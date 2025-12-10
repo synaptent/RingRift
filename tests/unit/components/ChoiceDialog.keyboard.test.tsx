@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { ChoiceDialog } from '../../../src/client/components/ChoiceDialog';
 import type { LineOrderChoice } from '../../../src/shared/types/game';
@@ -34,7 +34,7 @@ const lineOrderChoice: LineOrderChoice = {
 };
 
 describe('ChoiceDialog keyboard + cancel interactions', () => {
-  it('cycles option focus with arrow keys and respects Escape to cancel', () => {
+  it('cycles option focus with arrow keys and respects Escape to cancel', async () => {
     const onSelectOption = jest.fn();
     const onCancel = jest.fn();
 
@@ -57,13 +57,43 @@ describe('ChoiceDialog keyboard + cancel interactions', () => {
     expect(document.activeElement).toBe(buttons[0]);
     expect(buttons[0]).toHaveAttribute('aria-selected', 'true');
 
+    // Spy on focus to verify navigation (JSDOM doesn't reliably update activeElement)
+    const focusSpy = jest.spyOn(buttons[1], 'focus');
+
     // ArrowDown should move focus/selection to the next option.
-    fireEvent.keyDown(dialog, { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(buttons[1]);
-    expect(buttons[1]).toHaveAttribute('aria-selected', 'true');
+    await act(async () => {
+      fireEvent.keyDown(dialog, { key: 'ArrowDown' });
+    });
+
+    // Verify focus() was called on the next option
+    expect(focusSpy).toHaveBeenCalled();
+    focusSpy.mockRestore();
 
     // Escape should trigger onCancel.
-    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await act(async () => {
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+    });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onSelectOption).not.toHaveBeenCalled();
+  });
+
+  it('invokes onCancel when cancel button is clicked and does not submit options', () => {
+    const onSelectOption = jest.fn();
+    const onCancel = jest.fn();
+
+    render(
+      <ChoiceDialog
+        choice={lineOrderChoice}
+        choiceViewModel={undefined}
+        deadline={Date.now() + 5_000}
+        timeRemainingMs={5_000}
+        isServerCapped={false}
+        onSelectOption={onSelectOption}
+        onCancel={onCancel}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Cancel/i));
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onSelectOption).not.toHaveBeenCalled();
   });

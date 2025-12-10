@@ -126,6 +126,19 @@ function baseHudViewModel(): HUDViewModel {
       reconciledDecisionTimeRemainingMs: 4_000,
       isServerCapped: true,
     },
+    decisionPhase: {
+      isActive: true,
+      actingPlayerNumber: 1,
+      actingPlayerName: 'Alice',
+      isLocalActor: true,
+      label: 'Choose Line Reward',
+      description: 'Select a reward for your formed line',
+      shortLabel: 'Line reward',
+      timeRemainingMs: 4_000,
+      showCountdown: true,
+      isServerCapped: true,
+      spectatorLabel: 'Waiting for Alice',
+    },
     connectionStatus: 'connected',
     isSpectator: false,
     isLocalSandboxOnly: false,
@@ -139,11 +152,12 @@ describe('GameHUD decision countdown', () => {
 
     render(<GameHUD viewModel={hud} timeControl={state.timeControl} />);
 
-    const timer = screen.getByTestId('decision-countdown');
+    const timer = screen.getByTestId('decision-phase-countdown');
     expect(timer).toBeInTheDocument();
     expect(timer).toHaveAttribute('data-severity', 'warning');
     expect(timer).toHaveAttribute('data-server-capped', 'true');
     expect(screen.getByText(/Server deadline/i)).toBeInTheDocument();
-    expect(screen.getByText(/4s/)).toBeInTheDocument();
+    // The countdown shows 0:04 - check within the timer element
+    expect(timer).toHaveTextContent('0:04');
   });
 });
