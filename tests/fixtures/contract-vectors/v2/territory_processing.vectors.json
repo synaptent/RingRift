@@ -1,11 +1,11 @@
 {
   "version": "v2",
-  "generated": "2025-11-28T23:30:21.878Z",
-  "count": 2,
+  "generated": "2025-12-10T00:51:27.440Z",
+  "count": 1,
   "categories": ["territory_processing"],
   "vectors": [
     {
-      "id": "territory_processing.mijhwjzi.tm2h",
+      "id": "territory_processing.mizan7m8.yt6k",
       "version": "v2",
       "category": "territory_processing",
       "description": "Territory region processing (two-space region, square8)",
@@ -14,12 +14,10 @@
         "territory_processing",
         "orchestrator",
         "parity",
-        "sequence:territory.region.self_elim.square8",
-        "skip:pending_self_elim_tracking"
+        "sequence:territory.region.self_elim.square8"
       ],
-      "skip": "Pending self-elimination tracking not implemented in orchestrator for explicit process_territory_region moves. This sequence tests a flow that requires the orchestrator to stay in territory_processing phase after region processing with pending elimination.",
       "source": "generated",
-      "createdAt": "2025-11-28T23:30:21.870Z",
+      "createdAt": "2025-12-10T00:51:27.440Z",
       "input": {
         "state": {
           "gameId": "contract-territory-composite",
@@ -42,10 +40,10 @@
                   "x": 1,
                   "y": 0
                 },
-                "rings": [2, 2, 2],
+                "rings": [1, 1, 1],
                 "stackHeight": 3,
                 "capHeight": 3,
-                "controllingPlayer": 2
+                "controllingPlayer": 1
               },
               "3,3": {
                 "position": {
@@ -111,11 +109,11 @@
                   "y": 0
                 }
               ],
-              "controllingPlayer": 0,
+              "controllingPlayer": 1,
               "isDisconnected": true
             }
           ],
-          "timestamp": "2025-11-28T23:30:21.866Z",
+          "timestamp": "2025-12-10T00:51:27.437Z",
           "thinkTime": 0,
           "moveNumber": 1
         }
@@ -123,9 +121,9 @@
       "expectedOutput": {
         "status": "complete",
         "assertions": {
-          "currentPlayer": 2,
-          "currentPhase": "movement",
-          "gameStatus": "active",
+          "currentPlayer": 1,
+          "currentPhase": "game_over",
+          "gameStatus": "completed",
           "stackCount": 1,
           "markerCount": 0,
           "collapsedCount": 2,
@@ -133,120 +131,8 @@
           "player1RingsInHand": 0,
           "player1EliminatedRings": 5,
           "player2RingsInHand": 0,
-          "player2EliminatedRings": 0
-        }
-      }
-    },
-    {
-      "id": "territory_processing.mijhwjzq.ktgk",
-      "version": "v2",
-      "category": "territory_processing",
-      "description": "Territory self-elimination after region processing (square8)",
-      "tags": [
-        "territory",
-        "territory_processing",
-        "orchestrator",
-        "parity",
-        "sequence:territory.region.self_elim.square8"
-      ],
-      "source": "generated",
-      "createdAt": "2025-11-28T23:30:21.878Z",
-      "input": {
-        "state": {
-          "gameId": "contract-territory-composite",
-          "board": {
-            "type": "square8",
-            "size": 8,
-            "stacks": {
-              "3,3": {
-                "position": {
-                  "x": 3,
-                  "y": 3
-                },
-                "rings": [1],
-                "stackHeight": 1,
-                "capHeight": 1,
-                "controllingPlayer": 1
-              }
-            },
-            "markers": {},
-            "collapsedSpaces": {
-              "0,0": 1,
-              "1,0": 1
-            },
-            "eliminatedRings": {
-              "1": 5,
-              "2": 0
-            },
-            "formedLines": []
-          },
-          "players": [
-            {
-              "playerNumber": 1,
-              "ringsInHand": 0,
-              "eliminatedRings": 5,
-              "territorySpaces": 2,
-              "isActive": true
-            },
-            {
-              "playerNumber": 2,
-              "ringsInHand": 0,
-              "eliminatedRings": 0,
-              "territorySpaces": 0,
-              "isActive": true
-            }
-          ],
-          "currentPlayer": 2,
-          "currentPhase": "movement",
-          "turnNumber": 1,
-          "moveHistory": [],
-          "gameStatus": "active",
-          "victoryThreshold": 19,
-          "territoryVictoryThreshold": 33,
-          "totalRingsEliminated": 5
-        },
-        "move": {
-          "id": "eliminate-3,3",
-          "type": "eliminate_rings_from_stack",
-          "player": 1,
-          "to": {
-            "x": 3,
-            "y": 3
-          },
-          "eliminatedRings": [
-            {
-              "player": 1,
-              "count": 1
-            }
-          ],
-          "eliminationFromStack": {
-            "position": {
-              "x": 3,
-              "y": 3
-            },
-            "capHeight": 1,
-            "totalHeight": 1
-          },
-          "timestamp": "2025-11-28T23:30:21.869Z",
-          "thinkTime": 0,
-          "moveNumber": 1
-        }
-      },
-      "expectedOutput": {
-        "status": "complete",
-        "assertions": {
-          "currentPlayer": 2,
-          "currentPhase": "ring_placement",
-          "gameStatus": "completed",
-          "stackCount": 0,
-          "markerCount": 0,
-          "collapsedCount": 2,
-          "sInvariantDelta": 1,
-          "player1RingsInHand": 0,
-          "player1EliminatedRings": 6,
-          "player2RingsInHand": 0,
           "player2EliminatedRings": 0,
-          "victoryWinner": null
+          "victoryWinner": 1
         }
       }
     }
