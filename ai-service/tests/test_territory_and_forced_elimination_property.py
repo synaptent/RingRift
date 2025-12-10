@@ -122,9 +122,11 @@ def _build_q23_region_state(
         min_size=4,
         max_size=4,
     ),
-    outside_height=st.integers(min_value=1, max_value=4),
+    # RR-CANON-R082: Outside stack must be eligible cap target (height > 1)
+    # Height-1 standalone rings are NOT eligible for self-elimination
+    outside_height=st.integers(min_value=2, max_value=4),
 )
-@settings(max_examples=25)
+@settings(max_examples=25, deadline=None)
 def test_territory_processing_q23_region_property(
     internal_heights: List[int],
     outside_height: int,
@@ -138,6 +140,9 @@ def test_territory_processing_q23_region_property(
     - collapse region spaces to Player 1,
     - credit all internal eliminations to Player 1, and
     - keep collapsed-space counts monotone.
+
+    Note: Per RR-CANON-R082, outside_height must be >= 2 because height-1
+    standalone rings are not eligible cap targets for territory processing.
     """
     state, region_positions, expected_internal = _build_q23_region_state(
         internal_heights,
