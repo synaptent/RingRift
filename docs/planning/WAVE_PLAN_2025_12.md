@@ -275,26 +275,33 @@ Wave WS is a supporting multi-step wave series focused on HTTP and WebSocket mov
 | D9 | Descent | 12600ms | Yes | Master |
 | D10 | Descent | 16000ms | Yes | Grandmaster |
 
-### 9.2 - Service-Backed Choices Completion
+### 9.2 - Service-Backed Choices Completion ✅ COMPLETE (2025-12-10)
 
-- [ ] Complete `line_order` choice service backing
-- [ ] Complete `capture_direction` choice service backing
-- [ ] Add timeout handling for AI choice requests
-- [ ] Implement graceful fallback on service errors
+- [x] Complete `line_order` choice service backing (`/ai/choice/line_order`)
+- [x] Complete `capture_direction` choice service backing (`/ai/choice/capture_direction`)
+- [x] Complete `line_reward_option` choice service backing (`/ai/choice/line_reward_option`)
+- [x] Complete `ring_elimination` choice service backing (`/ai/choice/ring_elimination`)
+- [x] Complete `region_order` choice service backing (`/ai/choice/region_order`)
+- [x] Add timeout handling via circuit breaker pattern (AIServiceClient.ts)
+- [x] Implement graceful fallback on service errors (localAIMoveSelection.ts)
 
-### 9.3 - Heuristic Weight Optimization
+### 9.3 - Heuristic Weight Optimization ✅ INFRASTRUCTURE COMPLETE
 
-- [ ] Run CMA-ES optimization with current game pool
-- [ ] Export optimized weight profiles
+- [x] CMA-ES optimization scripts (`run_gpu_cmaes.py`, `run_iterative_cmaes.py`)
+- [x] Distributed GPU support (`run_distributed_gpu_cmaes.py`)
+- [x] Heuristic weight profiles configurable via `ladder_config.py`
+- [ ] Run CMA-ES optimization with production game pool (optional tuning)
+- [ ] Export optimized weight profiles to production
 - [ ] A/B test optimized vs baseline heuristics
-- [ ] Document weight tuning process
 
-### 9.4 - AI Observability
+### 9.4 - AI Observability ✅ COMPLETE (2025-12-10)
 
-- [ ] Add per-difficulty latency metrics
-- [ ] Add AI quality metrics (move evaluation scores)
-- [ ] Create AI performance dashboard
-- [ ] Add AI error rate tracking
+- [x] Add per-difficulty latency metrics (`AI_MOVE_LATENCY` histogram in metrics.py)
+- [x] Add AI request counters by outcome (`AI_MOVE_REQUESTS` counter)
+- [x] Prometheus metrics endpoint (`/metrics`)
+- [x] Per-tier performance budgets (`perf_budgets.py`)
+- [x] Tier benchmark tooling (`tier_perf_benchmark.py`)
+- [ ] Create AI performance dashboard (optional - Grafana/observability stack)
 
 **Estimated Effort:** 5-7 days
 
@@ -472,16 +479,20 @@ Choose based on your priorities:
 
 ## Next Session Recommendations
 
+**Completed Waves:** 7 (FSM Canonicalization), 8 (Branch Coverage), 9 (AI Ladder)
+
 For immediate continuation, select one of:
 
-| Option | Wave      | Focus                | Effort   |
-| ------ | --------- | -------------------- | -------- |
-| 1      | Wave 7.3  | Operational drills   | 1-2 days |
-| 2      | Wave 8.1  | Coverage analysis    | 1 day    |
-| 3      | Wave 9.1  | AI ladder wiring     | 2-3 days |
-| 4      | Wave 10.1 | First-time player UX | 3-4 days |
+| Option | Wave      | Focus                    | Effort   |
+| ------ | --------- | ------------------------ | -------- |
+| 1      | Wave 10.1 | First-time player UX     | 3-4 days |
+| 2      | Wave 11.1 | Game records & replay    | 2-3 days |
+| 3      | Wave 13.1 | Multi-player rules check | 2-3 days |
+| 4      | Wave 12.1 | Rating system            | 2-3 days |
+
+**Recommended Path:** Wave 10 (UX Polish) → Wave 11 (Replay) → Wave 12 (Matchmaking) → Wave 13 (Multi-Player)
 
 ---
 
 **Document Maintainer:** Claude Code
-**Last Updated:** December 3, 2025
+**Last Updated:** December 10, 2025

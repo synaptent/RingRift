@@ -14,6 +14,7 @@ RingRift's AI training pipeline requires **identical engine behavior** between:
 - **Python (Py)**: The rules implementation used for AI training, self-play, and replay
 
 When the engines diverge, training data becomes unreliable because:
+
 - State hashes won't match between recorded positions and replayed positions
 - AI move evaluations may be based on incorrect board states
 - Self-play games may record invalid or impossible game trajectories
@@ -23,8 +24,9 @@ When the engines diverge, training data becomes unreliable because:
 Parity means: **same inputs → same outputs**
 
 For any sequence of moves applied to an initial state:
+
 - Both engines produce the same `currentPlayer` after each move
-- Both engines produce the same `currentPhase` after each move  
+- Both engines produce the same `currentPhase` after each move
 - Both engines produce the same `gameStatus` after each move
 - Both engines produce the same structural state hash
 
@@ -32,11 +34,11 @@ For any sequence of moves applied to an initial state:
 
 ✅ **All board types are passing parity** (as of December 2025):
 
-| Board Type | Status | Canonical DB |
-|------------|--------|--------------|
-| Square 8×8 | ✅ Passing | [`canonical_square8.db`](../ai-service/data/games/canonical_square8.db) |
+| Board Type   | Status     | Canonical DB                                                              |
+| ------------ | ---------- | ------------------------------------------------------------------------- |
+| Square 8×8   | ✅ Passing | [`canonical_square8.db`](../ai-service/data/games/canonical_square8.db)   |
 | Square 19×19 | ✅ Passing | [`canonical_square19.db`](../ai-service/data/games/canonical_square19.db) |
-| Hexagonal | ✅ Passing | `canonical_hex.db` (⚠️ deprecated R10 geometry) |
+| Hexagonal    | ✅ Passing | `canonical_hex.db` (⚠️ deprecated R10 geometry)                           |
 
 ---
 
@@ -82,6 +84,7 @@ Each canonical DB has an accompanying parity gate JSON:
 ```
 
 **Key fields:**
+
 - `passed_canonical_parity_gate`: **Must be `true`** for training use
 - `games_with_semantic_divergence`: Should be `0`
 - `games_with_structural_issues`: Should be `0`
@@ -94,11 +97,11 @@ The authoritative inventory of canonical vs legacy databases is maintained in:
 
 **Data Classification:**
 
-| Status | Meaning |
-|--------|---------|
-| `canonical` | Parity + canonical history gates passed - safe for training |
-| `legacy_noncanonical` | Pre-parity-fix data - **DO NOT use for training** |
-| `pending_gate` | Not yet validated - requires gate before training |
+| Status                | Meaning                                                     |
+| --------------------- | ----------------------------------------------------------- |
+| `canonical`           | Parity + canonical history gates passed - safe for training |
+| `legacy_noncanonical` | Pre-parity-fix data - **DO NOT use for training**           |
+| `pending_gate`        | Not yet validated - requires gate before training           |
 
 ---
 
@@ -114,12 +117,14 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py --db <path>
 ```
 
 **Example - Check a single DB:**
+
 ```bash
 PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
   --db data/games/canonical_square8.db
 ```
 
 **Output (JSON):**
+
 ```json
 {
   "total_databases": 1,
@@ -144,6 +149,7 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 ```
 
 **Output format:**
+
 ```
 SEMANTIC db=/path/to/db game=<game_id> diverged_at=50 py_phase=movement ts_phase=territory_processing ...
 ```
@@ -158,6 +164,7 @@ PYTHONPATH=. python scripts/run_parity_healthcheck.py
 ```
 
 **Options:**
+
 ```bash
 --suite contract_vectors_v2   # Run specific suite
 --suite plateau_snapshots     # Run specific suite
@@ -179,6 +186,7 @@ PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
 ```
 
 A DB is eligible for `canonical` status **only if**:
+
 - `canonical_ok` in summary is `true`
 - `parity_gate.passed_canonical_parity_gate` is `true`
 - `canonical_history.non_canonical_games == 0`
@@ -195,6 +203,7 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 ```
 
 **Output:**
+
 ```
 TRACE-HEADER db=... game=<id> structure=good total_moves_py=67 total_moves_ts=67
 TRACE db=... game=<id> k=0 py_player=1 ts_player=1 py_phase=ring_placement ts_phase=ring_placement ...
@@ -231,6 +240,7 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 ```
 
 This creates files like:
+
 ```
 parity_bundles/debug_session/
 ├── failing__<game_id>__k50.state_bundle.json
@@ -248,6 +258,7 @@ PYTHONPATH=. python scripts/diff_state_bundle.py \
 ```
 
 **Sample output:**
+
 ```
 Bundle: parity_bundles/debug_session/failing__game123__k50.state_bundle.json
 DB:     /path/to/failing.db
@@ -277,12 +288,12 @@ Players (PY vs TS):
 
 ### 4.4 Step 3: Interpret the Output
 
-| Mismatch Kind | Typical Cause | Investigation Focus |
-|---------------|---------------|---------------------|
-| `current_phase` | Missing bookkeeping move injection | Check `_auto_inject_no_action_moves()` |
-| `current_player` | Player rotation mismatch | Check turn advancement logic |
-| `game_status` | Victory detection mismatch | Check terminal condition evaluation |
-| `state_hash` | Structural board difference | Diff stacks, collapsed, players |
+| Mismatch Kind    | Typical Cause                      | Investigation Focus                    |
+| ---------------- | ---------------------------------- | -------------------------------------- |
+| `current_phase`  | Missing bookkeeping move injection | Check `_auto_inject_no_action_moves()` |
+| `current_player` | Player rotation mismatch           | Check turn advancement logic           |
+| `game_status`    | Victory detection mismatch         | Check terminal condition evaluation    |
+| `state_hash`     | Structural board difference        | Diff stacks, collapsed, players        |
 
 ### 4.5 Generate Parity Fixtures for Regression
 
@@ -295,6 +306,7 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 ```
 
 This creates fixtures like:
+
 ```
 parity_fixtures/failing__game123__k50.json
 ```
@@ -323,7 +335,7 @@ def _auto_inject_no_action_moves(self, state: GameState) -> GameState:
 
     while iterations < max_iterations:
         requirement = GameEngine.get_phase_requirement(state, state.current_player)
-        
+
         if requirement.type == PhaseRequirementType.NO_LINE_ACTION_REQUIRED:
             bookkeeping = GameEngine.synthesize_bookkeeping_move(requirement, state)
             state = GameEngine.apply_move(state, bookkeeping, trace_mode=True)
@@ -375,6 +387,7 @@ grep -r "RR-PARITY-FIX" ai-service/
 ### 6.1 What Parity Fixtures Are
 
 Parity fixtures are JSON snapshots capturing:
+
 - Game ID and DB path where divergence occurred
 - The exact move number (`k` value) of divergence
 - Python and TS state summaries at that point
@@ -418,7 +431,9 @@ ai-service/parity_fixtures/
     "state_hash": "cd457d73bc3b69b2"
   },
   "canonical_move_index": 49,
-  "canonical_move": { /* Move JSON */ }
+  "canonical_move": {
+    /* Move JSON */
+  }
 }
 ```
 
@@ -435,6 +450,7 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 ### 6.5 Naming Convention
 
 Fixtures follow this naming pattern:
+
 ```
 {db_stem}__{game_id}__k{diverged_at}.json
 ```
@@ -451,14 +467,15 @@ Example: `selfplay_square8_2p__3f9641f6-5f17-423d-b529-aa9fc054d786__k50.json`
 
 Two levels of parity checks run in CI:
 
-| Workflow | Trigger | What it checks |
-|----------|---------|----------------|
-| `parity-ci.yml` | PRs affecting engine code | TS↔Python replay parity on `canonical_square8.db` |
-| `ci.yml` (`python-parity-healthcheck`) | All PRs | Contract vectors + plateau snapshots |
+| Workflow                               | Trigger                   | What it checks                                    |
+| -------------------------------------- | ------------------------- | ------------------------------------------------- |
+| `parity-ci.yml`                        | PRs affecting engine code | TS↔Python replay parity on `canonical_square8.db` |
+| `ci.yml` (`python-parity-healthcheck`) | All PRs                   | Contract vectors + plateau snapshots              |
 
 ### 7.2 Parity CI Workflow (`parity-ci.yml`)
 
 The dedicated parity CI gate runs on PRs that modify:
+
 - `src/shared/engine/**` (TS engine)
 - `src/client/sandbox/**` (TS sandbox)
 - `ai-service/app/rules/**` (Python rules)
@@ -467,6 +484,7 @@ The dedicated parity CI gate runs on PRs that modify:
 - Canonical databases and parity scripts
 
 **What it does:**
+
 1. Sets up Node.js (for TS replay harness) and Python
 2. Runs [`check_ts_python_replay_parity.py`](../ai-service/scripts/check_ts_python_replay_parity.py) with `--fail-on-divergence`
 3. Gates merges on zero semantic divergences
@@ -477,6 +495,7 @@ The dedicated parity CI gate runs on PRs that modify:
 ### 7.3 Workflow Commands
 
 **Check replay parity (CI-equivalent):**
+
 ```bash
 cd ai-service
 PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
@@ -485,6 +504,7 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 ```
 
 **Check contract vectors + plateau snapshots (CI-equivalent):**
+
 ```bash
 cd ai-service
 PYTHONPATH=. python scripts/run_parity_healthcheck.py --fail-on-mismatch
@@ -515,11 +535,13 @@ PYTHONPATH=. python scripts/run_parity_healthcheck.py --fail-on-mismatch
 **Symptom:** Python shows `movement`, TS shows `territory_processing`
 
 **Common causes:**
+
 1. **Missing bookkeeping move injection** - Check `_auto_inject_no_action_moves()` is called
 2. **Phase transition logic differs** - Compare phase state machines
 3. **Legacy DB without explicit phase moves** - May need regeneration
 
 **Fix approach:**
+
 ```bash
 # Trace the specific game to see where phases diverge
 PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
@@ -532,11 +554,13 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 **Symptom:** Python shows player 2, TS shows player 1
 
 **Common causes:**
+
 1. **Turn advancement logic differs** - Check forced elimination rotation
 2. **Player skip logic differs** - Check eliminated player handling
 3. **Off-by-one in move counting** - Index alignment issue
 
 **Fix approach:**
+
 ```bash
 # Generate state bundle and compare player states
 PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
@@ -553,10 +577,12 @@ PYTHONPATH=. python scripts/diff_state_bundle.py \
 **Symptom:** `total_moves_python != total_moves_ts`
 
 **Common causes:**
+
 1. **TS or Python fails to apply some moves** - Check for validation errors
 2. **Legacy move format incompatibility** - Check `normalizeRecordedMove()` in TS
 
 **Fix approach:**
+
 ```bash
 # Check compact output for the specific game
 PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
@@ -569,11 +595,13 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 **Symptom:** Phase/player/status match but `state_hash` differs
 
 **Common causes:**
+
 1. **Board structure difference** - Different stacks, markers, or collapsed cells
 2. **Player progress difference** - Different eliminated_rings or territory_spaces
 3. **Hash computation difference** - Unlikely but check `hash_game_state()`
 
 **Fix approach:**
+
 ```bash
 # Use diff_state_bundle to see structural differences
 PYTHONPATH=. python scripts/diff_state_bundle.py --bundle <bundle.json>
@@ -589,10 +617,12 @@ PYTHONPATH=. python scripts/diff_state_bundle.py --bundle <bundle.json>
 **Symptom:** `structure: non_canonical_history`
 
 **Common causes:**
+
 1. **Legacy DB with implicit phase transitions** - Must regenerate
 2. **Recording pipeline bug** - Check `validate_canonical_move()` enforcement
 
 **Fix approach:**
+
 - Regenerate the DB using canonical self-play pipeline
 - Check [`history_contract.py`](../ai-service/app/rules/history_contract.py) for valid phase/move-type pairs
 
@@ -602,50 +632,53 @@ PYTHONPATH=. python scripts/diff_state_bundle.py --bundle <bundle.json>
 
 ### 9.1 Python Parity Infrastructure
 
-| File | Purpose |
-|------|---------|
-| [`ai-service/app/db/game_replay.py`](../ai-service/app/db/game_replay.py) | GameReplayDB with parity fix (`_auto_inject_no_action_moves`) |
-| [`ai-service/scripts/check_ts_python_replay_parity.py`](../ai-service/scripts/check_ts_python_replay_parity.py) | Main parity checker script |
-| [`ai-service/scripts/diff_state_bundle.py`](../ai-service/scripts/diff_state_bundle.py) | State bundle differ |
-| [`ai-service/scripts/run_parity_healthcheck.py`](../ai-service/scripts/run_parity_healthcheck.py) | Multi-suite parity healthcheck |
-| [`ai-service/scripts/run_canonical_selfplay_parity_gate.py`](../ai-service/scripts/run_canonical_selfplay_parity_gate.py) | Generate + gate canonical DBs |
-| [`ai-service/scripts/generate_canonical_selfplay.py`](../ai-service/scripts/generate_canonical_selfplay.py) | Unified canonical generator |
-| [`ai-service/app/rules/history_contract.py`](../ai-service/app/rules/history_contract.py) | Canonical phase/move-type contract |
-| [`ai-service/app/rules/history_validation.py`](../ai-service/app/rules/history_validation.py) | History validation helpers |
+| File                                                                                                                      | Purpose                                                       |
+| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| [`ai-service/app/db/game_replay.py`](../ai-service/app/db/game_replay.py)                                                 | GameReplayDB with parity fix (`_auto_inject_no_action_moves`) |
+| [`ai-service/scripts/check_ts_python_replay_parity.py`](../ai-service/scripts/check_ts_python_replay_parity.py)           | Main parity checker script                                    |
+| [`ai-service/scripts/diff_state_bundle.py`](../ai-service/scripts/diff_state_bundle.py)                                   | State bundle differ                                           |
+| [`ai-service/scripts/run_parity_healthcheck.py`](../ai-service/scripts/run_parity_healthcheck.py)                         | Multi-suite parity healthcheck                                |
+| [`ai-service/scripts/run_canonical_selfplay_parity_gate.py`](../ai-service/scripts/run_canonical_selfplay_parity_gate.py) | Generate + gate canonical DBs                                 |
+| [`ai-service/scripts/generate_canonical_selfplay.py`](../ai-service/scripts/generate_canonical_selfplay.py)               | Unified canonical generator                                   |
+| [`ai-service/app/rules/history_contract.py`](../ai-service/app/rules/history_contract.py)                                 | Canonical phase/move-type contract                            |
+| [`ai-service/app/rules/history_validation.py`](../ai-service/app/rules/history_validation.py)                             | History validation helpers                                    |
 
 ### 9.2 TypeScript Parity Infrastructure
 
-| File | Purpose |
-|------|---------|
-| [`scripts/selfplay-db-ts-replay.ts`](../scripts/selfplay-db-ts-replay.ts) | TS replay harness for parity checks |
-| [`src/client/sandbox/SandboxOrchestratorAdapter.ts`](../src/client/sandbox/SandboxOrchestratorAdapter.ts) | TS sandbox adapter with auto-advance |
-| [`src/client/sandbox/ClientSandboxEngine.ts`](../src/client/sandbox/ClientSandboxEngine.ts) | TS sandbox engine |
-| [`src/shared/engine/orchestration/turnOrchestrator.ts`](../src/shared/engine/orchestration/turnOrchestrator.ts) | Core TS turn orchestrator |
+| File                                                                                                            | Purpose                              |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| [`scripts/selfplay-db-ts-replay.ts`](../scripts/selfplay-db-ts-replay.ts)                                       | TS replay harness for parity checks  |
+| [`src/client/sandbox/SandboxOrchestratorAdapter.ts`](../src/client/sandbox/SandboxOrchestratorAdapter.ts)       | TS sandbox adapter with auto-advance |
+| [`src/client/sandbox/ClientSandboxEngine.ts`](../src/client/sandbox/ClientSandboxEngine.ts)                     | TS sandbox engine                    |
+| [`src/shared/engine/orchestration/turnOrchestrator.ts`](../src/shared/engine/orchestration/turnOrchestrator.ts) | Core TS turn orchestrator            |
 
 ### 9.3 Documentation
 
-| File | Purpose |
-|------|---------|
-| [`ai-service/TRAINING_DATA_REGISTRY.md`](../ai-service/TRAINING_DATA_REGISTRY.md) | Canonical vs legacy data inventory |
-| [`ai-service/docs/GAME_REPLAY_DATABASE_SPEC.md`](../ai-service/docs/GAME_REPLAY_DATABASE_SPEC.md) | GameReplayDB schema spec |
-| [`AGENTS.md`](../AGENTS.md) | Agent guidelines including parity rules |
+| File                                                                                              | Purpose                                 |
+| ------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| [`ai-service/TRAINING_DATA_REGISTRY.md`](../ai-service/TRAINING_DATA_REGISTRY.md)                 | Canonical vs legacy data inventory      |
+| [`ai-service/docs/GAME_REPLAY_DATABASE_SPEC.md`](../ai-service/docs/GAME_REPLAY_DATABASE_SPEC.md) | GameReplayDB schema spec                |
+| [`AGENTS.md`](../AGENTS.md)                                                                       | Agent guidelines including parity rules |
 
 ---
 
 ## 10. Quick Reference Commands
 
 ### Check parity for a single DB
+
 ```bash
 cd ai-service
 PYTHONPATH=. python scripts/check_ts_python_replay_parity.py --db <path>
 ```
 
 ### Run all parity healthchecks
+
 ```bash
 PYTHONPATH=. python scripts/run_parity_healthcheck.py --fail-on-mismatch
 ```
 
 ### Generate debug bundles for divergences
+
 ```bash
 PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
   --db <path> \
@@ -653,11 +686,13 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 ```
 
 ### Diff a state bundle
+
 ```bash
 PYTHONPATH=. python scripts/diff_state_bundle.py --bundle <path.state_bundle.json>
 ```
 
 ### Trace a specific game move-by-move
+
 ```bash
 PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
   --db <path> \
@@ -665,6 +700,7 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 ```
 
 ### Generate canonical DB with parity gate
+
 ```bash
 PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
   --board-type square8 \
@@ -675,4 +711,80 @@ PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
 
 ---
 
-_Last updated: 2025-12-07 (PA-6: Parity CI Gate automated)_
+## 11. FSM Validation Warnings During TS Replay
+
+### 11.1 Understanding FSM Validation Failures
+
+During TS replay (using `selfplay-db-ts-replay.ts`), you may see warnings like:
+
+```
+[selfplay-db-ts-replay] FSM parity warning: 2 move(s) failed FSM validation for game <game_id>
+```
+
+**These are NOT semantic divergences.** FSM validation failures indicate that the TurnStateMachine's internal state machine simulation has fallen out of sync with the actual game state during replay.
+
+### 11.2 Why FSM Validation Failures Occur
+
+The FSM (Finite State Machine) simulation in `FSMAdapter.ts` attempts to track phase transitions using a pure state machine model. However, during replay:
+
+1. **Synthesized moves** - Bridge moves that get auto-injected don't always map cleanly to FSM events
+2. **Turn-end resolution** - The `turn_end` meta-state must resolve to the next player's actual phase based on their `ringsInHand`, which the FSM doesn't always predict correctly
+3. **Complex multi-step turns** - Captures, territory processing, and eliminations can involve nested phase transitions that the FSM simulation doesn't fully track
+
+### 11.3 When FSM Warnings Are Safe to Ignore
+
+FSM validation warnings are **informational only** if:
+
+- ✅ The game reaches `game_over` state
+- ✅ The `ts-replay-final` output shows the game completed successfully
+- ✅ No semantic divergence is detected in actual game state (player, phase, status, hash)
+
+**Example of safe output:**
+
+```json
+{
+  "kind": "ts-replay-final",
+  "appliedMoves": 79,
+  "synthesizedMoves": 0,
+  "fsmValidationFailures": 0,
+  "summary": {
+    "label": "final",
+    "currentPlayer": 2,
+    "currentPhase": "game_over",
+    "gameStatus": "completed",
+    "moveHistoryLength": 79
+  }
+}
+```
+
+### 11.4 When FSM Warnings Require Investigation
+
+FSM warnings require investigation if:
+
+- ❌ The game does NOT reach `game_over` state
+- ❌ There's a semantic divergence between Python and TS states
+- ❌ The `fsmValidationFailures` count is high AND games don't complete
+
+### 11.5 FSM vs Semantic Parity
+
+| Check Type          | What It Validates                                       | Blocking?              |
+| ------------------- | ------------------------------------------------------- | ---------------------- |
+| **Semantic parity** | Player, phase, status, hash match between TS and Python | **YES** - CI-blocking  |
+| **FSM validation**  | Internal state machine simulation consistency           | **NO** - informational |
+
+The key distinction:
+
+- **Semantic parity** = actual game behavior matches (the truth)
+- **FSM validation** = state machine model predicts correctly (a tracking model)
+
+If semantic parity passes but FSM fails, the FSM model needs improvement but the game engine is correct.
+
+### 11.6 Relevant Code References
+
+- **FSM Adapter:** [`src/shared/engine/fsm/FSMAdapter.ts`](../src/shared/engine/fsm/FSMAdapter.ts) - Contains the `turn_end` resolution logic per RR-CANON-R073
+- **Turn State Machine:** [`src/shared/engine/fsm/TurnStateMachine.ts`](../src/shared/engine/fsm/TurnStateMachine.ts) - Core FSM implementation
+- **TS Replay Harness:** [`scripts/selfplay-db-ts-replay.ts`](../scripts/selfplay-db-ts-replay.ts) - Reports FSM validation status
+
+---
+
+_Last updated: 2025-12-10 (Added FSM validation behavior documentation)_
