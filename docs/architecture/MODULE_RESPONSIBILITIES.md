@@ -41,7 +41,7 @@ The `src/shared/engine/` directory contains the following **active module groups
 - **Shared helpers (pure logic)**
   - `core.ts` – geometry, distances, capture reachability, marker-path effects, state hashing.
   - `movementLogic.ts`, `movementApplication.ts` – movement enumeration and application helpers.
-  - `captureLogic.ts`, `captureChainHelpers.ts` – capture enumeration and chain helpers.
+  - `captureLogic.ts` – capture enumeration helpers.
   - `lineDetection.ts`, `lineDecisionHelpers.ts` – line geometry and line decision moves.
   - `territoryDetection.ts`, `territoryBorders.ts`, `territoryProcessing.ts`, `territoryDecisionHelpers.ts` – territory detection, borders, processing, and decision moves.
   - `victoryLogic.ts` – victory evaluation (ring elimination, territory, LPS, stalemate ladder).
@@ -209,14 +209,6 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 - **Primary Responsibility:** Enumerate overtaking capture moves from a given position.
 - **Concern Type:** `QUERY` (capture-move enumeration).
-
-#### [`captureChainHelpers.ts`](../src/shared/engine/captureChainHelpers.ts)
-
-- **Primary Responsibility:** Helpers for chain-capture state and continuation enumeration.
-- **Typical Tasks:**
-  - Track which positions have been captured in a chain.
-  - Determine mandatory continuation vs optional end of chain.
-- **Concern Type:** `QUERY` + `ORCHESTRATION` (within the capture domain).
 
 #### [`aggregates/MovementAggregate.ts`](../src/shared/engine/aggregates/MovementAggregate.ts)
 
@@ -474,7 +466,6 @@ graph TD
         moveLogic[movementLogic.ts]
         moveApp[movementApplication.ts]
         capLogic[captureLogic.ts]
-        capChain[captureChainHelpers.ts]
         vict[victoryLogic.ts]
     end
 
@@ -509,14 +500,12 @@ graph TD
     core --> moveLogic
     core --> moveApp
     core --> capLogic
-    core --> capChain
     core --> terrProc
     core --> vict
 
     moveLogic --> moveAgg
     moveApp --> moveAgg
     capLogic --> capAgg
-    capChain --> capAgg
     lineDet --> lineDecHelpers
     lineDecHelpers --> lineAgg
     terrDet --> terrProc

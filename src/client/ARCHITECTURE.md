@@ -487,7 +487,7 @@ The following patterns are **forbidden** or **strongly discouraged** in new code
 - Do not import shared engine or orchestrator modules into React components, hooks, or contexts, including:
   - `src/shared/engine/orchestration/turnOrchestrator.ts`
   - Domain aggregates such as `MovementAggregate`, `CaptureAggregate`, `PlacementAggregate`, `LineAggregate`, `TerritoryAggregate`, `VictoryAggregate`.
-  - Low‑level helpers such as `movementLogic`, `territoryDecisionHelpers`, or `captureChainHelpers`.
+  - Low‑level helpers such as `movementLogic`, `territoryDecisionHelpers`, or `captureLogic`.
 
 All production rules calls must go through:
 

@@ -49,7 +49,7 @@ important groups are:
 - **Movement & captures**
   - Geometry & non‑capturing reachability: [`movementLogic.ts`](src/shared/engine/movementLogic.ts:1)
   - Overtaking capture enumeration: [`captureLogic.ts`](src/shared/engine/captureLogic.ts:1)
-  - Shared helpers for applying movement/capture segments and marker path effects: [`core.ts`](src/shared/engine/core.ts:1), [`movementApplication.ts`](src/shared/engine/movementApplication.ts:1), [`captureChainHelpers.ts`](src/shared/engine/captureChainHelpers.ts:1)
+  - Shared helpers for applying movement/capture segments and marker path effects: [`core.ts`](src/shared/engine/core.ts:1), [`movementApplication.ts`](src/shared/engine/movementApplication.ts:1)
   - Aggregates and mutators: [`MovementAggregate.ts`](src/shared/engine/aggregates/MovementAggregate.ts:1), [`CaptureAggregate.ts`](src/shared/engine/aggregates/CaptureAggregate.ts:1), [`MovementMutator.ts`](src/shared/engine/mutators/MovementMutator.ts:1), [`CaptureMutator.ts`](src/shared/engine/mutators/CaptureMutator.ts:1)
 
 - **Lines**
@@ -157,7 +157,6 @@ truth:
    - Movement & captures (enumeration, application, chain state, aggregates): [`movementLogic.ts`](src/shared/engine/movementLogic.ts:1),
      [`captureLogic.ts`](src/shared/engine/captureLogic.ts:1),
      [`movementApplication.ts`](src/shared/engine/movementApplication.ts:1),
-     [`captureChainHelpers.ts`](src/shared/engine/captureChainHelpers.ts:1),
      [`MovementAggregate.ts`](src/shared/engine/aggregates/MovementAggregate.ts:1),
      [`CaptureAggregate.ts`](src/shared/engine/aggregates/CaptureAggregate.ts:1),
      [`MovementMutator.ts`](src/shared/engine/mutators/MovementMutator.ts:1),

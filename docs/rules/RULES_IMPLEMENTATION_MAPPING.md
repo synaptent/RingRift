@@ -348,8 +348,7 @@ Status legend:
 
 - **Primary implementation**
   - Shared enumeration of follow-up segments via [`TypeScript.enumerateCaptureMoves()`](src/shared/engine/captureLogic.ts:26).
-  - Backend chain state tracked in `chainCaptureState` within [`TypeScript.GameEngine`](src/server/game/GameEngine.ts:92) and helper module [`TypeScript.captureChainHelpers`](src/shared/engine/captureChainHelpers.ts:1).
-    - Historically this was also exposed via a legacy server module `captureChainEngine` under `src/server/game/rules/captureChainEngine.ts` (now removed); it is retained here only as a historical naming anchor for older docs and parity reports.
+  - Backend chain state tracked in `chainCaptureState` within [`TypeScript.GameEngine`](src/server/game/GameEngine.ts:92) and [`TypeScript.CaptureAggregate`](src/shared/engine/aggregates/CaptureAggregate.ts:1).
   - Sandbox chain engine now lives in [`TypeScript.ClientSandboxEngine.performCaptureChainInternal`](src/client/sandbox/ClientSandboxEngine.ts:1960), which:
     - Applies an initial segment.
     - Transitions the game into `chain_capture` phase while continuations exist.

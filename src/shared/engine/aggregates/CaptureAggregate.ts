@@ -7,7 +7,6 @@
  * enumeration, and chain capture logic from:
  *
  * - captureLogic.ts → capture enumeration, validation
- * - captureChainHelpers.ts → chain capture logic
  * - validators/CaptureValidator.ts → validation
  * - mutators/CaptureMutator.ts → mutation
  *

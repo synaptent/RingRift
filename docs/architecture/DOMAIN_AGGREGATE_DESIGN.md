@@ -28,7 +28,7 @@ This document specifies the **domain aggregate structure** for the shared RingRi
 
 Today, the implementation sits in the following shape:
 
-- **Shared helpers**: `core.ts`, `movementLogic.ts`, `movementApplication.ts`, `captureLogic.ts`, `captureChainHelpers.ts`, `lineDetection.ts`, `lineDecisionHelpers.ts`, `territoryDetection.ts`, `territoryBorders.ts`, `territoryProcessing.ts`, `territoryDecisionHelpers.ts`, `victoryLogic.ts`, `placementHelpers.ts`, `notation.ts`, `moveActionAdapter.ts`, `types.ts`, etc.
+- **Shared helpers**: `core.ts`, `movementLogic.ts`, `movementApplication.ts`, `captureLogic.ts`, `lineDetection.ts`, `lineDecisionHelpers.ts`, `territoryDetection.ts`, `territoryBorders.ts`, `territoryProcessing.ts`, `territoryDecisionHelpers.ts`, `victoryLogic.ts`, `placementHelpers.ts`, `notation.ts`, `moveActionAdapter.ts`, `types.ts`, etc.
 - **Single-file aggregates** (implemented):
   - `aggregates/PlacementAggregate.ts`
   - `aggregates/MovementAggregate.ts`
@@ -386,7 +386,6 @@ Owns all overtaking capture validation, enumeration, and mutation logic, includi
 | [`validators/CaptureValidator.ts`](../src/shared/engine/validators/CaptureValidator.ts) | Absorbed into aggregate |
 | [`mutators/CaptureMutator.ts`](../src/shared/engine/mutators/CaptureMutator.ts)         | Absorbed into aggregate |
 | [`captureLogic.ts`](../src/shared/engine/captureLogic.ts)                               | Absorbed into aggregate |
-| [`captureChainHelpers.ts`](../src/shared/engine/captureChainHelpers.ts)                 | Absorbed into aggregate |
 
 #### Public Interface (design sketch)
 
@@ -522,7 +521,7 @@ CaptureAggregate/
 
 #### Migration Notes
 
-- In code, chain capture logic is implemented across `captureLogic.ts`, `captureChainHelpers.ts`, `mutators/CaptureMutator.ts`, and `aggregates/CaptureAggregate.ts`.
+- In code, chain capture logic is implemented across `captureLogic.ts`, `mutators/CaptureMutator.ts`, and `aggregates/CaptureAggregate.ts`.
 - Tests such as `tests/unit/captureLogic.shared.test.ts`, `tests/unit/GameEngine.chainCapture.test.ts`, and `tests/unit/ClientSandboxEngine.chainCapture.scenarios.test.ts` are the parity constraints.
 
 ---
