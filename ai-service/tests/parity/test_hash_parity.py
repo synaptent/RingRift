@@ -48,7 +48,7 @@ class TestSimpleHash:
 
 def _create_test_state():
     """Create a minimal test game state."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     from app.models import GameState, BoardState, GamePhase, Player, BoardType, TimeControl
 
     board = BoardState(
@@ -66,7 +66,7 @@ def _create_test_state():
         type="fischer",
     )
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     return GameState(
         id="test-game-id",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Ensure `app.*` imports resolve when running pytest from ai-service/
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -53,7 +53,7 @@ def _make_forced_elimination_state() -> tuple[GameState, Move]:
     delegates to _end_turn, which may apply an extra forced elimination for
     the next player via _perform_forced_elimination_for_player.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     board = BoardState(
         type=BoardType.SQUARE8,
@@ -126,7 +126,7 @@ def _make_non_forced_elimination_state() -> tuple[GameState, Move]:
     """State where P1 eliminates and the next player has material plus
     legal actions, so no host-level forced elimination occurs.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     board = BoardState(
         type=BoardType.SQUARE8,

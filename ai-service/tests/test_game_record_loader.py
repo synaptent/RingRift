@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -42,8 +42,9 @@ def _make_minimal_game_record(
     winner: int | None = 1,
 ) -> GameRecord:
     """Construct a minimal but structurally valid GameRecord instance."""
-    now = datetime.utcnow()
-    now_iso = now.isoformat() + "Z"
+    now = datetime.now(timezone.utc)
+    # Use replace to remove timezone info, then add Z suffix for ISO format
+    now_iso = now.replace(tzinfo=None).isoformat() + "Z"
 
     payload = {
         "id": game_id,
