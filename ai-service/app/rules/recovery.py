@@ -851,7 +851,44 @@ def validate_recovery_slide(
     line_length = get_effective_line_length(board.type, len(state.players))
     completes, markers_count, line_positions = _would_complete_line_at(board, player, move.to, line_length)
 
-    # Restore marker
+    # Check for fallback mode (RR-CANON-R112(b))
+    # If recoveryMode is 'fallback', we allow the slide if it doesn't disconnect territory
+    recovery_mode = getattr(move, "recoveryMode", None)
+    is_fallback = recovery_mode == "fallback"
+
+    # For fallback mode, check territory disconnection instead of line formation
+    if is_fallback:
+        # Check territory disconnection with marker temporarily moved
+        causes_disconnect, _ = _would_cause_territory_disconnection(
+            board, player, move.from_pos, move.to
+        )
+        # Restore marker before returning
+        del board.markers[to_key]
+        board.markers[from_key] = from_marker
+
+        if causes_disconnect:
+            return RecoveryValidationResult(
+                valid=False,
+                reason="Fallback recovery would cause territory disconnection",
+            )
+
+        # Fallback mode valid - costs 1 buried ring
+        buried_rings = count_buried_rings(board, player)
+        if buried_rings < 1:
+            return RecoveryValidationResult(
+                valid=False,
+                reason="Fallback recovery requires at least 1 buried ring",
+            )
+
+        return RecoveryValidationResult(
+            valid=True,
+            line_positions=[],  # No line in fallback
+            is_overlength=False,
+            option_used=None,
+            cost=1,  # Fallback always costs 1
+        )
+
+    # Restore marker for line-based validation
     del board.markers[to_key]
     board.markers[from_key] = from_marker
 
@@ -1000,54 +1037,67 @@ def apply_recovery_slide(
         type="regular",
     )
 
-    # Find the completed line
-    line_length = get_effective_line_length(board.type, len(state.players))
-    _, markers_count, line_positions = _would_complete_line_at(board, player, move.to, line_length)
+    # Check for fallback mode (RR-CANON-R112(b))
+    recovery_mode = getattr(move, "recoveryMode", None)
+    is_fallback = recovery_mode == "fallback"
 
-    is_overlength = markers_count > line_length
-
-    # Determine effective option
-    if option is not None:
-        effective_option = option
-    elif getattr(move, "recovery_option", None) is not None:
-        effective_option = getattr(move, "recovery_option")
-    elif is_overlength:
-        # Default to Option 2 (free) for overlength if not specified
-        effective_option = 2
+    if is_fallback:
+        # Fallback mode: no line collapse, just marker move + ring extraction
+        # Per RR-CANON-R115: fallback costs 1 buried ring, no line processing
+        cost = 1
+        collapsed_positions = []  # No line collapse in fallback mode
+        effective_option = None  # No option applies
     else:
-        effective_option = 1
+        # Line mode: find and collapse the completed line
+        line_length = get_effective_line_length(board.type, len(state.players))
+        _, markers_count, line_positions = _would_complete_line_at(board, player, move.to, line_length)
 
-    # Determine which positions to collapse
-    if effective_option == 2 and collapse_positions is not None:
-        positions_to_collapse = collapse_positions
-    elif effective_option == 2 and is_overlength:
-        # Default: collapse the first lineLength positions
-        positions_to_collapse = line_positions[:line_length]
-    else:
-        # Option 1: collapse all
-        positions_to_collapse = line_positions
+        is_overlength = markers_count > line_length
 
-    # Collapse markers - markers become territory (collapsed spaces)
-    # Note: Territory cascade should be handled by the turn orchestrator;
-    # here we mutate board state to reflect collapsed spaces and removed markers.
-    collapsed_positions = list(positions_to_collapse)
-    for pos in collapsed_positions:
-        key = pos.to_key()
-        # Remove marker (if still present after the slide)
-        if key in board.markers:
-            del board.markers[key]
-        # Mark territory for the player
-        board.collapsed_spaces[key] = player
+        # Determine effective option
+        if option is not None:
+            effective_option = option
+        elif getattr(move, "recovery_option", None) is not None:
+            effective_option = getattr(move, "recovery_option")
+        elif is_overlength:
+            # Default to Option 2 (free) for overlength if not specified
+            effective_option = 2
+        else:
+            effective_option = 1
 
-    # Update player's territory count for collapsed markers
-    for p in state.players:
-        if p.player_number == player:
-            p.territory_spaces = getattr(p, "territory_spaces", 0) + len(collapsed_positions)
-            break
+        # Determine which positions to collapse
+        if effective_option == 2 and collapse_positions is not None:
+            positions_to_collapse = collapse_positions
+        elif effective_option == 2 and is_overlength:
+            # Default: collapse the first lineLength positions
+            positions_to_collapse = line_positions[:line_length]
+        else:
+            # Option 1: collapse all
+            positions_to_collapse = line_positions
 
-    # Calculate cost and extract rings (Option 1 only)
+        # Collapse markers - markers become territory (collapsed spaces)
+        # Note: Territory cascade should be handled by the turn orchestrator;
+        # here we mutate board state to reflect collapsed spaces and removed markers.
+        collapsed_positions = list(positions_to_collapse)
+        for pos in collapsed_positions:
+            key = pos.to_key()
+            # Remove marker (if still present after the slide)
+            if key in board.markers:
+                del board.markers[key]
+            # Mark territory for the player
+            board.collapsed_spaces[key] = player
+
+        # Update player's territory count for collapsed markers
+        for p in state.players:
+            if p.player_number == player:
+                p.territory_spaces = getattr(p, "territory_spaces", 0) + len(collapsed_positions)
+                break
+
+        # Calculate cost (Option 1 only)
+        cost = calculate_recovery_cost(effective_option)
+
+    # Extract buried rings to pay cost
     # Per RR-CANON-R113: Extract the bottommost ring from chosen stack(s)
-    cost = calculate_recovery_cost(effective_option)
     rings_extracted = 0
 
     if cost > 0:

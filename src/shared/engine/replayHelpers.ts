@@ -75,14 +75,33 @@ export function reconstructStateAtMove(record: GameRecord, moveIndex: number): G
   let state: GameState = initialState;
   for (let i = 0; i < clampedIndex; i += 1) {
     const rec: MoveRecord = record.moves[i];
+
     const move: Move = {
       id: `record-${record.id}-${i}`,
       player: rec.player,
       type: rec.type,
-      ...(rec.from ? { from: rec.from } : {}),
-      ...(rec.to ? { to: rec.to } : {}),
-      ...(rec.captureTarget ? { captureTarget: rec.captureTarget } : {}),
+      // Spatial metadata
+      ...(rec.from !== undefined ? { from: rec.from } : {}),
+      ...(rec.to !== undefined ? { to: rec.to } : {}),
+      ...(rec.captureTarget !== undefined ? { captureTarget: rec.captureTarget } : {}),
+      // Placement metadata
       ...(rec.placementCount !== undefined ? { placementCount: rec.placementCount } : {}),
+      ...(rec.placedOnStack !== undefined ? { placedOnStack: rec.placedOnStack } : {}),
+      // Line/territory processing metadata. These fields are critical for TS↔Python
+      // parity: when present, they carry the canonical geometry chosen by Python's
+      // GameEngine for lines and territory regions, and should be preferred over
+      // re-detection during replay.
+      ...(rec.formedLines !== undefined ? { formedLines: rec.formedLines } : {}),
+      ...(rec.collapsedMarkers !== undefined ? { collapsedMarkers: rec.collapsedMarkers } : {}),
+      ...(rec.disconnectedRegions !== undefined
+        ? { disconnectedRegions: rec.disconnectedRegions }
+        : {}),
+      ...(rec.eliminatedRings !== undefined ? { eliminatedRings: rec.eliminatedRings } : {}),
+      // Replay-focused timing metadata. We do not attempt to reconstruct real
+      // wall-clock timestamps; thinkTime is preserved when available.
+      timestamp: new Date(0),
+      thinkTime: rec.thinkTimeMs ?? 0,
+      moveNumber: rec.moveNumber,
     } as Move;
 
     const result = processTurn(state, move);

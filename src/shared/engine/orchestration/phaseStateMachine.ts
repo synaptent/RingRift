@@ -152,6 +152,18 @@ export function createTurnLogicDelegates(
       const nextIdx = (currentIdx + 1) % players.length;
       return players[nextIdx].playerNumber;
     },
+
+    playerHasAnyRings: (state: GameState, player: number): boolean => {
+      // Check if player has rings anywhere (hand + board including buried)
+      const playerState = state.players.find((p) => p.playerNumber === player);
+      if (!playerState) return false;
+      if (playerState.ringsInHand > 0) return true;
+      // Check stacks for player's rings
+      for (const [, stack] of state.board.stacks) {
+        if (stack.rings.includes(player)) return true;
+      }
+      return false;
+    },
   };
 }
 

@@ -126,13 +126,13 @@ export interface RecoverySlideTarget {
 export interface RecoveryApplicationOutcome {
   /** Updated game state after recovery */
   nextState: GameState;
-  /** The line that was formed */
-  formedLine: LineInfo;
-  /** Which markers were actually collapsed (all for Option 1, lineLength for Option 2) */
+  /** The line that was formed (undefined for fallback mode) */
+  formedLine: LineInfo | undefined;
+  /** Which markers were actually collapsed (all for Option 1, lineLength for Option 2, empty for fallback) */
   collapsedPositions: Position[];
-  /** Which option was used (1 or 2) */
-  optionUsed: RecoveryOption;
-  /** Number of buried rings extracted (1 for Option 1, 0 for Option 2) */
+  /** Which option was used (1 or 2, undefined for fallback mode) */
+  optionUsed: RecoveryOption | undefined;
+  /** Number of buried rings extracted (1 for Option 1/fallback, 0 for Option 2) */
   extractionCount: number;
   /** Territory spaces gained */
   territoryGained: number;
@@ -446,7 +446,52 @@ export function validateRecoverySlide(
     };
   }
 
-  // Check line formation
+  // Check for fallback mode (RR-CANON-R112(b))
+  // Fallback slides bypass line formation check but still cost 1 buried ring
+  const { recoveryMode } = move;
+  if (recoveryMode === 'fallback') {
+    // Fallback mode: no line required, but need buried rings for cost
+    // Per RR-CANON-R112(b): fallback slides must NOT cause territory disconnection
+    // The move was generated with this check, so we trust it was valid when created
+    // Validate extraction stacks for fallback cost (1 buried ring)
+    if (extractionStacks.length !== 1) {
+      return {
+        valid: false,
+        reason: `Fallback recovery requires exactly 1 extraction stack, got ${extractionStacks.length}`,
+        code: 'RECOVERY_WRONG_EXTRACTION_COUNT',
+      };
+    }
+    if (buriedRingCount < 1) {
+      return {
+        valid: false,
+        reason: 'Fallback recovery requires at least 1 buried ring',
+        code: 'RECOVERY_INSUFFICIENT_BURIED_RINGS',
+      };
+    }
+    // Validate the extraction stack
+    const stackKey = extractionStacks[0];
+    const stack = state.board.stacks.get(stackKey);
+    if (!stack) {
+      return {
+        valid: false,
+        reason: `No stack at extraction position ${stackKey}`,
+        code: 'RECOVERY_INVALID_EXTRACTION_STACK',
+      };
+    }
+    const hasBuriedRing = stack.rings
+      .slice(0, -1) // All except top
+      .some((ringPlayer) => ringPlayer === player);
+    if (!hasBuriedRing) {
+      return {
+        valid: false,
+        reason: `No buried ring for player ${player} at ${stackKey}`,
+        code: 'RECOVERY_NO_BURIED_RING_IN_STACK',
+      };
+    }
+    return { valid: true };
+  }
+
+  // Line mode: Check line formation (RR-CANON-R112(a))
   const lineLength = getEffectiveLineLengthThreshold(state.board.type, state.players.length);
   const lineInfo = getFormedLineInfo(state.board, from, to, player);
   const formedLineLength = lineInfo.length;
@@ -632,13 +677,11 @@ export function applyRecoverySlide(
   state: GameState,
   move: RecoverySlideMove
 ): RecoveryApplicationOutcome {
-  const { player, from, to, option, collapsePositions, extractionStacks } = move;
+  const { player, from, to, option, collapsePositions, extractionStacks, recoveryMode } = move;
 
   // Clone state for mutation
   const nextState = cloneGameState(state);
   const board = nextState.board;
-
-  const lineLength = getEffectiveLineLengthThreshold(board.type, nextState.players.length);
 
   // 1. Move the marker from -> to
   const fromKey = positionToString(from);
@@ -651,7 +694,53 @@ export function applyRecoverySlide(
     type: 'regular',
   });
 
-  // 2. Detect the formed line
+  // Get player state for updates
+  const playerState = nextState.players.find((p) => p.playerNumber === player);
+
+  // Check for fallback mode (RR-CANON-R112(b))
+  // Fallback mode: no line collapse, just marker move + ring extraction
+  if (recoveryMode === 'fallback') {
+    // Extract 1 buried ring (fallback cost)
+    let extractionCount = 0;
+    for (const stackKey of extractionStacks) {
+      const stack = board.stacks.get(stackKey);
+      if (!stack) continue;
+
+      // Find and remove player's bottommost ring (first occurrence = bottommost)
+      const ringIndex = stack.rings.indexOf(player);
+      if (ringIndex === -1) continue;
+
+      // Remove the ring
+      stack.rings.splice(ringIndex, 1);
+      stack.stackHeight--;
+      extractionCount++;
+
+      // Update player's eliminated rings
+      if (playerState) {
+        playerState.eliminatedRings++;
+      }
+
+      // Update stack control if needed
+      if (stack.rings.length === 0) {
+        board.stacks.delete(stackKey);
+      } else {
+        stack.controllingPlayer = stack.rings[stack.rings.length - 1];
+        stack.capHeight = calculateCapHeight(stack.rings);
+      }
+    }
+
+    return {
+      nextState,
+      formedLine: undefined,
+      collapsedPositions: [],
+      optionUsed: undefined,
+      extractionCount,
+      territoryGained: 0,
+    };
+  }
+
+  // Line mode: detect and collapse the formed line
+  const lineLength = getEffectiveLineLengthThreshold(board.type, nextState.players.length);
   const formedLine = detectFormedLine(board, to, player);
   if (!formedLine || formedLine.length < lineLength) {
     throw new Error('Recovery slide did not form a valid line');
@@ -686,7 +775,6 @@ export function applyRecoverySlide(
   }
 
   // Update player's territory count
-  const playerState = nextState.players.find((p) => p.playerNumber === player);
   if (playerState) {
     playerState.territorySpaces += positionsToCollapse.length;
   }

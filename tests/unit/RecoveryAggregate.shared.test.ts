@@ -159,7 +159,9 @@ describe('isEligibleForRecovery', () => {
     expect(isEligibleForRecovery(state, 1)).toBe(false);
   });
 
-  test('returns false when player has rings in hand', () => {
+  test('returns true even when player has rings in hand (per RR-CANON-R201)', () => {
+    // Per RR-CANON-R201: "Recovery eligibility is independent of rings in hand.
+    // Players with rings may choose recovery over placement."
     const board = createTestBoard('square8');
     addMarker(board, pos(4, 4), 1);
     addStackWithRings(board, pos(5, 5), [1, 2]); // P1 has buried ring
@@ -174,7 +176,7 @@ describe('isEligibleForRecovery', () => {
           playerNumber: 1,
           isReady: true,
           timeRemaining: 600,
-          ringsInHand: 1,
+          ringsInHand: 1, // Still eligible for recovery per R201
           eliminatedRings: 0,
           territorySpaces: 0,
         },
@@ -192,7 +194,12 @@ describe('isEligibleForRecovery', () => {
       ],
     });
 
-    expect(isEligibleForRecovery(state, 1)).toBe(false);
+    // Per RR-CANON-R201, player IS eligible since they have:
+    // 1. No controlled stacks
+    // 2. At least one marker
+    // 3. At least one buried ring
+    // Rings in hand does NOT disqualify
+    expect(isEligibleForRecovery(state, 1)).toBe(true);
   });
 
   test('returns false when player has no markers', () => {
@@ -324,6 +331,7 @@ describe('calculateRecoveryCost', () => {
 describe('Option 1/2 Semantics', () => {
   /**
    * Helper to create a recovery-eligible state with configurable markers
+   * Uses 3 players so lineLength = 3 for square8 (per RR-CANON-R120)
    */
   function createRecoveryState(
     markerPositions: Position[],
@@ -341,6 +349,7 @@ describe('Option 1/2 Semantics', () => {
     const ringComposition = Array(buriedRingCount).fill(1).concat([2]); // [1, 1, ..., 2]
     addStackWithRings(board, pos(7, 7), ringComposition);
 
+    // Use 3 players so lineLength = 3 (per RR-CANON-R120: square8 2p = 4, 3-4p = 3)
     return createTestGameState({
       board,
       players: [
@@ -360,6 +369,17 @@ describe('Option 1/2 Semantics', () => {
           username: 'P2',
           type: 'human',
           playerNumber: 2,
+          isReady: true,
+          timeRemaining: 600,
+          ringsInHand: 5,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+        },
+        {
+          id: 'p3',
+          username: 'P3',
+          type: 'human',
+          playerNumber: 3,
           isReady: true,
           timeRemaining: 600,
           ringsInHand: 5,
@@ -432,7 +452,7 @@ describe('Option 1/2 Semantics', () => {
 
   describe('Overlength lines', () => {
     test('overlength line has Option 2 available (free)', () => {
-      // 4 markers forming overlength line (lineLength=3 for square8)
+      // 4 markers forming overlength line (lineLength=3 for square8 3-player)
       // Set up so sliding creates line of 4
       const board = createTestBoard('square8');
       addMarker(board, pos(1, 3), 1);
@@ -441,6 +461,7 @@ describe('Option 1/2 Semantics', () => {
       addMarker(board, pos(4, 2), 1); // Can slide to (4,3) for line of 4
       addStackWithRings(board, pos(7, 7), [1, 2]);
 
+      // Use 3 players so lineLength = 3 (per RR-CANON-R120)
       const state = createTestGameState({
         board,
         players: [
@@ -460,6 +481,17 @@ describe('Option 1/2 Semantics', () => {
             username: 'P2',
             type: 'human',
             playerNumber: 2,
+            isReady: true,
+            timeRemaining: 600,
+            ringsInHand: 5,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            id: 'p3',
+            username: 'P3',
+            type: 'human',
+            playerNumber: 3,
             isReady: true,
             timeRemaining: 600,
             ringsInHand: 5,
@@ -493,6 +525,7 @@ describe('Option 1/2 Semantics', () => {
       // Only 1 buried ring (minimum for eligibility)
       addStackWithRings(board, pos(7, 7), [1, 2]);
 
+      // Use 3 players so lineLength = 3 (per RR-CANON-R120)
       const state = createTestGameState({
         board,
         players: [
@@ -512,6 +545,17 @@ describe('Option 1/2 Semantics', () => {
             username: 'P2',
             type: 'human',
             playerNumber: 2,
+            isReady: true,
+            timeRemaining: 600,
+            ringsInHand: 5,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            id: 'p3',
+            username: 'P3',
+            type: 'human',
+            playerNumber: 3,
             isReady: true,
             timeRemaining: 600,
             ringsInHand: 5,
@@ -543,6 +587,7 @@ describe('Option 1/2 Semantics', () => {
       addMarker(board, pos(4, 2), 1);
       addStackWithRings(board, pos(7, 7), [1, 2]);
 
+      // Use 3 players so lineLength = 3 (per RR-CANON-R120)
       const state = createTestGameState({
         board,
         players: [
@@ -562,6 +607,17 @@ describe('Option 1/2 Semantics', () => {
             username: 'P2',
             type: 'human',
             playerNumber: 2,
+            isReady: true,
+            timeRemaining: 600,
+            ringsInHand: 5,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            id: 'p3',
+            username: 'P3',
+            type: 'human',
+            playerNumber: 3,
             isReady: true,
             timeRemaining: 600,
             ringsInHand: 5,
@@ -592,6 +648,7 @@ describe('Option 1/2 Semantics', () => {
       addMarker(board, pos(4, 2), 1);
       addStackWithRings(board, pos(7, 7), [1, 2]);
 
+      // Use 3 players so lineLength = 3 (per RR-CANON-R120)
       const state = createTestGameState({
         board,
         players: [
@@ -611,6 +668,17 @@ describe('Option 1/2 Semantics', () => {
             username: 'P2',
             type: 'human',
             playerNumber: 2,
+            isReady: true,
+            timeRemaining: 600,
+            ringsInHand: 5,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            id: 'p3',
+            username: 'P3',
+            type: 'human',
+            playerNumber: 3,
             isReady: true,
             timeRemaining: 600,
             ringsInHand: 5,
@@ -641,6 +709,7 @@ describe('Option 1/2 Semantics', () => {
       addMarker(board, pos(4, 2), 1);
       addStackWithRings(board, pos(7, 7), [1, 2]);
 
+      // Use 3 players so lineLength = 3 (per RR-CANON-R120)
       const state = createTestGameState({
         board,
         players: [
@@ -660,6 +729,17 @@ describe('Option 1/2 Semantics', () => {
             username: 'P2',
             type: 'human',
             playerNumber: 2,
+            isReady: true,
+            timeRemaining: 600,
+            ringsInHand: 5,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            id: 'p3',
+            username: 'P3',
+            type: 'human',
+            playerNumber: 3,
             isReady: true,
             timeRemaining: 600,
             ringsInHand: 5,
@@ -694,6 +774,7 @@ describe('Option 1/2 Semantics', () => {
       addMarker(board, pos(4, 2), 1);
       addStackWithRings(board, pos(7, 7), [1, 2]);
 
+      // Use 3 players so lineLength = 3 (per RR-CANON-R120)
       const state = createTestGameState({
         board,
         players: [
@@ -713,6 +794,17 @@ describe('Option 1/2 Semantics', () => {
             username: 'P2',
             type: 'human',
             playerNumber: 2,
+            isReady: true,
+            timeRemaining: 600,
+            ringsInHand: 5,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            id: 'p3',
+            username: 'P3',
+            type: 'human',
+            playerNumber: 3,
             isReady: true,
             timeRemaining: 600,
             ringsInHand: 5,
@@ -762,6 +854,7 @@ describe('Option 1/2 Semantics', () => {
       addMarker(board, pos(4, 2), 1);
       addStackWithRings(board, pos(7, 7), [1, 2]);
 
+      // Use 3 players so lineLength = 3 (per RR-CANON-R120)
       const state = createTestGameState({
         board,
         players: [
@@ -781,6 +874,17 @@ describe('Option 1/2 Semantics', () => {
             username: 'P2',
             type: 'human',
             playerNumber: 2,
+            isReady: true,
+            timeRemaining: 600,
+            ringsInHand: 5,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            id: 'p3',
+            username: 'P3',
+            type: 'human',
+            playerNumber: 3,
             isReady: true,
             timeRemaining: 600,
             ringsInHand: 5,
@@ -947,23 +1051,14 @@ describe('enumerateRecoverySlideTargets', () => {
 
   test('returns targets with correct cost for overlength', () => {
     const board = createTestBoard('square8');
-    // Set up markers that can form a line of 4 (overlength for square8 lineLength=3)
-    // Markers at (2,3), (3,3), (4,3), and we'll slide one to extend
+    // For 2-player square8, lineLength = 4 (per RR-CANON-R120)
+    // Set up 4 markers: 3 in a row, fourth adjacent that can slide to complete line of 4
+    // Markers: (1,3), (2,3), (3,3) in horizontal line
+    // Marker at (4,2) can slide to (4,3) to form line of 4
+    addMarker(board, pos(1, 3), 1);
     addMarker(board, pos(2, 3), 1);
     addMarker(board, pos(3, 3), 1);
-    addMarker(board, pos(4, 3), 1);
-    // Leave (5,3) empty - sliding (4,3) to (5,3) or similar won't form new line
-    // Actually, let's place markers so a slide COMPLETES a line
-    // If we have markers at (0,0), (1,0), and slide to complete from (2,0)
-    // No wait, markers can't just slide anywhere, they must be adjacent
-
-    // Better setup: 2 markers in a row, third marker adjacent that can slide to complete
-    // Markers: (2,3), (3,3) in horizontal line
-    // Marker at (4,2) can slide to (4,3) to form line of 3
-    board.markers.clear();
-    addMarker(board, pos(2, 3), 1);
-    addMarker(board, pos(3, 3), 1);
-    addMarker(board, pos(4, 2), 1); // Can slide down to (4,3)
+    addMarker(board, pos(4, 2), 1); // Can slide down to (4,3) to complete line of 4
 
     // P1 has buried ring
     addStackWithRings(board, pos(6, 6), [1, 2]);
@@ -1005,7 +1100,7 @@ describe('enumerateRecoverySlideTargets', () => {
       (t) => t.from.x === 4 && t.from.y === 2 && t.to.x === 4 && t.to.y === 3
     );
     expect(slideTarget).toBeDefined();
-    expect(slideTarget?.formedLineLength).toBe(3);
+    expect(slideTarget?.formedLineLength).toBe(4);
     expect(slideTarget?.cost).toBe(1); // Exact length = 1
   });
 });
@@ -1048,10 +1143,12 @@ describe('hasAnyRecoveryMove', () => {
 
   test('returns true when valid recovery move exists', () => {
     const board = createTestBoard('square8');
-    // Markers that can form a line
+    // For 2-player square8, lineLength = 4 (per RR-CANON-R120)
+    // 4 markers that can form a line of 4
+    addMarker(board, pos(1, 3), 1);
     addMarker(board, pos(2, 3), 1);
     addMarker(board, pos(3, 3), 1);
-    addMarker(board, pos(4, 2), 1); // Can slide to (4,3)
+    addMarker(board, pos(4, 2), 1); // Can slide to (4,3) to complete line of 4
     addStackWithRings(board, pos(6, 6), [1, 2]);
 
     const state = createTestGameState({
@@ -1087,11 +1184,14 @@ describe('hasAnyRecoveryMove', () => {
 });
 
 describe('validateRecoverySlide', () => {
+  // For 2-player square8, lineLength = 4 (per RR-CANON-R120)
   function createRecoveryEligibleState(): GameState {
     const board = createTestBoard('square8');
+    // 4 markers: 3 in row, 4th can slide to complete line of 4
+    addMarker(board, pos(1, 3), 1);
     addMarker(board, pos(2, 3), 1);
     addMarker(board, pos(3, 3), 1);
-    addMarker(board, pos(4, 2), 1);
+    addMarker(board, pos(4, 2), 1); // Can slide to (4,3)
     addStackWithRings(board, pos(6, 6), [1, 2]);
 
     return createTestGameState({
@@ -1203,9 +1303,12 @@ describe('validateRecoverySlide', () => {
 describe('applyRecoverySlide', () => {
   test('applies recovery slide correctly', () => {
     const board = createTestBoard('square8');
+    // For 2-player square8, lineLength = 4 (per RR-CANON-R120)
+    // 4 markers: 3 in row, 4th can slide to complete line of 4
+    addMarker(board, pos(1, 3), 1);
     addMarker(board, pos(2, 3), 1);
     addMarker(board, pos(3, 3), 1);
-    addMarker(board, pos(4, 2), 1);
+    addMarker(board, pos(4, 2), 1); // Can slide to (4,3)
     addStackWithRings(board, pos(6, 6), [1, 2]);
 
     const state = createTestGameState({
@@ -1246,12 +1349,14 @@ describe('applyRecoverySlide', () => {
 
     const result = applyRecoverySlide(state, move);
 
-    // Check line collapsed (markers removed)
+    // Check line collapsed (markers removed) - line is now 4 markers long
+    expect(result.nextState.board.markers.has(posStr(1, 3))).toBe(false);
     expect(result.nextState.board.markers.has(posStr(2, 3))).toBe(false);
     expect(result.nextState.board.markers.has(posStr(3, 3))).toBe(false);
     expect(result.nextState.board.markers.has(posStr(4, 3))).toBe(false);
 
-    // Check territory gained
+    // Check territory gained - 4 markers
+    expect(result.nextState.board.collapsedSpaces.has(posStr(1, 3))).toBe(true);
     expect(result.nextState.board.collapsedSpaces.has(posStr(2, 3))).toBe(true);
     expect(result.nextState.board.collapsedSpaces.has(posStr(3, 3))).toBe(true);
     expect(result.nextState.board.collapsedSpaces.has(posStr(4, 3))).toBe(true);
@@ -1263,15 +1368,15 @@ describe('applyRecoverySlide', () => {
       expect(stack.rings).not.toContain(1);
     }
 
-    // Check player stats
+    // Check player stats - 4 territory spaces now
     const player1 = result.nextState.players.find((p) => p.playerNumber === 1);
-    expect(player1?.territorySpaces).toBe(3);
+    expect(player1?.territorySpaces).toBe(4);
     expect(player1?.eliminatedRings).toBe(1);
 
-    // Check outcome
-    expect(result.formedLine.length).toBe(3);
+    // Check outcome - line is 4 markers
+    expect(result.formedLine!.length).toBe(4);
     expect(result.extractionCount).toBe(1);
-    expect(result.territoryGained).toBe(3);
+    expect(result.territoryGained).toBe(4);
   });
 });
 
@@ -1330,9 +1435,11 @@ describe('Extraction Stack Choice', () => {
   test('player can choose which stack to extract from', () => {
     const board = createTestBoard('square8');
     // Setup: P1 has markers for line, P1 is buried in TWO stacks
+    // Setup: 4 markers in a row at y=3, with slide from (3,2) to (3,3) completing the line
+    addMarker(board, pos(0, 3), 1);
     addMarker(board, pos(1, 3), 1);
     addMarker(board, pos(2, 3), 1);
-    addMarker(board, pos(3, 2), 1); // Source marker
+    addMarker(board, pos(3, 2), 1); // Source marker - will slide to (3,3)
     addStackWithRings(board, pos(6, 6), [1, 2]); // Stack A: P1 buried
     addStackWithRings(board, pos(7, 7), [1, 2]); // Stack B: P1 buried
 
@@ -1391,9 +1498,11 @@ describe('Extraction Stack Choice', () => {
   test('extracts bottommost ring from chosen stack', () => {
     const board = createTestBoard('square8');
     // Setup: P1 has TWO rings in the same stack (both buried)
+    // Setup: 4 markers in a row at y=3, with slide from (3,2) to (3,3) completing the line
+    addMarker(board, pos(0, 3), 1);
     addMarker(board, pos(1, 3), 1);
     addMarker(board, pos(2, 3), 1);
-    addMarker(board, pos(3, 2), 1);
+    addMarker(board, pos(3, 2), 1); // Source marker - will slide to (3,3)
     // Stack with P1 at bottom and middle, P2 at top
     addStackWithRings(board, pos(6, 6), [1, 1, 2]); // P1, P1, P2 (P1 has 2 buried)
 
@@ -1445,9 +1554,11 @@ describe('Extraction Stack Choice', () => {
 
   test('validation rejects invalid extraction stack', () => {
     const board = createTestBoard('square8');
+    // Setup: 4 markers in a row at y=3, with slide from (3,2) to (3,3) completing the line
+    addMarker(board, pos(0, 3), 1);
     addMarker(board, pos(1, 3), 1);
     addMarker(board, pos(2, 3), 1);
-    addMarker(board, pos(3, 2), 1);
+    addMarker(board, pos(3, 2), 1); // This marker will slide to (3,3) to complete line
     addStackWithRings(board, pos(6, 6), [1, 2]); // P1 buried here
     addStackWithRings(board, pos(7, 7), [2, 2]); // NO P1 rings here
 

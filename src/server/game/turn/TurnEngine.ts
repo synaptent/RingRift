@@ -136,6 +136,17 @@ export function advanceGameForCurrentPlayer(
       const nextIndex = (currentIndex + 1) % state.players.length;
       return state.players[nextIndex].playerNumber;
     },
+    playerHasAnyRings: (state, player) => {
+      // Check if player has rings anywhere (hand + board including buried)
+      const playerState = state.players.find((p) => p.playerNumber === player);
+      if (!playerState) return false;
+      if (playerState.ringsInHand > 0) return true;
+      // Check stacks for player's rings
+      for (const [, stack] of state.board.stacks) {
+        if (stack.rings.includes(player)) return true;
+      }
+      return false;
+    },
   };
 
   const beforeSnapshot = {

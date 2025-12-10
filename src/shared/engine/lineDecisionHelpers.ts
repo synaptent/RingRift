@@ -540,6 +540,17 @@ export function applyProcessLineDecision(
     };
   }
 
+  // Overlength lines (longer than the effective threshold) require a
+  // choose_line_reward decision per RR-CANON-R122. Treating process_line
+  // on an overlength line as a no-op avoids silently defaulting to either
+  // option (collapse-all vs min-collapse).
+  if (line.length > requiredLength) {
+    return {
+      nextState: state,
+      pendingLineRewardElimination: false,
+    };
+  }
+
   const { nextState } = collapseLinePositions(state, line.positions, move.player);
 
   return {

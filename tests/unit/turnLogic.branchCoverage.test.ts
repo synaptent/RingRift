@@ -95,6 +95,12 @@ function makeDelegates(overrides: Partial<TurnLogicDelegates> = {}): TurnLogicDe
     hasAnyCapture: jest.fn().mockReturnValue(false),
     applyForcedElimination: jest.fn((state) => state),
     getNextPlayerNumber: jest.fn((state, current) => (current % state.players.length) + 1),
+    // Default: players have rings if they have rings in hand.
+    // More complex checks (stacks/buried rings) need specific overrides.
+    playerHasAnyRings: jest.fn((state, player) => {
+      const p = state.players.find((pl) => pl.playerNumber === player);
+      return p ? p.ringsInHand > 0 : false;
+    }),
     ...overrides,
   };
 }
@@ -427,13 +433,16 @@ describe('turnLogic branch coverage', () => {
           getPlayerStacks: jest.fn().mockReturnValue([{ position: pos(0, 0), stackHeight: 1 }]),
           hasAnyPlacement: jest.fn().mockReturnValue(false),
           hasAnyMovement: jest.fn().mockReturnValue(true),
+          // Player 2 has stacks (so they have rings in those stacks), even though ringsInHand=0
+          playerHasAnyRings: jest.fn().mockReturnValue(true),
         });
 
         const result = advanceTurnAndPhase(state, turn, delegates);
 
-        // Player 2 should be active with movement phase (no rings)
+        // Player 2 should be active with ring_placement (canonical: all players start there)
+        // Per RR-CANON-R075: all phases visited with explicit moves
         expect(result.nextState.currentPlayer).toBe(2);
-        expect(result.nextState.currentPhase).toBe('movement');
+        expect(result.nextState.currentPhase).toBe('ring_placement');
       });
 
       it('breaks from loop when player not found', () => {
@@ -525,7 +534,11 @@ describe('turnLogic branch coverage', () => {
         expect(result.nextState.currentPhase).toBe('ring_placement');
       });
 
-      it('starts next player in movement when they have no rings', () => {
+      it('starts next player in ring_placement (canonical: all players start in ring_placement)', () => {
+        // Per RR-CANON-R075: All phases must be visited with explicit moves.
+        // All players always start in ring_placement phase, regardless of
+        // ringsInHand. Players with ringsInHand == 0 will emit no_placement_action
+        // and transition to movement during the ring_placement phase.
         const state = makeGameState({
           currentPhase: 'territory_processing',
           currentPlayer: 1,
@@ -548,7 +561,7 @@ describe('turnLogic branch coverage', () => {
               type: 'human',
               isReady: true,
               timeRemaining: 600000,
-              ringsInHand: 0, // No rings
+              ringsInHand: 0, // No rings in hand, but has stacks
               eliminatedRings: 10,
               territorySpaces: 0,
             },
@@ -559,12 +572,15 @@ describe('turnLogic branch coverage', () => {
           getPlayerStacks: jest.fn().mockReturnValue([{ position: pos(0, 0), stackHeight: 1 }]),
           hasAnyPlacement: jest.fn().mockReturnValue(false),
           hasAnyMovement: jest.fn().mockReturnValue(true),
+          // Player 2 has stacks (so they have rings in those stacks), not rings in hand
+          playerHasAnyRings: jest.fn().mockReturnValue(true),
         });
 
         const result = advanceTurnAndPhase(state, turn, delegates);
 
         expect(result.nextState.currentPlayer).toBe(2);
-        expect(result.nextState.currentPhase).toBe('movement');
+        // Canonical: always starts in ring_placement, will emit skip_placement to advance
+        expect(result.nextState.currentPhase).toBe('ring_placement');
       });
     });
   });
