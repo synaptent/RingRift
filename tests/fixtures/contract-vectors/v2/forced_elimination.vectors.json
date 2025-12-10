@@ -332,7 +332,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 18
         },
@@ -418,7 +418,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 15
         },
@@ -493,7 +493,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 0
         },
@@ -579,7 +579,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 235,
           "totalRingsEliminated": 0
         },

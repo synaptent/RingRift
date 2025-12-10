@@ -104,7 +104,7 @@ export interface ActionAvailabilityDelegates {
  * NOT real actions (for LPS purposes):
  * - Recovery slide (recovery_slide) - player can still use recovery but it
  *   doesn't reset LPS counter. This creates strategic tension: rings in hand
- *   become a "survival budget" - players must place at least once every 3
+ *   become a "survival budget" - players must place at least once every 2
  *   rounds to avoid LPS loss.
  * - Forced elimination (eliminate_rings_from_stack when stack > 5)
  * - Line processing decisions

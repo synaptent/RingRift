@@ -91,7 +91,7 @@ class TestHeuristicAI(unittest.TestCase):
             maxPlayers=2,
             totalRingsInPlay=36,
             totalRingsEliminated=0,
-            victoryThreshold=19,
+            victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
             territoryVictoryThreshold=33,
             chainCaptureState=None,
             mustMoveFromStackKey=None,
@@ -282,7 +282,7 @@ class TestHeuristicAI(unittest.TestCase):
         territory victory threshold.
         """
         # Baseline: no territory spaces for either player.
-        self.game_state.victory_threshold = 19
+        self.game_state.victory_threshold = 18  # RR-CANON-R061: ringsPerPlayer
         self.game_state.territory_victory_threshold = 33
         p1, p2 = self.game_state.players
         p1.eliminated_rings = 0
@@ -331,12 +331,12 @@ class TestHeuristicAI(unittest.TestCase):
         base_p1, base_p2 = base_state.players
         near_p1, near_p2 = near_victory_state.players
 
-        base_state.victory_threshold = 19
+        base_state.victory_threshold = 18  # RR-CANON-R061: ringsPerPlayer
         base_state.territory_victory_threshold = 33
         base_p1.territory_spaces = 0
         base_p2.territory_spaces = 0
 
-        near_victory_state.victory_threshold = 19
+        near_victory_state.victory_threshold = 18  # RR-CANON-R061: ringsPerPlayer
         near_victory_state.territory_victory_threshold = 33
         near_p1.territory_spaces = 32
         near_p2.territory_spaces = 0
@@ -822,7 +822,7 @@ class TestHeuristicAIConfig(unittest.TestCase):
             maxPlayers=2,
             totalRingsInPlay=36,
             totalRingsEliminated=0,
-            victoryThreshold=19,
+            victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
             territoryVictoryThreshold=33,
             chainCaptureState=None,
             mustMoveFromStackKey=None,
@@ -1076,7 +1076,7 @@ class TestHeuristicAIMoveSelectionDeterminism(unittest.TestCase):
             maxPlayers=2,
             totalRingsInPlay=36,
             totalRingsEliminated=0,
-            victoryThreshold=19,
+            victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
             territoryVictoryThreshold=33,
             chainCaptureState=None,
             mustMoveFromStackKey=None,
@@ -1236,7 +1236,7 @@ class TestHeuristicAISwapEvaluation(unittest.TestCase):
             maxPlayers=2,
             totalRingsInPlay=36,
             totalRingsEliminated=0,
-            victoryThreshold=19,
+            victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
             territoryVictoryThreshold=33,
             chainCaptureState=None,
             mustMoveFromStackKey=None,
@@ -1405,7 +1405,7 @@ class TestOpeningPositionClassifier(unittest.TestCase):
             maxPlayers=2,
             totalRingsInPlay=36,
             totalRingsEliminated=0,
-            victoryThreshold=19,
+            victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
             territoryVictoryThreshold=33,
             chainCaptureState=None,
             mustMoveFromStackKey=None,

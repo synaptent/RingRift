@@ -176,7 +176,7 @@ describe('GameSession Branch Coverage - Initialize', () => {
       maxPlayers: 2,
       totalRingsInPlay: 36,
       totalRingsEliminated: 0,
-      victoryThreshold: 19,
+      victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
       territoryVictoryThreshold: 33,
       ...(overrides as Record<string, unknown>),
     };
@@ -936,4 +936,3 @@ describe('GameSession Branch Coverage - database client error handling', () => {
     await expect(session.initialize()).rejects.toThrow('Database not available');
   });
 });
-

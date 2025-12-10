@@ -95,7 +95,7 @@ describe('AIEngine pie rule (swap_sides meta-move)', () => {
       maxPlayers: 2,
       totalRingsInPlay: 36,
       totalRingsEliminated: 0,
-      victoryThreshold: 19,
+      victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
       territoryVictoryThreshold: 33,
       rngSeed: 123,
       // Enable pie rule for this game.

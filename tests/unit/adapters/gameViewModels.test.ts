@@ -53,7 +53,7 @@ function createTestGameState(players: Player[]): GameState {
     maxPlayers: players.length,
     totalRingsInPlay: 36,
     totalRingsEliminated: 0,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 }

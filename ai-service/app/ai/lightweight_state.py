@@ -210,7 +210,7 @@ class LightweightState:
         state.current_phase = LightweightPhase(phase_str)
 
         # Victory conditions
-        state.victory_rings = getattr(game_state, "victory_threshold", 19)
+        state.victory_rings = getattr(game_state, "victory_threshold", 18)  # RR-CANON-R061: ringsPerPlayer
         state.victory_territory = getattr(game_state, "territory_victory_threshold", 33)
 
         return state

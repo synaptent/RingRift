@@ -71,7 +71,7 @@ describe('TurnOrchestrator victory explanation branch coverage', () => {
     timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
     maxPlayers: numPlayers,
     totalRingsInPlay: 36,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 10,
   });
 
@@ -170,9 +170,9 @@ describe('TurnOrchestrator victory explanation branch coverage', () => {
   describe('ring_elimination victory', () => {
     it('detects standard ring majority victory', () => {
       const state = createBaseState('movement');
-      // Player 1 reaches victory threshold
-      state.players[0].eliminatedRings = 19;
-      state.victoryThreshold = 19;
+      // Player 1 reaches victory threshold (RR-CANON-R061: ringsPerPlayer)
+      state.players[0].eliminatedRings = 18;
+      state.victoryThreshold = 18;
       // Player 2 has fewer eliminations
       state.players[1].eliminatedRings = 5;
       // Keep stacks on board (not bare board)
@@ -382,8 +382,8 @@ describe('TurnOrchestrator victory explanation branch coverage', () => {
         composition: [{ player: 1, count: 2 }],
         rings: [1, 1],
       });
-      state.players[0].eliminatedRings = 19;
-      state.victoryThreshold = 19;
+      state.players[0].eliminatedRings = 18; // RR-CANON-R061: ringsPerPlayer
+      state.victoryThreshold = 18;
 
       const result = toVictoryState(state);
 
@@ -435,8 +435,8 @@ describe('TurnOrchestrator victory explanation branch coverage', () => {
       state.board.markers.set('0,0', { position: { x: 0, y: 0 }, player: 1 });
       state.board.markers.set('1,0', { position: { x: 1, y: 0 }, player: 2 });
       // Terminal state
-      state.players[0].eliminatedRings = 19;
-      state.victoryThreshold = 19;
+      state.players[0].eliminatedRings = 18; // RR-CANON-R061: ringsPerPlayer
+      state.victoryThreshold = 18;
       state.board.stacks.set('3,3', {
         position: { x: 3, y: 3 },
         stackHeight: 2,
@@ -448,7 +448,7 @@ describe('TurnOrchestrator victory explanation branch coverage', () => {
       const result = toVictoryState(state);
 
       expect(result.scores).toHaveLength(2);
-      expect(result.scores[0].eliminatedRings).toBe(19);
+      expect(result.scores[0].eliminatedRings).toBe(18); // RR-CANON-R061: ringsPerPlayer
       expect(result.scores[1].eliminatedRings).toBe(8);
     });
   });
@@ -460,8 +460,8 @@ describe('TurnOrchestrator victory explanation branch coverage', () => {
     it('handles 3-player victory state', () => {
       const state = createBaseState('movement', 3);
       // Player 1 reaches threshold
-      state.players[0].eliminatedRings = 19;
-      state.victoryThreshold = 19;
+      state.players[0].eliminatedRings = 18; // RR-CANON-R061: ringsPerPlayer
+      state.victoryThreshold = 18;
       state.board.stacks.set('3,3', {
         position: { x: 3, y: 3 },
         stackHeight: 2,
@@ -480,8 +480,8 @@ describe('TurnOrchestrator victory explanation branch coverage', () => {
     it('handles 4-player victory state', () => {
       const state = createBaseState('movement', 4);
       // Player 3 reaches threshold
-      state.players[2].eliminatedRings = 19;
-      state.victoryThreshold = 19;
+      state.players[2].eliminatedRings = 18; // RR-CANON-R061: ringsPerPlayer
+      state.victoryThreshold = 18;
       state.board.stacks.set('3,3', {
         position: { x: 3, y: 3 },
         stackHeight: 2,

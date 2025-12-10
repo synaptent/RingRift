@@ -57,6 +57,7 @@ class MoveType(IntEnum):
     TERRITORY_CLAIM = 4
     SKIP = 5
     NO_ACTION = 6  # For phases with no available action
+    RECOVERY_SLIDE = 7  # Recovery move for players without turn material
 
 
 class GamePhase(IntEnum):
@@ -96,6 +97,7 @@ class BatchGameState:
     territory_count: torch.Tensor
     is_eliminated: torch.Tensor    # bool
     eliminated_rings: torch.Tensor # Rings eliminated by this player
+    buried_rings: torch.Tensor     # Rings buried in stacks (captured but not removed)
 
     # Game metadata: (batch_size,)
     current_player: torch.Tensor   # 1-4
@@ -168,6 +170,7 @@ class BatchGameState:
             territory_count=torch.zeros(shape_players, dtype=torch.int16, device=device),
             is_eliminated=torch.zeros(shape_players, dtype=torch.bool, device=device),
             eliminated_rings=torch.zeros(shape_players, dtype=torch.int16, device=device),
+            buried_rings=torch.zeros(shape_players, dtype=torch.int16, device=device),
             current_player=torch.ones(batch_size, dtype=torch.int8, device=device),
             current_phase=torch.zeros(batch_size, dtype=torch.int8, device=device),  # RING_PLACEMENT
             move_count=torch.zeros(batch_size, dtype=torch.int32, device=device),
@@ -736,6 +739,154 @@ def generate_capture_moves_batch(
 
 
 # =============================================================================
+# Recovery Slide Move Generation (RR-CANON-R110-R115)
+# =============================================================================
+
+
+def generate_recovery_moves_batch(
+    state: BatchGameState,
+    active_mask: Optional[torch.Tensor] = None,
+) -> BatchMoves:
+    """Generate all valid recovery slide moves for eligible players.
+
+    Per RR-CANON-R110-R115:
+    - Player must have no controlled stacks AND no rings in hand
+    - Player must have at least one marker on the board
+    - Player must have buried rings (can afford the recovery cost)
+    - Recovery slides a marker to an adjacent empty cell
+    - "Line mode": slide completes a line of markers (preferred)
+    - "Fallback mode": any adjacent slide if no line possible (costs 1 buried ring)
+
+    Args:
+        state: Current batch game state
+        active_mask: Mask of games to generate moves for
+
+    Returns:
+        BatchMoves with all valid recovery slide moves
+    """
+    if active_mask is None:
+        active_mask = state.get_active_mask()
+
+    device = state.device
+    batch_size = state.batch_size
+    board_size = state.board_size
+
+    # 8 directions for sliding (Moore neighborhood)
+    directions = [
+        (-1, 0), (-1, 1), (0, 1), (1, 1),
+        (1, 0), (1, -1), (0, -1), (-1, -1)
+    ]
+
+    all_game_idx = []
+    all_from_y = []
+    all_from_x = []
+    all_to_y = []
+    all_to_x = []
+
+    for g in range(batch_size):
+        if not active_mask[g]:
+            continue
+
+        player = state.current_player[g].item()
+
+        # Check recovery eligibility per RR-CANON-R110:
+        # 1. No controlled stacks
+        has_stacks = (state.stack_owner[g] == player).any().item()
+        if has_stacks:
+            continue
+
+        # 2. No rings in hand
+        rings_in_hand = state.rings_in_hand[g, player].item()
+        if rings_in_hand > 0:
+            continue
+
+        # 3. Has markers on board
+        my_markers = (state.marker_owner[g] == player)
+        marker_positions = torch.nonzero(my_markers, as_tuple=False)
+        if marker_positions.shape[0] == 0:
+            continue
+
+        # 4. Has buried rings (can afford recovery cost)
+        buried_rings = state.buried_rings[g, player].item()
+        if buried_rings <= 0:
+            continue
+
+        # Player is eligible for recovery - generate slide moves
+        # For simplified GPU implementation, we generate all adjacent slides
+        # (both line-completing and fallback moves are valid)
+        for pos_idx in range(marker_positions.shape[0]):
+            from_y = marker_positions[pos_idx, 0].item()
+            from_x = marker_positions[pos_idx, 1].item()
+
+            for dy, dx in directions:
+                to_y = from_y + dy
+                to_x = from_x + dx
+
+                # Check bounds
+                if not (0 <= to_y < board_size and 0 <= to_x < board_size):
+                    continue
+
+                # Target must be empty (no stack, no marker, no territory)
+                if state.stack_owner[g, to_y, to_x].item() != 0:
+                    continue
+                if state.marker_owner[g, to_y, to_x].item() != 0:
+                    continue
+                if state.territory_owner[g, to_y, to_x].item() != 0:
+                    continue
+
+                # Valid recovery slide!
+                all_game_idx.append(g)
+                all_from_y.append(from_y)
+                all_from_x.append(from_x)
+                all_to_y.append(to_y)
+                all_to_x.append(to_x)
+
+    total_moves = len(all_game_idx)
+
+    if total_moves == 0:
+        return BatchMoves(
+            game_idx=torch.tensor([], dtype=torch.int32, device=device),
+            move_type=torch.tensor([], dtype=torch.int8, device=device),
+            from_y=torch.tensor([], dtype=torch.int32, device=device),
+            from_x=torch.tensor([], dtype=torch.int32, device=device),
+            to_y=torch.tensor([], dtype=torch.int32, device=device),
+            to_x=torch.tensor([], dtype=torch.int32, device=device),
+            moves_per_game=torch.zeros(batch_size, dtype=torch.int32, device=device),
+            move_offsets=torch.zeros(batch_size, dtype=torch.int32, device=device),
+            total_moves=0,
+            device=device,
+        )
+
+    game_idx_t = torch.tensor(all_game_idx, dtype=torch.int32, device=device)
+    from_y_t = torch.tensor(all_from_y, dtype=torch.int32, device=device)
+    from_x_t = torch.tensor(all_from_x, dtype=torch.int32, device=device)
+    to_y_t = torch.tensor(all_to_y, dtype=torch.int32, device=device)
+    to_x_t = torch.tensor(all_to_x, dtype=torch.int32, device=device)
+
+    moves_per_game = torch.zeros(batch_size, dtype=torch.int32, device=device)
+    for g in all_game_idx:
+        moves_per_game[g] += 1
+
+    move_offsets = torch.cumsum(
+        torch.cat([torch.tensor([0], device=device), moves_per_game[:-1]]),
+        dim=0
+    ).int()
+
+    return BatchMoves(
+        game_idx=game_idx_t,
+        move_type=torch.full((total_moves,), MoveType.RECOVERY_SLIDE, dtype=torch.int8, device=device),
+        from_y=from_y_t,
+        from_x=from_x_t,
+        to_y=to_y_t,
+        to_x=to_x_t,
+        moves_per_game=moves_per_game,
+        move_offsets=move_offsets,
+        total_moves=total_moves,
+        device=device,
+    )
+
+
+# =============================================================================
 # Batch Move Application
 # =============================================================================
 
@@ -1203,7 +1354,17 @@ def evaluate_positions_batch(
     state: BatchGameState,
     weights: Dict[str, float],
 ) -> torch.Tensor:
-    """Evaluate all positions using heuristic scoring.
+    """Evaluate all positions using comprehensive heuristic scoring.
+
+    Implements all 8 heuristic weights from DEFAULT_WEIGHTS:
+    - material_weight: Total rings on board (controlled stacks)
+    - ring_count_weight: Total ring count including buried
+    - stack_height_weight: Tall stacks are valuable
+    - center_control_weight: Stacks near center
+    - territory_weight: Territory count
+    - mobility_weight: Available movement options
+    - line_potential_weight: 3-in-a-row opportunities
+    - defensive_weight: Blocking opponent lines
 
     Args:
         state: BatchGameState to evaluate
@@ -1214,31 +1375,141 @@ def evaluate_positions_batch(
     """
     device = state.device
     batch_size = state.batch_size
+    board_size = state.board_size
     num_players = state.num_players
+    center = board_size // 2
 
     scores = torch.zeros(batch_size, num_players + 1, dtype=torch.float32, device=device)
 
+    # Pre-compute center distance matrix
+    y_coords = torch.arange(board_size, device=device).view(-1, 1).expand(board_size, board_size)
+    x_coords = torch.arange(board_size, device=device).view(1, -1).expand(board_size, board_size)
+    center_dist = ((y_coords - center).abs() + (x_coords - center).abs()).float()
+    max_dist = center_dist.max()
+    center_bonus = (max_dist - center_dist) / max_dist  # 1.0 at center, 0.0 at corners
+
     for p in range(1, num_players + 1):
-        # Stack count
-        my_stacks = (state.stack_owner == p).sum(dim=(1, 2)).float()
+        # === MATERIAL WEIGHT ===
+        # Count stacks controlled by player
+        player_stacks = (state.stack_owner == p)
+        stack_count = player_stacks.sum(dim=(1, 2)).float()
 
-        # Territory
-        my_territory = state.territory_count[:, p].float()
+        # === RING COUNT WEIGHT ===
+        # Total rings on controlled stacks (sum of heights)
+        ring_count = (state.stack_height * player_stacks.int()).sum(dim=(1, 2)).float()
 
-        # Rings in hand (negative - want to place them)
-        my_rings = state.rings_in_hand[:, p].float()
+        # Add rings in hand
+        ring_count = ring_count + state.rings_in_hand[:, p].float()
 
-        # Compute score
+        # === STACK HEIGHT WEIGHT ===
+        # Average stack height (tall stacks are strong)
+        total_height = (state.stack_height * player_stacks.int()).sum(dim=(1, 2)).float()
+        avg_height = total_height / (stack_count + 1e-6)
+
+        # Bonus for having tall stacks (height 3+)
+        tall_stacks = ((state.stack_height >= 3) & player_stacks).sum(dim=(1, 2)).float()
+
+        # === CENTER CONTROL WEIGHT ===
+        # Sum of center bonuses for all controlled positions
+        center_control = (center_bonus.unsqueeze(0) * player_stacks.float()).sum(dim=(1, 2))
+
+        # === TERRITORY WEIGHT ===
+        territory = state.territory_count[:, p].float()
+
+        # === MOBILITY WEIGHT (simplified) ===
+        # Approximate mobility by stack count + territory spread
+        # Full mobility calculation would be expensive
+        mobility = stack_count + territory * 0.5
+
+        # === LINE POTENTIAL WEIGHT ===
+        # Check for 2-in-a-row and 3-in-a-row patterns
+        line_potential = torch.zeros(batch_size, device=device)
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]  # H, V, D1, D2
+
+        for g in range(batch_size):
+            my_stacks_g = player_stacks[g]
+            potential = 0.0
+
+            for dy, dx in directions:
+                for start_y in range(board_size):
+                    for start_x in range(board_size):
+                        if not my_stacks_g[start_y, start_x]:
+                            continue
+
+                        # Count consecutive stacks in this direction
+                        count = 1
+                        y, x = start_y + dy, start_x + dx
+                        while 0 <= y < board_size and 0 <= x < board_size:
+                            if my_stacks_g[y, x]:
+                                count += 1
+                                y, x = y + dy, x + dx
+                            else:
+                                break
+
+                        # Score based on line length
+                        if count == 3:
+                            potential += 2.0  # 3-in-a-row is very valuable
+                        elif count == 2:
+                            potential += 0.5  # 2-in-a-row has some value
+
+            line_potential[g] = potential
+
+        # === DEFENSIVE WEIGHT ===
+        # Check opponent 3-in-a-row threats we could block
+        defensive_score = torch.zeros(batch_size, device=device)
+
+        for opponent in range(1, num_players + 1):
+            if opponent == p:
+                continue
+
+            opp_stacks = (state.stack_owner == opponent)
+
+            for g in range(batch_size):
+                opp_g = opp_stacks[g]
+                defense = 0.0
+
+                # Check if we're adjacent to opponent 2-in-a-row (blocking position)
+                for dy, dx in directions:
+                    for start_y in range(board_size):
+                        for start_x in range(board_size):
+                            if not player_stacks[g, start_y, start_x]:
+                                continue
+
+                            # Check if we're blocking an opponent line
+                            # Look in both directions from our stack
+                            for sign in [1, -1]:
+                                opp_count = 0
+                                y, x = start_y + sign * dy, start_x + sign * dx
+                                while 0 <= y < board_size and 0 <= x < board_size:
+                                    if opp_g[y, x]:
+                                        opp_count += 1
+                                        y, x = y + sign * dy, x + sign * dx
+                                    else:
+                                        break
+
+                                if opp_count >= 2:
+                                    defense += 1.0  # We're blocking a potential line
+
+                defensive_score[g] += defense
+
+        # === COMBINE ALL COMPONENTS ===
         w = weights
         scores[:, p] = (
-            my_stacks * w.get("stack_count", 1.0)
-            + my_territory * w.get("territory_count", 2.0)
-            - my_rings * w.get("rings_penalty", 0.1)
+            stack_count * w.get("material_weight", 1.0)
+            + ring_count * w.get("ring_count_weight", 0.5)
+            + (avg_height + tall_stacks) * w.get("stack_height_weight", 0.3)
+            + center_control * w.get("center_control_weight", 0.4)
+            + territory * w.get("territory_weight", 0.8)
+            + mobility * w.get("mobility_weight", 0.2)
+            + line_potential * w.get("line_potential_weight", 0.6)
+            + defensive_score * w.get("defensive_weight", 0.3)
         )
 
-        # Elimination penalty
+        # === ELIMINATION PENALTY ===
+        # Player with no stacks and no rings gets massive penalty
+        has_material = (stack_count > 0) | (state.rings_in_hand[:, p] > 0)
         scores[:, p] = torch.where(
-            my_stacks == 0,
+            ~has_material,
             scores[:, p] - 1000.0,
             scores[:, p]
         )
@@ -1489,6 +1760,45 @@ class ParallelGameRunner:
         games_with_stacks = mask & has_stacks
         games_without_stacks = mask & ~has_stacks
 
+        # Games WITHOUT stacks: check for recovery moves
+        if games_without_stacks.any():
+            recovery_moves = generate_recovery_moves_batch(self.state, games_without_stacks)
+
+            # Track games that had no recovery moves (for stalemate check)
+            games_no_recovery = games_without_stacks.clone()
+
+            for g in range(self.batch_size):
+                if not games_without_stacks[g]:
+                    continue
+
+                # Check if this game has recovery moves
+                recovery_start = recovery_moves.move_offsets[g].item()
+                recovery_count = recovery_moves.moves_per_game[g].item()
+
+                if recovery_count > 0:
+                    # This game has recovery moves, mark it
+                    games_no_recovery[g] = False
+
+                    # Select a recovery move (prefer center destinations)
+                    center = self.board_size // 2
+                    best_idx = 0
+                    best_dist = float('inf')
+                    for i in range(recovery_count):
+                        idx = recovery_start + i
+                        ty = recovery_moves.to_y[idx].item()
+                        tx = recovery_moves.to_x[idx].item()
+                        dist = abs(ty - center) + abs(tx - center)
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_idx = i
+
+                    # Apply recovery move
+                    self._apply_single_recovery(g, recovery_start + best_idx, recovery_moves)
+
+            # Check for stalemate in games that had no stacks AND no recovery moves
+            if games_no_recovery.any():
+                self._check_stalemate(games_no_recovery)
+
         # Games WITH stacks: generate movement and capture moves
         if games_with_stacks.any():
             # Generate non-capture movement moves
@@ -1508,42 +1818,54 @@ class ParallelGameRunner:
                 capture_count = capture_moves.moves_per_game[g].item()
 
                 if capture_count > 0:
-                    # Apply a capture move (select with center bias)
+                    # Select capture move using softmax sampling with center bias
+                    # This adds stochasticity to break deterministic P1 advantage
                     center = self.board_size // 2
-                    best_idx = 0
-                    best_dist = float('inf')
+                    max_dist = center * 2
+                    scores = []
                     for i in range(capture_count):
                         idx = capture_start + i
                         ty = capture_moves.to_y[idx].item()
                         tx = capture_moves.to_x[idx].item()
                         dist = abs(ty - center) + abs(tx - center)
-                        if dist < best_dist:
-                            best_dist = dist
-                            best_idx = i
+                        # Score: higher for closer to center + random noise
+                        score = (max_dist - dist) + torch.rand(1, device=self.device).item() * 2.0
+                        scores.append(score)
+
+                    # Softmax selection with temperature=1.0
+                    scores_tensor = torch.tensor(scores, device=self.device)
+                    probs = torch.softmax(scores_tensor, dim=0)
+                    selected_idx = torch.multinomial(probs, 1).item()
 
                     # Apply capture move directly for this game
-                    self._apply_single_capture(g, capture_start + best_idx, capture_moves)
+                    self._apply_single_capture(g, capture_start + selected_idx, capture_moves)
                 else:
                     # Apply a movement move
                     move_start = movement_moves.move_offsets[g].item()
                     move_count = movement_moves.moves_per_game[g].item()
 
                     if move_count > 0:
-                        # Select with center bias
+                        # Select movement move using softmax sampling with center bias
+                        # This adds stochasticity to break deterministic P1 advantage
                         center = self.board_size // 2
-                        best_idx = 0
-                        best_dist = float('inf')
+                        max_dist = center * 2
+                        scores = []
                         for i in range(move_count):
                             idx = move_start + i
                             ty = movement_moves.to_y[idx].item()
                             tx = movement_moves.to_x[idx].item()
                             dist = abs(ty - center) + abs(tx - center)
-                            if dist < best_dist:
-                                best_dist = dist
-                                best_idx = i
+                            # Score: higher for closer to center + random noise
+                            score = (max_dist - dist) + torch.rand(1, device=self.device).item() * 2.0
+                            scores.append(score)
+
+                        # Softmax selection with temperature=1.0
+                        scores_tensor = torch.tensor(scores, device=self.device)
+                        probs = torch.softmax(scores_tensor, dim=0)
+                        selected_idx = torch.multinomial(probs, 1).item()
 
                         # Apply movement move directly for this game
-                        self._apply_single_movement(g, move_start + best_idx, movement_moves)
+                        self._apply_single_movement(g, move_start + selected_idx, movement_moves)
 
         # After movement, advance to LINE_PROCESSING phase
         self.state.current_phase[mask] = GamePhase.LINE_PROCESSING
@@ -1725,6 +2047,43 @@ class ParallelGameRunner:
             new_height = dest_height + moving_height - landing_ring_cost
             state.stack_height[g, to_y, to_x] = min(5, new_height)  # Cap at 5
 
+    def _apply_single_recovery(self, g: int, move_idx: int, moves: BatchMoves) -> None:
+        """Apply a single recovery slide move for game g at global index move_idx.
+
+        Per RR-CANON-R110-R115:
+        - Recovery slide: marker moves to adjacent empty cell
+        - Costs 1 buried ring (deducted from buried_rings)
+        - Origin marker is cleared, destination gets marker
+        - Player gains recovery attempt toward un-burying rings
+        """
+        state = self.state
+        from_y = moves.from_y[move_idx].item()
+        from_x = moves.from_x[move_idx].item()
+        to_y = moves.to_y[move_idx].item()
+        to_x = moves.to_x[move_idx].item()
+        player = state.current_player[g].item()
+        move_type = moves.move_type[move_idx].item()
+
+        # Record move in history
+        move_count = state.move_count[g].item()
+        if move_count < state.max_history_moves:
+            state.move_history[g, move_count, 0] = move_type
+            state.move_history[g, move_count, 1] = player
+            state.move_history[g, move_count, 2] = from_y
+            state.move_history[g, move_count, 3] = from_x
+            state.move_history[g, move_count, 4] = to_y
+            state.move_history[g, move_count, 5] = to_x
+
+        # Move marker from origin to destination
+        state.marker_owner[g, from_y, from_x] = 0  # Clear origin
+        state.marker_owner[g, to_y, to_x] = player  # Place at destination
+
+        # Deduct recovery cost: 1 buried ring
+        # In the canonical rules, recovery costs rings from the buried pool
+        current_buried = state.buried_rings[g, player - 1].item()
+        if current_buried > 0:
+            state.buried_rings[g, player - 1] = current_buried - 1
+
     def _select_best_moves(
         self,
         moves: BatchMoves,
@@ -1826,6 +2185,68 @@ class ParallelGameRunner:
             victory_mask = active_mask & (ring_elimination_victory | territory_victory | last_player_standing)
             self.state.winner[victory_mask] = p
             self.state.game_status[victory_mask] = GameStatus.COMPLETED
+
+    def _check_stalemate(self, mask: torch.Tensor) -> None:
+        """Check for stalemate condition (no valid moves for current player).
+
+        Per RR-CANON-R175 (implied): If the current player has no valid moves
+        and cannot make any progress (no placement, no movement, no recovery),
+        then the game ends in a stalemate (draw) or tiebreaker by stack count.
+
+        This is called during MOVEMENT phase when a player has neither:
+        - Controlled stacks to move
+        - Rings in hand to place
+        - Recovery moves available
+
+        Stalemate resolution per canonical rules:
+        - Winner determined by highest total stack height
+        - Ties result in draw
+        """
+        active_mask = mask & self.state.get_active_mask()
+        if not active_mask.any():
+            return
+
+        for g in range(self.batch_size):
+            if not active_mask[g]:
+                continue
+
+            player = self.state.current_player[g].item()
+
+            # Check if player has any stacks
+            has_stacks = (self.state.stack_owner[g] == player).any().item()
+
+            # Check if player has rings in hand
+            has_rings_in_hand = self.state.rings_in_hand[g, player].item() > 0
+
+            # Check if player has markers and buried rings (recovery eligible)
+            has_markers = (self.state.marker_owner[g] == player).any().item()
+            has_buried = self.state.buried_rings[g, player - 1].item() > 0
+
+            # If player has no possible actions, it's a stalemate
+            if not has_stacks and not has_rings_in_hand and not (has_markers and has_buried):
+                # Determine winner by stack height (stalemate tiebreaker)
+                best_player = 0
+                best_total_height = -1
+                is_tie = False
+
+                for p in range(1, self.num_players + 1):
+                    p_stacks = (self.state.stack_owner[g] == p)
+                    p_total_height = (self.state.stack_height[g] * p_stacks.float()).sum().item()
+
+                    if p_total_height > best_total_height:
+                        best_total_height = p_total_height
+                        best_player = p
+                        is_tie = False
+                    elif p_total_height == best_total_height and p_total_height > 0:
+                        is_tie = True
+
+                # Set winner (0 = draw if tied)
+                if is_tie or best_total_height == 0:
+                    self.state.winner[g] = 0  # Draw
+                else:
+                    self.state.winner[g] = best_player
+
+                self.state.game_status[g] = GameStatus.COMPLETED
 
     def _default_weights(self) -> Dict[str, float]:
         """Default heuristic weights."""

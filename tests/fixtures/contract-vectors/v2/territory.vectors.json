@@ -69,7 +69,7 @@
           "turnNumber": 3,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33
         },
         "move": {
@@ -156,7 +156,7 @@
           "turnNumber": 2,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33
         },
         "move": {
@@ -247,7 +247,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 5
         },
@@ -755,7 +755,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 0
         },
@@ -871,7 +871,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 8
         },
@@ -1027,7 +1027,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 0
         },
@@ -1167,7 +1167,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 2
         },
@@ -1289,7 +1289,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 4
         },

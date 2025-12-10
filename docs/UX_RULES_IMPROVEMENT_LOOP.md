@@ -146,7 +146,7 @@ Categories of adjustments:
      - Weird‑state mapping in [`UX_RULES_WEIRD_STATES_SPEC.md`](docs/UX_RULES_WEIRD_STATES_SPEC.md:1).
    - Examples:
      - Clarify that chain captures are **mandatory** once started (DOCUX‑P1).
-     - Replace “eliminate all opponent rings” with “more than half of all rings” for elimination victory (DOCUX‑P2).
+     - Replace "eliminate all opponent rings" with "ringsPerPlayer (starting ring supply)" for elimination victory (DOCUX‑P2).
      - Add explicit self‑elimination explanation to territory HUD/tooltip (DOCUX‑P4).
 
 2. **Weird‑state UX refinement**

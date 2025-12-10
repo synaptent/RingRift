@@ -105,7 +105,7 @@ def _make_forced_elimination_state() -> tuple[GameState, Move]:
         maxPlayers=2,
         totalRingsInPlay=2,
         totalRingsEliminated=0,
-        victoryThreshold=19,
+        victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold=33,
     )
 
@@ -168,7 +168,7 @@ def _make_non_forced_elimination_state() -> tuple[GameState, Move]:
         maxPlayers=2,
         totalRingsInPlay=6,
         totalRingsEliminated=0,
-        victoryThreshold=19,
+        victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold=33,
     )
 

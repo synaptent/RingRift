@@ -103,7 +103,7 @@
           "turnNumber": 20,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 0,
           "pendingTerritoryDecision": {
@@ -242,7 +242,7 @@
           "turnNumber": 25,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 6,
           "pendingTerritoryDecision": {

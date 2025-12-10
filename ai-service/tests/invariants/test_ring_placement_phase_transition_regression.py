@@ -111,7 +111,7 @@ def create_ring_placement_zero_rings_state() -> GameState:
         max_players=2,
         total_rings_in_play=36,
         total_rings_eliminated=0,
-        victory_threshold=19,
+        victory_threshold=18,  # RR-CANON-R061: ringsPerPlayer
         territory_victory_threshold=33,
         chain_capture_state=None,
         must_move_from_stack_key=None,

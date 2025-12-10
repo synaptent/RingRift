@@ -46,7 +46,7 @@ describe('TurnMutator branch coverage', () => {
     timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
     maxPlayers: numPlayers,
     totalRingsInPlay: 36,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
   });
 
   describe('mutateTurnChange', () => {

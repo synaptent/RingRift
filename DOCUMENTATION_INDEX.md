@@ -199,7 +199,7 @@ Extended analysis and edge case documentation.
 
 | Document                                                                                                                         | Purpose                                                         |
 | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| [rules_analysis_lps_inconsistencies.md](docs/supplementary/rules_analysis/rules_analysis_lps_inconsistencies.md)                 | LPS three-round threshold audit + remaining UX copy gaps        |
+| [rules_analysis_lps_inconsistencies.md](docs/supplementary/rules_analysis/rules_analysis_lps_inconsistencies.md)                 | LPS two-round threshold audit + remaining UX copy gaps          |
 | [rules_analysis_lps_fe.md](docs/supplementary/rules_analysis/rules_analysis_lps_fe.md)                                           | Analysis of forced elimination not counting as an LPS real move |
 | [rules_analysis_ring_count_inconsistencies.md](docs/supplementary/rules_analysis/rules_analysis_ring_count_inconsistencies.md)   | Ring count mismatches across specs, docs, and engines           |
 | [rules_analysis_ring_count_increase.md](docs/supplementary/rules_analysis/rules_analysis_ring_count_increase.md)                 | Historical proposal to raise 19×19/hex ring supplies            |

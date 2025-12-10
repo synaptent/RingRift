@@ -48,7 +48,7 @@
         "turnNumber": 1,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -99,7 +99,7 @@
         "turnNumber": 1,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 31
       }
     },
@@ -165,7 +165,7 @@
         "turnNumber": 3,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       },
       "suggestedMove": {
@@ -249,7 +249,7 @@
         "turnNumber": 5,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -320,7 +320,7 @@
         "turnNumber": 5,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -397,7 +397,7 @@
         "turnNumber": 6,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -484,7 +484,7 @@
         "turnNumber": 8,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -582,7 +582,7 @@
         "turnNumber": 10,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -659,7 +659,7 @@
       "tags": ["endgame", "elimination", "victory", "advanced", "Rules_Victory"],
       "rulesConcept": "victory_ring_elimination",
       "uxSpecAnchor": "victory.elimination",
-      "rulesSnippet": "Win by eliminating more than half of all rings in the game – not just one opponent’s set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold.",
+      "rulesSnippet": "Win by eliminating a number of rings equal to the starting ring supply (ringsPerPlayer) – not just one opponent's set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold.",
       "rulesSnippetRef": "UX_RULES_COPY_SPEC#3-1-ring-elimination",
       "boardType": "square8",
       "playerCount": 2,
@@ -728,7 +728,7 @@
         "turnNumber": 30,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -841,7 +841,7 @@
         "turnNumber": 20,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33,
         "pendingTerritoryDecision": {
           "territories": ["pending_victory_region"],
@@ -952,7 +952,7 @@
         "turnNumber": 5,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       },
       "suggestedMove": {
@@ -1026,7 +1026,7 @@
         "turnNumber": 10,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -1142,7 +1142,7 @@
         "turnNumber": 30,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -1156,7 +1156,7 @@
       "rulesConcept": "anm_last_player_standing",
       "uxSpecAnchor": "victory.last_player_standing",
       "onboarding": true,
-      "rulesSnippet": "Last Player Standing: you win if you are the only player who can make real moves (placements, movements, or captures) for three full rounds; forced elimination does not count as a real move.",
+      "rulesSnippet": "Last Player Standing: you win if you are the only player who can make real moves (placements, movements, or captures) for two full rounds; forced elimination does not count as a real move.",
       "rulesSnippetRef": "ringrift_complete_rules#last-player-standing",
       "boardType": "square8",
       "playerCount": 3,
@@ -1276,7 +1276,7 @@
         "turnNumber": 20,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -1407,7 +1407,7 @@
         "turnNumber": 5,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -1487,7 +1487,7 @@
         "turnNumber": 5,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -1567,7 +1567,7 @@
         "turnNumber": 6,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -1654,7 +1654,7 @@
         "turnNumber": 8,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -1736,7 +1736,7 @@
         "turnNumber": 18,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -1816,7 +1816,7 @@
         "turnNumber": 4,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 31
       }
     },
@@ -1921,7 +1921,7 @@
         "turnNumber": 10,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 31
       }
     },
@@ -2219,7 +2219,7 @@
         "turnNumber": 10,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33,
         "pendingLineDecision": {
           "lines": [
@@ -2316,7 +2316,7 @@
         "turnNumber": 5,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -2386,7 +2386,7 @@
         "turnNumber": 5,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -2400,7 +2400,7 @@
       "rulesConcept": "victory_ring_elimination",
       "uxSpecAnchor": "victory.elimination_imminent",
       "onboarding": true,
-      "rulesSnippet": "Win by eliminating more than half of all rings in play. Eliminated rings are permanently removed from the game. One more elimination will cross the threshold.",
+      "rulesSnippet": "Win by eliminating a number of rings equal to the starting ring supply (ringsPerPlayer). Eliminated rings are permanently removed from the game. One more elimination will cross the threshold.",
       "rulesSnippetRef": "UX_RULES_COPY_SPEC#3-1-ring-elimination",
       "boardType": "square8",
       "playerCount": 2,
@@ -2462,7 +2462,7 @@
         "turnNumber": 28,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -2528,7 +2528,7 @@
         "turnNumber": 3,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }
     },
@@ -2582,7 +2582,7 @@
         "turnNumber": 1,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 31
       }
     },
@@ -2644,7 +2644,7 @@
         "turnNumber": 1,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 31
       }
     },

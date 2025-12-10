@@ -4,9 +4,9 @@
 export const RulesUxPhrases = {
   victory: {
     ringElimination: [
-      // Ring Elimination – winning by eliminating ringsPerPlayer rings globally.
-      // Shared substring between VictoryModal copy (“in play”) and curated scenarios (“in the game”).
-      'eliminating ringsPerPlayer rings',
+      // Ring Elimination – winning by eliminating ringsPerPlayer (starting ring supply) globally.
+      // Shared substring between VictoryModal copy and telemetry text.
+      'eliminating a number of rings equal to the starting ring supply',
       // Used primarily by TeachingOverlay and curated scenarios.
       'Eliminated rings are permanently removed',
     ],

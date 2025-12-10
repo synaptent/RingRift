@@ -77,7 +77,7 @@ function createTestGameState(players: Player[]): GameState {
     maxPlayers: 2,
     totalRingsInPlay: 36,
     totalRingsEliminated: 23,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 }
@@ -141,7 +141,7 @@ describe('VictoryModal', () => {
 
     expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
     expect(
-      screen.getByText(/Victory by eliminating more than half of all rings in play/)
+      screen.getByText(/Victory by eliminating a number of rings equal to the starting ring supply/)
     ).toBeInTheDocument();
   });
 
@@ -563,7 +563,7 @@ describe('VictoryModal', () => {
     // Title and description come from the view model path
     expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
     expect(
-      screen.getByText(/Victory by eliminating more than half of all rings in play/)
+      screen.getByText(/Victory by eliminating a number of rings equal to the starting ring supply/)
     ).toBeInTheDocument();
 
     // Stats table is rendered via the view model finalStats
@@ -844,7 +844,9 @@ describe('VictoryModal', () => {
 
       // Should fall back to standard ring elimination copy
       expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
-      expect(screen.getByText(/eliminating more than half/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/eliminating a number of rings equal to the starting ring supply/i)
+      ).toBeInTheDocument();
     });
 
     it('should use personalized "You" wording when current user is LPS winner', () => {
@@ -894,7 +896,9 @@ describe('VictoryModal', () => {
 
       // Should use standard legacy copy
       expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
-      expect(screen.getByText(/eliminating more than half/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/eliminating a number of rings equal to the starting ring supply/i)
+      ).toBeInTheDocument();
     });
 
     it('should display weird state info panel for LPS with ANM/FE', () => {

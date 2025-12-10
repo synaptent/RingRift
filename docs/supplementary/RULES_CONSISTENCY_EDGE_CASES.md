@@ -203,7 +203,7 @@ Each subsection lists:
   - Only considers stalemate and tie‑breaking on a **bare board** (`board.stacks.size === 0`):
     - If any player with rings in hand has a legal placement satisfying no‑dead‑placement, the game is **not** over.
     - Otherwise, treats all rings in hand as eliminated for tie‑breaking (`handCountsAsEliminated`), and walks the ladder territory → eliminated rings (including hand) → markers → last actor → `game_completed`.
-  - There is **no explicit implementation** of non‑bare‑board last‑player‑standing as defined in [`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:703) (three-round exclusive real-action condition); instead, games continue until ring‑elimination, territory victory, or bare‑board stalemate occurs.
+  - There is **no explicit implementation** of non‑bare‑board last‑player‑standing as defined in [`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:703) (two-round exclusive real-action condition); instead, games continue until ring‑elimination, territory victory, or bare‑board stalemate occurs.
 - Turn rotation in [`TypeScript.turnLogic`](src/shared/engine/turnLogic.ts:181) and Python strict invariants ensure that:
   - Players with neither stacks nor rings in hand are skipped when choosing the next active player.
   - Any ACTIVE state must offer at least one move or forced elimination to the current player (Python enforces this; TS assumes it via sequencing).
@@ -496,7 +496,7 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
   - At least one "buried ring" (opponent's stack sitting on top of one of their rings).
 
   This player can perform a **recovery slide**: move a marker into a position that completes a line, triggering line collapse and potentially eliminating the opponent's cap on the buried ring. Key interaction questions:
-  1. **With LPS (R172):** Does a recovery action count as a "real action" that resets the three-round LPS counter?
+  1. **With LPS (R172):** Does a recovery action count as a "real action" that resets the two-round LPS counter?
   2. **With ANM (R200–R207):** Does recovery availability prevent the ANM state (active player with turn-material but no legal global actions)?
   3. **With Forced Elimination (R100):** Can a player with recovery available still be forced to eliminate? (No—recovery is a legal action.)
   4. **With Weird States:** How should the UX present a "recovery only" turn where marker sliding is the sole legal action?

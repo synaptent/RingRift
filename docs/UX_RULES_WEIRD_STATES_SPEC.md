@@ -239,9 +239,9 @@ Typically used as a **sub‑section** within a longer VictoryModal explanation w
 
 #### RWS‑006 LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS (Terminal reason)
 
-- **Title:** `"Last Player Standing – only one player had real moves for three rounds"`
+- **Title:** `"Last Player Standing – only one player had real moves for two rounds"`
 - **Body:**
-  `"The game ended by Last Player Standing. For TWO consecutive complete rounds, only one player had any real actions available at the start of their turns – real actions meaning placements, non-capture movements, or overtaking captures. In the first round, this player had and took at least one real action while all others had none. In the second and third rounds, the same condition persisted. After the third round completed, the remaining active player won by Last Player Standing."`
+  `"The game ended by Last Player Standing. For TWO consecutive complete rounds, only one player had any real actions available at the start of their turns – real actions meaning placements, non-capture movements, or overtaking captures. In the first round, this player had and took at least one real action while all others had none. In the second round, the same condition persisted. After the second round completed, the remaining active player won by Last Player Standing."`
 - **Doc anchor:** [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1360) §13.3 _Last Player Standing_; [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:603) R172.
 
 ---

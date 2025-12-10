@@ -114,7 +114,7 @@ describe('VictoryModal Logic', () => {
       maxPlayers: 2,
       totalRingsInPlay: 36,
       totalRingsEliminated: 23,
-      victoryThreshold: 19,
+      victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
       territoryVictoryThreshold: 33,
     };
   }
@@ -400,7 +400,7 @@ describe('VictoryModal Logic', () => {
     it('should handle square8 board type', () => {
       const gameState = createGameStateWithStacks(createTestPlayers(), []);
       expect(gameState.boardType).toBe('square8');
-      expect(gameState.victoryThreshold).toBe(19); // >50% of 36 rings
+      expect(gameState.victoryThreshold).toBe(18); // ringsPerPlayer for 2 players on square8
       expect(gameState.territoryVictoryThreshold).toBe(33); // >50% of 64 spaces
     });
 

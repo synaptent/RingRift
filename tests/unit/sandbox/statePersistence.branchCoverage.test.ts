@@ -88,7 +88,7 @@ function createGameState(overrides: Partial<GameState> = {}): GameState {
     maxPlayers: 2,
     totalRingsInPlay: 36,
     totalRingsEliminated: 0,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
     ...overrides,
   } as GameState;

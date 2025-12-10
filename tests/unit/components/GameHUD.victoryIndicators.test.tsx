@@ -118,30 +118,15 @@ describe('LpsTrackingIndicator', () => {
     const indicator = screen.getByTestId('hud-lps-indicator');
     expect(indicator).toBeInTheDocument();
     expect(indicator).toHaveTextContent('Alice has exclusive actions');
-    expect(indicator).toHaveTextContent('2 rounds until LPS');
-    expect(indicator).toHaveTextContent('Round 1/3');
+    expect(indicator).toHaveTextContent('1 round until LPS');
+    expect(indicator).toHaveTextContent('Round 1/2');
   });
 
-  it('shows correct countdown at 2 rounds', () => {
+  it('shows LPS Victory at 2 rounds (per RR-CANON-R172)', () => {
     const viewModel = baseHudViewModel({
       lpsTracking: {
         roundIndex: 7,
         consecutiveExclusiveRounds: 2,
-        consecutiveExclusivePlayer: 1,
-      },
-    });
-    render(<GameHUD viewModel={viewModel} timeControl={baseTimeControl} />);
-
-    const indicator = screen.getByTestId('hud-lps-indicator');
-    expect(indicator).toHaveTextContent('1 round until LPS');
-    expect(indicator).toHaveTextContent('Round 2/3');
-  });
-
-  it('shows LPS Victory at 3 rounds (per RR-CANON-R172)', () => {
-    const viewModel = baseHudViewModel({
-      lpsTracking: {
-        roundIndex: 8,
-        consecutiveExclusiveRounds: 3,
         consecutiveExclusivePlayer: 2,
       },
     });
@@ -150,7 +135,7 @@ describe('LpsTrackingIndicator', () => {
     const indicator = screen.getByTestId('hud-lps-indicator');
     expect(indicator).toHaveTextContent('Bob has exclusive actions');
     expect(indicator).toHaveTextContent('LPS Victory!');
-    expect(indicator).toHaveTextContent('Round 3/3');
+    expect(indicator).toHaveTextContent('Round 2/2');
   });
 
   it('falls back to Player N when player not found', () => {

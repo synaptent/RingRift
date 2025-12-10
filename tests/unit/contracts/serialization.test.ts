@@ -142,7 +142,7 @@ describe('serialization', () => {
       maxPlayers: 2,
       totalRingsInPlay: 0,
       totalRingsEliminated: 0,
-      victoryThreshold: 19,
+      victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
       territoryVictoryThreshold: 33,
     }) as GameState;
 
@@ -466,7 +466,7 @@ describe('serialization', () => {
         turnNumber: 1,
         moveHistory: [],
         gameStatus: 'active',
-        victoryThreshold: 19,
+        victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold: 33,
       };
 
@@ -498,7 +498,7 @@ describe('serialization', () => {
         turnNumber: 1,
         moveHistory: [],
         gameStatus: 'active',
-        victoryThreshold: 19,
+        victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold: 33,
       };
 
@@ -538,7 +538,7 @@ describe('serialization', () => {
         turnNumber: 1,
         moveHistory: [],
         gameStatus: 'active',
-        victoryThreshold: 19,
+        victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold: 33,
       };
 
@@ -577,7 +577,7 @@ describe('serialization', () => {
           },
         ],
         gameStatus: 'active',
-        victoryThreshold: 19,
+        victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold: 33,
       };
 
@@ -606,7 +606,7 @@ describe('serialization', () => {
         turnNumber: 1,
         moveHistory: [],
         gameStatus: 'active',
-        victoryThreshold: 19,
+        victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold: 33,
       };
 
@@ -635,7 +635,7 @@ describe('serialization', () => {
         turnNumber: 5,
         moveHistory: [],
         gameStatus: 'active',
-        victoryThreshold: 19,
+        victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold: 33,
       };
 
@@ -695,7 +695,7 @@ describe('serialization', () => {
         "turnNumber": 1,
         "moveHistory": [],
         "gameStatus": "active",
-        "victoryThreshold": 19,
+        "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
       }`;
 

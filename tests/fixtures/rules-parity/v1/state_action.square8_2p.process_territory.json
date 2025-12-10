@@ -83,7 +83,7 @@
     "maxPlayers": 2,
     "totalRingsInPlay": 0,
     "totalRingsEliminated": 0,
-    "victoryThreshold": 19,
+    "victoryThreshold": 18,
     "territoryVictoryThreshold": 33
   },
   "move": {
@@ -122,7 +122,7 @@
       "gameStatus": "waiting",
       "totalRingsInPlay": 0,
       "totalRingsEliminated": 0,
-      "victoryThreshold": 19,
+      "victoryThreshold": 18,
       "territoryVictoryThreshold": 33,
       "markers": 0,
       "collapsed": 1,

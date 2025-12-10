@@ -53,7 +53,7 @@ Real Actions = {placement, non-capture_movement, overtaking_capture}
 NOT Real Actions = {recovery_slide, forced_elimination, skip_placement, no_* bookkeeping moves}
 ```
 
-This creates strategic tension: rings in hand become a "survival budget" - players can use recovery moves but must place at least one ring every 3 rounds to avoid LPS loss.
+This creates strategic tension: rings in hand become a "survival budget" - players can use recovery moves but must place at least one ring every 2 rounds to avoid LPS loss.
 
 **Impact on LPS Victory:**
 
@@ -61,8 +61,8 @@ This creates strategic tension: rings in hand become a "survival budget" - playe
 | --------------------------------------------------- | ------------------ | --------------------------------------------------- |
 | Player A dominates, Player B has only FE            | B cannot block LPS | B cannot block LPS (FE ≠ real action)               |
 | Player A dominates, Player B has recovery available | N/A                | B **cannot** block LPS with recovery (not real)     |
-| Player B has recovery + rings in hand               | N/A                | B can block LPS by **placing a ring** every 3 turns |
-| Only A has real actions for 3 rounds                | A wins LPS         | A wins LPS (recovery doesn't count)                 |
+| Player B has recovery + rings in hand               | N/A                | B can block LPS by **placing a ring** every 2 turns |
+| Only A has real actions for 2 rounds                | A wins LPS         | A wins LPS (recovery doesn't count)                 |
 
 **Strategic Implications:**
 

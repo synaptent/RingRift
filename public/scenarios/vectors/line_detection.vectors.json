@@ -53,7 +53,7 @@
           "turnNumber": 2,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33
         },
         "move": {
@@ -129,7 +129,7 @@
           "turnNumber": 3,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33
         },
         "move": {

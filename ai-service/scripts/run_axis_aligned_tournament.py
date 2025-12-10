@@ -186,7 +186,7 @@ def _create_game_state(
         maxPlayers=2,
         totalRingsInPlay=0,
         totalRingsEliminated=0,
-        victoryThreshold=19,  # >50% of 36 total rings
+        victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold=33,  # >50% of 64 spaces
         chainCaptureState=None,
         mustMoveFromStackKey=None,

@@ -266,7 +266,7 @@ export function createMultiPhaseTurnFixture(
     maxPlayers: 2,
     totalRingsInPlay: 5,
     totalRingsEliminated: 0,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 
@@ -392,7 +392,7 @@ export function createFullSequenceTurnFixture(
     maxPlayers: 2,
     totalRingsInPlay: 5,
     totalRingsEliminated: 0,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 
@@ -506,7 +506,7 @@ export function createPlacementToMovementFixture(
     maxPlayers: 2,
     totalRingsInPlay: 3,
     totalRingsEliminated: 0,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 

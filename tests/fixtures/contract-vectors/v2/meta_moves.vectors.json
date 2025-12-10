@@ -70,7 +70,7 @@
             }
           ],
           "gameStatus": "active",
-          "victoryThreshold": 19,
+          "victoryThreshold": 18,
           "territoryVictoryThreshold": 33,
           "totalRingsEliminated": 0
         },

@@ -223,7 +223,7 @@ Matches the existing Pydantic `GameState` model serialization with these fields:
   "maxPlayers": 2,
   "totalRingsInPlay": 36,
   "totalRingsEliminated": 0,
-  "victoryThreshold": 19,
+  "victoryThreshold": 18,
   "territoryVictoryThreshold": 33,
   "lpsRoundIndex": 0,
   "lpsCurrentRoundActorMask": {},

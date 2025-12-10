@@ -226,7 +226,7 @@ export function createChainCapture4Fixture(
     maxPlayers: 2,
     totalRingsInPlay: 5,
     totalRingsEliminated: 0,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 
@@ -357,7 +357,7 @@ export function createChainCapture5PlusFixture(
     maxPlayers: 2,
     totalRingsInPlay: 5,
     totalRingsEliminated: 0,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 
@@ -465,7 +465,7 @@ export function createChainCapture3Fixture(
     maxPlayers: 2,
     totalRingsInPlay: 4,
     totalRingsEliminated: 0,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 
@@ -572,7 +572,7 @@ export function createChainCaptureZigzagFixture(
     maxPlayers: 2,
     totalRingsInPlay: 4,
     totalRingsEliminated: 0,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 
@@ -661,7 +661,7 @@ export function createChainCaptureEdgeTerminationFixture(
     maxPlayers: 2,
     totalRingsInPlay: 2,
     totalRingsEliminated: 0,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 

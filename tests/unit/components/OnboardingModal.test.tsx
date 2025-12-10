@@ -45,15 +45,15 @@ describe('OnboardingModal – canonical copy & rules‑UX telemetry', () => {
     fireEvent.click(nextButton);
 
     // Victory step copy should come from ONBOARDING_COPY.victoryConcepts[0]:
-    // "Win by eliminating more than half of all rings in the game – not just one opponent’s set.
+    // "Win by eliminating a number of rings equal to the starting ring supply (ringsPerPlayer) – not just one opponent's set.
     //  Eliminated rings are permanently removed; captured rings you carry in stacks do not count
     //  toward this threshold."
     const dialog = screen.getByRole('dialog');
     const text = dialog.textContent || '';
 
-    expect(text).toMatch(
-      /Win by eliminating more than half of all rings in the game – not just one opponent’s set/i
-    );
+    expect(text).toMatch(/Win by eliminating a number of rings equal to the starting ring supply/i);
+    // Match the "not just one opponent's set" part with fancy apostrophe (U+2019)
+    expect(text).toMatch(/not just one opponent.s set/i);
     expect(text).toMatch(/Eliminated rings are permanently removed/i);
     expect(text).toMatch(/captured rings you carry in stacks do not count toward this threshold/i);
   });

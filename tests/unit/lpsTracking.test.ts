@@ -87,7 +87,7 @@ describe('lpsTracking module', () => {
 
     it('should reset consecutiveExclusiveRounds to 0', () => {
       const state = createLpsTrackingState();
-      state.consecutiveExclusiveRounds = 3;
+      state.consecutiveExclusiveRounds = 2;
       resetLpsTrackingState(state);
       expect(state.consecutiveExclusiveRounds).toBe(0);
     });

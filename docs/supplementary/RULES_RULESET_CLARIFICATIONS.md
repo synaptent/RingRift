@@ -64,7 +64,7 @@ RR-CANON-R090 defines movement availability in terms of stacks that "satisfy RR-
 - **Type:** Cross-document contradiction / design decision
 - **Status:** Resolved (binding semantics chosen)
 - **Priority:** High
-- **Resolution:** Resolved as a binding Last-Player-Standing victory with a **three-full-round** exclusive real-action condition, as encoded in RR-CANON-R172 and mirrored in the Complete and Simple rules. Player P wins by LPS if: (1) for one complete round P has at least one real action and takes at least one, while all other players have no real actions; (2) after the first round completes, P remains the only player with real actions through a second complete round and takes at least one real action; (3) after the second round completes, P remains the only player with real actions through a third complete round and takes at least one real action; (4) after the third round completes (and all required no-action/FE moves are logged), P is declared the winner.
+- **Resolution:** Resolved as a binding Last-Player-Standing victory with a **two-full-round** exclusive real-action condition, as encoded in RR-CANON-R172 and mirrored in the Complete and Simple rules. Player P wins by LPS if: (1) for one complete round P has at least one real action and takes at least one, while all other players have no real actions; (2) after the first round completes, P remains the only player with real actions through a second complete round and takes at least one real action; (3) after the second round completes (and all required no-action/FE moves are logged), P is declared the winner.
 
 **Sources**
 
@@ -91,7 +91,7 @@ This resolves the earlier ambiguity where engines played to completion and relie
 
 - The rules text (Complete, Simple, Canonical) and the engines are now aligned on **Interpretation A**:
   - RR-CANON-R172 is a binding early termination rule.
-  - As soon as the R172 condition holds after **two consecutive full rounds** (exactly one player has real actions during all three rounds, all others with material have none), the game ends immediately with a Last Player Standing victory, even if elimination or territory thresholds have not yet been reached.
+  - As soon as the R172 condition holds after **two consecutive full rounds** (exactly one player has real actions during both rounds, all others with material have none), the game ends immediately with a Last Player Standing victory, even if elimination or territory thresholds have not yet been reached.
 - `VictoryAggregate.evaluateVictory` in the shared TS engine and `GameEngine._check_victory` in Python both consult the shared LPS tracking state to implement this behaviour.
 
 ---

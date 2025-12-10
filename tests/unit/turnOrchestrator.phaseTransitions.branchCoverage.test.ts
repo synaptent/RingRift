@@ -75,7 +75,7 @@ const createBaseState = (phase: GamePhase, options: Partial<GameState> = {}): Ga
   timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
   maxPlayers: 2,
   totalRingsInPlay: 36,
-  victoryThreshold: 19, // >50% of 36 rings
+  victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
   territoryVictoryThreshold: 33, // >50% of 64 spaces for 8x8
   ...options,
 });

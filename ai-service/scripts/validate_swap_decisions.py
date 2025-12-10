@@ -181,7 +181,7 @@ def create_game_with_p1_opening(
         maxPlayers=2,
         totalRingsInPlay=1,
         totalRingsEliminated=0,
-        victoryThreshold=19,
+        victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold=33,
         chainCaptureState=None,
         mustMoveFromStackKey=None,

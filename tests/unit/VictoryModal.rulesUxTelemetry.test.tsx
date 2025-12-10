@@ -89,7 +89,7 @@ function createGameState(players: Player[]): GameState {
     maxPlayers: players.length,
     totalRingsInPlay: 40,
     totalRingsEliminated: 20,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 }

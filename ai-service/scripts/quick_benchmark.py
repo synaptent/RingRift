@@ -101,7 +101,7 @@ def create_starting_state(board_type: BoardType, board_size: int) -> GameState:
         maxPlayers=2,
         totalRingsInPlay=38,
         totalRingsEliminated=0,
-        victoryThreshold=19,
+        victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold=33,
         chainCaptureState=None,
         mustMoveFromStackKey=None,

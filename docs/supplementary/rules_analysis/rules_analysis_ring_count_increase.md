@@ -264,7 +264,7 @@ An empirical study was conducted using 124 self-play games across multiple board
 3. The board becomes partitioned into enclosed regions
 4. Territory "snowballs" as partitions create defensible zones
 
-This means territory percentage grows _acceleratingly_ with game length. If games lasted significantly longer (e.g., through LPS requiring 3 rounds instead of 2), the balance could tip dramatically toward territory victories. The current low territory percentages reflect premature game termination, not a fundamental ceiling on territory accumulation.
+This means territory percentage grows _acceleratingly_ with game length. The current low territory percentages reflect premature game termination, not a fundamental ceiling on territory accumulation.
 
 ### Game Length Analysis
 
@@ -335,9 +335,9 @@ The territory system appears undertuned in current data, but this may be an arti
 - Territory accumulation is **non-linear** with game length
 - As moves increase, markers and collapsed spaces partition the board
 - Enclosed regions become territory, and this effect compounds
-- Longer games (via LPS 3-round requirement) may naturally enable territory victories
+- Longer games (via the LPS 2-round requirement) may naturally enable territory victories
 
-**Wait-and-see approach:** Implement LPS 2→3 rounds first, measure territory percentages in longer games. Only consider threshold adjustments if territory remains suppressed:
+**Wait-and-see approach:** Measure territory percentages with the current LPS 2-round requirement. Only consider threshold adjustments if territory remains suppressed:
 
 - Reducing territory threshold to `floor(totalSpaces / 3) + 1`
 - Awarding territory bonuses for controlling connected regions
@@ -347,7 +347,7 @@ The territory system appears undertuned in current data, but this may be an arti
 
 | Intervention                  | Difficulty | Impact  | Recommendation                          |
 | ----------------------------- | ---------- | ------- | --------------------------------------- |
-| LPS 2→3 rounds                | Low        | High    | **Do this first**                       |
+| LPS 2-round requirement       | Low        | High    | **Already implemented (RR-CANON-R172)** |
 | Ring count increase           | Medium     | Medium  | Secondary, if LPS change insufficient   |
 | Territory threshold reduction | Low        | Unknown | Wait—may self-correct with longer games |
 
@@ -370,7 +370,7 @@ Both alternative victory paths are suppressed by early LPS termination. The prop
 
 **Recommended path forward:**
 
-1. Extend LPS requirement from 2 to 2 consecutive rounds
+1. LPS now requires 2 consecutive rounds (RR-CANON-R172)
 2. Monitor victory type distribution—territory may self-correct as games lengthen
 3. Consider smaller ring count adjustments only if needed after measuring impact
 4. Defer territory threshold changes pending measurement

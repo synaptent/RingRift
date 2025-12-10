@@ -62,7 +62,7 @@ function createGameState(players: Player[]): GameState {
     maxPlayers: players.length,
     totalRingsInPlay: 36,
     totalRingsEliminated: 18,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 }
@@ -292,7 +292,9 @@ describe('VictoryModal – GameEndExplanation-driven copy', () => {
     // Falls back to ring elimination copy based on gameResult.reason
     expect(screen.getByText(/Alice Wins/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/Victory by eliminating more than half of all rings/i)
+      screen.getByText(
+        /Victory by eliminating a number of rings equal to the starting ring supply/i
+      )
     ).toBeInTheDocument();
   });
 

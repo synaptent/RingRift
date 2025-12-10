@@ -63,7 +63,7 @@ function makeGameState(overrides: Partial<GameState> = {}): GameState {
     history: [],
     spectators: [],
     boardType: 'square8',
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,
   };
 
@@ -128,8 +128,8 @@ describe('victoryLogic branch coverage', () => {
     describe('ring elimination victory', () => {
       it('detects ring elimination victory for player 1', () => {
         const state = makeGameState();
-        state.players[0].eliminatedRings = 19; // >= threshold
-        state.victoryThreshold = 19;
+        state.players[0].eliminatedRings = 18; // >= threshold (RR-CANON-R061: ringsPerPlayer)
+        state.victoryThreshold = 18;
 
         const result = evaluateVictory(state);
 
@@ -141,8 +141,8 @@ describe('victoryLogic branch coverage', () => {
 
       it('detects ring elimination victory for player 2', () => {
         const state = makeGameState();
-        state.players[1].eliminatedRings = 20; // > threshold
-        state.victoryThreshold = 19;
+        state.players[1].eliminatedRings = 19; // > threshold
+        state.victoryThreshold = 18; // RR-CANON-R061: ringsPerPlayer
 
         const result = evaluateVictory(state);
 
@@ -153,8 +153,8 @@ describe('victoryLogic branch coverage', () => {
 
       it('no victory when elimination below threshold', () => {
         const state = makeGameState();
-        state.players[0].eliminatedRings = 18; // < threshold
-        state.victoryThreshold = 19;
+        state.players[0].eliminatedRings = 17; // < threshold (RR-CANON-R061: ringsPerPlayer)
+        state.victoryThreshold = 18;
         addStack(state, pos(0, 0), 1, 1); // Stacks on board
 
         const result = evaluateVictory(state);

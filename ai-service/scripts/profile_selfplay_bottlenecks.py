@@ -49,25 +49,26 @@ def create_game_state(
     num_players: int = 2,
 ) -> GameState:
     """Create an initial game state for profiling."""
+    # RR-CANON-R061: victoryThreshold = ringsPerPlayer
     if board_type == BoardType.SQUARE8:
         size = 8
         rings_per_player = 18
-        victory_threshold = 19
+        victory_threshold = 18  # ringsPerPlayer
         territory_threshold = 33
     elif board_type == BoardType.SQUARE19:
         size = 19
-        rings_per_player = 36
-        victory_threshold = 37
+        rings_per_player = 48
+        victory_threshold = 48  # ringsPerPlayer
         territory_threshold = 181
     elif board_type == BoardType.HEXAGONAL:
         size = 13  # Canonical hex: size=13, radius=12
-        rings_per_player = 48
-        victory_threshold = 49  # >48 for 2p (96 total rings)
+        rings_per_player = 72
+        victory_threshold = 72  # ringsPerPlayer
         territory_threshold = 235  # >234 for 469 cells
     else:
         size = 8
         rings_per_player = 18
-        victory_threshold = 19
+        victory_threshold = 18  # ringsPerPlayer
         territory_threshold = 33
 
     now = datetime.now()

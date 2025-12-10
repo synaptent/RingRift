@@ -15,16 +15,16 @@ According to `RULES_CANONICAL_SPEC.md` (RR-CANON-R172):
 
 ### 1. Documentation Status
 
-- **Canonical rulebook:** `ringrift_complete_rules.md` §13.3 now explicitly describes the three-round requirement from `RULES_CANONICAL_SPEC.md`.
+- **Canonical rulebook:** `ringrift_complete_rules.md` §13.3 now explicitly describes the two-round requirement from `RULES_CANONICAL_SPEC.md`.
 - **Implementation spec:** `ringrift_compact_rules.md` §7.3 is explicit about two consecutive full rounds with required real actions each round.
-- **Human-readable rules:** `ringrift_simple_human_rules.md` §5.3 now mirrors the three-round flow.
-- **UX specs:** `docs/UX_RULES_COPY_SPEC.md` and `docs/UX_RULES_WEIRD_STATES_SPEC.md` now both call out the three-round requirement in tooltips/teaching copy.
+- **Human-readable rules:** `ringrift_simple_human_rules.md` §5.3 now mirrors the two-round flow.
+- **UX specs:** `docs/UX_RULES_COPY_SPEC.md` and `docs/UX_RULES_WEIRD_STATES_SPEC.md` now both call out the two-round requirement in tooltips/teaching copy.
 
 ### 2. UX Copy Status (Updated 2025-12-08)
 
 - ✅ **`src/client/components/TeachingOverlay.tsx`**: Updated to "TWO consecutive complete rounds"
 - ✅ **`src/client/adapters/gameViewModels.ts`**: Updated LPS banner copy to "two consecutive full rounds"
-- ✅ **`src/shared/teaching/teachingTopics.ts`**: Updated all LPS tip text to "THREE rounds" and "three-round countdown"
+- ✅ **`src/shared/teaching/teachingTopics.ts`**: Updated all LPS tip text to "TWO rounds" and "two-round countdown"
 - ✅ **`src/shared/teaching/teachingScenarios.ts`**: Updated learning objective to "TWO consecutive rounds"
 - ✅ **`src/client/components/GameHUD.tsx`**: Already correct ("two consecutive full rounds" in tooltip)
 

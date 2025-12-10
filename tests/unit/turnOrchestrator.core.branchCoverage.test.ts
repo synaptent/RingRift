@@ -73,7 +73,7 @@ describe('TurnOrchestrator core branch coverage', () => {
     timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
     maxPlayers: numPlayers,
     totalRingsInPlay: 36,
-    victoryThreshold: 19,
+    victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
   });
 
   const createMove = (
@@ -1066,8 +1066,8 @@ describe('TurnOrchestrator core branch coverage', () => {
   describe('victory detection', () => {
     it('handles game completion', () => {
       const state = createBaseState('movement');
-      state.players[0].eliminatedRings = 19; // Victory threshold
-      state.victoryThreshold = 19;
+      state.players[0].eliminatedRings = 18; // Victory threshold (RR-CANON-R061: ringsPerPlayer)
+      state.victoryThreshold = 18;
       state.board.stacks.set('3,3', {
         position: { x: 3, y: 3 },
         stackHeight: 1,

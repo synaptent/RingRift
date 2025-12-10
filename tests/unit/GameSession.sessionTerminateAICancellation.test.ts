@@ -96,7 +96,7 @@ describe('GameSession.terminate → AI cancellation integration', () => {
         history: [],
         rngSeed: 0,
         timeControl: { initialTime: 600, increment: 5, type: 'blitz' },
-        victoryThreshold: 19,
+        victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold: 33,
         totalRingsEliminated: 0,
       })),

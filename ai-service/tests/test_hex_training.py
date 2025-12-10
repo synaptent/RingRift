@@ -102,7 +102,7 @@ def create_hex_game_state(
         maxPlayers=2,
         totalRingsInPlay=96,
         totalRingsEliminated=0,
-        victoryThreshold=49,
+        victoryThreshold=72,  # RR-CANON-R061: ringsPerPlayer for hexagonal
         territoryVictoryThreshold=235,
         chainCaptureState=None,
         mustMoveFromStackKey=None,

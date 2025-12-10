@@ -118,7 +118,7 @@ describe('ClientSandboxEngine – AI stall completion normalization', () => {
       maxPlayers: 2,
       totalRingsInPlay: 10,
       totalRingsEliminated: 0,
-      victoryThreshold: 19,
+      victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
       territoryVictoryThreshold: 33,
       chainCapturePosition: { x: 7, y: 5 },
     } as any;
@@ -265,7 +265,7 @@ describe('ClientSandboxEngine – AI stall completion normalization', () => {
       maxPlayers: 2,
       totalRingsInPlay: 10,
       totalRingsEliminated: 0,
-      victoryThreshold: 19,
+      victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
       territoryVictoryThreshold: 33,
       chainCapturePosition: { x: 7, y: 5 },
     } as any;

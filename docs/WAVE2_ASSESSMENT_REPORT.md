@@ -65,9 +65,9 @@ Four new specification documents created:
 | [`AI_LADDER_CHANGE_GUARDRAILS.md`](./ai/AI_LADDER_CHANGE_GUARDRAILS.md:1)             | 617   | Change management controls                |
 | [`AI_HUMAN_CALIBRATION_STUDY_DESIGN.md`](./ai/AI_HUMAN_CALIBRATION_STUDY_DESIGN.md:1) | 926   | Human study protocol                      |
 
-### 2.4 LPS Three-Round Requirement (PROPAGATED)
+### 2.4 LPS Two-Round Requirement (PROPAGATED)
 
-The Last-Player-Standing victory condition now correctly requires three full rounds of exclusive real actions, propagated across:
+The Last-Player-Standing victory condition now correctly requires two full rounds of exclusive real actions, propagated across:
 
 - Rules documentation
 - Engine implementations (TS and Python)
