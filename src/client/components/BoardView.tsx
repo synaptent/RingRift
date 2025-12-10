@@ -2034,8 +2034,13 @@ export const BoardView: React.FC<BoardViewProps> = ({
           }
         }
 
+        // Mobile-responsive hex cell sizing for W3-12 (44px touch targets)
+        // Hex cells: 44px minimum for touch, 48px on md (vs square8's 44px/56px/80px)
+        // Using rounded-full for hex shape appearance
+        const hexCellSizeClasses = 'w-11 h-11 md:w-12 md:h-12'; // 44px → 48px
+
         const cellClasses = [
-          'relative w-8 h-8 md:w-9 md:h-9 mx-0 flex items-center justify-center text-[11px] md:text-xs rounded-full border',
+          `relative ${hexCellSizeClasses} mx-0 flex items-center justify-center text-[11px] md:text-xs rounded-full border`,
           'border-slate-600 text-slate-100',
           territoryClasses,
           decisionHighlightClass,
@@ -2069,7 +2074,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
           cellVM?.marker?.colorClass ??
           (hasMarkerBoard && marker ? getPlayerColors(marker.player).marker : null);
 
-        const markerOuterSizeClasses = 'w-4 h-4 md:w-5 md:h-5';
+        // Mobile-responsive hex marker sizing (scales with larger 44px cells)
+        const markerOuterSizeClasses = 'w-5 h-5 md:w-6 md:h-6';
         const label = getHexLabel(q, r);
 
         // Check if this cell is keyboard-focused (different from selected)
