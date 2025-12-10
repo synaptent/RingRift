@@ -53,30 +53,21 @@ VECTORS_DIR = (
 # all bundles under VECTORS_DIR).
 # Known-failing vectors that need fixture updates (phase/player tracking changes)
 # These vectors have stale JSON fixtures that diverge from current engine behavior.
-# See: https://github.com/anthropics/RingRift/issues/XXX for tracking.
+# The remaining vectors are multi-step territory sequences where the intermediate step
+# has inconsistent phase tracking between TS and Python.
 KNOWN_FAILING_VECTORS = {
-    # Hex chain capture: TS produces line_processing after segment1 (not chain_capture like square)
-    # The fixture has segment2 starting from line_processing but using continue_capture_segment
-    # which Python correctly rejects. Fixture needs investigation for hex geometry specifics.
+    # Hex chain capture: TS produces different phase after segment1 than square boards.
+    # Fixture has segment2 starting from line_processing but using continue_capture_segment
+    # which Python correctly rejects.
     "chain_capture.depth3.segment2.hexagonal",
-    # Territory processing player tracking changed
+    # Territory processing: multi-step sequences where step2 has phase/player tracking
+    # differences. Step1 passes (creates first region), step2 involves processing second
+    # region with different current_player expectations.
     "territory.square_two_regions_then_elim.step2_regionA",
     "territory.square19_two_regions_then_elim.step2_regionA",
     "territory.hex_two_regions_then_elim.step2_regionA",
     # Non-canonical fixture: lines must be formed by markers, not stacks (RR-CANON-R120)
     "territory_line.overlong_line.step1.square8",
-    # Forced elimination fixtures have phase mismatch: input phase is ring_placement but
-    # move type is eliminate_rings_from_stack. Fixture generator output state transition
-    # produces incorrect intermediate phases. Python correctly rejects per phase/move invariants.
-    "forced_elimination.monotone_chain.step2.square8",
-    "forced_elimination.monotone_chain.final.square8",
-    # Territory region detection edge cases: TS finds disconnected regions that Python doesn't
-    # because these fixtures use stack-only board configurations where the stack isn't actually
-    # disconnected (it's the only piece or doesn't form a valid disconnected region).
-    "forced_elimination.territory_no_host_fe.square8",
-    "hex_edge_case.corner_region.case1.hexagonal",
-    "territory_line.single_point_swing.square19",
-    "territory_line.decision_auto_exit.square8",
 }
 
 VECTOR_CATEGORIES = [

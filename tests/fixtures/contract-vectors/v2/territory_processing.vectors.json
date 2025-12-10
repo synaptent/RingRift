@@ -1,13 +1,11 @@
 {
   "version": "v2",
-  "generated": "2025-12-10T03:22:42.735Z",
+  "generated": "2025-12-10T08:13:56.115Z",
   "count": 1,
-  "categories": [
-    "territory_processing"
-  ],
+  "categories": ["territory_processing"],
   "vectors": [
     {
-      "id": "territory_processing.mizg1q5r.9uoo",
+      "id": "territory_processing.mizqg8pf.bvf3",
       "version": "v2",
       "category": "territory_processing",
       "description": "Territory region processing (two-space region, square8)",
@@ -19,7 +17,7 @@
         "sequence:territory.region.self_elim.square8"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:22:42.735Z",
+      "createdAt": "2025-12-10T08:13:56.115Z",
       "input": {
         "state": {
           "gameId": "contract-territory-composite",
@@ -32,10 +30,7 @@
                   "x": 0,
                   "y": 0
                 },
-                "rings": [
-                  1,
-                  1
-                ],
+                "rings": [1, 1],
                 "stackHeight": 2,
                 "capHeight": 2,
                 "controllingPlayer": 1
@@ -45,11 +40,7 @@
                   "x": 1,
                   "y": 0
                 },
-                "rings": [
-                  1,
-                  1,
-                  1
-                ],
+                "rings": [1, 1, 1],
                 "stackHeight": 3,
                 "capHeight": 3,
                 "controllingPlayer": 1
@@ -59,9 +50,7 @@
                   "x": 3,
                   "y": 3
                 },
-                "rings": [
-                  1
-                ],
+                "rings": [1],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 1
@@ -124,7 +113,7 @@
               "isDisconnected": true
             }
           ],
-          "timestamp": "2025-12-10T03:22:42.732Z",
+          "timestamp": "2025-12-10T08:13:56.112Z",
           "thinkTime": 0,
           "moveNumber": 1
         }
@@ -132,8 +121,8 @@
       "expectedOutput": {
         "status": "complete",
         "assertions": {
-          "currentPlayer": 2,
-          "currentPhase": "ring_placement",
+          "currentPlayer": 1,
+          "currentPhase": "game_over",
           "gameStatus": "completed",
           "stackCount": 1,
           "markerCount": 0,

@@ -1,11 +1,8 @@
 {
   "version": "v2",
-  "generated": "2025-12-10T04:34:56.517Z",
+  "generated": "2025-12-10T08:13:48.735Z",
   "count": 3,
-  "categories": [
-    "line_processing",
-    "territory_processing"
-  ],
+  "categories": ["line_processing", "territory_processing"],
   "vectors": [
     {
       "id": "territory_line.overlong_line.step1.square8",
@@ -22,7 +19,7 @@
         "overlong"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T04:34:56.515Z",
+      "createdAt": "2025-12-10T08:13:48.733Z",
       "input": {
         "state": {
           "gameId": "contract-territory-line-overlong-square8",
@@ -143,16 +140,9 @@
       "version": "v2",
       "category": "territory_processing",
       "description": "Single point territory swing (square19)",
-      "tags": [
-        "territory_processing",
-        "orchestrator",
-        "parity",
-        "territory",
-        "swing",
-        "endgame"
-      ],
+      "tags": ["territory_processing", "orchestrator", "parity", "territory", "swing", "endgame"],
       "source": "generated",
-      "createdAt": "2025-12-10T04:34:56.517Z",
+      "createdAt": "2025-12-10T08:13:48.735Z",
       "input": {
         "state": {
           "gameId": "contract-territory-line-swing-square19",
@@ -165,9 +155,7 @@
                   "x": 9,
                   "y": 9
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -247,7 +235,7 @@
         "endgame"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T04:34:56.517Z",
+      "createdAt": "2025-12-10T08:13:48.735Z",
       "input": {
         "state": {
           "gameId": "contract-territory-decision-auto-exit-square8",
