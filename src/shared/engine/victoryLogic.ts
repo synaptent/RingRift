@@ -101,6 +101,8 @@ export function evaluateVictory(state: GameState): VictoryResult {
 
   // 4) Trapped position stalemate: All active players have stacks but no legal actions.
   // This handles AI vs AI games that stall when both players are blocked.
+  // Per RR-CANON-R072/R100/R203: players with stacks can ALWAYS act - either with
+  // real moves (placement/movement/capture) or via forced elimination.
   if (state.board.stacks.size > 0) {
     let somePlayerCanAct = false;
 
@@ -123,7 +125,10 @@ export function evaluateVictory(state: GameState): VictoryResult {
         break;
       }
 
-      if (playerHasStacks && !hasForcedEliminationAction(state, p.playerNumber)) {
+      // A player with stacks can always act: either with real moves (movement/capture)
+      // or via forced elimination (RR-CANON-R072/R100). We only reach stalemate when
+      // ALL players with stacks have neither real moves NOR forced elimination.
+      if (playerHasStacks) {
         somePlayerCanAct = true;
         break;
       }

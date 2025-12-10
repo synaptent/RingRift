@@ -61,6 +61,8 @@ import {
   // Forced elimination helpers
   enumerateForcedEliminationOptions,
   applyForcedEliminationForPlayer,
+  // Global action helpers
+  playerHasAnyRings,
 } from '../../shared/engine';
 import type { LpsTrackingState } from '../../shared/engine';
 import {
@@ -1664,6 +1666,7 @@ export class ClientSandboxEngine {
         return this.gameState;
       },
       getNextPlayerNumber: (state, current) => this.getNextPlayerNumber(current),
+      playerHasAnyRings: (state, player) => playerHasAnyRings(state, player),
     };
   }
 

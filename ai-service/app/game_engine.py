@@ -1200,15 +1200,54 @@ class GameEngine:
         return False
 
     @staticmethod
+    def _player_has_any_rings(game_state: GameState, player: int) -> bool:
+        """
+        Check if a player has any rings anywhere (controlled, buried, or in hand).
+
+        A player with no rings anywhere is permanently eliminated and should
+        be skipped in turn rotation (RR-CANON-R201). A player who has rings
+        (even if only buried in stacks controlled by other players) is NOT
+        permanently eliminated - they may be "recovery-eligible" and should
+        receive turns.
+
+        This is different from _player_has_turn_material():
+        - _player_has_turn_material: controlled stacks OR rings in hand
+        - _player_has_any_rings: any rings anywhere (including buried)
+        """
+        # Check rings in hand first (fast path)
+        player_state = next(
+            (p for p in game_state.players if p.player_number == player),
+            None,
+        )
+        if player_state is not None and player_state.rings_in_hand > 0:
+            return True
+
+        # Check all stacks for any ring belonging to this player
+        # This includes both controlled stacks (player is on top) AND
+        # buried rings (player's rings inside stacks controlled by others)
+        for stack in game_state.board.stacks.values():
+            if stack.stack_height <= 0:
+                continue
+            # The rings list contains player numbers from bottom to top
+            if stack.rings and player in stack.rings:
+                return True
+
+        return False
+
+    @staticmethod
     def _rotate_to_next_active_player(game_state: GameState) -> None:
         """
-        Rotate to the next player who has turn-material, skipping eliminated players.
+        Rotate to the next player who has any rings, skipping permanently eliminated players.
 
         This is a lighter-weight rotation than _end_turn: it does NOT apply
         forced elimination or complex per-turn state updates. It simply finds
-        the next player in seat order who still has turn-material (stacks or
-        rings in hand per RR-CANON-R201), and starts their turn in the
-        appropriate phase.
+        the next player in seat order who still has any rings anywhere
+        (controlled, buried, or in hand per RR-CANON-R201), and starts their
+        turn in the appropriate phase.
+
+        Players without any rings anywhere are permanently eliminated and are
+        skipped. Players who have rings (even if only buried in stacks
+        controlled by others) are NOT skipped - they may be recovery-eligible.
 
         Used after PROCESS_TERRITORY_REGION and ELIMINATE_RINGS_FROM_STACK
         where forced elimination should not be triggered at the transition.
@@ -1235,22 +1274,24 @@ class GameEngine:
         while skips < max_skips:
             candidate = players[idx]
 
-            # Check if candidate has turn-material (RR-CANON-R201):
-            # - controls at least one stack, OR
-            # - has rings in hand
-            # Players without turn-material are "temporarily eliminated for
-            # turn rotation" and must be skipped.
-            has_material = GameEngine._player_has_turn_material(
+            # Check if candidate has any rings anywhere (RR-CANON-R201):
+            # - rings in controlled stacks (top ring is player's colour)
+            # - rings buried inside stacks controlled by others
+            # - rings in hand (not yet placed)
+            # Players without ANY rings are permanently eliminated and must be
+            # skipped. Players with buried rings but no stacks/hand are NOT
+            # skipped - they may be recovery-eligible.
+            has_any_rings = GameEngine._player_has_any_rings(
                 game_state, candidate.player_number
             )
 
-            if has_material:
+            if has_any_rings:
                 game_state.current_player = candidate.player_number
                 game_state.must_move_from_stack_key = None
 
-                # Start phase depends on rings in hand (TS parity):
-                # - ringsInHand > 0: start in RING_PLACEMENT
-                # - ringsInHand == 0: start in MOVEMENT
+                # Per RR-CANON, players with rings_in_hand > 0 start in RING_PLACEMENT.
+                # Players with rings_in_hand == 0 skip directly to MOVEMENT (they may
+                # have recovery moves available if eligible). This matches TS semantics.
                 if candidate.rings_in_hand > 0:
                     game_state.current_phase = GamePhase.RING_PLACEMENT
                 else:
@@ -1261,11 +1302,11 @@ class GameEngine:
                 )
                 return
 
-            # Player has no turn-material; skip to next seat
+            # Player has no rings anywhere (permanently eliminated); skip to next seat
             idx = (idx + 1) % num_players
             skips += 1
 
-        # All players exhausted (no one has turn-material); keep current_player
+        # All players exhausted (no one has any rings); keep current_player
         # and set phase to RING_PLACEMENT to allow _check_victory to resolve
         # the global stalemate via canonical no-action moves.
         game_state.current_phase = GamePhase.RING_PLACEMENT
@@ -1279,15 +1320,17 @@ class GameEngine:
         This mirrors the TS TurnEngine "territory_processing" end-of-turn
         behaviour (RR-CANON-R201):
 
-        - Rotate to the next player in table order who has turn-material.
-        - Skip players without turn-material (no stacks AND no rings in hand);
-          they are "temporarily eliminated for turn rotation".
-        - For the next seat with turn-material:
+        - Rotate to the next player in table order who has any rings anywhere
+          (controlled, buried, or in hand).
+        - Skip players without ANY rings (permanently eliminated).
+        - Players with buried rings but no stacks/hand are NOT skipped - they
+          may be recovery-eligible.
+        - For the next player with rings:
           * If they have rings in hand, start in RING_PLACEMENT.
-          * If they have no rings in hand (but have stacks), start in MOVEMENT.
-        - If no players have any turn-material at all, leave current_player
-          unchanged and allow _check_victory to resolve global stalemate via
-          tie-breakers.
+          * If they have no rings in hand, start in MOVEMENT (where recovery
+            moves may be available if eligible).
+        - If no players have any rings at all, leave current_player unchanged
+          and allow _check_victory to resolve global stalemate via tie-breakers.
 
         Args:
             game_state: The game state to update.
@@ -1322,8 +1365,9 @@ class GameEngine:
                 current_index = i
                 break
 
-        # Find the next player with turn-material (RR-CANON-R201).
-        # Skip players without turn-material (no stacks AND no rings in hand).
+        # Find the next player with any rings anywhere (RR-CANON-R201).
+        # Skip players without ANY rings (permanently eliminated).
+        # Players with buried rings but no stacks/hand are NOT skipped.
         max_skips = num_players
         skips = 0
         idx = (current_index + 1) % num_players
@@ -1331,18 +1375,18 @@ class GameEngine:
         while skips < max_skips:
             candidate = players[idx]
 
-            # Check if candidate has turn-material
-            has_material = GameEngine._player_has_turn_material(
+            # Check if candidate has any rings anywhere (controlled, buried, or in hand)
+            has_any_rings = GameEngine._player_has_any_rings(
                 game_state, candidate.player_number
             )
 
-            if has_material:
+            if has_any_rings:
                 game_state.current_player = candidate.player_number
                 game_state.must_move_from_stack_key = None
 
-                # Start phase depends on rings in hand (TS parity):
-                # - ringsInHand > 0: start in RING_PLACEMENT
-                # - ringsInHand == 0: start in MOVEMENT
+                # Per RR-CANON, players with rings_in_hand > 0 start in RING_PLACEMENT.
+                # Players with rings_in_hand == 0 skip directly to MOVEMENT (they may
+                # have recovery moves available if eligible). This matches TS semantics.
                 if candidate.rings_in_hand > 0:
                     game_state.current_phase = GamePhase.RING_PLACEMENT
                 else:
@@ -1353,11 +1397,11 @@ class GameEngine:
                 )
                 return
 
-            # Player has no turn-material; skip to next seat
+            # Player has no rings anywhere (permanently eliminated); skip to next seat
             idx = (idx + 1) % num_players
             skips += 1
 
-        # All players exhausted (no one has turn-material); keep current_player
+        # All players exhausted (no one has any rings); keep current_player
         # and set phase to allow _check_victory to resolve the global stalemate.
         game_state.must_move_from_stack_key = None
 
@@ -1371,13 +1415,15 @@ class GameEngine:
         When ``STRICT_NO_MOVE_INVARIANT`` is enabled, any ACTIVE state must
         expose at least one legal action (interactive move **or** pending
         phase requirement) for ``current_player``, after accounting for the
-        defensive rotation used for temporarily eliminated players.
+        defensive rotation used for permanently eliminated players.
 
         Concretely:
-        - Per RR-CANON-R201, players without turn-material (no stacks AND no
-          rings in hand) are "temporarily eliminated for turn rotation" and
-          are skipped. If current_player has no turn-material, we rotate to
-          the next player with turn-material via _end_turn.
+        - Per RR-CANON-R201, players without ANY rings anywhere (controlled,
+          buried, or in hand) are permanently eliminated and are skipped.
+          If current_player has no rings anywhere, we rotate to the next
+          player with rings via _end_turn.
+        - Players with buried rings but no stacks/hand are NOT skipped - they
+          may be recovery-eligible and should receive turns.
         - For the resulting ``current_player``, if
           ``GameEngine.get_valid_moves(game_state, current_player)`` returns
           at least one move, the invariant holds.
@@ -1400,12 +1446,12 @@ class GameEngine:
 
         current_player = game_state.current_player
 
-        # First, ensure that fully eliminated players are not left as the
-        # active player in ACTIVE states. If the current player has no
-        # turn-material at all (no stacks and no rings in hand), attempt a
-        # single defensive rotation via _end_turn before treating the shape as
-        # an invariant violation.
-        if not ga.has_turn_material(game_state, current_player):
+        # First, ensure that permanently eliminated players are not left as the
+        # active player in ACTIVE states. If the current player has no rings
+        # anywhere (controlled, buried, or in hand), attempt a single defensive
+        # rotation via _end_turn before treating the shape as an invariant
+        # violation.
+        if not GameEngine._player_has_any_rings(game_state, current_player):
             previous_player = current_player
             GameEngine._end_turn(game_state)
 
@@ -1413,13 +1459,13 @@ class GameEngine:
             if game_state.game_status != GameStatus.ACTIVE:
                 return
 
-            # If we advanced to a different player who now has turn-material and
+            # If we advanced to a different player who now has any rings and
             # is not in an ANM state, the invariant holds.
             if game_state.current_player != previous_player:
                 rotated_player = game_state.current_player
-                # If rotation found a player with material and the resulting
+                # If rotation found a player with rings and the resulting
                 # state is not ANM, accept it without further checks.
-                if ga.has_turn_material(game_state, rotated_player) and not ga.is_anm_state(game_state):
+                if GameEngine._player_has_any_rings(game_state, rotated_player) and not ga.is_anm_state(game_state):
                     return
 
         # Re-evaluate the (possibly rotated) current player and consult the

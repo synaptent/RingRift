@@ -575,6 +575,7 @@ export {
   isANMState,
   computeSMetric,
   computeTMetric,
+  playerHasAnyRings,
 } from './globalActions';
 
 export type { ForcedEliminationOutcome, ForcedEliminationOption } from './globalActions';
