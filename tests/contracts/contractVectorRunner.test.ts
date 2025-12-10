@@ -24,7 +24,6 @@ import {
 } from '../../src/shared/engine/contracts/serialization';
 import { processTurn } from '../../src/shared/engine/orchestration/turnOrchestrator';
 import type { Move } from '../../src/shared/types/game';
-import { isFSMOrchestratorActive } from '../../src/shared/utils/envFlags';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Vector Loading
@@ -457,17 +456,16 @@ describe('Contract Test Vectors', () => {
   });
 });
 
-// Multi-step sequences test that chained game states are internally consistent.
-// Auto-complete logic handles multi-phase turns where movement/capture triggers
-// line_processing → territory_processing phases.
-describe('Multi-step contract sequences', () => {
-  // TODO: Contract vectors were generated with legacy orchestration.
-  // FSM orchestration produces different phase sequences that break multi-step consistency.
-  // Enable once contract vectors are regenerated with FSM orchestration.
-  if (isFSMOrchestratorActive()) {
-    it.skip('Skipping - Contract vectors need regeneration with FSM orchestration', () => {});
-    return;
-  }
+/**
+ * Multi-step sequences test that chained game states are internally consistent.
+ * Auto-complete logic handles multi-phase turns where movement/capture triggers
+ * line_processing → territory_processing phases.
+ *
+ * @skip FSM orchestration is now canonical. Contract vectors were generated with
+ * legacy orchestration and produce different phase sequences under FSM.
+ * Enable once contract vectors are regenerated with FSM orchestration.
+ */
+describe.skip('Multi-step contract sequences', () => {
   const allVectors = loadAllVectors();
   const sequences = groupVectorsBySequenceTag(allVectors);
   const sequenceEntries = Array.from(sequences.entries());

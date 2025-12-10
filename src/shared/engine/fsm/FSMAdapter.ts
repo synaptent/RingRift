@@ -136,9 +136,12 @@ export function moveToEvent(move: Move): TurnEvent | null {
     case 'forced_elimination':
       return { type: 'FORCED_ELIMINATE', target: move.to };
 
-    // Resign (allowed from any phase)
+    // Resign and Timeout (allowed from any phase, cause game termination)
     case 'resign':
       return { type: 'RESIGN', player: move.player };
+
+    case 'timeout':
+      return { type: 'TIMEOUT', player: move.player };
 
     // Meta/swap (not FSM events)
     case 'swap_sides':

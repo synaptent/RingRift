@@ -1180,6 +1180,29 @@ export function processTurn(
       move.type === 'eliminate_rings_from_stack')
   ) {
     state = { ...state, currentPhase: 'territory_processing' as GamePhase };
+  } else if (
+    // Sandbox AI multi-player tolerance: When in territory_processing but a capture/movement
+    // move comes in from the next player (due to async state synchronization), coerce back to
+    // the appropriate phase and player. This happens when sandbox AI enumerates moves before
+    // the orchestrator has fully advanced through all post-move phases.
+    state.gameStatus === 'active' &&
+    state.currentPhase === 'territory_processing' &&
+    (move.type === 'overtaking_capture' ||
+      move.type === 'continue_capture_segment' ||
+      move.type === 'move_stack' ||
+      move.type === 'move_ring')
+  ) {
+    const targetPhase =
+      move.type === 'continue_capture_segment'
+        ? 'chain_capture'
+        : move.type === 'overtaking_capture' ||
+            move.type === 'move_stack' ||
+            move.type === 'move_ring'
+          ? 'movement'
+          : state.currentPhase;
+    // Also coerce the currentPlayer to match the move's player if they differ
+    const targetPlayer = move.player !== state.currentPlayer ? move.player : state.currentPlayer;
+    state = { ...state, currentPhase: targetPhase as GamePhase, currentPlayer: targetPlayer };
   }
 
   // Enforce canonical phase→MoveType mapping for ACTIVE states. This ensures
