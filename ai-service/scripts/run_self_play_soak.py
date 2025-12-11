@@ -709,9 +709,9 @@ def run_self_play_soak(
     # Default is True (lean enabled), --no-lean-db disables it
     lean_db_enabled = getattr(args, "lean_db", True) and not getattr(args, "no_lean_db", False)
 
-    # Include training data (moves + initial_state) in JSONL output for
-    # instances that can't use database recording (e.g., Vast.ai with limited disk)
-    include_training_data = getattr(args, "include_training_data", False)
+    # Include training data (moves + initial_state) in JSONL output.
+    # Enabled by default; use --no-include-training-data to disable.
+    include_training_data = getattr(args, "include_training_data", True) and not getattr(args, "no_include_training_data", False)
 
     env_config = TrainingEnvConfig(
         board_type=board_type,
@@ -2189,11 +2189,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--include-training-data",
         action="store_true",
+        default=True,
         help=(
             "Include training data (moves and initial_state) in JSONL output. "
             "This allows reconstructing full games from JSONL alone without a database. "
-            "Increases JSONL file size but enables Vast.ai instances to generate "
-            "training-ready data without database overhead."
+            "Enabled by default. Use --no-include-training-data to disable."
+        ),
+    )
+    parser.add_argument(
+        "--no-include-training-data",
+        action="store_true",
+        help=(
+            "Disable including training data (moves and initial_state) in JSONL output. "
+            "Reduces JSONL file size but makes games unusable for training without a database."
         ),
     )
     return parser.parse_args()
