@@ -2021,8 +2021,7 @@ export function compareFSMWithLegacy(
   fsmResult: FSMOrchestrationResult,
   legacyPhase: string,
   legacyPlayer: number,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  nextPlayerRingsInHand?: number
+  _nextPlayerRingsInHand?: number
 ): {
   diverged: boolean;
   phaseDiverged: boolean;

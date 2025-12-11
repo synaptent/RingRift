@@ -254,7 +254,11 @@ export function invalidOutcome<T = void>(
   reason: string,
   context?: Record<string, unknown>
 ): ValidationOutcome<T> {
-  return { valid: false, code, reason, context };
+  // Only include context if provided (exactOptionalPropertyTypes compliance)
+  if (context !== undefined) {
+    return { valid: false, code, reason, context };
+  }
+  return { valid: false, code, reason };
 }
 
 /**

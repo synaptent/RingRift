@@ -2336,7 +2336,7 @@ function processPostMovePhases(
     );
 
     // Skip permanently eliminated players (RR-CANON-R201)
-    const { nextPlayerIndex, nextPlayer } = computeNextNonEliminatedPlayer(
+    const { nextPlayer } = computeNextNonEliminatedPlayer(
       currentState,
       currentPlayerIndex,
       players
@@ -2690,11 +2690,7 @@ function processPostMovePhases(
   const currentPlayerIndex = players.findIndex(
     (p) => p.playerNumber === currentState.currentPlayer
   );
-  const { nextPlayerIndex, nextPlayer } = computeNextNonEliminatedPlayer(
-    currentState,
-    currentPlayerIndex,
-    players
-  );
+  const { nextPlayer } = computeNextNonEliminatedPlayer(currentState, currentPlayerIndex, players);
   // Per RR-CANON-R073: ALL players start in ring_placement without exception.
   // NO PHASE SKIPPING - players with ringsInHand == 0 will emit no_placement_action.
   // When no legal placements exist (ringsInHand == 0), hosts must emit an

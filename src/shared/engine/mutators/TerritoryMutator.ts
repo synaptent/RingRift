@@ -1,10 +1,6 @@
 import { GameState, ProcessTerritoryAction, EliminateStackAction } from '../types';
 import { positionToString } from '../../types/game';
-import {
-  eliminateFromStack,
-  getRingsToEliminate,
-  type EliminationContext,
-} from '../aggregates/EliminationAggregate';
+import { eliminateFromStack, type EliminationContext } from '../aggregates/EliminationAggregate';
 
 export function mutateProcessTerritory(
   state: GameState,
