@@ -140,11 +140,12 @@ describe('territoryProcessing branch coverage', () => {
 
     it('handles empty region', () => {
       const board = makeBoardState();
-      addStack(board, pos(0, 0), 1, [1]);
+      // RR-CANON-R082: Must be height >= 2 to be an eligible cap target
+      addStack(board, pos(0, 0), 1, [1, 1]);
       const region = makeTerritory([], 1);
       const ctx: TerritoryProcessingContext = { player: 1 };
 
-      // Stack is outside region (since region is empty)
+      // Stack is outside region (since region is empty) and is eligible (height 2)
       expect(canProcessTerritoryRegion(board, region, ctx)).toBe(true);
     });
   });
@@ -171,7 +172,8 @@ describe('territoryProcessing branch coverage', () => {
 
     it('keeps processable regions', () => {
       const board = makeBoardState();
-      addStack(board, pos(0, 0), 1, [1]); // Outside both regions
+      // RR-CANON-R082: Must be height >= 2 to be an eligible cap target
+      addStack(board, pos(0, 0), 1, [1, 1]); // Outside both regions, height 2
       const region1 = makeTerritory([pos(5, 5)], 1);
       const region2 = makeTerritory([pos(6, 6)], 1);
       const ctx: TerritoryProcessingContext = { player: 1 };

@@ -2868,9 +2868,9 @@ class GameEngine:
             )
 
         # For overlength lines, enumerate all CHOOSE_LINE_REWARD options:
-        # - Option 1 (COLLAPSE_ALL): collapse entire line, eliminate entire cap
+        # - Option 1 (COLLAPSE_ALL): collapse entire line, eliminate one ring
         # - Option 2 (MINIMUM_COLLAPSE): collapse exactly required_len consecutive
-        #   markers, no cap elimination. Generate one move per valid segment.
+        #   markers, no ring elimination. Generate one move per valid segment.
         #
         # This mirrors TS LineAggregate.enumerateChooseLineRewardMoves.
         for idx, line in enumerate(player_lines):

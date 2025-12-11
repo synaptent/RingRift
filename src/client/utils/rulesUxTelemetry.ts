@@ -470,7 +470,7 @@ export const TEACHING_TOPICS_COPY: Record<string, TeachingTopicCopy> = {
     topicId: 'line_bonus',
     heading: 'Lines and Rewards',
     // UX_RULES_COPY_SPEC.md §6 – TeachingOverlay – Lines description
-    body: 'Lines are built from your markers. When a straight line of your markers reaches the minimum length for this board, it becomes a scoring line: you collapse markers in that line into permanent Territory and, on many boards, must pay the cost of eliminating the entire cap from an eligible stack you control.',
+    body: 'Lines are built from your markers. When a straight line of your markers reaches the minimum length for this board, it becomes a scoring line: you collapse markers in that line into permanent Territory and must pay the cost of eliminating one ring from a stack you control.',
   },
   territory: {
     topicId: 'territory',

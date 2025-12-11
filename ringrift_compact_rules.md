@@ -90,7 +90,8 @@ At minimum, your engine must maintain:
   - `stackHeight = rings.length`
   - `controllingPlayer = rings[top]`
   - `capHeight = number of consecutive rings from the top that equal controllingPlayer`.
-  - **Eliminating entire cap:** When rules require eliminating the "entire cap" or "stack cap", eliminate all `capHeight` rings from the top. For mixed-color stacks, this exposes buried rings of other colors. For single-color stacks with height > 1, this eliminates all rings (removing the stack).
+  - **Single-ring elimination (for line processing):** When rules require eliminating "one ring" for line processing, remove the top ring from any controlled stack (including height-1 standalone rings). Any controlled stack is an eligible target.
+  - **Entire cap elimination (for territory processing and forced elimination):** When rules require eliminating the "entire cap" or "stack cap", eliminate all `capHeight` rings from the top. For territory processing only, eligible targets must be either multicolour stacks or single-colour stacks of height > 1 (height-1 standalone rings are NOT eligible for territory processing). For mixed-color stacks, this exposes buried rings of other colors. For single-color stacks with height > 1, this eliminates all rings (removing the stack).
 
 You must maintain `capHeight` and `stackHeight` correctly after **placement**, **movement**, **overtaking**, and **elimination**.
 
@@ -340,17 +341,17 @@ Two cases:
 
 1. **Exact length: `len == requiredLen`**
    - Collapse **all markers in L** to `collapsedSpaces[pos] = P` and remove markers.
-   - `P` must **eliminate** the **entire cap** (all consecutive top rings of `P`'s colour) from an eligible controlled stack. Eligible caps: (1) multicolour stacks `P` controls (with other players' rings buried beneath), or (2) single-colour stacks of height > 1 consisting entirely of `P`'s colour. Height-1 standalone rings are NOT eligible.
-   - All eliminated rings update `eliminatedRings` counters and victory totals.
+   - `P` must **eliminate one ring** from the top of any stack `P` controls (including height-1 standalone rings). Any controlled stack is an eligible target.
+   - The eliminated ring updates `eliminatedRings` counters and victory totals.
 
 2. **Overlength: `len > requiredLen`**
    - `P` chooses **Option 1** or **Option 2**:
      - **Option 1 (max territory):**
        - Collapse **all** `len` markers in `L` to `P`'s collapsed spaces.
-       - Eliminate the entire cap from one of `P`'s controlled stacks as above.
+       - Eliminate one ring from a controlled stack as above.
      - **Option 2 (ring preservation):**
        - Choose **any contiguous segment** of `requiredLen` positions within `L`.
-       - Collapse exactly those `requiredLen` markers to `P`’s collapsed spaces.
+       - Collapse exactly those `requiredLen` markers to `P`'s collapsed spaces.
        - **No rings are eliminated**.
 
 Collapsed spaces are permanent: they cannot hold stacks or markers and act as obstacles for movement and capture.
@@ -430,7 +431,7 @@ After all line processing is complete:
 
 4. **Mandatory self-elimination:**
    - `P` must eliminate the **entire cap** (all consecutive top rings of `P`'s colour) from a `P`-controlled stack **outside** this region.
-   - **Cap eligibility:** An eligible stack cap for `P` must be either: (1) a **multicolour stack** that `P` controls (with other players' rings buried beneath `P`'s cap), or (2) a **single-colour stack of height > 1** consisting entirely of `P`'s colour. A height-1 standalone ring is **NOT** an eligible cap target for line/territory processing. For multicolour stacks (e.g., `[P, P, Q, P]`), eliminating the cap (top 2 rings) exposes buried rings. For single-colour stacks (e.g., `[P, P, P]`), the entire stack is eliminated.
+   - **Cap eligibility for territory processing:** An eligible stack cap for `P` must be either: (1) a **multicolour stack** that `P` controls (with other players' rings buried beneath `P`'s cap), or (2) a **single-colour stack of height > 1** consisting entirely of `P`'s colour. A height-1 standalone ring is **NOT** an eligible cap target for territory processing. For multicolour stacks (e.g., `[P, P, Q, P]`), eliminating the cap (top 2 rings) exposes buried rings. For single-colour stacks (e.g., `[P, P, P]`), the entire stack is eliminated. Note: Line processing has different, less restrictive rules—see Section 5.3.
    - **Exception for recovery actions:** When territory processing is triggered by a recovery action, the self-elimination cost is one buried ring extraction per region, not an entire stack cap.
 
 5. Update all ring/territory counters and derived stats.

@@ -1311,10 +1311,10 @@ export class GameEngine {
    *
    * For exact required length (4 for 8x8, 5 for 19x19/hex):
    *   - Collapse all markers
-   *   - Eliminate entire cap from controlled stack
+   *   - Eliminate one ring from any controlled stack
    *
    * For longer lines (5+ for 8x8, 6+ for 19x19/hex):
-   *   - Option 1: Collapse all + eliminate entire cap
+   *   - Option 1: Collapse all + eliminate one ring
    *   - Option 2: Collapse required markers only, no elimination
    *
    * Canonical line processing is now handled via applyProcessLineDecision /

@@ -579,7 +579,13 @@ export function applyEliminateRingsFromStackDecision(
     return { nextState: state };
   }
 
-  const remainingRings = existingStack.rings.slice(capHeight);
+  // Determine how many rings to eliminate based on context (RR-CANON-R022, R122):
+  // - 'line': Eliminate exactly ONE ring (per RR-CANON-R122)
+  // - 'territory' or 'forced' or undefined: Eliminate entire cap (per RR-CANON-R145, R100)
+  const eliminationContext = move.eliminationContext;
+  const ringsToEliminate = eliminationContext === 'line' ? 1 : capHeight;
+
+  const remainingRings = existingStack.rings.slice(ringsToEliminate);
 
   // Clone board/maps so callers see a functional-style update.
   const nextBoard = {
@@ -604,13 +610,13 @@ export function applyEliminateRingsFromStackDecision(
     nextBoard.stacks.delete(key);
   }
 
-  nextBoard.eliminatedRings[player] = (nextBoard.eliminatedRings[player] || 0) + capHeight;
+  nextBoard.eliminatedRings[player] = (nextBoard.eliminatedRings[player] || 0) + ringsToEliminate;
 
   const nextPlayers = state.players.map((p) =>
     p.playerNumber === player
       ? {
           ...p,
-          eliminatedRings: p.eliminatedRings + capHeight,
+          eliminatedRings: p.eliminatedRings + ringsToEliminate,
         }
       : p
   );
@@ -619,7 +625,7 @@ export function applyEliminateRingsFromStackDecision(
     ...state,
     board: nextBoard,
     players: nextPlayers,
-    totalRingsEliminated: state.totalRingsEliminated + capHeight,
+    totalRingsEliminated: state.totalRingsEliminated + ringsToEliminate,
   };
 
   return { nextState };

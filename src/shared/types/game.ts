@@ -493,6 +493,16 @@ export interface Move {
     capHeight: number;
     totalHeight: number;
   };
+  /**
+   * For `eliminate_rings_from_stack` moves: the context that triggered
+   * the elimination. Determines how many rings to eliminate:
+   * - 'line': Eliminate exactly ONE ring (any controlled stack eligible)
+   * - 'territory': Eliminate entire cap (only eligible stacks: multicolor or height > 1)
+   * - 'forced': Eliminate entire cap (any controlled stack eligible)
+   * Per RR-CANON-R022 and R122, line processing only requires single-ring
+   * elimination while territory processing requires entire cap elimination.
+   */
+  eliminationContext?: 'line' | 'territory' | 'forced';
 
   /** Wall-clock timestamp when the move was created/applied. */
   timestamp: Date;

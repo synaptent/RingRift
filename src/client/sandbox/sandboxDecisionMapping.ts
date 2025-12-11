@@ -59,7 +59,7 @@ export function mapPendingDecisionToPlayerChoice(
       // Use context description if available, otherwise provide a helpful default
       const eliminationPrompt =
         decision.context?.description ||
-        'You must eliminate the entire cap from one of your stacks. This is required to complete a line reward or territory claim.';
+        'You must eliminate a ring from one of your stacks. For lines: one ring from any stack. For territory: the entire cap from an eligible stack.';
 
       const choice: RingEliminationChoice = {
         id: generateChoiceId('ring-elimination'),

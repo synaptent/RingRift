@@ -245,12 +245,12 @@ export const LINE_TERRITORY_ORDER_TIPS: TeachingTip[] = [
     addressesGap: 'GAP-LINE-03',
   },
   {
-    text: 'OPTION 1 vs OPTION 2: For overlength lines (6+ on square, 7+ on hex), you choose: collapse ALL markers (costs entire cap) or collapse MINIMUM length (free but less territory).',
+    text: 'OPTION 1 vs OPTION 2: For overlength lines (6+ on square, 7+ on hex), you choose: collapse ALL markers (costs one ring) or collapse MINIMUM length (free but less territory).',
     category: 'options',
     emphasis: 'important',
   },
   {
-    text: 'Line collapse affects what territory regions form. Choosing Option 1 (full collapse) may create more territory but costs an entire cap; Option 2 (minimum) is safely free.',
+    text: 'Line collapse affects what territory regions form. Choosing Option 1 (full collapse) may create more territory but costs one ring; Option 2 (minimum) is safely free.',
     category: 'strategy',
     emphasis: 'normal',
   },

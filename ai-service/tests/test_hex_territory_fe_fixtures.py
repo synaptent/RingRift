@@ -75,7 +75,7 @@ def create_hex_territory_fe_board_hx_a() -> tuple[GameState, Territory]:
         (0, 0, 0)  -> P1 internal stack, height 1
         (1, -1, 0) -> P2 internal stack, height 2
         (0, -1, 1) -> P2 internal stack, height 1
-        (2, -2, 0) -> P1 stack outside the region, height 1
+        (2, -2, 0) -> P1 stack outside the region, height 2 (eligible cap target)
     - No collapsed spaces.
 
     Territory region for HX-A / Player 1:
@@ -120,13 +120,14 @@ def create_hex_territory_fe_board_hx_a() -> tuple[GameState, Territory]:
         controllingPlayer=2,
     )
 
-    # P1 stack outside the region at (2,-2,0), height 1
+    # P1 stack outside the region at (2,-2,0), height 2
+    # RR-CANON-R082: Must be height >= 2 to be an eligible cap target.
     pos_p1_outside = Position(x=2, y=-2, z=0)
     board.stacks[pos_p1_outside.to_key()] = RingStack(
         position=pos_p1_outside,
-        rings=[1],
-        stackHeight=1,
-        capHeight=1,
+        rings=[1, 1],
+        stackHeight=2,
+        capHeight=2,
         controllingPlayer=1,
     )
 

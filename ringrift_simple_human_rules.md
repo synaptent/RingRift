@@ -244,15 +244,15 @@ For each line that is eligible, you process it one at a time in an order
 1. **Lines of exactly required length**:
    - Replace all markers in that line with **collapsed spaces** of your
      colour.
-   - You must **eliminate** the **entire cap** (all consecutive top rings of your colour) from an eligible controlled stack. Eligible caps: (1) multicolour stacks you control (with other players' rings buried beneath), or (2) single-colour stacks of height > 1 consisting entirely of your colour. Height-1 standalone rings are NOT eligible.
-   - **Exception for recovery actions:** When a line is formed via recovery, you pay one buried ring extraction instead of eliminating an entire cap.
+   - You must **eliminate one ring** from the top of any stack you control (including height-1 standalone rings). Any controlled stack is an eligible target.
+   - **Exception for recovery actions:** When a line is formed via recovery, you pay one buried ring extraction instead.
 
 2. **Overlength lines** :
    - If you form a line longer than the minimum required length, you choose between:
      - **Option 1 (full reward)**:
        - Collapse the **entire line** to your territory.
-       - Eliminate the **entire cap** (all consecutive top rings of your colour) from one of your controlled stacks.
-       - **Exception for recovery actions:** When a line is formed via recovery, you pay one buried ring extraction instead of eliminating an entire cap.
+       - Eliminate **one ring** from the top of any stack you control (same rules as exact-length lines).
+       - **Exception for recovery actions:** When a line is formed via recovery, you pay one buried ring extraction instead.
      - **Option 2 (minimum collapse)**:
        - Collapse **exactly lineLength** consecutive markers of your choice
          within the line to your territory.
