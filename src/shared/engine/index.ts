@@ -757,3 +757,34 @@ export {
   replaceObjectContents,
   copyBoardStateInPlace,
 } from './boardMutationHelpers';
+
+// =============================================================================
+// ENGINE ERRORS
+// =============================================================================
+// Location: errors.ts
+// Structured error types for the rules engine layer
+// See also: src/shared/errors/GameDomainErrors.ts for session-level errors
+
+export type { EngineErrorJSON } from './errors';
+
+export {
+  // Error codes
+  EngineErrorCode,
+  ERROR_CATEGORY_DESCRIPTIONS,
+  // Error classes
+  EngineError,
+  RulesViolation,
+  InvalidState,
+  BoardConstraintViolation,
+  MoveRequirementError,
+  // Type guards
+  isEngineError,
+  isRulesViolation,
+  isInvalidState,
+  isBoardConstraintViolation,
+  isMoveRequirementError,
+  // Utilities
+  wrapEngineError,
+  entityNotFound,
+  moveMissingField,
+} from './errors';

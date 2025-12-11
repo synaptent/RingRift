@@ -70,26 +70,6 @@ export interface ProcessTurnResult {
 }
 
 /**
- * A pending decision that requires player input.
- */
-export interface PendingDecision {
-  /** Type of decision required */
-  type: DecisionType;
-
-  /** Player who must make the decision */
-  player: number;
-
-  /** Available options */
-  options: Move[];
-
-  /** Timeout in milliseconds (adapter concern) */
-  timeoutMs?: number;
-
-  /** Context for UI rendering */
-  context: DecisionContext;
-}
-
-/**
  * Types of decisions that may be pending.
  *
  * Per RR-CANON-R075, when a phase has no actions, the core rules layer returns
@@ -121,6 +101,192 @@ export interface DecisionContext {
 
   /** Additional metadata */
   extra?: Record<string, unknown>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DISCRIMINATED UNION DECISION TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// These provide type-safe access to decision-specific context. Use type guards
+// like `isLineOrderDecision(decision)` to narrow the type in switch statements.
+
+/**
+ * Base properties shared by all pending decisions.
+ */
+interface PendingDecisionBase {
+  /** Player who must make the decision */
+  player: number;
+
+  /** Available options */
+  options: Move[];
+
+  /** Timeout in milliseconds (adapter concern) */
+  timeoutMs?: number;
+
+  /** Context for UI rendering */
+  context: DecisionContext;
+}
+
+/**
+ * Decision for choosing which line to process first when multiple lines exist.
+ * RR-CANON-R033: When multiple lines exist, player chooses processing order.
+ */
+export interface LineOrderDecision extends PendingDecisionBase {
+  type: 'line_order';
+  /** Detected lines available for processing */
+  lines?: DetectedLineInfo[];
+}
+
+/**
+ * Decision for choosing line collapse reward (elimination bonus).
+ * RR-CANON-R031: After collapsing a line, player may eliminate opponent rings.
+ */
+export interface LineRewardDecision extends PendingDecisionBase {
+  type: 'line_reward';
+  /** Line that was collapsed (for context) */
+  collapsedLine?: DetectedLineInfo;
+}
+
+/**
+ * Decision for choosing which territory region to process first.
+ * RR-CANON-R052: Disconnected territory regions processed in player-chosen order.
+ */
+export interface RegionOrderDecision extends PendingDecisionBase {
+  type: 'region_order';
+  /** Available regions for processing */
+  regions?: Territory[];
+}
+
+/**
+ * Decision for choosing which stack to eliminate from during forced elimination.
+ * RR-CANON-R072/R100/R206: Forced elimination when no legal moves available.
+ */
+export interface EliminationTargetDecision extends PendingDecisionBase {
+  type: 'elimination_target';
+  /** Reason for elimination (forced_elimination vs line/territory) */
+  eliminationReason?: 'forced_elimination' | 'line_reward' | 'territory_disconnection';
+}
+
+/**
+ * Decision for choosing capture direction when multiple directions possible.
+ */
+export interface CaptureDirectionDecision extends PendingDecisionBase {
+  type: 'capture_direction';
+}
+
+/**
+ * Decision for continuing a chain capture.
+ * RR-CANON-R025: After overtaking capture, must continue if possible.
+ */
+export interface ChainCaptureDecision extends PendingDecisionBase {
+  type: 'chain_capture';
+  /** Current chain capture position */
+  chainPosition?: Position;
+}
+
+/**
+ * Bookkeeping decision when no line actions available.
+ * RR-CANON-R075: Explicit no-action move required for replay determinism.
+ */
+export interface NoLineActionDecision extends PendingDecisionBase {
+  type: 'no_line_action_required';
+}
+
+/**
+ * Bookkeeping decision when no territory actions available.
+ * RR-CANON-R075: Explicit no-action move required for replay determinism.
+ */
+export interface NoTerritoryActionDecision extends PendingDecisionBase {
+  type: 'no_territory_action_required';
+}
+
+/**
+ * Bookkeeping decision when no movement actions available.
+ * RR-CANON-R075: Explicit no-action move required for replay determinism.
+ */
+export interface NoMovementActionDecision extends PendingDecisionBase {
+  type: 'no_movement_action_required';
+}
+
+/**
+ * Bookkeeping decision when no placement actions available.
+ * RR-CANON-R075: Explicit no-action move required for replay determinism.
+ */
+export interface NoPlacementActionDecision extends PendingDecisionBase {
+  type: 'no_placement_action_required';
+}
+
+/**
+ * A pending decision that requires player input.
+ *
+ * This is a discriminated union - use the `type` field to narrow to specific
+ * decision types with their associated context.
+ *
+ * @example
+ * ```typescript
+ * function handleDecision(decision: PendingDecision) {
+ *   switch (decision.type) {
+ *     case 'line_order':
+ *       // TypeScript knows decision.lines is available
+ *       console.log(`${decision.lines?.length} lines to choose from`);
+ *       break;
+ *     case 'chain_capture':
+ *       // TypeScript knows decision.chainPosition is available
+ *       console.log(`Continue from ${decision.chainPosition}`);
+ *       break;
+ *   }
+ * }
+ * ```
+ */
+export type PendingDecision =
+  | LineOrderDecision
+  | LineRewardDecision
+  | RegionOrderDecision
+  | EliminationTargetDecision
+  | CaptureDirectionDecision
+  | ChainCaptureDecision
+  | NoLineActionDecision
+  | NoTerritoryActionDecision
+  | NoMovementActionDecision
+  | NoPlacementActionDecision;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TYPE GUARDS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Type guard for line order decisions */
+export function isLineOrderDecision(d: PendingDecision): d is LineOrderDecision {
+  return d.type === 'line_order';
+}
+
+/** Type guard for line reward decisions */
+export function isLineRewardDecision(d: PendingDecision): d is LineRewardDecision {
+  return d.type === 'line_reward';
+}
+
+/** Type guard for region order decisions */
+export function isRegionOrderDecision(d: PendingDecision): d is RegionOrderDecision {
+  return d.type === 'region_order';
+}
+
+/** Type guard for elimination target decisions */
+export function isEliminationTargetDecision(d: PendingDecision): d is EliminationTargetDecision {
+  return d.type === 'elimination_target';
+}
+
+/** Type guard for chain capture decisions */
+export function isChainCaptureDecision(d: PendingDecision): d is ChainCaptureDecision {
+  return d.type === 'chain_capture';
+}
+
+/** Type guard for no-action decisions (any type) */
+export function isNoActionDecision(d: PendingDecision): boolean {
+  return (
+    d.type === 'no_line_action_required' ||
+    d.type === 'no_territory_action_required' ||
+    d.type === 'no_movement_action_required' ||
+    d.type === 'no_placement_action_required'
+  );
 }
 
 /**

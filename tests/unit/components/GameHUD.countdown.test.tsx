@@ -189,4 +189,28 @@ describe('GameHUD decision countdown', () => {
 
     expect(screen.queryByTestId('decision-phase-countdown')).toBeNull();
   });
+
+  it('shows normal severity and remote-actor copy for spectators', () => {
+    const hud = baseHudViewModel();
+    hud.decisionPhase = {
+      ...hud.decisionPhase!,
+      actingPlayerNumber: 2,
+      actingPlayerName: 'Bot',
+      isLocalActor: false,
+      timeRemainingMs: 15_000,
+      showCountdown: true,
+      isServerCapped: false,
+    };
+
+    render(<GameHUD viewModel={hud} timeControl={baseGameState().timeControl} />);
+
+    const timer = screen.getByTestId('decision-phase-countdown');
+    expect(timer).toHaveAttribute('data-severity', 'normal');
+    expect(timer).not.toHaveAttribute('data-server-capped');
+    expect(timer).toHaveTextContent('0:15');
+
+    const badge = screen.getByTestId('hud-decision-time-pressure');
+    expect(badge).toHaveAttribute('data-severity', 'normal');
+    expect(badge).toHaveTextContent("Time left for Bot's decision: 0:15");
+  });
 });

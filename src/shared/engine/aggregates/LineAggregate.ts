@@ -1153,8 +1153,25 @@ export function applyProcessLineDecision(
 /**
  * Apply a `choose_line_reward` move produced by enumerateChooseLineRewardMoves.
  *
- * For collapse-all: collapses entire line with elimination reward.
- * For minimum-collapse: collapses only selected subset, no reward.
+ * Semantics (Python-aligned, including legacy fixtures):
+ *
+ * - When `move.collapsedMarkers` is provided and non-empty:
+ *   - Collapse exactly those marker positions, even if the line length equals
+ *     the effective threshold or the subset length is less than the threshold.
+ *   - This mirrors Python GameEngine._apply_line_formation, which always trusts
+ *     `collapsed_markers` when present (including historical DBs that carry
+ *     partial segments for exact-length lines).
+ * - When `move.collapsedMarkers` is absent or empty:
+ *   - Collapse the entire line.
+ *
+ * Elimination reward semantics:
+ *
+ * - A mandatory self-elimination reward is only granted when:
+ *   - the line length is at least the effective threshold for this
+ *     board/player-count combination, and
+ *   - the collapse covers the entire line (all markers in the line).
+ * - Minimum-collapse variants (proper subsets of the line) never set
+ *   `pendingLineRewardElimination`, regardless of line length.
  */
 export function applyChooseLineRewardDecision(
   state: GameState,
@@ -1179,35 +1196,28 @@ export function applyChooseLineRewardDecision(
   const requiredLength = getEffectiveLineLengthThreshold(boardType, numPlayers, state.rulesOptions);
   const length = line.length;
 
-  if (length < requiredLength) {
-    // Not a complete, collapsible line; treat as no-op.
-    return {
-      nextState: state,
-      pendingLineRewardElimination: false,
-    };
-  }
+  // Determine which positions to collapse, preferring explicit geometry from the move
+  // when present. This matches Python's _apply_line_formation, which always uses
+  // collapsed_markers when provided.
+  const collapsed = move.collapsedMarkers;
+  let positionsToCollapse: Position[];
 
-  let positionsToCollapse: Position[] = line.positions;
-  let pendingReward = false;
-
-  if (length === requiredLength) {
-    // Exact-length line: collapse all markers and grant elimination reward
-    positionsToCollapse = line.positions;
-    pendingReward = true;
+  if (collapsed && collapsed.length > 0) {
+    positionsToCollapse = collapsed;
   } else {
-    // Overlength line.
-    const collapsed = move.collapsedMarkers;
-    const isCollapseAll = !collapsed || collapsed.length === length || collapsed.length > length;
-
-    if (isCollapseAll) {
-      positionsToCollapse = line.positions;
-      pendingReward = true;
-    } else if (collapsed) {
-      // Minimum-collapse option: collapse exactly the selected subset.
-      positionsToCollapse = collapsed;
-      pendingReward = false;
-    }
+    positionsToCollapse = line.positions;
   }
+
+  // Decide whether this collapse should grant a mandatory elimination reward.
+  // Reward is only pending when:
+  // - the line is at least the effective threshold length, and
+  // - the collapse covers the entire line (no markers from this line remain).
+  const collapsedKeys = new Set(positionsToCollapse.map((p) => positionToString(p)));
+  const lineKeys = new Set(line.positions.map((p) => positionToString(p)));
+  const isFullCollapse =
+    collapsedKeys.size === lineKeys.size && Array.from(collapsedKeys).every((key) => lineKeys.has(key));
+
+  const pendingReward = length >= requiredLength && isFullCollapse;
 
   const { nextState } = collapseLinePositions(state, positionsToCollapse, move.player);
 

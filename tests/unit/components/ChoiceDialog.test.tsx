@@ -253,6 +253,29 @@ describe('ChoiceDialog', () => {
     });
   });
 
+  describe('generic choices', () => {
+    it('renders generic fallback copy and empty state when choice type is unknown', () => {
+      const genericChoice = {
+        id: 'choice-generic',
+        gameId: 'game-1',
+        playerNumber: 1,
+        type: 'unknown_choice_type',
+        prompt: 'Unhandled choice type',
+        timeoutMs: 10_000,
+        options: [],
+      } as unknown as PlayerChoice;
+
+      render(<ChoiceDialog {...defaultProps} choice={genericChoice} />);
+
+      expect(screen.getByText('Unhandled choice type')).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          /No options are available for this decision\. Please contact support if this persists\./i
+        )
+      ).toBeInTheDocument();
+    });
+  });
+
   describe('RingEliminationChoice', () => {
     it('displays prompt text', () => {
       const choice = createRingEliminationChoice();

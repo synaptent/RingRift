@@ -125,13 +125,50 @@ Path 3: Full GPU Batch (CMA-ES Training)
 
 ### 2.3 Code Duplication Analysis
 
-| Function                | Locations                                             | Status          |
-| ----------------------- | ----------------------------------------------------- | --------------- |
-| `get_device()`          | gpu_kernels.py, gpu_batch.py                          | Duplicate       |
-| `GPUHeuristicEvaluator` | gpu_batch.py, cuda_rules.py                           | cuda_rules dead |
-| `detect_lines_*`        | gpu_kernels.py, gpu_parallel_games.py, numba_rules.py | 3 copies        |
-| `evaluate_positions_*`  | gpu_kernels.py, gpu_parallel_games.py, gpu_batch.py   | 3 copies        |
-| Victory checking        | gpu_kernels.py, gpu_parallel_games.py, numba_rules.py | 3 copies        |
+| Function                | Locations                                             | Status                      |
+| ----------------------- | ----------------------------------------------------- | --------------------------- |
+| `get_device()`          | gpu_kernels.py, gpu_batch.py                          | Consolidated (gpu_batch.py canonical) |
+| `detect_lines_*`        | gpu_kernels.py, gpu_parallel_games.py, numba_rules.py | 3 copies                    |
+| `evaluate_positions_*`  | gpu_kernels.py, gpu_parallel_games.py, gpu_batch.py   | 3 copies                    |
+| Victory checking        | gpu_kernels.py, gpu_parallel_games.py, numba_rules.py | 3 copies                    |
+
+### 2.4 GPU vs CPU Evaluation Discrepancy Analysis (2025-12-11)
+
+**CRITICAL FINDING:** The GPU and CPU evaluators are **intentionally divergent** by design:
+
+| Implementation | Approach | Features | Speed |
+|---------------|----------|----------|-------|
+| CPU `HeuristicAI.evaluate_position()` | Full 45-weight heuristic | All Tier 0/1/2 features, visibility-based | Baseline |
+| GPU `evaluate_positions_batch()` | Simplified vectorized | ~8 effective weights, 4-adjacency only | 6x faster |
+
+**Root Causes of Score Divergence (63%-200% observed):**
+
+1. **Adjacency Model Mismatch**
+   - CPU: 8-directional line-of-sight (`_get_visible_stacks()`)
+   - GPU: 4-adjacent neighbors only (up/down/left/right)
+   - Impact: Misses diagonal threats, distant stack interactions
+
+2. **Constant Approximations**
+   ```python
+   # GPU approximates mobility with constants:
+   mobility = stack_count * 4.0      # CPU: actual move enumeration
+   stack_mobility = stack_count * 3.0  # CPU: per-stack neighbor checking
+   ```
+
+3. **Missing Feature Categories**
+   - No cap_height distinction (capture power vs total height)
+   - No territory closure (marker clustering analysis)
+   - No territory safety (opponent proximity)
+   - No LPS action advantage (multiplayer turn analysis)
+   - No recovery potential evaluation
+
+4. **Divergence Scales with Board Complexity**
+   - Initial states: ~63% difference (few interactions)
+   - Mid-game: >100% difference (stacks multiplying)
+   - Complex states: ~200% difference (visibility model fails)
+
+**This is NOT a bug** - it's an **architectural trade-off** documented in Phase 1.
+Phase 2 goal: Reduce to 0.05 (numerical precision) by implementing full CPU features on GPU.
 
 ---
 
@@ -263,15 +300,15 @@ else:
 - [x] Create benchmark script (`scripts/benchmark_gpu_cpu.py`)
 - [x] Run benchmark and document results
 - [x] Create this architecture document
-- [ ] Delete `cuda_rules.py`
-- [ ] Update `GPU_PIPELINE_ROADMAP.md` with benchmark results
+- [x] Delete `cuda_rules.py` (3,613 lines removed)
+- [x] Update `GPU_PIPELINE_ROADMAP.md` with benchmark results
 
-### 6.2 Short-term Actions (Next Session)
+### 6.2 Short-term Actions (Completed 2025-12-11)
 
-- [ ] Add batch size threshold to HybridGPUEvaluator
-- [ ] Create `app/ai/device.py` for consolidated device utilities
-- [ ] Document `gpu_kernels.py` as test-only in docstring
-- [ ] Add integration tests for full game replay parity
+- [x] Document `gpu_kernels.py` as test-only in docstring
+- [x] Add integration tests for full game replay parity (`tests/gpu/test_gpu_cpu_replay_parity.py`)
+- [x] Fix MarkerInfo handling in BatchGameState.from_single_game()
+- [ ] Add batch size threshold to HybridGPUEvaluator (deferred to Phase 2)
 
 ### 6.3 Medium-term Actions (Future)
 
@@ -302,8 +339,14 @@ Test Dependencies:
     └── gpu_kernels.py
     └── gpu_parallel_games.py
 
-Dead (No Dependencies):
-└── cuda_rules.py  ← DELETE
+Test-only (documented):
+└── gpu_kernels.py  # Used only by tests/gpu/test_gpu_cpu_parity.py
+
+Deleted (2025-12-11):
+└── cuda_rules.py  # 3,613 lines removed - preserved in git history
+└── tests/test_cuda_cpu_parity.py  # Dependent on cuda_rules.py
+└── scripts/verify_cuda_parity.py  # Dependent on cuda_rules.py
+└── scripts/verify_full_fidelity.py  # Dependent on cuda_rules.py
 ```
 
 ## Appendix B: Benchmark Script Location
@@ -332,3 +375,4 @@ python scripts/benchmark_gpu_cpu.py --board hexagonal
 | Date       | Version | Changes                                             |
 | ---------- | ------- | --------------------------------------------------- |
 | 2025-12-11 | 1.0     | Initial architecture analysis and benchmark results |
+| 2025-12-11 | 1.1     | Completed Phase A: cuda_rules.py deletion (3,613 lines), integration tests added |

@@ -10,6 +10,9 @@ Key optimizations:
 2. Batched path validation - check all paths simultaneously
 3. Fused heuristic evaluation - single kernel for all metrics
 4. Memory-efficient tensor operations - minimize CPU-GPU transfers
+
+NOTE: This module is primarily used for parity testing (tests/gpu/).
+For production code, prefer gpu_batch.py or gpu_parallel_games.py.
 """
 
 from __future__ import annotations
@@ -25,10 +28,19 @@ logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Device Detection and Configuration
+# Re-export from gpu_batch for consistency - use gpu_batch.get_device() directly
+# in production code for the full-featured version with prefer_gpu/device_id.
 # =============================================================================
 
 def get_device() -> torch.device:
-    """Get the best available GPU device."""
+    """Get the best available GPU device.
+
+    For production code with more control, use:
+        from app.ai.gpu_batch import get_device
+        device = get_device(prefer_gpu=True, device_id=0)
+
+    This simple version is kept for backward compatibility with test code.
+    """
     if torch.cuda.is_available():
         return torch.device("cuda")
     elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():

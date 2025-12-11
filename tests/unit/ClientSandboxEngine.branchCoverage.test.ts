@@ -473,8 +473,8 @@ describe('ClientSandboxEngine branch coverage', () => {
         interactionHandler: new MockInteractionHandler(),
       });
       const state = engine.getGameState();
-      // 18 rings * 2 players = 36, threshold = 36/2 + 1 = 19
-      expect(state.victoryThreshold).toBe(19);
+      // Per RR-CANON-R061: round(18 × (1/3 + 2/3 × 1)) = 18
+      expect(state.victoryThreshold).toBe(18);
     });
 
     it('square8 3p has correct victory threshold', () => {

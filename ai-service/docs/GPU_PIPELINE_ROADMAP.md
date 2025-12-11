@@ -36,12 +36,13 @@ This document outlines an incremental strategy to achieve full GPU-accelerated g
 
 | File                    | Lines  | Purpose                                    | Status                                         |
 | ----------------------- | ------ | ------------------------------------------ | ---------------------------------------------- |
-| `gpu_kernels.py`        | ~804   | Move generation kernels, evaluation kernel | Partial - Python loops defeat parallelism      |
+| `gpu_kernels.py`        | ~804   | Move generation kernels, evaluation kernel | Partial - Python loops defeat parallelism (TEST-ONLY) |
 | `gpu_batch.py`          | ~917   | GPUHeuristicEvaluator, GPUBatchEvaluator   | Complete - 45-weight CMA-ES evaluation         |
 | `gpu_parallel_games.py` | ~2,615 | BatchGameState, ParallelGameRunner         | Partial - per-game loops, rule simplifications |
 | `hybrid_gpu.py`         | ~822   | HybridGPUEvaluator - CPU rules + GPU eval  | Complete - safe path with 100% parity          |
-| `cuda_rules.py`         | ~300   | CUDA kernels for territory (flood-fill)    | Stub - kernels exist but not integrated        |
 | `numba_rules.py`        | ~900   | Numba JIT-compiled rule functions          | Complete - 10-50x faster than pure Python      |
+
+> **Note:** `cuda_rules.py` (3,613 lines) was deleted 2025-12-11 - see GPU_ARCHITECTURE_SIMPLIFICATION.md
 
 ### 1.2 Component Status Matrix
 
@@ -187,6 +188,24 @@ gpu_kernels.py:
 | **hexagonal** | ✅ Correct (4) | ✅ Correct (4) | ✅ Correct (4) |
 
 > **Note:** Line length detection was fixed on 2025-12-11 to be player-count-aware per RR-CANON-R120.
+
+### 3.4 Evaluation Discrepancy Analysis (2025-12-11)
+
+The GPU `evaluate_positions_batch()` is **intentionally simplified** compared to CPU `HeuristicAI.evaluate_position()`:
+
+| Aspect | CPU Implementation | GPU Implementation | Divergence Impact |
+|--------|-------------------|-------------------|-------------------|
+| **Visibility** | 8-direction line-of-sight | 4-adjacent only | Large (misses threats) |
+| **Mobility** | Actual move enumeration | `stack_count * 4.0` constant | Variable (100%+ possible) |
+| **Cap Height** | Distinct from total height | Conflated | Medium |
+| **Tier 2 Features** | Full implementation | Missing or stub | Large in complex states |
+
+**Observed divergence by game phase:**
+- Initial states: ~63% difference
+- Mid-game states: >100% difference
+- Complex states (late-game): ~200% difference
+
+**This is a design trade-off, not a bug.** See `GPU_ARCHITECTURE_SIMPLIFICATION.md` Section 2.4.
 
 ---
 
@@ -876,12 +895,14 @@ class AdaptiveBatchRunner:
 
 | File                    | Purpose              | Key Functions                                                            |
 | ----------------------- | -------------------- | ------------------------------------------------------------------------ |
-| `gpu_kernels.py`        | Move generation      | `generate_placement_mask_kernel()`, `generate_normal_moves_vectorized()` |
+| `gpu_kernels.py`        | Move generation (TEST-ONLY) | `generate_placement_mask_kernel()`, `generate_normal_moves_vectorized()` |
 | `gpu_parallel_games.py` | Batch game state     | `BatchGameState`, `ParallelGameRunner`, `evaluate_positions_batch()`     |
-| `gpu_batch.py`          | Heuristic evaluation | `GPUHeuristicEvaluator`, `GPUBatchEvaluator`                             |
+| `gpu_batch.py`          | Heuristic evaluation | `GPUHeuristicEvaluator`, `GPUBatchEvaluator`, `get_device()`             |
 | `hybrid_gpu.py`         | Safe hybrid path     | `HybridGPUEvaluator`, `game_state_to_gpu_arrays()`                       |
-| `cuda_rules.py`         | CUDA kernels         | `_parallel_flood_fill_kernel()`                                          |
 | `numba_rules.py`        | JIT CPU rules        | `detect_lines_numba()`, `check_victory_numba()`                          |
+| `numba_eval.py`         | JIT CPU evaluation   | Numba-optimized heuristic calculation                                    |
+
+> **Note:** `cuda_rules.py` was deleted 2025-12-11 (see GPU_ARCHITECTURE_SIMPLIFICATION.md)
 
 ### A.2 Configuration Points
 
@@ -905,18 +926,21 @@ PHASE_3_SPEEDUP_TARGET = 10.0  # vs Phase 1
 ```
 tests/
 ├── gpu/
-│   ├── test_gpu_cpu_parity.py      # Move generation parity
-│   ├── test_evaluation_parity.py   # Scoring parity
-│   ├── test_full_game_parity.py    # End-to-end games
-│   ├── test_shadow_validation.py   # Shadow validator tests
-│   └── fixtures/
-│       ├── parity_positions.py     # Test game states
-│       └── expected_moves.py       # Expected move lists
+│   ├── test_gpu_cpu_parity.py        # Board config, line length, evaluation parity (36 tests)
+│   ├── test_gpu_cpu_replay_parity.py # Full game replay parity (8 tests)
+│   └── conftest.py                   # Shared fixtures for GPU tests
 ├── integration/
-│   └── test_training_quality.py    # A/B training comparison
+│   └── test_training_quality.py      # A/B training comparison (TODO)
 └── benchmarks/
-    └── benchmark_gpu_cpu.py        # Performance measurement
+    └── benchmark_gpu_cpu.py          # Performance measurement (scripts/)
+
+scripts/
+└── benchmark_gpu_cpu.py              # CPU vs GPU benchmark (created 2025-12-11)
 ```
+
+> **Current Test Status (2025-12-11):**
+> - 36 parity tests passing, 6 skipped (awaiting Phase 2 GPU move generation API)
+> - 8 replay tests passing, 2 skipped (no square19/hexagonal games in test DBs)
 
 ---
 
@@ -1112,11 +1136,18 @@ Key features:
 
 #### Decision Gate Status (Phase 1 → Phase 2)
 
-- [x] Parity test infrastructure created (36 tests passing)
+- [x] Parity test infrastructure created (36 tests passing + 8 replay tests)
 - [ ] All parity tests pass (100%) - 6 skipped awaiting Phase 2 GPU API
 - [x] **Speedup ≥ 3x over CPU-only - ✅ PASSED (6.56x on CUDA)**
-- [ ] No regression in model training quality - A/B test not yet conducted
+- [x] A/B training quality test infrastructure created - `scripts/ab_test_gpu_training_quality.py`
+- [ ] A/B test conducted - Run `python scripts/ab_test_gpu_training_quality.py --num-games 1000`
 - [x] Benchmark results documented - See above
+
+**Phase 1 Architecture Cleanup (Completed 2025-12-11):**
+- [x] Deleted dead `cuda_rules.py` (3,613 lines) - see GPU_ARCHITECTURE_SIMPLIFICATION.md
+- [x] Created integration tests for full game replay parity (`tests/gpu/test_gpu_cpu_replay_parity.py`)
+- [x] Fixed MarkerInfo handling in BatchGameState.from_single_game()
+- [x] Documented `gpu_kernels.py` as test-only module
 
 ---
 
@@ -1127,6 +1158,8 @@ Key features:
 | 2025-12-11 | 1.0     | Initial comprehensive analysis                                                                      |
 | 2025-12-11 | 1.1     | Phase 1 Step 1 progress update: parity tests, line length fix, adjacency vectorization, hex support |
 | 2025-12-11 | 1.2     | Benchmark results: CUDA 6.56x speedup, Phase 1 speedup gate PASSED                                  |
+| 2025-12-11 | 1.3     | Phase 1 cleanup: cuda_rules.py deleted (3,613 lines), integration tests added, MarkerInfo fix       |
+| 2025-12-11 | 1.4     | A/B training quality test infrastructure created, evaluation discrepancy documented                 |
 
 ---
 

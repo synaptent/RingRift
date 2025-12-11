@@ -57,4 +57,25 @@ export type {
   TieBreaker,
   TurnProcessingState,
   PerTurnFlags,
+  // Discriminated union decision types (new in 2025-12-11 refactor)
+  LineOrderDecision,
+  LineRewardDecision,
+  RegionOrderDecision,
+  EliminationTargetDecision,
+  CaptureDirectionDecision,
+  ChainCaptureDecision,
+  NoLineActionDecision,
+  NoTerritoryActionDecision,
+  NoMovementActionDecision,
+  NoPlacementActionDecision,
+} from './types';
+
+// Type guards for decision types
+export {
+  isLineOrderDecision,
+  isLineRewardDecision,
+  isRegionOrderDecision,
+  isEliminationTargetDecision,
+  isChainCaptureDecision,
+  isNoActionDecision,
 } from './types';

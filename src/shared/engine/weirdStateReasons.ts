@@ -20,6 +20,16 @@ export interface WeirdStateReasonInfo {
 }
 
 /**
+ * Runtime guard for whether a weird-state type should be surfaced to players
+ * via HUD / Teaching overlays. Line/territory no-action cases are now treated
+ * as routine and should not render banners, but may still be tracked via
+ * telemetry when present.
+ */
+export function isSurfaceableWeirdStateType(type: RulesUxWeirdStateType): boolean {
+  return type === 'active-no-moves-movement' || type === 'forced-elimination' || type === 'structural-stalemate';
+}
+
+/**
  * Map a coarse weird state type (as exposed in HUD and telemetry) to a
  * canonical reason code and rules_context.
  *

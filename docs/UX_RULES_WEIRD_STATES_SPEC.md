@@ -54,23 +54,13 @@ The following states are considered “weird” or high‑confusion from a UX pe
    - Has no legal placements, moves, or captures,
    - Forced elimination is available and will fire ([`RR‑CANON‑R072`](RULES_CANONICAL_SPEC.md:210), [`RR‑CANON‑R100`](RULES_CANONICAL_SPEC.md:443), ANM‑SCEN‑01 in [`ACTIVE_NO_MOVES_BEHAVIOUR.md`](docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:39)).
 
-2. **ANM‑Line‑Auto** – ANM in the line‑processing phase:
-   - `currentPhase == line_processing`,
-   - No `process_line` / `choose_line_reward` decisions remain, but game is still ACTIVE,
-   - Engine auto‑advances (ANM‑SCEN‑05).
+2. **FE‑Sequence** – Visible forced‑elimination sequence where a player repeatedly loses caps due to FE (often in endgame), without understanding why caps are disappearing.
 
-3. **ANM‑Territory‑Auto** – ANM in the territory‑processing phase:
-   - `currentPhase == territory_processing`,
-   - No `process_territory_region` / `eliminate_rings_from_stack` decisions remain,
-   - Engine auto‑advances or terminates (ANM‑SCEN‑04).
-
-4. **FE‑Sequence** – Visible forced‑elimination sequence where a player repeatedly loses caps due to FE (often in endgame), without understanding why caps are disappearing.
-
-5. **Structural‑Stalemate** – **Global stalemate / plateau**:
+3. **Structural‑Stalemate** – **Global stalemate / plateau**:
    - No legal placements, moves, captures, or forced eliminations for any player,
    - Game ends via tie‑break ladder (territory → eliminated rings → markers → last actor) per [`RR‑CANON‑R173`](RULES_CANONICAL_SPEC.md:619).
 
-6. **LPS‑Early‑Win** – **Last‑Player‑Standing** early victory:
+4. **LPS‑Early‑Win** – **Last‑Player‑Standing** early victory:
    - Exactly one player has “real actions” (placements, moves, captures) over a full round,
    - Others are permanently stuck or only have FE,
    - Canonical rules treat this as a distinct victory condition ([`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:603); ANM‑SCEN‑07).
@@ -99,27 +89,9 @@ Each reason code is intended to be stable across hosts (backend, sandbox, Python
   - ANM‑SCEN‑01 in [`ACTIVE_NO_MOVES_BEHAVIOUR.md`](docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:39).
 - **Canonical `rules_context`:** `anm_forced_elimination` (see [`UX_RULES_TELEMETRY_SPEC.md`](docs/UX_RULES_TELEMETRY_SPEC.md:145)).
 
-#### RWS‑002 ANM_LINE_NO_ACTIONS
+> Routine no‑action bookkeeping (`no_line_action`, `no_territory_action`) is **not treated as a weird state for UX surfaces**. These moves remain mandatory for canonical histories (RR‑CANON‑R075) and can still be tagged for telemetry/debugging, but HUD/Victory/Teaching overlays should not surface them unless there is an anomaly (e.g., a host surfaced an interactive banner but offered zero options).
 
-- **Description:** No remaining interactive line decisions (no `process_line` or `choose_line_reward` moves) in `line_processing`; engine must auto‑advance to territory or victory.
-- **Rules references:**
-  - [`RR‑CANON‑R120–R122`](RULES_CANONICAL_SPEC.md:495) (lines and rewards).
-  - [`RR‑CANON‑R204`](RULES_CANONICAL_SPEC.md:271) (line‑processing exit must not leave ANM states).
-  - ANM‑SCEN‑05 in [`ACTIVE_NO_MOVES_BEHAVIOUR.md`](docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:121).
-- **Canonical `rules_context`:** `line_reward_exact` or `line_reward_overlength` (both map to this reason code).
-- **UX surface guidance:** Telemetry/debug only for the normal explicit `no_line_action` bookkeeping move. Do **not** show HUD/Victory banners for routine no‑line phases; reserve UI surfacing for anomalies (e.g., host surfaced a line banner but then offered zero options unexpectedly).
-
-#### RWS‑003 ANM_TERRITORY_NO_ACTIONS
-
-- **Description:** No remaining interactive territory decisions (no `process_territory_region`, `choose_territory_option`, or `eliminate_rings_from_stack` moves) in `territory_processing`; engine must either apply forced elimination or end the turn / game.
-- **Rules references:**
-  - [`RR‑CANON‑R140–R145`](RULES_CANONICAL_SPEC.md:535) (territory processing).
-  - [`RR‑CANON‑R204`](RULES_CANONICAL_SPEC.md:272) (territory‑processing exit rules).
-  - ANM‑SCEN‑04 in [`ACTIVE_NO_MOVES_BEHAVIOUR.md`](docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:100).
-- **Canonical `rules_context`:** `territory_mini_region` or `territory_multi_region` (depending on geometry).
-- **UX surface guidance:** Telemetry/debug only for the normal explicit `no_territory_action` bookkeeping move. Do **not** show HUD/Victory banners for routine no‑territory phases; reserve UI surfacing for anomalies (e.g., host surfaced a territory banner but then offered zero options unexpectedly).
-
-#### RWS‑004 FE_SEQUENCE_CURRENT_PLAYER
+#### RWS‑002 FE_SEQUENCE_CURRENT_PLAYER
 
 - **Description:** A forced‑elimination **sequence** is removing caps from the **local player’s** stacks because they are repeatedly blocked on their turns. In logs and parity tooling this corresponds to a run of `forced_elimination` moves in the `forced_elimination` phase between normal interactive turns.
 - **Rules references:**
@@ -128,7 +100,7 @@ Each reason code is intended to be stable across hosts (backend, sandbox, Python
   - CCE‑007 in [`RULES_CONSISTENCY_EDGE_CASES.md`](docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md:459) (selection heuristics).
 - **Canonical `rules_context`:** `anm_forced_elimination`.
 
-#### RWS‑005 STRUCTURAL_STALEMATE_TIEBREAK
+#### RWS‑003 STRUCTURAL_STALEMATE_TIEBREAK
 
 - **Description:** **Structural stalemate / plateau**: no legal placements, moves, captures, or forced eliminations for any player; game ends and is resolved by territory and eliminated‑ring tiebreakers.
 - **Rules references:**
@@ -136,7 +108,7 @@ Each reason code is intended to be stable across hosts (backend, sandbox, Python
   - ANM‑SCEN‑06 in [`ACTIVE_NO_MOVES_BEHAVIOUR.md`](docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:140).
 - **Canonical `rules_context`:** `structural_stalemate`.
 
-#### RWS‑006 LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS
+#### RWS‑004 LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS
 
 - **Description:** **Last‑Player‑Standing** victory: requires **two consecutive complete rounds** where exactly one player has real actions (placements, moves, captures) and all others have none (only FE or nothing). In the first round, the exclusive player must have and take at least one real action. After the second round completes with the same condition, that player wins by LPS.
 - **Rules references:**

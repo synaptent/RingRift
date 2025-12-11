@@ -571,4 +571,210 @@ describe('TurnOrchestrator victory explanation branch coverage', () => {
       expect(result.isGameOver).toBe(true);
     });
   });
+
+  // =========================================================================
+  // Victory explanation edge cases - lines 576-612, 411-420, 484-510
+  // =========================================================================
+  describe('victory explanation edge cases', () => {
+    it('handles bare-board structural stalemate with ring elimination tiebreak', () => {
+      // This tests the path at lines 385-434: noStacksLeft && !primaryRingWinner
+      const state = createBaseState('movement');
+      // Clear all stacks - bare board
+      state.board.stacks.clear();
+      // Neither player reached victory threshold, but player 1 eliminated more
+      state.players[0].eliminatedRings = 10;
+      state.players[0].ringsInHand = 0;
+      state.players[1].eliminatedRings = 8;
+      state.players[1].ringsInHand = 0;
+      state.victoryThreshold = 18; // Neither reached
+
+      const result = toVictoryState(state);
+
+      expect(result.isGameOver).toBe(true);
+      // Winner determined by elimination count tiebreak
+      expect(result.winner).toBe(1);
+      expect(result.reason).toBe('ring_elimination');
+    });
+
+    it('handles bare-board structural stalemate with forced elimination history', () => {
+      // This tests lines 411-420: hadForcedEliminationSequence branch
+      const state = createBaseState('movement');
+      state.board.stacks.clear();
+      state.players[0].eliminatedRings = 12;
+      state.players[0].ringsInHand = 0;
+      state.players[1].eliminatedRings = 6;
+      state.players[1].ringsInHand = 0;
+      state.victoryThreshold = 18;
+      // Add forced elimination move to history
+      state.history = [
+        {
+          id: 'fe-move',
+          type: 'forced_elimination',
+          player: 1,
+          to: { x: 3, y: 3 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: 50,
+        },
+      ];
+
+      const result = toVictoryState(state);
+
+      expect(result.isGameOver).toBe(true);
+      expect(result.winner).toBe(1);
+    });
+
+    it('handles territory tiebreak on bare board', () => {
+      // This tests lines 460-510: noStacksLeft && !primaryTerritoryWinner in territory_control
+      const state = createBaseState('movement');
+      state.board.stacks.clear();
+      // Set up territory win condition but with bare board
+      state.players[0].territorySpaces = 8;
+      state.players[0].ringsInHand = 0;
+      state.players[0].eliminatedRings = 5;
+      state.players[1].territorySpaces = 4;
+      state.players[1].ringsInHand = 0;
+      state.players[1].eliminatedRings = 5;
+      state.territoryVictoryThreshold = 10; // Neither reached
+      state.victoryThreshold = 18;
+
+      const result = toVictoryState(state);
+
+      expect(result.isGameOver).toBe(true);
+      // Winner should be determined by territory tiebreak when scores equal in elimination
+    });
+
+    it('handles territory tiebreak with forced elimination history', () => {
+      // This tests lines 484-493: hadForcedEliminationSequence in territory tiebreak
+      const state = createBaseState('movement');
+      state.board.stacks.clear();
+      state.players[0].territorySpaces = 8;
+      state.players[0].ringsInHand = 0;
+      state.players[0].eliminatedRings = 5;
+      state.players[1].territorySpaces = 4;
+      state.players[1].ringsInHand = 0;
+      state.players[1].eliminatedRings = 5;
+      state.territoryVictoryThreshold = 10;
+      state.victoryThreshold = 18;
+      // Add forced elimination move to history
+      state.history = [
+        {
+          id: 'fe-move',
+          type: 'forced_elimination',
+          player: 2,
+          to: { x: 5, y: 5 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: 40,
+        },
+      ];
+
+      const result = toVictoryState(state);
+
+      expect(result.isGameOver).toBe(true);
+    });
+
+    it('handles mini-region territory victory detection', () => {
+      // This tests lines 446-459: miniRegionInfo.isMiniRegionVictory
+      const state = createBaseState('movement');
+      // Player 1 has territory victory threshold
+      state.players[0].territorySpaces = 15;
+      state.territoryVictoryThreshold = 10;
+      // Add some stacks so it's not a bare board
+      state.board.stacks.set('0,0', {
+        position: { x: 0, y: 0 },
+        stackHeight: 2,
+        controllingPlayer: 1,
+        composition: [{ player: 1, count: 2 }],
+        rings: [1, 1],
+      });
+      // Add some territories for mini-region detection
+      state.board.territories.set('1,1', {
+        position: { x: 1, y: 1 },
+        player: 1,
+        type: 'collapsed',
+      });
+
+      const result = toVictoryState(state);
+
+      expect(result.isGameOver).toBe(true);
+      expect(result.winner).toBe(1);
+      expect(result.reason).toBe('territory_control');
+    });
+
+    it('handles LPS with forced elimination in history', () => {
+      // This tests lines 542-552: hadForcedEliminationSequence in LPS
+      const state = createBaseState('movement');
+      // Only player 1 has stacks
+      state.board.stacks.set('3,3', {
+        position: { x: 3, y: 3 },
+        stackHeight: 2,
+        controllingPlayer: 1,
+        composition: [{ player: 1, count: 2 }],
+        rings: [1, 1],
+      });
+      // Player 2 eliminated
+      state.players[1].ringsInHand = 0;
+      // Add forced elimination history
+      state.history = [
+        {
+          id: 'fe-move',
+          type: 'forced_elimination',
+          player: 2,
+          to: { x: 4, y: 4 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: 30,
+        },
+      ];
+
+      const result = toVictoryState(state);
+
+      expect(result.isGameOver).toBe(true);
+      expect(result.winner).toBe(1);
+      expect(result.reason).toBe('last_player_standing');
+    });
+
+    it('handles 3-player LPS with multiple eliminations via forced elimination', () => {
+      const state = createBaseState('movement', 3);
+      // Only player 1 has stacks
+      state.board.stacks.set('2,2', {
+        position: { x: 2, y: 2 },
+        stackHeight: 3,
+        controllingPlayer: 1,
+        composition: [{ player: 1, count: 3 }],
+        rings: [1, 1, 1],
+      });
+      // Players 2 and 3 eliminated
+      state.players[1].ringsInHand = 0;
+      state.players[2].ringsInHand = 0;
+      // Add forced elimination for both
+      state.history = [
+        {
+          id: 'fe1',
+          type: 'forced_elimination',
+          player: 2,
+          to: { x: 4, y: 4 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: 20,
+        },
+        {
+          id: 'fe2',
+          type: 'forced_elimination',
+          player: 3,
+          to: { x: 5, y: 5 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: 25,
+        },
+      ];
+
+      const result = toVictoryState(state);
+
+      expect(result.isGameOver).toBe(true);
+      expect(result.winner).toBe(1);
+      expect(result.reason).toBe('last_player_standing');
+    });
+  });
 });

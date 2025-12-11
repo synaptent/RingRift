@@ -7,6 +7,16 @@ import type { GameResult, Player, GameState } from '../../../src/shared/types/ga
 import type { GameEndExplanation } from '../../../src/shared/engine/gameEndExplanation';
 import type { VictoryViewModel } from '../../../src/client/adapters/gameViewModels';
 
+// Silence jsdom XHR noise from confetti/assets in VictoryModal during tests.
+let consoleErrorSpy: jest.SpyInstance;
+beforeAll(() => {
+  consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+});
+
+afterAll(() => {
+  consoleErrorSpy.mockRestore();
+});
+
 function createPlayers(): Player[] {
   return [
     {
@@ -818,5 +828,51 @@ describe('VictoryModal – rematch states', () => {
     );
 
     expect(screen.getByRole('button', { name: /Request Rematch/i })).toBeInTheDocument();
+  });
+
+  it('invokes telemetry-friendly teaching overlay from weird-state link and closes modal', async () => {
+    const players = createPlayers();
+    const gameState = createGameState(players);
+    const gameResult = createGameResult(1, 'last_player_standing');
+    const onClose = jest.fn();
+    const explanation: GameEndExplanation = {
+      outcomeType: 'last_player_standing',
+      victoryReasonCode: 'victory_last_player_standing',
+      primaryConceptId: 'lps_real_actions',
+      uxCopy: {
+        shortSummaryKey: 'game_end.lps.with_anm_fe.short',
+        detailedSummaryKey: 'game_end.lps.with_anm_fe.detailed',
+      },
+      weirdStateContext: {
+        reasonCodes: ['LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS'],
+        primaryReasonCode: 'LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS',
+        rulesContextTags: ['anm_forced_elimination'],
+      },
+      boardType: 'square8',
+      numPlayers: 2,
+      winnerPlayerId: 'p1',
+    };
+
+  render(
+    <VictoryModal
+      isOpen
+      gameResult={gameResult}
+      players={players}
+      gameState={gameState}
+      gameEndExplanation={explanation}
+      onClose={onClose}
+      onReturnToLobby={jest.fn()}
+    />
+  );
+
+  const helpLink = await screen.findByRole('button', { name: /What happened\?/i });
+  expect(helpLink).toBeInTheDocument();
+
+    await userEvent.click(helpLink);
+
+    // Closing the modal should still work after invoking the teaching overlay entrypoint.
+    const closeButtons = screen.getAllByRole('button', { name: /Close/i });
+    await userEvent.click(closeButtons[0]);
+    expect(onClose).toHaveBeenCalled();
   });
 });

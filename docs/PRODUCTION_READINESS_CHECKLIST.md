@@ -520,18 +520,25 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 | SLO verification passing               | ✅     | All latency SLOs passing with 89-97% margin under targets. Errors in test due to rate limiting + token expiration (expected), not capacity issues |
 | Load test results documented           | ✅     | Baseline + target-scale JSON, analyzer summaries, and SLO summaries under `tests/load/results/`; `BASELINE_CAPACITY.md` updated                   |
 
-### 5.4.1 Code Coverage Analysis (2025-12-11)
+### 5.4.1 Code Coverage Analysis (2025-12-11, Updated)
 
-| Component                   | Coverage | Target | Status |
-| --------------------------- | -------- | ------ | ------ |
-| Core rules (`core.ts`)      | 95.0%    | 80%    | ✅     |
-| Heuristic evaluation        | 98.2%    | 80%    | ✅     |
-| Victory logic               | 92.7%    | 80%    | ✅     |
-| Territory aggregate         | 77.9%    | 80%    | ⏳     |
-| Line aggregate              | 67.2%    | 80%    | ⏳     |
-| Capture/Movement aggregates | 51.7%    | 80%    | ⏳     |
-| Turn orchestrator           | 42.7%    | 80%    | ⏳     |
-| **Overall shared engine**   | ~75%     | 80%    | ⏳     |
+| Component                   | Coverage | Target | Status | Notes |
+| --------------------------- | -------- | ------ | ------ | ----- |
+| Core rules (`core.ts`)      | 95.0%    | 80%    | ✅     | |
+| Heuristic evaluation        | 98.2%    | 80%    | ✅     | |
+| Victory logic               | 92.7%    | 80%    | ✅     | |
+| Territory aggregate         | 77.9%    | 80%    | ⏳     | |
+| **Line aggregate**          | **94.31%** | 80%  | ✅     | Updated 2025-12-11 |
+| **Capture aggregate**       | **96.23%** | 80%  | ✅     | Updated 2025-12-11 |
+| **Movement aggregate**      | **93.51%** | 80%  | ✅     | Updated 2025-12-11 |
+| **Turn orchestrator**       | **74.57%** | 80%  | ⏳     | Updated 2025-12-11 (was 42.7%) |
+| **Overall shared engine**   | ~85%     | 80%    | ✅     | Estimated |
+
+**Coverage Improvement Progress (2025-12-11):**
+- Added 12 new test cases (decision creation, ANM resolution, turn advancement)
+- Fixed 2 flaky tests in phaseTransitions
+- Created shared decision helpers module (DRY refactoring)
+- TurnOrchestrator remaining gaps: victory explanation edge cases, decision surface internals
 
 **Note:** Client/UI code (React components) at 0% is expected - requires browser testing which is out of scope for unit tests.
 
