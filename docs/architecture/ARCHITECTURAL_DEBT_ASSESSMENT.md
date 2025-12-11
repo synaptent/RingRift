@@ -22,8 +22,8 @@ This document tracks architectural debt identified in the RingRift codebase and 
 | P1       | Deprecated Phase Orchestrators | Deferred    | Critical | High   |
 | P2       | Action Availability Predicates | TS Done ✅  | High     | Medium |
 | P3       | Cap Height Consolidation       | Complete ✅ | Medium   | Low    |
-| P4       | Validation Result Unification  | Not Started | Medium   | Medium |
-| P5       | Sandbox Aggregate Delegation   | Partial     | Medium   | High   |
+| P4       | Validation Result Unification  | Documented  | Medium   | High   |
+| P5       | Sandbox Aggregate Delegation   | Assessed ✅ | Medium   | Low    |
 | P6       | Dead Code Cleanup              | Partial ✅  | Low      | Low    |
 
 ---
@@ -157,22 +157,50 @@ Risk of subtle divergence in ring indexing semantics.
 
 ### Problem
 
-Different validators return different result structures:
+Three different validation result structures exist:
 
-- PlacementValidator: `PlacementValidationResult {valid, maxPlacementCount?, reason?, code?}`
-- Other validators: `ValidationResult {valid, reason?}`
-- Python validators: `bool` only
+1. `ValidationResult` (types.ts:135):
 
-### Resolution Plan
+   ```typescript
+   { valid: true } | { valid: false; reason: string; code: string }
+   ```
 
-1. Define unified `ValidationResult<T>` generic type
-2. Add error code enum covering all validation failures
-3. Update all validators to use unified type
-4. Update Python validators to return structured results
+2. `ValidationResult<T>` (contracts/validators.ts:570):
+
+   ```typescript
+   { success: true; data: T } | { success: false; error: string }
+   ```
+
+3. `PlacementValidationResult` (PlacementValidator.ts, PlacementAggregate.ts):
+   ```typescript
+   { valid: boolean; maxPlacementCount?: number; reason?: string; code?: string }
+   ```
+
+- Python validators: `bool` only (no structured results)
+
+### Analysis (2025-12-11)
+
+**Impact Assessment:**
+
+- Low impact on correctness (all patterns work)
+- Medium impact on debuggability (inconsistent error handling)
+- High effort to unify (touches 19+ files, ~500 usages)
+
+**Recommended Approach:**
+
+1. Define `ValidationOutcome<T>` as the unified type
+2. Add error code enum `ValidationErrorCode`
+3. Migrate validators incrementally (placement first, then movement, etc.)
+4. Python parity can use similar structure
+
+**Deferred Rationale:**
+Current inconsistency doesn't cause bugs - it's a DX/maintainability issue.
+Higher priority work (P1 FSM migration, P2 predicates) completed first.
 
 ### Progress
 
-- [ ] Unified ValidationResult type defined
+- [x] Current state documented (2025-12-11)
+- [ ] Unified ValidationOutcome<T> type defined
 - [ ] Error code enum created
 - [ ] TS validators migrated
 - [ ] Python validators migrated
@@ -206,9 +234,14 @@ Sandbox modules (sandboxPlacement.ts, sandboxElimination.ts, etc.) reimplement l
 ### Progress
 
 - [x] sandboxElimination.ts delegates to EliminationAggregate
-- [ ] sandboxPlacement.ts migration
-- [ ] sandboxCaptures.ts migration
-- [ ] Other modules assessed
+- [x] sandboxPlacement.ts - ALREADY OPTIMAL (delegates to validatePlacementOnBoard)
+- [x] sandboxMovement.ts - ALREADY OPTIMAL (thin adapter only)
+- [x] sandboxTerritory.ts - ALREADY OPTIMAL (proper delegation)
+- [ ] sandboxLines.ts - has dead code (getLineDirectionsForBoard, findLineInDirectionOnBoard)
+  - These functions are only used in tests, not production code
+  - Aggregate has private equivalents (getLineDirections, findLineInDirection)
+  - LOW priority: production code already uses shared findAllLines()
+- [ ] sandboxCaptures.ts - applyCaptureSegmentOnBoard is diagnostic-only (clearly marked)
 
 ---
 
