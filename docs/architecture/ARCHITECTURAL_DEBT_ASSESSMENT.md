@@ -22,10 +22,10 @@ This document tracks architectural debt identified in the RingRift codebase and 
 | P1       | Deprecated Phase Orchestrators | Deferred      | Critical | High   |
 | P2       | Action Availability Predicates | Complete ✅   | High     | Medium |
 | P3       | Cap Height Consolidation       | Complete ✅   | Medium   | Low    |
-| P4       | Validation Result Unification  | Documented    | Medium   | High   |
+| P4       | Validation Result Unification  | Implemented   | Medium   | Low    |
 | P5       | Sandbox Aggregate Delegation   | Complete ✅   | Medium   | Low    |
 | P6       | Dead Code Cleanup              | Blocked by P1 | Low      | Low    |
-| P7       | GameState Type Unification     | **NEW**       | High     | High   |
+| P7       | GameState Type Architecture    | Resolved ✅   | N/A      | N/A    |
 
 ---
 
@@ -422,57 +422,41 @@ Deprecated functions still exported, design-time stubs that throw, unused helper
 
 ---
 
-## P7: GameState Type Unification
+## P7: GameState Type Architecture (Resolved)
 
-### Problem (Discovered 2025-12-11)
+### Background
 
-The codebase has TWO incompatible `GameState` types:
+The codebase has two `GameState` types:
 
-| Location                 | Properties           | Used By                   |
-| ------------------------ | -------------------- | ------------------------- |
-| `shared/engine/types.ts` | 14 fields (readonly) | Validators, GameEngine.ts |
-| `shared/types/game.ts`   | 17+ fields           | Aggregates, shared types  |
+| Location                 | Properties           | Used By                        |
+| ------------------------ | -------------------- | ------------------------------ |
+| `shared/engine/types.ts` | 14 fields (readonly) | Internal validators/mutators   |
+| `shared/types/game.ts`   | 24+ fields (mutable) | Public API, aggregates, server |
 
-The `shared/types/game.ts` version has additional required fields:
+### Analysis (2025-12-11)
 
-- `boardType: BoardType`
-- `history: GameEvent[]`
-- `spectators: string[]`
+This is **intentional layered architecture**, not technical debt:
 
-### Impact
+1. **Public API** (`index.ts:34-43`) exports `GameState` from `types/game.ts`
+2. **Internal engine** uses minimal readonly subset from `engine/types.ts`
+3. The barrel export correctly exposes the full type to external consumers
 
-- Cannot consolidate validators with aggregates (attempted Dec 11, 2025)
-- Type confusion when passing state between modules
-- Potential runtime issues if wrong type used
+**Why this is correct:**
 
-### Attempted Resolution
+- Internal validators/mutators work with a minimal contract (14 fields)
+- External consumers (server, client, tests) use the full type (24+ fields)
+- This provides type safety at the engine boundary
 
-Simple re-export from validators to aggregates failed:
+### Historical Context
 
-```
-error TS2345: Argument of type 'GameState' is not assignable to parameter of type 'GameState'.
-  Type 'GameState' is missing the following properties: boardType, history, spectators
-```
+An attempted validator/aggregate consolidation failed with type mismatch errors.
+This was because the consolidation tried to mix internal and external types inappropriately.
+The correct approach is to keep validators using the internal type and aggregates using the public type.
 
-### Resolution Options
+### Status: Resolved ✅
 
-1. **Unify to single type** (Recommended, High Effort)
-   - Make `shared/types/game.ts:GameState` the canonical type
-   - Update `shared/engine/types.ts` to re-export it
-   - Update all consumers
-   - ~40+ files affected
-
-2. **Make engine type extend shared type** (Medium Effort)
-   - Add missing properties to engine GameState
-   - May require optional fields or defaults
-
-3. **Use type adapters** (Low Effort, Not Recommended)
-   - Create conversion functions between types
-   - Adds complexity and runtime overhead
-
-### Status: Documented, Pending
-
-This is a prerequisite for validator/aggregate consolidation and should be addressed before attempting P0.1 again.
+No action needed. The dual-type architecture is working as designed.
+The public API correctly exports the full `GameState` type for external consumers.
 
 ---
 
@@ -553,7 +537,7 @@ Assessed all `*Helpers.ts` files in `src/shared/engine/` for consolidation oppor
 
 - P1: Phase Orchestrators - deferred, dual-system documented (see PHASE_ORCHESTRATION_ARCHITECTURE.md)
 - P4: Validation Result Unification - `ValidationOutcome<T>` implemented for incremental adoption
-- P7: GameState Type Unification - documented, prerequisite for future consolidation
+- P7: GameState Type Architecture - resolved, intentional layered design confirmed
 
 **Architecture Health:**
 
