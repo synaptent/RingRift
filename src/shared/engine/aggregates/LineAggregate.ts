@@ -153,15 +153,17 @@ export interface LineDecisionApplicationOutcome {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Internal Helpers - Line Geometry
+// Line Geometry Helpers (Exported for testing)
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * Get the canonical line directions for a board type.
  * For square boards: 4 directions (E, SE, S, NE) to cover all lines.
  * For hex boards: 3 directions (E, NE, NW) in cube coordinates.
+ *
+ * Exported for testing purposes. Production code should use findAllLines().
  */
-function getLineDirections(boardType: string): Position[] {
+export function getLineDirections(boardType: string): Position[] {
   if (boardType === 'hexagonal') {
     // 3 directions for hexagonal (in cube coordinates)
     return [
@@ -225,8 +227,11 @@ function getStackAt(position: Position, board: BoardState): RingStack | undefine
 
 /**
  * Find all positions in a line from a starting position in a given direction.
+ * Walks both forward and backward from the starting position.
+ *
+ * Exported for testing purposes. Production code should use findAllLines().
  */
-function findLineInDirection(
+export function findLineInDirection(
   startPosition: Position,
   direction: Position,
   playerId: number,
@@ -1215,7 +1220,8 @@ export function applyChooseLineRewardDecision(
   const collapsedKeys = new Set(positionsToCollapse.map((p) => positionToString(p)));
   const lineKeys = new Set(line.positions.map((p) => positionToString(p)));
   const isFullCollapse =
-    collapsedKeys.size === lineKeys.size && Array.from(collapsedKeys).every((key) => lineKeys.has(key));
+    collapsedKeys.size === lineKeys.size &&
+    Array.from(collapsedKeys).every((key) => lineKeys.has(key));
 
   const pendingReward = length >= requiredLength && isFullCollapse;
 

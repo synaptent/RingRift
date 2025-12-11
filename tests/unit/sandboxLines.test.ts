@@ -1,24 +1,28 @@
 /**
- * Unit tests for sandboxLines.ts
+ * Unit tests for line geometry functions.
  *
- * Tests for line detection helpers used by the sandbox engine.
+ * Tests the canonical line detection geometry from LineAggregate.
+ * The sandbox's findAllLinesOnBoard is tested to ensure it delegates correctly.
  */
 
-import {
-  getLineDirectionsForBoard,
-  findLineInDirectionOnBoard,
-  findAllLinesOnBoard,
-  LineDirection,
-} from '../../src/client/sandbox/sandboxLines';
+import { findAllLinesOnBoard } from '../../src/client/sandbox/sandboxLines';
 import { createTestBoard, pos, posStr } from '../utils/fixtures';
 import type { BoardState, BoardType, Position } from '../../src/shared/types/game';
-import { isValidPosition } from '../../src/shared/engine';
-import { BOARD_CONFIGS } from '../../src/shared/engine';
+import {
+  isValidPosition,
+  BOARD_CONFIGS,
+  // Canonical line geometry from LineAggregate
+  getLineDirections,
+  findLineInDirection,
+} from '../../src/shared/engine';
 
-describe('sandboxLines', () => {
-  describe('getLineDirectionsForBoard', () => {
+// Type alias for backward compatibility with existing tests
+type LineDirection = Position;
+
+describe('Line Geometry (LineAggregate)', () => {
+  describe('getLineDirections', () => {
     it('returns 3 directions for hexagonal board', () => {
-      const directions = getLineDirectionsForBoard('hexagonal');
+      const directions = getLineDirections('hexagonal');
 
       expect(directions).toHaveLength(3);
       // Verify hex directions have z component
@@ -30,7 +34,7 @@ describe('sandboxLines', () => {
     });
 
     it('returns 4 directions for square8 board', () => {
-      const directions = getLineDirectionsForBoard('square8');
+      const directions = getLineDirections('square8');
 
       expect(directions).toHaveLength(4);
       // Verify square directions don't have z component
@@ -43,19 +47,14 @@ describe('sandboxLines', () => {
     });
 
     it('returns 4 directions for square19 board', () => {
-      const directions = getLineDirectionsForBoard('square19');
+      const directions = getLineDirections('square19');
 
       expect(directions).toHaveLength(4);
     });
   });
 
-  describe('findLineInDirectionOnBoard', () => {
+  describe('findLineInDirection', () => {
     const boardType: BoardType = 'square8';
-
-    function createIsValidPosition(boardType: BoardType): (pos: Position) => boolean {
-      const config = BOARD_CONFIGS[boardType];
-      return (p: Position) => isValidPosition(p, boardType, config.size);
-    }
 
     it('returns single position when no adjacent markers', () => {
       const board = createTestBoard(boardType);
@@ -65,10 +64,9 @@ describe('sandboxLines', () => {
         type: 'regular',
       });
 
-      const isValid = createIsValidPosition(boardType);
       const direction: LineDirection = { x: 1, y: 0 };
 
-      const line = findLineInDirectionOnBoard(pos(3, 3), direction, 1, board, isValid);
+      const line = findLineInDirection(pos(3, 3), direction, 1, board);
 
       expect(line).toHaveLength(1);
       expect(line[0]).toEqual(pos(3, 3));
@@ -85,10 +83,9 @@ describe('sandboxLines', () => {
         });
       }
 
-      const isValid = createIsValidPosition(boardType);
       const direction: LineDirection = { x: 1, y: 0 }; // East
 
-      const line = findLineInDirectionOnBoard(pos(3, 3), direction, 1, board, isValid);
+      const line = findLineInDirection(pos(3, 3), direction, 1, board);
 
       expect(line).toHaveLength(4);
       expect(line[0]).toEqual(pos(2, 3));
@@ -106,10 +103,9 @@ describe('sandboxLines', () => {
         });
       }
 
-      const isValid = createIsValidPosition(boardType);
       const direction: LineDirection = { x: 1, y: 1 }; // Southeast
 
-      const line = findLineInDirectionOnBoard(pos(2, 2), direction, 2, board, isValid);
+      const line = findLineInDirection(pos(2, 2), direction, 2, board);
 
       expect(line).toHaveLength(4);
       expect(line[0]).toEqual(pos(1, 1));
@@ -122,10 +118,9 @@ describe('sandboxLines', () => {
       board.markers.set(posStr(3, 3), { position: pos(3, 3), player: 1, type: 'regular' });
       board.markers.set(posStr(4, 3), { position: pos(4, 3), player: 2, type: 'regular' }); // Different player
 
-      const isValid = createIsValidPosition(boardType);
       const direction: LineDirection = { x: 1, y: 0 };
 
-      const line = findLineInDirectionOnBoard(pos(3, 3), direction, 1, board, isValid);
+      const line = findLineInDirection(pos(3, 3), direction, 1, board);
 
       expect(line).toHaveLength(2);
       expect(line).toContainEqual(pos(2, 3));
@@ -139,10 +134,9 @@ describe('sandboxLines', () => {
       // Gap at (4, 3)
       board.markers.set(posStr(5, 3), { position: pos(5, 3), player: 1, type: 'regular' });
 
-      const isValid = createIsValidPosition(boardType);
       const direction: LineDirection = { x: 1, y: 0 };
 
-      const line = findLineInDirectionOnBoard(pos(3, 3), direction, 1, board, isValid);
+      const line = findLineInDirection(pos(3, 3), direction, 1, board);
 
       expect(line).toHaveLength(2); // Only (2,3) and (3,3)
     });
@@ -154,10 +148,9 @@ describe('sandboxLines', () => {
       board.markers.set(posStr(4, 3), { position: pos(4, 3), player: 1, type: 'regular' });
       board.collapsedSpaces.set(posStr(4, 3), { position: pos(4, 3), collapsed: true });
 
-      const isValid = createIsValidPosition(boardType);
       const direction: LineDirection = { x: 1, y: 0 };
 
-      const line = findLineInDirectionOnBoard(pos(3, 3), direction, 1, board, isValid);
+      const line = findLineInDirection(pos(3, 3), direction, 1, board);
 
       expect(line).toHaveLength(2); // Collapsed space blocks the line
     });
@@ -176,10 +169,9 @@ describe('sandboxLines', () => {
         controllingPlayer: 1,
       });
 
-      const isValid = createIsValidPosition(boardType);
       const direction: LineDirection = { x: 1, y: 0 };
 
-      const line = findLineInDirectionOnBoard(pos(3, 3), direction, 1, board, isValid);
+      const line = findLineInDirection(pos(3, 3), direction, 1, board);
 
       expect(line).toHaveLength(2); // Stack blocks the line
     });
@@ -195,10 +187,9 @@ describe('sandboxLines', () => {
         });
       }
 
-      const isValid = createIsValidPosition(boardType);
       const direction: LineDirection = { x: 1, y: 0 };
 
-      const line = findLineInDirectionOnBoard(pos(6, 3), direction, 1, board, isValid);
+      const line = findLineInDirection(pos(6, 3), direction, 1, board);
 
       expect(line).toHaveLength(3); // Stops at x=7 (board edge is 0-7)
     });
@@ -229,17 +220,9 @@ describe('sandboxLines', () => {
           type: 'regular',
         });
 
-        const config = BOARD_CONFIGS['hexagonal'];
-        const isValid = (p: Position) => isValidPosition(p, 'hexagonal', config.size);
         const direction: LineDirection = { x: 1, y: 0, z: -1 }; // East
 
-        const line = findLineInDirectionOnBoard(
-          { x: 1, y: 0, z: -1 },
-          direction,
-          1,
-          board,
-          isValid
-        );
+        const line = findLineInDirection({ x: 1, y: 0, z: -1 }, direction, 1, board);
 
         expect(line).toHaveLength(3);
       });
@@ -269,11 +252,9 @@ describe('sandboxLines', () => {
           type: 'regular',
         });
 
-        const config = BOARD_CONFIGS['hexagonal'];
-        const isValid = (p: Position) => isValidPosition(p, 'hexagonal', config.size);
         const direction: LineDirection = { x: 1, y: -1, z: 0 }; // Northeast
 
-        const line = findLineInDirectionOnBoard({ x: 0, y: 0, z: 0 }, direction, 2, board, isValid);
+        const line = findLineInDirection({ x: 0, y: 0, z: 0 }, direction, 2, board);
 
         expect(line).toHaveLength(3);
         expect(line[0]).toEqual({ x: -1, y: 1, z: 0 });

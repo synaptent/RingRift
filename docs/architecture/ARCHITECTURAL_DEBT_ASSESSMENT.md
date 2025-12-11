@@ -237,10 +237,11 @@ Sandbox modules (sandboxPlacement.ts, sandboxElimination.ts, etc.) reimplement l
 - [x] sandboxPlacement.ts - ALREADY OPTIMAL (delegates to validatePlacementOnBoard)
 - [x] sandboxMovement.ts - ALREADY OPTIMAL (thin adapter only)
 - [x] sandboxTerritory.ts - ALREADY OPTIMAL (proper delegation)
-- [ ] sandboxLines.ts - has dead code (getLineDirectionsForBoard, findLineInDirectionOnBoard)
-  - These functions are only used in tests, not production code
-  - Aggregate has private equivalents (getLineDirections, findLineInDirection)
-  - LOW priority: production code already uses shared findAllLines()
+- [x] sandboxLines.ts - dead code removed (2025-12-11)
+  - Removed `getLineDirectionsForBoard`, `findLineInDirectionOnBoard` (~100 lines)
+  - Exported canonical `getLineDirections`, `findLineInDirection` from LineAggregate
+  - Updated tests to use canonical functions
+  - File reduced from 145 to 49 lines
 - [ ] sandboxCaptures.ts - applyCaptureSegmentOnBoard is diagnostic-only (clearly marked)
 
 ---

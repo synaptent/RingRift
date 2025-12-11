@@ -450,6 +450,9 @@ export {
   findAllLines as findAllLinesAggregate,
   findLinesForPlayer as findLinesForPlayerAggregate,
   findLinesContainingPosition,
+  // Geometry helpers (for testing)
+  getLineDirections,
+  findLineInDirection,
   // Validation
   validateProcessLine as validateProcessLineAggregate,
   validateChooseLineReward as validateChooseLineRewardAggregate,
