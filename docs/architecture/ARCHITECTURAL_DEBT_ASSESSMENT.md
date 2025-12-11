@@ -25,6 +25,7 @@ This document tracks architectural debt identified in the RingRift codebase and 
 | P4       | Validation Result Unification  | Documented    | Medium   | High   |
 | P5       | Sandbox Aggregate Delegation   | Complete ✅   | Medium   | Low    |
 | P6       | Dead Code Cleanup              | Blocked by P1 | Low      | Low    |
+| P7       | GameState Type Unification     | **NEW**       | High     | High   |
 
 ---
 
@@ -41,28 +42,50 @@ Both marked @deprecated but still in production paths.
 
 ### Files Involved
 
-| File                                                   | Lines | Status              |
-| ------------------------------------------------------ | ----- | ------------------- |
-| `src/shared/engine/orchestration/phaseStateMachine.ts` | 447   | DEPRECATED - Remove |
-| `ai-service/app/rules/phase_machine.py`                | 380   | DEPRECATED - Remove |
-| `src/shared/engine/fsm/TurnStateMachine.ts`            | 500+  | CANONICAL           |
-| `src/shared/engine/fsm/FSMAdapter.ts`                  | ~300  | CANONICAL           |
-| `ai-service/app/rules/fsm.py`                          | 865   | EXPERIMENTAL        |
+| File                                                   | Lines | Status                      |
+| ------------------------------------------------------ | ----- | --------------------------- |
+| `src/shared/engine/orchestration/phaseStateMachine.ts` | 447   | DEPRECATED (state tracking) |
+| `ai-service/app/rules/phase_machine.py`                | 380   | DEPRECATED (parity)         |
+| `src/shared/engine/fsm/TurnStateMachine.ts`            | 1112  | CANONICAL (validation)      |
+| `src/shared/engine/fsm/FSMAdapter.ts`                  | 2066  | CANONICAL (validation)      |
+| `ai-service/app/rules/fsm.py`                          | 865   | EXPERIMENTAL                |
 
-### Resolution Plan
+### Current Architecture (Dual-System)
 
-1. ~~Verify FSM handles all phase transitions currently in phaseStateMachine~~
-2. Update turnOrchestrator to route ALL phase logic through FSMAdapter
-3. Remove phaseStateMachine.ts exports from engine/index.ts
-4. Delete phaseStateMachine.ts
-5. Mark phase_machine.py for removal (Python should use FSM equivalent)
+**See**: [`PHASE_ORCHESTRATION_ARCHITECTURE.md`](./PHASE_ORCHESTRATION_ARCHITECTURE.md)
+
+The systems coexist with clear responsibilities:
+
+- **FSM**: Canonical for validation (`validateMoveWithFSM`) and phase resolution (`computeFSMOrchestration`)
+- **Legacy**: Used for state tracking during `processTurn()` execution
+
+This is working correctly with 254+ tests passing.
+
+### Resolution Plan (Updated 2025-12-11)
+
+~~Original plan: Full migration to FSM~~
+
+**New approach: Keep dual-system, document clearly**
+
+1. ~~Verify FSM handles all phase transitions~~ ✅ FSM is canonical validator
+2. ~~Update turnOrchestrator to route ALL phase logic through FSMAdapter~~ DEFERRED
+3. Document dual-system architecture ✅
+4. Migrate only if: bug found, feature requires it, or Python FSM reaches parity
+
+**Rationale:**
+
+- FSM validation already canonical - legacy is just state tracking wrapper
+- High risk of regression (69 method calls in turnOrchestrator)
+- Python parity would require significant additional work
+- Current system is working correctly
 
 ### Progress
 
-- [x] FSM exists and is marked canonical
-- [ ] turnOrchestrator fully migrated to FSM
-- [ ] phaseStateMachine.ts deleted
-- [ ] phase_machine.py migration started
+- [x] FSM exists and is canonical for validation
+- [x] `validateMoveWithFSM` used for all move validation
+- [x] `computeFSMOrchestration` used for phase resolution
+- [x] Dual-system architecture documented (2025-12-11)
+- [ ] Full migration (DEFERRED - not recommended)
 
 ---
 
@@ -246,24 +269,51 @@ Three different validation result structures exist:
 - Medium impact on debuggability (inconsistent error handling)
 - High effort to unify (touches 19+ files, ~500 usages)
 
-**Recommended Approach:**
+**Recommended Approach (Incremental):**
 
-1. Define `ValidationOutcome<T>` as the unified type
-2. Add error code enum `ValidationErrorCode`
-3. Migrate validators incrementally (placement first, then movement, etc.)
-4. Python parity can use similar structure
+1. ~~Define `ValidationOutcome<T>` as the unified type~~
+2. ~~Add error code enum `ValidationErrorCode`~~
+3. Use new types for NEW validators only
+4. Migrate existing validators opportunistically (when touched for other reasons)
+5. Do NOT attempt wholesale migration
 
-**Deferred Rationale:**
-Current inconsistency doesn't cause bugs - it's a DX/maintainability issue.
-Higher priority work (P1 FSM migration, P2 predicates) completed first.
+**Rationale:**
+
+- Current inconsistency doesn't cause bugs - it's a DX/maintainability issue
+- Wholesale migration (500+ usages) is high effort, low value
+- Incremental adoption captures benefits without the churn
 
 ### Progress
 
 - [x] Current state documented (2025-12-11)
-- [ ] Unified ValidationOutcome<T> type defined
-- [ ] Error code enum created
-- [ ] TS validators migrated
-- [ ] Python validators migrated
+- [x] `ValidationOutcome<T>` type defined (2025-12-11)
+- [x] `ValidationErrorCode` enum created (2025-12-11)
+- [x] Helper functions: `validOutcome()`, `invalidOutcome()`, `isValidOutcome()`
+- [x] 11 unit tests for new validation infrastructure
+- [ ] TS validators migrated (incremental, as-needed)
+- [ ] Python validators migrated (future, if needed)
+
+### Usage
+
+New validators should use `ValidationOutcome<T>`:
+
+```typescript
+import {
+  ValidationOutcome,
+  ValidationErrorCode,
+  validOutcome,
+  invalidOutcome,
+} from '@/shared/engine';
+
+function validateNewFeature(state: GameState): ValidationOutcome<FeatureData> {
+  if (!isValid) {
+    return invalidOutcome(ValidationErrorCode.GENERAL_INVALID_PLAYER, 'Descriptive error message', {
+      context: 'optional debugging context',
+    });
+  }
+  return validOutcome({ data: 'success data' });
+}
+```
 
 ---
 
@@ -372,6 +422,60 @@ Deprecated functions still exported, design-time stubs that throw, unused helper
 
 ---
 
+## P7: GameState Type Unification
+
+### Problem (Discovered 2025-12-11)
+
+The codebase has TWO incompatible `GameState` types:
+
+| Location                 | Properties           | Used By                   |
+| ------------------------ | -------------------- | ------------------------- |
+| `shared/engine/types.ts` | 14 fields (readonly) | Validators, GameEngine.ts |
+| `shared/types/game.ts`   | 17+ fields           | Aggregates, shared types  |
+
+The `shared/types/game.ts` version has additional required fields:
+
+- `boardType: BoardType`
+- `history: GameEvent[]`
+- `spectators: string[]`
+
+### Impact
+
+- Cannot consolidate validators with aggregates (attempted Dec 11, 2025)
+- Type confusion when passing state between modules
+- Potential runtime issues if wrong type used
+
+### Attempted Resolution
+
+Simple re-export from validators to aggregates failed:
+
+```
+error TS2345: Argument of type 'GameState' is not assignable to parameter of type 'GameState'.
+  Type 'GameState' is missing the following properties: boardType, history, spectators
+```
+
+### Resolution Options
+
+1. **Unify to single type** (Recommended, High Effort)
+   - Make `shared/types/game.ts:GameState` the canonical type
+   - Update `shared/engine/types.ts` to re-export it
+   - Update all consumers
+   - ~40+ files affected
+
+2. **Make engine type extend shared type** (Medium Effort)
+   - Add missing properties to engine GameState
+   - May require optional fields or defaults
+
+3. **Use type adapters** (Low Effort, Not Recommended)
+   - Create conversion functions between types
+   - Adds complexity and runtime overhead
+
+### Status: Documented, Pending
+
+This is a prerequisite for validator/aggregate consolidation and should be addressed before attempting P0.1 again.
+
+---
+
 ## Completed Work
 
 ### Elimination Logic Consolidation (2025-12-11)
@@ -447,8 +551,9 @@ Assessed all `*Helpers.ts` files in `src/shared/engine/` for consolidation oppor
 
 **Pending (Low Priority):**
 
-- P1: Phase Orchestrators - deferred, requires FSM migration (high effort)
-- P4: Validation Result Unification - documented, low urgency (medium effort)
+- P1: Phase Orchestrators - deferred, dual-system documented (see PHASE_ORCHESTRATION_ARCHITECTURE.md)
+- P4: Validation Result Unification - `ValidationOutcome<T>` implemented for incremental adoption
+- P7: GameState Type Unification - documented, prerequisite for future consolidation
 
 **Architecture Health:**
 
@@ -461,6 +566,7 @@ Assessed all `*Helpers.ts` files in `src/shared/engine/` for consolidation oppor
 
 ## References
 
+- `PHASE_ORCHESTRATION_ARCHITECTURE.md` - Dual-system phase orchestration documentation
 - `ELIMINATION_REFACTORING_PLAN.md` - Detailed elimination consolidation tracking
 - `RULES_CANONICAL_SPEC.md` - Canonical rules reference
 - `CANONICAL_ENGINE_API.md` - Public API documentation

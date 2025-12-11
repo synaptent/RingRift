@@ -105,8 +105,12 @@ export { isValidPosition } from './validators/utils';
 // ENGINE TYPES (from src/shared/engine/types.ts)
 // =============================================================================
 
-// Validation
+// Validation (legacy)
 export type { ValidationResult } from './types';
+
+// Validation (unified - for new validators)
+export type { ValidationOutcome } from './types';
+export { ValidationErrorCode, isValidOutcome, validOutcome, invalidOutcome } from './types';
 
 // Actions (for host-level action dispatch)
 export type {
