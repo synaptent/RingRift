@@ -182,7 +182,7 @@ A player who controls **zero stacks**, has **at least one marker**, and has **at
 
 1. **Marker slide:** Move one of your markers to an adjacent empty cell (Moore adjacency for square, hex-adjacency for hex).
 2. **Success criteria:** Legal if **either**:
-   - **(a) Line formation:** Completes a line of **at least** `lineLength` consecutive markers of your colour.
+   - **(a) Line formation:** Completes a line of **at least** `lineLength` consecutive markers of your colour. The line must be uninterrupted—collapsed spaces, opponent markers, or stacks break the line and segments on either side do not count toward the length requirement.
    - **(b) Fallback:** If no line-forming slide exists, any adjacent slide is permitted (including slides that cause territory disconnection).
 3. **Skip option:** You may skip recovery entirely, preserving buried rings for later.
 4. **Line recovery (condition a):** If the line exceeds `lineLength`:

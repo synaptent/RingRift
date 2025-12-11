@@ -53,7 +53,7 @@ There are three standard boards:
   - 64 spaces.
   - Each player has **18 rings**.
   - Territory victory: **>32** collapsed spaces.
-  - Lines: **3+** markers in a row.
+  - Lines: **4+** markers (2-player) or **3+** markers (3–4 player).
 
 - **19×19 square** (full version)
   - 361 spaces.
@@ -198,6 +198,8 @@ forced elimination.
 
 ### 3.5 Recovery action
 
+> **Key Mechanic:** Recovery actions let you stay in the game even after losing all your stacks! Keep some of your rings buried in opponents' stacks as "survival insurance."
+
 If you control **no stacks** but have **markers on the board** and **buried rings**
 (your rings at the bottom of opponents' stacks), you may perform a **recovery action**.
 Recovery eligibility is independent of rings in hand; players with rings may choose
@@ -205,7 +207,7 @@ recovery over placement:
 
 1. **Slide** one of your markers to an adjacent empty cell.
 2. The slide is legal if **either**:
-   - **(a) Line formation:** Completes a line of **at least** `lineLength` of your markers (3 for 8×8, 4 for 19×19/Hex).
+   - **(a) Line formation:** Completes a line of **at least** `lineLength` of your markers (4 for 8×8 2-player, 3 for 8×8 3–4 player, 4 for 19×19/Hex).
    - **(b) Fallback:** If no line-forming slide exists, any adjacent slide is permitted (including slides that cause territory disconnection).
 3. **Skip option:** You may skip recovery entirely to save your buried rings.
 4. **Line recovery (a):** Overlength lines follow standard Option 1 / Option 2 semantics:
@@ -238,7 +240,7 @@ handle the following **global effects** in this strict order:
 A **line** is a straight contiguous run of your **markers** of at least
 a certain length for the board:
 
-- 8×8: **3+** markers in a row.
+- 8×8: **4+** markers (2-player) or **3+** markers (3–4 player).
 - 19×19 and Hex: **4+** markers in a row.
 
 For each line that is eligible, you process it one at a time in an order

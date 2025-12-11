@@ -1,3 +1,13 @@
+/**
+ * @semantic-anchor Python_vs_TS.traceParity
+ * @rules-level-counterparts
+ *   - tests/contracts/contractVectorRunner.test.ts (canonical contract vectors)
+ *   - ai-service/tests/contracts/test_contract_vectors.py (Python contract vectors)
+ *   - tests/unit/territoryProcessing.shared.test.ts (territory semantics)
+ *   - tests/unit/lineDecisionHelpers.shared.test.ts (line semantics)
+ *   - RR-CANON-R001–R180 (complete rules specification)
+ * @classification Trace-level parity / cross-language
+ */
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { GameState, Move, BoardType } from '../../src/shared/types/game';

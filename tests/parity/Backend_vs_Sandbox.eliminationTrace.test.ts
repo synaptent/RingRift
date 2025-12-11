@@ -1,3 +1,12 @@
+/**
+ * @semantic-anchor Backend_vs_Sandbox.eliminationTrace
+ * @rules-level-counterparts
+ *   - tests/unit/territoryProcessing.shared.test.ts (elimination bookkeeping)
+ *   - tests/unit/victoryLogic.shared.test.ts (elimination thresholds)
+ *   - RR-CANON-R022 (line elimination cost: 1 ring from any stack)
+ *   - RR-CANON-R082 (territory elimination cost: entire cap from eligible stack)
+ * @classification Trace-level parity / diagnostic
+ */
 import { BoardType, GameState, Move } from '../../src/shared/types/game';
 import { runSandboxAITrace, createBackendEngineFromInitialState } from '../utils/traces';
 import { findMatchingBackendMove } from '../utils/moveMatching';

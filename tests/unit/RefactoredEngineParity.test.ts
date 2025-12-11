@@ -1,3 +1,13 @@
+/**
+ * @semantic-anchor RefactoredEngineParity
+ * @rules-level-counterparts
+ *   - src/shared/engine/GameEngine.ts (canonical shared engine)
+ *   - tests/unit/movement.shared.test.ts (movement rules)
+ *   - tests/unit/captureLogic.shared.test.ts (capture rules)
+ *   - tests/contracts/contractVectorRunner.test.ts (contract vectors)
+ *   - RR-CANON-R001–R180 (complete rules specification)
+ * @classification Rules-level parity / shared engine vs legacy adapters
+ */
 import { GameEngine as SharedGameEngine } from '../../src/shared/engine/GameEngine';
 import {
   GameState as SharedEngineGameState,

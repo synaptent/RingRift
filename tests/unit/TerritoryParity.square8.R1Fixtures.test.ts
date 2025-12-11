@@ -1,3 +1,13 @@
+/**
+ * @semantic-anchor TerritoryParity.square8.R1Fixtures
+ * @rules-level-counterparts
+ *   - tests/unit/territoryProcessing.shared.test.ts (territory region processing)
+ *   - tests/unit/territoryDecisionHelpers.shared.test.ts (territory decisions)
+ *   - tests/unit/territoryProcessing.branchCoverage.test.ts (eligibility logic)
+ *   - RR-CANON-R070–R082 (territory processing rules)
+ *   - RR-CANON-R082 (elimination cost: entire cap from eligible stack only)
+ * @classification Rules-level parity with fixtures
+ */
 import {
   BoardType,
   TimeControl,

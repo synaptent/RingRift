@@ -569,6 +569,8 @@ This option is available **only once**, immediately after Player 1's first turn,
 
 ### 4.5 Recovery Action
 
+> **Strategic Note:** Recovery actions are a powerful mechanic that lets players re-enter active play even after losing all their stacks. Unlike forced elimination (which is mandatory and removes your caps), recovery actions are voluntary and let you form lines or reposition markers while paying only a single buried ring. Maintaining buried rings in opponent stacks is a form of "survival insurance."
+
 A **recovery action** allows a player who controls no stacks but has markers and buried rings to take meaningful action during their turn. Recovery eligibility is independent of rings in hand; players with rings may choose recovery over placement.
 
 • **Prerequisites:** A player may perform a recovery action during the movement phase if and only if **all** of the following conditions are met:
@@ -618,11 +620,11 @@ A **recovery action** allows a player who controls no stacks but has markers and
 • **After movement and any captures are complete (and after any same-color marker removal upon landing), check for**:
 
 1.  **Line formations (board-specific thresholds)**
-    - On the **8×8 board**, lines of **3+ markers** trigger line processing.
+    - On the **8×8 board**, lines of **4+ markers** trigger line processing in 2-player games, **3+ markers** in 3–4 player games.
     - On the **19×19** and **Hexagonal** boards, lines of **4+ markers** trigger line processing.
     - Process each **eligible** line one at a time, with the moving player selecting which line to process first.
     - For rules that depend on the _required_ line length, use:
-      - 3 for 8×8;
+      - 4 for 8×8 in 2-player games, 3 for 8×8 in 3–4 player games;
       - 4 for 19×19 and Hexagonal.
     - For each eligible line:
       - **For lines of exactly the required length:**
