@@ -413,6 +413,50 @@ Deprecated functions still exported, design-time stubs that throw, unused helper
 - `src/shared/engine/phaseValidation.ts` (new)
 - `tests/unit/engine/phaseValidation.test.ts` (new - 44 tests)
 
+### Helper Module Assessment (2025-12-11)
+
+Assessed all `*Helpers.ts` files in `src/shared/engine/` for consolidation opportunities:
+
+| Module                        | Lines | Purpose                        | Status              |
+| ----------------------------- | ----- | ------------------------------ | ------------------- |
+| `turnDelegateHelpers.ts`      | 274   | Action availability predicates | ✅ Canonical        |
+| `lineDecisionHelpers.ts`      | 631   | Line processing decisions      | ✅ Proper layer     |
+| `territoryDecisionHelpers.ts` | 602   | Territory processing decisions | ✅ Proper layer     |
+| `placementHelpers.ts`         | 369   | GameState-level placement ops  | ✅ Above primitives |
+| `playerStateHelpers.ts`       | 249   | Player state utilities         | ✅ Clean            |
+| `swapSidesHelpers.ts`         | 211   | Side-swapping logic            | ✅ Clean            |
+| `historyHelpers.ts`           | 132   | Move history utilities         | ✅ Clean            |
+| `replayHelpers.ts`            | 123   | Replay serialization           | ✅ Clean            |
+| `boardMutationHelpers.ts`     | 95    | In-place board updates         | ✅ Clean            |
+| `sharedDecisionHelpers.ts`    | 55    | Cross-module utilities         | ✅ Clean            |
+
+**Assessment**: All helper modules are well-organized with clear responsibilities. No consolidation opportunities identified.
+
+---
+
+## Summary
+
+### Current State (2025-12-11)
+
+**Completed:**
+
+- P2: Action Availability Predicates - canonical implementations in turnDelegateHelpers.ts
+- P3: Cap Height Consolidation - ring indexing documented, parity verified
+- P5: Sandbox Aggregate Delegation - all sandbox modules delegate properly
+- P6: Dead Code Cleanup - inventoried, remaining items blocked by P1
+
+**Pending (Low Priority):**
+
+- P1: Phase Orchestrators - deferred, requires FSM migration (high effort)
+- P4: Validation Result Unification - documented, low urgency (medium effort)
+
+**Architecture Health:**
+
+- Single Source of Truth: ✅ Established for all completed areas
+- TypeScript/Python Parity: ✅ Verified for predicates, elimination, line detection
+- Layered Responsibility: ✅ Clear separation maintained
+- Helper Module Organization: ✅ No consolidation needed
+
 ---
 
 ## References
