@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import { ScenarioPickerModal } from '../../../src/client/components/ScenarioPickerModal';
+import type { ScenarioPickerModalProps } from '../../../src/client/components/ScenarioPickerModal';
 import type { LoadableScenario } from '../../../src/client/sandbox/scenarioTypes';
 import * as scenarioLoader from '../../../src/client/sandbox/scenarioLoader';
 import * as statePersistence from '../../../src/client/sandbox/statePersistence';
@@ -49,6 +50,15 @@ const createMockScenario = (
   state: {} as any,
 });
 
+let consoleErrorSpy: jest.SpyInstance;
+beforeAll(() => {
+  consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+});
+
+afterAll(() => {
+  consoleErrorSpy.mockRestore();
+});
+
 describe('ScenarioPickerModal', () => {
   const mockOnClose = jest.fn();
   const mockOnSelectScenario = jest.fn();
@@ -75,6 +85,33 @@ describe('ScenarioPickerModal', () => {
     mockFilterScenarios.mockImplementation((scenarios) => scenarios);
   });
 
+  const renderOpenModal = async (
+    props: Partial<ScenarioPickerModalProps> = {},
+    options?: { waitForLoad?: boolean }
+  ) => {
+    const waitForLoad = options?.waitForLoad ?? true;
+    let utils: ReturnType<typeof render> | undefined;
+
+    await act(async () => {
+      utils = render(
+        <ScenarioPickerModal
+          isOpen={true}
+          onClose={mockOnClose}
+          onSelectScenario={mockOnSelectScenario}
+          {...props}
+        />
+      );
+    });
+
+    if (waitForLoad) {
+      await waitFor(() => expect(mockLoadCuratedScenarios).toHaveBeenCalled());
+      await waitFor(() => expect(mockLoadVectorScenarios).toHaveBeenCalled());
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+    }
+
+    return { user: userEvent.setup(), ...(utils as ReturnType<typeof render>) };
+  };
+
   describe('visibility', () => {
     it('should not render when isOpen is false', () => {
       render(
@@ -89,54 +126,24 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should render when isOpen is true', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByRole('dialog')).toBeInTheDocument();
-      });
+      await renderOpenModal();
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
   });
 
   describe('header and controls', () => {
     it('should display the title', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
-
+      await renderOpenModal();
       expect(screen.getByText('Load Scenario')).toBeInTheDocument();
     });
 
     it('should have close button', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
-
+      await renderOpenModal();
       expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
     });
 
     it('should call onClose when close button is clicked', async () => {
-      const user = userEvent.setup();
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      const { user } = await renderOpenModal();
 
       await user.click(screen.getByRole('button', { name: 'Close' }));
       expect(mockOnClose).toHaveBeenCalled();
@@ -145,13 +152,7 @@ describe('ScenarioPickerModal', () => {
 
   describe('tabs', () => {
     it('should display all three tabs', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      await renderOpenModal();
 
       await waitFor(() => {
         expect(screen.getByText(/Learning \(Rules \/ FAQ\)/)).toBeInTheDocument();
@@ -161,13 +162,7 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should display scenario counts in tabs', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      await renderOpenModal();
 
       await waitFor(() => {
         // The count appears in the tab text - check for the full tab text
@@ -177,18 +172,7 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should switch tabs when clicked', async () => {
-      const user = userEvent.setup();
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/Test Scenarios/)).toBeInTheDocument();
-      });
+      const { user } = await renderOpenModal();
 
       await user.click(screen.getByText(/Test Scenarios/));
 
@@ -204,13 +188,7 @@ describe('ScenarioPickerModal', () => {
       // Make loading slow
       mockLoadCuratedScenarios.mockImplementation(() => new Promise(() => {}));
 
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      await renderOpenModal({}, { waitForLoad: false });
 
       expect(screen.getByText('Loading scenarios...')).toBeInTheDocument();
     });
@@ -218,13 +196,7 @@ describe('ScenarioPickerModal', () => {
 
   describe('scenario list', () => {
     it('should display curated scenarios by default', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      await renderOpenModal();
 
       await waitFor(() => {
         expect(screen.getByText('Ring Placement Tutorial')).toBeInTheDocument();
@@ -233,13 +205,7 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should display scenario description', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      await renderOpenModal();
 
       await waitFor(() => {
         expect(screen.getByText('Description for Ring Placement Tutorial')).toBeInTheDocument();
@@ -247,13 +213,7 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should display Load button for each scenario', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      await renderOpenModal();
 
       await waitFor(() => {
         const loadButtons = screen.getAllByRole('button', { name: 'Load' });
@@ -262,18 +222,7 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should call onSelectScenario when Load is clicked', async () => {
-      const user = userEvent.setup();
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('Ring Placement Tutorial')).toBeInTheDocument();
-      });
+      const { user } = await renderOpenModal();
 
       const loadButtons = screen.getAllByRole('button', { name: 'Load' });
       await user.click(loadButtons[0]);
@@ -285,43 +234,18 @@ describe('ScenarioPickerModal', () => {
 
   describe('search and filtering', () => {
     it('should display search input', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
-
+      await renderOpenModal();
       expect(screen.getByPlaceholderText('Search scenarios...')).toBeInTheDocument();
     });
 
     it('should display category filter', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
-
+      await renderOpenModal();
       expect(screen.getByRole('combobox')).toBeInTheDocument();
       expect(screen.getByText('All Categories')).toBeInTheDocument();
     });
 
     it('should call filterScenarios when search changes', async () => {
-      const user = userEvent.setup();
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Search scenarios...')).toBeInTheDocument();
-      });
+      const { user } = await renderOpenModal();
 
       const searchInput = screen.getByPlaceholderText('Search scenarios...');
       await user.type(searchInput, 'ring');
@@ -334,18 +258,7 @@ describe('ScenarioPickerModal', () => {
 
   describe('custom scenarios tab', () => {
     it('should display custom scenarios', async () => {
-      const user = userEvent.setup();
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/My Scenarios/)).toBeInTheDocument();
-      });
+      const { user } = await renderOpenModal();
 
       await user.click(screen.getByText(/My Scenarios/));
 
@@ -355,19 +268,7 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should show Import JSON button on custom tab', async () => {
-      const user = userEvent.setup();
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-          developerToolsEnabled={true}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/My Scenarios/)).toBeInTheDocument();
-      });
+      const { user } = await renderOpenModal({ developerToolsEnabled: true });
 
       await user.click(screen.getByText(/My Scenarios/));
 
@@ -377,19 +278,7 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should show Delete button for custom scenarios', async () => {
-      const user = userEvent.setup();
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-          developerToolsEnabled={true}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/My Scenarios/)).toBeInTheDocument();
-      });
+      const { user } = await renderOpenModal({ developerToolsEnabled: true });
 
       await user.click(screen.getByText(/My Scenarios/));
 
@@ -399,19 +288,7 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should show Export button for custom scenarios', async () => {
-      const user = userEvent.setup();
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-          developerToolsEnabled={true}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/My Scenarios/)).toBeInTheDocument();
-      });
+      const { user } = await renderOpenModal({ developerToolsEnabled: true });
 
       await user.click(screen.getByText(/My Scenarios/));
 
@@ -421,19 +298,7 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should call deleteCustomScenario when Delete is clicked', async () => {
-      const user = userEvent.setup();
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-          developerToolsEnabled={true}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/My Scenarios/)).toBeInTheDocument();
-      });
+      const { user } = await renderOpenModal({ developerToolsEnabled: true });
 
       await user.click(screen.getByText(/My Scenarios/));
 
@@ -447,19 +312,7 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should call exportScenarioToFile when Export is clicked', async () => {
-      const user = userEvent.setup();
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-          developerToolsEnabled={true}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/My Scenarios/)).toBeInTheDocument();
-      });
+      const { user } = await renderOpenModal({ developerToolsEnabled: true });
 
       await user.click(screen.getByText(/My Scenarios/));
 
@@ -476,19 +329,7 @@ describe('ScenarioPickerModal', () => {
   describe('empty states', () => {
     it('should show empty message for custom tab when no custom scenarios', async () => {
       mockLoadCustomScenarios.mockReturnValue([]);
-      const user = userEvent.setup();
-
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/My Scenarios/)).toBeInTheDocument();
-      });
+      const { user } = await renderOpenModal();
 
       await user.click(screen.getByText(/My Scenarios/));
 
@@ -502,13 +343,7 @@ describe('ScenarioPickerModal', () => {
     it('should show empty message for curated tab when no scenarios', async () => {
       mockLoadCuratedScenarios.mockResolvedValue([]);
 
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      await renderOpenModal();
 
       await waitFor(() => {
         expect(screen.getByText('No curated scenarios available yet.')).toBeInTheDocument();
@@ -520,15 +355,7 @@ describe('ScenarioPickerModal', () => {
     it('should show error when loading fails', async () => {
       mockLoadCuratedScenarios.mockRejectedValue(new Error('Network error'));
 
-      await act(async () => {
-        render(
-          <ScenarioPickerModal
-            isOpen={true}
-            onClose={mockOnClose}
-            onSelectScenario={mockOnSelectScenario}
-          />
-        );
-      });
+      await renderOpenModal();
 
       await waitFor(() => {
         expect(screen.getByText('Failed to load scenarios')).toBeInTheDocument();
@@ -536,18 +363,9 @@ describe('ScenarioPickerModal', () => {
     });
 
     it('should allow dismissing error', async () => {
-      const user = userEvent.setup();
       mockLoadCuratedScenarios.mockRejectedValue(new Error('Network error'));
 
-      await act(async () => {
-        render(
-          <ScenarioPickerModal
-            isOpen={true}
-            onClose={mockOnClose}
-            onSelectScenario={mockOnSelectScenario}
-          />
-        );
-      });
+      const { user } = await renderOpenModal();
 
       await waitFor(() => {
         expect(screen.getByText('Failed to load scenarios')).toBeInTheDocument();
@@ -561,17 +379,7 @@ describe('ScenarioPickerModal', () => {
 
   describe('keyboard interactions', () => {
     it('should close on Escape key press', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByRole('dialog')).toBeInTheDocument();
-      });
+      await renderOpenModal();
 
       // The keydown handler is on the inner dialogRef div
       const dialogContent = screen.getByRole('dialog').querySelector('div')!;
@@ -583,33 +391,17 @@ describe('ScenarioPickerModal', () => {
 
   describe('accessibility', () => {
     it('should have aria-modal attribute', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      await renderOpenModal();
 
-      await waitFor(() => {
-        const dialog = screen.getByRole('dialog');
-        expect(dialog).toHaveAttribute('aria-modal', 'true');
-      });
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
     });
 
     it('should have aria-labelledby pointing to title', async () => {
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      await renderOpenModal();
 
-      await waitFor(() => {
-        const dialog = screen.getByRole('dialog');
-        expect(dialog).toHaveAttribute('aria-labelledby', 'scenario-picker-title');
-      });
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveAttribute('aria-labelledby', 'scenario-picker-title');
 
       const title = document.getElementById('scenario-picker-title');
       expect(title).toHaveTextContent('Load Scenario');

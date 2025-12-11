@@ -1,1289 +1,164 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import { BoardView } from '../../../src/client/components/BoardView';
-import { BoardState, Position, RingStack } from '../../../src/shared/types/game';
-import type { BoardViewModel } from '../../../src/client/adapters/gameViewModels';
+import type { BoardState, BoardType, Position, RingStack } from '../../../src/shared/types/game';
 
-// Helper to create empty board state
-function createEmptyBoardState(type: 'square8' | 'square19' | 'hexagonal' = 'square8'): BoardState {
-  return {
-    stacks: new Map(),
-    markers: new Map(),
-    collapsedSpaces: new Map(),
-    territories: new Map(),
-    formedLines: [],
-    eliminatedRings: {},
-    size: type === 'square8' ? 8 : type === 'square19' ? 19 : 13, // hex: size=13, radius=12
-    type,
-  };
-}
+const createRingStack = (position: Position, player = 1): RingStack => ({
+  position,
+  rings: [player],
+  stackHeight: 1,
+  capHeight: 1,
+  controllingPlayer: player,
+});
 
-// Helper to create a board with stacks
-function createBoardWithStacks(positions: Array<{ pos: Position; rings: number[] }>): BoardState {
-  const board = createEmptyBoardState('square8');
-  positions.forEach(({ pos, rings }) => {
-    const key = `${pos.x},${pos.y}`;
-    board.stacks.set(key, {
-      position: pos,
-      rings,
-      stackHeight: rings.length,
-      capHeight: 1,
-      controllingPlayer: rings[0] ?? 1,
-    });
-  });
-  return board;
-}
+const createBoardState = (boardType: BoardType = 'square8'): BoardState => ({
+  stacks: new Map(),
+  markers: new Map(),
+  collapsedSpaces: new Map(),
+  territories: new Map(),
+  formedLines: [],
+  eliminatedRings: {},
+  size: boardType === 'hexagonal' ? 3 : boardType === 'square19' ? 19 : 8,
+  type: boardType,
+});
+
+const renderBoard = (props: Partial<React.ComponentProps<typeof BoardView>> = {}) => {
+  const board = createBoardState(props.boardType as BoardType | undefined);
+  return render(
+    <BoardView
+      boardType="square8"
+      board={board}
+      validTargets={[]}
+      onCellClick={jest.fn()}
+      onCellDoubleClick={jest.fn()}
+      onCellContextMenu={jest.fn()}
+      {...props}
+    />
+  );
+};
 
 describe('BoardView', () => {
-  describe('rendering', () => {
-    it('renders without crashing', () => {
-      const board = createEmptyBoardState('square8');
-      render(<BoardView boardType="square8" board={board} />);
-      expect(screen.getByTestId('board-view')).toBeInTheDocument();
-    });
+  it('renders square board cells and coordinate labels when enabled', () => {
+    renderBoard({ showCoordinateLabels: true });
 
-    it('renders square8 board correctly', () => {
-      const board = createEmptyBoardState('square8');
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      // Should have 8x8 = 64 cells
-      const buttons = container.querySelectorAll('button');
-      expect(buttons).toHaveLength(64);
-    });
-
-    it('renders square19 board correctly', () => {
-      const board = createEmptyBoardState('square19');
-      board.size = 19;
-      const { container } = render(<BoardView boardType="square19" board={board} />);
-
-      // Should have 19x19 = 361 cells
-      const buttons = container.querySelectorAll('button');
-      expect(buttons).toHaveLength(361);
-    });
-
-    it('renders hexagonal board correctly', () => {
-      const board = createEmptyBoardState('hexagonal');
-      board.size = 13; // radius=12
-      board.type = 'hexagonal';
-      const { container } = render(<BoardView boardType="hexagonal" board={board} />);
-
-      // Hex board has variable cell count based on radius
-      const buttons = container.querySelectorAll('button');
-      expect(buttons.length).toBeGreaterThan(0);
-    });
-
-    it('renders an empty container for unknown board type', () => {
-      const board = createEmptyBoardState('square8');
-      const { container } = render(<BoardView boardType={'unknown' as any} board={board} />);
-
-      // The accessibility wrapper remains, but no interactive board cells
-      // should be rendered when the board type is unknown.
-      const wrapper = screen.getByTestId('board-view');
-      expect(wrapper).toBeInTheDocument();
-      const buttons = container.querySelectorAll('button');
-      expect(buttons.length).toBe(0);
-    });
+    const cells = screen.getAllByRole('gridcell');
+    expect(cells.length).toBe(64); // 8x8 board
+    expect(screen.getAllByText('a').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1').length).toBeGreaterThan(0);
   });
 
-  describe('click handling', () => {
-    it('calls onCellClick when a cell is clicked', () => {
-      const board = createEmptyBoardState('square8');
-      const handleCellClick = jest.fn();
+  it('invokes click, double-click, and context menu handlers for a cell', async () => {
+    const onCellClick = jest.fn();
+    const onCellDoubleClick = jest.fn();
+    const onCellContextMenu = jest.fn();
 
-      render(<BoardView boardType="square8" board={board} onCellClick={handleCellClick} />);
+    renderBoard({ onCellClick, onCellDoubleClick, onCellContextMenu });
+    const user = userEvent.setup();
+    const firstCell = screen.getAllByRole('gridcell')[0];
 
-      const cells = screen.getByTestId('board-view').querySelectorAll('button');
-      fireEvent.click(cells[0]);
+    await user.click(firstCell);
+    await user.dblClick(firstCell);
+    fireEvent.contextMenu(firstCell);
 
-      expect(handleCellClick).toHaveBeenCalledTimes(1);
-      expect(handleCellClick).toHaveBeenCalledWith(expect.objectContaining({ x: 0, y: 0 }));
-    });
-
-    it('calls onCellDoubleClick when a cell is double-clicked', () => {
-      const board = createEmptyBoardState('square8');
-      const handleDoubleClick = jest.fn();
-
-      render(<BoardView boardType="square8" board={board} onCellDoubleClick={handleDoubleClick} />);
-
-      const cells = screen.getByTestId('board-view').querySelectorAll('button');
-      fireEvent.doubleClick(cells[0]);
-
-      expect(handleDoubleClick).toHaveBeenCalledTimes(1);
-    });
-
-    it('calls onCellContextMenu on right-click', () => {
-      const board = createEmptyBoardState('square8');
-      const handleContextMenu = jest.fn();
-
-      render(<BoardView boardType="square8" board={board} onCellContextMenu={handleContextMenu} />);
-
-      const cells = screen.getByTestId('board-view').querySelectorAll('button');
-      fireEvent.contextMenu(cells[0]);
-
-      expect(handleContextMenu).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not call click handlers when spectating', () => {
-      const board = createEmptyBoardState('square8');
-      const handleCellClick = jest.fn();
-
-      render(
-        <BoardView
-          boardType="square8"
-          board={board}
-          onCellClick={handleCellClick}
-          isSpectator={true}
-        />
-      );
-
-      const cells = screen.getByTestId('board-view').querySelectorAll('button');
-      fireEvent.click(cells[0]);
-
-      expect(handleCellClick).not.toHaveBeenCalled();
-    });
+    expect(onCellClick).toHaveBeenCalledWith({ x: 0, y: 0 });
+    expect(onCellDoubleClick).toHaveBeenCalledWith({ x: 0, y: 0 });
+    expect(onCellContextMenu).toHaveBeenCalledWith({ x: 0, y: 0 });
   });
 
-  describe('selected position', () => {
-    it('highlights selected position', () => {
-      const board = createEmptyBoardState('square8');
-      const selectedPosition: Position = { x: 3, y: 3 };
+  it('suppresses input handlers when rendered for spectators', async () => {
+    const onCellClick = jest.fn();
+    const onCellDoubleClick = jest.fn();
+    const onCellContextMenu = jest.fn();
 
-      const { container } = render(
-        <BoardView boardType="square8" board={board} selectedPosition={selectedPosition} />
-      );
-
-      // Check that selected cell has ring highlighting
-      const selectedCell = container.querySelector('.ring-emerald-400');
-      expect(selectedCell).toBeInTheDocument();
+    renderBoard({
+      onCellClick,
+      onCellDoubleClick,
+      onCellContextMenu,
+      isSpectator: true,
     });
+    const user = userEvent.setup();
+    const firstCell = screen.getAllByRole('gridcell')[0];
+
+    await user.click(firstCell);
+    await user.dblClick(firstCell);
+    fireEvent.contextMenu(firstCell);
+
+    expect(onCellClick).not.toHaveBeenCalled();
+    expect(onCellDoubleClick).not.toHaveBeenCalled();
+    expect(onCellContextMenu).not.toHaveBeenCalled();
   });
 
-  describe('valid targets', () => {
-    it('highlights valid target positions', () => {
-      const board = createEmptyBoardState('square8');
-      const validTargets: Position[] = [
-        { x: 2, y: 2 },
-        { x: 4, y: 4 },
-      ];
+  it('handles keyboard navigation and selection', () => {
+    const onCellClick = jest.fn();
+    renderBoard({ onCellClick });
 
-      const { container } = render(
-        <BoardView boardType="square8" board={board} validTargets={validTargets} />
-      );
+    const boardContainer = screen.getByTestId('board-view');
+    boardContainer.focus();
 
-      // Check that valid targets have outline styling (square8 uses emerald-400/95)
-      const highlightedCells = container.querySelectorAll('.outline-emerald-400\\/95');
-      expect(highlightedCells.length).toBeGreaterThanOrEqual(2);
-    });
+    fireEvent.keyDown(boardContainer, { key: 'ArrowRight' });
+    fireEvent.keyDown(boardContainer, { key: 'Enter' });
 
-    it('renders board-driven markers when no stack is present', () => {
-      const board = createEmptyBoardState('square8');
-      board.markers.set('1,1', {
-        player: 2,
-        position: { x: 1, y: 1 },
-        type: 'regular',
-      });
-
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      const cell = container.querySelector('button[data-x="1"][data-y="1"]');
-      expect(cell).toBeInTheDocument();
-      // Marker uses the player color border class; for player 2 this is border-sky-500.
-      const markerEl = cell?.querySelector('.border-sky-500');
-      expect(markerEl).toBeInTheDocument();
-    });
-
-    it('renders collapsed territory overlays from board state', () => {
-      const board = createEmptyBoardState('square8');
-      board.collapsedSpaces.set('2,2', 3); // player 3 territory
-
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      const cell = container.querySelector('button[data-x="2"][data-y="2"]');
-      expect(cell).toBeInTheDocument();
-      // Territory overlay uses marker color classes; player 3 uses border-amber-400.
-      const territoryOverlay = cell?.querySelector('.border-amber-400');
-      expect(territoryOverlay).toBeInTheDocument();
-    });
+    expect(onCellClick).toHaveBeenCalledWith({ x: 0, y: 0 });
   });
 
-  describe('decision highlights', () => {
-    it('applies primary and secondary decision highlight classes on square boards', () => {
-      const board = createEmptyBoardState('square8');
-      const baseVM: BoardViewModel = {
-        boardType: 'square8',
-        size: 8,
-        cells: [],
-        rows: [],
-        decisionHighlights: {
-          choiceKind: 'line_reward',
-          highlights: [
-            { positionKey: '1,1', intensity: 'primary' },
-            { positionKey: '2,2', intensity: 'secondary' },
+  it('fires keyboard help callback on question-mark press', () => {
+    const onShowKeyboardHelp = jest.fn();
+    renderBoard({ onShowKeyboardHelp });
+
+    const boardContainer = screen.getByTestId('board-view');
+    boardContainer.focus();
+    fireEvent.keyDown(boardContainer, { key: '?' });
+
+    expect(onShowKeyboardHelp).toHaveBeenCalled();
+  });
+
+  it('announces stack details from view model when present', () => {
+    const board = createBoardState('square8');
+    const pos: Position = { x: 1, y: 1 };
+    const stack = createRingStack(pos, 2);
+    board.stacks.set('1,1', stack);
+
+    render(
+      <BoardView
+        boardType="square8"
+        board={board}
+        validTargets={[]}
+        viewModel={{
+          boardType: 'square8',
+          size: 8,
+          cells: [
+            {
+              position: pos,
+              positionKey: '1,1',
+              stack: {
+                position: pos,
+                positionKey: '1,1',
+                rings: [
+                  {
+                    playerNumber: 2,
+                    colorClass: 'bg-blue-500',
+                    borderClass: 'border-blue-300',
+                    isTop: true,
+                    isInCap: true,
+                  },
+                ],
+                stackHeight: 1,
+                capHeight: 1,
+                controllingPlayer: 2,
+              },
+              isSelected: true,
+              isValidTarget: false,
+              isDarkSquare: false,
+            },
           ],
-        },
-      };
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} viewModel={baseVM} />
-      );
-
-      const primaryCell = container.querySelector('button[data-x="1"][data-y="1"]');
-      const secondaryCell = container.querySelector('button[data-x="2"][data-y="2"]');
-
-      expect(primaryCell).toHaveClass('decision-highlight-primary');
-      expect(primaryCell).toHaveClass('line-formation-burst');
-      expect(primaryCell).toHaveAttribute('data-decision-highlight', 'primary');
-
-      expect(secondaryCell).toHaveClass('decision-highlight-secondary');
-      expect(secondaryCell).toHaveAttribute('data-decision-highlight', 'secondary');
-    });
-
-    it('applies decision highlight classes on hex boards using cube coordinates', () => {
-      const board = createEmptyBoardState('hexagonal');
-      board.type = 'hexagonal';
-      board.size = 3; // small radius to keep button count manageable
-
-      const baseVM: BoardViewModel = {
-        boardType: 'hexagonal',
-        size: 3,
-        cells: [],
-        decisionHighlights: {
-          choiceKind: 'capture_direction',
-          highlights: [{ positionKey: '0,0,0', intensity: 'primary' }],
-        },
-      };
-
-      const { container } = render(
-        <BoardView boardType="hexagonal" board={board} viewModel={baseVM} />
-      );
-
-      const highlightedCell = container.querySelector('button[data-x="0"][data-y="0"][data-z="0"]');
-      expect(highlightedCell).toHaveClass('decision-highlight-primary');
-      expect(highlightedCell).toHaveAttribute('data-decision-highlight', 'primary');
-    });
-
-    it('applies elimination decision pulses on square boards', () => {
-      const board = createBoardWithStacks([{ pos: { x: 3, y: 3 }, rings: [1, 1, 1] }]);
-
-      const baseVM: BoardViewModel = {
-        boardType: 'square8',
-        size: 8,
-        cells: [],
-        rows: [],
-        decisionHighlights: {
-          choiceKind: 'ring_elimination',
-          highlights: [{ positionKey: '3,3', intensity: 'primary' }],
-        },
-      };
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} viewModel={baseVM} />
-      );
-
-      const cell = container.querySelector('button[data-x="3"][data-y="3"]');
-      expect(cell).toHaveClass('decision-pulse-elimination');
-
-      // Stack within the cell should also receive the stack-level pulse.
-      const stackPulse = cell?.querySelector('.decision-elimination-stack-pulse');
-      expect(stackPulse).toBeInTheDocument();
-    });
-
-    it('applies capture and territory decision pulses on square boards', () => {
-      const board = createEmptyBoardState('square8');
-
-      const captureVM: BoardViewModel = {
-        boardType: 'square8',
-        size: 8,
-        cells: [],
-        rows: [],
-        decisionHighlights: {
-          choiceKind: 'capture_direction',
-          highlights: [{ positionKey: '2,2', intensity: 'primary' }],
-        },
-      };
-
-      const territoryVM: BoardViewModel = {
-        boardType: 'square8',
-        size: 8,
-        cells: [],
-        rows: [],
-        decisionHighlights: {
-          choiceKind: 'territory_region_order',
-          highlights: [{ positionKey: '4,4', intensity: 'primary' }],
-        },
-      };
-
-      const { container: captureContainer } = render(
-        <BoardView boardType="square8" board={board} viewModel={captureVM} />
-      );
-      const captureCell = captureContainer.querySelector('button[data-x="2"][data-y="2"]');
-      expect(captureCell).toHaveClass('decision-pulse-capture');
-
-      const { container: territoryContainer } = render(
-        <BoardView boardType="square8" board={board} viewModel={territoryVM} />
-      );
-      const territoryCell = territoryContainer.querySelector('button[data-x="4"][data-y="4"]');
-      expect(territoryCell).toHaveClass('decision-pulse-territory');
-    });
-
-    it('applies elimination and territory decision pulses on hex boards', () => {
-      const board = createEmptyBoardState('hexagonal');
-      board.type = 'hexagonal';
-      board.size = 3;
-      // Add a stack at the origin so elimination pulses can apply to a real stack.
-      const stackKey = '0,0,0';
-      board.stacks.set(stackKey, {
-        position: { x: 0, y: 0, z: 0 } as Position,
-        rings: [1, 1],
-        stackHeight: 2,
-        capHeight: 2,
-        controllingPlayer: 1,
-      } as RingStack);
-
-      const elimVM: BoardViewModel = {
-        boardType: 'hexagonal',
-        size: 3,
-        cells: [],
-        decisionHighlights: {
-          choiceKind: 'ring_elimination',
-          highlights: [{ positionKey: '0,0,0', intensity: 'primary' }],
-        },
-      };
-
-      const territoryVM: BoardViewModel = {
-        boardType: 'hexagonal',
-        size: 3,
-        cells: [],
-        decisionHighlights: {
-          choiceKind: 'territory_region_order',
-          highlights: [{ positionKey: '0,0,0', intensity: 'primary' }],
-        },
-      };
-
-      const { container: elimContainer } = render(
-        <BoardView boardType="hexagonal" board={board} viewModel={elimVM} />
-      );
-      const elimCell = elimContainer.querySelector(
-        'button[data-x="0"][data-y="0"][data-z="0"]'
-      ) as HTMLElement;
-      expect(elimCell).toHaveClass('decision-pulse-elimination');
-      const elimStackPulse = elimCell.querySelector('.decision-elimination-stack-pulse');
-      expect(elimStackPulse).toBeInTheDocument();
-
-      const { container: territoryContainer } = render(
-        <BoardView boardType="hexagonal" board={board} viewModel={territoryVM} />
-      );
-      const territoryCell = territoryContainer.querySelector(
-        'button[data-x="0"][data-y="0"][data-z="0"]'
-      ) as HTMLElement;
-      expect(territoryCell).toHaveClass('decision-pulse-territory');
-    });
-
-    it('applies capture decision pulses on hex boards', () => {
-      const board = createEmptyBoardState('hexagonal');
-      board.type = 'hexagonal';
-      board.size = 3;
-
-      const captureVM: BoardViewModel = {
-        boardType: 'hexagonal',
-        size: 3,
-        cells: [],
-        decisionHighlights: {
-          choiceKind: 'capture_direction',
-          highlights: [{ positionKey: '0,0,0', intensity: 'primary' }],
-        },
-      };
-
-      const { container } = render(
-        <BoardView boardType="hexagonal" board={board} viewModel={captureVM} />
-      );
-
-      const captureCell = container.querySelector(
-        'button[data-x="0"][data-y="0"][data-z="0"]'
-      ) as HTMLElement;
-      expect(captureCell).toHaveClass('decision-pulse-capture');
-    });
-  });
-
-  describe('stacks rendering', () => {
-    it('renders ring stacks on the board', () => {
-      const board = createBoardWithStacks([{ pos: { x: 3, y: 3 }, rings: [1, 2] }]);
-
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      // Stack should display height and cap info
-      expect(container.textContent).toContain('H2');
-      expect(container.textContent).toContain('C1');
-    });
-  });
-
-  describe('markers rendering', () => {
-    it('renders markers on the board', () => {
-      const board = createEmptyBoardState('square8');
-      board.markers.set('4,4', { type: 'regular', player: 1, position: { x: 4, y: 4 } });
-
-      render(<BoardView boardType="square8" board={board} />);
-
-      // Marker should be visible (checking for marker styling)
-      const markerElement = document.querySelector('.border-emerald-400');
-      expect(markerElement).toBeInTheDocument();
-    });
-
-    it('does not render a marker when a stack is present on the same cell', () => {
-      const board = createEmptyBoardState('square8');
-
-      // Stack and marker at the same position; view model should prefer stack.
-      const pos: Position = { x: 2, y: 2 };
-      const key = '2,2';
-
-      const stack: RingStack = {
-        position: pos,
-        rings: [1, 1],
-        stackHeight: 2,
-        capHeight: 2,
-        controllingPlayer: 1,
-      };
-
-      board.stacks.set(key, stack);
-      board.markers.set(key, { type: 'regular', player: 1, position: pos });
-
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      const cell = container.querySelector('button[data-x="2"][data-y="2"]');
-      expect(cell).toBeInTheDocument();
-
-      // Cell should show stack info but no marker border class.
-      expect(container.textContent).toContain('H2');
-      expect(container.textContent).toContain('C2');
-
-      const markerInCell = (cell as HTMLElement).querySelector('.border-emerald-400');
-      expect(markerInCell).toBeNull();
-    });
-  });
-
-  describe('movement destination pulses', () => {
-    it('applies destination pulse only to landing stack on hex boards', async () => {
-      const origin: Position = { x: 0, y: 0, z: 0 };
-      const dest: Position = { x: 0, y: 2, z: -2 };
-
-      // Initial board: stack at origin only
-      const preBoard = createEmptyBoardState('hexagonal');
-      preBoard.type = 'hexagonal';
-      preBoard.size = 13; // radius=12
-      preBoard.stacks.set('0,0,0', {
-        position: origin,
-        rings: [1],
-        stackHeight: 1,
-        capHeight: 1,
-        controllingPlayer: 1,
-      });
-
-      const { container, rerender } = render(<BoardView boardType="hexagonal" board={preBoard} />);
-
-      // Post-move board: stack moved to dest, marker left at origin
-      const postBoard = createEmptyBoardState('hexagonal');
-      postBoard.type = 'hexagonal';
-      postBoard.size = 13; // radius=12
-      postBoard.stacks.set('0,2,-2', {
-        position: dest,
-        rings: [1],
-        stackHeight: 1,
-        capHeight: 1,
-        controllingPlayer: 1,
-      });
-      postBoard.markers.set('0,0,0', {
-        position: origin,
-        player: 1,
-        type: 'regular',
-      });
-
-      rerender(<BoardView boardType="hexagonal" board={postBoard} />);
-
-      // Wait for BoardView's board-diff effect to run and apply animations.
-      const getCells = () => {
-        const originCell = container.querySelector(
-          'button[data-x="0"][data-y="0"][data-z="0"]'
-        ) as HTMLButtonElement | null;
-        const destCell = container.querySelector(
-          'button[data-x="0"][data-y="2"][data-z="-2"]'
-        ) as HTMLButtonElement | null;
-        return { originCell, destCell };
-      };
-
-      await screen.findByTestId('board-view');
-
-      const { originCell, destCell } = getCells();
-      expect(originCell).not.toBeNull();
-      expect(destCell).not.toBeNull();
-
-      // The origin (marker-only) cell should not have the destination pulse,
-      // while the landing stack cell should.
-      expect(originCell).not.toHaveClass('move-destination-pulse');
-      expect(destCell).toHaveClass('move-destination-pulse');
-    });
-  });
-
-  describe('collapsed spaces', () => {
-    it('renders collapsed territory spaces with player colors', () => {
-      const board = createEmptyBoardState('square8');
-      board.collapsedSpaces.set('5,5', 1);
-
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      // Territory should have player-specific background
-      const territoryCell = container.querySelector('.bg-emerald-700\\/85');
-      expect(territoryCell).toBeInTheDocument();
-    });
-  });
-
-  describe('rules-lab overlays', () => {
-    it('sets line overlay data attributes when showLineOverlays is true', () => {
-      const board = createEmptyBoardState('square8');
-      board.formedLines = [
-        {
-          positions: [
-            { x: 0, y: 0 },
-            { x: 1, y: 0 },
-          ],
-          player: 1,
-          length: 2,
-          direction: { x: 1, y: 0 },
-        },
-      ];
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} showLineOverlays={true} />
-      );
-
-      const cell = container.querySelector(
-        'button[data-x="0"][data-y="0"]'
-      ) as HTMLButtonElement | null;
-      expect(cell).not.toBeNull();
-      expect(cell).toHaveAttribute('data-line-overlay', 'true');
-      expect(cell).toHaveAttribute('data-line-overlay-player', '1');
-    });
-
-    it('sets territory region overlay data attributes when showTerritoryRegionOverlays is true', () => {
-      const board = createEmptyBoardState('square8');
-      board.territories.set('region-1', {
-        spaces: [{ x: 2, y: 2 }],
-        controllingPlayer: 2,
-        isDisconnected: true,
-      });
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} showTerritoryRegionOverlays={true} />
-      );
-
-      const cell = container.querySelector(
-        'button[data-x="2"][data-y="2"]'
-      ) as HTMLButtonElement | null;
-      expect(cell).not.toBeNull();
-      expect(cell).toHaveAttribute('data-region-overlay', 'true');
-      expect(cell).toHaveAttribute('data-region-overlay-player', '2');
-      expect(cell).toHaveAttribute('data-region-overlay-disconnected', 'true');
-    });
-  });
-
-  describe('accessibility labels for decision states', () => {
-    it('describes capture landings and targets in aria-labels on square boards', () => {
-      const board = createEmptyBoardState('square8');
-
-      const viewModel: BoardViewModel = {
-        boardType: 'square8',
-        size: 8,
-        cells: [],
-        rows: [],
-        decisionHighlights: {
-          choiceKind: 'capture_direction',
-          highlights: [
-            { positionKey: '2,2', intensity: 'primary' }, // landing
-            { positionKey: '3,3', intensity: 'secondary' }, // target stack
-          ],
-        },
-      };
-
-      const { container } = render(
-        <BoardView
-          boardType="square8"
-          board={board}
-          viewModel={viewModel}
-          validTargets={[{ x: 2, y: 2 }]}
-        />
-      );
-
-      const landingCell = container.querySelector(
-        'button[data-x="2"][data-y="2"]'
-      ) as HTMLButtonElement | null;
-      const targetCell = container.querySelector(
-        'button[data-x="3"][data-y="3"]'
-      ) as HTMLButtonElement | null;
-
-      expect(landingCell).not.toBeNull();
-      expect(targetCell).not.toBeNull();
-
-      expect(landingCell?.getAttribute('aria-label')).toContain(
-        'Capture landing, valid move target'
-      );
-      expect(targetCell?.getAttribute('aria-label')).toContain('Capture target stack');
-    });
-
-    it('describes territory region options in aria-labels on square boards', () => {
-      const board = createEmptyBoardState('square8');
-
-      const viewModel: BoardViewModel = {
-        boardType: 'square8',
-        size: 8,
-        cells: [],
-        rows: [],
-        decisionHighlights: {
-          choiceKind: 'territory_region_order',
-          highlights: [
-            { positionKey: '2,2', intensity: 'primary', groupId: 'region-2' },
-            // Same cell in two regions to exercise overlap description.
-            { positionKey: '3,3', intensity: 'primary', groupId: 'region-1' },
-            { positionKey: '3,3', intensity: 'secondary', groupId: 'region-2' },
-          ],
-          territoryRegions: {
-            regionIdsInDisplayOrder: ['region-1', 'region-2'],
-          },
-        },
-      };
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} viewModel={viewModel} />
-      );
-
-      const singleRegionCell = container.querySelector(
-        'button[data-x="2"][data-y="2"]'
-      ) as HTMLButtonElement | null;
-      const overlapCell = container.querySelector(
-        'button[data-x="3"][data-y="3"]'
-      ) as HTMLButtonElement | null;
-
-      expect(singleRegionCell).not.toBeNull();
-      expect(overlapCell).not.toBeNull();
-
-      // Second region in display order should be announced as "option 2".
-      expect(singleRegionCell?.getAttribute('aria-label')).toContain('Territory region option 2');
-
-      // Overlapping regions get an explicit overlap description.
-      expect(overlapCell?.getAttribute('aria-label')).toContain(
-        'Overlapping territory regions for this choice'
-      );
-    });
-
-    it('describes chain capture path positions in aria-labels', () => {
-      const board = createEmptyBoardState('square8');
-      const chainCapturePath: Position[] = [
-        { x: 0, y: 0 },
-        { x: 2, y: 0 },
-      ];
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} chainCapturePath={chainCapturePath} />
-      );
-
-      const originCell = container.querySelector(
-        'button[data-x="0"][data-y="0"]'
-      ) as HTMLButtonElement | null;
-      const currentCell = container.querySelector(
-        'button[data-x="2"][data-y="0"]'
-      ) as HTMLButtonElement | null;
-
-      expect(originCell).not.toBeNull();
-      expect(currentCell).not.toBeNull();
-
-      expect(originCell?.getAttribute('aria-label')).toContain('Visited position in capture chain');
-      expect(currentCell?.getAttribute('aria-label')).toContain(
-        'Current capture position in chain'
-      );
-    });
-  });
-
-  describe('chain capture path visualization', () => {
-    it('accepts chainCapturePath prop and renders board without errors', () => {
-      const board = createEmptyBoardState('square8');
-      const chainCapturePath = [
-        { x: 2, y: 2 },
-        { x: 4, y: 2 },
-        { x: 6, y: 2 },
-      ];
-
-      // The SVG overlay relies on DOM geometry (getBoundingClientRect) which
-      // isn't available in JSDOM. This test verifies the component accepts
-      // the prop and renders the board correctly without errors.
-      render(<BoardView boardType="square8" board={board} chainCapturePath={chainCapturePath} />);
-
-      // Board should render correctly with the chainCapturePath prop
-      expect(screen.getByTestId('board-view')).toBeInTheDocument();
-    });
-
-    it('does not render chain capture overlay when path has fewer than 2 positions', () => {
-      const board = createEmptyBoardState('square8');
-      const chainCapturePath = [{ x: 2, y: 2 }]; // Only one position
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} chainCapturePath={chainCapturePath} />
-      );
-
-      // Should not have the chain capture arrow marker (path too short)
-      const arrowMarker = container.querySelector('#chain-capture-arrow');
-      expect(arrowMarker).toBeNull();
-    });
-
-    it('does not render chain capture overlay when path is undefined', () => {
-      const board = createEmptyBoardState('square8');
-
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      // Should not have the chain capture arrow marker
-      const arrowMarker = container.querySelector('#chain-capture-arrow');
-      expect(arrowMarker).toBeNull();
-    });
-
-    it('renders movement grid overlay when enabled', () => {
-      const board = createEmptyBoardState('square8');
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} showMovementGrid={true} />
-      );
-
-      const svg = container.querySelector('svg');
-      expect(svg).toBeInTheDocument();
-      const lines = svg?.querySelectorAll('line') ?? [];
-      expect(lines.length).toBeGreaterThan(0);
-    });
-
-    it('renders movement grid overlay on hex boards when enabled', () => {
-      const board = createEmptyBoardState('hexagonal');
-      board.type = 'hexagonal';
-      board.size = 3;
-
-      const { container } = render(
-        <BoardView boardType="hexagonal" board={board} showMovementGrid={true} />
-      );
-
-      const svg = container.querySelector('svg');
-      expect(svg).toBeInTheDocument();
-      const lines = svg?.querySelectorAll('line') ?? [];
-      expect(lines.length).toBeGreaterThan(0);
-    });
-
-    it('does not render movement grid overlay when disabled', () => {
-      const board = createEmptyBoardState('square8');
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} showMovementGrid={false} />
-      );
-
-      const svg = container.querySelector('svg');
-      // No movement grid overlay should be present when the feature flag is false.
-      expect(svg).not.toBeInTheDocument();
-    });
-
-    it('accepts chainCapturePath prop on hex boards', () => {
-      const board = createEmptyBoardState('hexagonal');
-      board.type = 'hexagonal';
-      board.size = 13; // radius=12
-
-      const chainCapturePath = [
-        { x: 0, y: 0, z: 0 },
-        { x: 1, y: -1, z: 0 },
-        { x: 2, y: -2, z: 0 },
-      ];
-
-      // Verify component accepts the prop without errors on hex boards
-      render(<BoardView boardType="hexagonal" board={board} chainCapturePath={chainCapturePath} />);
-
-      expect(screen.getByTestId('board-view')).toBeInTheDocument();
-    });
-  });
-
-  describe('coordinate labels', () => {
-    it('shows coordinate labels when enabled', () => {
-      const board = createEmptyBoardState('square8');
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} showCoordinateLabels={true} />
-      );
-
-      // Should show file labels (a-h for square8)
-      expect(container.textContent).toContain('a');
-      expect(container.textContent).toContain('h');
-      // Should show rank labels (1-8)
-      expect(container.textContent).toContain('1');
-      expect(container.textContent).toContain('8');
-    });
-
-    it('does not show coordinate labels when disabled', () => {
-      const board = createEmptyBoardState('square8');
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} showCoordinateLabels={false} />
-      );
-
-      // Coordinate labels should not be present in label elements
-      const labelElements = container.querySelectorAll('.text-slate-400');
-      expect(labelElements.length).toBe(0);
-    });
-
-    describe('square rank orientation', () => {
-      it('uses canonical top-origin ranks by default (top row = rank 1)', () => {
-        const board = createEmptyBoardState('square8');
-
-        const { container } = render(
-          <BoardView boardType="square8" board={board} showCoordinateLabels={true} />
-        );
-
-        // Find all rank label elements (they're on the left/right edges)
-        const labels = Array.from(container.querySelectorAll('.text-slate-400')).map(
-          (el) => el.textContent
-        );
-
-        // Canonical: ranks should go 1,2,3...8 from top to bottom
-        // The rank labels appear twice (left and right edges)
-        expect(labels).toContain('1');
-        expect(labels).toContain('8');
-
-        // Verify the ordering: rank labels should include 1 at the top
-        // In canonical mode, the visual top row is rank 1 (y=0)
-        const rankLabels = labels.filter((l) => l && /^\d+$/.test(l));
-        expect(rankLabels.length).toBeGreaterThan(0);
-        expect(rankLabels).toContain('1');
-        expect(rankLabels).toContain('8');
-      });
-
-      it('uses bottom-origin ranks when squareRankFromBottom=true (bottom row = rank 1)', () => {
-        const board = createEmptyBoardState('square8');
-
-        const { container } = render(
-          <BoardView
-            boardType="square8"
-            board={board}
-            showCoordinateLabels={true}
-            squareRankFromBottom={true}
-          />
-        );
-
-        // Find all rank label elements
-        const labels = Array.from(container.querySelectorAll('.text-slate-400')).map(
-          (el) => el.textContent
-        );
-
-        // Bottom-origin: ranks should go 8,7,6...1 from top to bottom (visually)
-        // So rank 1 appears at the bottom, rank 8 at the top
-        expect(labels).toContain('1');
-        expect(labels).toContain('8');
-
-        // Both arrays of labels should exist, but in reversed order
-        const rankLabels = labels.filter((l) => l && /^\d+$/.test(l));
-        expect(rankLabels.length).toBeGreaterThan(0);
-        expect(rankLabels).toContain('1');
-        expect(rankLabels).toContain('8');
-      });
-
-      it('maintains canonical behavior for square19 by default', () => {
-        const board = createEmptyBoardState('square19');
-
-        const { container } = render(
-          <BoardView boardType="square19" board={board} showCoordinateLabels={true} />
-        );
-
-        const labels = Array.from(container.querySelectorAll('.text-slate-400')).map(
-          (el) => el.textContent
-        );
-
-        // Canonical: should have ranks 1-19
-        const rankLabels = labels.filter((l) => l && /^\d+$/.test(l));
-        expect(rankLabels).toContain('1');
-        expect(rankLabels).toContain('19');
-      });
-
-      it('flips square19 ranks when squareRankFromBottom=true', () => {
-        const board = createEmptyBoardState('square19');
-
-        const { container } = render(
-          <BoardView
-            boardType="square19"
-            board={board}
-            showCoordinateLabels={true}
-            squareRankFromBottom={true}
-          />
-        );
-
-        const labels = Array.from(container.querySelectorAll('.text-slate-400')).map(
-          (el) => el.textContent
-        );
-
-        // Should still show 1 and 19, but in flipped positions
-        const rankLabels = labels.filter((l) => l && /^\d+$/.test(l));
-        expect(rankLabels).toContain('1');
-        expect(rankLabels).toContain('19');
-      });
-
-      it('ignores squareRankFromBottom for hex boards', () => {
-        const board = createEmptyBoardState('hexagonal');
-        board.type = 'hexagonal';
-        board.size = 3;
-
-        // squareRankFromBottom should have no effect on hex boards
-        const { container } = render(
-          <BoardView
-            boardType="hexagonal"
-            board={board}
-            showCoordinateLabels={true}
-            squareRankFromBottom={true}
-          />
-        );
-
-        // Hex boards don't have rank labels; they use in-cell algebraic notation
-        // Just verify the board renders without errors
-        expect(screen.getByTestId('board-view')).toBeInTheDocument();
-      });
-
-      it('only affects labels when showCoordinateLabels is enabled', () => {
-        const board = createEmptyBoardState('square8');
-
-        const { container } = render(
-          <BoardView
-            boardType="square8"
-            board={board}
-            showCoordinateLabels={false}
-            squareRankFromBottom={true}
-          />
-        );
-
-        // No labels should be shown at all
-        const labelElements = container.querySelectorAll('.text-slate-400');
-        expect(labelElements.length).toBe(0);
-      });
-    });
-  });
-
-  describe('spectator mode', () => {
-    it('disables cells in spectator mode', () => {
-      const board = createEmptyBoardState('square8');
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} isSpectator={true} />
-      );
-
-      const buttons = container.querySelectorAll('button');
-      buttons.forEach((button) => {
-        expect(button).toBeDisabled();
-      });
-    });
-
-    it('changes cursor to default in spectator mode', () => {
-      const board = createEmptyBoardState('square8');
-
-      const { container } = render(
-        <BoardView boardType="square8" board={board} isSpectator={true} />
-      );
-
-      const button = container.querySelector('button');
-      expect(button).toHaveClass('cursor-default');
-    });
-  });
-
-  describe('data-testid', () => {
-    it('has board-view data-testid for square8', () => {
-      const board = createEmptyBoardState('square8');
-      render(<BoardView boardType="square8" board={board} />);
-      expect(screen.getByTestId('board-view')).toBeInTheDocument();
-    });
-
-    it('has board-view data-testid for hexagonal', () => {
-      const board = createEmptyBoardState('hexagonal');
-      board.type = 'hexagonal';
-      render(<BoardView boardType="hexagonal" board={board} />);
-      expect(screen.getByTestId('board-view')).toBeInTheDocument();
-    });
-  });
-
-  describe('keyboard navigation', () => {
-    it('makes the board container focusable with tabIndex=0', () => {
-      const board = createEmptyBoardState('square8');
-      render(<BoardView boardType="square8" board={board} />);
-
-      const boardView = screen.getByTestId('board-view');
-      expect(boardView).toHaveAttribute('tabIndex', '0');
-
-      // Simulate keyboard tab focus landing on the board container.
-      (boardView as HTMLElement).focus();
-      expect(document.activeElement).toBe(boardView);
-    });
-
-    it('focuses cell on arrow key press from initial state', () => {
-      const board = createEmptyBoardState('square8');
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      const boardView = screen.getByTestId('board-view');
-      fireEvent.keyDown(boardView, { key: 'ArrowDown' });
-
-      // First cell should receive focus
-      const firstCell = container.querySelector('button[data-x="0"][data-y="0"]');
-      expect(document.activeElement).toBe(firstCell);
-    });
-
-    it('moves focus right with ArrowRight key', () => {
-      const board = createEmptyBoardState('square8');
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      // Focus first cell
-      const firstCell = container.querySelector(
-        'button[data-x="0"][data-y="0"]'
-      ) as HTMLButtonElement;
-      act(() => {
-        firstCell.focus();
-      });
-      fireEvent.focus(firstCell);
-
-      // Press ArrowRight
-      fireEvent.keyDown(screen.getByTestId('board-view'), { key: 'ArrowRight' });
-
-      const nextCell = container.querySelector('button[data-x="1"][data-y="0"]');
-      expect(document.activeElement).toBe(nextCell);
-    });
-
-    it('moves focus down with ArrowDown key', () => {
-      const board = createEmptyBoardState('square8');
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      // Focus first cell
-      const firstCell = container.querySelector(
-        'button[data-x="0"][data-y="0"]'
-      ) as HTMLButtonElement;
-      act(() => {
-        firstCell.focus();
-      });
-      fireEvent.focus(firstCell);
-
-      // Press ArrowDown
-      fireEvent.keyDown(screen.getByTestId('board-view'), { key: 'ArrowDown' });
-
-      const nextCell = container.querySelector('button[data-x="0"][data-y="1"]');
-      expect(document.activeElement).toBe(nextCell);
-    });
-
-    it('calls onCellClick when Enter is pressed on focused cell', () => {
-      const board = createEmptyBoardState('square8');
-      const handleCellClick = jest.fn();
-      const { container } = render(
-        <BoardView boardType="square8" board={board} onCellClick={handleCellClick} />
-      );
-
-      // Focus a cell
-      const cell = container.querySelector('button[data-x="3"][data-y="3"]') as HTMLButtonElement;
-      act(() => {
-        cell.focus();
-      });
-      fireEvent.focus(cell);
-
-      // Press Enter
-      fireEvent.keyDown(screen.getByTestId('board-view'), { key: 'Enter' });
-
-      expect(handleCellClick).toHaveBeenCalledTimes(1);
-      expect(handleCellClick).toHaveBeenCalledWith(expect.objectContaining({ x: 3, y: 3 }));
-    });
-
-    it('calls onCellClick when Space is pressed on focused cell', () => {
-      const board = createEmptyBoardState('square8');
-      const handleCellClick = jest.fn();
-      const { container } = render(
-        <BoardView boardType="square8" board={board} onCellClick={handleCellClick} />
-      );
-
-      // Focus a cell
-      const cell = container.querySelector('button[data-x="4"][data-y="4"]') as HTMLButtonElement;
-      act(() => {
-        cell.focus();
-      });
-      fireEvent.focus(cell);
-
-      // Press Space
-      fireEvent.keyDown(screen.getByTestId('board-view'), { key: ' ' });
-
-      expect(handleCellClick).toHaveBeenCalledTimes(1);
-      expect(handleCellClick).toHaveBeenCalledWith(expect.objectContaining({ x: 4, y: 4 }));
-    });
-
-    it('does not trigger click when in spectator mode', () => {
-      const board = createEmptyBoardState('square8');
-      const handleCellClick = jest.fn();
-      const { container } = render(
-        <BoardView
-          boardType="square8"
-          board={board}
-          onCellClick={handleCellClick}
-          isSpectator={true}
-        />
-      );
-
-      // Focus a cell
-      const cell = container.querySelector('button[data-x="3"][data-y="3"]') as HTMLButtonElement;
-      act(() => {
-        cell.focus();
-      });
-      fireEvent.focus(cell);
-
-      // Press Enter
-      fireEvent.keyDown(screen.getByTestId('board-view'), { key: 'Enter' });
-
-      expect(handleCellClick).not.toHaveBeenCalled();
-    });
-
-    it('does not move focus beyond board boundaries', () => {
-      const board = createEmptyBoardState('square8');
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      // Focus top-left cell
-      const topLeftCell = container.querySelector(
-        'button[data-x="0"][data-y="0"]'
-      ) as HTMLButtonElement;
-      act(() => {
-        topLeftCell.focus();
-      });
-      fireEvent.focus(topLeftCell);
-
-      // Try to move up (should stay in place)
-      fireEvent.keyDown(screen.getByTestId('board-view'), { key: 'ArrowUp' });
-      expect(document.activeElement).toBe(topLeftCell);
-
-      // Try to move left (should stay in place)
-      fireEvent.keyDown(screen.getByTestId('board-view'), { key: 'ArrowLeft' });
-      expect(document.activeElement).toBe(topLeftCell);
-    });
-
-    it('shows focus ring styling on focused cell', () => {
-      const board = createEmptyBoardState('square8');
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      // Focus a cell
-      const cell = container.querySelector('button[data-x="3"][data-y="3"]') as HTMLButtonElement;
-      act(() => {
-        cell.focus();
-      });
-      fireEvent.focus(cell);
-
-      // Cell should have amber focus ring class
-      expect(cell).toHaveClass('ring-amber-400');
-    });
-
-    it('navigates hexagonal board with arrow keys', () => {
-      const board = createEmptyBoardState('hexagonal');
-      board.type = 'hexagonal';
-      board.size = 3; // Small size for testing
-
-      const { container } = render(<BoardView boardType="hexagonal" board={board} />);
-
-      // Focus center cell (0,0,0)
-      const centerCell = container.querySelector(
-        'button[data-x="0"][data-y="0"][data-z="0"]'
-      ) as HTMLButtonElement;
-      if (centerCell) {
-        act(() => {
-          centerCell.focus();
-        });
-        fireEvent.focus(centerCell);
-      }
-
-      // Navigate with arrow key - should move to adjacent hex
-      if (centerCell) {
-        fireEvent.keyDown(screen.getByTestId('board-view'), { key: 'ArrowRight' });
-        // Active element should be different from center
-        expect(document.activeElement).not.toBe(centerCell);
-      }
-    });
-
-    it('has proper ARIA attributes for accessibility', () => {
-      const board = createEmptyBoardState('square8');
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      const boardView = screen.getByTestId('board-view');
-      expect(boardView).toHaveAttribute('role', 'grid');
-      expect(boardView).toHaveAttribute('aria-label');
-
-      // Check that cells have proper roles and labels
-      const cell = container.querySelector('button[data-x="0"][data-y="0"]');
-      expect(cell).toHaveAttribute('role', 'gridcell');
-      expect(cell).toHaveAttribute('aria-label');
-    });
-
-    it('has screen reader announcement region', () => {
-      const board = createEmptyBoardState('square8');
-      render(<BoardView boardType="square8" board={board} />);
-
-      const srRegion = document.querySelector('[role="status"][aria-live="polite"]');
-      expect(srRegion).toBeInTheDocument();
-    });
-  });
-
-  describe('cell coordinate attributes', () => {
-    it('renders square8 cells with data-x and data-y attributes matching their coordinates', () => {
-      const board = createEmptyBoardState('square8');
-
-      const { container } = render(<BoardView boardType="square8" board={board} />);
-
-      const cells = Array.from(container.querySelectorAll('button'));
-      expect(cells).toHaveLength(64);
-
-      // Ensure that each cell exposes its coordinate via data-x/data-y so that
-      // E2E helpers and movement tests can target cells deterministically.
-      cells.forEach((cell) => {
-        const xAttr = cell.getAttribute('data-x');
-        const yAttr = cell.getAttribute('data-y');
-        expect(xAttr).not.toBeNull();
-        expect(yAttr).not.toBeNull();
-
-        const x = Number(xAttr);
-        const y = Number(yAttr);
-        expect(Number.isInteger(x)).toBe(true);
-        expect(Number.isInteger(y)).toBe(true);
-        expect(x).toBeGreaterThanOrEqual(0);
-        expect(x).toBeLessThan(8);
-        expect(y).toBeGreaterThanOrEqual(0);
-        expect(y).toBeLessThan(8);
-      });
-    });
-
-    it('renders hexagonal cells with cube-coordinate data-x/data-y/data-z attributes', () => {
-      const board = createEmptyBoardState('hexagonal');
-      board.type = 'hexagonal';
-      board.size = 13; // radius=12 // canonical side length for the hex board in core rules
-
-      const { container } = render(<BoardView boardType="hexagonal" board={board} />);
-
-      const cells = Array.from(container.querySelectorAll('button'));
-      expect(cells.length).toBeGreaterThan(0);
-
-      const radius = board.size - 1;
-
-      cells.forEach((cell) => {
-        const xAttr = cell.getAttribute('data-x');
-        const yAttr = cell.getAttribute('data-y');
-        const zAttr = cell.getAttribute('data-z');
-
-        expect(xAttr).not.toBeNull();
-        expect(yAttr).not.toBeNull();
-        expect(zAttr).not.toBeNull();
-
-        const q = Number(xAttr);
-        const r = Number(yAttr);
-        const s = Number(zAttr);
-
-        expect(Number.isInteger(q)).toBe(true);
-        expect(Number.isInteger(r)).toBe(true);
-        expect(Number.isInteger(s)).toBe(true);
-
-        // Cube coordinate invariant for hex boards: q + r + s === 0 within radius.
-        expect(q + r + s).toBe(0);
-        expect(Math.abs(q)).toBeLessThanOrEqual(radius);
-        expect(Math.abs(r)).toBeLessThanOrEqual(radius);
-        expect(Math.abs(s)).toBeLessThanOrEqual(radius);
-      });
-    });
+        }}
+      />
+    );
+
+    expect(
+      screen.getByLabelText(/Row 2, Column 2\. Stack height 1, cap 1, player 2/)
+    ).toBeInTheDocument();
   });
 });

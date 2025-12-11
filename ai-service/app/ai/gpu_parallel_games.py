@@ -185,6 +185,92 @@ class BatchGameState:
             num_players=num_players,
         )
 
+    @classmethod
+    def from_single_game(
+        cls,
+        game_state: "GameState",
+        device: Optional[torch.device] = None,
+    ) -> "BatchGameState":
+        """Convert a single CPU GameState to a BatchGameState with batch_size=1.
+
+        This method enables direct comparison between CPU and GPU implementations
+        by converting the canonical CPU representation to GPU tensor format.
+
+        Args:
+            game_state: A single GameState from the CPU implementation
+            device: GPU device (auto-detected if None)
+
+        Returns:
+            BatchGameState with batch_size=1 containing the converted state
+        """
+        from app.models import GameState, BoardType, GamePhase as CPUGamePhase
+
+        if device is None:
+            device = get_device()
+
+        # Determine board size from board type (Pydantic converts to snake_case)
+        board_type = game_state.board_type
+        board_size = {
+            BoardType.SQUARE8: 8,
+            BoardType.SQUARE19: 19,
+            BoardType.HEXAGONAL: 13,  # Hex uses 13 for radius calculation
+        }.get(board_type, 8)
+
+        num_players = len(game_state.players)
+        batch_size = 1
+
+        # Create empty batch state
+        batch = cls.create_batch(
+            batch_size=batch_size,
+            board_size=board_size,
+            num_players=num_players,
+            device=device,
+        )
+
+        # Copy board state (Pydantic converts to snake_case for access)
+        for key, stack in game_state.board.stacks.items():
+            x, y = map(int, key.split(","))
+            if 0 <= x < board_size and 0 <= y < board_size:
+                batch.stack_owner[0, y, x] = stack.controlling_player
+                batch.stack_height[0, y, x] = len(stack.rings)
+
+        for key, player in game_state.board.markers.items():
+            x, y = map(int, key.split(","))
+            if 0 <= x < board_size and 0 <= y < board_size:
+                batch.marker_owner[0, y, x] = player
+
+        for key, player in game_state.board.collapsed_spaces.items():
+            x, y = map(int, key.split(","))
+            if 0 <= x < board_size and 0 <= y < board_size:
+                batch.territory_owner[0, y, x] = player
+                batch.is_collapsed[0, y, x] = True
+
+        # Copy player state
+        for i, player in enumerate(game_state.players):
+            player_num = i + 1
+            batch.rings_in_hand[0, player_num] = player.rings_in_hand
+            batch.eliminated_rings[0, player_num] = player.eliminated_rings
+            batch.territory_count[0, player_num] = player.territory_spaces
+
+        # Copy game metadata
+        batch.current_player[0] = game_state.current_player
+
+        # Map CPU GamePhase to GPU GamePhase (IntEnum)
+        # Note: GPU uses simplified phase model, map all to closest equivalent
+        phase_map = {
+            CPUGamePhase.RING_PLACEMENT: 0,
+            CPUGamePhase.MOVEMENT: 1,
+            CPUGamePhase.CAPTURE: 1,  # Map to movement
+            CPUGamePhase.CHAIN_CAPTURE: 1,  # Map to movement
+            CPUGamePhase.LINE_PROCESSING: 2,
+            CPUGamePhase.TERRITORY_PROCESSING: 3,
+            CPUGamePhase.FORCED_ELIMINATION: 3,  # Map to territory processing
+            CPUGamePhase.GAME_OVER: 4,
+        }
+        batch.current_phase[0] = phase_map.get(game_state.current_phase, 0)
+
+        return batch
+
     def get_active_mask(self) -> torch.Tensor:
         """Get mask of games that are still active.
 

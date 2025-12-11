@@ -62,7 +62,9 @@ export const ScenarioPickerModal: React.FC<ScenarioPickerModalProps> = ({
         setScenarios({ curated, vectors, custom });
       } catch (err) {
         setError('Failed to load scenarios');
-        console.error('Failed to load scenarios:', err);
+        if (process.env.NODE_ENV !== 'test') {
+          console.error('Failed to load scenarios:', err);
+        }
       } finally {
         setLoading(false);
       }

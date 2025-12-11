@@ -1352,6 +1352,36 @@ class GameReplayDB:
                 state.current_phase = GamePhase.FORCED_ELIMINATION
                 break  # Phase is now correct, exit loop
 
+            # RR-PARITY-FIX-2025-12-11: When in ring_placement but the player has
+            # no rings to place (rings_in_hand == 0), and the next move is a movement
+            # or capture phase move, inject NO_PLACEMENT_ACTION to advance through
+            # ring_placement. This handles canonical recordings where the placement
+            # phase was skipped because the player had exhausted their rings.
+            # Movement-phase moves include: move_stack, no_movement_action, recovery_slide
+            # Capture-phase moves include: overtaking_capture, continue_capture_segment, skip_capture
+            movement_and_capture_moves = (
+                "move_stack", "no_movement_action", "recovery_slide",
+                "overtaking_capture", "continue_capture_segment", "skip_capture"
+            )
+            if current_phase == "ring_placement":
+                player_idx = state.current_player - 1
+                rings_in_hand = state.players[player_idx].rings_in_hand
+                if rings_in_hand == 0 and next_type in movement_and_capture_moves:
+                    no_placement_move = Move(
+                        id="auto-inject-no-placement",
+                        type=MoveType.NO_PLACEMENT_ACTION,
+                        player=state.current_player,
+                        to=Position(x=0, y=0),
+                        timestamp=datetime.now(),
+                        thinkTime=0,
+                        moveNumber=0,
+                    )
+                    state = GameEngine.apply_move(state, no_placement_move, trace_mode=True)
+                    continue  # Re-check phase after injection
+                else:
+                    # Player has rings or next move is a placement move - no injection needed
+                    break
+
             # Check if we're in a no-action phase that needs auto-advancing
             if current_phase == "territory_processing":
                 # Check if the next move is forced_elimination - if so, coerce phase
