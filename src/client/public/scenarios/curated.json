@@ -1,23 +1,24 @@
 {
-  "version": "1.0",
-  "description": "Curated learning scenarios for RingRift sandbox mode",
+  "version": "1.0.0",
   "scenarios": [
     {
-      "id": "learn.placement.basics",
-      "name": "Learn: Ring Placement",
-      "description": "Start with an empty board to practice ring placement. Place a single ring or stack on existing rings.",
-      "category": "placement",
+      "id": "learning.empty.square8",
+      "name": "Empty 8×8 Board",
+      "description": "Start with a fresh 8×8 board. Practice basic ring placement and stack movement on the compact square board.",
+      "category": "learning",
       "difficulty": "beginner",
-      "tags": ["tutorial", "placement", "basics"],
+      "tags": ["empty", "tutorial", "beginner"],
+      "rulesConcept": "board_intro_square8",
+      "uxSpecAnchor": "sandbox.board_intro.square8",
       "onboarding": true,
       "rulesSnippet": "Place rings onto empty spaces or existing stacks while keeping at least one legal movement or capture available for your next turn. Avoid trapping your own stacks where they cannot move.",
       "rulesSnippetRef": "ringrift_compact_rules#ring-placement",
       "boardType": "square8",
       "playerCount": 2,
-      "createdAt": "2025-11-30T00:00:00.000Z",
+      "createdAt": "2025-01-01T00:00:00.000Z",
       "source": "curated",
       "state": {
-        "gameId": "learn-placement-001",
+        "gameId": "curated-empty-square8",
         "board": {
           "type": "square8",
           "size": 8,
@@ -32,18 +33,14 @@
             "ringsInHand": 18,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
+            "isActive": true
           },
           {
             "playerNumber": 2,
             "ringsInHand": 18,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI",
-            "type": "ai"
+            "isActive": true
           }
         ],
         "currentPlayer": 1,
@@ -56,29 +53,92 @@
       }
     },
     {
-      "id": "learn.movement.basics",
-      "name": "Learn: Stack Movement",
-      "description": "Practice moving stacks. Each stack must move at least as far as its height, and can go farther if the path stays clear.",
-      "category": "movement",
+      "id": "learning.empty.hexagonal",
+      "name": "Empty Hex Board",
+      "description": "Start with a fresh hexagonal board and experience 6-directional movement and adjacency.",
+      "category": "learning",
       "difficulty": "beginner",
-      "tags": ["tutorial", "movement", "basics"],
+      "tags": ["empty", "tutorial", "hex", "beginner"],
+      "rulesConcept": "board_intro_hex",
+      "uxSpecAnchor": "sandbox.board_intro.hex",
       "onboarding": true,
-      "rulesSnippet": "A stack moves in a straight line at least as many spaces as its height, and farther if the path stays clear. You cannot move through other stacks or collapsed Territory; markers do not block movement but may eliminate your top ring when you land on them.",
+      "rulesSnippet": "On the hex board, stacks move in straight lines along the six hex directions. Movement still follows the same rule: a stack must move at least as far as its height, and farther if the path stays clear of stacks and Territory.",
       "rulesSnippetRef": "ringrift_compact_rules#movement",
-      "boardType": "square8",
+      "boardType": "hexagonal",
       "playerCount": 2,
-      "createdAt": "2025-11-30T00:00:00.000Z",
+      "createdAt": "2025-01-01T00:00:00.000Z",
       "source": "curated",
       "state": {
-        "gameId": "learn-movement-001",
+        "gameId": "curated-empty-hex",
+        "board": {
+          "type": "hexagonal",
+          "size": 5,
+          "stacks": {},
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 18,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 18,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "ring_placement",
+        "turnNumber": 1,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 31
+      }
+    },
+    {
+      "id": "learning.capture.setup",
+      "name": "First Capture Tutorial",
+      "description": "Learn basic overtaking capture. Move Player 1's 2-high stack to jump over the adjacent stack, taking its top ring onto the bottom of your stack; the captured ring stays in play.",
+      "category": "learning",
+      "difficulty": "beginner",
+      "tags": ["capture", "tutorial", "beginner", "Rules_Capture"],
+      "rulesConcept": "capture_basic",
+      "uxSpecAnchor": "capture.basic",
+      "onboarding": true,
+      "rulesSnippet": "To capture, jump over an adjacent opponent stack in a straight line and land on the empty or marker space just beyond it. You take the top ring from the jumped stack and add it to the bottom of your own stack; captured rings stay in play and do not count as eliminated.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#5-capture-and-chain-capture-semantics",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-capture-setup",
         "board": {
           "type": "square8",
           "size": 8,
           "stacks": {
-            "3,3": { "stackHeight": 2, "capHeight": 2, "controllingPlayer": 1 },
-            "5,3": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 2 },
-            "3,5": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 2 },
-            "1,3": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 1 }
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "3,4": {
+              "position": { "x": 3, "y": 4 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
           },
           "markers": {},
           "collapsedSpaces": {},
@@ -87,21 +147,101 @@
         "players": [
           {
             "playerNumber": 1,
-            "ringsInHand": 14,
+            "ringsInHand": 16,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 17,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 3,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      },
+      "suggestedMove": {
+        "id": "suggested-capture",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": { "x": 3, "y": 3 },
+        "captureTarget": { "x": 3, "y": 4 },
+        "to": { "x": 3, "y": 5 },
+        "timestamp": "2025-01-01T00:00:00.000Z",
+        "thinkTime": 0,
+        "moveNumber": 3
+      }
+    },
+    {
+      "id": "learning.chain.capture",
+      "name": "Chain Capture Tutorial",
+      "description": "Learn chain capture mechanics. Player 1's stack can capture two opponent stacks in succession. Starting the first capture is optional, but once you begin you must keep capturing while any capture is available.",
+      "category": "learning",
+      "difficulty": "intermediate",
+      "tags": ["chain_capture", "tutorial", "intermediate", "Rules_ChainCapture"],
+      "rulesConcept": "chain_capture_mandatory",
+      "uxSpecAnchor": "capture.chain_capture",
+      "onboarding": true,
+      "rulesSnippet": "If your capturing stack can jump again after a capture, you are in a chain capture. Starting the first capture is optional, but once the chain begins you must keep capturing as long as any capture is available; when several jumps exist, you choose which target to take next.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#5-capture-and-chain-capture-semantics",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-chain-capture",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "2,2": {
+              "position": { "x": 2, "y": 2 },
+              "rings": [1, 1, 1],
+              "stackHeight": 3,
+              "capHeight": 3,
+              "controllingPlayer": 1
+            },
+            "2,4": {
+              "position": { "x": 2, "y": 4 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "2,6": {
+              "position": { "x": 2, "y": 6 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 15,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
           },
           {
             "playerNumber": 2,
             "ringsInHand": 16,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI",
-            "type": "ai"
+            "isActive": true
           }
         ],
         "currentPlayer": 1,
@@ -114,29 +254,210 @@
       }
     },
     {
-      "id": "learn.capture.chain",
-      "name": "Learn: Chain Captures",
-      "description": "Practice capture chains where starting the first capture is optional, but once you begin you must keep capturing while any capture is available, choosing which stack to jump over each time.",
-      "category": "chain_capture",
+      "id": "learning.line.almost",
+      "name": "Line Completion Tutorial",
+      "description": "Learn line completion. Player 1 is one marker away from a scoring line; complete the line to collapse markers into Territory and see how line rewards can require or skip ring elimination.",
+      "category": "learning",
       "difficulty": "intermediate",
-      "tags": ["tutorial", "capture", "chain"],
+      "tags": ["line", "territory", "tutorial", "intermediate", "Rules_Line"],
+      "rulesConcept": "lines_basic",
+      "uxSpecAnchor": "lines.core",
       "onboarding": true,
-      "rulesSnippet": "After an overtaking capture, if your new stack can capture again, you must continue the chain until no valid capture targets remain. Each link in the chain removes rings and can quickly swing the game.",
-      "rulesSnippetRef": "ringrift_compact_rules#chain-capture",
+      "rulesSnippet": "When a contiguous line of your markers reaches the minimum scoring length, it immediately becomes a line to resolve. You collapse markers into permanent Territory and must eliminate one ring from the top of any stack you control (including standalone rings). For overlength lines you can instead collapse a minimal scoring segment and skip elimination.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#6-lines-and-rewards",
       "boardType": "square8",
       "playerCount": 2,
-      "createdAt": "2025-11-30T00:00:00.000Z",
+      "createdAt": "2025-01-01T00:00:00.000Z",
       "source": "curated",
       "state": {
-        "gameId": "learn-chain-001",
+        "gameId": "curated-line-almost",
         "board": {
           "type": "square8",
           "size": 8,
           "stacks": {
-            "1,3": { "stackHeight": 3, "capHeight": 3, "controllingPlayer": 1 },
-            "2,3": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 2 },
-            "4,3": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 2 },
-            "6,3": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 2 }
+            "1,3": {
+              "position": { "x": 1, "y": 3 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "6,3": {
+              "position": { "x": 6, "y": 3 },
+              "rings": [2, 2],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {
+            "2,3": { "player": 1, "position": { "x": 2, "y": 3 }, "type": "regular" },
+            "3,3": { "player": 1, "position": { "x": 3, "y": 3 }, "type": "regular" },
+            "4,3": { "player": 1, "position": { "x": 4, "y": 3 }, "type": "regular" },
+            "5,3": { "player": 1, "position": { "x": 5, "y": 3 }, "type": "regular" }
+          },
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 16,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 16,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 5,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "learning.territory.disconnect",
+      "name": "Territory Disconnection",
+      "description": "Learn territory mechanics. A move by Player 1 can cut off Player 2's region from the rest of the board; when that disconnected region is processed it collapses into Territory and its rings are eliminated, with a self-elimination cost from another stack.",
+      "category": "learning",
+      "difficulty": "advanced",
+      "tags": ["territory", "disconnect", "advanced", "Rules_Territory"],
+      "rulesConcept": "territory_basic",
+      "uxSpecAnchor": "territory.core",
+      "onboarding": true,
+      "rulesSnippet": "Territory spaces are collapsed cells you permanently own. When a disconnected region you control is processed, all of its spaces become your Territory, all rings in the region are eliminated, and you must pay an elimination cost: the entire cap from an eligible stack outside the region (multicolor or height > 1; standalone rings are NOT eligible).",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#7-territory-and-disconnected-regions",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-territory-disconnect",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [1, 1, 1],
+              "stackHeight": 3,
+              "capHeight": 3,
+              "controllingPlayer": 1
+            },
+            "0,0": {
+              "position": { "x": 0, "y": 0 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "5,5": {
+              "position": { "x": 5, "y": 5 },
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            }
+          },
+          "markers": {
+            "0,1": { "player": 2, "position": { "x": 0, "y": 1 }, "type": "regular" },
+            "1,0": { "player": 2, "position": { "x": 1, "y": 0 }, "type": "regular" },
+            "1,1": { "player": 1, "position": { "x": 1, "y": 1 }, "type": "regular" }
+          },
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 14,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 17,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 6,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "learning.advanced.multistack",
+      "name": "Multi-Stack Tactics",
+      "description": "Practice with multiple stacks of different heights. Each stack must move at least as far as its height in a straight line, and can go farther if the path stays clear.",
+      "category": "learning",
+      "difficulty": "intermediate",
+      "tags": ["movement", "stacks", "intermediate", "Rules_Movement"],
+      "rulesConcept": "stack_height_mobility",
+      "uxSpecAnchor": "movement.semantics",
+      "onboarding": true,
+      "rulesSnippet": "A stack moves in a straight line at least as many spaces as its height, and may move farther if the path stays legal. The path cannot pass through other stacks or collapsed Territory spaces; markers do not block movement, but landing on a marker eliminates your top ring.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#4-movement-semantics",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-multistack",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "1,1": {
+              "position": { "x": 1, "y": 1 },
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "3,1": {
+              "position": { "x": 3, "y": 1 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "5,1": {
+              "position": { "x": 5, "y": 1 },
+              "rings": [1, 1, 1],
+              "stackHeight": 3,
+              "capHeight": 3,
+              "controllingPlayer": 1
+            },
+            "3,5": {
+              "position": { "x": 3, "y": 5 },
+              "rings": [2, 2],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 2
+            },
+            "5,5": {
+              "position": { "x": 5, "y": 5 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
           },
           "markers": {},
           "collapsedSpaces": {},
@@ -145,21 +466,17 @@
         "players": [
           {
             "playerNumber": 1,
-            "ringsInHand": 15,
+            "ringsInHand": 12,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
+            "isActive": true
           },
           {
             "playerNumber": 2,
             "ringsInHand": 15,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI",
-            "type": "ai"
+            "isActive": true
           }
         ],
         "currentPlayer": 1,
@@ -172,190 +489,96 @@
       }
     },
     {
-      "id": "learn.lines.formation.Rules_11_2_Q7_Q20",
-      "name": "Learn: Line Formation (Rules_11_2_Q7_Q20)",
-      "description": "Form a line of 4+ connected markers of the same color, then observe how this mirrors the combined RulesMatrix scenario Rules_11_2_12_2_Q7_Q20_overlength_line_then_single_cell_region_square8.",
-      "category": "line_processing",
+      "id": "learning.midgame.balanced",
+      "name": "Balanced Midgame",
+      "description": "A balanced midgame position with both players having equal material. Practice strategic decision-making while applying standard movement, capture, and line rules.",
+      "category": "learning",
       "difficulty": "intermediate",
-      "tags": ["tutorial", "lines", "markers", "Rules_11_2_Q7", "Rules_11_2_12_2_Q7_Q20"],
-      "onboarding": true,
-      "rulesSnippet": "When a contiguous line of your markers reaches the minimum scoring length, it immediately becomes a line to resolve. You choose how to reward each completed line: collapse markers into permanent Territory and, on many boards, pay a small ring-elimination cost from one of your stacks. Rings are never returned to hand as a line reward.",
-      "rulesSnippetRef": "RULES_SCENARIO_MATRIX#Rules_11_2_12_2_Q7_Q20_overlength_line_then_single_cell_region_square8",
-      "matrixScenarioId": "Rules_11_2_12_2_Q7_Q20_overlength_line_then_single_cell_region_square8",
+      "tags": ["midgame", "strategy", "intermediate"],
+      "rulesConcept": "movement_basic",
+      "uxSpecAnchor": "movement.semantics",
+      "rulesSnippet": "Move a stack you control in a straight line at least as many spaces as the stack’s height. You can keep going farther as long as the path has no stacks or Territory blocking you; markers are allowed and may eliminate your top ring when you land on them.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#4-movement-semantics",
       "boardType": "square8",
       "playerCount": 2,
-      "createdAt": "2025-11-30T00:00:00.000Z",
+      "createdAt": "2025-01-01T00:00:00.000Z",
       "source": "curated",
       "state": {
-        "gameId": "learn-lines-001",
+        "gameId": "curated-midgame-balanced",
         "board": {
           "type": "square8",
           "size": 8,
           "stacks": {
-            "3,0": { "stackHeight": 2, "capHeight": 2, "controllingPlayer": 1 },
-            "3,7": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 2 }
+            "1,1": {
+              "position": { "x": 1, "y": 1 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "1,5": {
+              "position": { "x": 1, "y": 5 },
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "4,3": {
+              "position": { "x": 4, "y": 3 },
+              "rings": [1, 1, 1],
+              "stackHeight": 3,
+              "capHeight": 3,
+              "controllingPlayer": 1
+            },
+            "6,1": {
+              "position": { "x": 6, "y": 1 },
+              "rings": [2, 2],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 2
+            },
+            "6,5": {
+              "position": { "x": 6, "y": 5 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "3,4": {
+              "position": { "x": 3, "y": 4 },
+              "rings": [2, 2, 2],
+              "stackHeight": 3,
+              "capHeight": 3,
+              "controllingPlayer": 2
+            }
           },
           "markers": {
-            "3,2": { "player": 1 },
-            "3,3": { "player": 1 },
-            "3,4": { "player": 1 }
+            "2,2": { "player": 1, "position": { "x": 2, "y": 2 }, "type": "regular" },
+            "3,2": { "player": 1, "position": { "x": 3, "y": 2 }, "type": "regular" },
+            "5,2": { "player": 2, "position": { "x": 5, "y": 2 }, "type": "regular" },
+            "5,4": { "player": 2, "position": { "x": 5, "y": 4 }, "type": "regular" }
           },
-          "collapsedSpaces": {},
-          "eliminatedRings": { "1": 3, "2": 3 }
-        },
-        "players": [
-          {
-            "playerNumber": 1,
-            "ringsInHand": 13,
-            "eliminatedRings": 3,
-            "territorySpaces": 0,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
-          },
-          {
-            "playerNumber": 2,
-            "ringsInHand": 14,
-            "eliminatedRings": 3,
-            "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI",
-            "type": "ai"
-          }
-        ],
-        "currentPlayer": 1,
-        "currentPhase": "movement",
-        "turnNumber": 12,
-        "moveHistory": [],
-        "gameStatus": "active",
-        "victoryThreshold": 18,
-        "territoryVictoryThreshold": 33
-      }
-    },
-    {
-      "id": "learn.territory.basics.Rules_12_2_Q23",
-      "name": "Learn: Territory Control (Rules_12_2_Q23)",
-      "description": "Surround empty spaces with your markers to claim territory and see the self-elimination prerequisite from FAQ Q23 in action, mirroring Rules_12_2_Q23_mini_region_square8_numeric_invariant.",
-      "category": "territory_processing",
-      "difficulty": "advanced",
-      "tags": [
-        "tutorial",
-        "territory",
-        "strategy",
-        "Rules_12_2_Q23_mini_region_square8_numeric_invariant"
-      ],
-      "onboarding": true,
-      "rulesSnippet": "Collapsed Territory spaces are owned permanently. When you process a disconnected region for a player, all of its spaces are added to that player’s Territory, rings in that region are eliminated, and the player usually must eliminate rings from a stack they control outside the region as a cost. If this pushes them past the Territory threshold they immediately win on Territory.",
-      "rulesSnippetRef": "RULES_SCENARIO_MATRIX#Rules_12_2_Q23_mini_region_square8_numeric_invariant",
-      "matrixScenarioId": "Rules_12_2_Q23_mini_region_square8_numeric_invariant",
-      "boardType": "square8",
-      "playerCount": 2,
-      "createdAt": "2025-11-30T00:00:00.000Z",
-      "source": "curated",
-      "state": {
-        "gameId": "learn-territory-001",
-        "board": {
-          "type": "square8",
-          "size": 8,
-          "stacks": {
-            "0,0": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 1 },
-            "7,7": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 2 }
-          },
-          "markers": {
-            "2,2": { "player": 1 },
-            "2,3": { "player": 1 },
-            "2,4": { "player": 1 },
-            "3,2": { "player": 1 },
-            "3,4": { "player": 1 },
-            "4,2": { "player": 1 },
-            "4,3": { "player": 1 },
-            "4,4": { "player": 1 },
-            "5,5": { "player": 2 },
-            "5,6": { "player": 2 },
-            "6,5": { "player": 2 },
-            "6,6": { "player": 2 }
-          },
-          "collapsedSpaces": {},
-          "eliminatedRings": { "1": 8, "2": 4 }
-        },
-        "players": [
-          {
-            "playerNumber": 1,
-            "ringsInHand": 9,
-            "eliminatedRings": 8,
-            "territorySpaces": 0,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
-          },
-          {
-            "playerNumber": 2,
-            "ringsInHand": 13,
-            "eliminatedRings": 4,
-            "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI",
-            "type": "ai"
-          }
-        ],
-        "currentPlayer": 1,
-        "currentPhase": "movement",
-        "turnNumber": 20,
-        "moveHistory": [],
-        "gameStatus": "active",
-        "victoryThreshold": 18,
-        "territoryVictoryThreshold": 33
-      }
-    },
-    {
-      "id": "puzzle.capture.triple",
-      "name": "Puzzle: Triple Chain Capture",
-      "description": "Find the sequence of moves that captures three opponent stacks in one chain!",
-      "category": "chain_capture",
-      "difficulty": "advanced",
-      "tags": ["puzzle", "capture", "chain", "challenge"],
-      "boardType": "square8",
-      "playerCount": 2,
-      "createdAt": "2025-11-30T00:00:00.000Z",
-      "source": "curated",
-      "state": {
-        "gameId": "puzzle-capture-001",
-        "board": {
-          "type": "square8",
-          "size": 8,
-          "stacks": {
-            "0,3": { "stackHeight": 4, "capHeight": 4, "controllingPlayer": 1 },
-            "1,3": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 2 },
-            "3,3": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 2 },
-            "5,3": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 2 },
-            "7,3": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 1 }
-          },
-          "markers": {},
           "collapsedSpaces": {},
           "eliminatedRings": { "1": 0, "2": 0 }
         },
         "players": [
           {
             "playerNumber": 1,
-            "ringsInHand": 13,
+            "ringsInHand": 12,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
+            "isActive": true
           },
           {
             "playerNumber": 2,
-            "ringsInHand": 15,
+            "ringsInHand": 12,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI",
-            "type": "ai"
+            "isActive": true
           }
         ],
         "currentPlayer": 1,
-        "currentPhase": "movement",
+        "currentPhase": "ring_placement",
         "turnNumber": 10,
         "moveHistory": [],
         "gameStatus": "active",
@@ -364,19 +587,170 @@
       }
     },
     {
-      "id": "rules.territory.near_victory_territory",
-      "name": "Q23 – Near-Victory Territory (RulesMatrix)",
-      "description": "Player 1 is one region away from winning on territory. Processing the pending region mirrors the near_victory_territory.process.single_region vector and pushes P1 from 32 to 33 territory spaces for a territory_control victory.",
+      "id": "learning.fourplayer.start",
+      "name": "4-Player Free-for-All",
+      "description": "Experience a 4-player game on the hex board. All players start fresh with equal resources and use the same movement, capture, line, and Territory rules as on other boards.",
+      "category": "learning",
+      "difficulty": "advanced",
+      "tags": ["multiplayer", "4player", "hex", "advanced"],
+      "rulesConcept": "board_intro_hex",
+      "uxSpecAnchor": "sandbox.board_intro.hex",
+      "rulesSnippet": "On the hex board, movement, lines, and Territory all use 6-directional hex adjacency. Ring counts, victory thresholds, and elimination rules still follow the same global rules as on square boards.",
+      "rulesSnippetRef": "RULES_CANONICAL_SPEC#1-entities-and-components",
+      "boardType": "hexagonal",
+      "playerCount": 4,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-4player-hex",
+        "board": {
+          "type": "hexagonal",
+          "size": 5,
+          "stacks": {},
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0, "3": 0, "4": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 3,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 4,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "ring_placement",
+        "turnNumber": 1,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 25,
+        "territoryVictoryThreshold": 31
+      }
+    },
+    {
+      "id": "learning.endgame.elimination",
+      "name": "Ring Elimination Victory",
+      "description": "Explore Ring Elimination victory. Use the HUD to compare each player's “Rings Eliminated” to the Ring Elimination threshold, then try moves that eliminate additional rings (for example via markers, lines, or Territory) to see how elimination victory is triggered.",
+      "category": "learning",
+      "difficulty": "advanced",
+      "tags": ["endgame", "elimination", "victory", "advanced", "Rules_Victory"],
+      "rulesConcept": "victory_ring_elimination",
+      "uxSpecAnchor": "victory.elimination",
+      "rulesSnippet": "Win by eliminating a number of rings equal to the starting ring supply (ringsPerPlayer) – not just one opponent's set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#3-1-ring-elimination",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-endgame-elimination",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [1, 1, 1, 1],
+              "stackHeight": 4,
+              "capHeight": 4,
+              "controllingPlayer": 1
+            },
+            "3,5": {
+              "position": { "x": 3, "y": 5 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "6,6": {
+              "position": { "x": 6, "y": 6 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            }
+          },
+          "markers": {
+            "2,2": { "player": 1, "position": { "x": 2, "y": 2 }, "type": "regular" },
+            "4,4": { "player": 1, "position": { "x": 4, "y": 4 }, "type": "regular" },
+            "5,5": { "player": 1, "position": { "x": 5, "y": 5 }, "type": "regular" }
+          },
+          "collapsedSpaces": {
+            "0,0": 1,
+            "0,1": 1,
+            "0,2": 1,
+            "1,0": 1,
+            "1,1": 1
+          },
+          "eliminatedRings": { "1": 2, "2": 17 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 9,
+            "eliminatedRings": 2,
+            "territorySpaces": 5,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 0,
+            "eliminatedRings": 17,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 30,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "learning.near_victory.territory",
+      "name": "Territory Victory Setup",
+      "description": "Player 1 is one Territory region away from victory. Process the pending region to claim enough Territory spaces to pass the Territory Control threshold and win immediately.",
       "category": "territory_processing",
       "difficulty": "advanced",
       "tags": [
         "territory",
         "victory",
         "near_victory",
-        "territory_control",
-        "Rules_12_2_Q23_mini_region_square8_numeric_invariant",
-        "near_victory_territory.process.single_region"
+        "endgame",
+        "Rules_Victory",
+        "Rules_Territory"
       ],
+      "rulesConcept": "territory_near_victory",
+      "uxSpecAnchor": "victory.territory",
+      "onboarding": true,
+      "rulesSnippet": "Win by controlling more than half of all board spaces as Territory. Territory spaces are collapsed cells you permanently own; this scenario begins one Territory region short of the threshold so you can see Territory victory trigger when the pending region is processed.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#3-2-territory-control",
       "boardType": "square8",
       "playerCount": 2,
       "createdAt": "2025-12-01T00:00:00.000Z",
@@ -404,44 +778,44 @@
           },
           "markers": {},
           "collapsedSpaces": {
-            "1,0": 1,
+            "0,0": 1,
             "0,1": 1,
+            "0,2": 1,
+            "0,3": 1,
+            "0,4": 1,
+            "0,5": 1,
+            "0,6": 1,
+            "0,7": 1,
+            "1,0": 1,
             "1,1": 1,
+            "1,2": 1,
+            "1,3": 1,
+            "1,4": 1,
+            "1,5": 1,
+            "1,6": 1,
+            "1,7": 1,
             "2,0": 1,
             "2,1": 1,
             "2,2": 1,
-            "0,2": 1,
-            "1,2": 1,
-            "0,3": 1,
-            "1,3": 1,
             "2,3": 1,
+            "2,4": 1,
+            "2,5": 1,
+            "2,6": 1,
+            "2,7": 1,
             "3,0": 1,
             "3,1": 1,
             "3,2": 1,
             "3,3": 1,
-            "0,4": 1,
-            "1,4": 1,
-            "2,4": 1,
             "3,4": 1,
-            "4,0": 1,
-            "4,1": 1,
-            "4,2": 1,
-            "4,3": 1,
-            "4,4": 1,
-            "0,5": 1,
-            "1,5": 1,
-            "2,5": 1,
             "3,5": 1,
-            "4,5": 1,
-            "5,0": 1,
-            "5,1": 1,
-            "5,2": 1
+            "3,6": 1,
+            "3,7": 1
           },
           "territories": {
             "pending_victory_region": {
-              "spaces": [{ "x": 0, "y": 0 }],
+              "spaces": [{ "x": 4, "y": 4 }],
               "controllingPlayer": 1,
-              "isDisconnected": true
+              "isDisconnected": false
             }
           },
           "eliminatedRings": { "1": 0, "2": 0 }
@@ -452,18 +826,14 @@
             "ringsInHand": 10,
             "eliminatedRings": 0,
             "territorySpaces": 32,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
+            "isActive": true
           },
           {
             "playerNumber": 2,
             "ringsInHand": 10,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI",
-            "type": "ai"
+            "isActive": true
           }
         ],
         "currentPlayer": 1,
@@ -479,55 +849,60 @@
         }
       },
       "suggestedMove": {
-        "id": "process-victory-region",
+        "id": "suggested-territory-victory",
         "type": "process_territory_region",
         "player": 1,
-        "to": { "x": 0, "y": 0 },
+        "to": { "x": 4, "y": 4 },
         "disconnectedRegions": [
           {
-            "spaces": [{ "x": 0, "y": 0 }],
+            "spaces": [{ "x": 4, "y": 4 }],
             "controllingPlayer": 1,
-            "isDisconnected": true
+            "isDisconnected": false
           }
         ],
-        "timestamp": "2025-12-01T10:55:00.000Z",
+        "timestamp": "2025-12-01T00:00:00.000Z",
         "thinkTime": 0,
         "moveNumber": 20
       }
     },
     {
-      "id": "advanced.chain_capture_extended.C4",
-      "name": "C4 – Extended Chain Capture (RulesMatrix)",
-      "description": "Deep multi-target chain capture on square8, mirroring the chain_capture.4_targets.diagonal_with_turn vector and C4 axis in RULES_SCENARIO_MATRIX.",
-      "category": "chain_capture",
+      "id": "advanced.multi_phase_turn",
+      "name": "Multi-Phase Turn Demo",
+      "description": "Experience a turn with multiple phases. Player 1's capture triggers a chain capture, which then leads into line processing and Territory processing in order.",
+      "category": "line_processing",
       "difficulty": "advanced",
       "tags": [
+        "multi_phase",
+        "turn_lifecycle",
+        "capture",
         "chain_capture",
-        "extended_chain",
-        "Rules_C4_chain_capture_extended",
-        "Axis_C4",
-        "chain_capture_extended",
-        "chain_capture.4_targets.diagonal_with_turn"
+        "line_processing",
+        "advanced"
       ],
+      "rulesConcept": "turn_multi_phase",
+      "uxSpecAnchor": "turn.multi_phase.line_then_territory",
+      "onboarding": true,
+      "rulesSnippet": "A full turn flows from movement or capture, into any mandatory chain capture, then line processing, and finally Territory processing before victory checks and turn rotation. This scenario starts just before a multi-phase sequence so you can watch the engine advance phases in order.",
+      "rulesSnippetRef": "RULES_CANONICAL_SPEC#4-turn-phase-step-structure",
       "boardType": "square8",
       "playerCount": 2,
       "createdAt": "2025-12-01T00:00:00.000Z",
       "source": "curated",
       "state": {
-        "gameId": "curated-chain-capture-extended-C4",
+        "gameId": "curated-multi-phase-turn",
         "board": {
           "type": "square8",
           "size": 8,
           "stacks": {
-            "0,0": {
-              "position": { "x": 0, "y": 0 },
+            "0,3": {
+              "position": { "x": 0, "y": 3 },
               "rings": [1],
               "stackHeight": 1,
               "capHeight": 1,
               "controllingPlayer": 1
             },
-            "1,1": {
-              "position": { "x": 1, "y": 1 },
+            "1,3": {
+              "position": { "x": 1, "y": 3 },
               "rings": [2],
               "stackHeight": 1,
               "capHeight": 1,
@@ -540,43 +915,36 @@
               "capHeight": 1,
               "controllingPlayer": 2
             },
-            "5,5": {
-              "position": { "x": 5, "y": 5 },
-              "rings": [2],
-              "stackHeight": 1,
-              "capHeight": 1,
-              "controllingPlayer": 2
-            },
-            "5,6": {
-              "position": { "x": 5, "y": 6 },
-              "rings": [2],
-              "stackHeight": 1,
-              "capHeight": 1,
-              "controllingPlayer": 2
+            "7,3": {
+              "position": { "x": 7, "y": 3 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
             }
           },
-          "markers": {},
+          "markers": {
+            "4,3": { "position": { "x": 4, "y": 3 }, "player": 1, "type": "regular" },
+            "5,3": { "position": { "x": 5, "y": 3 }, "player": 1, "type": "regular" },
+            "6,3": { "position": { "x": 6, "y": 3 }, "player": 1, "type": "regular" }
+          },
           "collapsedSpaces": {},
           "eliminatedRings": { "1": 0, "2": 0 }
         },
         "players": [
           {
             "playerNumber": 1,
-            "ringsInHand": 17,
-            "eliminatedRings": 0,
-            "territorySpaces": 0,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
-          },
-          {
-            "playerNumber": 2,
             "ringsInHand": 14,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI",
-            "type": "ai"
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 16,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
           }
         ],
         "currentPlayer": 1,
@@ -588,13 +956,13 @@
         "territoryVictoryThreshold": 33
       },
       "suggestedMove": {
-        "id": "move-chain-4-start",
+        "id": "suggested-multi-phase-capture",
         "type": "overtaking_capture",
         "player": 1,
-        "from": { "x": 0, "y": 0 },
-        "captureTarget": { "x": 1, "y": 1 },
-        "to": { "x": 2, "y": 2 },
-        "timestamp": "2025-12-01T11:00:00.000Z",
+        "from": { "x": 0, "y": 3 },
+        "captureTarget": { "x": 1, "y": 3 },
+        "to": { "x": 2, "y": 3 },
+        "timestamp": "2025-12-01T00:00:00.000Z",
         "thinkTime": 0,
         "moveNumber": 5
       }
@@ -614,6 +982,7 @@
       ],
       "rulesConcept": "anm_forced_elimination",
       "uxSpecAnchor": "active_no_moves.fe_core",
+      "onboarding": true,
       "rulesSnippet": "Forced Elimination: caps are removed from your stacks automatically until either a real move becomes available or your stacks are gone, and this does not count as a “real move” for Last Player Standing.",
       "rulesSnippetRef": "docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md#ANM-SCEN-01",
       "boardType": "square8",
@@ -642,18 +1011,14 @@
             "ringsInHand": 0,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
+            "isActive": true
           },
           {
             "playerNumber": 2,
             "ringsInHand": 0,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI",
-            "type": "ai"
+            "isActive": true
           }
         ],
         "currentPlayer": 1,
@@ -674,6 +1039,7 @@
       "tags": ["weird_state", "structural_stalemate", "stalemate", "tiebreak"],
       "rulesConcept": "structural_stalemate",
       "uxSpecAnchor": "victory.structural_stalemate",
+      "onboarding": true,
       "rulesSnippet": "In a structural stalemate, no player has any legal placements, movements, captures, or forced eliminations; the game ends and the winner is decided by territory and eliminated rings plus markers and last real action.",
       "rulesSnippetRef": "ringrift_complete_rules#end-of-game-stalemate-resolution",
       "boardType": "square8",
@@ -760,19 +1126,15 @@
             "playerNumber": 1,
             "ringsInHand": 3,
             "eliminatedRings": 0,
-            "territorySpaces": 0,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
+            "territorySpaces": 32,
+            "isActive": true
           },
           {
             "playerNumber": 2,
             "ringsInHand": 5,
             "eliminatedRings": 0,
-            "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI",
-            "type": "ai"
+            "territorySpaces": 32,
+            "isActive": true
           }
         ],
         "currentPlayer": 1,
@@ -793,6 +1155,7 @@
       "tags": ["weird_state", "last_player_standing", "anm_last_player_standing", "victory"],
       "rulesConcept": "anm_last_player_standing",
       "uxSpecAnchor": "victory.last_player_standing",
+      "onboarding": true,
       "rulesSnippet": "Last Player Standing: you win if you are the only player who can make real moves (placements, movements, or captures) for two full rounds; forced elimination does not count as a real move.",
       "rulesSnippetRef": "ringrift_complete_rules#last-player-standing",
       "boardType": "square8",
@@ -817,27 +1180,21 @@
             "ringsInHand": 4,
             "eliminatedRings": 0,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
+            "isActive": true
           },
           {
             "playerNumber": 2,
             "ringsInHand": 0,
             "eliminatedRings": 5,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI P2",
-            "type": "ai"
+            "isActive": true
           },
           {
             "playerNumber": 3,
             "ringsInHand": 0,
             "eliminatedRings": 5,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI P3",
-            "type": "ai"
+            "isActive": true
           }
         ],
         "currentPlayer": 1,
@@ -852,7 +1209,7 @@
     {
       "id": "teaching.mini_region.step_1",
       "name": "Weird State: Territory Mini-Regions (Q23)",
-      "description": "Q23-style mini-region on square8. Player 1 surrounds a compact 2×2 group of empty cells; processing the disconnected region eliminates interior rings and requires paying a self-elimination cost from an outside stack.",
+      "description": "Q23-style mini-region on square8. Player 1 surrounds a compact 2×2 group of empty cells; this is one of the canonical disconnected groups of empty cells where rings inside the region are eliminated and the border becomes Territory when processed.",
       "category": "territory_processing",
       "difficulty": "advanced",
       "tags": [
@@ -864,7 +1221,8 @@
       ],
       "rulesConcept": "territory_mini_region_q23",
       "uxSpecAnchor": "territory.mini_region.q23",
-      "rulesSnippet": "Q23 mini-regions explain how disconnected groups of empty cells are processed: rings inside the region are eliminated and the surrounding markers become Territory.",
+      "onboarding": true,
+      "rulesSnippet": "Q23 mini-regions explain how disconnected groups of empty cells are processed: rings inside the region are eliminated and the surrounding markers become Territory. The self-elimination cost requires the entire cap from an eligible stack outside the region (multicolor or height > 1; standalone rings are NOT eligible).",
       "rulesSnippetRef": "RULES_SCENARIO_MATRIX#Rules_12_2_Q23_mini_region_square8_numeric_invariant",
       "matrixScenarioId": "Rules_12_2_Q23_mini_region_square8_numeric_invariant",
       "boardType": "square8",
@@ -903,18 +1261,14 @@
             "ringsInHand": 9,
             "eliminatedRings": 8,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "You",
-            "type": "human"
+            "isActive": true
           },
           {
             "playerNumber": 2,
             "ringsInHand": 13,
             "eliminatedRings": 4,
             "territorySpaces": 0,
-            "isActive": true,
-            "username": "AI",
-            "type": "ai"
+            "isActive": true
           }
         ],
         "currentPlayer": 1,
@@ -924,6 +1278,1444 @@
         "gameStatus": "active",
         "victoryThreshold": 18,
         "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "quickstart.square19.empty",
+      "name": "Empty 19×19 Board",
+      "description": "Start with a fresh 19×19 board. Experience the larger strategic space with more room for territory formation and complex line patterns.",
+      "category": "learning",
+      "difficulty": "intermediate",
+      "tags": ["empty", "square19", "tutorial", "large_board"],
+      "rulesConcept": "board_intro_square8",
+      "uxSpecAnchor": "sandbox.board_intro.square19",
+      "onboarding": true,
+      "rulesSnippet": "On the 19×19 board, the same rules apply but with more space for complex territory and line strategies. Scoring lines require 5 markers; the larger board allows for more simultaneous threats.",
+      "rulesSnippetRef": "ringrift_compact_rules#board-variants",
+      "boardType": "square19",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-empty-square19",
+        "board": {
+          "type": "square19",
+          "size": 19,
+          "stacks": {},
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 50,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 50,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "ring_placement",
+        "turnNumber": 1,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 51,
+        "territoryVictoryThreshold": 181
+      }
+    },
+    {
+      "id": "quickstart.movement_basics",
+      "name": "Movement Basics",
+      "description": "Learn fundamental movement mechanics. Player 1 has stacks of different heights ready to move. Practice the min-distance rule: a stack must move at least as many spaces as its height.",
+      "category": "movement",
+      "difficulty": "beginner",
+      "tags": ["movement", "tutorial", "beginner", "quickstart"],
+      "rulesConcept": "movement_basic",
+      "uxSpecAnchor": "movement.basics",
+      "onboarding": true,
+      "rulesSnippet": "A stack moves in a straight line at least as many spaces as its height. Taller stacks must travel farther but can go beyond the minimum if the path is clear.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#4-movement-semantics",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-movement-basics",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "1,4": {
+              "position": { "x": 1, "y": 4 },
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "3,4": {
+              "position": { "x": 3, "y": 4 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "5,4": {
+              "position": { "x": 5, "y": 4 },
+              "rings": [1, 1, 1],
+              "stackHeight": 3,
+              "capHeight": 3,
+              "controllingPlayer": 1
+            },
+            "6,1": {
+              "position": { "x": 6, "y": 1 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 17,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 5,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "quickstart.capture_opportunity_multi",
+      "name": "Multiple Capture Opportunities",
+      "description": "Practice choosing between different capture targets. Player 1 has a stack positioned with multiple opponent stacks in range. Choose which target offers the best strategic advantage.",
+      "category": "capture",
+      "difficulty": "intermediate",
+      "tags": ["capture", "tactics", "intermediate", "quickstart"],
+      "rulesConcept": "capture_basic",
+      "uxSpecAnchor": "capture.choice",
+      "onboarding": true,
+      "rulesSnippet": "When multiple captures are available, you choose which opponent stack to jump. Captured rings stay in play and do not count as eliminated. Consider the resulting position and whether a chain capture might follow.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#5-capture-and-chain-capture-semantics",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-capture-multi",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "3,4": {
+              "position": { "x": 3, "y": 4 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "4,3": {
+              "position": { "x": 4, "y": 3 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "2,3": {
+              "position": { "x": 2, "y": 3 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 16,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 15,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 5,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "quickstart.chain_extended",
+      "name": "Extended Chain Capture",
+      "description": "Execute a long chain capture sequence. Player 1 can capture 3 opponent stacks in succession. Remember: once you start a chain, you must continue capturing while opportunities exist.",
+      "category": "chain_capture",
+      "difficulty": "intermediate",
+      "tags": ["chain_capture", "tactics", "intermediate", "quickstart"],
+      "rulesConcept": "chain_capture_extended",
+      "uxSpecAnchor": "capture.chain_extended",
+      "onboarding": true,
+      "rulesSnippet": "In an extended chain capture, you jump multiple stacks in sequence. Each captured ring adds to your stack's bottom, building a tall powerful piece if you survive the chain.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#5-capture-and-chain-capture-semantics",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-chain-extended",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "1,1": {
+              "position": { "x": 1, "y": 1 },
+              "rings": [1, 1, 1, 1],
+              "stackHeight": 4,
+              "capHeight": 4,
+              "controllingPlayer": 1
+            },
+            "1,3": {
+              "position": { "x": 1, "y": 3 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "1,5": {
+              "position": { "x": 1, "y": 5 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "1,7": {
+              "position": { "x": 1, "y": 7 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 14,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 15,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 6,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "quickstart.territories_forming",
+      "name": "Territories Forming",
+      "description": "Mid-game position where both players are building toward territory control. Practice strategic marker placement to surround areas that may disconnect and become Territory.",
+      "category": "territory_processing",
+      "difficulty": "intermediate",
+      "tags": ["territory", "midgame", "strategy", "quickstart"],
+      "rulesConcept": "territory_basic",
+      "uxSpecAnchor": "territory.forming",
+      "onboarding": true,
+      "rulesSnippet": "When a disconnected region you control is processed, it becomes Territory. Rings in the region are eliminated, and you must pay the entire cap from an eligible stack outside the region (multicolor or height > 1; standalone rings are NOT eligible). Plan your marker placement to cut off corners and edges that your opponent cannot reach.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#7-territory-and-disconnected-regions",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-territories-forming",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "2,2": {
+              "position": { "x": 2, "y": 2 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "5,5": {
+              "position": { "x": 5, "y": 5 },
+              "rings": [2, 2],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 2
+            },
+            "6,1": {
+              "position": { "x": 6, "y": 1 },
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "1,6": {
+              "position": { "x": 1, "y": 6 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {
+            "0,0": { "player": 1, "position": { "x": 0, "y": 0 }, "type": "regular" },
+            "0,1": { "player": 1, "position": { "x": 0, "y": 1 }, "type": "regular" },
+            "1,0": { "player": 1, "position": { "x": 1, "y": 0 }, "type": "regular" },
+            "7,7": { "player": 2, "position": { "x": 7, "y": 7 }, "type": "regular" },
+            "7,6": { "player": 2, "position": { "x": 7, "y": 6 }, "type": "regular" },
+            "6,7": { "player": 2, "position": { "x": 6, "y": 7 }, "type": "regular" }
+          },
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 13,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 13,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "ring_placement",
+        "turnNumber": 8,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "quickstart.territory_battle",
+      "name": "Territory Battle",
+      "description": "Late-game territory competition. Both players have significant territory with more regions contested. Strategic moves now could swing the territory count decisively.",
+      "category": "territory_processing",
+      "difficulty": "advanced",
+      "tags": ["territory", "endgame", "strategy", "quickstart"],
+      "rulesConcept": "territory_near_victory",
+      "uxSpecAnchor": "territory.battle",
+      "onboarding": true,
+      "rulesSnippet": "Win by controlling more than half of all board spaces as Territory. In late-game territory battles, each disconnected region you claim brings you closer to territory victory. Watch the territory threshold and plan which regions to contest.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#3-2-territory-control",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-territory-battle",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [1, 1, 1],
+              "stackHeight": 3,
+              "capHeight": 3,
+              "controllingPlayer": 1
+            },
+            "4,4": {
+              "position": { "x": 4, "y": 4 },
+              "rings": [2, 2, 2],
+              "stackHeight": 3,
+              "capHeight": 3,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {
+            "3,4": { "player": 1, "position": { "x": 3, "y": 4 }, "type": "regular" },
+            "3,5": { "player": 1, "position": { "x": 3, "y": 5 }, "type": "regular" },
+            "4,3": { "player": 2, "position": { "x": 4, "y": 3 }, "type": "regular" },
+            "5,3": { "player": 2, "position": { "x": 5, "y": 3 }, "type": "regular" }
+          },
+          "collapsedSpaces": {
+            "0,0": 1,
+            "0,1": 1,
+            "0,2": 1,
+            "1,0": 1,
+            "1,1": 1,
+            "7,7": 2,
+            "7,6": 2,
+            "7,5": 2,
+            "6,7": 2,
+            "6,6": 2
+          },
+          "eliminatedRings": { "1": 3, "2": 3 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 8,
+            "eliminatedRings": 3,
+            "territorySpaces": 5,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 8,
+            "eliminatedRings": 3,
+            "territorySpaces": 5,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 18,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "quickstart.hex_2p_early",
+      "name": "Hex 2-Player Early Game",
+      "description": "Early game on the hexagonal board with 2 players. Initial rings placed, ready for movement phase. Experience 6-directional movement on the hex grid.",
+      "category": "movement",
+      "difficulty": "beginner",
+      "tags": ["hex", "2player", "early", "quickstart"],
+      "rulesConcept": "board_intro_hex",
+      "uxSpecAnchor": "sandbox.hex.early",
+      "onboarding": true,
+      "rulesSnippet": "On the hex board, movement follows six directions instead of four. Lines and territory also use hex adjacency. Practice moving stacks along the hex grid.",
+      "rulesSnippetRef": "ringrift_compact_rules#hex-board",
+      "boardType": "hexagonal",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-hex-2p-early",
+        "board": {
+          "type": "hexagonal",
+          "size": 5,
+          "stacks": {
+            "0,0": {
+              "position": { "x": 0, "y": 0 },
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "2,2": {
+              "position": { "x": 2, "y": 2 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "4,4": {
+              "position": { "x": 4, "y": 4 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "3,1": {
+              "position": { "x": 3, "y": 1 },
+              "rings": [2, 2],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 15,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 15,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 4,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 31
+      }
+    },
+    {
+      "id": "quickstart.hex_3p_midgame",
+      "name": "Hex 3-Player Midgame",
+      "description": "Three-player midgame on the hex board. Multiple players compete for territory and captures. No alliances – everyone plays for themselves.",
+      "category": "learning",
+      "difficulty": "intermediate",
+      "tags": ["hex", "3player", "midgame", "multiplayer", "quickstart"],
+      "rulesConcept": "board_intro_hex",
+      "uxSpecAnchor": "sandbox.hex.3p",
+      "onboarding": true,
+      "rulesSnippet": "In 3-player games, there are no alliances. Each player competes independently for ring elimination or territory victory. Watch all opponents when planning your moves.",
+      "rulesSnippetRef": "ringrift_compact_rules#multiplayer",
+      "boardType": "hexagonal",
+      "playerCount": 3,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-hex-3p-midgame",
+        "board": {
+          "type": "hexagonal",
+          "size": 5,
+          "stacks": {
+            "0,2": {
+              "position": { "x": 0, "y": 2 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "2,0": {
+              "position": { "x": 2, "y": 0 },
+              "rings": [2, 2],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 2
+            },
+            "4,2": {
+              "position": { "x": 4, "y": 2 },
+              "rings": [3, 3],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 3
+            },
+            "2,4": {
+              "position": { "x": 2, "y": 4 },
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "1,1": {
+              "position": { "x": 1, "y": 1 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [3],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 3
+            }
+          },
+          "markers": {
+            "1,2": { "player": 1, "position": { "x": 1, "y": 2 }, "type": "regular" },
+            "2,1": { "player": 2, "position": { "x": 2, "y": 1 }, "type": "regular" },
+            "3,2": { "player": 3, "position": { "x": 3, "y": 2 }, "type": "regular" }
+          },
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0, "3": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 9,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 9,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 3,
+            "ringsInHand": 9,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "ring_placement",
+        "turnNumber": 10,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 31
+      }
+    },
+    {
+      "id": "quickstart.hex_4p_battle",
+      "name": "Hex 4-Player Battle",
+      "description": "Four-player battle on the hex board. Crowded conditions lead to frequent captures. With four players, territory fills quickly and captures become critical for survival.",
+      "category": "capture",
+      "difficulty": "advanced",
+      "tags": ["hex", "4player", "battle", "multiplayer", "quickstart"],
+      "rulesConcept": "capture_basic",
+      "uxSpecAnchor": "sandbox.hex.4p",
+      "onboarding": true,
+      "rulesSnippet": "In 4-player games, board space is at a premium. Captures become more common and strategic positioning is crucial. Remember that captured rings stay in play. Watch for chain capture opportunities against multiple opponents.",
+      "rulesSnippetRef": "ringrift_compact_rules#multiplayer",
+      "boardType": "hexagonal",
+      "playerCount": 4,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-hex-4p-battle",
+        "board": {
+          "type": "hexagonal",
+          "size": 5,
+          "stacks": {
+            "0,0": {
+              "position": { "x": 0, "y": 0 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "4,0": {
+              "position": { "x": 4, "y": 0 },
+              "rings": [2, 2],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 2
+            },
+            "0,4": {
+              "position": { "x": 0, "y": 4 },
+              "rings": [3, 3],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 3
+            },
+            "4,4": {
+              "position": { "x": 4, "y": 4 },
+              "rings": [4, 4],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 4
+            },
+            "2,2": {
+              "position": { "x": 2, "y": 2 },
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "2,1": {
+              "position": { "x": 2, "y": 1 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "1,3": {
+              "position": { "x": 1, "y": 3 },
+              "rings": [3],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 3
+            },
+            "3,2": {
+              "position": { "x": 3, "y": 2 },
+              "rings": [4],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 4
+            }
+          },
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0, "3": 0, "4": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 9,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 9,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 3,
+            "ringsInHand": 9,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 4,
+            "ringsInHand": 9,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 12,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 25,
+        "territoryVictoryThreshold": 31
+      }
+    },
+    {
+      "id": "quickstart.square19_complex",
+      "name": "Square 19×19 Complex Position",
+      "description": "Complex mid-game position on the 19×19 board. Multiple active fronts with territory forming in corners. Experience the strategic depth of the larger board.",
+      "category": "territory_processing",
+      "difficulty": "advanced",
+      "tags": ["square19", "complex", "strategy", "quickstart"],
+      "rulesConcept": "territory_multi_region",
+      "uxSpecAnchor": "sandbox.square19.complex",
+      "onboarding": true,
+      "rulesSnippet": "When a disconnected region you control is processed, the rings in the region are eliminated and it becomes Territory. You must pay the entire cap from an eligible stack outside the region (multicolor or height > 1; standalone rings are NOT eligible). On the 19×19 board, multiple territory fronts can develop simultaneously. Prioritize which regions to contest while maintaining enough eligible stacks for defense.",
+      "rulesSnippetRef": "ringrift_compact_rules#board-variants",
+      "boardType": "square19",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-square19-complex",
+        "board": {
+          "type": "square19",
+          "size": 19,
+          "stacks": {
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [1, 1, 1],
+              "stackHeight": 3,
+              "capHeight": 3,
+              "controllingPlayer": 1
+            },
+            "15,15": {
+              "position": { "x": 15, "y": 15 },
+              "rings": [2, 2, 2],
+              "stackHeight": 3,
+              "capHeight": 3,
+              "controllingPlayer": 2
+            },
+            "3,15": {
+              "position": { "x": 3, "y": 15 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "15,3": {
+              "position": { "x": 15, "y": 3 },
+              "rings": [2, 2],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 2
+            },
+            "9,9": {
+              "position": { "x": 9, "y": 9 },
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "10,10": {
+              "position": { "x": 10, "y": 10 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {
+            "0,0": { "player": 1, "position": { "x": 0, "y": 0 }, "type": "regular" },
+            "0,1": { "player": 1, "position": { "x": 0, "y": 1 }, "type": "regular" },
+            "1,0": { "player": 1, "position": { "x": 1, "y": 0 }, "type": "regular" },
+            "1,1": { "player": 1, "position": { "x": 1, "y": 1 }, "type": "regular" },
+            "18,18": { "player": 2, "position": { "x": 18, "y": 18 }, "type": "regular" },
+            "18,17": { "player": 2, "position": { "x": 18, "y": 17 }, "type": "regular" },
+            "17,18": { "player": 2, "position": { "x": 17, "y": 18 }, "type": "regular" },
+            "17,17": { "player": 2, "position": { "x": 17, "y": 17 }, "type": "regular" }
+          },
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 40,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 40,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "ring_placement",
+        "turnNumber": 12,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 51,
+        "territoryVictoryThreshold": 181
+      }
+    },
+    {
+      "id": "quickstart.line_overlength",
+      "name": "Overlength Line Options",
+      "description": "Learn overlength line processing. Player 1 has a 6-marker line (one more than required). You can choose to collapse the minimum 5 and skip elimination, or collapse all 6 with the standard elimination cost.",
+      "category": "line_processing",
+      "difficulty": "intermediate",
+      "tags": ["line", "overlength", "tutorial", "quickstart"],
+      "rulesConcept": "lines_overlength_option2",
+      "uxSpecAnchor": "lines.overlength",
+      "onboarding": true,
+      "rulesSnippet": "Overlength lines give you a choice: collapse a minimal scoring segment and skip elimination, or collapse the full line and pay one ring from the top of any stack you control (including standalone rings).",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#6-lines-and-rewards",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-line-overlength",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "0,3": {
+              "position": { "x": 0, "y": 3 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "7,3": {
+              "position": { "x": 7, "y": 3 },
+              "rings": [2, 2],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {
+            "1,3": { "player": 1, "position": { "x": 1, "y": 3 }, "type": "regular" },
+            "2,3": { "player": 1, "position": { "x": 2, "y": 3 }, "type": "regular" },
+            "3,3": { "player": 1, "position": { "x": 3, "y": 3 }, "type": "regular" },
+            "4,3": { "player": 1, "position": { "x": 4, "y": 3 }, "type": "regular" },
+            "5,3": { "player": 1, "position": { "x": 5, "y": 3 }, "type": "regular" },
+            "6,3": { "player": 1, "position": { "x": 6, "y": 3 }, "type": "regular" }
+          },
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 10,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 16,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "line_processing",
+        "turnNumber": 10,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33,
+        "pendingLineDecision": {
+          "lines": [
+            {
+              "spaces": [
+                { "x": 1, "y": 3 },
+                { "x": 2, "y": 3 },
+                { "x": 3, "y": 3 },
+                { "x": 4, "y": 3 },
+                { "x": 5, "y": 3 },
+                { "x": 6, "y": 3 }
+              ],
+              "player": 1,
+              "isOverlength": true
+            }
+          ],
+          "currentIndex": 0
+        }
+      }
+    },
+    {
+      "id": "quickstart.puzzle_fork",
+      "name": "Capture Fork Puzzle",
+      "description": "Tactical puzzle: Player 1 can set up a capture fork. Position your stack so that on the next turn you threaten multiple captures simultaneously, forcing the opponent to lose material.",
+      "category": "capture",
+      "difficulty": "intermediate",
+      "tags": ["puzzle", "capture", "tactics", "quickstart"],
+      "rulesConcept": "puzzle_capture",
+      "uxSpecAnchor": "puzzle.fork",
+      "onboarding": true,
+      "rulesSnippet": "A capture fork threatens multiple captures at once. Your opponent can only defend one, so you're guaranteed to capture something on your next turn.",
+      "rulesSnippetRef": "ringrift_compact_rules#tactics",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-puzzle-fork",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [1, 1, 1],
+              "stackHeight": 3,
+              "capHeight": 3,
+              "controllingPlayer": 1
+            },
+            "1,5": {
+              "position": { "x": 1, "y": 5 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "5,1": {
+              "position": { "x": 5, "y": 1 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "6,6": {
+              "position": { "x": 6, "y": 6 },
+              "rings": [2, 2],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 15,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 14,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 5,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "quickstart.marker_landing",
+      "name": "Marker Landing Elimination",
+      "description": "Learn marker landing rules. Moving onto a marker eliminates your top ring. Player 1 has a stack that can move to several positions – some have markers that will cost a ring.",
+      "category": "movement",
+      "difficulty": "beginner",
+      "tags": ["movement", "markers", "tutorial", "quickstart"],
+      "rulesConcept": "movement_basic",
+      "uxSpecAnchor": "movement.marker_landing",
+      "onboarding": true,
+      "rulesSnippet": "Stacks must move at least as many spaces as their height. When you land on a marker (yours or opponent's), your top ring is eliminated. The marker is removed and you leave a new marker in its place.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#4-movement-semantics",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-marker-landing",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "3,0": {
+              "position": { "x": 3, "y": 0 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "7,7": {
+              "position": { "x": 7, "y": 7 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {
+            "3,2": { "player": 2, "position": { "x": 3, "y": 2 }, "type": "regular" },
+            "3,4": { "player": 1, "position": { "x": 3, "y": 4 }, "type": "regular" },
+            "3,6": { "player": 2, "position": { "x": 3, "y": 6 }, "type": "regular" }
+          },
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 15,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 15,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 5,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "quickstart.victory_imminent_elimination",
+      "name": "Ring Elimination Victory Imminent",
+      "description": "Player 1 is one elimination away from ring elimination victory. Find a move that eliminates another of Player 2's rings to win the game.",
+      "category": "learning",
+      "difficulty": "advanced",
+      "tags": ["victory", "elimination", "endgame", "quickstart"],
+      "rulesConcept": "victory_ring_elimination",
+      "uxSpecAnchor": "victory.elimination_imminent",
+      "onboarding": true,
+      "rulesSnippet": "Win by eliminating a number of rings equal to the starting ring supply (ringsPerPlayer). Eliminated rings are permanently removed from the game. One more elimination will cross the threshold.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#3-1-ring-elimination",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-victory-imminent-elim",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [1, 1, 1, 1, 2, 2],
+              "stackHeight": 6,
+              "capHeight": 4,
+              "controllingPlayer": 1
+            },
+            "3,4": {
+              "position": { "x": 3, "y": 4 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {},
+          "collapsedSpaces": {
+            "0,0": 1,
+            "0,1": 1,
+            "0,2": 1,
+            "1,0": 1,
+            "1,1": 1,
+            "1,2": 1,
+            "2,0": 1,
+            "2,1": 1,
+            "2,2": 1
+          },
+          "eliminatedRings": { "1": 3, "2": 15 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 7,
+            "eliminatedRings": 3,
+            "territorySpaces": 9,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 0,
+            "eliminatedRings": 15,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 28,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "quickstart.placement_stacking",
+      "name": "Placement Stacking Tutorial",
+      "description": "Practice placing rings onto existing stacks. Player 1 can place on an empty space or add to their existing stack, building a taller piece with more movement potential.",
+      "category": "placement",
+      "difficulty": "beginner",
+      "tags": ["placement", "stacking", "tutorial", "quickstart"],
+      "rulesConcept": "placement_basic",
+      "uxSpecAnchor": "placement.stacking",
+      "onboarding": true,
+      "rulesSnippet": "You can place a ring on an empty space to create a new stack, or add it to the top of an existing friendly stack. Taller stacks must move farther but offer more reach.",
+      "rulesSnippetRef": "UX_RULES_COPY_SPEC#placement",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-placement-stacking",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "5,5": {
+              "position": { "x": 5, "y": 5 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 16,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 17,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "ring_placement",
+        "turnNumber": 3,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "quickstart.hex_ai_battle_2p",
+      "name": "Hex AI Battle (2 Players)",
+      "description": "Watch two AIs compete on a hexagonal board. Sit back and observe strategic AI play with 6-directional movement and hex adjacency patterns.",
+      "category": "ai_battle",
+      "difficulty": "beginner",
+      "tags": ["hex", "ai", "2player", "spectator", "quickstart", "ai_battle"],
+      "rulesConcept": "board_intro_hex",
+      "uxSpecAnchor": "sandbox.ai_battle.hex.2p",
+      "onboarding": false,
+      "rulesSnippet": "Two AI players compete from an empty hex board. Watch how they develop positions, form lines, and compete for territory using 6-directional movement.",
+      "rulesSnippetRef": "ringrift_compact_rules#hex-board",
+      "boardType": "hexagonal",
+      "playerCount": 2,
+      "aiControlled": [1, 2],
+      "createdAt": "2025-12-07T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-hex-ai-battle-2p",
+        "board": {
+          "type": "hexagonal",
+          "size": 5,
+          "stacks": {},
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 18,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "isAI": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 18,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "isAI": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "ring_placement",
+        "turnNumber": 1,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 31
+      }
+    },
+    {
+      "id": "quickstart.hex_ai_battle_3p",
+      "name": "Hex AI Battle (3 Players)",
+      "description": "Watch three AIs battle on a hexagonal board. Observe multi-player dynamics as three AI opponents compete for ring elimination or territory victory.",
+      "category": "ai_battle",
+      "difficulty": "intermediate",
+      "tags": ["hex", "ai", "3player", "spectator", "multiplayer", "quickstart", "ai_battle"],
+      "rulesConcept": "board_intro_hex",
+      "uxSpecAnchor": "sandbox.ai_battle.hex.3p",
+      "onboarding": false,
+      "rulesSnippet": "Three AI players compete on the hex board. Watch how they balance aggression and defense when facing multiple opponents simultaneously.",
+      "rulesSnippetRef": "ringrift_compact_rules#multiplayer",
+      "boardType": "hexagonal",
+      "playerCount": 3,
+      "aiControlled": [1, 2, 3],
+      "createdAt": "2025-12-07T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-hex-ai-battle-3p",
+        "board": {
+          "type": "hexagonal",
+          "size": 5,
+          "stacks": {},
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0, "3": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "isAI": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "isAI": true
+          },
+          {
+            "playerNumber": 3,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "isAI": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "ring_placement",
+        "turnNumber": 1,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 18,
+        "territoryVictoryThreshold": 31
+      }
+    },
+    {
+      "id": "quickstart.hex_ai_battle_4p",
+      "name": "Hex AI Battle (4 Players)",
+      "description": "Watch four AIs clash on a hexagonal board. Experience the chaos of a four-way AI battle with crowded positions and frequent captures.",
+      "category": "ai_battle",
+      "difficulty": "advanced",
+      "tags": ["hex", "ai", "4player", "spectator", "multiplayer", "quickstart", "ai_battle"],
+      "rulesConcept": "board_intro_hex",
+      "uxSpecAnchor": "sandbox.ai_battle.hex.4p",
+      "onboarding": false,
+      "rulesSnippet": "Four AI players compete on the hex board. With limited space, watch how AIs handle crowded conditions with frequent captures and territory battles.",
+      "rulesSnippetRef": "ringrift_compact_rules#multiplayer",
+      "boardType": "hexagonal",
+      "playerCount": 4,
+      "aiControlled": [1, 2, 3, 4],
+      "createdAt": "2025-12-07T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-hex-ai-battle-4p",
+        "board": {
+          "type": "hexagonal",
+          "size": 5,
+          "stacks": {},
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0, "3": 0, "4": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "isAI": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "isAI": true
+          },
+          {
+            "playerNumber": 3,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "isAI": true
+          },
+          {
+            "playerNumber": 4,
+            "ringsInHand": 12,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "isAI": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "ring_placement",
+        "turnNumber": 1,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 25,
+        "territoryVictoryThreshold": 31
       }
     }
   ]
