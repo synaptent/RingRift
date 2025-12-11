@@ -183,8 +183,13 @@ class TestRingRiftEnv(unittest.TestCase):
             player_numbers = sorted(p.player_number for p in state.players)
             self.assertEqual(player_numbers, list(range(1, num_players + 1)))
 
-            # Victory threshold equals ringsPerPlayer per RR-CANON-R061.
-            expected_victory_threshold = rings_per_player
+            # Victory threshold per RR-CANON-R061:
+            # round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+            # For 3 players: round(18 × 5/3) = 30
+            # For 4 players: round(18 × 7/3) = 42
+            expected_victory_threshold = round(
+                rings_per_player * (1 / 3 + 2 / 3 * (num_players - 1))
+            )
             expected_territory_threshold = (total_spaces // 2) + 1
 
             self.assertEqual(state.victory_threshold, expected_victory_threshold)

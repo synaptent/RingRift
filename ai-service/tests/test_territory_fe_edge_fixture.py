@@ -62,6 +62,13 @@ BUNDLE_PATH = (
     )
 )
 
+# Skip all tests in this module if the fixture bundle doesn't exist
+# (it's gitignored and only generated during parity debugging)
+pytestmark = pytest.mark.skipif(
+    not BUNDLE_PATH.exists(),
+    reason=f"Parity fixture bundle not found: {BUNDLE_PATH}",
+)
+
 
 def load_python_state_from_bundle(k: int = 89) -> GameState:
     """
