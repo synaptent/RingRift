@@ -18,7 +18,13 @@
 
 import type { GameState, Move, Territory, RingStack } from '../types/game';
 import { positionToString } from '../types/game';
-import { calculateCapHeight } from './core';
+import {
+  eliminateFromStack,
+  isStackEligibleForElimination,
+  getRingsToEliminate,
+  calculateCapHeight,
+  type EliminationContext,
+} from './aggregates/EliminationAggregate';
 import {
   getProcessableTerritoryRegions,
   filterProcessableTerritoryRegions,
@@ -488,10 +494,8 @@ export function enumerateTerritoryEliminationMoves(
   const nextMoveNumber = computeNextMoveNumber(state);
   const moves: Move[] = [];
 
-  // Determine elimination context and eligibility rules
-  const eliminationContext = scope?.eliminationContext ?? 'territory';
-  const isLineElimination = eliminationContext === 'line';
-  const isTerritoryElimination = eliminationContext === 'territory';
+  // Determine elimination context - delegates to canonical EliminationAggregate
+  const eliminationContext: EliminationContext = scope?.eliminationContext ?? 'territory';
 
   for (const { key, stack } of stacks) {
     const capHeight = calculateCapHeight(stack.rings);
@@ -499,23 +503,15 @@ export function enumerateTerritoryEliminationMoves(
       continue;
     }
 
-    // RR-CANON-R082 / R100 / R122 / R145: Eligibility rules differ by context:
-    // - Territory (R145): Only eligible cap targets (multicolor or height > 1)
-    // - Line (R122): Any controlled stack (including height-1 standalone rings)
-    // - Forced (R100): Any controlled stack (including height-1 standalone rings)
-    if (isTerritoryElimination) {
-      // For territory elimination only, apply height restriction (RR-CANON-R082)
-      const isMulticolor = stack.stackHeight > capHeight;
-      const isSingleColorTall = stack.stackHeight === capHeight && stack.stackHeight > 1;
-      if (!isMulticolor && !isSingleColorTall) {
-        // Skip height-1 standalone rings - not eligible for territory elimination
-        continue;
-      }
+    // Delegate eligibility check to canonical EliminationAggregate
+    // RR-CANON-R082 / R100 / R122 / R145: Rules handled by isStackEligibleForElimination
+    const eligibility = isStackEligibleForElimination(stack, eliminationContext, player);
+    if (!eligibility.eligible) {
+      continue;
     }
-    // Line and Forced: all controlled stacks are eligible (no height restriction)
 
-    // For line elimination, only 1 ring is eliminated; for territory/forced, entire cap
-    const ringsToEliminate = isLineElimination ? 1 : capHeight;
+    // Delegate ring count calculation to canonical EliminationAggregate
+    const ringsToEliminate = getRingsToEliminate(stack, eliminationContext);
 
     // NOTE: scope.processedRegionId is reserved for future variants where
     // eliminations may be constrained to outside/inside a particular region.
@@ -589,66 +585,39 @@ export function applyEliminateRingsFromStackDecision(
   }
 
   const player = move.player;
-  const key = positionToString(move.to);
-  const existingStack = state.board.stacks.get(key);
 
-  if (!existingStack || existingStack.controllingPlayer !== player) {
+  // Determine elimination context from move - defaults to 'territory' for backwards compat
+  const eliminationContext: EliminationContext =
+    (move.eliminationContext as EliminationContext) ?? 'territory';
+
+  // Delegate to canonical EliminationAggregate
+  const eliminationResult = eliminateFromStack({
+    context: eliminationContext,
+    player,
+    stackPosition: move.to,
+    board: state.board,
+  });
+
+  if (!eliminationResult.success) {
     // Invalid or stale target; leave state unchanged defensively.
     return { nextState: state };
   }
 
-  const capHeight = calculateCapHeight(existingStack.rings);
-  if (capHeight <= 0) {
-    return { nextState: state };
-  }
-
-  // Determine how many rings to eliminate based on context (RR-CANON-R022, R122):
-  // - 'line': Eliminate exactly ONE ring (per RR-CANON-R122)
-  // - 'territory' or 'forced' or undefined: Eliminate entire cap (per RR-CANON-R145, R100)
-  const eliminationContext = move.eliminationContext;
-  const ringsToEliminate = eliminationContext === 'line' ? 1 : capHeight;
-
-  const remainingRings = existingStack.rings.slice(ringsToEliminate);
-
-  // Clone board/maps so callers see a functional-style update.
-  const nextBoard = {
-    ...state.board,
-    stacks: new Map(state.board.stacks),
-    markers: new Map(state.board.markers),
-    collapsedSpaces: new Map(state.board.collapsedSpaces),
-    territories: new Map(state.board.territories),
-    formedLines: [...state.board.formedLines],
-    eliminatedRings: { ...state.board.eliminatedRings },
-  };
-
-  if (remainingRings.length > 0) {
-    nextBoard.stacks.set(key, {
-      ...existingStack,
-      rings: remainingRings,
-      stackHeight: remainingRings.length,
-      capHeight: calculateCapHeight(remainingRings),
-      controllingPlayer: remainingRings[0],
-    });
-  } else {
-    nextBoard.stacks.delete(key);
-  }
-
-  nextBoard.eliminatedRings[player] = (nextBoard.eliminatedRings[player] || 0) + ringsToEliminate;
-
+  // Update players array (EliminationAggregate only updates board)
   const nextPlayers = state.players.map((p) =>
     p.playerNumber === player
       ? {
           ...p,
-          eliminatedRings: p.eliminatedRings + ringsToEliminate,
+          eliminatedRings: p.eliminatedRings + eliminationResult.ringsEliminated,
         }
       : p
   );
 
   const nextState: GameState = {
     ...state,
-    board: nextBoard,
+    board: eliminationResult.updatedBoard,
     players: nextPlayers,
-    totalRingsEliminated: state.totalRingsEliminated + ringsToEliminate,
+    totalRingsEliminated: state.totalRingsEliminated + eliminationResult.ringsEliminated,
   };
 
   return { nextState };

@@ -1,6 +1,10 @@
 import { GameState, ProcessTerritoryAction, EliminateStackAction } from '../types';
 import { positionToString } from '../../types/game';
-import { calculateCapHeight } from '../core';
+import {
+  eliminateFromStack,
+  getRingsToEliminate,
+  type EliminationContext,
+} from '../aggregates/EliminationAggregate';
 
 export function mutateProcessTerritory(
   state: GameState,
@@ -82,13 +86,42 @@ export function mutateProcessTerritory(
 }
 
 export function mutateEliminateStack(state: GameState, action: EliminateStackAction): GameState {
+  const key = positionToString(action.stackPosition);
+  const stack = state.board.stacks.get(key);
+
+  if (!stack) {
+    throw new Error('TerritoryMutator: Stack to eliminate not found');
+  }
+
+  const topRingOwner = stack.rings[0];
+
+  // Determine elimination context - defaults to 'forced' for backwards compatibility
+  // The mutator is typically used for internal territory eliminations where any stack
+  // inside the region is eliminated unconditionally (no eligibility check needed)
+  const eliminationContext: EliminationContext =
+    (action.eliminationContext as EliminationContext) ?? 'forced';
+
+  // DELEGATE TO EliminationAggregate for canonical elimination semantics
+  // Per RR-CANON-R022, R122, R145, R100:
+  // - 'line': Eliminate exactly ONE ring from the top (any controlled stack is eligible)
+  // - 'territory': Eliminate entire cap (only eligible stacks: multicolor or height > 1)
+  // - 'forced': Eliminate entire cap (any controlled stack is eligible)
+  const eliminationResult = eliminateFromStack({
+    context: eliminationContext,
+    player: topRingOwner,
+    stackPosition: action.stackPosition,
+    board: state.board,
+  });
+
+  if (!eliminationResult.success) {
+    // If elimination failed, return unchanged state
+    return state;
+  }
+
+  // Create new state with the updated board from EliminationAggregate
   const newState = {
     ...state,
-    board: {
-      ...state.board,
-      stacks: new Map(state.board.stacks),
-      eliminatedRings: { ...state.board.eliminatedRings },
-    },
+    board: eliminationResult.updatedBoard,
     players: state.players.map((p) => ({ ...p })),
     moveHistory: [...state.moveHistory],
   } as GameState & {
@@ -96,52 +129,16 @@ export function mutateEliminateStack(state: GameState, action: EliminateStackAct
     lastMoveAt: Date;
   };
 
-  const key = positionToString(action.stackPosition);
-  const stack = newState.board.stacks.get(key);
-
-  if (!stack) {
-    throw new Error('TerritoryMutator: Stack to eliminate not found');
+  // Update player's eliminatedRings count
+  const player = newState.players.find((p) => p.playerNumber === topRingOwner);
+  if (player) {
+    player.eliminatedRings += eliminationResult.ringsEliminated;
   }
 
-  // "Eliminate rings from stack"
-  // Per RR-CANON-R022, R122, R145, R100:
-  // - 'line': Eliminate exactly ONE ring from the top (any controlled stack is eligible)
-  // - 'territory': Eliminate entire cap (only eligible stacks: multicolor or height > 1)
-  // - 'forced': Eliminate entire cap (any controlled stack is eligible)
-
-  // Rings are [top, ..., bottom].
-  const capHeight = calculateCapHeight(stack.rings);
-  const topRingOwner = stack.rings[0];
-
-  // Determine how many rings to eliminate based on context (RR-CANON-R022, R122):
-  // - 'line': Eliminate exactly ONE ring (per RR-CANON-R122)
-  // - 'territory' or 'forced' or undefined: Eliminate entire cap (per RR-CANON-R145, R100)
-  const eliminationContext = action.eliminationContext;
-  const ringsToEliminate = eliminationContext === 'line' ? 1 : capHeight;
-
-  // Remove rings from top
-  const remainingRings = stack.rings.slice(ringsToEliminate);
-
-  if (remainingRings.length === 0) {
-    newState.board.stacks.delete(key);
-  } else {
-    stack.rings = remainingRings;
-    stack.stackHeight = remainingRings.length;
-    stack.capHeight = calculateCapHeight(remainingRings);
-    stack.controllingPlayer = remainingRings[0]; // New top ring
-  }
-
-  // Update elimination counts
-  if (ringsToEliminate > 0) {
-    newState.totalRingsEliminated += ringsToEliminate;
-    newState.board.eliminatedRings[topRingOwner] =
-      (newState.board.eliminatedRings[topRingOwner] || 0) + ringsToEliminate;
-
-    const player = newState.players.find((p) => p.playerNumber === topRingOwner);
-    if (player) {
-      player.eliminatedRings += ringsToEliminate;
-    }
-  }
+  // Update total rings eliminated
+  newState.totalRingsEliminated =
+    (state as GameState & { totalRingsEliminated: number }).totalRingsEliminated +
+    eliminationResult.ringsEliminated;
 
   newState.lastMoveAt = new Date();
   return newState;

@@ -62,8 +62,12 @@ import { BOARD_CONFIGS, positionToString } from '../../types/game';
 
 import type { ProcessTerritoryAction, EliminateStackAction } from '../types';
 
-import { calculateCapHeight } from '../core';
 import { SQUARE_MOORE_DIRECTIONS } from '../core';
+import {
+  eliminateFromStack,
+  calculateCapHeight,
+  type EliminationContext,
+} from './EliminationAggregate';
 import { findDisconnectedRegions as findDisconnectedRegionsShared } from '../territoryDetection';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -729,6 +733,9 @@ export function enumerateTerritoryEliminationMoves(
         capHeight,
         totalHeight: stack.stackHeight,
       },
+      // CRITICAL: Use 'forced' context since this function only returns moves
+      // in forced_elimination phase. This allows any controlled stack (RR-CANON-R100).
+      eliminationContext: 'forced',
       timestamp: new Date(),
       thinkTime: 0,
       moveNumber: nextMoveNumber,
@@ -1066,6 +1073,8 @@ export function applyProcessTerritoryRegionDecision(
  * is semantic: `eliminate_rings_from_stack` is used during territory processing
  * as a player choice, while `forced_elimination` is used when a player has no
  * valid moves and must eliminate rings from a stack (RR-CANON-R070).
+ *
+ * DELEGATES TO EliminationAggregate for canonical elimination semantics.
  */
 export function applyEliminateRingsFromStackDecision(
   state: GameState,
@@ -1082,51 +1091,43 @@ export function applyEliminateRingsFromStackDecision(
   }
 
   const player = move.player;
-  const key = positionToString(move.to);
-  const existingStack = state.board.stacks.get(key);
 
-  if (!existingStack || existingStack.controllingPlayer !== player) {
+  // Determine elimination context from move type and move data
+  // - 'forced_elimination' move type: use 'forced' context (any stack eligible)
+  // - 'eliminate_rings_from_stack': use move.eliminationContext or default to 'territory'
+  const eliminationContext: EliminationContext =
+    move.type === 'forced_elimination'
+      ? 'forced'
+      : ((move.eliminationContext as EliminationContext) ?? 'territory');
+
+  // Delegate to canonical EliminationAggregate
+  const eliminationResult = eliminateFromStack({
+    context: eliminationContext,
+    player,
+    stackPosition: move.to,
+    board: state.board,
+  });
+
+  if (!eliminationResult.success) {
+    // Invalid or stale target; leave state unchanged defensively.
     return { nextState: state };
   }
 
-  const capHeight = calculateCapHeight(existingStack.rings);
-  if (capHeight <= 0) {
-    return { nextState: state };
-  }
-
-  const remainingRings = existingStack.rings.slice(capHeight);
-
-  // Clone board/maps for functional-style update
-  const nextBoard = cloneBoard(state.board);
-
-  if (remainingRings.length > 0) {
-    nextBoard.stacks.set(key, {
-      ...existingStack,
-      rings: remainingRings,
-      stackHeight: remainingRings.length,
-      capHeight: calculateCapHeight(remainingRings),
-      controllingPlayer: remainingRings[0],
-    });
-  } else {
-    nextBoard.stacks.delete(key);
-  }
-
-  nextBoard.eliminatedRings[player] = (nextBoard.eliminatedRings[player] || 0) + capHeight;
-
+  // Update players array (EliminationAggregate only updates board)
   const nextPlayers = state.players.map((p) =>
     p.playerNumber === player
       ? {
           ...p,
-          eliminatedRings: p.eliminatedRings + capHeight,
+          eliminatedRings: p.eliminatedRings + eliminationResult.ringsEliminated,
         }
       : p
   );
 
   const nextState: GameState = {
     ...state,
-    board: nextBoard,
+    board: eliminationResult.updatedBoard,
     players: nextPlayers,
-    totalRingsEliminated: state.totalRingsEliminated + capHeight,
+    totalRingsEliminated: state.totalRingsEliminated + eliminationResult.ringsEliminated,
   };
 
   return { nextState };

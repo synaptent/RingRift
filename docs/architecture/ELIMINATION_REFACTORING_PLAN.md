@@ -262,21 +262,21 @@ RINGRIFT_PHASE_AUDIT=1 npx ts-node scripts/selfplay-db-ts-replay.ts --db canonic
 
 ## Progress Tracking
 
-| Phase                                     | Status      | Completion Date | Notes |
-| ----------------------------------------- | ----------- | --------------- | ----- |
-| 1.1 Create EliminationAggregate           | Not Started |                 |       |
-| 1.2 Update Consumers                      | Not Started |                 |       |
-| 1.3 Remove Duplicates                     | Not Started |                 |       |
-| 2.1 Consolidate canProcessTerritoryRegion | Not Started |                 |       |
-| 2.2 Add Recovery Context Flag             | Not Started |                 |       |
-| 3.1 Define Phase-Move Matrix              | Not Started |                 |       |
-| 3.2 Update Turn Orchestrator              | Not Started |                 |       |
-| 4.1 Define Audit Structure                | Not Started |                 |       |
-| 4.2 Emit Events                           | Not Started |                 |       |
-| 5.1 Create Python EliminationAggregate    | Not Started |                 |       |
-| 5.2 Update Python Consumers               | Not Started |                 |       |
-| 6.1 Add Phase Transition Audit            | Not Started |                 |       |
-| 6.2 Fix Hex Parity                        | Not Started |                 |       |
+| Phase                                     | Status      | Completion Date | Notes                                                                                                            |
+| ----------------------------------------- | ----------- | --------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 1.1 Create EliminationAggregate           | ✅ Complete | 2025-12-11      | 33 unit tests passing                                                                                            |
+| 1.2 Update Consumers                      | ✅ Complete | 2025-12-11      | sandboxElimination ✅, territoryDecisionHelpers ✅, globalActions ✅, TerritoryAggregate ✅, TerritoryMutator ✅ |
+| 1.3 Remove Duplicates                     | Deferred    |                 | Duplicate code removed via delegation, functions retained for API compat                                         |
+| 2.1 Consolidate canProcessTerritoryRegion | Not Started |                 |                                                                                                                  |
+| 2.2 Add Recovery Context Flag             | Not Started |                 |                                                                                                                  |
+| 3.1 Define Phase-Move Matrix              | Not Started |                 |                                                                                                                  |
+| 3.2 Update Turn Orchestrator              | Not Started |                 |                                                                                                                  |
+| 4.1 Define Audit Structure                | Not Started |                 |                                                                                                                  |
+| 4.2 Emit Events                           | Not Started |                 |                                                                                                                  |
+| 5.1 Create Python EliminationAggregate    | Not Started |                 |                                                                                                                  |
+| 5.2 Update Python Consumers               | Not Started |                 |                                                                                                                  |
+| 6.1 Add Phase Transition Audit            | Not Started |                 |                                                                                                                  |
+| 6.2 Fix Hex Parity                        | Not Started |                 |                                                                                                                  |
 
 ## Testing Strategy
 

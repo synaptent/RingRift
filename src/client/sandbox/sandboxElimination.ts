@@ -1,5 +1,10 @@
-import type { BoardState, Player, RingStack } from '../../shared/engine';
-import { positionToString, calculateCapHeight } from '../../shared/engine';
+import type { BoardState, Player, RingStack, EliminationContext } from '../../shared/engine';
+import {
+  eliminateFromStack,
+  isStackEligibleForElimination,
+  calculateCapHeightElimination as calculateCapHeight,
+} from '../../shared/engine';
+import { positionToString } from '../../shared/types/game';
 import { flagEnabled, isTestEnvironment } from '../../shared/utils/envFlags';
 
 const TERRITORY_TRACE_DEBUG = flagEnabled('RINGRIFT_TRACE_DEBUG');
@@ -71,6 +76,8 @@ function assertForcedEliminationConsistency(
  * pure with respect to GameState, returning updated structures and the
  * number of rings eliminated.
  *
+ * DELEGATES TO EliminationAggregate for canonical elimination semantics.
+ *
  * Per RR-CANON-R022, R122, R145, R100:
  * - 'line': Eliminate exactly ONE ring from the top (any controlled stack is eligible)
  * - 'territory': Eliminate entire cap (only eligible stacks: multicolor or height > 1)
@@ -81,7 +88,7 @@ export function forceEliminateCapOnBoard(
   players: Player[],
   playerNumber: number,
   stacks: RingStack[],
-  eliminationContext: 'line' | 'territory' | 'forced' = 'forced'
+  eliminationContext: EliminationContext = 'forced'
 ): ForcedEliminationResult {
   const player = players.find((p) => p.playerNumber === playerNumber);
   if (!player) {
@@ -92,70 +99,74 @@ export function forceEliminateCapOnBoard(
     return { board, players, totalRingsEliminatedDelta: 0 };
   }
 
-  const stack = stacks.find((s) => s.capHeight > 0) ?? stacks[0];
-  const capHeight = calculateCapHeight(stack.rings);
-  if (capHeight <= 0) {
+  // Prefer stacks with positive stored capHeight (matches original behavior)
+  // Then verify eligibility using canonical rules
+  const stacksWithCap = stacks.filter((s) => s.capHeight > 0);
+  const eligibleStack = stacksWithCap.find(
+    (s) => isStackEligibleForElimination(s, eliminationContext, playerNumber).eligible
+  );
+
+  // Fall back to first stack with cap if no eligible found under current context
+  const stack =
+    eligibleStack ?? stacksWithCap[0] ?? stacks.find((s) => calculateCapHeight(s.rings) > 0);
+
+  if (!stack || calculateCapHeight(stack.rings) <= 0) {
     return { board, players, totalRingsEliminatedDelta: 0 };
   }
 
-  // Determine how many rings to eliminate based on context (RR-CANON-R022, R122):
-  // - 'line': Eliminate exactly ONE ring (per RR-CANON-R122)
-  // - 'territory' or 'forced': Eliminate entire cap (per RR-CANON-R145, R100)
-  const ringsToEliminate = eliminationContext === 'line' ? 1 : capHeight;
+  // If selected stack isn't eligible for requested context, use forced (least restrictive)
+  const effectiveContext = isStackEligibleForElimination(stack, eliminationContext, playerNumber)
+    .eligible
+    ? eliminationContext
+    : 'forced';
 
+  return forceEliminateCapOnBoardInternal(board, players, playerNumber, stack, effectiveContext);
+}
+
+/**
+ * Internal elimination function that delegates to EliminationAggregate.
+ */
+function forceEliminateCapOnBoardInternal(
+  board: BoardState,
+  players: Player[],
+  playerNumber: number,
+  stack: RingStack,
+  eliminationContext: EliminationContext
+): ForcedEliminationResult {
   if (TERRITORY_TRACE_DEBUG) {
     // eslint-disable-next-line no-console
     console.log('[sandboxElimination.forceEliminateCapOnBoard]', {
       playerNumber,
       stackPosition: stack.position,
-      capHeight,
+      capHeight: calculateCapHeight(stack.rings),
       stackHeight: stack.stackHeight,
       eliminationContext,
-      ringsToEliminate,
     });
   }
 
-  const remainingRings = stack.rings.slice(ringsToEliminate);
+  // Delegate to canonical EliminationAggregate
+  const eliminationResult = eliminateFromStack({
+    context: eliminationContext,
+    player: playerNumber,
+    stackPosition: stack.position,
+    board,
+  });
 
-  const updatedEliminatedRings = { ...board.eliminatedRings };
-  updatedEliminatedRings[playerNumber] =
-    (updatedEliminatedRings[playerNumber] || 0) + ringsToEliminate;
+  if (!eliminationResult.success) {
+    return { board, players, totalRingsEliminatedDelta: 0 };
+  }
 
+  // Update players array (EliminationAggregate only updates board)
   const updatedPlayers = players.map((p) =>
     p.playerNumber === playerNumber
-      ? { ...p, eliminatedRings: p.eliminatedRings + ringsToEliminate }
+      ? { ...p, eliminatedRings: p.eliminatedRings + eliminationResult.ringsEliminated }
       : p
   );
 
-  const nextBoard: BoardState = {
-    ...board,
-    stacks: new Map(board.stacks),
-    markers: new Map(board.markers),
-    collapsedSpaces: new Map(board.collapsedSpaces),
-    territories: new Map(board.territories),
-    formedLines: [...board.formedLines],
-    eliminatedRings: updatedEliminatedRings,
-  };
-
-  if (remainingRings.length > 0) {
-    const newStack: RingStack = {
-      ...stack,
-      rings: remainingRings,
-      stackHeight: remainingRings.length,
-      capHeight: calculateCapHeight(remainingRings),
-      controllingPlayer: remainingRings[0],
-    };
-    const key = positionToString(stack.position);
-    nextBoard.stacks.set(key, newStack);
-  } else {
-    const key = positionToString(stack.position);
-    nextBoard.stacks.delete(key);
-  }
-
   const result: ForcedEliminationResult = {
-    board: nextBoard,
+    board: eliminationResult.updatedBoard,
     players: updatedPlayers,
-    totalRingsEliminatedDelta: ringsToEliminate,
+    totalRingsEliminatedDelta: eliminationResult.ringsEliminated,
   };
 
   assertForcedEliminationConsistency(

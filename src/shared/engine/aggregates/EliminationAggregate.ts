@@ -20,7 +20,7 @@
  */
 
 import type { BoardState, Position, RingStack } from '../../types/game';
-import { positionToString, stringToPosition } from '../../types/game';
+import { positionToString } from '../../types/game';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -330,7 +330,7 @@ export function eliminateFromStack(params: EliminationParams): EliminationResult
   const auditEvent: EliminationAuditEvent = {
     timestamp: new Date(),
     context,
-    reason,
+    ...(reason !== undefined && { reason }),
     player,
     stackPosition,
     ringsEliminated: ringsToEliminate,
@@ -428,13 +428,3 @@ function emitEliminationAuditEvent(event: EliminationAuditEvent): void {
     console.log('[ELIMINATION_AUDIT]', JSON.stringify(event));
   }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// EXPORTS
-// ═══════════════════════════════════════════════════════════════════════════
-
-export {
-  // Re-export for convenience
-  positionToString,
-  stringToPosition,
-};

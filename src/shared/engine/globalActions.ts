@@ -504,6 +504,8 @@ export function applyForcedEliminationForPlayer(
       capHeight: chosenStack.capHeight,
       totalHeight: chosenStack.stackHeight,
     },
+    // CRITICAL: Use 'forced' context - allows any controlled stack (RR-CANON-R100)
+    eliminationContext: 'forced',
     // Deterministic placeholders – callers should not rely on these fields.
     timestamp: new Date(0),
     thinkTime: 0,
