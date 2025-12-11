@@ -79,7 +79,7 @@ def test_weight_application():
                 maxPlayers=2,
                 totalRingsInPlay=0,
                 totalRingsEliminated=0,
-                victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
+                victoryThreshold=18,  # RR-CANON-R061: = ringsPerPlayer for 2-player games
                 territoryVictoryThreshold=33,
                 chainCaptureState=None,
                 mustMoveFromStackKey=None,

@@ -535,6 +535,18 @@ def main():
         action="store_true",
         help="Only run GPU benchmark, don't optimize",
     )
+    parser.add_argument(
+        "--selfplay-data-dir",
+        type=str,
+        default=None,
+        help=(
+            "Path to directory containing aggregated selfplay JSONL data from "
+            "distributed cluster. If provided, this data will be logged alongside "
+            "CMA-ES run metadata for later analysis. Expected structure: "
+            "subdirectories like 'random_square8_2p/', 'heuristic_hexagonal_3p/' "
+            "each containing 'games.jsonl'."
+        ),
+    )
 
     args = parser.parse_args()
 

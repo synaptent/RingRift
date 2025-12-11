@@ -105,9 +105,9 @@ describe('GameEngine branch coverage', () => {
       const state = engine.getGameState();
       expect(state.players).toHaveLength(3);
       expect(state.maxPlayers).toBe(3);
-      // 18 rings * 3 players = 54 rings total
-      // Victory threshold = floor(54/2) + 1 = 28
-      expect(state.victoryThreshold).toBe(28);
+      // Per RR-CANON-R061: round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+      // = round(18 × (1/3 + 2/3 × 2)) = round(18 × 5/3) = 30
+      expect(state.victoryThreshold).toBe(30);
     });
 
     it('creates engine with 4 players', () => {
@@ -115,9 +115,9 @@ describe('GameEngine branch coverage', () => {
       const state = engine.getGameState();
       expect(state.players).toHaveLength(4);
       expect(state.maxPlayers).toBe(4);
-      // 18 rings * 4 players = 72 rings total
-      // Victory threshold = floor(72/2) + 1 = 37
-      expect(state.victoryThreshold).toBe(37);
+      // Per RR-CANON-R061: round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+      // = round(18 × (1/3 + 2/3 × 3)) = round(18 × 7/3) = 42
+      expect(state.victoryThreshold).toBe(42);
     });
   });
 

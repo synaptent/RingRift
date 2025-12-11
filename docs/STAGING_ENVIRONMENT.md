@@ -229,48 +229,146 @@ For examples of how the AI service and training workloads can take advantage of 
 
 ## Load Testing
 
-The staging environment supports the k6 load testing scenarios defined in `tests/load/`:
+The staging environment is the canonical target for the **Production Validation Contract** scenarios defined in
+[`docs/PRODUCTION_READINESS_CHECKLIST.md`](PRODUCTION_READINESS_CHECKLIST.md:104):
 
-### Baseline Test
+- Baseline smoke: `BCAP_STAGING_BASELINE_20G_60P`
+- Target-scale: `BCAP_SQ8_3P_TARGET_100G_300P`
+- AI-heavy: `BCAP_SQ8_4P_AI_HEAVY_75G_300P`
 
-Tests sustained load at target scale:
+These scenarios are driven by the k6 runners under `tests/load/scripts/**` and assume that the Docker-based
+staging stack is already up and **healthy** (app, AI service, Postgres, Redis).
 
-```bash
-# Run from project root
-npm run load:baseline -- -e BASE_URL=http://localhost:3000
+### How to bring up staging for production-validation load tests
 
-# Or directly with k6
-k6 run tests/load/scenarios/baseline.js \
-  -e BASE_URL=http://localhost:3000 \
-  -e VUS=100 \
-  -e DURATION=5m
-```
-
-### Stress Test
-
-Tests system behavior beyond target scale:
+From a clean clone with Docker running:
 
 ```bash
-npm run load:stress -- -e BASE_URL=http://localhost:3000
+# 1) Deploy/refresh the local Docker-based staging stack
+./scripts/deploy-staging.sh --clean
 ```
 
-### WebSocket Load Test
+This script:
 
-Tests WebSocket connection scaling:
+- Builds all images using [`docker-compose.staging.yml`](../docker-compose.staging.yml:1).
+- Starts `postgres`, `redis`, `ai-service`, `app`, Prometheus, Grafana, Alertmanager, and nginx.
+- Waits for:
+  - PostgreSQL (`pg_isready` against the `postgres` service).
+  - Redis (`redis-cli ping` inside the `redis` service).
+  - AI service at `http://localhost:8001/health`.
+  - App liveness at `http://localhost:3000/health`.
+  - App readiness at `http://localhost:3000/ready`.
+
+If any of these checks fail to become healthy within the timeout window, the script exits non-zero and prints
+hints for inspecting logs so CI/automation can short-circuit.
+
+To stop and clean up the stack when you are done:
 
 ```bash
-npm run load:websocket -- -e WS_URL=ws://localhost:3001
+# Stop services but preserve data volumes
+./scripts/teardown-staging.sh
+
+# Destroy containers + volumes (full reset)
+./scripts/teardown-staging.sh --volumes
 ```
+
+For a full reset (including volumes) followed by a clean deployment, run:
+
+```bash
+./scripts/teardown-staging.sh --volumes --force
+./scripts/deploy-staging.sh --clean
+```
+
+### Running the BCAP baseline, target-scale, and AI-heavy runners against staging
+
+Once staging is healthy on `http://localhost:3000` with AI service on `http://localhost:8001`, you can run the
+three contract scenarios using the k6 runners. These commands assume you have a working load-test user account
+(`LOADTEST_EMAIL` / `LOADTEST_PASSWORD`) that can log in to the target environment.
+
+> **Tip:** You can seed a pool of `loadtest_user_*@loadtest.local` accounts via
+> `npm run load:seed-users`. When running against the Docker-based staging DB, be sure your `DATABASE_URL`
+> points at `localhost:5432` with the correct `DB_PASSWORD` from `.env.staging`.
+
+#### 1. Baseline smoke: `BCAP_STAGING_BASELINE_20G_60P`
+
+```bash
+# From repo root, with staging already deployed
+export LOADTEST_EMAIL="<your_loadtest_user_email>"
+export LOADTEST_PASSWORD="<your_loadtest_user_password>"
+
+SEED_LOADTEST_USERS=true \
+  tests/load/scripts/run-baseline.sh --staging
+```
+
+- Targets the local Docker-based staging stack at `http://localhost:3000` by default.
+- Writes raw k6 JSON and summaries under `tests/load/results/` with filenames prefixed by the
+  scenario ID, for example `BCAP_STAGING_BASELINE_20G_60P_staging_*.json`.
+
+#### 2. Target-scale: `BCAP_SQ8_3P_TARGET_100G_300P`
+
+```bash
+# From repo root, with staging already deployed and healthy
+export LOADTEST_EMAIL="<your_loadtest_user_email>"
+export LOADTEST_PASSWORD="<your_loadtest_user_password>"
+
+SEED_LOADTEST_USERS=true \
+  tests/load/scripts/run-target-scale.sh --staging
+```
+
+- Uses **production** thresholds for k6 (`THRESHOLD_ENV=production`) while still pointing at staging.
+- Emits results under `tests/load/results/BCAP_SQ8_3P_TARGET_100G_300P_staging_*.json` and corresponding
+  `*_summary.json` files for SLO aggregation.
+
+#### 3. AI-heavy: `BCAP_SQ8_4P_AI_HEAVY_75G_300P`
+
+```bash
+# From repo root, with staging already deployed and healthy
+export LOADTEST_EMAIL="<your_loadtest_user_email>"
+export LOADTEST_PASSWORD="<your_loadtest_user_password>"
+
+SEED_LOADTEST_USERS=true \
+  tests/load/scripts/run-ai-heavy.sh --staging
+```
+
+- Uses staging thresholds for k6 (`THRESHOLD_ENV=staging`) and applies stricter, production-level SLOs
+  for AI latency/fallback at the SLO verification layer, as described in
+  [`docs/PRODUCTION_READINESS_CHECKLIST.md`](PRODUCTION_READINESS_CHECKLIST.md:176) and
+  [`docs/SLO_VERIFICATION.md`](SLO_VERIFICATION.md:45).
+
+### Where results and SLO reports are written
+
+All three runners write their primary artifacts under `tests/load/results/`:
+
+- Raw k6 JSON:
+  - `tests/load/results/BCAP_STAGING_BASELINE_20G_60P_ENV_TIMESTAMP.json`
+  - `tests/load/results/BCAP_SQ8_3P_TARGET_100G_300P_ENV_TIMESTAMP.json`
+  - `tests/load/results/BCAP_SQ8_4P_AI_HEAVY_75G_300P_ENV_TIMESTAMP.json`
+- Per-scenario k6 summaries produced via `handleSummary`:
+  - `tests/load/results/*_summary.json`
+- SLO verification reports generated by [`tests/load/scripts/verify-slos.js`](../tests/load/scripts/verify-slos.js:1)
+  (invoked via `npm run slo:verify`):
+  - `tests/load/results/*_slo_report.json`
+
+After running the three BCAP scenarios you can aggregate the summary artifacts into a single go/no-go
+view using:
+
+```bash
+npx ts-node scripts/analyze-load-slos.ts
+```
+
+which writes `load_slo_summary.json` and prints a compact table of scenario statuses, as described in
+[`docs/PRODUCTION_READINESS_CHECKLIST.md`](PRODUCTION_READINESS_CHECKLIST.md:245).
 
 ### Target Metrics During Load Testing
 
-| Metric                | Baseline Target | Stress Target |
-| --------------------- | --------------- | ------------- |
-| Concurrent VUs        | 100             | 300           |
-| Requests/sec          | 500             | 1500          |
-| p95 latency           | <500ms          | <1s           |
-| Error rate            | <1%             | <5%           |
-| WebSocket connections | 300             | 500           |
+See the canonical SLO catalogue and environment-specific thresholds in
+[`docs/SLO_VERIFICATION.md`](SLO_VERIFICATION.md:45) and the JSON configs under
+`tests/load/configs/` and `tests/load/config/thresholds.json`. For quick reference:
+
+- **Baseline smoke (staging):** ≥20 concurrent games, ≥60 concurrent players.
+- **Target-scale (production thresholds):** ≥100 concurrent games, ≥300 concurrent players.
+- **AI-heavy (staging thresholds + production AI SLOs):** ≈75 concurrent games, ≈300 concurrent seats
+  with 3 AI seats per game.
 
 ---
 

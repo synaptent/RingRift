@@ -199,12 +199,27 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.3, 5–7, 9; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§9.2, 11–13, 15.4 Q6, Q11–Q12.
 
 - **[RR-CANON-R061] Ring-elimination victory threshold.**
-  - `victoryThreshold = ringsPerPlayer` (the starting number of rings in hand per player for the board type).
-  - For standard board configurations:
-    - `square8`: `victoryThreshold = 18` (18 rings per player)
-    - `square19`: `victoryThreshold = 48` (48 rings per player)
-    - `hexagonal`: `victoryThreshold = 72` (72 rings per player)
+  - `victoryThreshold = round((1/3) × ringsPerPlayer + (2/3) × opponentsCombinedStartingRings)`
+  - Where:
+    - `ringsPerPlayer` = starting rings in hand for this player (from board config)
+    - `opponentsCombinedStartingRings` = `ringsPerPlayer × (numPlayers - 1)`
+  - Simplified formula: `victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))`
+  - **Implementation note**: Use `round()` instead of `floor()` to avoid floating-point precision errors (e.g., `18 × 5/3 = 29.999...` would incorrectly floor to 29).
+  - For standard board configurations with N players:
+    - `square8` (18 rings/player):
+      - 2 players: `round(18 × (1/3 + 2/3 × 1)) = round(18 × 1) = 18`
+      - 3 players: `round(18 × (1/3 + 2/3 × 2)) = round(18 × 5/3) = 30`
+      - 4 players: `round(18 × (1/3 + 2/3 × 3)) = round(18 × 7/3) = 42`
+    - `square19` (48 rings/player):
+      - 2 players: `round(48 × 1) = 48`
+      - 3 players: `round(48 × 5/3) = 80`
+      - 4 players: `round(48 × 7/3) = 112`
+    - `hexagonal` (72 rings/player):
+      - 2 players: `round(72 × 1) = 72`
+      - 3 players: `round(72 × 5/3) = 120`
+      - 4 players: `round(72 × 7/3) = 168`
   - A player wins by elimination when their credited eliminated ring total reaches or exceeds `victoryThreshold`.
+  - Rationale: In multi-player games, a player must eliminate more rings to win, proportional to the total rings controlled by opponents.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §7.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.3, 13.1, 16.3, 16.9.4.5.
 
 - **[RR-CANON-R062] Territory-control victory threshold.**

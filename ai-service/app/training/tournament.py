@@ -328,8 +328,11 @@ class Tournament:
             maxPlayers=2,
             totalRingsInPlay=rings * 2,
             totalRingsEliminated=0,
-            victoryThreshold=rings,  # Per RR-CANON-R061: ringsPerPlayer
-            territoryVictoryThreshold=33,
+            # Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+            # For 2p: round(18 × (1/3 + 2/3 × 1)) = round(18 × 1) = 18
+            victoryThreshold=round(rings * (1 / 3 + (2 / 3) * (2 - 1))),
+            # Per RR-CANON-R062: territoryVictoryThreshold = floor(totalSpaces / 2) + 1
+            territoryVictoryThreshold=(size * size) // 2 + 1,  # 33 for 8x8
             chainCaptureState=None,
             mustMoveFromStackKey=None,
             zobristHash=None,

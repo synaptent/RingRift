@@ -79,7 +79,15 @@ describe('territoryDecisionHelpers – shared territory decision enumeration and
 
     // Two stacks for player 1 inside a larger region; only the smaller
     // region that does not cover all stacks satisfies the self-elimination
-    // prerequisite (must control at least one stack outside the region).
+    // prerequisite. Under the canonical Q23 prerequisite (RR-CANON-R082),
+    // at least one stack **outside** the region must be an eligible cap
+    // target:
+    //   - multicolour stack (stackHeight > capHeight), or
+    //   - single-colour stack with height > 1.
+    //
+    // Here:
+    //   - Stack at `a` is a single-ring stack (not eligible).
+    //   - Stack at `b` is a height-2 single-colour stack (eligible).
     const a: Position = { x: 0, y: 0 };
     const b: Position = { x: 1, y: 0 };
     const aKey = positionToString(a);
@@ -94,9 +102,9 @@ describe('territoryDecisionHelpers – shared territory decision enumeration and
     } as any);
     board.stacks.set(bKey, {
       position: b,
-      rings: [1],
-      stackHeight: 1,
-      capHeight: 1,
+      rings: [1, 1],
+      stackHeight: 2,
+      capHeight: 2,
       controllingPlayer: 1,
     } as any);
 
@@ -166,18 +174,21 @@ describe('territoryDecisionHelpers – shared territory decision enumeration and
     } as any);
 
     // Single stack for player 1 outside the region to satisfy the
-    // self-elimination prerequisite.
+    // self-elimination prerequisite. Under RR-CANON-R082 the outside stack
+    // must be an eligible cap target (height > 1 or multicolour).
     board.stacks.set(outsideKey, {
       position: outside,
-      rings: [1],
-      stackHeight: 1,
-      capHeight: 1,
+      rings: [1, 1],
+      stackHeight: 2,
+      capHeight: 2,
       controllingPlayer: 1,
     } as any);
 
     const region: Territory = {
       spaces: [p1a, p2a],
-      controllingPlayer: 0,
+      // Canonical detector always attributes disconnected regions to the
+      // border-marker owner; controllingPlayer 0 is considered non-canonical.
+      controllingPlayer: 1,
       isDisconnected: true,
     };
 

@@ -4,6 +4,8 @@
 > **Status:** Complete
 > **Purpose:** Document "healthy system" metric ranges for operations and alerting
 
+Note: For which scenarios are required for v1.0, and which SLO thresholds and go/no-go rules apply, see the Production Validation Contract in [`docs/PRODUCTION_READINESS_CHECKLIST.md`](../PRODUCTION_READINESS_CHECKLIST.md:104). This file reports baseline metrics only and is subordinate to that contract.
+
 ## Test Environment
 
 | Parameter          | Value                  |

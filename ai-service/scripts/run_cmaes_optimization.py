@@ -1383,6 +1383,103 @@ def save_weights_to_file(
         json.dump(data, f, indent=2, sort_keys=True)
 
 
+# Path to the canonical trained heuristic profiles config
+TRAINED_PROFILES_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "data",
+    "trained_heuristic_profiles.json",
+)
+
+
+def update_trained_profiles_config(
+    weights: HeuristicWeights,
+    num_players: int,
+    board_type: str,
+    run_id: str,
+    fitness: float,
+    generation: int,
+) -> bool:
+    """Update the trained_heuristic_profiles.json with the new best weights.
+
+    This only updates the profile if the new fitness is better than the existing one.
+
+    Parameters
+    ----------
+    weights:
+        Best weights from CMA-ES optimization.
+    num_players:
+        Number of players (2, 3, or 4).
+    board_type:
+        Board type used for training.
+    run_id:
+        CMA-ES run identifier.
+    fitness:
+        Best fitness achieved.
+    generation:
+        Final generation number.
+
+    Returns
+    -------
+    bool:
+        True if the profile was updated, False otherwise.
+    """
+    profile_key = f"heuristic_v1_{num_players}p"
+
+    # Load existing config or create new one
+    if os.path.exists(TRAINED_PROFILES_PATH):
+        with open(TRAINED_PROFILES_PATH, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    else:
+        config = {
+            "version": "1.0.0",
+            "created": datetime.now().strftime("%Y-%m-%d"),
+            "description": "CMA-ES optimized heuristic weight profiles for different player counts",
+            "profiles": {},
+            "training_metadata": {},
+        }
+
+    # Check if we should update (new fitness is better)
+    existing_metadata = config.get("training_metadata", {}).get(profile_key, {})
+    existing_fitness = existing_metadata.get("fitness", 0.0)
+
+    if fitness <= existing_fitness:
+        print(
+            f"[Config] Skipping profile update: new fitness {fitness:.4f} "
+            f"<= existing {existing_fitness:.4f}"
+        )
+        return False
+
+    # Update the profile weights
+    config["profiles"][profile_key] = weights
+
+    # Update metadata
+    if "training_metadata" not in config:
+        config["training_metadata"] = {}
+
+    # Increment iteration if same profile exists
+    prev_iteration = existing_metadata.get("iteration", 0)
+    config["training_metadata"][profile_key] = {
+        "source": "Iterative CMA-ES",
+        "iteration": prev_iteration + 1,
+        "run_id": run_id,
+        "board": board_type,
+        "fitness": fitness,
+        "generation": generation,
+    }
+
+    # Update timestamp
+    config["updated"] = datetime.now().strftime("%Y-%m-%d")
+
+    # Write back
+    os.makedirs(os.path.dirname(TRAINED_PROFILES_PATH), exist_ok=True)
+    with open(TRAINED_PROFILES_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2, sort_keys=True)
+
+    print(f"[Config] Updated {profile_key} in {TRAINED_PROFILES_PATH}")
+    print(f"  Fitness: {existing_fitness:.4f} -> {fitness:.4f}")
+    return True
+
+
 @dataclass
 class AxisAlignedProfile:
     """Axis-aligned profile wrapper for diagnostics."""
@@ -2101,6 +2198,16 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
     )
     print(f"Optimized weights saved to: {config.output_path}")
 
+    # Auto-update canonical profiles config if fitness improved
+    update_trained_profiles_config(
+        weights=best_weights,
+        num_players=config.num_players,
+        board_type=config.board_type.value,
+        run_id=run_id,
+        fitness=best_fitness,
+        generation=final_generation,
+    )
+
     # Cleanup queue connection if used
     if queue_evaluator is not None:
         queue_evaluator.close()
@@ -2384,6 +2491,19 @@ def main():
             "workers (square8 only due to 16GB RAM limit), 'hybrid' uses both. "
             "Use with --distributed to auto-discover workers from hosts config. "
             "Default: local."
+        ),
+    )
+    parser.add_argument(
+        "--selfplay-data-dir",
+        type=str,
+        default=None,
+        help=(
+            "Path to directory containing aggregated selfplay JSONL data from "
+            "distributed cluster. If provided, this data will be logged alongside "
+            "CMA-ES run metadata for later analysis. Expected structure: "
+            "subdirectories like 'random_square8_2p/', 'heuristic_hexagonal_3p/' "
+            "each containing 'games.jsonl'. This allows correlating optimization "
+            "runs with the selfplay data available at that time."
         ),
     )
 

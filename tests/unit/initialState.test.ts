@@ -253,8 +253,8 @@ describe('initialState', () => {
     it('should calculate victoryThreshold correctly', () => {
       const state = createInitialGameState('game-1', 'square8', createPlayers(), timeControl);
 
-      // 18 rings per player * 2 players = 36 total, floor(36/2) + 1 = 19
-      expect(state.victoryThreshold).toBe(19);
+      // Canonical rule RR-CANON-R061: for 2-player games, victoryThreshold = ringsPerPlayer = 18
+      expect(state.victoryThreshold).toBe(18);
     });
 
     it('should calculate territoryVictoryThreshold correctly', () => {
@@ -284,8 +284,8 @@ describe('initialState', () => {
       expect(state.players).toHaveLength(3);
       expect(state.players[2].playerNumber).toBe(3);
       expect(state.maxPlayers).toBe(3);
-      // 18 * 3 = 54, floor(54/2) + 1 = 28
-      expect(state.victoryThreshold).toBe(28);
+      // Per RR-CANON-R061: round(18 * (1/3 + 2/3 * 2)) = round(18 * 5/3) = 30
+      expect(state.victoryThreshold).toBe(30);
     });
 
     it('should handle mixed human/AI players', () => {

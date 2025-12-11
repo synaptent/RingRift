@@ -483,8 +483,8 @@ describe('ClientSandboxEngine branch coverage', () => {
         interactionHandler: new MockInteractionHandler(),
       });
       const state = engine.getGameState();
-      // 18 rings * 3 players = 54, threshold = 54/2 + 1 = 28
-      expect(state.victoryThreshold).toBe(28);
+      // Per RR-CANON-R061: round(18 × (1/3 + 2/3 × 2)) = 30
+      expect(state.victoryThreshold).toBe(30);
     });
 
     it('square8 4p has correct victory threshold', () => {
@@ -493,8 +493,8 @@ describe('ClientSandboxEngine branch coverage', () => {
         interactionHandler: new MockInteractionHandler(),
       });
       const state = engine.getGameState();
-      // 18 rings * 4 players = 72, threshold = 72/2 + 1 = 37
-      expect(state.victoryThreshold).toBe(37);
+      // Per RR-CANON-R061: round(18 × (1/3 + 2/3 × 3)) = 42
+      expect(state.victoryThreshold).toBe(42);
     });
 
     it('territory victory threshold is correct', () => {

@@ -61,7 +61,7 @@ class TestMinimaxAI(unittest.TestCase):
             maxPlayers=2,
             totalRingsInPlay=36,
             totalRingsEliminated=0,
-            victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
+            victoryThreshold=18,  # RR-CANON-R061: = ringsPerPlayer for 2-player games
             territoryVictoryThreshold=33,
         )
 

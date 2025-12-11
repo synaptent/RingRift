@@ -81,8 +81,12 @@ export function createInitialGameState(
     maxPlayers: players.length,
     totalRingsInPlay: 0, // Starts at 0, increments as rings are placed
     totalRingsEliminated: 0,
-    // Per RR-CANON-R061: victoryThreshold = ringsPerPlayer (starting ring supply)
-    victoryThreshold: config.ringsPerPlayer,
+    // Per RR-CANON-R061: victoryThreshold = round((1/3) × ownStartingRings + (2/3) × opponentsCombinedStartingRings)
+    // Simplified: round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+    // Note: Using Math.round() to handle floating-point precision (e.g., 18 * (1/3 + 2/3*2) = 29.999... → 30)
+    // This makes elimination harder in 2p (need to eliminate more of opponent's rings)
+    // and scales appropriately for 3p/4p games
+    victoryThreshold: Math.round(config.ringsPerPlayer * (1 / 3 + (2 / 3) * (players.length - 1))),
     territoryVictoryThreshold: Math.floor(config.totalSpaces / 2) + 1,
   };
 }

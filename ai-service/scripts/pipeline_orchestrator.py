@@ -51,10 +51,11 @@ class WorkerConfig:
     """Configuration for a compute worker."""
 
     name: str
-    host: str
+    host: str  # user@hostname format
     role: str  # "selfplay", "training", "cmaes", "mixed"
     capabilities: List[str]
     ssh_key: Optional[str] = None
+    ssh_port: int = 22  # Non-standard port for Vast.ai etc
     remote_path: str = "~/ringrift/ai-service"
     max_parallel_jobs: int = 1
 
@@ -83,37 +84,81 @@ class PipelineState:
     errors: List[str] = field(default_factory=list)
 
 
-# Worker configurations
+# Worker configurations - based on PLAN.md cluster
+# Local machines use Tailscale IPs (100.x.x.x)
+# Cloud machines use public IPs
 WORKERS = [
+    # === Local Mac Machines (Tailscale) ===
     WorkerConfig(
-        name="staging",
-        host="ringrift-staging",
-        role="selfplay",
-        capabilities=["square8", "square19", "hexagonal"],
+        name="mac-studio",
+        host="armand@100.107.168.125",
+        role="mixed",  # training + selfplay
+        capabilities=["square8", "square19", "hexagonal", "nn", "nnue", "mps"],
+        ssh_key="~/.ssh/id_cluster",
+        remote_path="~/Development/RingRift/ai-service",
         max_parallel_jobs=4,
     ),
     WorkerConfig(
-        name="extra",
-        host="ringrift-selfplay-extra",
+        name="mbp-16gb",
+        host="armand@100.66.142.46",
         role="selfplay",
         capabilities=["square8", "square19", "hexagonal"],
+        remote_path="~/Development/RingRift/ai-service",
         max_parallel_jobs=2,
     ),
     WorkerConfig(
-        name="m1pro",
-        host="m1-pro",
+        name="mbp-64gb",
+        host="armand@100.92.222.49",
         role="selfplay",
-        capabilities=["square8", "hexagonal"],
+        capabilities=["square8", "square19", "hexagonal"],
         remote_path="~/Development/RingRift/ai-service",
-        max_parallel_jobs=2,
+        max_parallel_jobs=4,
+    ),
+    # === AWS Instances ===
+    WorkerConfig(
+        name="aws-staging",
+        host="ubuntu@54.198.219.106",
+        role="selfplay",
+        capabilities=["square8", "square19", "hexagonal"],
+        ssh_key="~/.ssh/ringrift-staging-key.pem",
+        remote_path="~/ringrift/ai-service",
+        max_parallel_jobs=4,
     ),
     WorkerConfig(
-        name="mac-studio",
-        host="mac-studio",
-        role="training",
-        capabilities=["nn", "nnue", "mps"],
-        remote_path="~/Development/RingRift/ai-service",
-        max_parallel_jobs=1,
+        name="aws-extra",
+        host="ubuntu@3.208.88.21",
+        role="selfplay",
+        capabilities=["square8", "square19", "hexagonal"],
+        ssh_key="~/.ssh/ringrift-staging-key.pem",
+        remote_path="~/ringrift/ai-service",
+        max_parallel_jobs=2,
+    ),
+    # === Lambda Labs GPU Instances ===
+    WorkerConfig(
+        name="lambda-h100",
+        host="ubuntu@209.20.157.81",
+        role="mixed",  # GPU selfplay + training
+        capabilities=["square8", "square19", "hexagonal", "gpu", "nn"],
+        remote_path="~/ringrift/ai-service",
+        max_parallel_jobs=8,
+    ),
+    WorkerConfig(
+        name="lambda-a10",
+        host="ubuntu@150.136.65.197",
+        role="selfplay",
+        capabilities=["square8", "square19", "hexagonal", "gpu"],
+        remote_path="~/ringrift/ai-service",
+        max_parallel_jobs=4,
+    ),
+    # === Vast.ai GPU Instance ===
+    WorkerConfig(
+        name="vast-3090",
+        host="root@79.116.93.241",
+        role="selfplay",
+        capabilities=["square8", "square19", "hexagonal", "gpu"],
+        ssh_port=47070,  # Non-standard Vast.ai port
+        remote_path="~/ringrift/ai-service",
+        max_parallel_jobs=4,
     ),
 ]
 
@@ -187,6 +232,8 @@ class PipelineOrchestrator:
         ssh_cmd = ["ssh", "-o", "ConnectTimeout=10"]
         if worker.ssh_key:
             ssh_cmd.extend(["-i", worker.ssh_key])
+        if worker.ssh_port != 22:
+            ssh_cmd.extend(["-p", str(worker.ssh_port)])
         ssh_cmd.append(worker.host)
 
         if background:

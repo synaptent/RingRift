@@ -306,14 +306,16 @@ normal play, exactly one of these will apply first.
 
 ### 5.1 Ring Elimination Victory
 
-You win by eliminating a number of rings equal to the **starting ring supply
-per player** for the chosen board type (regardless of player count).
+You win by eliminating a number of rings equal to one third of your starting
+rings in hand plus two thirds of your opponents' combined starting rings in
+hand. In multi-player games, more rings must be eliminated to win since more
+total rings are in play.
 
 Thresholds:
 
-- 8×8: **18 rings** eliminated.
-- 19×19: **48 rings** eliminated.
-- Hex: **72 rings** eliminated.
+- 8×8 (18 rings/player): **18** (2p), **30** (3p), **42** (4p) rings eliminated.
+- 19×19 (48 rings/player): **48** (2p), **80** (3p), **112** (4p) rings eliminated.
+- Hex (72 rings/player): **72** (2p), **120** (3p), **168** (4p) rings eliminated.
 
 Your eliminated‑rings total includes:
 

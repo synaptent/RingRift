@@ -812,7 +812,7 @@ export interface GameState {
   // RingRift specific state
   totalRingsInPlay: number; // Total rings placed on board
   totalRingsEliminated: number; // Total rings eliminated from game
-  victoryThreshold: number; // Rings needed to win (= ringsPerPlayer per RR-CANON-R061)
+  victoryThreshold: number; // Rings needed to win (per RR-CANON-R061: round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1))))
   territoryVictoryThreshold: number; // Territory spaces needed to win (>50% of board)
 
   /**

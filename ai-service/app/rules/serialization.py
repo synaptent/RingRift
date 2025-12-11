@@ -438,7 +438,7 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
         maxPlayers=2,
         totalRingsInPlay=data.get("totalRingsInPlay", 36),  # Default for 2-player square8
         totalRingsEliminated=data.get("totalRingsEliminated", 0),
-        victoryThreshold=data.get("victoryThreshold", 18),  # RR-CANON-R061: ringsPerPlayer
+        victoryThreshold=data.get("victoryThreshold", 18),  # RR-CANON-R061 (default for 2p square8)
         territoryVictoryThreshold=data.get("territoryVictoryThreshold", 33),
         chainCaptureState=chain_capture_state,
         mustMoveFromStackKey=None,

@@ -181,10 +181,11 @@ $COMPOSE_CMD -f docker-compose.staging.yml up -d postgres redis
 echo -e "\n${YELLOW}⏳ Waiting for database...${NC}"
 MAX_RETRIES=30
 RETRY_COUNT=0
-while ! docker exec $(docker ps -qf "name=postgres") pg_isready -U ringrift -d ringrift >/dev/null 2>&1; do
+while ! $COMPOSE_CMD -f docker-compose.staging.yml exec -T postgres pg_isready -U "${POSTGRES_USER:-ringrift}" -d "${POSTGRES_DB:-ringrift}" >/dev/null 2>&1; do
     RETRY_COUNT=$((RETRY_COUNT + 1))
     if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
         echo -e "${RED}Error: Database failed to start after $MAX_RETRIES attempts${NC}"
+        echo "Hint: Check logs with: $COMPOSE_CMD -f docker-compose.staging.yml logs postgres --tail 50"
         exit 1
     fi
     echo "  Waiting for PostgreSQL... ($RETRY_COUNT/$MAX_RETRIES)"
@@ -195,10 +196,11 @@ echo "  ✓ PostgreSQL is ready"
 # Wait for Redis
 echo -e "\n${YELLOW}⏳ Waiting for Redis...${NC}"
 RETRY_COUNT=0
-while ! docker exec $(docker ps -qf "name=redis") redis-cli ping >/dev/null 2>&1; do
+while ! $COMPOSE_CMD -f docker-compose.staging.yml exec -T redis redis-cli ping >/dev/null 2>&1; do
     RETRY_COUNT=$((RETRY_COUNT + 1))
     if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
         echo -e "${RED}Error: Redis failed to start after $MAX_RETRIES attempts${NC}"
+        echo "Hint: Check logs with: $COMPOSE_CMD -f docker-compose.staging.yml logs redis --tail 50"
         exit 1
     fi
     echo "  Waiting for Redis... ($RETRY_COUNT/$MAX_RETRIES)"
@@ -210,27 +212,30 @@ echo "  ✓ Redis is ready"
 echo -e "\n${YELLOW}🤖 Starting AI service...${NC}"
 $COMPOSE_CMD -f docker-compose.staging.yml up -d ai-service
 
-# Wait for AI service
-echo -e "\n${YELLOW}⏳ Waiting for AI service...${NC}"
-RETRY_COUNT=0
-while ! curl -sf http://localhost:8001/health >/dev/null 2>&1; do
-    RETRY_COUNT=$((RETRY_COUNT + 1))
-    if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-        echo -e "${YELLOW}Warning: AI service not responding (fallback mode will be used)${NC}"
-        break
-    fi
-    echo "  Waiting for AI service... ($RETRY_COUNT/$MAX_RETRIES)"
-    sleep 2
-done
-if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+# Wait for AI service (required for staging load tests unless --skip-health is provided)
+if [ "$SKIP_HEALTH" = false ]; then
+    echo -e "\n${YELLOW}⏳ Waiting for AI service (/health)...${NC}"
+    RETRY_COUNT=0
+    while ! curl -sf http://localhost:8001/health >/dev/null 2>&1; do
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+            echo -e "${RED}Error: AI service failed to become healthy after $MAX_RETRIES attempts${NC}"
+            echo "Hint: Check AI service logs with: $COMPOSE_CMD -f docker-compose.staging.yml logs ai-service --tail 50"
+            exit 1
+        fi
+        echo "  Waiting for AI service... ($RETRY_COUNT/$MAX_RETRIES)"
+        sleep 2
+    done
     echo "  ✓ AI service is ready"
+else
+    echo -e "\n${YELLOW}⏭️  Skipping AI service health wait (--skip-health provided).${NC}"
 fi
 
 # Start main application
 echo -e "\n${YELLOW}🎮 Starting main application...${NC}"
 $COMPOSE_CMD -f docker-compose.staging.yml up -d app
 
-# Wait for application
+# Wait for application (liveness)
 echo -e "\n${YELLOW}⏳ Waiting for application...${NC}"
 sleep 10
 RETRY_COUNT=0
@@ -245,7 +250,26 @@ while ! curl -sf http://localhost:3000/health >/dev/null 2>&1; do
     echo "  Waiting for application... ($RETRY_COUNT/60)"
     sleep 2
 done
-echo "  ✓ Application is ready"
+echo "  ✓ Application is responding on /health"
+
+# Readiness check (ensures core dependencies like DB/Redis/AI are wired up)
+if [ "$SKIP_HEALTH" = false ]; then
+    echo -e "\n${YELLOW}⏳ Verifying application readiness (/ready)...${NC}"
+    RETRY_COUNT=0
+    while ! curl -sf http://localhost:3000/ready >/dev/null 2>&1; do
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        if [ $RETRY_COUNT -ge 60 ]; then
+            echo -e "${RED}Error: Application readiness check failed after 60 attempts${NC}"
+            echo "Hint: Check service status with:"
+            echo "  $COMPOSE_CMD -f docker-compose.staging.yml ps"
+            echo "  $COMPOSE_CMD -f docker-compose.staging.yml logs app ai-service postgres redis --tail 50"
+            exit 1
+        fi
+        echo "  Waiting for readiness... ($RETRY_COUNT/60)"
+        sleep 2
+    done
+    echo "  ✓ Application reports ready on /ready"
+fi
 
 # Start remaining services
 echo -e "\n${YELLOW}📊 Starting monitoring stack...${NC}"

@@ -511,14 +511,22 @@ describe('territoryDecisionHelpers branch coverage', () => {
         expect(moves).toHaveLength(0);
       });
 
-      it('returns moves for multiple eligible stacks', () => {
+      it('returns moves for multiple eligible stacks (excluding height-1 standalone rings)', () => {
         const state = makeGameState({ currentPhase: 'movement' });
+        // Under RR-CANON-R082, eligible cap targets are:
+        // - multicolour stacks (stackHeight > capHeight), or
+        // - single-colour stacks with height > 1.
+        //
+        // Here:
+        //   - (0,0): height-2 single-colour stack → eligible
+        //   - (1,1): height-3 single-colour stack → eligible
+        //   - (2,2): height-1 single ring         → NOT eligible
         addStack(state, pos(0, 0), [1, 1]);
         addStack(state, pos(1, 1), [1, 1, 1]);
         addStack(state, pos(2, 2), [1]);
 
         const moves = enumerateTerritoryEliminationMoves(state, 1);
-        expect(moves.length).toBe(3);
+        expect(moves.length).toBe(2);
       });
     });
 

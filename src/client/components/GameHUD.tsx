@@ -518,7 +518,7 @@ function LpsTrackingIndicator({
 
 /**
  * Victory progress indicator showing ring elimination and territory control progress.
- * Per RR-CANON-R061: victoryThreshold = ringsPerPlayer (starting ring supply)
+ * Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
  * Per RR-CANON-R062: territoryThreshold = floor(totalSpaces/2)+1
  */
 function VictoryProgressIndicator({

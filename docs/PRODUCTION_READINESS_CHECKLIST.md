@@ -216,16 +216,45 @@ This contract uses three result classes at both scenario and overall-run level:
 
 For v1.0, the **only acceptable state for a full public production launch is PASS**. Conditional results may be used for internal or friends-and-family deployments but must not be treated as production-ready until remediated and re-validated.
 
-#### 2.4.4 How this maps to existing tools
+#### 2.4.4 Scenario 9 tooling and SLO map
+
+This subsection makes the **scenario 9 tooling 9 SLO** mapping explicit. It binds the three BCAP scenario IDs from §2.4.2 to concrete runner scripts, k6 scenarios, JSON configs, and SLO environments.
+
+| Contract scenario                        | Scenario ID                     | Runner 9 k6 scenario                                                                                                                                                                                                                                                                                               | Scenario configs 9 registry                                                                                                                                                                                                                                                                      | SLO verification env (`--env` for [`verify-slos.js`](../tests/load/scripts/verify-slos.js:1))                                                   | k6 thresholds env (`THRESHOLD_ENV`)                                                                                | Key SLO focus (from [`docs/SLO_VERIFICATION.md`](SLO_VERIFICATION.md:45) and [`tests/load/configs/slo-definitions.json`](../tests/load/configs/slo-definitions.json:1))                                                                                                                 |
+| ---------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Baseline smoke**                       | `BCAP_STAGING_BASELINE_20G_60P` | [`tests/load/scripts/run-baseline.sh`](../tests/load/scripts/run-baseline.sh:1) 9 [`tests/load/scenarios/concurrent-games.js`](../tests/load/scenarios/concurrent-games.js:1) (+ optional WebSocket companion [`tests/load/scenarios/websocket-stress.js`](../tests/load/scenarios/websocket-stress.js:1))         | BCAP entry in [`tests/load/configs/bcap-scenarios.json`](../tests/load/configs/bcap-scenarios.json:8) (scenario `BCAP_STAGING_BASELINE_20G_60P`); baseline profile and capacity targets in [`tests/load/configs/baseline.json`](../tests/load/configs/baseline.json:1)                           | `staging`                                                                                                                                       | `staging` (set by runner for both `--local` and `--staging`)                                                       | Critical SLOs (availability, error_rate, contract_failures, lifecycle_mismatches) and High SLOs for API p95 latency, game creation, move latency, WebSocket connect (if WS companion enabled), AI p95 latency, and capacity targets `concurrent_games ≥ 20`, `concurrent_players ≥ 60`. |
+| **Target-scale production validation**   | `BCAP_SQ8_3P_TARGET_100G_300P`  | [`tests/load/scripts/run-target-scale.sh`](../tests/load/scripts/run-target-scale.sh:1) 9 [`tests/load/scenarios/concurrent-games.js`](../tests/load/scenarios/concurrent-games.js:1) (+ optional WebSocket companion [`tests/load/scenarios/websocket-stress.js`](../tests/load/scenarios/websocket-stress.js:1)) | BCAP entry in [`tests/load/configs/bcap-scenarios.json`](../tests/load/configs/bcap-scenarios.json:55) (scenario `BCAP_SQ8_3P_TARGET_100G_300P`); target-scale phases and capacity targets in [`tests/load/configs/target-scale.json`](../tests/load/configs/target-scale.json:1)                | `production`                                                                                                                                    | `production` when run with `--staging` (see runner); `staging` only for local dry-runs                             | Same Critical SLOs as baseline, plus High SLOs at **production** targets for API p95, move latency, AI p95 latency, WebSocket connect 9 success, and capacity SLOs `concurrent_games ≥ 100`, `concurrent_players ≥ 300`.                                                                |
+| **AI-heavy validation (4p, 3 AI seats)** | `BCAP_SQ8_4P_AI_HEAVY_75G_300P` | [`tests/load/scripts/run-ai-heavy.sh`](../tests/load/scripts/run-ai-heavy.sh:1) 9 [`tests/load/scenarios/concurrent-games.js`](../tests/load/scenarios/concurrent-games.js:1)                                                                                                                                      | BCAP entry in [`tests/load/configs/bcap-scenarios.json`](../tests/load/configs/bcap-scenarios.json:104) (scenario `BCAP_SQ8_4P_AI_HEAVY_75G_300P`); AI-heavy profile and stage shapes in the `ai_heavy` profile of [`tests/load/config/scenarios.json`](../tests/load/config/scenarios.json:228) | `staging` for end-to-end SLO verification today; production targets for AI SLOs are defined logically via per-SLO overrides in BCAP (see below) | `staging` (runner comment: staging thresholds for k6; production-level AI SLOs enforced at SLO verification layer) | Critical SLOs as in baseline, plus AI-specific SLOs: AI response p95 9 p99 and AI fallback rate. WebSocket move latency 9 stall-rate SLOs should meet the same targets as target-scale; significant degradation is treated as at least **CONDITIONAL** per §2.4.3.                      |
+
+**Environment-specific SLO thresholds per scenario**
+
+All three scenarios share the same SLO catalogue and metric mappings defined in [`tests/load/configs/slo-definitions.json`](../tests/load/configs/slo-definitions.json:1) and [`tests/load/config/thresholds.json`](../tests/load/config/thresholds.json:1). Scenario differences come from **which environment is applied to those SLOs**:
+
+- **Baseline smoke (`BCAP_STAGING_BASELINE_20G_60P`)**
+  - `verify-slos` runs with `--env staging`, applying the `staging` overrides in `slo-definitions.environments.staging.overrides`.
+  - k6 thresholds use `thresholds.environments.staging.*` via `THRESHOLD_ENV=staging` in [`tests/load/scripts/run-baseline.sh`](../tests/load/scripts/run-baseline.sh:63).
+- **Target-scale (`BCAP_SQ8_3P_TARGET_100G_300P`)**
+  - `verify-slos` runs with `--env production`, so all Critical 9 High SLOs are evaluated against **production** targets.
+  - k6 thresholds use `thresholds.environments.production.*` via `THRESHOLD_ENV=production` when [`tests/load/scripts/run-target-scale.sh`](../tests/load/scripts/run-target-scale.sh:1) is invoked with `--staging`.
+- **AI-heavy (`BCAP_SQ8_4P_AI_HEAVY_75G_300P`)**
+  - `verify-slos` currently runs with `--env staging` for the overall SLO report.
+  - BCAP-specific SLO environment policy (documented in [`tests/load/configs/bcap-scenarios.json`](../tests/load/configs/bcap-scenarios.json:104)) treats AI SLOs as stricter:
+    - `latency_ai_response`, `latency_ai_response_p99`, and `ai_fallback_rate` use **production** targets via `sloPolicies.sloEnvironments.overrides`.
+  - k6 thresholds use `thresholds.environments.staging.*` via `THRESHOLD_ENV=staging` in [`tests/load/scripts/run-ai-heavy.sh`](../tests/load/scripts/run-ai-heavy.sh:64). The per-SLO environment overrides above are enforced by the SLO verification 9 reporting layer rather than by k6 itself.
+
+**Shared tooling components (all scenarios)**
 
 - **k6 scenarios and helpers**
-  - HTTP and concurrency exercises use the k6 scripts under [`tests/load/scenarios/`](../tests/load/scenarios:1) together with helpers in [`tests/load/helpers/*.js`](../tests/load/helpers/api.js:1).
-  - Baseline, target-scale, and AI-heavy profiles are defined by JSON configs under [`tests/load/configs/`](../tests/load/configs:1) and orchestrated by the shell runners under [`tests/load/scripts/`](../tests/load/scripts/run-baseline.sh:1).
+  - All three contract scenarios drive the `concurrent-games` k6 scenario in [`tests/load/scenarios/concurrent-games.js`](../tests/load/scenarios/concurrent-games.js:1), with optional WebSocket companion runs via [`tests/load/scenarios/websocket-stress.js`](../tests/load/scenarios/websocket-stress.js:1).
+  - Shared HTTP 9 WebSocket helpers live under [`tests/load/helpers/*.js`](../tests/load/helpers/api.js:1) and the auth helper in `tests/load/auth/helpers.js` (see references from the concurrent-games scenario).
+  - BCAP scenario shapes and capacities are recorded in [`tests/load/configs/bcap-scenarios.json`](../tests/load/configs/bcap-scenarios.json:1); additional historical profiles live in [`tests/load/configs/baseline.json`](../tests/load/configs/baseline.json:1) and [`tests/load/configs/target-scale.json`](../tests/load/configs/target-scale.json:1).
 - **SLO verification**
-  - SLO definitions and priorities are encoded in [`tests/load/configs/slo-definitions.json`](../tests/load/configs/slo-definitions.json:1) and [`tests/load/config/thresholds.json`](../tests/load/config/thresholds.json:1) and enforced by [`tests/load/scripts/verify-slos.js`](../tests/load/scripts/verify-slos.js:1).
-  - npm scripts such as `npm run slo:check`, `npm run slo:verify`, and `npm run slo:dashboard` (see [`docs/SLO_VERIFICATION.md`](SLO_VERIFICATION.md:24)) wrap these helpers.
+  - SLO definitions, priorities, and metric mappings are encoded in [`tests/load/configs/slo-definitions.json`](../tests/load/configs/slo-definitions.json:1) and [`tests/load/config/thresholds.json`](../tests/load/config/thresholds.json:1) and enforced by [`tests/load/scripts/verify-slos.js`](../tests/load/scripts/verify-slos.js:1).
+  - npm scripts such as `npm run slo:check`, `npm run slo:verify`, and `npm run slo:dashboard` (see [`docs/SLO_VERIFICATION.md`](SLO_VERIFICATION.md:24)) wrap [`verify-slos.js`](../tests/load/scripts/verify-slos.js:1) and dashboard generation for common cases.
 - **Aggregated go/no-go artifact**
-  - When per-scenario k6 runs also emit compact `.summary.json` files, [`scripts/analyze-load-slos.ts`](../scripts/analyze-load-slos.ts:1) aggregates them into a single `load_slo_summary.json` file and prints a summary table. For production validation, this aggregated result must reflect PASS per §2.4.3 for the set of required scenarios.
+  - When per-scenario k6 runs emit compact `.summary.json` files via the shared `handleSummary` helper (see [`docs/testing/LOAD_TEST_BASELINE_REPORT.md`](testing/LOAD_TEST_BASELINE_REPORT.md:86)), [`scripts/analyze-load-slos.ts`](../scripts/analyze-load-slos.ts:1) aggregates them into a single `load_slo_summary.json` file and prints a summary table.
+  - Each entry in `scenarios[*]` of `load_slo_summary.json` corresponds to **one summary file**; for BCAP runs, the `sourceFile` field will contain the BCAP scenario ID (for example `BCAP_STAGING_BASELINE_20G_60P`), even when multiple entries share the same k6 `scenario` name such as `concurrent-games`.
+  - For production validation, this aggregated result must reflect PASS per §2.4.3 **and** must include at least one scenario entry whose `sourceFile` contains each of the required BCAP scenario IDs from §2.4.2.
 - **Production preview harness**
   - The production-preview go/no-go harness in [`scripts/run-prod-preview-go-no-go.ts`](../scripts/run-prod-preview-go-no-go.ts:1) is complementary to this contract:
     - It validates deployment topology and configuration, auth flows, basic WebSocket and AI behaviour, and AI-service readiness using lightweight drills.
@@ -233,7 +262,77 @@ For v1.0, the **only acceptable state for a full public production launch is PAS
       - A PASS result from the production-preview go/no-go harness on the target environment.
       - A PASS result from the production validation contract runs described in this section.
 
-#### 2.4.5 How to run full production validation (operator checklist)
+#### 2.4.5 Scenario-specific verification flows and outputs
+
+For each contract scenario, this subsection summarises the expected commands, primary artifacts, and how to invoke [`verify-slos.js`](../tests/load/scripts/verify-slos.js:1) and [`scripts/analyze-load-slos.ts`](../scripts/analyze-load-slos.ts:1). Filenames below use `SCENARIO_ID`, `ENV`, and `TIMESTAMP` placeholders as in the runner scripts.
+
+- **Baseline smoke: `BCAP_STAGING_BASELINE_20G_60P`**
+  - **Run k6 load:**
+    - Staging (canonical BCAP run):
+      - `SEED_LOADTEST_USERS=true tests/load/scripts/run-baseline.sh --staging`
+    - Local smoke wiring check:
+      - `SMOKE=1 SKIP_WS_COMPANION=1 tests/load/scripts/run-baseline.sh --local`
+  - **Primary outputs (HTTP 9 WebSocket):**
+    - Raw k6 JSON (HTTP 9 game lifecycle):
+      - `tests/load/results/BCAP_STAGING_BASELINE_20G_60P_ENV_TIMESTAMP.json`
+    - Compact per-scenario summary produced by `handleSummary` inside the k6 script:
+      - `tests/load/results/BCAP_STAGING_BASELINE_20G_60P_ENV_TIMESTAMP_summary.json`
+    - Optional WebSocket companion raw JSON and summary (when `SKIP_WS_COMPANION` is not set):
+      - `tests/load/results/websocket_BCAP_STAGING_BASELINE_20G_60P_ENV_TIMESTAMP.json`
+      - `tests/load/results/websocket_BCAP_STAGING_BASELINE_20G_60P_ENV_TIMESTAMP_summary.json`
+  - **SLO verification:**
+    - Run `verify-slos` against the **raw** k6 JSON with staging thresholds:
+      - `npm run slo:verify tests/load/results/BCAP_STAGING_BASELINE_20G_60P_staging_TIMESTAMP.json -- --env staging`
+      - (and, if present) `npm run slo:verify tests/load/results/websocket_BCAP_STAGING_BASELINE_20G_60P_staging_TIMESTAMP.json -- --env staging`
+  - **Aggregation (optional but recommended for full runs):**
+    - Ensure all relevant `.summary.json` files for this scenario are under `tests/load/results/`.
+    - After running all three BCAP scenarios, aggregate with:
+      - `npx ts-node scripts/analyze-load-slos.ts`
+    - Confirm that `load_slo_summary.json` contains at least one `scenarios[*].sourceFile` starting with `tests/load/results/BCAP_STAGING_BASELINE_20G_60P_` and that its `overallPass` flag is `true`.
+
+- **Target-scale: `BCAP_SQ8_3P_TARGET_100G_300P`**
+  - **Run k6 load (staging or perf stack; production thresholds):**
+    - Canonical validation run:
+      - `SEED_LOADTEST_USERS=true tests/load/scripts/run-target-scale.sh --staging`
+    - Local dry-run (non-gating, staging thresholds):
+      - `SKIP_WS_COMPANION=1 SKIP_CONFIRM=true tests/load/scripts/run-target-scale.sh --local`
+  - **Primary outputs:**
+    - Raw k6 JSON (HTTP 9 game lifecycle):
+      - `tests/load/results/BCAP_SQ8_3P_TARGET_100G_300P_ENV_TIMESTAMP.json`
+    - Per-scenario summary:
+      - `tests/load/results/BCAP_SQ8_3P_TARGET_100G_300P_ENV_TIMESTAMP_summary.json`
+    - Optional WebSocket companion raw JSON and summary (if enabled by the runner):
+      - `tests/load/results/websocket_BCAP_SQ8_3P_TARGET_100G_300P_ENV_TIMESTAMP.json`
+      - `tests/load/results/websocket_BCAP_SQ8_3P_TARGET_100G_300P_ENV_TIMESTAMP_summary.json`
+  - **SLO verification:**
+    - Use **production** thresholds when checking target-scale results:
+      - `npm run slo:verify tests/load/results/BCAP_SQ8_3P_TARGET_100G_300P_staging_TIMESTAMP.json -- --env production`
+      - For any WebSocket companion run: `npm run slo:verify tests/load/results/websocket_BCAP_SQ8_3P_TARGET_100G_300P_staging_TIMESTAMP.json -- --env production`
+  - **Aggregation:**
+    - As for baseline, ensure the relevant `*_summary.json` artifacts are present under `tests/load/results/`.
+    - After all contract scenarios have been run, `npx ts-node scripts/analyze-load-slos.ts` should report a scenario entry whose `sourceFile` starts with `tests/load/results/BCAP_SQ8_3P_TARGET_100G_300P_` and whose `overallPass` is `true`.
+
+- **AI-heavy validation: `BCAP_SQ8_4P_AI_HEAVY_75G_300P`**
+  - **Run k6 load (staging; AI-heavy profile):**
+    - Canonical capacity probe:
+      - `SEED_LOADTEST_USERS=true tests/load/scripts/run-ai-heavy.sh --staging`
+    - Local smoke / wiring check:
+      - `SMOKE=1 SKIP_CONFIRM=true tests/load/scripts/run-ai-heavy.sh --local`
+  - **Primary outputs:**
+    - Raw k6 JSON (HTTP 9 AI-heavy gameplay):
+      - `tests/load/results/BCAP_SQ8_4P_AI_HEAVY_75G_300P_ENV_TIMESTAMP.json`
+    - Per-scenario summary:
+      - `tests/load/results/BCAP_SQ8_4P_AI_HEAVY_75G_300P_ENV_TIMESTAMP_summary.json`
+    - Optional WebSocket companion (if added in future): summary naming should follow the same `websocket_${SCENARIO_ID}_ENV_TIMESTAMP` convention as baseline 9 target-scale.
+  - **SLO verification:**
+    - Run `verify-slos` with staging thresholds for overall SLOs:
+      - `npm run slo:verify tests/load/results/BCAP_SQ8_4P_AI_HEAVY_75G_300P_staging_TIMESTAMP.json -- --env staging`
+    - When interpreting the report, treat AI latency and fallback SLOs as using **production** targets as defined in [`tests/load/configs/bcap-scenarios.json`](../tests/load/configs/bcap-scenarios.json:125) and [`tests/load/configs/slo-definitions.json`](../tests/load/configs/slo-definitions.json:64).
+  - **Aggregation:**
+    - As with the other scenarios, ensure the AI-heavy `.summary.json` artifact is present in `tests/load/results/` before running [`scripts/analyze-load-slos.ts`](../scripts/analyze-load-slos.ts:1).
+    - For a v1.0 PASS, the aggregated `load_slo_summary.json` must include an entry whose `sourceFile` starts with `tests/load/results/BCAP_SQ8_4P_AI_HEAVY_75G_300P_` and has `overallPass: true`.
+
+#### 2.4.6 How to run full production validation (operator checklist)
 
 ```mermaid
 flowchart TD
@@ -242,7 +341,7 @@ flowchart TD
   C --> D[Run AI-heavy 75G_300P scenario]
   D --> E[Verify SLOs for each run]
   E --> F[Aggregate load SLO summaries]
-  F --> G{All critical and high SLOs green}
+  F --> G{All critical and high SLOs green]
   G -->|yes| H[Production validation PASS]
   G -->|no| I[Production validation CONDITIONAL or FAIL]
 ```
@@ -258,6 +357,22 @@ Operationally:
 6. Review:
    - Per-run SLO reports (`*_slo_report.json` / dashboards).
    - Any aggregated `load_slo_summary.json` from [`scripts/analyze-load-slos.ts`](../scripts/analyze-load-slos.ts:1).
+
+#### 2.4.7 Open questions and planned PV extensions
+
+The following items are intentionally left as **future PV tasks** and must be resolved in follow-up waves (for example PV-3+) before they can change the production-validation gate:
+
+- **WebSocket gameplay-specific P-01 scenarios**
+  - The canonical contract for v1.0 only requires the three BCAP scenarios in §2.4.2, all of which currently drive the `concurrent-games` k6 script with an optional WebSocket companion via [`tests/load/scenarios/websocket-stress.js`](../tests/load/scenarios/websocket-stress.js:1).
+  - Dedicated gameplay-centric WebSocket scenarios such as [`tests/load/scenarios/websocket-gameplay.js`](../tests/load/scenarios/websocket-gameplay.js:1), when fully implemented, are **not yet part of the required production-validation gate**. They may be used as supplementary regression coverage, but they must not be promoted to required status without updating this contract (including §2.4.2 9 §2.4.4) and the BCAP registry in [`tests/load/configs/bcap-scenarios.json`](../tests/load/configs/bcap-scenarios.json:1).
+- **Changes to canonical concurrency targets**
+  - The concurrency targets encoded in the BCAP scenario IDs (20G/60P baseline, 100G/300P target-scale, 75G/300P AI-heavy) are derived from the v1.0 performance SLOs in [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:143) and mirrored in [`tests/load/configs/bcap-scenarios.json`](../tests/load/configs/bcap-scenarios.json:1).
+  - Any future change to these canonical targets (for example raising target-scale above 100G/300P or relaxing the AI-heavy 75G/300P probe) must:
+    - First update the performance SLOs in [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:143) and this contract (§2.4.2 9 §2.4.3).
+    - Then update the BCAP registry ([`tests/load/configs/bcap-scenarios.json`](../tests/load/configs/bcap-scenarios.json:1)), k6 configs such as [`tests/load/configs/target-scale.json`](../tests/load/configs/target-scale.json:1) or the `ai_heavy` profile in [`tests/load/config/scenarios.json`](../tests/load/config/scenarios.json:228), and any subordinate docs (for example [`docs/BASELINE_CAPACITY.md`](BASELINE_CAPACITY.md:15)).
+    - Finally, adjust alerting 9 observability targets only after the SLO 9 PV contract changes are in place.
+  - PV-3+ tasks should codify this flow so that concurrency/SLO target changes cannot accidentally bypass the SSoT in [`PROJECT_GOALS.md`](../PROJECT_GOALS.md:143).
+
 7. Declare the production validation outcome as PASS / CONDITIONAL / FAIL according to §2.4.3 and record the decision (for example in release notes or an ops runbook).
 
 #### 2.4.6 Open questions / TODOs

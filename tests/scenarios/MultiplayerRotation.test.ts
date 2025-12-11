@@ -120,8 +120,8 @@ describe('MultiplayerRotation: 3-Player Game Scenarios', () => {
       // Total rings in play should be 54 (3 × 18)
       expect(state.totalRingsInPlay).toBe(54);
 
-      // Victory threshold should be 28 (>50% of 54)
-      expect(state.victoryThreshold).toBe(28);
+      // Per RR-CANON-R061: round(18 × (1/3 + 2/3 × 2)) = 30
+      expect(state.victoryThreshold).toBe(30);
     });
   });
 
@@ -184,8 +184,8 @@ describe('MultiplayerRotation: 4-Player Game Scenarios', () => {
       // Total rings: 4 × 48 = 192
       expect(state.totalRingsInPlay).toBe(192);
 
-      // Victory threshold: floor(192/2) + 1 = 97
-      expect(state.victoryThreshold).toBe(97);
+      // Per RR-CANON-R061: round(48 × (1/3 + 2/3 × 3)) = 112
+      expect(state.victoryThreshold).toBe(112);
     });
   });
 
@@ -266,9 +266,9 @@ describe('MultiplayerRotation: Victory Conditions', () => {
       const state = getGameState(engine);
 
       // With 3 players × 18 rings = 54 total rings
-      // Victory threshold: 28 (>50% of 54)
+      // Per RR-CANON-R061: round(18 × (1/3 + 2/3 × 2)) = 30
       expect(state.totalRingsInPlay).toBe(54);
-      expect(state.victoryThreshold).toBe(28);
+      expect(state.victoryThreshold).toBe(30);
 
       // Set P2 to have 27 eliminated rings (close to threshold)
       state.board.eliminatedRings = { '1': 0, '2': 27, '3': 0 };

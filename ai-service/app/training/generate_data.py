@@ -150,10 +150,12 @@ def create_initial_state(
         total_spaces = 64
 
     # Victory thresholds per RR-CANON-R061 and RR-CANON-R062
-    # Ring elimination: victoryThreshold = ringsPerPlayer (starting ring supply)
+    # Ring elimination: victoryThreshold = round((1/3)*ownRings + (2/3)*opponentsRings)
+    # Simplified: round(ringsPerPlayer * (1/3 + 2/3*(numPlayers-1)))
     # Territory: > 50% of total spaces
     total_rings = rings_per_player * num_players
-    victory_threshold = rings_per_player  # Per RR-CANON-R061: starting ring supply
+    # Per RR-CANON-R061: victoryThreshold = round((1/3)*ownStartingRings + (2/3)*opponentsCombinedStartingRings)
+    victory_threshold = round(rings_per_player * (1 / 3 + (2 / 3) * (num_players - 1)))
     territory_threshold = (total_spaces // 2) + 1
 
     players = [

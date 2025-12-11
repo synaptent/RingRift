@@ -98,6 +98,58 @@ from app.game_engine import (  # type: ignore  # noqa: E402
     PhaseRequirementType,
     PhaseRequirement,
 )
+
+
+# =============================================================================
+# Heuristic Weight Loading
+# =============================================================================
+
+
+def load_weights_from_profile(
+    weights_file: str,
+    profile_name: str,
+) -> Optional[Dict[str, float]]:
+    """Load heuristic weights from a profile file.
+
+    Args:
+        weights_file: Path to JSON file containing weight profiles
+        profile_name: Name of the profile to load
+
+    Returns:
+        Dict of weight name -> value, or None if loading fails
+    """
+    if not os.path.exists(weights_file):
+        print(
+            f"[heuristic-weights] Warning: Weights file not found: {weights_file}",
+            file=sys.stderr,
+        )
+        return None
+
+    try:
+        with open(weights_file, "r") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        print(
+            f"[heuristic-weights] Warning: Failed to parse {weights_file}: {e}",
+            file=sys.stderr,
+        )
+        return None
+
+    profiles = data.get("profiles", {})
+    if profile_name not in profiles:
+        print(
+            f"[heuristic-weights] Warning: Profile '{profile_name}' not found in {weights_file}. "
+            f"Available: {list(profiles.keys())}",
+            file=sys.stderr,
+        )
+        return None
+
+    weights = profiles[profile_name].get("weights", {})
+    print(
+        f"[heuristic-weights] Loaded profile '{profile_name}' with {len(weights)} weights",
+        flush=True,
+    )
+    return weights
 from app.metrics import (  # type: ignore  # noqa: E402
     PYTHON_INVARIANT_VIOLATIONS,
 )
@@ -314,6 +366,7 @@ def _build_mixed_ai_pool(
     base_seed: Optional[int],
     board_type: BoardType,
     difficulty_band: str = "canonical",
+    heuristic_weights: Optional[Dict[str, float]] = None,
 ) -> Tuple[Dict[int, Any], Dict[str, Any]]:
     """Construct per-player AI instances for a single game.
 
@@ -380,11 +433,19 @@ def _build_mixed_ai_pool(
 
     if engine_mode == "heuristic-only":
         from app.ai.heuristic_ai import HeuristicAI  # type: ignore
+        from app.ai.heuristic_weights import HEURISTIC_WEIGHT_PROFILES
 
         heuristic_eval_mode = TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD.get(
             board_type,
             "full",
         )
+
+        # If custom weights provided, register them as a dynamic profile
+        custom_profile_id: Optional[str] = None
+        if heuristic_weights:
+            custom_profile_id = "_soak_custom_weights"
+            HEURISTIC_WEIGHT_PROFILES[custom_profile_id] = heuristic_weights
+
         for pnum in player_numbers:
             cfg = AIConfig(
                 difficulty=2,
@@ -392,10 +453,13 @@ def _build_mixed_ai_pool(
                 randomness=0.05,
                 rngSeed=(base_seed or 0) + pnum + game_index,
                 heuristic_eval_mode=heuristic_eval_mode,
+                heuristic_profile_id=custom_profile_id,  # Use custom weights if provided
             )
             ai_by_player[pnum] = HeuristicAI(pnum, cfg)
             ai_metadata[f"player_{pnum}_ai_type"] = "heuristic"
             ai_metadata[f"player_{pnum}_difficulty"] = 2
+            if custom_profile_id:
+                ai_metadata[f"player_{pnum}_heuristic_profile"] = custom_profile_id
         return ai_by_player, ai_metadata
 
     if engine_mode == "minimax-only":
@@ -571,6 +635,22 @@ def run_self_play_soak(
     engine_mode = args.engine_mode
     base_seed = args.seed
     difficulty_band = getattr(args, "difficulty_band", "canonical")
+
+    # Load heuristic weights from CLI args if specified
+    heuristic_weights: Optional[Dict[str, float]] = None
+    heuristic_weights_file = getattr(args, "heuristic_weights_file", None)
+    heuristic_profile = getattr(args, "heuristic_profile", None)
+    if heuristic_weights_file and heuristic_profile:
+        heuristic_weights = load_weights_from_profile(
+            heuristic_weights_file,
+            heuristic_profile,
+        )
+        if heuristic_weights and engine_mode == "heuristic-only":
+            print(
+                f"[heuristic-weights] Using custom weights for heuristic-only mode",
+                flush=True,
+            )
+
     gc_interval = getattr(args, "gc_interval", 5)
     profile_timing = getattr(args, "profile_timing", False)
 
@@ -697,6 +777,21 @@ def run_self_play_soak(
 
     os.makedirs(os.path.dirname(args.log_jsonl) or ".", exist_ok=True)
 
+    # Resume support: count existing lines in JSONL file to determine starting index
+    resume_from_jsonl = getattr(args, "resume_from_jsonl", False)
+    checkpoint_interval = getattr(args, "checkpoint_interval", 0)
+    start_game_idx = 0
+    checkpoint_path = args.log_jsonl + ".checkpoint.json"
+
+    if resume_from_jsonl and os.path.exists(args.log_jsonl):
+        with open(args.log_jsonl, "r", encoding="utf-8") as f:
+            start_game_idx = sum(1 for _ in f)
+        if start_game_idx > 0:
+            logger.info(f"Resuming from game {start_game_idx} (found {start_game_idx} existing games in {args.log_jsonl})")
+        if start_game_idx >= num_games:
+            logger.info(f"All {num_games} games already completed. Nothing to do.")
+            return [], []
+
     # Initialize optional game recording database
     # --no-record-db flag overrides --record-db to disable recording
     record_db_path = None if getattr(args, "no_record_db", False) else getattr(args, "record_db", None)
@@ -743,8 +838,34 @@ def run_self_play_soak(
         "on",
     }
 
-    with open(args.log_jsonl, "w", encoding="utf-8") as log_f:
-        for game_idx in range(num_games):
+    # Helper to write checkpoint file
+    def _write_checkpoint(
+        games_done: int,
+        elapsed_sec: float,
+        records_so_far: List[GameRecord],
+    ) -> None:
+        checkpoint_data = {
+            "games_completed": games_done,
+            "total_games": num_games,
+            "elapsed_seconds": elapsed_sec,
+            "board_type": board_type.value,
+            "num_players": num_players,
+            "engine_mode": engine_mode,
+            "seed": base_seed,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        try:
+            with open(checkpoint_path, "w", encoding="utf-8") as ckpt_f:
+                json.dump(checkpoint_data, ckpt_f)
+        except Exception as e:
+            logger.warning(f"Failed to write checkpoint: {e}")
+
+    # Open in append mode if resuming, otherwise write mode
+    file_mode = "a" if (resume_from_jsonl and start_game_idx > 0) else "w"
+    soak_start_time = time.time()
+
+    with open(args.log_jsonl, file_mode, encoding="utf-8") as log_f:
+        for game_idx in range(start_game_idx, num_games):
             game_start_time = time.time()
             game_seed = None if base_seed is None else base_seed + game_idx
             try:
@@ -782,6 +903,7 @@ def run_self_play_soak(
                 base_seed,
                 board_type,
                 difficulty_band=difficulty_band,
+                heuristic_weights=heuristic_weights,
             )
             if profile_timing:
                 timing_totals["ai_build"] += time.time() - t_ai_start
@@ -927,13 +1049,11 @@ def run_self_play_soak(
                         skipped = True
                         break
 
-                    # If the AI proposes swap_sides during ring_placement when the pie
-                    # rule is enabled, treat it as an illegal move for parity runs and
-                    # skip the game instead of recording a mis-ordered trace.
-                    if state.current_phase == GamePhase.RING_PLACEMENT and move.type == MoveType.SWAP_SIDES:
-                        termination_reason = "swap_sides_not_allowed_in_ring_placement"
-                        skipped = True
-                        break
+                    # NOTE: swap_sides (pie rule) IS a valid move during ring_placement
+                    # when offered by the rules engine. The previous check that rejected
+                    # these moves was incorrect and caused 91% of heuristic 2p games to
+                    # fail after only 2 moves. The rules engine correctly offers swap_sides
+                    # as a legal move when the pie rule is enabled.
 
                     # Guard against movement/capture moves being returned after the host
                     # has already advanced into decision phases. If this happens, drop
@@ -1417,6 +1537,14 @@ def run_self_play_soak(
             # while a long soak is still in progress.
             log_f.flush()
             records.append(rec)
+
+            # Write checkpoint if interval is configured
+            if checkpoint_interval > 0 and (game_idx + 1) % checkpoint_interval == 0:
+                _write_checkpoint(
+                    games_done=game_idx + 1,
+                    elapsed_sec=time.time() - soak_start_time,
+                    records_so_far=records,
+                )
 
             if skipped:
                 print(
@@ -1985,6 +2113,27 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--heuristic-weights-file",
+        type=str,
+        default=None,
+        help=(
+            "Path to a JSON file containing heuristic weight profiles. "
+            "When specified with --heuristic-profile, uses trained weights "
+            "instead of defaults for heuristic-only mode. "
+            "Example: config/trained_heuristic_profiles.json"
+        ),
+    )
+    parser.add_argument(
+        "--heuristic-profile",
+        type=str,
+        default=None,
+        help=(
+            "Name of the weight profile to use from --heuristic-weights-file. "
+            "Only applies when engine_mode='heuristic-only'. "
+            "Example: 'heuristic_v1_2p' or 'cmaes_gen50_best'"
+        ),
+    )
+    parser.add_argument(
         "--num-players",
         type=int,
         default=2,
@@ -2202,6 +2351,27 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Disable including training data (moves and initial_state) in JSONL output. "
             "Reduces JSONL file size but makes games unusable for training without a database."
+        ),
+    )
+    parser.add_argument(
+        "--resume-from-jsonl",
+        action="store_true",
+        help=(
+            "Resume from an existing JSONL file. If --log-jsonl file exists, count its "
+            "lines to determine how many games have been completed, skip those games, "
+            "and append new games to the file. The seed offset is adjusted to maintain "
+            "determinism across restarts. Use for crash recovery in long runs."
+        ),
+    )
+    parser.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=0,
+        help=(
+            "If >0, write a checkpoint JSON file every N games with current run state "
+            "(games completed, elapsed time, stats). The checkpoint file is written to "
+            "--log-jsonl path with '.checkpoint.json' suffix. Use --resume-from-jsonl "
+            "to automatically resume from the last checkpoint. Default: 0 (disabled)."
         ),
     )
     return parser.parse_args()

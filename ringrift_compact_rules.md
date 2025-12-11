@@ -83,7 +83,7 @@ At minimum, your engine must maintain:
   - Victory metadata:
     - `totalRingsInPlay` (initial total over all players, board type)
     - `totalRingsEliminated`
-    - `victoryThreshold` = ringsPerPlayer (the starting number of rings in hand for the board type)
+    - `victoryThreshold` = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
     - `territoryVictoryThreshold` = floor(totalSpaces/2) + 1
 
 - **Stacks, cap height, control**
@@ -450,8 +450,14 @@ The game ends immediately if **any** of these is true after a full turn (includi
 For player `P`:
 
 - Let `P.eliminatedRingsTotal` be the total number of rings credited to `P` as eliminated (through lines, regions, forced elimination, stalemate conversion of rings in hand, etc.).
-- If `P.eliminatedRingsTotal ≥ victoryThreshold` (equal to `ringsPerPlayer`, the starting number of rings in hand), `P` wins.
-- For standard board types: square8 = 18, square19 = 48, hexagonal = 72.
+- If `P.eliminatedRingsTotal ≥ victoryThreshold`, `P` wins.
+- `victoryThreshold` = round((1/3) × ringsPerPlayer + (2/3) × opponentsCombinedStartingRings)
+  - Simplified: round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+  - Note: Use `round()` to avoid floating-point precision errors.
+- For standard board types with N players:
+  - square8 (18 rings/player): 2P = 18, 3P = 30, 4P = 42
+  - square19 (48 rings/player): 2P = 48, 3P = 80, 4P = 112
+  - hexagonal (72 rings/player): 2P = 72, 3P = 120, 4P = 168
 - This cannot occur for multiple players simultaneously by construction.
 
 ### 7.2 Territory-control victory

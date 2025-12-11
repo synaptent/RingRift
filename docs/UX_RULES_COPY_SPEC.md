@@ -35,8 +35,10 @@ Semantics must always match:
 
 **Global elimination threshold (R060–R061)**
 
-- The victory threshold equals `ringsPerPlayer` (the starting number of rings in hand per player).
-- Threshold values: 18 (8×8), 48 (19×19), 72 (hexagonal).
+- Per RR-CANON-R061, the victory threshold is calculated as: `round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))`.
+- For 2-player games, threshold = `ringsPerPlayer`: 18 (8×8), 48 (19×19), 72 (hexagonal).
+- For 3-player games, threshold increases: 30 (8×8), 80 (19×19), 120 (hexagonal).
+- For 4-player games, threshold increases further: 42 (8×8), 112 (19×19), 168 (hexagonal).
 - A player wins by **Ring Elimination** when their credited eliminated rings reach or exceed this threshold.
 
 **Territory threshold (R062, R140–R145)**

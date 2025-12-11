@@ -246,8 +246,12 @@ export class GameEngine {
       maxPlayers: players.length,
       totalRingsInPlay: boardConfig.ringsPerPlayer * players.length,
       totalRingsEliminated: 0,
-      // Per RR-CANON-R061: victoryThreshold = ringsPerPlayer (starting ring supply)
-      victoryThreshold: boardConfig.ringsPerPlayer,
+      // Per RR-CANON-R061: victoryThreshold = round((1/3) × ownStartingRings + (2/3) × opponentsCombinedStartingRings)
+      // Simplified: round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+      // Note: Using Math.round() to handle floating-point precision (e.g., 18 * (1/3 + 2/3*2) = 29.999... → 30)
+      victoryThreshold: Math.round(
+        boardConfig.ringsPerPlayer * (1 / 3 + (2 / 3) * (players.length - 1))
+      ),
       territoryVictoryThreshold: Math.floor(boardConfig.totalSpaces / 2) + 1,
     };
 

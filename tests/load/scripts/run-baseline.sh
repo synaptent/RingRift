@@ -68,8 +68,10 @@ case "$TARGET" in
     THRESHOLD_ENV="staging"
     ;;
   --staging|staging)
-    BASE_URL="${STAGING_URL:-${BASE_URL:-http://localhost:3001}}"
-    WS_URL="${WS_URL:-$(echo "$BASE_URL" | sed 's/^http/ws/')}"
+    # For staging, default to the Docker-based staging stack (app on :3000).
+    # STAGING_URL can be used to point at a remote staging host instead.
+    BASE_URL="${STAGING_URL:-${BASE_URL:-http://localhost:3000}}"
+    WS_URL="${WS_URL:-$(echo "$BASE_URL" | sed 's/^http/ws/') }"
     THRESHOLD_ENV="staging"
     ;;
   --production|production)

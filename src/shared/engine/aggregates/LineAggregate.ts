@@ -340,23 +340,41 @@ function resolveLineForMove(
   move: Move,
   options?: LineEnumerationOptions
 ): LineInfo | undefined {
+  // When replaying canonical games or applying moves constructed from Python's
+  // GameEngine, prefer the explicit line geometry carried on the Move itself.
+  // This mirrors Python _apply_line_formation, which trusts move.formed_lines
+  // rather than re-detecting from the current board. Re-detection can fail in
+  // replay contexts where board.formedLines was never populated, leading to
+  // missing collapses and TS↔Python structural mismatches.
+  if (move.formedLines && move.formedLines.length > 0) {
+    const target = move.formedLines[0] as LineInfo;
+
+    // Normalise optional fields in case the source omitted them.
+    const length = (target as any).length ?? target.positions.length;
+    const direction =
+      (target as any).direction ??
+      (target.positions.length >= 2
+        ? {
+            x: target.positions[1].x - target.positions[0].x,
+            y: target.positions[1].y - target.positions[0].y,
+          }
+        : { x: 1, y: 0 });
+
+    return {
+      ...target,
+      length,
+      direction,
+    } as LineInfo;
+  }
+
   const player = move.player;
   const playerLines = detectPlayerLines(state, player, options);
   if (playerLines.length === 0) {
     return undefined;
   }
 
-  if (move.formedLines && move.formedLines.length > 0) {
-    const target = move.formedLines[0];
-    const targetKey = canonicalLineKey(target);
-
-    const matched = playerLines.find((line) => canonicalLineKey(line) === targetKey);
-    if (matched) {
-      return matched;
-    }
-  }
-
-  // Fallback: first line wins
+  // Fallback: first detected line for the player when no explicit geometry was
+  // supplied on the Move.
   return playerLines[0];
 }
 

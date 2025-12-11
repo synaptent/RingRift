@@ -145,8 +145,9 @@ class BatchGameState:
         shape_board = (batch_size, board_size, board_size)
         shape_players = (batch_size, num_players + 1)  # +1 for 1-indexed players
 
-        # Starting rings per player based on board size
-        starting_rings = {8: 19, 19: 50}.get(board_size, 19)
+        # Starting rings per player based on board size (per RR-CANON-R020)
+        # square8: 18, square19: 48, hexagonal: 72
+        starting_rings = {8: 18, 19: 48}.get(board_size, 18)
 
         rings = torch.zeros(shape_players, dtype=torch.int16, device=device)
         rings[:, 1:num_players+1] = starting_rings
@@ -322,9 +323,11 @@ class BatchGameState:
 
         # Check victory conditions
         if winner > 0:
-            # Check territory victory threshold
-            victory_threshold = 33 if self.board_size == 8 else 100
-            if self.territory_count[game_idx, winner].item() >= victory_threshold:
+            # Check territory victory threshold (per RR-CANON-R062)
+            # Territory threshold = floor(totalSpaces / 2) + 1
+            total_spaces = self.board_size * self.board_size
+            territory_threshold = total_spaces // 2 + 1  # 33 for 8x8, 181 for 19x19
+            if self.territory_count[game_idx, winner].item() >= territory_threshold:
                 return ("territory", None)
 
             # Check if opponent has no stacks (elimination)
@@ -1438,8 +1441,10 @@ def evaluate_positions_batch(
 
     # Victory thresholds
     territory_victory_threshold = 33 if board_size == 8 else 100
-    rings_per_player = 19 if board_size == 8 else 50
-    ring_victory_threshold = rings_per_player - 1  # Need to eliminate all but 1
+    rings_per_player = 18 if board_size == 8 else 48  # Matches BOARD_CONFIGS
+    # Per RR-CANON-R061: victoryThreshold = round((1/3)*ownStartingRings + (2/3)*opponentsCombinedStartingRings)
+    # Simplified: round(ringsPerPlayer * (1/3 + 2/3*(numPlayers-1)))
+    ring_victory_threshold = round(rings_per_player * (1 / 3 + (2 / 3) * (num_players - 1)))
 
     # Weight mapping: support both old 8-weight format and new 45-weight format
     def get_weight(new_key: str, old_key: str = None, default: float = 0.0) -> float:
