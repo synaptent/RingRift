@@ -17,14 +17,14 @@ This document tracks architectural debt identified in the RingRift codebase and 
 
 ## Priority Matrix
 
-| Priority | Area                           | Status      | Impact   | Effort |
-| -------- | ------------------------------ | ----------- | -------- | ------ |
-| P1       | Deprecated Phase Orchestrators | Deferred    | Critical | High   |
-| P2       | Action Availability Predicates | Complete ✅ | High     | Medium |
-| P3       | Cap Height Consolidation       | Complete ✅ | Medium   | Low    |
-| P4       | Validation Result Unification  | Documented  | Medium   | High   |
-| P5       | Sandbox Aggregate Delegation   | Complete ✅ | Medium   | Low    |
-| P6       | Dead Code Cleanup              | In Progress | Low      | Low    |
+| Priority | Area                           | Status        | Impact   | Effort |
+| -------- | ------------------------------ | ------------- | -------- | ------ |
+| P1       | Deprecated Phase Orchestrators | Deferred      | Critical | High   |
+| P2       | Action Availability Predicates | Complete ✅   | High     | Medium |
+| P3       | Cap Height Consolidation       | Complete ✅   | Medium   | Low    |
+| P4       | Validation Result Unification  | Documented    | Medium   | High   |
+| P5       | Sandbox Aggregate Delegation   | Complete ✅   | Medium   | Low    |
+| P6       | Dead Code Cleanup              | Blocked by P1 | Low      | Low    |
 
 ---
 
@@ -302,7 +302,13 @@ Sandbox modules (sandboxPlacement.ts, sandboxElimination.ts, etc.) reimplement l
   - Exported canonical `getLineDirections`, `findLineInDirection` from LineAggregate
   - Updated tests to use canonical functions
   - File reduced from 145 to 49 lines
-- [ ] sandboxCaptures.ts - applyCaptureSegmentOnBoard is diagnostic-only (clearly marked)
+- [x] sandboxCaptures.ts - assessed (2025-12-11)
+  - `enumerateCaptureSegmentsFromBoard` delegates to shared `enumerateCaptureMovesShared` ✅
+  - `applyCaptureSegmentOnBoard` marked as DIAGNOSTICS-ONLY, used by:
+    - `sandboxCaptureSearch.ts` for chain capture enumeration
+    - Test files for parity verification
+    - Scripts for exhaustive testing
+  - Intentionally kept for diagnostic/test tooling - not production code path
 
 ---
 
@@ -338,9 +344,31 @@ Deprecated functions still exported, design-time stubs that throw, unused helper
 - [x] RecoverySlideTarget.cost deprecated field removed (2025-12-11)
   - Replaced by `option1Cost` and `option2Cost` fields
   - Test updated to use `option1Cost`
-- [ ] Deprecated exports inventoried
-- [ ] Dependencies verified
+- [x] Deprecated exports inventoried (2025-12-11)
+- [x] Dependencies verified (2025-12-11)
 - [ ] Remaining cleanup pending (phaseStateMachine.ts depends on P1)
+
+### Deprecated Exports Inventory (2025-12-11)
+
+| Location                   | Export                    | Status  | Blocker                                       |
+| -------------------------- | ------------------------- | ------- | --------------------------------------------- |
+| `phaseStateMachine.ts`     | Entire module (9 exports) | BLOCKED | P1 - turnOrchestrator uses it                 |
+| `turnOrchestrator.ts:2280` | `computeNextPhase`        | Keep    | Internal orchestrator use                     |
+| `turnOrchestrator.ts:2785` | `validateMove` (legacy)   | Keep    | Used by processTurn, FSM validation preferred |
+| `core.ts:781`              | `hashGameState`           | Keep    | Alias to fingerprintGameState, heavy usage    |
+| `types/game.ts:138-146`    | MoveType aliases          | Keep    | Historical game recordings                    |
+
+**MoveType Deprecations (keep for backwards compatibility):**
+
+- `line_formation` → Use `process_line` + `choose_line_reward`
+- `territory_claim` → Use `process_territory_region` + `skip_territory_processing`
+- `skip_placement` → Use `no_placement_action`
+
+**Assessment:**
+
+- All deprecated exports are either blocked by P1 or intentionally kept for backwards compatibility
+- No low-risk removals available without completing P1 (FSM migration)
+- `hashGameState` has 40+ usages - safe as forwarding alias
 
 ---
 
