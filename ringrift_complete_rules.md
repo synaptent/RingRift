@@ -676,6 +676,8 @@ When you capture a ring, it goes to the _bottom_ of your stack. The order of rin
 
 **Territory processing** requires eliminating the **entire cap** (all consecutive top rings of the controlling color). An **eligible cap target** for territory processing must be either: (1) a **multicolor stack** that P controls (with other players' rings buried beneath P's cap), or (2) a **single-color stack of height > 1** consisting entirely of P's colour. A height-1 standalone ring is **NOT** an eligible cap target for territory processing. For multicolor stacks, eliminating the cap exposes buried rings of other colors beneath. For single-color stacks with height > 1, this eliminates all rings and removes the stack entirely.
 
+**Forced elimination** (when a player has no valid actions but still controls stacks) requires eliminating the **entire cap** from **any** controlled stack—**including height-1 standalone rings**. Unlike territory processing, all controlled stacks are eligible targets for forced elimination regardless of height or composition.
+
 Why it matters:
 
 - **Capture power**: You can only capture stacks with cap heights _less than or equal to_ your own

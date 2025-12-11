@@ -3983,9 +3983,11 @@ class GameEngine:
     def _apply_forced_elimination(game_state: GameState, move: Move):
         """Apply forced elimination move.
 
-        Mirrors the TS eliminatePlayerRingOrCap / ELIMINATE_STACK behaviour by
-        eliminating exactly the current cap from the target stack using the
-        shared _eliminate_top_ring_at helper, so that board.eliminated_rings,
+        Mirrors the TS applyEliminateRingsFromStackDecision behaviour:
+        - For line context (RR-CANON-R122): Eliminate exactly ONE ring
+        - For territory/forced context (RR-CANON-R145, R100): Eliminate entire cap
+
+        Uses the shared _eliminate_top_ring_at helper, so that board.eliminated_rings,
         total_rings_eliminated, and per-player eliminated_rings remain in
         sync with TS semantics.
         """
@@ -3997,12 +3999,21 @@ class GameEngine:
                 f"Cannot apply forced elimination - no stack at {pos.to_key()} "
                 f"for player {move.player}"
             )
-        # Per TS parity (globalActions.ts line 458): use max(1, cap_height) to
-        # handle degenerate legacy states where cap_height metadata is 0 or
-        # missing but the stack has rings. This matches:
-        #   eliminatedRings: [{ player, count: Math.max(1, chosenStack.capHeight || 0) }]
-        cap_height = max(1, stack.cap_height or 0)
-        for _ in range(cap_height):
+
+        # Determine how many rings to eliminate based on context (RR-CANON-R022, R122):
+        # - 'line': Eliminate exactly ONE ring (per RR-CANON-R122)
+        # - 'territory' or 'forced' or None: Eliminate entire cap (per RR-CANON-R145, R100)
+        elimination_context = getattr(move, 'elimination_context', None)
+        if elimination_context == 'line':
+            rings_to_eliminate = 1
+        else:
+            # Per TS parity (globalActions.ts line 458): use max(1, cap_height) to
+            # handle degenerate legacy states where cap_height metadata is 0 or
+            # missing but the stack has rings. This matches:
+            #   eliminatedRings: [{ player, count: Math.max(1, chosenStack.capHeight || 0) }]
+            rings_to_eliminate = max(1, stack.cap_height or 0)
+
+        for _ in range(rings_to_eliminate):
             GameEngine._eliminate_top_ring_at(
                 game_state,
                 pos,

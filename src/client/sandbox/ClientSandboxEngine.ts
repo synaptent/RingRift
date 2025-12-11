@@ -2935,7 +2935,12 @@ export class ClientSandboxEngine {
     }
 
     const movingPlayer = this.gameState.currentPlayer;
-    return enumerateTerritoryEliminationMoves(this.gameState, movingPlayer);
+
+    // Per RR-CANON-R122 vs R145: Line elimination uses different rules
+    // - Line: any controlled stack (including height-1), eliminate 1 ring
+    // - Territory: only eligible caps (multicolor or height > 1), eliminate entire cap
+    const eliminationContext = pendingLineReward ? 'line' : 'territory';
+    return enumerateTerritoryEliminationMoves(this.gameState, movingPlayer, { eliminationContext });
   }
 
   /**

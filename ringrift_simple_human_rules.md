@@ -84,7 +84,10 @@ RR‑CANON‑R001 and are the base for all variants.
   - The **cap height** is the number of consecutive rings, from the top
     downward, that match the controlling player's colour.
   - Example: Blue, Blue, Blue, Red → cap height for Blue is 3.
-  - **Eliminating entire cap:** When you must eliminate your "entire cap" or "stack cap", you eliminate all consecutive top rings of your colour. For mixed-colour stacks, this exposes buried rings of other colours beneath. For single-colour stacks with height > 1, this eliminates all rings (removing the stack entirely).
+  - **Elimination costs vary by context:**
+    - **Line processing:** Eliminate **one ring** from the top of any stack you control (including standalone rings).
+    - **Territory processing:** Eliminate your **entire cap** from an eligible stack. Eligible targets must be either: (1) multicolour stacks you control, or (2) single-colour stacks of height > 1. **Standalone rings (height 1) are NOT eligible for territory processing.**
+    - **Forced elimination:** Eliminate your **entire cap** from **any** stack you control—**including standalone rings**.
 
 - **Marker**
   - When you move a stack, you leave a **marker** of your colour on the

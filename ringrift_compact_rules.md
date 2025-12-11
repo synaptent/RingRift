@@ -91,7 +91,8 @@ At minimum, your engine must maintain:
   - `controllingPlayer = rings[top]`
   - `capHeight = number of consecutive rings from the top that equal controllingPlayer`.
   - **Single-ring elimination (for line processing):** When rules require eliminating "one ring" for line processing, remove the top ring from any controlled stack (including height-1 standalone rings). Any controlled stack is an eligible target.
-  - **Entire cap elimination (for territory processing and forced elimination):** When rules require eliminating the "entire cap" or "stack cap", eliminate all `capHeight` rings from the top. For territory processing only, eligible targets must be either multicolour stacks or single-colour stacks of height > 1 (height-1 standalone rings are NOT eligible for territory processing). For mixed-color stacks, this exposes buried rings of other colors. For single-color stacks with height > 1, this eliminates all rings (removing the stack).
+  - **Entire cap elimination (for territory processing):** When territory processing requires eliminating the "entire cap" or "stack cap", eliminate all `capHeight` rings from the top. Eligible targets must be either multicolour stacks or single-colour stacks of height > 1. **Height-1 standalone rings are NOT eligible for territory processing.** For mixed-color stacks, this exposes buried rings of other colors. For single-color stacks with height > 1, this eliminates all rings (removing the stack).
+  - **Entire cap elimination (for forced elimination):** When forced elimination occurs (player had no valid actions but still controls stacks), eliminate all `capHeight` rings from the top of **any** controlled stack—**including height-1 standalone rings**. All controlled stacks are eligible targets for forced elimination.
 
 You must maintain `capHeight` and `stackHeight` correctly after **placement**, **movement**, **overtaking**, and **elimination**.
 

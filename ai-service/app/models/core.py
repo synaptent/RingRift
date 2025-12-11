@@ -312,6 +312,13 @@ class Move(BaseModel):
     eliminated_rings: Optional[Tuple[Dict[str, int], ...]] = Field(
         default=None, alias="eliminatedRings"
     )
+    # Elimination context for eliminate_rings_from_stack moves (RR-CANON-R022, R122):
+    # - 'line': Eliminate exactly ONE ring (any controlled stack eligible)
+    # - 'territory': Eliminate entire cap (only eligible stacks: multicolor or height > 1)
+    # - 'forced': Eliminate entire cap (any controlled stack eligible)
+    elimination_context: Optional[str] = Field(
+        default=None, alias="eliminationContext"
+    )
 
     # Timing / ordering
     timestamp: datetime

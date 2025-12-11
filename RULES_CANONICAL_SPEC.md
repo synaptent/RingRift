@@ -109,7 +109,8 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - `stackHeight = rings.length`.
   - `capHeight` is the number of consecutive rings from the top that belong to `controllingPlayer`.
   - **Single-ring elimination (for line processing):** When rules require eliminating "one ring" for line processing, P may choose **any** ring from **any** stack P controls—including a height-1 standalone ring. The ring is removed from the top of the chosen stack. If this empties the stack, the stack is removed; if buried rings remain, control transfers to the new top ring's owner.
-  - **Entire cap elimination (for territory processing and forced elimination):** When rules require eliminating the "entire cap" or "stack cap" (territory processing or forced elimination), this means eliminating all consecutive top rings of the controlling color. An eligible stack cap for territory processing must be either: (1) a **multicolor stack** that P controls (P's rings on top with other players' rings buried beneath), or (2) a **single-color stack of height > 1** consisting entirely of P's colour. Height-1 standalone rings are NOT eligible cap targets for territory processing. For multicolor stacks, eliminating the cap exposes the buried rings of other colours. For single-color stacks with height > 1, this eliminates all rings and removes the stack entirely.
+  - **Entire cap elimination (for territory processing):** When territory processing requires eliminating the "entire cap" or "stack cap", this means eliminating all consecutive top rings of the controlling color. An eligible stack cap for territory processing must be either: (1) a **multicolor stack** that P controls (P's rings on top with other players' rings buried beneath), or (2) a **single-color stack of height > 1** consisting entirely of P's colour. **Height-1 standalone rings are NOT eligible cap targets for territory processing.** For multicolor stacks, eliminating the cap exposes the buried rings of other colours. For single-color stacks with height > 1, this eliminates all rings and removes the stack entirely.
+  - **Entire cap elimination (for forced elimination):** When forced elimination occurs (player had no valid actions but still controls stacks), P must eliminate the entire cap from **any** controlled stack—**including height-1 standalone rings**. All controlled stacks are eligible targets for forced elimination, regardless of height or composition.
   - Control changes whenever the top ring changes color (due to overtaking or elimination).
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5.1–5.3, 7.2, 15.4 Q16.
 
@@ -118,8 +119,9 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Adding rings at the **top** via placement.
     - Adding rings at the **bottom** via overtaking capture.
     - Removing the **top ring** of a stack via overtaking capture.
-    - Removing **one ring** from the top of a controlled stack via line processing elimination.
-    - Removing an **entire cap** (all consecutive top rings of the controlling color) via forced elimination or territory processing.
+    - Removing **one ring** from the top of a controlled stack via line processing elimination (any controlled stack eligible, including standalone rings).
+    - Removing an **entire cap** via territory processing (only multicolor stacks or single-color stacks with height > 1 are eligible; standalone rings are NOT eligible).
+    - Removing an **entire cap** via forced elimination (any controlled stack eligible, including standalone rings).
     - Removing all rings in a region during territory collapse.
   - Stacks may **never** be split or reordered in any other way.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§2–4, 5, 6; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5–7, 9–12, 15.4 Q1.
