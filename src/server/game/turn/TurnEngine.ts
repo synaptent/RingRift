@@ -9,10 +9,14 @@ import type {
 } from '../../../shared/engine';
 import {
   advanceTurnAndPhase,
-  enumerateAllCaptureMoves as enumerateAllCaptureMovesAggregate,
   applyForcedEliminationForPlayer,
   evaluateLpsVictory,
   updateLpsTracking,
+  // Shared action-availability predicates (canonical implementations)
+  hasAnyPlacementForPlayer,
+  hasAnyMovementForPlayer,
+  hasAnyCaptureForPlayer,
+  playerHasAnyRings,
 } from '../../../shared/engine';
 import { BoardManager } from '../BoardManager';
 import { RuleEngine } from '../RuleEngine';
@@ -113,11 +117,10 @@ export function advanceGameForCurrentPlayer(
 ): PerTurnState {
   const delegates: TurnLogicDelegates = {
     getPlayerStacks: (state, player) => deps.boardManager.getPlayerStacks(state.board, player),
-    hasAnyPlacement: (state, player) => hasValidPlacements(state, deps, player),
-    hasAnyMovement: (state, player, turn) =>
-      hasValidMovements(state, turn as PerTurnState, deps, player),
-    hasAnyCapture: (state, player, turn) =>
-      hasValidCaptures(state, turn as PerTurnState, deps, player),
+    // Use shared canonical predicates from turnDelegateHelpers.ts
+    hasAnyPlacement: (state, player) => hasAnyPlacementForPlayer(state, player),
+    hasAnyMovement: (state, player, turn) => hasAnyMovementForPlayer(state, player, turn),
+    hasAnyCapture: (state, player, turn) => hasAnyCaptureForPlayer(state, player, turn),
     applyForcedElimination: (state, player) => {
       // Reuse the existing forced-elimination helper and backend victory
       // evaluator so that shared turnLogic observes exactly the same
@@ -136,17 +139,8 @@ export function advanceGameForCurrentPlayer(
       const nextIndex = (currentIndex + 1) % state.players.length;
       return state.players[nextIndex].playerNumber;
     },
-    playerHasAnyRings: (state, player) => {
-      // Check if player has rings anywhere (hand + board including buried)
-      const playerState = state.players.find((p) => p.playerNumber === player);
-      if (!playerState) return false;
-      if (playerState.ringsInHand > 0) return true;
-      // Check stacks for player's rings
-      for (const [, stack] of state.board.stacks) {
-        if (stack.rings.includes(player)) return true;
-      }
-      return false;
-    },
+    // Use shared canonical predicate from globalActions.ts
+    playerHasAnyRings: (state, player) => playerHasAnyRings(state, player),
   };
 
   const beforeSnapshot = {
@@ -202,50 +196,18 @@ export function advanceGameForCurrentPlayer(
   return nextTurn as PerTurnState;
 }
 
-/**
- * Check if player has any valid capture moves available
- * Rule Reference: Section 10.1
- */
-function hasValidCaptures(
-  gameState: GameState,
-  turnState: PerTurnState,
-  _deps: TurnEngineDeps,
-  playerNumber: number
-): boolean {
-  // Use the shared CaptureAggregate global enumerator so that the decision to
-  // enter the capture phase stays in sync with the canonical capture surface
-  // used by the sandbox and shared engine.
-  const tempState: GameState = {
-    ...gameState,
-    currentPlayer: playerNumber,
-    currentPhase: 'capture',
-  };
-
-  let moves = enumerateAllCaptureMovesAggregate(tempState, playerNumber);
-
-  // Respect per-turn must-move constraints: if a stack was just placed or
-  // updated this turn, only captures originating from that stack are
-  // considered when deciding whether to enter the capture phase. This keeps
-  // TurnEngine's gating semantics aligned with GameEngine.getValidMoves,
-  // which applies the same restriction.
-  const { mustMoveFromStackKey } = turnState;
-  if (mustMoveFromStackKey) {
-    moves = moves.filter((m) => {
-      if ((m.type !== 'overtaking_capture' && m.type !== 'continue_capture_segment') || !m.from) {
-        return false;
-      }
-
-      const fromKey = positionToStringLocal(m.from);
-      return fromKey === mustMoveFromStackKey;
-    });
-  }
-
-  return moves.length > 0;
-}
+// Local action-availability helpers removed - TurnEngine now uses shared canonical
+// predicates from turnDelegateHelpers.ts:
+// - hasValidCaptures → hasAnyCaptureForPlayer
+// - hasValidPlacements → hasAnyPlacementForPlayer
+// - hasValidMovements → hasAnyMovementForPlayer
 
 /**
  * Check if player has any valid actions available
  * Rule Reference: Section 4.4
+ *
+ * Note: This function uses the shared canonical predicates from turnDelegateHelpers.ts.
+ * Recovery is checked separately as it's not included in the shared predicates.
  */
 function hasValidActions(
   gameState: GameState,
@@ -254,92 +216,10 @@ function hasValidActions(
   playerNumber: number
 ): boolean {
   return (
-    hasValidPlacements(gameState, deps, playerNumber) ||
-    hasValidMovements(gameState, turnState, deps, playerNumber) ||
-    hasValidCaptures(gameState, turnState, deps, playerNumber) ||
+    hasAnyPlacementForPlayer(gameState, playerNumber) ||
+    hasAnyMovementForPlayer(gameState, playerNumber, turnState) ||
+    hasAnyCaptureForPlayer(gameState, playerNumber, turnState) ||
     hasValidRecovery(gameState, deps, playerNumber)
-  );
-}
-
-/**
- * Check if player has any valid placement moves
- * Rule Reference: Section 4.1, 6.1-6.3
- */
-function hasValidPlacements(
-  gameState: GameState,
-  deps: TurnEngineDeps,
-  playerNumber: number
-): boolean {
-  const player = gameState.players.find((p) => p.playerNumber === playerNumber);
-  if (!player || player.ringsInHand === 0) {
-    return false; // No rings in hand to place
-  }
-
-  const { ruleEngine } = deps;
-
-  // Ask RuleEngine for actual placement moves in a lightweight view
-  // where this player is active and the phase is forced to
-  // 'ring_placement'. This keeps forced-elimination gating in sync
-  // with real placement availability.
-  const tempState: GameState = {
-    ...gameState,
-    currentPlayer: playerNumber,
-    currentPhase: 'ring_placement',
-  };
-
-  const moves = ruleEngine.getValidMoves(tempState);
-  // Treat only actual place_ring actions as evidence of a real placement
-  // option. skip_placement is a bookkeeping-only move and should not
-  // prevent forced elimination or LPS tracking from considering the
-  // player "blocked" for placement purposes.
-  return moves.some((m) => m.type === 'place_ring');
-}
-
-/**
- * Check if player has any valid movement moves
- * Rule Reference: Section 8.1, 8.2
- */
-function hasValidMovements(
-  gameState: GameState,
-  turnState: PerTurnState,
-  deps: TurnEngineDeps,
-  playerNumber: number
-): boolean {
-  const { ruleEngine } = deps;
-
-  // Construct a movement-phase view for this player and delegate to
-  // RuleEngine so movement availability is determined by the same
-  // rules used for actual move generation.
-  const tempState: GameState = {
-    ...gameState,
-    currentPlayer: playerNumber,
-    currentPhase: 'movement',
-  };
-
-  let moves = ruleEngine.getValidMoves(tempState);
-
-  // Respect per-turn must-move constraints: if a stack was just
-  // placed or updated this turn, only movements originating from that
-  // stack are considered when deciding whether to enter the movement
-  // phase. This keeps TurnEngine's gating semantics aligned with
-  // GameEngine.getValidMoves, which applies the same restriction.
-  const { mustMoveFromStackKey } = turnState;
-  if (mustMoveFromStackKey) {
-    moves = moves.filter((m) => {
-      const isMovementType =
-        m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'build_stack';
-
-      if (!isMovementType || !m.from) {
-        return false;
-      }
-
-      const fromKey = positionToStringLocal(m.from);
-      return fromKey === mustMoveFromStackKey;
-    });
-  }
-
-  return moves.some(
-    (m) => m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'build_stack'
   );
 }
 

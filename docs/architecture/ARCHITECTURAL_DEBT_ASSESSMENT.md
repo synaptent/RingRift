@@ -20,7 +20,7 @@ This document tracks architectural debt identified in the RingRift codebase and 
 | Priority | Area                           | Status      | Impact   | Effort |
 | -------- | ------------------------------ | ----------- | -------- | ------ |
 | P1       | Deprecated Phase Orchestrators | Deferred    | Critical | High   |
-| P2       | Action Availability Predicates | Partial ✅  | High     | Medium |
+| P2       | Action Availability Predicates | TS Done ✅  | High     | Medium |
 | P3       | Cap Height Consolidation       | Complete ✅ | Medium   | Low    |
 | P4       | Validation Result Unification  | Not Started | Medium   | Medium |
 | P5       | Sandbox Aggregate Delegation   | Partial     | Medium   | High   |
@@ -83,8 +83,8 @@ Three different implementations of "has any action?" predicates:
 | `src/shared/engine/turnDelegateHelpers.ts`  | `hasAnyMovementForPlayer`  | ✅ IMPLEMENTED            |
 | `src/shared/engine/turnDelegateHelpers.ts`  | `hasAnyCaptureForPlayer`   | ✅ IMPLEMENTED            |
 | `src/shared/engine/turnDelegateHelpers.ts`  | `hasAnyPlacementForPlayer` | ✅ IMPLEMENTED            |
-| `src/server/game/turn/TurnEngine.ts`        | `hasValidMovements`        | Duplicate - to be wired   |
-| `src/client/sandbox/ClientSandboxEngine.ts` | Various                    | Duplicate - to be wired   |
+| `src/server/game/turn/TurnEngine.ts`        | `hasValidMovements`        | ✅ REMOVED - uses shared  |
+| `src/client/sandbox/ClientSandboxEngine.ts` | Various                    | ✅ WIRED - uses shared    |
 | `ai-service/app/rules/default_engine.py`    | `_has_valid_movements`     | Duplicate - Python parity |
 
 ### Resolution Plan
@@ -104,8 +104,14 @@ Three different implementations of "has any action?" predicates:
   - `hasAnyCaptureForPlayer` - delegates to enumerateAllCaptureMoves
   - All three respect mustMoveFromStackKey constraints from PerTurnState
   - 35 unit tests passing
-- [ ] TurnEngine migrated
-- [ ] ClientSandboxEngine migrated
+- [x] TurnEngine migrated (2025-12-11)
+  - Removed local `hasValidPlacements`, `hasValidMovements`, `hasValidCaptures`
+  - `advanceGameForCurrentPlayer` delegates now use shared predicates
+  - `hasValidActions` uses shared predicates (recovery checked separately)
+  - 254 GameEngine/TurnEngine tests passing
+- [x] ClientSandboxEngine migrated (2025-12-11)
+  - `createTurnLogicDelegates()` now uses shared predicates
+  - All ClientSandboxEngine unit tests passing
 - [ ] Python parity established
 
 ---

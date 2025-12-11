@@ -70,6 +70,12 @@ import {
   serializeGameState,
   type SerializedGameState,
 } from '../../shared/engine/contracts/serialization';
+// Shared action-availability predicates (canonical implementations)
+import {
+  hasAnyPlacementForPlayer,
+  hasAnyMovementForPlayer,
+  hasAnyCaptureForPlayer,
+} from '../../shared/engine';
 import type {
   PlayerChoice,
   PlayerChoiceResponseFor,
@@ -1660,19 +1666,12 @@ export class ClientSandboxEngine {
   private createTurnLogicDelegates(): TurnLogicDelegates {
     return {
       getPlayerStacks: (state, playerNumber) => this.getPlayerStacks(playerNumber, state.board),
-      hasAnyPlacement: (state, playerNumber) => {
-        const player = state.players.find((p) => p.playerNumber === playerNumber);
-        if (!player || player.ringsInHand <= 0) {
-          return false;
-        }
-
-        const positions = enumeratePlacementPositions(state, playerNumber);
-        return positions.length > 0;
-      },
+      // Use shared canonical predicates from turnDelegateHelpers.ts
+      hasAnyPlacement: (state, playerNumber) => hasAnyPlacementForPlayer(state, playerNumber),
       hasAnyMovement: (state, playerNumber, turn) =>
-        this.hasAnyMovementOrCaptureForPlayer(state, playerNumber, turn as SandboxTurnState),
+        hasAnyMovementForPlayer(state, playerNumber, turn as SandboxTurnState),
       hasAnyCapture: (state, playerNumber, turn) =>
-        this.hasAnyMovementOrCaptureForPlayer(state, playerNumber, turn as SandboxTurnState),
+        hasAnyCaptureForPlayer(state, playerNumber, turn as SandboxTurnState),
       applyForcedElimination: (state, playerNumber) => {
         // In traceMode, do not inject host-level forced elimination between
         // recorded moves. Canonical replays expect any eliminations to be

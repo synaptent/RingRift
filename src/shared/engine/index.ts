@@ -134,8 +134,8 @@ export type { Validator, Mutator } from './types';
 // Turn/Phase
 export type { TurnAdvanceResult, PerTurnState, TurnLogicDelegates } from './turnLogic';
 
-// Victory
-export type { VictoryResult, VictoryReason } from './victoryLogic';
+// Victory (from VictoryAggregate - victoryLogic.ts was removed Dec 2025)
+export type { VictoryResult, VictoryReason } from './aggregates/VictoryAggregate';
 
 // Placement
 export type { PlacementContext, PlacementValidationResult } from './validators/PlacementValidator';
@@ -266,14 +266,15 @@ export {
 // =============================================================================
 // VICTORY DOMAIN
 // =============================================================================
-// Location: victoryLogic.ts
+// Location: aggregates/VictoryAggregate.ts
 // Rule Reference: Section 13 - Victory Conditions
+// Note: victoryLogic.ts was removed Dec 2025 - all victory logic is in VictoryAggregate
 
 // Evaluation
-export { evaluateVictory } from './victoryLogic';
+export { evaluateVictory } from './aggregates/VictoryAggregate';
 
 // Tie-breaker Helper
-export { getLastActor } from './victoryLogic';
+export { getLastActor } from './aggregates/VictoryAggregate';
 
 // =============================================================================
 // TURN MANAGEMENT
@@ -283,6 +284,17 @@ export { getLastActor } from './victoryLogic';
 
 // Turn/Phase Progression
 export { advanceTurnAndPhase } from './turnLogic';
+
+// Action Availability Predicates (canonical implementations)
+// These provide the single source of truth for "has any action?" queries
+export {
+  hasAnyPlacementForPlayer,
+  hasAnyMovementForPlayer,
+  hasAnyCaptureForPlayer,
+  createDefaultTurnLogicDelegates,
+} from './turnDelegateHelpers';
+
+export type { DefaultTurnDelegatesConfig } from './turnDelegateHelpers';
 
 // =============================================================================
 // CORE UTILITIES
