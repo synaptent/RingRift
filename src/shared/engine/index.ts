@@ -622,6 +622,25 @@ export {
 export { getEffectiveLineLengthThreshold } from './rulesConfig';
 
 // =============================================================================
+// PHASE VALIDATION
+// =============================================================================
+// Location: phaseValidation.ts
+// Declarative phase-move validation matrix
+// Rule Reference: Phase/move type compatibility from RR-CANON spec
+
+export type { MoveType as PhaseValidationMoveType } from './phaseValidation';
+
+export {
+  VALID_MOVES_BY_PHASE,
+  ALWAYS_VALID_MOVES,
+  isMoveValidInPhase,
+  getValidMoveTypesForPhase,
+  getPhasesForMoveType,
+  getEliminationContextForPhase,
+  canEliminateInPhase,
+} from './phaseValidation';
+
+// =============================================================================
 // ORCHESTRATION TYPES
 // =============================================================================
 // Location: orchestration/types.ts

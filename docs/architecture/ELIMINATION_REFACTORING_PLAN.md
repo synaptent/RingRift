@@ -267,9 +267,9 @@ RINGRIFT_PHASE_AUDIT=1 npx ts-node scripts/selfplay-db-ts-replay.ts --db canonic
 | 1.1 Create EliminationAggregate           | ✅ Complete | 2025-12-11      | 33 unit tests passing                                                                                            |
 | 1.2 Update Consumers                      | ✅ Complete | 2025-12-11      | sandboxElimination ✅, territoryDecisionHelpers ✅, globalActions ✅, TerritoryAggregate ✅, TerritoryMutator ✅ |
 | 1.3 Remove Duplicates                     | Deferred    |                 | Duplicate code removed via delegation, functions retained for API compat                                         |
-| 2.1 Consolidate canProcessTerritoryRegion | Not Started |                 |                                                                                                                  |
+| 2.1 Consolidate canProcessTerritoryRegion | ✅ Complete | 2025-12-11      | TerritoryAggregate now delegates to EliminationAggregate, fixtures fixed for height-1 rule                       |
 | 2.2 Add Recovery Context Flag             | Not Started |                 |                                                                                                                  |
-| 3.1 Define Phase-Move Matrix              | Not Started |                 |                                                                                                                  |
+| 3.1 Define Phase-Move Matrix              | ✅ Complete | 2025-12-11      | phaseValidation.ts created with 44 unit tests passing                                                            |
 | 3.2 Update Turn Orchestrator              | Not Started |                 |                                                                                                                  |
 | 4.1 Define Audit Structure                | Not Started |                 |                                                                                                                  |
 | 4.2 Emit Events                           | Not Started |                 |                                                                                                                  |
