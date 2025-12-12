@@ -507,6 +507,7 @@ class BatchGameState:
     move_count: torch.Tensor
     game_status: torch.Tensor      # GameStatus enum
     winner: torch.Tensor           # 0=none, 1-4=player
+    swap_offered: torch.Tensor     # bool: whether swap_sides (pie rule) was offered to P2
 
     # Move history: (batch_size, max_moves, 6) - [move_type, player, from_y, from_x, to_y, to_x]
     # -1 indicates unused slot
@@ -579,6 +580,7 @@ class BatchGameState:
             move_count=torch.zeros(batch_size, dtype=torch.int32, device=device),
             game_status=torch.zeros(batch_size, dtype=torch.int8, device=device),
             winner=torch.zeros(batch_size, dtype=torch.int8, device=device),
+            swap_offered=torch.zeros(batch_size, dtype=torch.bool, device=device),
             move_history=move_history,
             max_history_moves=max_history_moves,
             device=device,
@@ -894,14 +896,16 @@ class BatchGameState:
         moves = []
         num_moves = min(self.move_count[game_idx].item(), self.max_history_moves)
 
-        # Move type names for output
+        # Move type names for output - must match canonical MoveType enum values
+        # from app/models/core.py for compatibility with jsonl_to_npz.py
         move_type_names = {
-            MoveType.PLACEMENT: "ring_placement",
-            MoveType.MOVEMENT: "movement",
-            MoveType.CAPTURE: "capture",
+            MoveType.PLACEMENT: "place_ring",
+            MoveType.MOVEMENT: "move_stack",
+            MoveType.CAPTURE: "overtaking_capture",
             MoveType.LINE_FORMATION: "line_formation",
             MoveType.TERRITORY_CLAIM: "territory_claim",
-            MoveType.SKIP: "skip",
+            MoveType.SKIP: "skip_capture",
+            MoveType.RECOVERY_SLIDE: "recovery_slide",
         }
 
         for i in range(num_moves):
@@ -3209,6 +3213,7 @@ class ParallelGameRunner:
         state_validation: bool = False,
         state_sample_rate: float = 0.01,
         state_threshold: float = 0.001,
+        swap_enabled: bool = True,
     ):
         """Initialize parallel game runner.
 
@@ -3223,10 +3228,12 @@ class ParallelGameRunner:
             state_validation: Enable CPU oracle mode (state validation)
             state_sample_rate: Fraction of states to validate (0.0-1.0)
             state_threshold: Maximum state divergence rate before halt
+            swap_enabled: Enable pie rule (swap_sides) for 2-player games (RR-CANON R180-R184)
         """
         self.batch_size = batch_size
         self.board_size = board_size
         self.num_players = num_players
+        self.swap_enabled = swap_enabled
 
         if device is None:
             self.device = get_device()
@@ -3853,6 +3860,133 @@ class ParallelGameRunner:
         # Per RR-CANON-R073: ALL players start in RING_PLACEMENT without exception.
         # NO PHASE SKIPPING - this is a core invariant for parity with TS/Python engines.
         self.state.current_phase[mask] = GamePhase.RING_PLACEMENT
+
+        # Swap sides (pie rule) check for 2-player games (RR-CANON R180-R184)
+        # Offered to P2 immediately after P1's first complete turn
+        if self.num_players == 2 and self.swap_enabled:
+            self._check_and_apply_swap_sides(mask)
+
+    def _check_and_apply_swap_sides(self, mask: torch.Tensor) -> None:
+        """Check for swap_sides eligibility and apply if AI decides to accept.
+
+        Per RR-CANON R180-R184: The pie rule allows P2 to swap colours/seats
+        with P1 immediately after P1's first complete turn.
+
+        Conditions for swap eligibility:
+        1. 2-player game (already checked by caller)
+        2. Current player is now P2
+        3. Swap not already offered in this game
+        4. P1 has completed at least one full turn (has moves in history)
+
+        For selfplay, we use a simple heuristic: P2 accepts the swap if P1's
+        position is significantly better (based on stack control advantage).
+        """
+        # Identify games where swap should be offered:
+        # - In mask (just completed END_TURN)
+        # - Current player is now P2
+        # - Swap not already offered
+        is_p2_turn = self.state.current_player == 2
+        not_yet_offered = ~self.state.swap_offered
+        swap_eligible = mask & is_p2_turn & not_yet_offered
+
+        if not swap_eligible.any():
+            return
+
+        # Mark swap as offered for these games (regardless of acceptance)
+        self.state.swap_offered[swap_eligible] = True
+
+        # Evaluate position to decide whether to accept swap
+        # Simple heuristic: count stacks controlled by each player
+        p1_stacks = (self.state.stack_owner == 1).sum(dim=(1, 2)).float()
+        p2_stacks = (self.state.stack_owner == 2).sum(dim=(1, 2)).float()
+
+        # Also consider territory control
+        p1_territory = self.state.territory_count[:, 1].float()
+        p2_territory = self.state.territory_count[:, 2].float()
+
+        # Combined advantage score (positive = P1 is ahead)
+        stack_advantage = p1_stacks - p2_stacks
+        territory_advantage = p1_territory - p2_territory
+        combined_advantage = stack_advantage + territory_advantage * 2.0
+
+        # Accept swap if P1 has significant advantage (threshold: 1.0)
+        # This means P2 should swap if P1 has more stacks/territory
+        swap_threshold = 1.0
+        should_swap = swap_eligible & (combined_advantage > swap_threshold)
+
+        if not should_swap.any():
+            return
+
+        # Apply swap: exchange ownership between P1 and P2
+        # This swaps who controls what on the board
+
+        # Swap stack ownership using torch.where for vectorization
+        swap_mask_3d = should_swap.unsqueeze(-1).unsqueeze(-1).expand_as(self.state.stack_owner)
+        p1_stacks_mask = self.state.stack_owner == 1
+        p2_stacks_mask = self.state.stack_owner == 2
+        self.state.stack_owner = torch.where(
+            swap_mask_3d & p1_stacks_mask,
+            torch.tensor(2, dtype=self.state.stack_owner.dtype, device=self.device),
+            self.state.stack_owner
+        )
+        self.state.stack_owner = torch.where(
+            swap_mask_3d & p2_stacks_mask,
+            torch.tensor(1, dtype=self.state.stack_owner.dtype, device=self.device),
+            self.state.stack_owner
+        )
+
+        # Swap marker ownership
+        p1_markers_mask = self.state.marker_owner == 1
+        p2_markers_mask = self.state.marker_owner == 2
+        self.state.marker_owner = torch.where(
+            swap_mask_3d & p1_markers_mask,
+            torch.tensor(2, dtype=self.state.marker_owner.dtype, device=self.device),
+            self.state.marker_owner
+        )
+        self.state.marker_owner = torch.where(
+            swap_mask_3d & p2_markers_mask,
+            torch.tensor(1, dtype=self.state.marker_owner.dtype, device=self.device),
+            self.state.marker_owner
+        )
+
+        # Swap territory ownership
+        p1_terr_mask = self.state.territory_owner == 1
+        p2_terr_mask = self.state.territory_owner == 2
+        self.state.territory_owner = torch.where(
+            swap_mask_3d & p1_terr_mask,
+            torch.tensor(2, dtype=self.state.territory_owner.dtype, device=self.device),
+            self.state.territory_owner
+        )
+        self.state.territory_owner = torch.where(
+            swap_mask_3d & p2_terr_mask,
+            torch.tensor(1, dtype=self.state.territory_owner.dtype, device=self.device),
+            self.state.territory_owner
+        )
+
+        # Swap player stats vectorized
+        # Swap rings_in_hand
+        p1_rings = self.state.rings_in_hand[:, 1].clone()
+        p2_rings = self.state.rings_in_hand[:, 2].clone()
+        self.state.rings_in_hand[:, 1] = torch.where(should_swap, p2_rings, self.state.rings_in_hand[:, 1])
+        self.state.rings_in_hand[:, 2] = torch.where(should_swap, p1_rings, self.state.rings_in_hand[:, 2])
+
+        # Swap territory_count
+        p1_terr = self.state.territory_count[:, 1].clone()
+        p2_terr = self.state.territory_count[:, 2].clone()
+        self.state.territory_count[:, 1] = torch.where(should_swap, p2_terr, self.state.territory_count[:, 1])
+        self.state.territory_count[:, 2] = torch.where(should_swap, p1_terr, self.state.territory_count[:, 2])
+
+        # Swap eliminated_rings
+        p1_elim = self.state.eliminated_rings[:, 1].clone()
+        p2_elim = self.state.eliminated_rings[:, 2].clone()
+        self.state.eliminated_rings[:, 1] = torch.where(should_swap, p2_elim, self.state.eliminated_rings[:, 1])
+        self.state.eliminated_rings[:, 2] = torch.where(should_swap, p1_elim, self.state.eliminated_rings[:, 2])
+
+        # Swap buried_rings
+        p1_buried = self.state.buried_rings[:, 1].clone()
+        p2_buried = self.state.buried_rings[:, 2].clone()
+        self.state.buried_rings[:, 1] = torch.where(should_swap, p2_buried, self.state.buried_rings[:, 1])
+        self.state.buried_rings[:, 2] = torch.where(should_swap, p1_buried, self.state.buried_rings[:, 2])
 
     def _compute_player_ring_status_batch(self) -> torch.Tensor:
         """Compute which players have any rings in each game (vectorized).

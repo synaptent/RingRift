@@ -669,7 +669,27 @@ class HybridSelfPlayRunner:
             )
 
             if not valid_moves:
-                break
+                # Per RR-CANON-R076: when get_valid_moves returns empty,
+                # check for phase requirements that require bookkeeping moves
+                # (NO_LINE_ACTION, NO_TERRITORY_ACTION, NO_PLACEMENT_ACTION, etc.)
+                from ..game_engine import GameEngine
+                requirement = GameEngine.get_phase_requirement(
+                    game_state,
+                    current_player,
+                )
+                if requirement is not None:
+                    # Synthesize the required bookkeeping move and continue
+                    best_move = GameEngine.synthesize_bookkeeping_move(
+                        requirement,
+                        game_state,
+                    )
+                    game_state = self.rules_engine.apply_move(game_state, best_move)
+                    moves_played.append(best_move)
+                    move_count += 1
+                    continue
+                else:
+                    # True "no moves" case - end game
+                    break
 
             # Evaluate moves (hybrid CPU/GPU)
             move_scores = self.evaluator.evaluate_moves(
