@@ -20,7 +20,7 @@ import numpy as np
 
 from app.ai.descent_ai import DescentAI
 from app.ai.mcts_ai import MCTSAI
-from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI
+from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI, encode_move_for_board
 from app.db import GameReplayDB, get_or_create_db, record_completed_game
 from app.models import (
     GameState, BoardType, BoardState, GamePhase, GameStatus, TimeControl,
@@ -44,6 +44,7 @@ def extract_mcts_visit_distribution(
     ai: MCTSAI,
     state: GameState,
     encoder: Optional[NeuralNetAI] = None,
+    use_board_aware_encoding: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Extract MCTS visit count distribution as soft policy targets.
 
@@ -58,6 +59,12 @@ def extract_mcts_visit_distribution(
         The game state that was searched (for move encoding).
     encoder : Optional[NeuralNetAI]
         The neural network for encoding moves. If None, uses ai.neural_net.
+        Only used when use_board_aware_encoding=False.
+    use_board_aware_encoding : bool
+        If True, uses encode_move_for_board() which produces compact
+        board-specific policy indices (e.g., max ~7000 for square8).
+        If False (default), uses the legacy encoder.encode_move() which
+        always uses MAX_N=19 layout (~55000 indices).
 
     Returns
     -------
@@ -72,11 +79,11 @@ def extract_mcts_visit_distribution(
     >>> p_indices, p_values = extract_mcts_visit_distribution(ai, state)
     >>> # p_indices contains move indices, p_values contains visit probabilities
     """
-    if encoder is None:
-        encoder = ai.neural_net
-
-    if encoder is None:
-        return np.array([], dtype=np.int32), np.array([], dtype=np.float32)
+    if not use_board_aware_encoding:
+        if encoder is None:
+            encoder = ai.neural_net
+        if encoder is None:
+            return np.array([], dtype=np.int32), np.array([], dtype=np.float32)
 
     # Get visit distribution from MCTS (handles both legacy and incremental)
     moves, probs = ai.get_visit_distribution()
@@ -89,7 +96,10 @@ def extract_mcts_visit_distribution(
     p_values = []
 
     for move, prob in zip(moves, probs):
-        idx = encoder.encode_move(move, state.board)
+        if use_board_aware_encoding:
+            idx = encode_move_for_board(move, state.board)
+        else:
+            idx = encoder.encode_move(move, state.board)
         if idx != INVALID_MOVE_INDEX:
             p_indices.append(idx)
             p_values.append(prob)

@@ -270,6 +270,275 @@ SQUARE19_TERRITORY_CHOICE_BASE = SQUARE19_LINE_CHOICE_BASE + SQUARE19_LINE_CHOIC
 SQUARE19_TERRITORY_CHOICE_SPAN = 19 * 19 * TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS  # 11,552
 
 
+def encode_move_for_board(
+    move: "Move",
+    board: Union["BoardState", "GameState"],
+) -> int:
+    """
+    Encode a move to a policy index using board-type-specific encoding.
+
+    Unlike NeuralNetAI.encode_move which uses a fixed MAX_N=19 layout for all boards,
+    this function uses the proper policy layout for each board type:
+    - SQUARE8: policy_size=7000 (compact 8x8 encoding)
+    - SQUARE19: policy_size=67000 (19x19 encoding)
+    - HEXAGONAL: policy_size=91876 (hex-specific encoding)
+
+    This should be used for selfplay data generation to create training data
+    with correct policy sizes.
+
+    Parameters
+    ----------
+    move : Move
+        The move to encode
+    board : BoardState or GameState
+        Board context for coordinate mapping
+
+    Returns
+    -------
+    int
+        Policy index in [0, policy_size) for the board type,
+        or INVALID_MOVE_INDEX (-1) if the move cannot be encoded
+    """
+    if isinstance(board, GameState):
+        board = board.board
+
+    board_type = board.type
+
+    # Dispatch to board-specific encoder
+    if board_type == BoardType.SQUARE8:
+        return _encode_move_square8(move, board)
+    elif board_type == BoardType.SQUARE19:
+        return _encode_move_square19(move, board)
+    elif board_type == BoardType.HEXAGONAL:
+        # For hex boards, we can delegate to the HexActionEncoder
+        # but for now return INVALID since hex uses different encoding
+        return INVALID_MOVE_INDEX
+    else:
+        return INVALID_MOVE_INDEX
+
+
+def _encode_move_square8(move: "Move", board: "BoardState") -> int:
+    """Encode move for square8 board using compact 8x8 policy layout (max ~7000)."""
+    N = 8  # Board size
+    MAX_DIST = MAX_DIST_SQUARE8  # 7
+
+    # Placement: 0..191 (3 * 8 * 8)
+    if move.type == "place_ring":
+        cx, cy = move.to.x, move.to.y
+        if not (0 <= cx < N and 0 <= cy < N):
+            return INVALID_MOVE_INDEX
+        pos_idx = cy * N + cx
+        count_idx = (move.placement_count or 1) - 1
+        return pos_idx * 3 + count_idx
+
+    # Movement: 192..3775 (8 * 8 * 8 * 7)
+    if move.type in [
+        "move_stack", "move_ring", "overtaking_capture",
+        "chain_capture", "continue_capture_segment", "recovery_slide",
+    ]:
+        if not move.from_pos:
+            return INVALID_MOVE_INDEX
+        cfx, cfy = move.from_pos.x, move.from_pos.y
+        ctx, cty = move.to.x, move.to.y
+
+        if not (0 <= cfx < N and 0 <= cfy < N and 0 <= ctx < N and 0 <= cty < N):
+            return INVALID_MOVE_INDEX
+
+        from_idx = cfy * N + cfx
+        dx, dy = ctx - cfx, cty - cfy
+        dist = max(abs(dx), abs(dy))
+        if dist == 0 or dist > MAX_DIST:
+            return INVALID_MOVE_INDEX
+
+        dir_x = dx // dist if dist > 0 else 0
+        dir_y = dy // dist if dist > 0 else 0
+
+        dirs = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+        try:
+            dir_idx = dirs.index((dir_x, dir_y))
+        except ValueError:
+            return INVALID_MOVE_INDEX
+
+        return SQUARE8_MOVEMENT_BASE + from_idx * (8 * MAX_DIST) + dir_idx * MAX_DIST + (dist - 1)
+
+    # Line formation: 3776..4031
+    if move.type == "line_formation":
+        cx, cy = move.to.x, move.to.y
+        if not (0 <= cx < N and 0 <= cy < N):
+            return INVALID_MOVE_INDEX
+        pos_idx = cy * N + cx
+        return SQUARE8_LINE_FORM_BASE + pos_idx * 4  # 4 directions
+
+    # Territory claim: 4032..4095
+    if move.type == "territory_claim":
+        cx, cy = move.to.x, move.to.y
+        if not (0 <= cx < N and 0 <= cy < N):
+            return INVALID_MOVE_INDEX
+        pos_idx = cy * N + cx
+        return SQUARE8_TERRITORY_CLAIM_BASE + pos_idx
+
+    # Special actions
+    if move.type == "skip_placement":
+        return SQUARE8_SKIP_PLACEMENT_IDX
+
+    if move.type == "swap_sides":
+        return SQUARE8_SWAP_SIDES_IDX
+
+    if move.type == "skip_recovery":
+        return SQUARE8_SKIP_RECOVERY_IDX
+
+    # Line choice: 4099..4102
+    if move.type in ("choose_line_reward", "choose_line_option"):
+        option = (move.placement_count or 1) - 1
+        option = max(0, min(3, option))
+        return SQUARE8_LINE_CHOICE_BASE + option
+
+    # Territory choice: 4103..6150
+    if move.type == "choose_territory_option":
+        canonical_pos = move.to
+        region_size = 1
+        controlling_player = move.player
+
+        if move.disconnected_regions:
+            regions = list(move.disconnected_regions)
+            if regions:
+                region = regions[0]
+                if hasattr(region, "spaces") and region.spaces:
+                    spaces = list(region.spaces)
+                    region_size = len(spaces)
+                    canonical_pos = min(spaces, key=lambda p: (p.y, p.x))
+                if hasattr(region, "controlling_player"):
+                    controlling_player = region.controlling_player
+
+        cx, cy = canonical_pos.x, canonical_pos.y
+        if not (0 <= cx < N and 0 <= cy < N):
+            return INVALID_MOVE_INDEX
+
+        pos_idx = cy * N + cx
+        size_bucket = min(region_size - 1, TERRITORY_SIZE_BUCKETS - 1)
+        player_idx = (controlling_player - 1) % TERRITORY_MAX_PLAYERS
+
+        return (
+            SQUARE8_TERRITORY_CHOICE_BASE
+            + pos_idx * (TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS)
+            + size_bucket * TERRITORY_MAX_PLAYERS
+            + player_idx
+        )
+
+    return INVALID_MOVE_INDEX
+
+
+def _encode_move_square19(move: "Move", board: "BoardState") -> int:
+    """Encode move for square19 board using 19x19 policy layout (max ~67000)."""
+    N = 19  # Board size
+    MAX_DIST = MAX_DIST_SQUARE19  # 18
+
+    # Placement: 0..1082 (3 * 19 * 19)
+    if move.type == "place_ring":
+        cx, cy = move.to.x, move.to.y
+        if not (0 <= cx < N and 0 <= cy < N):
+            return INVALID_MOVE_INDEX
+        pos_idx = cy * N + cx
+        count_idx = (move.placement_count or 1) - 1
+        return pos_idx * 3 + count_idx
+
+    # Movement: 1083..53066
+    if move.type in [
+        "move_stack", "move_ring", "overtaking_capture",
+        "chain_capture", "continue_capture_segment", "recovery_slide",
+    ]:
+        if not move.from_pos:
+            return INVALID_MOVE_INDEX
+        cfx, cfy = move.from_pos.x, move.from_pos.y
+        ctx, cty = move.to.x, move.to.y
+
+        if not (0 <= cfx < N and 0 <= cfy < N and 0 <= ctx < N and 0 <= cty < N):
+            return INVALID_MOVE_INDEX
+
+        from_idx = cfy * N + cfx
+        dx, dy = ctx - cfx, cty - cfy
+        dist = max(abs(dx), abs(dy))
+        if dist == 0 or dist > MAX_DIST:
+            return INVALID_MOVE_INDEX
+
+        dir_x = dx // dist if dist > 0 else 0
+        dir_y = dy // dist if dist > 0 else 0
+
+        dirs = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+        try:
+            dir_idx = dirs.index((dir_x, dir_y))
+        except ValueError:
+            return INVALID_MOVE_INDEX
+
+        return SQUARE19_MOVEMENT_BASE + from_idx * (8 * MAX_DIST) + dir_idx * MAX_DIST + (dist - 1)
+
+    # Line formation: 53067..54510
+    if move.type == "line_formation":
+        cx, cy = move.to.x, move.to.y
+        if not (0 <= cx < N and 0 <= cy < N):
+            return INVALID_MOVE_INDEX
+        pos_idx = cy * N + cx
+        return SQUARE19_LINE_FORM_BASE + pos_idx * 4
+
+    # Territory claim: 54511..54871
+    if move.type == "territory_claim":
+        cx, cy = move.to.x, move.to.y
+        if not (0 <= cx < N and 0 <= cy < N):
+            return INVALID_MOVE_INDEX
+        pos_idx = cy * N + cx
+        return SQUARE19_TERRITORY_CLAIM_BASE + pos_idx
+
+    # Special actions
+    if move.type == "skip_placement":
+        return SQUARE19_SKIP_PLACEMENT_IDX
+
+    if move.type == "swap_sides":
+        return SQUARE19_SWAP_SIDES_IDX
+
+    if move.type == "skip_recovery":
+        return SQUARE19_SKIP_RECOVERY_IDX
+
+    # Line choice: 54875..54878
+    if move.type in ("choose_line_reward", "choose_line_option"):
+        option = (move.placement_count or 1) - 1
+        option = max(0, min(3, option))
+        return SQUARE19_LINE_CHOICE_BASE + option
+
+    # Territory choice: 54879..66430
+    if move.type == "choose_territory_option":
+        canonical_pos = move.to
+        region_size = 1
+        controlling_player = move.player
+
+        if move.disconnected_regions:
+            regions = list(move.disconnected_regions)
+            if regions:
+                region = regions[0]
+                if hasattr(region, "spaces") and region.spaces:
+                    spaces = list(region.spaces)
+                    region_size = len(spaces)
+                    canonical_pos = min(spaces, key=lambda p: (p.y, p.x))
+                if hasattr(region, "controlling_player"):
+                    controlling_player = region.controlling_player
+
+        cx, cy = canonical_pos.x, canonical_pos.y
+        if not (0 <= cx < N and 0 <= cy < N):
+            return INVALID_MOVE_INDEX
+
+        pos_idx = cy * N + cx
+        size_bucket = min(region_size - 1, TERRITORY_SIZE_BUCKETS - 1)
+        player_idx = (controlling_player - 1) % TERRITORY_MAX_PLAYERS
+
+        return (
+            SQUARE19_TERRITORY_CHOICE_BASE
+            + pos_idx * (TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS)
+            + size_bucket * TERRITORY_MAX_PLAYERS
+            + player_idx
+        )
+
+    return INVALID_MOVE_INDEX
+
+
 def _infer_board_size(board: Union[BoardState, GameState]) -> int:
     """
     Infer the canonical 2D board_size for CNN feature tensors.
@@ -4688,6 +4957,7 @@ __all__ = [
     "RingRiftCNN_v2",
     "RingRiftCNN_v3",
     "clear_model_cache",
+    "encode_move_for_board",
     "get_cached_model_count",
     "get_policy_size_for_board",
     "get_spatial_size_for_board",
