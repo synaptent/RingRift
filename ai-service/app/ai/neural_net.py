@@ -2557,8 +2557,13 @@ class NeuralNetAI(BaseAI):
             return
 
         # Defaults for fresh weights / unknown metadata.
-        num_res_blocks = 10
-        num_filters = 128
+        #
+        # IMPORTANT: Our current canonical v2 checkpoints use the "high" tier
+        # (12 res blocks, 192 filters). Defaulting to the historical 10/128 can
+        # trigger checkpoint shape mismatches (e.g., value_fc1 in_features
+        # checkpoint=212 vs expected=148) when metadata cannot be read.
+        num_res_blocks = 12
+        num_filters = 192
         policy_size_override: Optional[int] = None
         model_class_name: Optional[str] = None
         memory_tier_override: Optional[str] = None
@@ -2592,6 +2597,51 @@ class NeuralNetAI(BaseAI):
                                 memory_tier_override = "low"
                             else:
                                 memory_tier_override = "high"
+
+                    # Cross-check metadata against the actual weight shapes.
+                    # This hardens against metadata drift and protects callers
+                    # that rely on model_id prefixes.
+                    state_dict = checkpoint.get("model_state_dict")
+                    if isinstance(state_dict, dict):
+                        conv1_weight = state_dict.get("conv1.weight")
+                        if conv1_weight is not None and hasattr(conv1_weight, "shape"):
+                            inferred_filters = int(conv1_weight.shape[0])
+                            if inferred_filters and inferred_filters != num_filters:
+                                logger.warning(
+                                    "Checkpoint metadata num_filters=%s disagrees with weights (%s); "
+                                    "using inferred value.",
+                                    num_filters,
+                                    inferred_filters,
+                                )
+                                num_filters = inferred_filters
+
+                        # Infer res-block count from state_dict keys when possible.
+                        # We avoid importing regex at module level to keep import
+                        # time down for inference.
+                        inferred_blocks = None
+                        try:
+                            import re
+
+                            indices = set()
+                            for key in state_dict.keys():
+                                if not isinstance(key, str):
+                                    continue
+                                m = re.match(r"(?:module\\.)?res_blocks\\.(\\d+)\\.", key)
+                                if m:
+                                    indices.add(int(m.group(1)))
+                            if indices:
+                                inferred_blocks = max(indices) + 1
+                        except Exception:
+                            inferred_blocks = None
+
+                        if inferred_blocks and inferred_blocks != num_res_blocks:
+                            logger.warning(
+                                "Checkpoint metadata num_res_blocks=%s disagrees with weights (%s); "
+                                "using inferred value.",
+                                num_res_blocks,
+                                inferred_blocks,
+                            )
+                            num_res_blocks = inferred_blocks
             except Exception as e:
                 logger.debug(
                     "Failed to read checkpoint metadata for %s: %s",

@@ -46,6 +46,9 @@ from typing import Dict, List, Optional, Tuple
 # Allow imports from app/
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Light-weight significance helper (used for promotion gating).
+from app.training.significance import wilson_score_interval
+
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -122,6 +125,51 @@ def parse_winrate(output: str) -> float:
         return p1_wins / total
 
     return 0.5  # Default to 50% if parsing fails
+
+
+def _promotion_gate(
+    *,
+    wins: int,
+    losses: int,
+    draws: int,
+    threshold: float,
+    confidence: float,
+) -> dict:
+    """Compute promotion decision using a Wilson lower-bound gate."""
+    total_games = wins + losses + draws
+    if total_games <= 0:
+        return {
+            "games": 0,
+            "wins": wins,
+            "losses": losses,
+            "draws": draws,
+            "win_rate": 0.0,
+            "win_rate_ci_low": None,
+            "win_rate_ci_high": None,
+            "threshold": threshold,
+            "confidence": confidence,
+            "promote": False,
+        }
+
+    win_rate = wins / float(total_games)
+    ci_low, ci_high = wilson_score_interval(
+        wins,
+        total_games,
+        confidence=confidence,
+    )
+    promote = win_rate >= threshold and ci_low >= threshold
+    return {
+        "games": total_games,
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+        "win_rate": win_rate,
+        "win_rate_ci_low": ci_low,
+        "win_rate_ci_high": ci_high,
+        "threshold": threshold,
+        "confidence": confidence,
+        "promote": promote,
+    }
 
 
 def validate_model(model_path: Path) -> bool:
@@ -427,54 +475,110 @@ def train_model(
 
 def evaluate_model(
     config: dict,
+    iteration: int,
     iter_model: Path,
     dry_run: bool = False,
-) -> Tuple[bool, float]:
+) -> Tuple[bool, dict]:
     """Evaluate new model against baseline.
 
-    Returns: (success, winrate)
+    Returns: (success, evaluation_summary)
     """
     board = config["board"]
     players = config["players"]
     best_model = AI_SERVICE_ROOT / "models" / f"{board}_{players}p_best.pth"
 
-    # Determine opponent
+    if players != 2:
+        print(
+            "Evaluation currently supports only 2-player games "
+            f"(requested players={players}).",
+            file=sys.stderr,
+        )
+        return False, {}
+
+    eval_games = int(config.get("eval_games", 100))
+    seed = int(config.get("eval_seed_base", 10_000)) + int(iteration)
+    max_moves = int(config.get("max_moves", 200))
+
+    log_dir = AI_SERVICE_ROOT / "logs" / "improvement"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    eval_out = log_dir / f"eval_iter{iteration}_{board}_{players}p.json"
+
+    # Determine opponent (prefer NN-vs-NN when a best model exists).
     if best_model.exists():
-        opponent = "Neural"
-        opponent_args = ["--p2-model", str(best_model)]
+        opponent = "neural_network"
+        opponent_args = ["--checkpoint2", str(best_model)]
     else:
-        opponent = "Heuristic"
-        opponent_args = ["--p2-diff", "5"]
+        opponent = "baseline_heuristic"
+        opponent_args = []
 
     cmd = [
         "python",
-        "scripts/run_ai_tournament.py",
-        "--p1",
-        "Neural",
-        "--p1-model",
-        str(iter_model),
-        "--p2",
+        "scripts/evaluate_ai_models.py",
+        "--player1",
+        "neural_network",
+        "--player2",
         opponent,
         *opponent_args,
         "--board",
-        board.capitalize() if board != "hexagonal" else "Hexagonal",
+        board,
         "--games",
-        "20",
+        str(eval_games),
+        "--max-moves",
+        str(max_moves),
+        "--seed",
+        str(seed),
+        "--checkpoint",
+        str(iter_model),
+        "--output",
+        str(eval_out),
+        "--quiet",
     ]
 
     print(f"Evaluating {iter_model.name} vs {opponent}...")
-    code, stdout, stderr = run_command(cmd, dry_run=dry_run, capture=True, timeout=1800, cwd=AI_SERVICE_ROOT)
+    code, _, stderr = run_command(
+        cmd,
+        dry_run=dry_run,
+        capture=False,
+        timeout=7200,
+        cwd=AI_SERVICE_ROOT,
+    )
 
     if code != 0:
         print(f"Evaluation failed: {stderr[:200]}")
-        return False, 0.0
+        return False, {}
 
     if dry_run:
-        return True, 0.6  # Assume success for dry run
+        return True, {
+            "games": eval_games,
+            "wins": int(eval_games * 0.6),
+            "losses": int(eval_games * 0.4),
+            "draws": 0,
+            "win_rate": 0.6,
+        }
 
-    winrate = parse_winrate(stdout)
-    print(f"Win rate: {winrate:.1%}")
-    return True, winrate
+    if not eval_out.exists():
+        print(f"Evaluation did not produce output file: {eval_out}", file=sys.stderr)
+        return False, {}
+
+    payload = json.loads(eval_out.read_text())
+    res = payload.get("results", {}) if isinstance(payload, dict) else {}
+    wins = int(res.get("player1_wins", 0))
+    losses = int(res.get("player2_wins", 0))
+    draws = int(res.get("draws", 0))
+
+    summary = _promotion_gate(
+        wins=wins,
+        losses=losses,
+        draws=draws,
+        threshold=float(config.get("promotion_threshold", 0.55)),
+        confidence=float(config.get("promotion_confidence", 0.95)),
+    )
+    print(
+        f"Win rate: {summary['win_rate']:.1%} "
+        f"(CI_low={summary['win_rate_ci_low']:.1%} "
+        f"@ {summary['confidence']:.0%})"
+    )
+    return True, summary
 
 
 def promote_model(
@@ -568,21 +672,39 @@ def run_improvement_iteration(
 
     # Step 4: Evaluate
     print(f"\n--- Step 4: Evaluate ---")
-    success, winrate = evaluate_model(config, iter_model, dry_run)
+    success, eval_summary = evaluate_model(
+        config,
+        iteration,
+        iter_model,
+        dry_run,
+    )
     if not success:
         return False, 0.0, games
 
     # Step 5: Promote if improved
     print(f"\n--- Step 5: Promotion Decision ---")
     threshold = config.get("promotion_threshold", 0.55)
-    if winrate > threshold:
+    if eval_summary.get("promote", False):
         if promote_model(config, iter_model, dry_run):
-            print(f"Model promoted! Win rate {winrate:.1%} > {threshold:.1%}")
+            winrate = float(eval_summary.get("win_rate") or 0.0)
+            ci_low = eval_summary.get("win_rate_ci_low")
+            ci_text = f"{ci_low:.1%}" if isinstance(ci_low, float) else "N/A"
+            print(
+                "Model promoted! "
+                f"Win rate {winrate:.1%} "
+                f"(CI_low={ci_text}) >= {threshold:.1%}"
+            )
             return True, winrate, games
         else:
-            return False, winrate, games
+            return False, float(eval_summary.get("win_rate") or 0.0), games
     else:
-        print(f"No improvement: {winrate:.1%} <= {threshold:.1%}")
+        winrate = float(eval_summary.get("win_rate") or 0.0)
+        ci_low = eval_summary.get("win_rate_ci_low")
+        ci_text = f"{ci_low:.1%}" if isinstance(ci_low, float) else "N/A"
+        print(
+            "No improvement: "
+            f"win={winrate:.1%}, CI_low={ci_text} < {threshold:.1%}"
+        )
         return False, winrate, games
 
 
@@ -654,6 +776,18 @@ def main():
         help="Win rate threshold for model promotion",
     )
     parser.add_argument(
+        "--promotion-confidence",
+        type=float,
+        default=0.95,
+        help="Wilson CI confidence level for promotion gate (default: 0.95).",
+    )
+    parser.add_argument(
+        "--eval-games",
+        type=int,
+        default=100,
+        help="Number of evaluation games per iteration (default: 100).",
+    )
+    parser.add_argument(
         "--max-consecutive-failures",
         type=int,
         default=5,
@@ -694,6 +828,8 @@ def main():
         "games_per_iter": args.games_per_iter,
         "max_moves": 500 if args.board == "square8" else 1000,
         "promotion_threshold": args.promotion_threshold,
+        "promotion_confidence": args.promotion_confidence,
+        "eval_games": args.eval_games,
         "replay_db": str(replay_db_path),
         "canonical_mode": canonical_mode,
         "allow_pending_gate": bool(args.allow_pending_gate),
@@ -721,7 +857,9 @@ def main():
         print(f"Gate summary: {gate_summary_path}")
     print(f"Iterations: {start_iter + 1} to {args.iterations}")
     print(f"Games per iteration: {args.games_per_iter}")
+    print(f"Eval games per iteration: {args.eval_games}")
     print(f"Promotion threshold: {args.promotion_threshold:.0%}")
+    print(f"Promotion confidence: {args.promotion_confidence:.0%}")
     print(f"State file: {state_path}")
     if args.dry_run:
         print("*** DRY RUN MODE - No commands will be executed ***")

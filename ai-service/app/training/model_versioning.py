@@ -258,6 +258,10 @@ def get_model_config(model: nn.Module) -> Dict[str, Any]:
         config = {
             "board_size": getattr(model, "board_size", 8),
             "total_in_channels": getattr(model, "total_in_channels", 40),
+            # These are canonical constants in current encoders but we persist them
+            # to make checkpoint compatibility checks explicit.
+            "global_features": getattr(model, "global_features", 20),
+            "history_length": getattr(model, "history_length", 3),
             "num_filters": num_filters,
             "num_res_blocks": num_res_blocks,
             "policy_size": getattr(model, "policy_size", 55000),

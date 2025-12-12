@@ -16,17 +16,19 @@ This document tracks the provenance and canonical status of all self-play databa
 
 ### Canonical (Parity + Canonical-History Gated)
 
-| Database               | Board Type | Players | Status        | Gate Summary                     | Notes                                                                                                                                                                  |
-| ---------------------- | ---------- | ------- | ------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canonical_square8.db` | square8    | 2       | **canonical** | db_health.canonical_square8.json | 2025-12-12 distributed regeneration (12 games) and re-gate after TS territory-control parity fix; `canonical_ok=true` (only end-of-game-only current_player mismatch). |
+| Database                  | Board Type | Players | Status        | Gate Summary                        | Notes                                                                                                                                                                  |
+| ------------------------- | ---------- | ------- | ------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canonical_square8.db`    | square8    | 2       | **canonical** | db_health.canonical_square8.json    | 2025-12-12 distributed regeneration (12 games) and re-gate after TS territory-control parity fix; `canonical_ok=true` (only end-of-game-only current_player mismatch). |
+| `canonical_square8_3p.db` | square8    | 3       | **canonical** | db_health.canonical_square8_3p.json | 2025-12-12 initial 3P canonical DB (2 games) gated successfully (`canonical_ok=true`; parity only end-of-game-only current_player mismatch).                           |
+| `canonical_square19.db`   | square19   | 2       | **canonical** | db_health.canonical_square19.json   | 2025-12-12 initial Square19 canonical DB (1 game) gated successfully (`canonical_ok=true`). Scale up before training.                                                  |
 
-The `Status` column uses `canonical` only for DBs whose latest gate summary JSON has `canonical_ok == true`. For supported board types (currently `square8` and `hexagonal`), this also implies `fe_territory_fixtures_ok == true` as well as a passing parity gate and canonical phase history.
+The `Status` column uses `canonical` only for DBs whose latest gate summary JSON has `canonical_ok == true`. For supported board types (currently `square8` and `square19`; hex pending), this also implies `fe_territory_fixtures_ok == true` as well as a passing parity gate and canonical phase history.
 
 ### Pending Re-Gate / Needs Regeneration
 
-| Database | Board Type | Players | Status | Gate Summary | Notes |
-| -------- | ---------- | ------- | ------ | ------------ | ----- |
-| _None_   | –          | –       | –      | –            | –     |
+| Database                  | Board Type | Players | Status           | Gate Summary                        | Notes                                                                                     |
+| ------------------------- | ---------- | ------- | ---------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| `canonical_square8_4p.db` | square8    | 4       | **pending_gate** | db_health.canonical_square8_4p.json | Parity gate currently fails with a semantic divergence; fix/re-generate before promotion. |
 
 ### Legacy / Non-Canonical
 
@@ -46,9 +48,10 @@ _None retained._ All legacy/non-canonical DBs were deleted as part of the 2025-1
 ### Gate Notes (2025-12-07)
 
 - 2025-12-12 distributed regeneration + parity fix: `canonical_square8.db` now passes the canonical gate (`canonical_ok=true`, parity only end-of-game-only mismatches). It is safe for new training.
-- `canonical_square19.db` currently has zero games despite an older parity gate artifact; regenerate and re-gate before use.
+- 2025-12-12: `canonical_square8_3p.db` and `canonical_square19.db` have initial gated games; scale up before training.
+- 2025-12-12: `canonical_square8_4p.db` is **not** yet canonical (`canonical_ok=false`) due to a parity divergence; do not train from it.
 - Hex assets remain deprecated until a radius-12 canonical DB is generated. Only radius-12 hex DBs whose gate summary JSON reports `canonical_ok == true` and `fe_territory_fixtures_ok == true` **and** that are listed as `canonical` in this registry should be used for training hex models. Older radius-10/legacy hex DBs remain permanently non-canonical; see `docs/HEX_PARITY_AUDIT.md` and `ai-service/data/HEX_DATA_DEPRECATION_NOTICE.md` for deprecation and parity-audit context.
-- 2025-12-08 sandbox attempt to regenerate `canonical_square8.db` via `generate_canonical_selfplay.py` failed before the parity gate due to OpenMP shared-memory permissions (`OMP: Error #179: Function Can't open SHM2 failed`). The resulting `db_health.canonical_square8.json` has `canonical_ok=false` and an empty `canonical_history` block. Re-run the generator on a host with SHM permissions, then replace the DB and summaries.
+- Historical: the sandboxed environment can fail OpenMP shared-memory allocation (`OMP: Error #179: Function Can't open SHM2 failed`); run canonical self-play on a host/container with SHM permissions.
 - (Historical) 2025-12-09 re-gate of `canonical_square8.db` found TS replay structural errors; resolved on 2025-12-12 by aligning TS territory-control victory to collapsed-territory counts.
 
 ---
@@ -207,4 +210,4 @@ parity issues before promoting a DB to the canonical training allowlist.
 
 ---
 
-_Last updated: 2025-12-09_
+_Last updated: 2025-12-12_

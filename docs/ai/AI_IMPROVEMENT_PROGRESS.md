@@ -40,12 +40,13 @@ Status tags:
 - **done** Regenerated and re-gated `canonical_square8.db` (2P) via distributed
   `generate_canonical_selfplay.py`; parity + canonical history pass and the
   registry is updated (`canonical_ok=true`).
-- **next** Regenerate remaining canonical replay DBs via
-  `ai-service/scripts/generate_canonical_selfplay.py` for:
-  - `canonical_square8.db` (3P/4P variants)
-  - `canonical_square19.db`
-  - `canonical_hex.db` (radius‑12)
-    then update `ai-service/TRAINING_DATA_REGISTRY.md` with gate summaries.
+- **done** Gated initial `canonical_square8_3p.db` (3P) (`canonical_ok=true`).
+- **next** Fix/re-generate `canonical_square8_4p.db` (4P); parity gate currently
+  fails (`canonical_ok=false`).
+- **done** Gated initial `canonical_square19.db` (2P) (`canonical_ok=true`);
+  scale up before training.
+- **next** Regenerate `canonical_hex.db` (radius‑12) and gate it, then update
+  `ai-service/TRAINING_DATA_REGISTRY.md` with gate summaries.
 - **done** Canonical dataset export path fixed (`build_canonical_dataset.py`
   - programmatic `export_replay_dataset.py`) and neural tier training now
     defaults to `canonical_square8_2p.npz` for non-demo runs.
@@ -54,6 +55,10 @@ Status tags:
 
 ## Training & Evaluation
 
+- **done** Reset/reseed reused AI instances per game in `app.training.generate_data`
+  to keep self-play runs reproducible under a base seed and reduce correlated RNG.
+- **done** Promotion gating in `ai-service/scripts/run_improvement_loop.py` now uses
+  a Wilson CI lower-bound check (configurable `--promotion-confidence` and `--eval-games`).
 - **next** Implement real ReAnalyze over DB‑stored games
   (`ai-service/app/training/reanalyze.py`) to refresh targets with newer models.
 - **next** Generalize tier tournaments / gates to square19 + hex and 3P/4P pools

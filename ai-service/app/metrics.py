@@ -67,6 +67,15 @@ AI_INSTANCE_CACHE_SIZE: Final[Gauge] = Gauge(
     "Current number of cached AI instances in this process.",
 )
 
+# Pre-initialize one labeled time series for the core /ai/move metrics so the
+# /metrics endpoint exposes histogram buckets even before the first request.
+# This keeps smoke tests and local Prometheus setups stable.
+#
+# Note: we intentionally do NOT call .observe() / .inc() here; creating the
+# labeled child is sufficient to emit zero-valued samples.
+AI_MOVE_REQUESTS.labels("init", "0", "init")  # type: ignore[arg-type]
+AI_MOVE_LATENCY.labels("init", "0")  # type: ignore[arg-type]
+
 
 def observe_ai_move_start(ai_type: str, difficulty: int) -> tuple[str, str]:
     """Prepare metric label values for a new /ai/move request.

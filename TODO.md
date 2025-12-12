@@ -230,6 +230,8 @@ Operational drills completed:
 | **W3-13** | Touch-optimized controls                         | LOW      | Complete | Touch targets ≥44px, gestures functional           |
 | **W3-14** | E2E multiplayer scenario tests                   | MEDIUM   | Complete | ≥5 full game flow tests for 3-4 player games       |
 
+**W3-14 evidence:** `tests/scenarios/MultiplayerRotation.test.ts` (17 tests; Jest).
+
 **Dependencies:**
 
 - W3-3, W3-4 depend on W3-1 and W3-2
@@ -308,9 +310,14 @@ Operational drills completed:
   - [x] Run `ai-service/scripts/run_parity_and_history_gate.py --db <path> [--emit-state-bundles-dir DIR]`
     - Pass: coverage*selfplay, distributed_soak_20251207/selfplay_square8*{2p,3p,4p}_local, selfplay_{square8,square19,hexagonal}_{2p,3p,4p}, distributed_soak_fetch/selfplay_square19_{2p,3p}_mbp-64gb, distributed_soak_fetch/selfplay_square8\_\_ (mbp/mac-studio), parity_test/_, selfplay_hex_mps_smoke, selfplay.db, canonical_square8.db
     - Removed (history fail): fixtures/golden_games/golden_square8_2p.db, legacy_noncanonical/canonical_square19.bad.db
-  - [ ] Archive parity/history results alongside DB (or update registry entry)
-- [ ] Regenerate canonical DBs via `ai-service/scripts/generate_canonical_selfplay.py` starting with `canonical_square8.db`, attach emitted gate summaries next to the DBs, refresh the CI golden replay pack, and update `ai-service/TRAINING_DATA_REGISTRY.md` accordingly.
-  - Attempted `generate_canonical_selfplay.py --board-type square8 --num-games 4` in sandbox; Python self-play failed with `OMP: Error #179: Function Can't open SHM2 failed` (no SHM perms), so `canonical_ok=false` and parity gate not executed. Rerun off-sandbox/SHM-enabled host before promoting DB.
+  - [x] Archive parity/history results alongside DB (or update registry entry)
+    - Gate summaries live under `ai-service/data/games/db_health.*.json` (plus `*.db.parity_gate.json` artefacts).
+- [ ] Regenerate and gate canonical replay DBs via `ai-service/scripts/generate_canonical_selfplay.py` (attach gate summaries + update `ai-service/TRAINING_DATA_REGISTRY.md`):
+  - [x] `canonical_square8.db` (2P) — `canonical_ok=true` (`ai-service/data/games/db_health.canonical_square8.json`)
+  - [x] `canonical_square8_3p.db` (3P) — `canonical_ok=true` (`ai-service/data/games/db_health.canonical_square8_3p.json`)
+  - [ ] `canonical_square8_4p.db` (4P) — parity gate failing (`ai-service/data/games/db_health.canonical_square8_4p.json`)
+  - [x] `canonical_square19.db` (2P) — `canonical_ok=true` (`ai-service/data/games/db_health.canonical_square19.json`, low volume; scale up)
+  - [ ] `canonical_hex.db` (radius‑12) — pending
 - [x] Add and keep a small golden replay pack in CI that replays in TS + Python and fails on any semantic drift
   - [x] Exported new canonical golden from `canonical_square8_2p.db` -> `tests/fixtures/golden-games/golden_square8_2p_d033.json`
 - [x] Audit orchestrator/Python `game_engine.py` changes for silent transitions or forced elimination without recorded moves
@@ -342,7 +349,7 @@ Operational drills completed:
 - [x] Land `CanonicalReplayEngine` (TurnEngineAdapter `replayMode` wrapper) and port `scripts/selfplay-db-ts-replay.ts` to use it for parity.
 - [x] Add unit tests for the replay engine (decision/no-op/FE coverage).
 - [x] FSM validation script uses `CanonicalReplayEngine` (clean, coercion-free path).
-- [ ] Regenerate/replace `canonical_square8.db` (game `151ba34a-b7bf-4845-a779-5232221f592e` is non-canonical: territory → no_placement_action; missing initial state in Python checker). Until regenerated, skip this game/DB in parity runs (`--skip-game`).
+- [x] Regenerate/replace `canonical_square8.db` (resolved via 2025-12-12 regeneration + re-gate; referenced non-canonical game no longer present).
 - [x] **Assess parity test migration from ClientSandboxEngine traceMode to CanonicalReplayEngine:**
   - **Finding:** 17 of 20 files are Backend (GameEngine) vs ClientSandboxEngine comparison tests - these REQUIRE both engines and are NOT migration candidates
   - **Breakdown:**
