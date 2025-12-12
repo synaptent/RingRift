@@ -57,7 +57,7 @@ import numpy as np
 
 from app.db import GameReplayDB
 from app.models import AIConfig, BoardType, GameState, Move
-from app.ai.neural_net import NeuralNetAI, INVALID_MOVE_INDEX
+from app.ai.neural_net import NeuralNetAI, INVALID_MOVE_INDEX, encode_move_for_board
 
 
 BOARD_TYPE_MAP: Dict[str, BoardType] = {
@@ -289,6 +289,7 @@ def export_replay_dataset(
     use_rank_aware_values: bool = True,
     parity_fixtures_dir: Optional[str] = None,
     exclude_recovery: bool = False,
+    use_board_aware_encoding: bool = False,
 ) -> None:
     """
     Export training samples from a single GameReplayDB into an NPZ dataset.
@@ -306,6 +307,9 @@ def export_replay_dataset(
         max_moves: Maximum move count to include a game
         use_rank_aware_values: If True, use rank-based values for multiplayer;
             if False, use binary winner/loser values (default: True)
+        use_board_aware_encoding: If True, use board-specific policy encoding
+            (e.g., 7000 actions for square8). If False, use legacy MAX_N=19
+            encoding (~55000 actions). Default: False for backward compat.
     """
     db = GameReplayDB(db_path)
     encoder = build_encoder(board_type)
@@ -488,7 +492,10 @@ def export_replay_dataset(
                 history_frames.pop(0)
 
             # Encode the action taken at this state.
-            idx = encoder.encode_move(move, state_before.board)
+            if use_board_aware_encoding:
+                idx = encode_move_for_board(move, state_before.board)
+            else:
+                idx = encoder.encode_move(move, state_before.board)
             if idx == INVALID_MOVE_INDEX:
                 continue
 
@@ -722,6 +729,16 @@ def _parse_args() -> argparse.Namespace:
             "Use this for training data purity when recovery rules have changed."
         ),
     )
+    parser.add_argument(
+        "--board-aware-encoding",
+        action="store_true",
+        help=(
+            "Use board-specific policy encoding (compact action space). "
+            "square8: 7000 actions, square19: 67000 actions. "
+            "Recommended for new training runs. Legacy default uses ~55000 actions "
+            "for all square boards."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -748,6 +765,7 @@ def main() -> None:
         use_rank_aware_values=not args.no_rank_aware_values,
         parity_fixtures_dir=args.parity_fixtures_dir,
         exclude_recovery=args.exclude_recovery,
+        use_board_aware_encoding=args.board_aware_encoding,
     )
 
 

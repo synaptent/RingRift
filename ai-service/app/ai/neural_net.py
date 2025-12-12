@@ -310,9 +310,9 @@ def encode_move_for_board(
     elif board_type == BoardType.SQUARE19:
         return _encode_move_square19(move, board)
     elif board_type == BoardType.HEXAGONAL:
-        # For hex boards, we can delegate to the HexActionEncoder
-        # but for now return INVALID since hex uses different encoding
-        return INVALID_MOVE_INDEX
+        # Use the hex-specific encoder (policy_size=91876)
+        hex_encoder = ActionEncoderHex(board_size=HEX_BOARD_SIZE, policy_size=P_HEX)
+        return hex_encoder.encode_move(move, board)
     else:
         return INVALID_MOVE_INDEX
 
