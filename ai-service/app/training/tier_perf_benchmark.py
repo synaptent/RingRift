@@ -158,8 +158,20 @@ def run_tier_perf_benchmark(
             t0 = perf_counter()
             move = current_ai.select_move(state)
             if move is None:
-                # Treat failure to produce a move as immediate termination.
-                break
+                # Per RR-CANON-R076: when get_valid_moves returns empty,
+                # check for phase requirements that require bookkeeping moves
+                requirement = GameEngine.get_phase_requirement(
+                    state,
+                    current_player,
+                )
+                if requirement is not None:
+                    move = GameEngine.synthesize_bookkeeping_move(
+                        requirement,
+                        state,
+                    )
+                else:
+                    # True "no moves" case - terminate immediately.
+                    break
             # Mirror the /ai/move critical path by including evaluation.
             _ = current_ai.evaluate_position(state)
             t1 = perf_counter()

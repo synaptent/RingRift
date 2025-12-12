@@ -294,17 +294,31 @@ def _play_matchup(
                 )
             move = current_ai.select_move(game_state)
             if move is None:
-                # Treat lack of move as immediate loss for the side that
-                # failed to produce a move.
-                if current_player == candidate_seat:
-                    stats.losses += 1
-                else:
-                    stats.wins += 1
-                stats.victory_reasons["ai_no_move"] = (
-                    stats.victory_reasons.get("ai_no_move", 0) + 1
+                # Per RR-CANON-R076: when get_valid_moves returns empty,
+                # check for phase requirements that require bookkeeping moves
+                # (NO_*_ACTION, FORCED_ELIMINATION, etc.)
+                requirement = GameEngine.get_phase_requirement(
+                    game_state,
+                    current_player,
                 )
-                stats.total_moves += moves_played
-                break
+                if requirement is not None:
+                    # Synthesize the required bookkeeping move and continue
+                    move = GameEngine.synthesize_bookkeeping_move(
+                        requirement,
+                        game_state,
+                    )
+                else:
+                    # True "no moves" case - treat as immediate loss for the side that
+                    # failed to produce a move.
+                    if current_player == candidate_seat:
+                        stats.losses += 1
+                    else:
+                        stats.wins += 1
+                    stats.victory_reasons["ai_no_move"] = (
+                        stats.victory_reasons.get("ai_no_move", 0) + 1
+                    )
+                    stats.total_moves += moves_played
+                    break
 
             game_state, reward, done, info = env.step(move)
             last_info = info

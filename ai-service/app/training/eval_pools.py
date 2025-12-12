@@ -493,31 +493,45 @@ def run_heuristic_tier_eval(
                 candidate_latencies_ms.append(dt_ms)
 
             if move is None:
-                # No legal move available: treat as an immediate loss for the
-                # side to move, mirroring the tournament harness semantics.
-                if current_player == candidate_seat:
-                    winner = baseline_seat
-                else:
-                    winner = candidate_seat
-
-                if winner == candidate_seat:
-                    wins += 1
-                else:
-                    losses += 1
-
-                # Use a synthetic victory reason to keep stats structured.
-                prev_no_moves = victory_reasons.get("no_moves", 0)
-                victory_reasons["no_moves"] = prev_no_moves + 1
-
-                # Margin from the current state.
-                margins = _compute_margins(
+                # Per RR-CANON-R076: when get_valid_moves returns empty,
+                # check for phase requirements that require bookkeeping moves
+                # (NO_*_ACTION, FORCED_ELIMINATION, etc.)
+                requirement = GameEngine.get_phase_requirement(
                     game_state,
-                    candidate_seat,
-                    baseline_seat,
+                    current_player,
                 )
-                ring_margins.append(margins["ring_margin"])
-                territory_margins.append(margins["territory_margin"])
-                break
+                if requirement is not None:
+                    # Synthesize the required bookkeeping move and continue
+                    move = GameEngine.synthesize_bookkeeping_move(
+                        requirement,
+                        game_state,
+                    )
+                else:
+                    # True "no moves" case: treat as an immediate loss for the
+                    # side to move, mirroring the tournament harness semantics.
+                    if current_player == candidate_seat:
+                        winner = baseline_seat
+                    else:
+                        winner = candidate_seat
+
+                    if winner == candidate_seat:
+                        wins += 1
+                    else:
+                        losses += 1
+
+                    # Use a synthetic victory reason to keep stats structured.
+                    prev_no_moves = victory_reasons.get("no_moves", 0)
+                    victory_reasons["no_moves"] = prev_no_moves + 1
+
+                    # Margin from the current state.
+                    margins = _compute_margins(
+                        game_state,
+                        candidate_seat,
+                        baseline_seat,
+                    )
+                    ring_margins.append(margins["ring_margin"])
+                    territory_margins.append(margins["territory_margin"])
+                    break
 
             # Apply move via canonical GameEngine.
             game_state = GameEngine.apply_move(game_state, move)
