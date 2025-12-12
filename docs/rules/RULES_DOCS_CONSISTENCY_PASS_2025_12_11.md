@@ -117,3 +117,28 @@ Notes:
 - **Python (focused):**
   - `pytest ai-service/tests/rules/test_phase_machine.py`
   - `pytest ai-service/tests/parity/test_recovery_parity.py`
+
+---
+
+## Follow-up Pass (2025-12-12): SSoT Drift Guards + CI Alignment (P0)
+
+> **Goal:** Make contract drift and CI/doc mismatches fail fast so rules/engine changes don’t silently desync.
+
+### Changes applied
+
+- **Phase↔MoveType drift guard (TS↔Python):**
+  - Added `scripts/ssot/phase-move-contract-ssot-check.ts` and wired it into `npm run ssot-check`.
+  - Exported a canonical-only mapping in `src/shared/engine/phaseValidation.ts` as `CANONICAL_VALID_MOVES_BY_PHASE` (matches Python `ai-service/app/rules/history_contract.py`).
+- **SSoT docs alignment:**
+  - Updated `docs/rules/RULES_IMPLEMENTATION_MAPPING.md` to reference missing RR-CANON rule anchors required by `rules-semantics-ssot`.
+  - Updated `docs/architecture/CANONICAL_ENGINE_API.md` MoveType literal listing to include all non-legacy MoveTypes required by `lifecycle-api-ssot`.
+- **CI alignment:**
+  - Reintroduced the CI job `TS Orchestrator Parity (adapter-ON)` in `.github/workflows/ci.yml` to match SSoT guard expectations and supply-chain documentation.
+- **Python FSM parity correctness:**
+  - Updated `ai-service/app/rules/fsm.py` to respect RR-CANON-R075 “no silent phase skipping” (line_processing always advances to territory_processing) and to handle `CHOOSE_TERRITORY_OPTION` / `SKIP_TERRITORY_PROCESSING`.
+  - Updated `ai-service/tests/rules/test_fsm_parity.py` expectations accordingly.
+
+### Verification commands
+
+- `npm run ssot-check`
+- `pytest ai-service/tests/rules/test_fsm_parity.py`

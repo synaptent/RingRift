@@ -1,14 +1,13 @@
 """
-FSM Canonical Tests - Validate Python FSM phase transitions.
+FSM Orchestration Tests - Validate Python FSM phase transitions.
 
-FSM is now the canonical game state orchestrator (RR-CANON compliance).
 These tests validate that `compute_fsm_orchestration()` produces correct
-phase and player transitions for all move types.
+phase and player transitions for all move types and remains aligned with
+the existing `phase_machine.advance_phases()` behavior.
 
-Note: Legacy parity checks are preserved for regression detection, but
-FSM behavior is authoritative when there are divergences. The FSM
-correctly skips empty phases (e.g., territory_processing when no regions
-exist) which legacy phase_machine did not.
+RR-CANON-R075 requires that phases are not silently skipped: even when no
+interactive decisions exist, hosts must record explicit no-action moves
+(`no_*_action`) for phase visits.
 """
 
 from __future__ import annotations
@@ -241,40 +240,38 @@ class TestFSMParityLineProcessing:
     """Test FSM parity for line_processing phase transitions."""
 
     def test_no_line_action_empty_board_ends_turn(self):
-        """NO_LINE_ACTION on empty board should end turn (no territory regions).
+        """NO_LINE_ACTION on empty board should advance to TERRITORY_PROCESSING.
 
-        FSM correctly skips territory_processing when there are no regions,
-        while legacy phase_machine always transitions to territory_processing.
-        FSM behavior is canonical (RR-CANON compliance).
+        Per RR-CANON-R075, all phases must be visited and recorded. When no
+        territory decisions exist, the host emits NO_TERRITORY_ACTION next.
         """
         state = _make_game_state(GamePhase.LINE_PROCESSING, current_player=1)
         move = _make_move(MoveType.NO_LINE_ACTION, player=1)
 
         fsm_result, legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
 
-        # FSM correctly skips empty territory_processing phase
-        # Legacy goes to territory_processing, but FSM behavior is canonical
-        assert fsm_result.next_phase == GamePhase.RING_PLACEMENT
-        assert fsm_result.next_player == 2
-        # Note: Legacy behavior (territory_processing/1) is not canonical
+        assert parity_ok, f"FSM: {fsm_result.next_phase}/{fsm_result.next_player}, Legacy: {legacy_phase}/{legacy_player}"
+        assert fsm_result.next_phase == GamePhase.TERRITORY_PROCESSING
+        assert fsm_result.next_player == 1
+        assert legacy_phase == GamePhase.TERRITORY_PROCESSING
+        assert legacy_player == 1
 
     def test_process_line_empty_board_ends_turn(self):
-        """PROCESS_LINE on empty board should end turn (no more lines, no territory).
+        """PROCESS_LINE on empty board advances to TERRITORY_PROCESSING.
 
-        FSM correctly skips territory_processing when there are no regions,
-        while legacy phase_machine always transitions to territory_processing.
-        FSM behavior is canonical (RR-CANON compliance).
+        After line processing completes, territory_processing is always
+        visited as a distinct phase (RR-CANON-R075).
         """
         state = _make_game_state(GamePhase.LINE_PROCESSING, current_player=1)
         move = _make_move(MoveType.PROCESS_LINE, player=1)
 
         fsm_result, legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
 
-        # FSM correctly skips empty territory_processing phase
-        # Legacy goes to territory_processing, but FSM behavior is canonical
-        assert fsm_result.next_phase == GamePhase.RING_PLACEMENT
-        assert fsm_result.next_player == 2
-        # Note: Legacy behavior (territory_processing/1) is not canonical
+        assert parity_ok, f"FSM: {fsm_result.next_phase}/{fsm_result.next_player}, Legacy: {legacy_phase}/{legacy_player}"
+        assert fsm_result.next_phase == GamePhase.TERRITORY_PROCESSING
+        assert fsm_result.next_player == 1
+        assert legacy_phase == GamePhase.TERRITORY_PROCESSING
+        assert legacy_player == 1
 
 
 class TestFSMParityTerritoryProcessing:
@@ -384,11 +381,15 @@ class TestFSMDecisionSurface:
         state = _make_game_state(GamePhase.LINE_PROCESSING, current_player=1)
         move = _make_move(MoveType.NO_LINE_ACTION, player=1)
 
-        # This will skip territory on empty board, but let's check the FSM result
         fsm_result = compute_fsm_orchestration(state, move)
 
-        # On empty board, goes straight to next player
-        assert fsm_result.next_phase == GamePhase.RING_PLACEMENT
+        assert fsm_result.next_phase == GamePhase.TERRITORY_PROCESSING
+        assert fsm_result.next_player == 1
+        assert fsm_result.pending_decision_type in (
+            "region_order_required",
+            "no_territory_action_required",
+            None,  # May be None if region detection isn't surfaced in this path
+        )
 
     def test_forced_elimination_decision_surface(self):
         """FORCED_ELIMINATION should populate decision surface."""

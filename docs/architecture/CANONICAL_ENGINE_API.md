@@ -134,14 +134,18 @@ GamePhase:
   'ring_placement' | 'movement' | 'capture' | 'chain_capture' | 'line_processing' | 'territory_processing' | 'forced_elimination' | 'game_over'
 
 MoveType:
-  'place_ring' | 'move_ring' | 'build_stack' | 'move_stack' |
+  'place_ring' | 'skip_placement' | 'no_placement_action' |
+  'move_stack' | 'move_ring' | 'build_stack' | 'no_movement_action' |
   'overtaking_capture' | 'continue_capture_segment' | 'skip_capture' |
+  'recovery_slide' | 'skip_recovery' |
   'swap_sides' |
   'process_line' | 'choose_line_option' | // legacy alias: 'choose_line_reward'
+  'no_line_action' |
   'choose_territory_option' | // legacy alias: 'process_territory_region'
-  'skip_territory_processing' | 'eliminate_rings_from_stack' |
+  'skip_territory_processing' | 'no_territory_action' | 'eliminate_rings_from_stack' |
   'forced_elimination' |
-  'line_formation' | 'territory_claim' | 'skip_placement'
+  'resign' | 'timeout' |
+  'line_formation' | 'territory_claim'
 ```
 
 These literals are the **single source of truth** for host/UI/transport code that needs to

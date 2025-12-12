@@ -101,6 +101,43 @@ export const VALID_MOVES_BY_PHASE: Readonly<Record<GamePhase, readonly MoveType[
 } as const;
 
 /**
+ * Canonical phase → MoveType contract for recordings (RR-CANON-R070/R075).
+ *
+ * This mapping is intended to match Python's `ai-service/app/rules/history_contract.py`
+ * and excludes legacy aliases and deprecated move types. Use this for:
+ * - write-time canonical history enforcement,
+ * - TS↔Python contract drift guards,
+ * - tooling that must distinguish canonical vs legacy replay surfaces.
+ *
+ * Runtime validators that need to tolerate legacy fixtures may still rely on
+ * {@link VALID_MOVES_BY_PHASE}.
+ */
+export const CANONICAL_VALID_MOVES_BY_PHASE: Readonly<Record<GamePhase, readonly MoveType[]>> = {
+  ring_placement: ['place_ring', 'skip_placement', 'no_placement_action', 'swap_sides'],
+  movement: [
+    'move_stack',
+    'move_ring',
+    'build_stack',
+    'overtaking_capture',
+    'continue_capture_segment',
+    'recovery_slide',
+    'skip_recovery',
+    'no_movement_action',
+  ],
+  capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture'],
+  chain_capture: ['continue_capture_segment'],
+  line_processing: ['process_line', 'choose_line_option', 'no_line_action'],
+  territory_processing: [
+    'choose_territory_option',
+    'eliminate_rings_from_stack',
+    'skip_territory_processing',
+    'no_territory_action',
+  ],
+  forced_elimination: ['forced_elimination'],
+  game_over: [],
+} as const;
+
+/**
  * Moves that are always valid regardless of phase (meta moves).
  */
 export const ALWAYS_VALID_MOVES: readonly MoveType[] = ['resign', 'timeout'] as const;

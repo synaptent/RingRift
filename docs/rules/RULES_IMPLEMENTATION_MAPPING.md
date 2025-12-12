@@ -30,6 +30,22 @@ Canonical rule IDs of the form `RR-CANON-RXXX` always refer to entries in [`RULE
 
 ---
 
+## 0. RR-CANON Traceability Index (P0)
+
+This section exists to ensure the most cross-cutting RR-CANON rules have an
+explicit “anchor” back to concrete engine surfaces and tests. It is not a full
+catalogue.
+
+- **RR-CANON-R073** (mandatory phase transitions): TS `src/shared/engine/orchestration/turnOrchestrator.ts` + `src/shared/engine/orchestration/phaseStateMachine.ts`; Python `ai-service/app/rules/phase_machine.py`.
+- **RR-CANON-R074** (record all actions/skips): TS move recording + decision moves in `src/shared/types/game.ts` and orchestrator decisions; Python canonical contract `ai-service/app/rules/history_contract.py` (write-time enforcement via `ai-service/app/db/game_replay.py`).
+- **RR-CANON-R075** (canonical replay semantics / no silent transitions): TS `src/shared/engine/phaseValidation.ts` + `tests/unit/PhaseRecording.invariant.test.ts`; Python `ai-service/app/rules/history_contract.py` + `ai-service/app/rules/history_validation.py`.
+- **RR-CANON-R076** (core rules vs host layer boundaries): see `docs/architecture/CANONICAL_ENGINE_API.md` + `src/shared/engine/**` vs hosts (`src/server/game/**`, `src/client/sandbox/**`, `ai-service/app/game_engine.py`).
+- **RR-CANON-R093** (post-movement capture eligibility from landing position only): TS capture enumeration in `src/shared/engine/aggregates/CaptureAggregate.ts`; Python capture enumeration in `ai-service/app/game_engine.py`.
+- **RR-CANON-R110, RR-CANON-R111, RR-CANON-R112, RR-CANON-R113, RR-CANON-R114, RR-CANON-R115** (recovery eligibility, slide, success criteria, extraction, cascade + recording): TS `src/shared/engine/aggregates/RecoveryAggregate.ts` + `src/shared/engine/lpsTracking.ts`; Python `ai-service/app/rules/global_actions.py` + recovery logic in `ai-service/app/game_engine.py`.
+- **RR-CANON-R130** (line reward semantics referenced by recovery): TS `src/shared/engine/aggregates/LineAggregate.ts`; contract vectors under `tests/fixtures/contract-vectors/v2/line_processing.vectors.json`.
+- **RR-CANON-R175, RR-CANON-R176, RR-CANON-R177, RR-CANON-R178, RR-CANON-R179** (turn-material / elimination + ranking algorithm): TS elimination + ranking via `src/shared/engine/playerStateHelpers.ts` + victory evaluation; Python equivalents in `ai-service/app/rules/core.py` and `ai-service/app/rules/default_engine.py`.
+- **RR-CANON-R208–R209** (multi-phase line→territory sequencing + chain-capture boundaries): TS orchestrator (`src/shared/engine/orchestration/turnOrchestrator.ts`) + FSM adapter (`src/shared/engine/fsm/FSMAdapter.ts`); Python `ai-service/app/rules/phase_machine.py` and FSM orchestration `ai-service/app/rules/fsm.py`.
+
 ## 1. Overview: Implementation Landscape
 
 ### 1.1 Languages and frameworks

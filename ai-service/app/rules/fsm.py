@@ -568,22 +568,9 @@ def compute_fsm_orchestration(
 
     elif current_phase == GamePhase.LINE_PROCESSING:
         if move_type == MoveType.NO_LINE_ACTION:
-            # Check for territory regions
-            territory_moves = GameEngine._get_territory_processing_moves(
-                game_state, current_player
-            )
-            if territory_moves:
-                next_phase = GamePhase.TERRITORY_PROCESSING
-            else:
-                # Check for forced elimination
-                had_action = compute_had_any_action_this_turn(game_state)
-                has_stacks = player_has_stacks_on_board(game_state, current_player)
-                if not had_action and has_stacks:
-                    next_phase = GamePhase.FORCED_ELIMINATION
-                else:
-                    # Turn ends - next player
-                    next_phase = GamePhase.RING_PLACEMENT
-                    next_player = _next_active_player(game_state)
+            # RR-CANON-R075: Always visit TERRITORY_PROCESSING as a distinct phase.
+            # When no regions exist, the host emits NO_TERRITORY_ACTION next.
+            next_phase = GamePhase.TERRITORY_PROCESSING
         elif move_type in (MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_OPTION, MoveType.CHOOSE_LINE_REWARD):
             # Check for more lines
             line_moves = [
@@ -594,20 +581,9 @@ def compute_fsm_orchestration(
             if line_moves:
                 next_phase = GamePhase.LINE_PROCESSING  # Stay
             else:
-                # Same logic as NO_LINE_ACTION after last line
-                territory_moves = GameEngine._get_territory_processing_moves(
-                    game_state, current_player
-                )
-                if territory_moves:
-                    next_phase = GamePhase.TERRITORY_PROCESSING
-                else:
-                    had_action = compute_had_any_action_this_turn(game_state)
-                    has_stacks = player_has_stacks_on_board(game_state, current_player)
-                    if not had_action and has_stacks:
-                        next_phase = GamePhase.FORCED_ELIMINATION
-                    else:
-                        next_phase = GamePhase.RING_PLACEMENT
-                        next_player = _next_active_player(game_state)
+                # RR-CANON-R075: After finishing line decisions, always enter
+                # TERRITORY_PROCESSING. FE/turn-end is resolved after territory.
+                next_phase = GamePhase.TERRITORY_PROCESSING
 
     elif current_phase == GamePhase.TERRITORY_PROCESSING:
         if move_type == MoveType.NO_TERRITORY_ACTION:
@@ -618,7 +594,18 @@ def compute_fsm_orchestration(
             else:
                 next_phase = GamePhase.RING_PLACEMENT
                 next_player = _next_active_player(game_state)
+        elif move_type == MoveType.SKIP_TERRITORY_PROCESSING:
+            # Voluntary early stop when region decisions exist.
+            # This counts as an action for FE gating (see compute_had_any_action_this_turn).
+            had_action = compute_had_any_action_this_turn(game_state)
+            has_stacks = player_has_stacks_on_board(game_state, current_player)
+            if not had_action and has_stacks:
+                next_phase = GamePhase.FORCED_ELIMINATION
+            else:
+                next_phase = GamePhase.RING_PLACEMENT
+                next_player = _next_active_player(game_state)
         elif move_type in (
+            MoveType.CHOOSE_TERRITORY_OPTION,
             MoveType.PROCESS_TERRITORY_REGION,
             MoveType.ELIMINATE_RINGS_FROM_STACK,
         ):
@@ -690,6 +677,8 @@ def compute_fsm_orchestration(
             pending_decision_type = "region_order_required"
         elif move_type not in (
             MoveType.NO_TERRITORY_ACTION,
+            MoveType.SKIP_TERRITORY_PROCESSING,
+            MoveType.CHOOSE_TERRITORY_OPTION,
             MoveType.PROCESS_TERRITORY_REGION,
             MoveType.ELIMINATE_RINGS_FROM_STACK,
         ):

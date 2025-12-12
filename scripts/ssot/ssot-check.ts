@@ -23,6 +23,7 @@ import { runApiDocSsotCheck } from './api-doc-ssot-check';
 import { runDocsLinkSsotCheck } from './docs-link-ssot-check';
 import { runApiEndpointsSsotCheck } from './api-endpoints-ssot-check';
 import { runParityProtectionSsotCheck } from './parity-protection-ssot-check';
+import { runPhaseMoveContractSsotCheck } from './phase-move-contract-ssot-check';
 
 interface CheckResult {
   name: string;
@@ -34,6 +35,7 @@ async function main() {
   const checks: Array<() => Promise<CheckResult>> = [
     runRulesSsotCheck,
     runLifecycleSsotCheck,
+    runPhaseMoveContractSsotCheck,
     runPythonParitySsotCheck,
     runCiAndConfigSsotCheck,
     runDocsBannerSsotCheck,
