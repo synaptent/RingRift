@@ -17,6 +17,7 @@ import glob
 import math
 import contextlib
 import json
+import sys
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import (
@@ -1790,12 +1791,15 @@ def train_model(
                 val_dataset,
                 shuffle=False,
             )
+            # Note: num_workers=0 required on macOS - memory-mapped NPZ files
+            # contain BufferedReader objects that can't be pickled for multiprocessing.
+            num_loader_workers = 0 if sys.platform == "darwin" else 2
             train_loader = DataLoader(
                 train_dataset,
                 batch_size=config.batch_size,
                 shuffle=False,  # Sampler handles shuffling
                 sampler=train_sampler,
-                num_workers=2,
+                num_workers=num_loader_workers,
                 pin_memory=True,
             )
             val_loader = DataLoader(
@@ -1803,7 +1807,7 @@ def train_model(
                 batch_size=config.batch_size,
                 shuffle=False,
                 sampler=val_sampler,
-                num_workers=2,
+                num_workers=num_loader_workers,
                 pin_memory=True,
             )
         else:

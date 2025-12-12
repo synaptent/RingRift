@@ -250,16 +250,27 @@ def replay_and_analyze_game(
         else:
             candidates = [vm for vm in valid_moves if vm.type == move_type]
 
-            if m_json.get('to'):
-                to_x, to_y = m_json['to']['x'], m_json['to']['y']
-                candidates = [vm for vm in candidates if vm.to and vm.to.x == to_x and vm.to.y == to_y]
+            to_payload = m_json.get('to')
+            if to_payload:
+                to_x, to_y = to_payload['x'], to_payload['y']
+                # Some canonical bookkeeping/no-op moves serialize with a
+                # placeholder `to` even though the semantic move has `to=None`.
+                # Treat `to=None` candidates as compatible.
+                candidates = [
+                    vm
+                    for vm in candidates
+                    if vm.to is None or (vm.to.x == to_x and vm.to.y == to_y)
+                ]
 
-            if m_json.get('from'):
-                from_x, from_y = m_json['from']['x'], m_json['from']['y']
+            from_payload = m_json.get('from') or m_json.get('from_pos')
+            if from_payload:
+                from_x, from_y = from_payload['x'], from_payload['y']
                 new_candidates = []
                 for vm in candidates:
                     from_pos = getattr(vm, 'from_position', None) or getattr(vm, 'from_pos', None)
-                    if from_pos and from_pos.x == from_x and from_pos.y == from_y:
+                    if from_pos is None:
+                        new_candidates.append(vm)
+                    elif from_pos.x == from_x and from_pos.y == from_y:
                         new_candidates.append(vm)
                 candidates = new_candidates
 
@@ -271,7 +282,9 @@ def replay_and_analyze_game(
             break
 
         try:
-            state = GameEngine.apply_move(state, matched_move)
+            # Use trace_mode=True so replay follows canonical (RR-CANON-R075)
+            # move histories without silently skipping phases.
+            state = GameEngine.apply_move(state, matched_move, trace_mode=True)
             game_stats.moves_replayed += 1
         except Exception as e:
             game_stats.error = f"Error at move {move_idx}: {str(e)}"
@@ -449,6 +462,21 @@ def main():
 
     # Save results to JSON
     if args.output:
+        error_samples: List[Dict[str, Any]] = []
+        for gs in all_game_stats:
+            if gs.error:
+                error_samples.append(
+                    {
+                        "game_file": gs.game_file,
+                        "game_index": gs.game_index,
+                        "board_type": gs.board_type,
+                        "num_players": gs.num_players,
+                        "moves_replayed": gs.moves_replayed,
+                        "total_moves": gs.total_moves,
+                        "error": gs.error,
+                    }
+                )
+
         results = {
             'total_games': total_games,
             'games_with_fe': games_with_fe,
@@ -471,6 +499,7 @@ def main():
             'condition_combos': dict(stats.condition_combos),
             'near_misses': stats.near_misses[:50],
             'eligible_states': stats.eligible_states[:50],
+            'error_samples': error_samples[:25],
             'board_type_games': dict(board_type_games),
             'player_count_games': {str(k): v for k, v in player_count_games.items()},
         }
