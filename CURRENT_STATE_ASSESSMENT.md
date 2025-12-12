@@ -310,12 +310,12 @@ Documented in `docs/TEST_CATEGORIES.md`:
 
 ### Active Risks
 
-| Risk                     | Level  | Mitigation                                                |
-| ------------------------ | ------ | --------------------------------------------------------- |
-| Frontend UX completeness | MEDIUM | Scenario picker, spectator UI pending                     |
-| E2E multiplayer coverage | MEDIUM | Infrastructure in place, focused coverage added           |
-| Production validation    | MEDIUM | Needs real traffic testing                                |
-| Scale testing            | MEDIUM | Load testing framework ready, not yet at production scale |
+| Risk                     | Level  | Mitigation                                                                                      |
+| ------------------------ | ------ | ----------------------------------------------------------------------------------------------- |
+| Frontend UX completeness | MEDIUM | Scenario picker, spectator UI pending                                                           |
+| E2E multiplayer coverage | MEDIUM | Infrastructure in place, focused coverage added                                                 |
+| Production validation    | LOW    | Baseline + target-scale staging runs and alert rules validated; rerun after major infra changes |
+| Scale testing            | LOW    | Target scale achieved at 300 VUs in staging; rerun after major infra changes                    |
 
 ---
 
@@ -330,18 +330,18 @@ Documented in `docs/TEST_CATEGORIES.md`:
 
 ### Remaining for Production
 
-| Item                      | Status                             |
-| ------------------------- | ---------------------------------- |
-| Security hardening review | Pending                            |
-| Scale testing             | Framework ready, execution pending |
-| Backup/recovery drill     | Runbook exists, not exercised      |
-| Performance optimization  | Load testing pending               |
+| Item                      | Status                                     |
+| ------------------------- | ------------------------------------------ |
+| Security hardening review | Pending                                    |
+| Scale testing             | Complete (staging baseline + target scale) |
+| Backup/recovery drill     | Runbook exists, not exercised              |
+| Performance optimization  | No major bottlenecks at target load        |
 
 ---
 
 ## 9. Next Steps
 
-1. **Production Validation:** Run load tests at scale, establish baseline metrics
+1. **Canonical Training Data:** Regenerate and gate canonical self-play DBs
 2. **Frontend UX Polish:** Scenario picker, spectator UI, HUD enhancements
 3. **E2E Coverage:** Complex multiplayer scenarios, visual regression
 4. **Coverage Target:** Increase from ~69% toward 80%

@@ -1230,6 +1230,14 @@ def run_self_play_soak(
                     # requirements per RR-CANON-R075/R076. These are critical for
                     # TS↔Python replay parity.
                     if should_track_game_data:
+                        # Normalize moveNumber for recording. Some AI paths may
+                        # return legal moves with stale move_number metadata.
+                        record_idx = len(game_moves_for_recording) + 1
+                        if hasattr(move, "model_copy"):
+                            try:
+                                move = move.model_copy(update={"move_number": record_idx})  # type: ignore[attr-defined]
+                            except Exception:
+                                pass
                         game_moves_for_recording.append(move)
                         auto_moves = step_info.get("auto_generated_moves", [])
                         if auto_moves:
@@ -1238,7 +1246,16 @@ def run_self_play_soak(
                             # is expected and required for canonical recordings
                             # (e.g., new player has 0 rings → no_placement_action).
                             # We no longer reject cross-player auto-generated moves.
-                            game_moves_for_recording.extend(auto_moves)
+                            for auto_move in auto_moves:
+                                record_idx = len(game_moves_for_recording) + 1
+                                if hasattr(auto_move, "model_copy"):
+                                    try:
+                                        auto_move = auto_move.model_copy(  # type: ignore[attr-defined]
+                                            update={"move_number": record_idx}
+                                        )
+                                    except Exception:
+                                        pass
+                                game_moves_for_recording.append(auto_move)
                     if done:
                         # If the env terminated but the rules engine still reports
                         # ACTIVE, treat it as an env-level cutoff to avoid recording

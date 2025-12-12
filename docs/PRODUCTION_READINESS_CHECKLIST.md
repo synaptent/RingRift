@@ -505,11 +505,11 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 
 ### 5.3 E2E Tests
 
-| Item                              | Status | Evidence                            |
-| --------------------------------- | ------ | ----------------------------------- |
-| Critical user flows tested        | ✅     | Playwright E2E suite                |
-| Cross-browser validation complete | ⏳     | Playwright configured, needs CI run |
-| Mobile responsiveness verified    | ⬜     | Pending (P2 priority)               |
+| Item                              | Status | Evidence                                                   |
+| --------------------------------- | ------ | ---------------------------------------------------------- |
+| Critical user flows tested        | ✅     | Playwright E2E suite                                       |
+| Cross-browser validation complete | ⏳     | Playwright configured, needs CI run                        |
+| Mobile responsiveness verified    | ⏳     | Implementation complete (W3-12/13); needs device QA report |
 
 ### 5.4 Load Tests
 
@@ -747,16 +747,16 @@ npx prisma migrate deploy
 
 ### Area Sign-offs
 
-| Area                    | Owner | Status     | Date | Notes                             |
-| ----------------------- | ----- | ---------- | ---- | --------------------------------- |
-| **Core Functionality**  | -     | ✅ Ready   | -    | All game mechanics working        |
-| **Performance & Scale** | -     | ⬜ Pending | -    | Awaiting load test validation     |
-| **Security**            | -     | ⏳ Partial | -    | Auth complete, TLS pending        |
-| **Infrastructure**      | -     | ⏳ Partial | -    | Staging ready, prod infra pending |
-| **Testing**             | -     | ✅ Ready   | -    | All test suites passing           |
-| **Documentation**       | -     | ✅ Ready   | -    | Comprehensive docs complete       |
-| **Compliance**          | -     | ⬜ Pending | -    | Legal review required             |
-| **Launch Preparation**  | -     | ⬜ Pending | -    | Pre-launch tasks pending          |
+| Area                    | Owner | Status     | Date | Notes                                             |
+| ----------------------- | ----- | ---------- | ---- | ------------------------------------------------- |
+| **Core Functionality**  | -     | ✅ Ready   | -    | All game mechanics working                        |
+| **Performance & Scale** | -     | ✅ Ready   | -    | Load tests complete; alert rules validated (W3-8) |
+| **Security**            | -     | ⏳ Partial | -    | Auth complete, TLS pending                        |
+| **Infrastructure**      | -     | ⏳ Partial | -    | Staging ready, prod infra pending                 |
+| **Testing**             | -     | ✅ Ready   | -    | All test suites passing                           |
+| **Documentation**       | -     | ✅ Ready   | -    | Comprehensive docs complete                       |
+| **Compliance**          | -     | ⬜ Pending | -    | Legal review required                             |
+| **Launch Preparation**  | -     | ⬜ Pending | -    | Pre-launch tasks pending                          |
 
 ### Final Sign-off
 
@@ -788,7 +788,7 @@ Based on the current checklist status, the recommended action sequence:
 ### High Priority (Before Launch)
 
 5. ~~**W3-6: Bottleneck resolution**~~ ✅ No bottlenecks found (7.5% CPU at target load)
-6. **W3-8: Alerting validation** - Verify alerts fire correctly ⏳
+6. ~~**W3-8: Alerting validation**~~ ✅ Complete (promtool synthetic alert tests; see `docs/testing/ALERTING_VALIDATION_REPORT.md`)
 7. **Legal: Terms/Privacy** - Placeholders created, legal review needed ⏳
 
 ### Medium Priority (Launch Week)

@@ -21,8 +21,12 @@ global:
   smtp_auth_password: '${SMTP_PASSWORD}'
   smtp_require_tls: true
 
-  # The auth token for Slack
-  slack_api_url: '${SLACK_WEBHOOK_URL}'
+  # The auth token for Slack.
+  #
+  # Alertmanager does not support environment-variable interpolation in YAML
+  # configs, so this must be a valid URL literal with a scheme even in local
+  # staging. Replace with your real Slack webhook URL for production.
+  slack_api_url: 'https://hooks.slack.com/services/REPLACE_ME'
 
   # ResolveTimeout is the time after which an alert is declared resolved
   # if it has not been updated.
@@ -32,19 +36,19 @@ global:
 route:
   # The default receiver
   receiver: 'default-receiver'
-  
+
   # The labels by which incoming alerts are grouped together.
   # All alerts with the same values for these labels will be batched together.
   group_by: ['alertname', 'severity', 'team']
-  
+
   # How long to initially wait before sending a notification
   group_wait: 30s
-  
+
   # How long to wait before sending a notification about new alerts
   # that are added to a group of alerts for which an initial notification
   # has already been sent.
   group_interval: 5m
-  
+
   # How long to wait before sending a notification again if it has already
   # been sent successfully for an alert.
   repeat_interval: 4h
@@ -184,14 +188,14 @@ receivers:
           - type: button
             text: 'Runbook'
             url: '{{ (index .Alerts 0).Annotations.runbook_url }}'
-    
+
     # Email notification
     email_configs:
       - to: 'oncall@ringrift.io'
         send_resolved: true
         headers:
           subject: '🚨 [CRITICAL] {{ .GroupLabels.alertname }}'
-    
+
     # PagerDuty integration (if configured)
     # pagerduty_configs:
     #   - service_key: '${PAGERDUTY_SERVICE_KEY}'
@@ -218,7 +222,7 @@ receivers:
           {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
           {{ end }}
         color: '{{ if eq .Status "firing" }}{{ if eq .CommonLabels.severity "critical" }}danger{{ else }}warning{{ end }}{{ else }}good{{ end }}'
-    
+
     email_configs:
       - to: 'backend-team@ringrift.io'
         send_resolved: true
@@ -239,7 +243,7 @@ receivers:
           {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
           {{ end }}
         color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
-    
+
     email_configs:
       - to: 'ai-team@ringrift.io'
         send_resolved: true

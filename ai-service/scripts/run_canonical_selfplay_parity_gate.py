@@ -33,6 +33,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.models import BoardType
+from app.training.env import get_theoretical_max_moves
+
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
@@ -205,8 +208,12 @@ def main() -> None:
     parser.add_argument(
         "--max-moves",
         type=int,
-        default=200,
-        help="Maximum moves per game before forced termination (default: 200).",
+        default=0,
+        help=(
+            "Maximum moves per game before forced termination. "
+            "Use 0 to auto-select the theoretical max for the board/player count "
+            "(default: 0)."
+        ),
     )
     parser.add_argument(
         "--hosts",
@@ -229,6 +236,18 @@ def main() -> None:
     parity_summary: Dict[str, Any] | Dict[str, Any]
     soak_result: Dict[str, Any] = {}
     dbs_to_check: list[Path] = [db_path]
+
+    # Auto-select max_moves when not provided.
+    if args.max_moves and args.max_moves > 0:
+        max_moves = args.max_moves
+    else:
+        bt_map = {
+            "square8": BoardType.SQUARE8,
+            "square19": BoardType.SQUARE19,
+            "hexagonal": BoardType.HEXAGONAL,
+        }
+        board_enum = bt_map[args.board_type]
+        max_moves = get_theoretical_max_moves(board_enum, args.num_players)
 
     if args.hosts:
         hosts = [h.strip() for h in args.hosts.split(",") if h.strip()]
@@ -273,7 +292,7 @@ def main() -> None:
             parity_summary = run_parity_checks(dbs_to_check)
     else:
         soak_result = run_selfplay_soak(
-            args.board_type, args.num_games, db_path, args.seed, args.max_moves, args.num_players
+            args.board_type, args.num_games, db_path, args.seed, max_moves, args.num_players
         )
         parity_summary = run_parity_check(db_path)
 
@@ -304,7 +323,7 @@ def main() -> None:
         "db_paths_checked": [str(p) for p in dbs_to_check],
         "num_games": args.num_games,
         "seed": args.seed,
-        "max_moves": args.max_moves,
+        "max_moves": max_moves,
         "hosts": args.hosts.split(",") if args.hosts else None,
         "soak_returncode": soak_result.get("returncode"),
         "parity_summary": parity_summary,

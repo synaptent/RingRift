@@ -54,6 +54,12 @@ import { serializeGameState } from '../src/shared/engine/contracts/serialization
 import { validateMoveWithFSM, computeFSMOrchestration } from '../src/shared/engine/fsm/FSMAdapter';
 import { getValidMoves } from '../src/shared/engine/orchestration/turnOrchestrator';
 import { isANMState } from '../src/shared/engine/globalActions';
+import {
+  hasAnyPlacementForPlayer,
+  hasAnyMovementForPlayer,
+  hasAnyCaptureForPlayer,
+} from '../src/shared/engine/turnDelegateHelpers';
+import type { PerTurnState } from '../src/shared/engine/turnLogic';
 import { connectDatabase, disconnectDatabase } from '../src/server/database/connection';
 import type { PrismaClient } from '@prisma/client';
 import { CanonicalReplayEngine } from '../src/shared/replay/CanonicalReplayEngine';
@@ -740,20 +746,16 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
 
   // Helper to build action availability delegates for hasAnyRealAction
   const buildActionDelegates = (state: GameState) => {
-    const validMoves = getValidMoves(state);
+    const turnForPlayer = (pn: number): PerTurnState => ({
+      hasPlacedThisTurn: pn === state.currentPlayer && Boolean(state.mustMoveFromStackKey),
+      mustMoveFromStackKey:
+        pn === state.currentPlayer ? (state.mustMoveFromStackKey ?? undefined) : undefined,
+    });
+
     return {
-      hasPlacement: (pn: number) =>
-        validMoves.some(
-          (m) => m.player === pn && (m.type === 'place_ring' || m.type === 'skip_placement')
-        ),
-      hasMovement: (pn: number) =>
-        validMoves.some(
-          (m) =>
-            m.player === pn &&
-            (m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'build_stack')
-        ),
-      hasCapture: (pn: number) =>
-        validMoves.some((m) => m.player === pn && m.type === 'overtaking_capture'),
+      hasPlacement: (pn: number) => hasAnyPlacementForPlayer(state, pn),
+      hasMovement: (pn: number) => hasAnyMovementForPlayer(state, pn, turnForPlayer(pn)),
+      hasCapture: (pn: number) => hasAnyCaptureForPlayer(state, pn, turnForPlayer(pn)),
     };
   };
 
@@ -813,6 +815,7 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
 
     // Check if we need to synthesize bookkeeping moves to bridge phases
     const currentState = engine.getState() as GameState;
+    const prePhase = currentState.currentPhase;
 
     // Per RR-CANON-R073: ALL players start in ring_placement without exception.
     // NO PHASE SKIPPING - both TS and Python now always start in ring_placement.
@@ -1096,9 +1099,15 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
       mutableState.currentPlayer = verdict.winner;
     }
 
-    // Update LPS tracking after each move for R172 victory condition.
-    // This must happen at interactive phase transitions when a player starts their turn.
-    if (isLpsActivePhase(stateTyped.currentPhase) && stateTyped.gameStatus === 'active') {
+    // Update LPS tracking for R172 only at the START of an interactive turn.
+    // We detect turn starts by a rotation to a new currentPlayer in an
+    // interactive phase (ring_placement / movement / capture / chain_capture).
+    if (
+      stateTyped.gameStatus === 'active' &&
+      stateTyped.currentPhase === 'ring_placement' &&
+      prePhase !== 'ring_placement' &&
+      isLpsActivePhase(stateTyped.currentPhase)
+    ) {
       const activePlayers = stateTyped.players
         .filter((p) => playerHasMaterial(stateTyped, p.playerNumber))
         .map((p) => p.playerNumber);
@@ -1110,6 +1119,26 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
         activePlayers,
         hasRealAction: hasReal,
       });
+
+      if (process.env.RINGRIFT_TRACE_LPS === '1') {
+        // eslint-disable-next-line no-console
+        console.log(
+          JSON.stringify({
+            kind: 'ts-replay-lps-update',
+            k: applied,
+            currentPlayer: stateTyped.currentPlayer,
+            activePlayers,
+            hasRealAction: hasReal,
+            lpsState: {
+              roundIndex: lpsState.roundIndex,
+              currentRoundFirstPlayer: lpsState.currentRoundFirstPlayer,
+              exclusivePlayerForCompletedRound: lpsState.exclusivePlayerForCompletedRound,
+              consecutiveExclusiveRounds: lpsState.consecutiveExclusiveRounds,
+              consecutiveExclusivePlayer: lpsState.consecutiveExclusivePlayer,
+            },
+          })
+        );
+      }
 
       // Check for LPS victory after updating tracking
       const lpsResult = evaluateLpsVictory({
@@ -1134,6 +1163,11 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
             },
           })
         );
+        const mutableState = stateTyped as any;
+        mutableState.gameStatus = 'completed';
+        mutableState.winner = lpsResult.winner;
+        mutableState.currentPhase = 'game_over';
+        mutableState.currentPlayer = lpsResult.winner;
       }
     }
 

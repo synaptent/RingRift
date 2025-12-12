@@ -211,7 +211,7 @@ Operational drills completed:
 
 ### 3.1 Wave 3 Remediation: Production Validation at Scale
 
-**Assessment (2025-12-07):** Production Validation at Scale was the **weakest aspect** and **hardest problem**. Baseline and target-scale k6 runs are now complete (staging P-01, 2025-12-08 → 2025-12-10); see `docs/testing/BASELINE_CAPACITY.md` and `docs/testing/LOAD_TEST_BASELINE.md`. Remaining Wave-3 follow-up is alerting validation under load (W3-8).
+**Assessment (2025-12-07):** Production Validation at Scale was the **weakest aspect** and **hardest problem**. Baseline and target-scale k6 runs are complete (staging P-01, 2025-12-08 → 2025-12-10); see `docs/testing/BASELINE_CAPACITY.md` and `docs/testing/LOAD_TEST_BASELINE.md`. Alerting rules have now been validated via promtool + end-to-end Docker drill (W3-8); rerun after major infra changes.
 
 | ID        | Task                                             | Priority | Status   | Acceptance Criteria                                |
 | --------- | ------------------------------------------------ | -------- | -------- | -------------------------------------------------- |
@@ -222,7 +222,7 @@ Operational drills completed:
 | **W3-5**  | Verify SLO compliance                            | HIGH     | Complete | All p95/p99 targets met and documented             |
 | **W3-6**  | Identify and resolve bottlenecks                 | HIGH     | Complete | No degradation >20% at target load                 |
 | **W3-7**  | Document capacity limits                         | MEDIUM   | Complete | Capacity planning doc created                      |
-| **W3-8**  | Validate alerting under load                     | HIGH     | Pending  | Synthetic alerts fire correctly                    |
+| **W3-8**  | Validate alerting under load                     | HIGH     | Complete | Synthetic alerts fire correctly                    |
 | **W3-9**  | Expand territory_processing parity fixtures      | MEDIUM   | Complete | ≥15 fixtures covering territory edge cases         |
 | **W3-10** | Expand forced_elimination parity fixtures        | MEDIUM   | Complete | ≥15 fixtures covering FE edge cases                |
 | **W3-11** | Complete canonical move/phase audit              | HIGH     | Complete | All 3 audit checklist items verified               |

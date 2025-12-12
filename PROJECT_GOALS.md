@@ -216,11 +216,10 @@ Environment posture and rollout discipline are first-class parts of v1.0 readine
   - System health dashboard (HTTP, WebSocket, infrastructure)
   - k6 load testing framework with production-scale scenarios
 
-- **Production validation pending** ⚠️ **NEXT STEP (Wave 7)**
-  - Load tests must be executed at target scale (100+ games, 200–300 players)
-  - Baseline metrics must be established from staging runs
-  - Operational drills must be rehearsed (secrets rotation, backup/restore)
-  - SLOs must be validated under real production-scale load
+- **Production validation at scale** ✅ **ACHIEVED (PASS22 / 2025-12-10 staging)**
+  - Baseline and target-scale k6 runs completed and summarized in `docs/testing/BASELINE_CAPACITY.md`
+  - SLOs validated under 300-VU target load with strong headroom
+  - Alert rules validated (W3-8); rerun load+alert drills after major infra changes
 
 These criteria are intentionally high‑level and goal‑oriented; detailed rollout tables, environment presets, and alert thresholds live in `STRATEGIC_ROADMAP.md`, `CURRENT_STATE_ASSESSMENT.md`, `docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md`, and `docs/operations/ALERTING_THRESHOLDS.md`. When changing rollout strategy or SLOs, update those documents for implementation detail, and this section for the overarching success definition.
 

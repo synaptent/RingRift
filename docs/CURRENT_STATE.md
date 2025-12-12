@@ -153,8 +153,8 @@ None. All P0 blockers resolved.
 
 | Issue                       | Severity | Status                      |
 | --------------------------- | -------- | --------------------------- |
-| Mobile responsiveness       | P2       | ⬜ Pending                  |
-| Touch controls              | P2       | ⬜ Pending                  |
+| Mobile responsiveness       | P2       | ✅ Complete                 |
+| Touch controls              | P2       | ✅ Complete                 |
 | Automated matchmaking queue | P2       | ⏳ Basic lobby works        |
 | Cross-browser validation    | P2       | ⏳ Configured, needs CI run |
 

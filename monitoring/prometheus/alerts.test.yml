@@ -1,0 +1,67 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: high_error_rate_fires
+    interval: 1m
+    input_series:
+      - series: http_requests_total{status="500"}
+        values: 0 10 20 30 40 50 60 70 80 90 100 110 120
+      - series: http_requests_total{status="200"}
+        values: 0 100 200 300 400 500 600 700 800 900 1000 1100 1200
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: backend
+            exp_annotations:
+              summary: 'High HTTP 5xx error rate (9.091%)'
+              description: 'More than 5% of HTTP requests are returning 5xx errors over the last 5 minutes.'
+              runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/HIGH_ERROR_RATE.md'
+              impact: 'Users experiencing failures on 9.091% of requests.'
+
+  - name: high_p95_latency_fires
+    interval: 1m
+    input_series:
+      - series: http_request_duration_seconds_bucket{le="1"}
+        values: 0 5 10 15 20 25 30 35 40 45 50 55 60
+      - series: http_request_duration_seconds_bucket{le="2"}
+        values: 0 100 200 300 400 500 600 700 800 900 1000 1100 1200
+      - series: http_request_duration_seconds_bucket{le="+Inf"}
+        values: 0 100 200 300 400 500 600 700 800 900 1000 1100 1200
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: HighP95Latency
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: backend
+            exp_annotations:
+              summary: 'High P95 latency (1.947s)'
+              description: '95th percentile HTTP request latency exceeds 1 second sustained for 10 minutes.'
+              runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/HIGH_LATENCY.md'
+              impact: '5% of users experiencing latency > 1 second.'
+
+  - name: redis_down_fires
+    interval: 1m
+    input_series:
+      - series: ringrift_service_status{service="redis"}
+        values: 0 0 0 0 0
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: RedisDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: backend
+              component: redis
+              service: redis
+            exp_annotations:
+              summary: 'Redis service is down'
+              description: 'The Redis service has been unavailable for more than 1 minute. This affects caching and rate limiting.'
+              runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/REDIS_DOWN.md'
+              impact: 'Rate limiting disabled, session management degraded, increased database load.'

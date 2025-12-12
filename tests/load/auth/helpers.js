@@ -48,7 +48,7 @@ export function loginAndGetToken(baseUrl, options) {
   const email = __ENV.LOADTEST_EMAIL || 'loadtest_user_1@loadtest.local';
   const password = __ENV.LOADTEST_PASSWORD || 'TestPassword123!';
 
-  const res = http.post(
+  let res = http.post(
     `${baseUrl}${apiPrefix}/auth/login`,
     JSON.stringify({ email, password }),
     {
@@ -56,6 +56,19 @@ export function loginAndGetToken(baseUrl, options) {
       tags,
     }
   );
+
+  // Some production/staging deployments enforce a trailing slash on auth routes.
+  // Fall back to /auth/login/ when the non-slashed path returns 404.
+  if (res.status === 404) {
+    res = http.post(
+      `${baseUrl}${apiPrefix}/auth/login/`,
+      JSON.stringify({ email, password }),
+      {
+        headers: { 'Content-Type': 'application/json' },
+        tags,
+      }
+    );
+  }
 
   let parsed = null;
   let accessToken = null;

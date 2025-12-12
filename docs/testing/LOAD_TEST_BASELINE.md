@@ -38,6 +38,15 @@ This harness uses the k6 `websocket-gameplay.js` scenario to drive a small swarm
 
   Alternatively, set `LOADTEST_EMAIL` / `LOADTEST_PASSWORD` when running k6 to use a different account.
 
+> **AWS public staging note (2025‑12‑12):** A remote smoke run against the
+> `ringrift-staging` host (`https://54.198.219.106`) confirmed auth works, but
+> `POST /api/games` is rate‑limited for normal users (returns 429 even at low
+> VU counts). For meaningful AWS load tests, either:
+>
+> - use a dedicated load‑test account with the “loadtest/ops” role, or
+> - temporarily raise `RATE_LIMIT_GAME_CREATE_*` in the staging env.
+>   A safe remote smoke harness lives in `tests/load/scenarios/remote-smoke.js`.
+
 ### Command (10–25 concurrent games baseline)
 
 From the repo root, targeting the staging stack on `localhost`:

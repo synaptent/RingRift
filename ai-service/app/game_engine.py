@@ -974,72 +974,9 @@ class GameEngine:
                 game_state.current_phase = GamePhase.GAME_OVER
                 return
 
-        # 4. Round-based last-player-standing victory (R172).
-        # LPS is only evaluated during interactive phases, matching TS
-        # lpsTracking.ts LPS_ACTIVE_PHASES.
-        # LPS requires TWO consecutive full rounds where the same player is
-        # the exclusive real-action holder.
-        LPS_REQUIRED_CONSECUTIVE_ROUNDS = 2
-        lps_active_phases = {
-            GamePhase.RING_PLACEMENT,
-            GamePhase.MOVEMENT,
-            GamePhase.CAPTURE,
-            GamePhase.CHAIN_CAPTURE,
-        }
-        candidate = game_state.lps_consecutive_exclusive_player
-        consecutive_rounds = game_state.lps_consecutive_exclusive_rounds
-        if (
-            consecutive_rounds >= LPS_REQUIRED_CONSECUTIVE_ROUNDS
-            and candidate is not None
-            and game_state.current_phase in lps_active_phases
-            and game_state.current_player == candidate
-            and GameEngine._has_real_action_for_player(game_state, candidate)
-        ):
-            # Only declare LPS when the exclusive candidate just took the most
-            # recent action. This prevents a rotation into the candidate's
-            # seat (after another player's bookkeeping no-ops) from
-            # prematurely ending the game before the candidate actually acts,
-            # matching TS turn-orchestration semantics.
-            #
-            # The TS evaluateLpsVictory is called at the START of each
-            # interactive turn, whereas Python's _check_victory is called
-            # AFTER each move. To achieve parity, we only declare victory
-            # when the candidate themselves just took an action.
-            last_move_player = game_state.move_history[-1].player if game_state.move_history else None
-            if last_move_player != candidate:
-                # Defer LPS check until the candidate takes their own action.
-                # DO NOT reset LPS tracking or check others_have_actions here -
-                # just wait for the candidate's next move.
-                pass
-            else:
-                # Candidate just acted - check if others still have actions
-                board = game_state.board
-                others_have_actions = False
-                for player in game_state.players:
-                    if player.player_number == candidate:
-                        continue
-                    has_stacks = any(stack.controlling_player == player.player_number for stack in board.stacks.values())
-                    if not has_stacks and player.rings_in_hand <= 0:
-                        continue
-                    if GameEngine._has_real_action_for_player(
-                        game_state,
-                        player.player_number,
-                    ):
-                        others_have_actions = True
-                        break
-
-                # If no other player with material has any real action, candidate wins.
-                if not others_have_actions:
-                    game_state.game_status = GameStatus.COMPLETED
-                    game_state.winner = candidate
-                    game_state.current_player = candidate  # TS parity: winner stays current
-                    game_state.current_phase = GamePhase.GAME_OVER
-                    return
-
-                # Candidate condition failed; require fresh qualifying rounds.
-                game_state.lps_exclusive_player_for_completed_round = None
-                game_state.lps_consecutive_exclusive_rounds = 0
-                game_state.lps_consecutive_exclusive_player = None
+        # 4. Round-based LPS victory (R172) is evaluated at the START of each
+        # interactive turn via _maybe_apply_lps_victory_at_turn_start(...)
+        # after LPS tracking is updated. Do not re-check here.
 
         # 5. Global structural terminality
         # Fallback termination is triggered when:
@@ -1341,6 +1278,7 @@ class GameEngine:
                 GameEngine._update_lps_round_tracking_for_current_player(
                     game_state,
                 )
+                GameEngine._maybe_apply_lps_victory_at_turn_start(game_state)
                 return
 
             # Player has no rings anywhere (permanently eliminated); skip to next seat
@@ -1435,6 +1373,7 @@ class GameEngine:
                 GameEngine._update_lps_round_tracking_for_current_player(
                     game_state,
                 )
+                GameEngine._maybe_apply_lps_victory_at_turn_start(game_state)
                 return
 
             # Player has no rings anywhere (permanently eliminated); skip to next seat
@@ -2690,6 +2629,68 @@ class GameEngine:
         if GameEngine._has_valid_captures(game_state, player_number):
             return True
         return False
+
+    @staticmethod
+    def _maybe_apply_lps_victory_at_turn_start(game_state: GameState) -> None:
+        """
+        Apply round-based LPS victory (RR-CANON-R172) at the START of an
+        interactive turn.
+
+        Mirrors TS lpsTracking.evaluateLpsVictory semantics:
+        - Requires two consecutive exclusive rounds for the same candidate.
+        - Evaluated when the candidate's next interactive turn begins.
+        - Candidate must still have a real action available.
+        - All other players with material must have no real actions.
+
+        This is intentionally evaluated at turn start (after LPS tracking is
+        updated) rather than after a bookkeeping move, to avoid awarding LPS
+        on non-real actions like ``no_placement_action``.
+        """
+        if game_state.game_status != GameStatus.ACTIVE:
+            return
+
+        lps_active_phases = {
+            GamePhase.RING_PLACEMENT,
+            GamePhase.MOVEMENT,
+            GamePhase.CAPTURE,
+            GamePhase.CHAIN_CAPTURE,
+        }
+        if game_state.current_phase not in lps_active_phases:
+            return
+
+        # Mirror TS ANM gating: do not award LPS victory while the state
+        # is in an active-no-move (ANM) sequence. ANM bookkeeping moves must
+        # be recorded explicitly before LPS can resolve.
+        from app.rules import global_actions as ga  # type: ignore
+
+        if ga.is_anm_state(game_state):
+            return
+
+        if game_state.lps_consecutive_exclusive_rounds < 2:
+            return
+
+        candidate = game_state.lps_consecutive_exclusive_player
+        if candidate is None:
+            return
+
+        if game_state.current_player != candidate:
+            return
+
+        if not GameEngine._has_real_action_for_player(game_state, candidate):
+            return
+
+        for player in game_state.players:
+            if player.player_number == candidate:
+                continue
+            if count_rings_in_play_for_player(game_state, player.player_number) <= 0:
+                continue
+            if GameEngine._has_real_action_for_player(game_state, player.player_number):
+                return
+
+        game_state.game_status = GameStatus.COMPLETED
+        game_state.winner = candidate
+        game_state.current_player = candidate  # TS parity: winner stays current
+        game_state.current_phase = GamePhase.GAME_OVER
 
     @staticmethod
     def _update_lps_round_tracking_for_current_player(
