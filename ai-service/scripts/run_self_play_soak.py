@@ -614,13 +614,21 @@ def _build_mixed_ai_pool(
 
     if difficulty_band == "light":
         # Lighter band for memory-/time-conscious soaks: Random,
-        # Heuristic, and low-depth Minimax only.
-        difficulty_choices = [
-            1,
-            2,
-            4,
-            5,
-        ]
+        # Heuristic, and (for square8 only) low-depth Minimax.
+        #
+        # Note: square19/hex move generation is expensive enough that even
+        # shallow Minimax can dominate runtime. For those boards, keep the
+        # "light" band strictly random/heuristic so canonical parity gates
+        # and debuggable self-play DB generation remain practical.
+        if board_type in {BoardType.SQUARE19, BoardType.HEXAGONAL}:
+            difficulty_choices = [1, 2]
+        else:
+            difficulty_choices = [
+                1,
+                2,
+                4,
+                5,
+            ]
 
     if base_seed is not None:
         game_rng = random.Random(base_seed + game_index)

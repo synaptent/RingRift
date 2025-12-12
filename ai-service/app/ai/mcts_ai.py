@@ -38,16 +38,93 @@ from ..utils.memory_config import MemoryConfig
 logger = logging.getLogger(__name__)
 
 
-def _moves_match(m1: Move, m2: Move) -> bool:
-    """Check if two moves match by type and position.
+def _pos_key(pos: Optional[Any]) -> Optional[str]:
+    if pos is None:
+        return None
+    to_key = getattr(pos, "to_key", None)
+    if callable(to_key):
+        return cast(str, to_key())
+    x = getattr(pos, "x", None)
+    y = getattr(pos, "y", None)
+    z = getattr(pos, "z", None)
+    if x is None or y is None:
+        return None
+    return f"{x},{y},{z}" if z is not None else f"{x},{y}"
 
-    Handles moves with to=None (e.g. NO_LINE_ACTION, NO_TERRITORY_ACTION).
+
+def _pos_seq_key(seq: Optional[Tuple[Any, ...]]) -> Optional[Tuple[str, ...]]:
+    if not seq:
+        return None
+    return tuple(k for k in (_pos_key(p) for p in seq) if k is not None)
+
+
+def _move_key(move: Move) -> tuple:
+    """Return a stable, hashable key for comparing AI moves.
+
+    Purpose:
+        Used to avoid conflating distinct moves that share the same (type, to)
+        shape but differ in semantics (e.g. multi-ring place_ring placementCount,
+        choose_line_option collapsed_markers segments).
+
+    Notes:
+        This key intentionally excludes timing metadata (timestamp/think_time/
+        move_number) so that host-synthesized bookkeeping moves remain comparable
+        across regenerations.
     """
-    if m1.type != m2.type:
+    move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
+    return (
+        move_type,
+        int(move.player),
+        _pos_key(getattr(move, "from_pos", None)),
+        _pos_key(getattr(move, "to", None)),
+        _pos_key(getattr(move, "capture_target", None)),
+        getattr(move, "placement_count", None),
+        getattr(move, "placed_on_stack", None),
+        getattr(move, "line_index", None),
+        _pos_seq_key(getattr(move, "collapsed_markers", None)),
+        _pos_seq_key(getattr(move, "collapse_positions", None)),
+        tuple(getattr(move, "extraction_stacks", None) or ()),
+        getattr(move, "recovery_option", None),
+        getattr(move, "recovery_mode", None),
+        getattr(move, "elimination_context", None),
+        _pos_seq_key(getattr(move, "capture_chain", None)),
+        tuple(getattr(move, "overtaken_rings", None) or ()),
+    )
+
+
+def _moves_match(m1: Move, m2: Move) -> bool:
+    """Check if two moves match by semantic identity (not timing metadata)."""
+    if m1.type != m2.type or m1.player != m2.player:
         return False
-    if m1.to is None or m2.to is None:
-        return m1.to is None and m2.to is None
-    return m1.to.x == m2.to.x and m1.to.y == m2.to.y
+    if m1.from_pos != m2.from_pos:
+        return False
+    if m1.to != m2.to:
+        return False
+    if m1.capture_target != m2.capture_target:
+        return False
+    if m1.placement_count != m2.placement_count:
+        return False
+    if m1.placed_on_stack != m2.placed_on_stack:
+        return False
+    if m1.line_index != m2.line_index:
+        return False
+    if m1.collapsed_markers != m2.collapsed_markers:
+        return False
+    if m1.collapse_positions != m2.collapse_positions:
+        return False
+    if m1.extraction_stacks != m2.extraction_stacks:
+        return False
+    if m1.recovery_option != m2.recovery_option:
+        return False
+    if m1.recovery_mode != m2.recovery_mode:
+        return False
+    if m1.elimination_context != m2.elimination_context:
+        return False
+    if m1.capture_chain != m2.capture_chain:
+        return False
+    if m1.overtaken_rings != m2.overtaken_rings:
+        return False
+    return True
 
 
 class MCTSNode:
@@ -826,15 +903,11 @@ class MCTSAI(HeuristicAI):
             # was built. Filter untried_moves to only include moves that are
             # still valid in the current state. This prevents returning illegal
             # moves like place_ring when the player has 0 rings.
-            valid_moves_set = {
-                (m.type, m.player, getattr(m, "to", None), getattr(m, "from_pos", None))
-                for m in valid_moves
-            }
+            valid_moves_set = {_move_key(m) for m in valid_moves}
             root.untried_moves = [
                 m
                 for m in root.untried_moves
-                if (m.type, m.player, getattr(m, "to", None), getattr(m, "from_pos", None))
-                in valid_moves_set
+                if _move_key(m) in valid_moves_set
             ]
 
         # Progressive widening on large boards benefits from NN priors at the root.
@@ -1440,7 +1513,11 @@ class MCTSAI(HeuristicAI):
         if not valid_moves_state:
             return
 
-        node.untried_moves = list(valid_moves_state)
+        existing_child_keys = (
+            {_move_key(c.move) for c in node.children if c.move is not None}
+            if node.children
+            else set()
+        )
         node.policy_map = {}
 
         total_prob = 0.0
@@ -1464,6 +1541,14 @@ class MCTSAI(HeuristicAI):
             uniform = 1.0 / len(valid_moves_state)
             for move in valid_moves_state:
                 node.policy_map[str(move)] = uniform
+
+        # Keep untried moves disjoint from already-expanded children (important
+        # for root prior seeding + tree reuse, and for move types where
+        # (type,to) is not unique, e.g. multi-ring placements or choose-line
+        # segments).
+        node.untried_moves = [
+            m for m in valid_moves_state if _move_key(m) not in existing_child_keys
+        ]
 
         # Apply Dirichlet noise only at root during self-play.
         self._maybe_apply_root_dirichlet_noise(node, state.board.type)
@@ -1537,10 +1622,7 @@ class MCTSAI(HeuristicAI):
         # Build a set of valid move signatures for efficient lookup.
         # Include player attribute to catch stale moves from tree reuse where
         # the acting player or their resources (e.g., rings_in_hand) changed.
-        valid_moves_set = {
-            (m.type, m.player, getattr(m, "to", None), getattr(m, "from_pos", None))
-            for m in valid_moves
-        }
+        valid_moves_set = {_move_key(m) for m in valid_moves}
 
         # Filter children to only those with currently valid moves.
         # This is critical for tree reuse scenarios where children were
@@ -1548,10 +1630,7 @@ class MCTSAI(HeuristicAI):
         # resources have changed (e.g., rings_in_hand depleted).
         valid_children = [
             c for c in root.children
-            if c.move is not None and (
-                c.move.type, c.move.player,
-                getattr(c.move, "to", None), getattr(c.move, "from_pos", None)
-            ) in valid_moves_set
+            if c.move is not None and _move_key(c.move) in valid_moves_set
         ]
 
         if valid_children:
@@ -1581,10 +1660,7 @@ class MCTSAI(HeuristicAI):
             # This should always pass given the filtering above, but we keep
             # it as a safety net.
             if selected is not None:
-                is_valid = (
-                    selected.type, selected.player,
-                    getattr(selected, "to", None), getattr(selected, "from_pos", None)
-                ) in valid_moves_set
+                is_valid = _move_key(selected) in valid_moves_set
                 if not is_valid:
                     logger.warning(
                         "MCTS legacy selected invalid move %s "
@@ -1672,15 +1748,11 @@ class MCTSAI(HeuristicAI):
             # was built. Filter untried_moves to only include moves that are
             # still valid in the current state. This prevents returning illegal
             # moves like place_ring when the player has 0 rings.
-            valid_moves_set = {
-                (m.type, m.player, getattr(m, "to", None), getattr(m, "from_pos", None))
-                for m in valid_moves
-            }
+            valid_moves_set = {_move_key(m) for m in valid_moves}
             root.untried_moves = [
                 m
                 for m in root.untried_moves
-                if (m.type, m.player, getattr(m, "to", None), getattr(m, "from_pos", None))
-                in valid_moves_set
+                if _move_key(m) in valid_moves_set
             ]
 
         # Seed NN priors at root for large boards to align with progressive widening.
@@ -2078,7 +2150,11 @@ class MCTSAI(HeuristicAI):
         if not valid_moves_state:
             return
 
-        node.untried_moves = list(valid_moves_state)
+        existing_child_keys = (
+            {_move_key(c.move) for c in node.children if c.move is not None}
+            if node.children
+            else set()
+        )
         node.policy_map = {}
 
         total_prob = 0.0
@@ -2103,6 +2179,14 @@ class MCTSAI(HeuristicAI):
             for move in valid_moves_state:
                 node.policy_map[str(move)] = uniform
 
+        # Keep untried moves disjoint from already-expanded children (important
+        # for root prior seeding + tree reuse, and for move types where
+        # (type,to) is not unique, e.g. multi-ring placements or choose-line
+        # segments).
+        node.untried_moves = [
+            m for m in valid_moves_state if _move_key(m) not in existing_child_keys
+        ]
+
         # Apply Dirichlet noise only at root during self-play.
         self._maybe_apply_root_dirichlet_noise(node, state.board.type)
 
@@ -2124,10 +2208,7 @@ class MCTSAI(HeuristicAI):
         # Build a set of valid move signatures for efficient lookup.
         # Include player attribute to catch stale moves from tree reuse where
         # the acting player or their resources (e.g., rings_in_hand) changed.
-        valid_moves_set = {
-            (m.type, m.player, getattr(m, "to", None), getattr(m, "from_pos", None))
-            for m in valid_moves
-        }
+        valid_moves_set = {_move_key(m) for m in valid_moves}
 
         # Filter children to only those with currently valid moves.
         # This is critical for tree reuse scenarios where children were
@@ -2135,10 +2216,7 @@ class MCTSAI(HeuristicAI):
         # resources have changed (e.g., rings_in_hand depleted).
         valid_children = [
             c for c in root.children
-            if c.move is not None and (
-                c.move.type, c.move.player,
-                getattr(c.move, "to", None), getattr(c.move, "from_pos", None)
-            ) in valid_moves_set
+            if c.move is not None and _move_key(c.move) in valid_moves_set
         ]
 
         if valid_children:
@@ -2170,10 +2248,7 @@ class MCTSAI(HeuristicAI):
             # This should always pass given the filtering above, but we keep
             # it as a safety net.
             if selected is not None:
-                is_valid = (
-                    selected.type, selected.player,
-                    getattr(selected, "to", None), getattr(selected, "from_pos", None)
-                ) in valid_moves_set
+                is_valid = _move_key(selected) in valid_moves_set
                 if not is_valid:
                     logger.warning(
                         "MCTS incremental selected invalid move %s "

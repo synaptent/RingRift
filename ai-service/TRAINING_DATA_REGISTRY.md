@@ -106,7 +106,7 @@ Once canonical self-play DBs are generated and exported, retrain these models:
 
    A DB is eligible for `Status = canonical` **only if** its latest gate summary JSON (written by `scripts/generate_canonical_selfplay.py`) reports:
    - `canonical_ok == true` (the top-level allowlist flag), and
-   - for supported board types (currently `square8` and `hexagonal`), this in turn implies:
+   - for supported board types (currently `square8` and `square19`; hex pending), this in turn implies:
      - `parity_gate.passed_canonical_parity_gate == true`, and
      - `canonical_history.games_checked > 0` and `canonical_history.non_canonical_games == 0`, and
      - `fe_territory_fixtures_ok == true`, and

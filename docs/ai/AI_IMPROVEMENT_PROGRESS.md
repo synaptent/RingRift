@@ -40,6 +40,8 @@ Status tags:
 - **done** Regenerated and re-gated `canonical_square8.db` (2P) via distributed
   `generate_canonical_selfplay.py`; parity + canonical history pass and the
   registry is updated (`canonical_ok=true`).
+- **done** `generate_canonical_selfplay.py` now streams gate progress to stderr
+  (parity + pytest gates) and keeps stdout as clean JSON to avoid long silent runs.
 - **done** Gated initial `canonical_square8_3p.db` (3P) (`canonical_ok=true`).
 - **done** Gated initial `canonical_square8_4p.db` (4P) (`canonical_ok=true`);
   scale up before training.
@@ -59,13 +61,16 @@ Status tags:
   to keep self-play runs reproducible under a base seed and reduce correlated RNG.
 - **done** Promotion gating in `ai-service/scripts/run_improvement_loop.py` now uses
   a Wilson CI lower-bound check (configurable `--promotion-confidence` and `--eval-games`).
+- **done** Tier evaluation runner now supports 3P/4P by rotating the candidate
+  across all seats and instantiating one opponent AI per seat.
 - **in_progress** Re-run distributed D1–D10 tournaments (10 games/matchup) on GPU
   hosts with `TORCH_COMPILE_DISABLE=1` for stability; collect reports from
   `ai-service/results/tournaments/report_*.json`.
-- **next** Implement real ReAnalyze over DB‑stored games
-  (`ai-service/app/training/reanalyze.py`) to refresh targets with newer models.
-- **next** Generalize tier tournaments / gates to square19 + hex and 3P/4P pools
-  (`ai-service/app/training/tournament.py`,
-  `ai-service/app/training/tier_eval_config.py`).
+- **done** ReAnalyze over replay DBs: `ai-service/scripts/reanalyze_replay_dataset.py`
+  can regenerate policy targets from MCTS visit counts or Descent root softmax.
+- **next** Wire ReAnalyze into the training pipeline and deprecate the
+  legacy stub (`ai-service/app/training/reanalyze.py`).
+- **next** Generalize tier tournaments to square19 + hex and 3P/4P pools
+  (`ai-service/app/training/tournament.py`).
 - **next** Re‑tune heuristic weight profiles for 3P/4P and large boards using
   canonical evaluation pools.

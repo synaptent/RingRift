@@ -118,13 +118,17 @@ def test_run_tier_evaluation_multiboard_and_multiplayer_smoke(
     """Smoke test run_tier_evaluation on multi-board / multiplayer tiers."""
     tier_cfg = get_tier_config(tier_name)
     candidate_id = f"test_candidate_{tier_name.lower()}"
-    num_games_override = 4
+    # Keep this smoke test fast: we only need to validate wiring + JSON shape.
+    num_games_override = 2
 
     result = run_tier_evaluation(
         tier_config=tier_cfg,
         candidate_id=candidate_id,
         seed=1,
         num_games_override=num_games_override,
+        # Keep the smoke test runtime bounded on large boards (square19/hex)
+        # where fully-random play can otherwise run for thousands of moves.
+        max_moves_override=100,
     )
 
     assert result.tier_name == tier_cfg.tier_name
