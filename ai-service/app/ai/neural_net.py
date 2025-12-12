@@ -1309,7 +1309,8 @@ class RingRiftCNN_v3(nn.Module):
         dtype = placement_logits.dtype
 
         # Initialize flat policy with large negative (will be masked by legal moves)
-        policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=dtype)
+        # Use -1e4 instead of -1e9 to avoid float16 overflow in mixed precision
+        policy = torch.full((B, self.policy_size), -1e4, device=device, dtype=dtype)
 
         # Flatten and scatter placement logits
         placement_flat = placement_logits.view(B, -1)
@@ -1626,7 +1627,8 @@ class RingRiftCNN_v3_Lite(nn.Module):
         device = placement_logits.device
         dtype = placement_logits.dtype
 
-        policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=dtype)
+        # Use -1e4 instead of -1e9 to avoid float16 overflow in mixed precision
+        policy = torch.full((B, self.policy_size), -1e4, device=device, dtype=dtype)
 
         # Scatter all spatial logits
         placement_flat = placement_logits.view(B, -1)
@@ -2664,7 +2666,43 @@ class NeuralNetAI(BaseAI):
                     # Cross-check metadata against the actual weight shapes.
                     # This hardens against metadata drift and protects callers
                     # that rely on model_id prefixes.
-                    state_dict = checkpoint.get("model_state_dict")
+                    def _extract_state_dict(candidate: object) -> Optional[dict]:
+                        """Extract a raw state_dict from a loaded checkpoint.
+
+                        Supports:
+                        - Versioned checkpoints (model_state_dict key)
+                        - Common legacy keys (state_dict)
+                        - Bare state_dict checkpoints (direct mapping of weight tensors)
+                        """
+
+                        if not isinstance(candidate, dict):
+                            return None
+
+                        state_dict_obj = candidate.get("model_state_dict")
+                        if isinstance(state_dict_obj, dict):
+                            return state_dict_obj
+
+                        state_dict_obj = candidate.get("state_dict")
+                        if isinstance(state_dict_obj, dict):
+                            return state_dict_obj
+
+                        # Best-effort: treat as bare state_dict when keys look like weights.
+                        if any(
+                            key in candidate
+                            for key in (
+                                "conv1.weight",
+                                "module.conv1.weight",
+                                "value_fc1.weight",
+                                "module.value_fc1.weight",
+                                "policy_fc2.weight",
+                                "module.policy_fc2.weight",
+                            )
+                        ):
+                            return candidate
+
+                        return None
+
+                    state_dict = _extract_state_dict(checkpoint)
                     if isinstance(state_dict, dict):
                         state_dict = _strip_module_prefix(state_dict)
                         conv1_weight = state_dict.get("conv1.weight")
@@ -2679,6 +2717,18 @@ class NeuralNetAI(BaseAI):
                                 )
                                 num_filters = inferred_filters
 
+                        # Infer policy_size when metadata is absent (common for legacy exports).
+                        if policy_size_override is None:
+                            policy_fc2_weight = state_dict.get("policy_fc2.weight")
+                            if policy_fc2_weight is not None and hasattr(policy_fc2_weight, "shape"):
+                                inferred_policy_size = int(policy_fc2_weight.shape[0])
+                                if inferred_policy_size:
+                                    policy_size_override = inferred_policy_size
+                                    # Ensure we take the direct instantiation path that respects
+                                    # policy_size overrides for square boards.
+                                    if model_class_name is None:
+                                        model_class_name = "RingRiftCNN_v2"
+
                         # Infer res-block count from state_dict keys when possible.
                         # We avoid importing regex at module level to keep import
                         # time down for inference.
@@ -2690,7 +2740,7 @@ class NeuralNetAI(BaseAI):
                             for key in state_dict.keys():
                                 if not isinstance(key, str):
                                     continue
-                                m = re.match(r"(?:module\\.)?res_blocks\\.(\\d+)\\.", key)
+                                m = re.match(r"(?:module\.)?res_blocks\.(\d+)\.", key)
                                 if m:
                                     indices.add(int(m.group(1)))
                             if indices:
@@ -4807,7 +4857,8 @@ class HexNeuralNet_v3(nn.Module):
         dtype = placement_logits.dtype
 
         # Initialize flat policy with large negative (will be masked anyway)
-        policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=dtype)
+        # Use -1e4 instead of -1e9 to avoid float16 overflow in mixed precision
+        policy = torch.full((B, self.policy_size), -1e4, device=device, dtype=dtype)
 
         # Flatten spatial dimensions for scatter
         # placement_logits: [B, 3, H, W] → [B, 3*H*W]
@@ -5017,7 +5068,8 @@ class HexNeuralNet_v3_Lite(nn.Module):
         device = placement_logits.device
         dtype = placement_logits.dtype
 
-        policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=dtype)
+        # Use -1e4 instead of -1e9 to avoid float16 overflow in mixed precision
+        policy = torch.full((B, self.policy_size), -1e4, device=device, dtype=dtype)
 
         placement_flat = placement_logits.view(B, -1)
         placement_idx_flat = self.placement_idx.view(-1).expand(B, -1)

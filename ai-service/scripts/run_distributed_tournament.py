@@ -7,8 +7,8 @@ canonical difficulty ladder configuration and runs hundreds of games in
 parallel on a single machine.
 
 Note: Despite the filename, this harness currently runs locally with a thread
-pool. True multi-host distribution is tracked as future work; see
-`ai-service/AI_IMPROVEMENT_PLAN.md` §10.8.
+pool. For SSH-based multi-host distribution, see
+`scripts/run_ssh_distributed_tournament.py`.
 
 Features:
 - Supports canonical difficulty tiers (D1-D10)
@@ -380,23 +380,27 @@ class DistributedTournament:
         max_workers: int = 8,
         output_dir: str = "results/tournaments",
         resume_file: Optional[str] = None,
+        checkpoint_path: Optional[str] = None,
         nn_model_id: Optional[str] = None,
         base_seed: int = 1,
         think_time_scale: float = 1.0,
         max_moves: int = 300,
         confidence: float = 0.95,
         report_path: Optional[str] = None,
+        worker_label: Optional[str] = None,
     ):
         self.tiers = sorted(tiers, key=lambda t: int(t[1:]))
         self.games_per_matchup = games_per_matchup
         self.board_type = board_type
         self.max_workers = max_workers
         self.output_dir = Path(output_dir)
+        self.checkpoint_path = Path(checkpoint_path) if checkpoint_path else None
         self.nn_model_id = nn_model_id
         self.think_time_scale = think_time_scale
         self.max_moves = max_moves
         self.confidence = confidence
         self.report_path = Path(report_path) if report_path else None
+        self.worker_label = worker_label
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         if resume_file and os.path.exists(resume_file):
@@ -405,6 +409,8 @@ class DistributedTournament:
             logger.info(f"Resumed tournament {self.state.tournament_id}")
             self.nn_model_id = self.state.nn_model_id
             self.think_time_scale = self.state.think_time_scale
+            if self.checkpoint_path is None:
+                self.checkpoint_path = Path(resume_file)
         else:
             self.state = TournamentState(
                 tournament_id=str(uuid.uuid4())[:8],
@@ -429,7 +435,12 @@ class DistributedTournament:
         return [m for m in self.all_matchups if m not in completed]
 
     def _save_checkpoint(self) -> None:
-        path = self.output_dir / f"tournament_{self.state.tournament_id}.json"
+        path = (
+            self.checkpoint_path
+            if self.checkpoint_path is not None
+            else self.output_dir / f"tournament_{self.state.tournament_id}.json"
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             json.dump(self.state.to_dict(), f, indent=2)
         logger.info(f"Saved checkpoint: {path}")
@@ -525,6 +536,8 @@ class DistributedTournament:
 
             for tier_a, tier_b in pending:
                 worker_name = f"worker_{len(futures) % self.max_workers}"
+                if self.worker_label:
+                    worker_name = f"{self.worker_label}:{worker_name}"
                 future = executor.submit(
                     self.run_matchup, tier_a, tier_b, worker_name
                 )
@@ -830,6 +843,12 @@ def parse_args() -> argparse.Namespace:
         help="Output directory for results",
     )
     parser.add_argument(
+        "--output-checkpoint",
+        type=str,
+        default=None,
+        help="Optional explicit path for the checkpoint JSON (default: output-dir/tournament_<id>.json)",
+    )
+    parser.add_argument(
         "--resume",
         type=str,
         help="Resume from previous tournament checkpoint",
@@ -870,6 +889,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional explicit path for the JSON report (default: output-dir/report_<id>.json)",
     )
     parser.add_argument(
+        "--worker-label",
+        type=str,
+        default=None,
+        help="Optional prefix for MatchResult.worker (useful for multi-host orchestration)",
+    )
+    parser.add_argument(
         "--nn-model-id",
         type=str,
         default=None,
@@ -907,12 +932,14 @@ def main() -> None:
         max_workers=args.workers,
         output_dir=args.output_dir,
         resume_file=args.resume,
+        checkpoint_path=args.output_checkpoint,
         nn_model_id=nn_model_id,
         base_seed=args.seed,
         think_time_scale=args.think_time_scale,
         max_moves=args.max_moves,
         confidence=args.wilson_confidence,
         report_path=args.output_report,
+        worker_label=args.worker_label,
     )
 
     report = tournament.run()

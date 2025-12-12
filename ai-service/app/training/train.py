@@ -795,15 +795,14 @@ class RingRiftDataset(Dataset):
 
         if os.path.exists(data_path):
             try:
-                # Load in mmap mode to avoid loading everything into RAM.
-                # Note: np.load with mmap_mode returns a NpzFile where numeric
-                # arrays are memory-mapped. We use allow_pickle=True so object
-                # arrays (sparse policies) can still be loaded on demand.
-                self.data = np.load(
-                    data_path,
-                    mmap_mode='r',
-                    allow_pickle=True,
-                )
+                # Load data and cache arrays in memory. NPZ files don't support
+                # true mmap (they're zip files), so each array access would
+                # re-read from disk. For training efficiency, we load everything
+                # into RAM upfront. For very large datasets, consider using
+                # HDF5 or raw .npy files instead.
+                npz_data = np.load(data_path, allow_pickle=True)
+                # Convert to dict to force-load all arrays into memory
+                self.data = {k: np.asarray(v) for k, v in npz_data.items()}
 
                 if 'features' in self.data:
                     total_samples = len(self.data['values'])
@@ -835,7 +834,7 @@ class RingRiftDataset(Dataset):
                     else:
                         logger.info(
                             f"Loaded {self.length} valid training samples "
-                            f"from {data_path} (mmap)"
+                            f"from {data_path} (in-memory)"
                         )
 
                     # Optional per-dataset metadata for multi-board training.
@@ -1969,6 +1968,14 @@ def train_model(
                 if batch_num_players is not None:
                     batch_num_players = batch_num_players.to(device)
 
+                # Pad policy targets if smaller than model policy_size (e.g., dataset
+                # was generated with a smaller policy space than the model supports)
+                if hasattr(model, 'policy_size') and policy_targets.size(1) < model.policy_size:
+                    pad_size = model.policy_size - policy_targets.size(1)
+                    policy_targets = torch.nn.functional.pad(
+                        policy_targets, (0, pad_size), value=0.0
+                    )
+
                 optimizer.zero_grad()
 
                 # Autocast for mixed precision (CUDA only usually).
@@ -2120,6 +2127,13 @@ def train_model(
                     policy_targets = policy_targets.to(device)
                     if val_batch_num_players is not None:
                         val_batch_num_players = val_batch_num_players.to(device)
+
+                    # Pad policy targets if smaller than model policy_size
+                    if hasattr(model, 'policy_size') and policy_targets.size(1) < model.policy_size:
+                        pad_size = model.policy_size - policy_targets.size(1)
+                        policy_targets = torch.nn.functional.pad(
+                            policy_targets, (0, pad_size), value=0.0
+                        )
 
                     # For DDP, forward through the wrapped model
                     out = model(features, globals_vec)

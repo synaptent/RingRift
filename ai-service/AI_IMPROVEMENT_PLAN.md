@@ -1343,6 +1343,31 @@ python scripts/run_distributed_tournament.py --resume results/tournaments/tourna
 
 # Use specific board type
 python scripts/run_distributed_tournament.py --board square19 --tiers D2,D4,D6,D8
+
+# Deterministic checkpoint path (useful for multi-host orchestration)
+python scripts/run_distributed_tournament.py \
+  --tiers D1,D2 \
+  --games-per-matchup 100 \
+  --output-checkpoint results/tournaments/shards/D1_vs_D2.checkpoint.json \
+  --worker-label mac-studio
+```
+
+### 10.2.1 SSH Multi-Host Tournament Orchestration (New)
+
+**Location:** `scripts/run_ssh_distributed_tournament.py`
+
+This wrapper distributes tier matchups across SSH hosts configured in
+`config/distributed_hosts.yaml` (including custom `ssh_port` and
+`venv_activate`) and aggregates shard checkpoints into a single report.
+
+```bash
+# From ai-service/
+python scripts/run_ssh_distributed_tournament.py \
+  --tiers D1-D10 \
+  --board square8 \
+  --games-per-matchup 100 \
+  --hosts mac-studio,aws-staging \
+  --output-dir results/tournaments
 ```
 
 ### 10.3 Canonical Difficulty Ladder
@@ -1487,7 +1512,7 @@ P1 has real actions (movement/capture) and others do not.
 1. ~~**Fix RandomAI ZobristHash issue**~~ ✅ RESOLVED (thread-safe singleton)
 2. ~~**Extended tournament**~~ ✅ RESOLVED (`scripts/run_distributed_tournament.py`, `scripts/run_crossboard_difficulty_tournament.py`)
 3. ~~**Cross-board validation**~~ ✅ RESOLVED (rank-consistency summary via `scripts/run_crossboard_difficulty_tournament.py`)
-4. **Cloud-distributed execution** - Leverage Lambda/Vast.ai for faster tournament completion
+4. ~~**Cloud-distributed execution**~~ ✅ RESOLVED (`scripts/run_ssh_distributed_tournament.py` + `config/distributed_hosts.yaml`)
 5. ~~**Continuous strength monitoring**~~ ✅ RESOLVED (`scripts/run_strength_regression_gate.py`, CI job `python-ai-strength-regression`)
 
 ---

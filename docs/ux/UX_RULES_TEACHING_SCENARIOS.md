@@ -492,7 +492,7 @@ Each subsection describes one scenario family (flow), its id, and its steps.
      Overlay labels each player’s status:
      - “Has real moves”.
      - “Only forced elimination”.
-     - “Inactive / fully eliminated”.
+     - “Inactive / permanently eliminated”.
 
 2. **Step id:** `teaching.lps.step_2`
    - **Index:** 2

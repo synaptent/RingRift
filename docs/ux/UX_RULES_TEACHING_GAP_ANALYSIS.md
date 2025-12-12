@@ -292,7 +292,7 @@ Coverage was assessed by reviewing:
 #### GAP-RECOV-01: No TeachingOverlay topic for recovery action
 
 - **Status:** Ready for implementation (engine complete as of 2025-12-08)
-- **Description**: Recovery action engine is fully implemented. A teaching topic should explain: eligibility (no stacks, no rings, has markers, buried rings), marker slide mechanics, line length requirement (at least `lineLength`), overlength options, and buried ring extraction cost.
+- **Description**: Recovery action engine is fully implemented. A teaching topic should explain: eligibility (no stacks; has markers + buried rings; rings in hand do not prevent recovery), marker slide mechanics, line length requirement (at least `lineLength`), overlength options, and buried ring extraction cost.
 - **Recommended Remedy**: Add `recovery_action` to `TeachingTopicId` and create dedicated teaching tips in `teachingTopics.ts`.
 - **Effort**: Small
 - **Dependencies**: None (engine complete)
@@ -305,10 +305,10 @@ Coverage was assessed by reviewing:
 - **Effort**: Medium
 - **Dependencies**: GAP-RECOV-01
 
-#### GAP-RECOV-03: No distinction between "temporarily eliminated" vs "fully eliminated"
+#### GAP-RECOV-03: No distinction between "temporarily eliminated" vs "permanently eliminated"
 
 - **Status:** Ready for implementation (engine complete as of 2025-12-08)
-- **Description**: Players will likely confuse "temporarily eliminated with recovery" and "fully eliminated for turn rotation". Teaching content should clarify: temporarily eliminated players can still act via recovery and are NOT skipped; fully eliminated players are skipped.
+- **Description**: Players will likely confuse "temporarily eliminated / inactive (no turn-material, may have recovery)" and "permanently eliminated (no rings anywhere)". Teaching content should clarify: temporarily eliminated players are **not** skipped by rotation and may still act via recovery; permanently eliminated players are removed from rotation.
 - **Recommended Remedy**: Add comparative tips in ANM/FE and recovery topics.
 - **Effort**: Small
 - **Dependencies**: GAP-RECOV-01

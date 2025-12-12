@@ -21,15 +21,15 @@
   - Phase-local interactive moves currently exposed to P (placements, movements, captures, line decisions, territory decisions, victory acknowledgements) as defined in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:192).
   - Any legal **ring placements** P could make under [`RR-CANON-R080`–`R082`](RULES_CANONICAL_SPEC.md:220) given the current board and `ringsInHand[P]`, even when `currentPhase` is not `ring_placement`.
   - Any legal **forced-elimination** actions for P under [`RR-CANON-R100`](RULES_CANONICAL_SPEC.md:280) when P controls at least one stack but has no placements, movements, or captures.
-  - Any legal **recovery actions** for P under [`RR-CANON-R110`–`R115`](RULES_CANONICAL_SPEC.md:579) when P controls no stacks, has no rings in hand, but has markers on the board and buried rings in other stacks.
+  - Any legal **recovery actions** for P under [`RR-CANON-R110`–`R115`](RULES_CANONICAL_SPEC.md:579) when P is recovery-eligible (controls no stacks, owns at least one marker, and has at least one buried ring). Recovery eligibility is independent of rings in hand; when `ringsInHand[P] > 0`, P may reach `movement` by voluntarily recording `skip_placement` and then attempt recovery.
 - **Real action (for last-player-standing):** As in [`RR-CANON-R172`](RULES_CANONICAL_SPEC.md:438): a ring placement, non-capture movement, or overtaking capture on the player's own turn. **Recovery actions do NOT count as real actions** for LPS purposes - this creates strategic tension where players with rings in hand have a "survival budget." Forced eliminations also do **not** count as real actions.
 - **Turn-material:** For ANM and phase/turn invariants, a player has turn-material if they either:
   - Control at least one stack (a top ring of their colour on some stack), or
   - Have `ringsInHand[P] > 0`.
     Captured/buried rings of P's colour inside opponents' stacks do not give P turn-material; they matter only for Territory, last-player-standing colour-representation rules, and **recovery action eligibility**.
-- **Temporarily eliminated:** A player with no stacks and no rings in hand, but who has **markers on the board** and **buried rings** in other stacks, is "temporarily eliminated." Such a player may still take **recovery actions** (RR-CANON-R110–R115) and is NOT skipped by turn rotation. This is distinct from "fully eliminated."
-- **Fully eliminated for turn rotation:** A player with **no** turn-material (no controlled stacks and `ringsInHand == 0`) **and no recovery action available** is fully eliminated for purposes of choosing `currentPlayer` in ACTIVE states. Such a player may still own buried rings for scoring, but is skipped by turn rotation; see [`INV-PHASE-CONSISTENCY`](docs/INVARIANTS_AND_PARITY_FRAMEWORK.md:167).
-- **Active-no-moves (ANM) state:** A (hypothetical) ACTIVE state where the current player P has turn-material or recovery eligibility but **no global legal actions** at all (no placements, movements, captures, recovery actions, line/territory decisions, or forced elimination). `INV-ACTIVE-NO-MOVES` requires that such states never persist in valid play.
+- **Temporarily eliminated:** A player P is temporarily eliminated at the start of a turn if P has **no** turn-material (no controlled stacks and `ringsInHand[P] == 0`) but still has at least one ring somewhere in the game (i.e., at least one buried ring). Temporary elimination is reversible: if stack control changes later expose P’s buried ring on top of a stack, P regains turn-material and is no longer temporarily eliminated. Temporarily eliminated players are **not** skipped by turn rotation.
+- **Permanently eliminated:** A player P is permanently eliminated if P has **no rings anywhere**: no controlled stacks, no rings in hand, and no buried rings. Permanently eliminated players are removed from turn rotation and must never be left as `currentPlayer` in an ACTIVE state (RR‑CANON‑R201).
+- **Active-no-moves (ANM) state:** A (hypothetical) ACTIVE state where the current player P has turn-material but **no global legal actions** at all (no placements, movements, captures, recovery actions, line/territory decisions, or forced elimination). `INV-ACTIVE-NO-MOVES` requires that such states never persist in valid play. Players who lack turn-material may still have forced no‑op turns recorded via `no_*_action` bookkeeping moves; those are not classified as ANM.
 
 The scenarios below capture concrete shapes that have historically exercised these concepts in TS and Python engines. Each scenario lists:
 
@@ -81,24 +81,25 @@ The scenarios below capture concrete shapes that have historically exercised the
   - Global placement availability in `RR-CANON-R200`.
   - ANM definition in `RR-CANON-R201` / `RR-CANON-R203` (global actions rather than phase-local only).
 
-### ANM-SCEN-03 – Movement phase with a fully eliminated current player
+### ANM-SCEN-03 – Movement phase with a permanently eliminated current player
 
 - **Shape:**
   - `gameStatus == ACTIVE`.
   - `currentPhase == movement`.
-  - `currentPlayer == P` where P has **no stacks** and `ringsInHand[P] == 0` (no turn-material).
+  - `currentPlayer == P` where P is **permanently eliminated** (no controlled stacks, `ringsInHand[P] == 0`, and no buried rings anywhere).
   - At least one other player Q still has stacks and/or rings in hand.
   - `get_valid_moves(state, P) == []` and `_get_forced_elimination_moves(state, P) == []`.
-- **Historical issue:** Python strict-invariant snapshots captured states where a fully eliminated player remained `currentPlayer` in ACTIVE / MOVEMENT, even though other players still had material. This violated both ANM expectations and phase-consistency semantics compared to the TS TurnEngine.
+- **Historical issue:** Python strict-invariant snapshots captured states where a permanently eliminated player remained `currentPlayer` in ACTIVE / MOVEMENT, even though other players still had material. This violated both ANM expectations and phase-consistency semantics compared to the TS TurnEngine.
 - **Expected canonical behaviour:**
-  - Players with no turn-material (no stacks and no rings in hand) must **not** remain `currentPlayer` in ACTIVE states.
-  - Turn rotation (`_end_turn` / `advanceTurnAndPhase`) must skip such players and select the next player with turn-material (or terminate the game if none exist).
-  - Any attempt to leave an ACTIVE / MOVEMENT state with a fully eliminated `currentPlayer` and no actions is invalid under `INV-ACTIVE-NO-MOVES` and `INV-PHASE-CONSISTENCY`.
+  - Permanently eliminated players must **not** remain `currentPlayer` in ACTIVE states.
+  - Turn rotation (`_end_turn` / `advanceTurnAndPhase`) must skip permanently eliminated players and select the next player in seat order who is **not** permanently eliminated (RR‑CANON‑R201).
+  - By contrast, players with buried rings but no turn-material (temporarily eliminated) are **not** skipped; if they have no legal recovery action they still traverse phases via forced no‑op bookkeeping moves.
+  - Any attempt to leave an ACTIVE / MOVEMENT state with a permanently eliminated `currentPlayer` and no actions is invalid under `INV-ACTIVE-NO-MOVES` and `INV-PHASE-CONSISTENCY`.
 - **Implementations / tests:**
   - Python regression [`test_active_no_moves_movement_fully_eliminated_regression.py`](ai-service/tests/invariants/test_active_no_moves_movement_fully_eliminated_regression.py:1).
   - Phase-consistency discussion in [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](docs/INVARIANTS_AND_PARITY_FRAMEWORK.md:167).
 - **RR-CANON mapping:**
-  - Turn-material and fully eliminated players in `RR-CANON-R201` / `RR-CANON-R202`.
+  - Turn rotation and permanent elimination in `RR‑CANON‑R201`.
   - Turn rotation requirements in `RR-CANON-R070`–`RR-CANON-R072` and the ANM cluster.
 
 ### ANM-SCEN-04 – Territory processing with no remaining decisions
@@ -184,18 +185,18 @@ The scenarios below capture concrete shapes that have historically exercised the
 
 - **Shape:**
   - 3–4 player game.
-  - Some players have no turn-material (no stacks and no rings in hand) and are “fully eliminated for turn rotation” per §1.
-  - Others may still own buried rings of the eliminated colours in mixed stacks.
+  - Some players are **permanently eliminated** (no rings anywhere) and are removed from rotation.
+  - Other players may have no turn-material (temporarily eliminated) while still having buried rings (and may or may not be recovery-eligible).
   - At least one remaining player still has global legal actions.
 - **Expected canonical behaviour:**
-  - Turn rotation skips players with no turn-material; they are not chosen as `currentPlayer` in ACTIVE states.
-  - Colour-based concepts like Territory representation (`ActiveColors` in [`RR-CANON-R142`](RULES_CANONICAL_SPEC.md:384)) still account for buried rings; fully eliminated-for-turn players may continue to matter for region eligibility even though they never act again.
-  - ANM invariants are enforced per active player only; inactive/fully eliminated players are irrelevant to `INV-ACTIVE-NO-MOVES` but still contribute to scoring and some connectivity rules.
+  - Turn rotation skips **only** permanently eliminated players; temporarily eliminated / recovery-eligible players are still chosen as `currentPlayer` in ACTIVE states (RR‑CANON‑R201).
+  - Colour-based concepts like Territory representation (`ActiveColors` in [`RR-CANON-R142`](RULES_CANONICAL_SPEC.md:384)) still account for buried rings; players who are temporarily eliminated (no turn-material) may still contribute a colour to region eligibility even when they are not currently acting.
+  - ANM invariants are enforced per active player only; temporarily inactive players (no turn-material) and permanently eliminated players are irrelevant to `INV-ACTIVE-NO-MOVES` but can still affect scoring and some connectivity rules.
 - **Implementations / tests:**
   - TS and Python turn-rotation logic as described in [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:665).
   - Python invariants and self-play soaks under `INV-ACTIVE-NO-MOVES` and `INV-PHASE-CONSISTENCY` in [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](docs/INVARIANTS_AND_PARITY_FRAMEWORK.md:167).
 - **RR-CANON mapping:**
-  - Turn-material and fully-eliminated semantics in the R2xx cluster, together with `RR-CANON-R142` (Territory colour-representation) and `RR-CANON-R170`–`R173`.
+  - Turn rotation and elimination semantics in `RR‑CANON‑R201`, together with `RR-CANON-R142` (Territory colour-representation) and `RR-CANON-R170`–`R173`.
 
 ### ANM-SCEN-09 – Temporarily eliminated player with recovery action available
 
@@ -214,8 +215,8 @@ The scenarios below capture concrete shapes that have historically exercised the
     1. Line collapse (markers → territory).
     2. Buried ring extraction as self-elimination cost.
     3. Potential territory cascade processing.
-  - After recovery, P may still control zero stacks and have `ringsInHand[P] == 0`. Recovery is a survival / scoring mechanism; it does not “restore” rings to hand. P remains in turn rotation as long as they still have rings somewhere (typically buried rings) or can take recovery actions; they are skipped only once permanently eliminated.
-  - Turn rotation must not skip P while P has recovery options; P is "temporarily eliminated" but still has global legal actions.
+  - After recovery, P may still control zero stacks and have `ringsInHand[P] == 0`. Recovery is a survival / scoring mechanism; it does not “restore” rings to hand. P remains in turn rotation as long as they are not permanently eliminated.
+  - Turn rotation does **not** depend on whether a recovery slide is currently available; if P is not permanently eliminated but has no legal recovery action, their turns are forced no‑ops recorded via bookkeeping moves rather than being skipped.
 - **Key constraints:**
   - Line-forming recovery requires completing a line of **at least** `lineLength` markers; overlength lines qualify and introduce the Option 1 / Option 2 choice.
   - Marker slide uses Moore adjacency (8 directions) for square boards, hex-adjacency for hexagonal.
@@ -232,13 +233,13 @@ The scenarios below capture concrete shapes that have historically exercised the
   - Recovery cascade processing: `RR-CANON-R114`.
   - Recovery recording semantics: `RR-CANON-R115`.
 - **Interaction with other ANM scenarios:**
-  - ANM-SCEN-03 (fully eliminated player): Recovery differs from full elimination; a player with markers + buried rings but no stacks/rings-in-hand is "temporarily eliminated" with recovery options, not "fully eliminated for turn rotation."
+  - ANM-SCEN-03 (permanently eliminated player): Recovery differs from permanent elimination; a player with markers + buried rings but no stacks/rings-in-hand is "temporarily eliminated" with recovery options, not permanently eliminated.
   - ANM-SCEN-07 (LPS with one player having real actions): Recovery action does **NOT** count as a real action, so a player with only recovery options does **not** block LPS victory for others; the LPS countdown can still complete.
 
 ## 3. Relationship to Invariants and Future Formalisation
 
-- `INV-ACTIVE-NO-MOVES` in [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](docs/INVARIANTS_AND_PARITY_FRAMEWORK.md:119) treats any ACTIVE state where `currentPlayer` has no global legal action (per §1) as an invariant violation, except for the terminal global-stalemate shape in ANM-SCEN-06.
-- `INV-PHASE-CONSISTENCY` ensures that composite phases (`line_processing`, `territory_processing`, `chain_capture`) never strand the current player in ANM states; scenarios ANM-SCEN-04 and ANM-SCEN-05 are representative.
+- `INV-ACTIVE-NO-MOVES` in [`INVARIANTS_AND_PARITY_FRAMEWORK.md`](INVARIANTS_AND_PARITY_FRAMEWORK.md:119) treats any ACTIVE state where `currentPlayer` has turn-material but no global legal action (per §1) as an invariant violation, except for the terminal global-stalemate shape in ANM-SCEN-06.
+- `INV-PHASE-CONSISTENCY` in [`INVARIANTS_AND_PARITY_FRAMEWORK.md`](INVARIANTS_AND_PARITY_FRAMEWORK.md:217) ensures that composite phases (`line_processing`, `territory_processing`, `chain_capture`) never strand the current player in ANM states; scenarios ANM-SCEN-04 and ANM-SCEN-05 are representative.
 - `INV-TERMINATION` and the S-invariant [`RR-CANON-R191`](RULES_CANONICAL_SPEC.md:476) rely on forced elimination and Territory/line processing always increasing eliminated rings or Territory; repeated ANM patterns must always consume some finite resource (e.g. caps) so that play cannot continue forever.
 - `PARITY-TS-PY-ACTIVE-NO-MOVES` and related parity IDs require TS and Python to agree on which states are ANM-free; the snapshots in `ai-service/tests/invariants/test_active_no_moves_*.py` and `ai-service/tests/parity/test_active_no_moves_line_processing_regression.py` serve as concrete anchors.
 - Future formal work (ANM-03-ARCH) will lift these behavioural scenarios into explicit progress measures and machine-checkable invariants over the shared TS engine and Python mirror, using the R2xx rules as the semantic backbone.

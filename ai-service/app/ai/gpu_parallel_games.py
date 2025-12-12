@@ -498,8 +498,9 @@ class BatchGameState:
     rings_in_hand: torch.Tensor
     territory_count: torch.Tensor
     is_eliminated: torch.Tensor    # bool
-    eliminated_rings: torch.Tensor # Rings eliminated by this player
+    eliminated_rings: torch.Tensor # Rings LOST BY this player (not for victory check)
     buried_rings: torch.Tensor     # Rings buried in stacks (captured but not removed)
+    rings_caused_eliminated: torch.Tensor  # Rings CAUSED TO BE ELIMINATED BY this player (RR-CANON-R060)
 
     # Game metadata: (batch_size,)
     current_player: torch.Tensor   # 1-4
@@ -575,6 +576,7 @@ class BatchGameState:
             is_eliminated=torch.zeros(shape_players, dtype=torch.bool, device=device),
             eliminated_rings=torch.zeros(shape_players, dtype=torch.int16, device=device),
             buried_rings=torch.zeros(shape_players, dtype=torch.int16, device=device),
+            rings_caused_eliminated=torch.zeros(shape_players, dtype=torch.int16, device=device),
             current_player=torch.ones(batch_size, dtype=torch.int8, device=device),
             current_phase=torch.zeros(batch_size, dtype=torch.int8, device=device),  # RING_PLACEMENT
             move_count=torch.zeros(batch_size, dtype=torch.int32, device=device),
@@ -2001,7 +2003,10 @@ def apply_capture_moves_batch(
                 state.marker_owner[g, check_y, check_x] = player
 
         # Eliminate defender's top ring
-        state.eliminated_rings[g, player] += 1
+        # eliminated_rings tracks rings LOST BY each player
+        # rings_caused_eliminated tracks rings CAUSED TO BE ELIMINATED BY each player (for victory)
+        state.eliminated_rings[g, defender_owner] += 1
+        state.rings_caused_eliminated[g, player] += 1
 
         # Clear origin
         state.stack_owner[g, from_y, from_x] = 0
@@ -2199,6 +2204,8 @@ def _eliminate_one_ring_from_any_stack(
                     # Eliminate one ring from top
                     state.stack_height[game_idx, y, x] = stack_height - 1
                     state.eliminated_rings[game_idx, player] += 1
+                    # Player eliminates their own ring for line collapse cost
+                    state.rings_caused_eliminated[game_idx, player] += 1
 
                     # If stack is now empty, clear ownership
                     if stack_height - 1 == 0:
@@ -2674,7 +2681,12 @@ def compute_territory_batch(
                         # Remove any stacks
                         stack_height = state.stack_height[g, y, x].item()
                         if stack_height > 0:
-                            state.eliminated_rings[g, player] += stack_height
+                            # Track which player lost the rings
+                            stack_owner = state.stack_owner[g, y, x].item()
+                            if stack_owner > 0:
+                                state.eliminated_rings[g, stack_owner] += stack_height
+                            # Player processing territory CAUSED these eliminations (for victory)
+                            state.rings_caused_eliminated[g, player] += stack_height
                             state.stack_height[g, y, x] = 0
                             state.stack_owner[g, y, x] = 0
 
@@ -2708,7 +2720,10 @@ def compute_territory_batch(
                     # 4. Mandatory self-elimination (eliminate cap)
                     state.stack_height[g, cap_y, cap_x] = 0
                     state.stack_owner[g, cap_y, cap_x] = 0
+                    # Player eliminates own rings for territory cap cost
                     state.eliminated_rings[g, player] += cap_height
+                    # Player CAUSED these eliminations (self-elimination counts for victory)
+                    state.rings_caused_eliminated[g, player] += cap_height
 
                     # Update territory count
                     state.territory_count[g, player] += territory_count
@@ -4117,7 +4132,10 @@ class ParallelGameRunner:
 
         # Track elimination
         if defender_owner > 0:
+            # Defender LOSES the ring
             state.eliminated_rings[g, defender_owner] += defender_eliminated
+            # Attacker (player) CAUSED the elimination (for victory check)
+            state.rings_caused_eliminated[g, player] += defender_eliminated
 
         # Clear attacker origin
         state.stack_owner[g, from_y, from_x] = 0
@@ -4360,8 +4378,10 @@ class ParallelGameRunner:
 
         for p in range(1, self.num_players + 1):
             # Check ring-elimination victory (RR-CANON-R170)
-            # Player wins when they've eliminated >= victoryThreshold rings
-            ring_elimination_victory = self.state.eliminated_rings[:, p] >= ring_elimination_threshold
+            # Per RR-CANON-R060/R170: Player wins when they have CAUSED >= victoryThreshold
+            # rings to be eliminated (includes self-elimination via lines, territory, etc.)
+            # rings_caused_eliminated[:, p] tracks rings that player p CAUSED to be eliminated
+            ring_elimination_victory = self.state.rings_caused_eliminated[:, p] >= ring_elimination_threshold
 
             # Check territory victory (RR-CANON-R171)
             territory_victory = self.state.territory_count[:, p] >= territory_victory_threshold

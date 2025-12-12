@@ -107,14 +107,14 @@ This resolves the earlier ambiguity where engines played to completion and relie
 **Sources**
 
 - [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:61) – RR-CANON-R020 rings per player; [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:218) RR-CANON-R081 and [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:225) RR-CANON-R082 reference a per-player `ringsPerPlayer` maximum when placing.
-- [`ringrift_compact_rules.md`](ringrift_compact_rules.md:18) §1.1 version table – defines `ringsPerPlayer` = 18 (square8), 48 (square19), or 72 (hexagonal radius 12).
-- [`ringrift_complete_rules.md`](ringrift_complete_rules.md:342) §3.2.1 – states "Each player has 72 rings for hexagonal (radius 12), 48 for 19x19, 18 for 8x8".
+- [`ringrift_compact_rules.md`](ringrift_compact_rules.md:18) §1.1 version table – defines `ringsPerPlayer` = 18 (square8), 72 (square19), or 96 (hexagonal radius 12).
+- [`ringrift_complete_rules.md`](ringrift_complete_rules.md:443) §3.2.1 – states the fixed personal ring supply: 72 (19×19), 96 (hexagonal), 18 (8×8).
 - [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:755) §2.3.3 – describes the current implementation approximation: per-player ring cap counts **all rings in stacks controlled by a player**, including captured rings of other colours, when deciding whether further placements are allowed (CCE-002).
 - [`docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md`](RULES_CONSISTENCY_EDGE_CASES.md:365) CCE-002 – classifies this as an "implementation compromise" and recommends either canonising or tightening it.
 
 **Problem description**
 
-The rules texts clearly define a per-player ring budget `ringsPerPlayer` (18 or 36 depending on board type), and R081/R082 use this to limit **placements** ("must not exceed ... the per-player `ringsPerPlayer` maximum for the board"). However, it is not fully specified how this interacts with **captured rings** and mixed-colour stacks:
+The rules texts clearly define a per-player ring budget `ringsPerPlayer` (18 / 72 / 96 depending on board type), and R081/R082 use this to limit **placements** ("must not exceed ... the per-player `ringsPerPlayer` maximum for the board"). However, it is not fully specified how this interacts with **captured rings** and mixed-colour stacks:
 
 - Does `ringsPerPlayer` constrain only rings of a player’s own colour they may **introduce from hand to the board** (i.e., initial supply), or
 - Does it also limit how many rings they may **control or be associated with** in stacks, including captured rings of other colours?

@@ -179,6 +179,7 @@ def run_selfplay_and_parity(
     difficulty_band: str = "light",
     parity_limit_games_per_db: int = 0,
     parity_timeout_seconds: int | None = None,
+    include_training_data_jsonl: bool = False,
 ) -> Dict[str, Any]:
     """
     Delegate to run_canonical_selfplay_parity_gate.py to:
@@ -272,6 +273,8 @@ def run_selfplay_and_parity(
             "--difficulty-band",
             difficulty_band,
         ]
+        if include_training_data_jsonl:
+            cmd.append("--include-training-data-jsonl")
         if hosts:
             cmd += ["--hosts", hosts]
 
@@ -627,6 +630,20 @@ def main(argv: List[str] | None = None) -> int:
         help="Optional path to write the combined canonical summary JSON.",
     )
     parser.add_argument(
+        "--analysis-dir",
+        type=str,
+        default=None,
+        help=(
+            "Optional directory to write analysis artifacts (game stats, recovery reports). "
+            "Defaults to <summary>.analysis when --summary is provided."
+        ),
+    )
+    parser.add_argument(
+        "--skip-analyses",
+        action="store_true",
+        help="Skip running post-soak analysis scripts on the JSONL logs.",
+    )
+    parser.add_argument(
         "--hosts",
         type=str,
         default=None,
@@ -659,6 +676,7 @@ def main(argv: List[str] | None = None) -> int:
         if int(args.parity_timeout_seconds) > 0
         else None
     )
+    run_analyses = bool(not args.skip_analyses)
 
     if args.db:
         db_path = Path(args.db).resolve()
@@ -678,6 +696,7 @@ def main(argv: List[str] | None = None) -> int:
             difficulty_band=difficulty_band,
             parity_limit_games_per_db=parity_limit_games_per_db,
             parity_timeout_seconds=parity_timeout_seconds,
+            include_training_data_jsonl=run_analyses and num_games > 0,
         )
     except Exception as e:  # pragma: no cover - debug hook
         payload = {
@@ -756,6 +775,100 @@ def main(argv: List[str] | None = None) -> int:
         "anm_ok": bool(anm_ok),
         "canonical_ok": bool(canonical_ok),
     }
+
+    # Optional post-soak analysis (requires JSONL logs with move history).
+    analysis_payload: Dict[str, Any] | None = None
+    if run_analyses and num_games > 0:
+        jsonl_path_str = parity_summary.get("soak_log_jsonl_path")
+        jsonl_path = (
+            Path(jsonl_path_str).resolve()
+            if isinstance(jsonl_path_str, str) and jsonl_path_str
+            else None
+        )
+        if jsonl_path is not None and jsonl_path.exists():
+            if args.analysis_dir:
+                analysis_dir = Path(args.analysis_dir).resolve()
+            elif args.summary:
+                s = Path(args.summary).resolve()
+                analysis_dir = s.parent / f"{s.stem}.analysis"
+            else:
+                ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                analysis_dir = (
+                    AI_SERVICE_ROOT
+                    / "logs"
+                    / "selfplay"
+                    / "analysis"
+                    / f"{board_type}_{num_players}p_{ts}"
+                )
+            analysis_dir.mkdir(parents=True, exist_ok=True)
+
+            analysis_payload = {
+                "analysis_dir": str(analysis_dir),
+                "log_jsonl": str(jsonl_path),
+                "artifacts": {},
+            }
+
+            # 1) Overall game statistics (victory types, win rates, lengths).
+            stats_base = analysis_dir / "game_statistics"
+            cmd = [
+                sys.executable,
+                "scripts/analyze_game_statistics.py",
+                "--jsonl",
+                str(jsonl_path),
+                "--format",
+                "both",
+                "--output",
+                str(stats_base),
+                "--quiet",
+            ]
+            proc = _run_cmd(cmd, cwd=AI_SERVICE_ROOT)
+            analysis_payload["artifacts"]["game_statistics"] = {
+                "returncode": int(proc.returncode),
+                "markdown": str(stats_base.with_suffix(".md")),
+                "json": str(stats_base.with_suffix(".json")),
+            }
+
+            # 2) Recovery eligibility replay analysis (CPU oracle).
+            recovery_out = analysis_dir / "recovery_across_games.json"
+            cmd = [
+                sys.executable,
+                "scripts/analyze_recovery_across_games.py",
+                "--input-dir",
+                str(jsonl_path.parent),
+                "--pattern",
+                str(jsonl_path.name),
+                "--output",
+                str(recovery_out),
+            ]
+            proc = _run_cmd(cmd, cwd=AI_SERVICE_ROOT)
+            analysis_payload["artifacts"]["recovery_across_games"] = {
+                "returncode": int(proc.returncode),
+                "json": str(recovery_out),
+            }
+
+            # 3) Recovery opportunity windows (lightweight replay).
+            recovery_opp_out = analysis_dir / "recovery_opportunities.txt"
+            cmd = [
+                sys.executable,
+                "scripts/analyze_recovery_opportunities.py",
+                "--dir",
+                str(jsonl_path.parent),
+            ]
+            proc = _run_cmd(cmd, cwd=AI_SERVICE_ROOT)
+            output = (proc.stdout or "") + (proc.stderr or "")
+            recovery_opp_out.write_text(output, encoding="utf-8")
+            analysis_payload["artifacts"]["recovery_opportunities"] = {
+                "returncode": int(proc.returncode),
+                "text": str(recovery_opp_out),
+            }
+        else:
+            analysis_payload = {
+                "skipped": True,
+                "reason": "soak_log_jsonl_path_missing_or_not_found",
+            }
+
+    if analysis_payload is not None:
+        summary["analysis"] = analysis_payload
 
     if args.summary:
         summary_path = Path(args.summary).resolve()

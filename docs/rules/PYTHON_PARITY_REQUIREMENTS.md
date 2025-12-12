@@ -657,7 +657,7 @@ The extended vectors are organised into four primary **families**:
 
 - **Family B – Forced elimination and ANM**
   - Forced elimination chains from a single trapped stack (monotone `totalRingsEliminated`).
-  - Multi-player rotation semantics (skipping fully eliminated players).
+  - Multi-player rotation semantics (skipping permanently eliminated players).
   - Territory-phase explicit elimination vs host-level forced elimination.
   - ANM guard cases where forced elimination must _not_ be triggered despite constrained geometry.
 
@@ -808,11 +808,11 @@ This section lists the **intended** new IDs, grouped by family with short semant
   - Category: `territory_processing` or `edge_case`, board: `square8`.
   - Sequence of host-level forced eliminations applied to a single trapped stack; `totalRingsEliminated` and the acting player’s `eliminatedRings` strictly increase each step, and the chain terminates in finitely many steps.
 
-**Turn rotation skipping fully eliminated player (3-player)**
+**Turn rotation skipping permanently eliminated player (3-player)**
 
 - `forced_elimination.rotation.skip_eliminated.square8`
   - Category: `edge_case`, board: `square8`.
-  - After P1’s forced elimination, turn rotation must skip a fully eliminated P2 and hand the turn to P3 who has turn material and legal moves, enforcing `INV-ANM-TURN-MATERIAL-SKIP`.
+  - After P1’s forced elimination, turn rotation must skip a permanently eliminated P2 and hand the turn to P3 (who is not permanently eliminated) with legal moves, enforcing `INV-ANM-TURN-MATERIAL-SKIP`.
 
 **Territory-phase explicit elimination vs host-level forced elimination**
 
@@ -893,7 +893,7 @@ TS↔Python harnesses for these semantics:
 
 - `hex_edge_case.forced_elim_3p.hexagonal`
   - Category: `edge_case`, board: `hexagonal`.
-  - 3-player hex game where forced elimination is applied to a player with trapped stacks while a fully eliminated player is skipped and a third player with material receives the turn, and no ACTIVE-no-moves state leaks out.
+  - 3-player hex game where forced elimination is applied to a player with trapped stacks while a permanently eliminated player is skipped and a third non-permanently-eliminated player receives the turn, and no ACTIVE-no-moves state leaks out.
 
 ### 8.6 Consumption and maintenance expectations (Python side)
 
