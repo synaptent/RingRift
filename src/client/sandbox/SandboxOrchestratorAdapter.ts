@@ -16,6 +16,7 @@
 import type { GameState, Move, GameResult } from '../../shared/engine';
 import { hashGameState } from '../../shared/engine';
 import type { GameEndExplanation } from '../../shared/engine/gameEndExplanation';
+import { createHistoryEntry } from '../../shared/engine/historyHelpers';
 import {
   processTurn,
   getValidMoves,
@@ -280,7 +281,19 @@ export class SandboxOrchestratorAdapter {
       // reflect the post-move board BEFORE any pending decisions are surfaced.
       let workingState = initialState;
       let result = runProcessTurn(workingState, move);
-      workingState = result.nextState;
+      const afterPrimary = result.nextState;
+      const primaryEntry = createHistoryEntry(workingState, afterPrimary, move, {
+        normalizeMoveNumber: true,
+      });
+      workingState = {
+        ...afterPrimary,
+        moveHistory: [
+          ...workingState.moveHistory,
+          { ...move, moveNumber: primaryEntry.moveNumber },
+        ],
+        history: [...workingState.history, primaryEntry],
+        lastMoveAt: new Date(),
+      };
       this.stateAccessor.updateGameState(workingState);
 
       // Resolve any pending decisions (line order, rewards, territory, elimination)
@@ -376,8 +389,21 @@ export class SandboxOrchestratorAdapter {
             moveNumber,
           };
 
-          result = runProcessTurn(workingState, noActionMove);
-          workingState = result.nextState;
+          const beforeNoAction = workingState;
+          result = runProcessTurn(beforeNoAction, noActionMove);
+          const afterNoAction = result.nextState;
+          const entry = createHistoryEntry(beforeNoAction, afterNoAction, noActionMove, {
+            normalizeMoveNumber: true,
+          });
+          workingState = {
+            ...afterNoAction,
+            moveHistory: [
+              ...beforeNoAction.moveHistory,
+              { ...noActionMove, moveNumber: entry.moveNumber },
+            ],
+            history: [...beforeNoAction.history, entry],
+            lastMoveAt: new Date(),
+          };
           this.stateAccessor.updateGameState(workingState);
           continue;
         }
@@ -428,8 +454,21 @@ export class SandboxOrchestratorAdapter {
           payload: { decision, chosenMove },
         });
 
-        result = runProcessTurn(workingState, chosenMove);
-        workingState = result.nextState;
+        const beforeDecisionMove = workingState;
+        result = runProcessTurn(beforeDecisionMove, chosenMove);
+        const afterDecisionMove = result.nextState;
+        const entry = createHistoryEntry(beforeDecisionMove, afterDecisionMove, chosenMove, {
+          normalizeMoveNumber: true,
+        });
+        workingState = {
+          ...afterDecisionMove,
+          moveHistory: [
+            ...beforeDecisionMove.moveHistory,
+            { ...chosenMove, moveNumber: entry.moveNumber },
+          ],
+          history: [...beforeDecisionMove.history, entry],
+          lastMoveAt: new Date(),
+        };
         this.stateAccessor.updateGameState(workingState);
       }
 
