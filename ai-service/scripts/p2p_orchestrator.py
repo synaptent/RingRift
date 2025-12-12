@@ -21,7 +21,7 @@ Usage:
     python scripts/p2p_orchestrator.py --node-id vast-5090-quad --port 8770
 
     # With known peers (for cloud nodes without broadcast):
-    python scripts/p2p_orchestrator.py --node-id vast-3090 --peers 100.107.168.125:8770,100.66.142.46:8770
+    python scripts/p2p_orchestrator.py --node-id vast-3090 --peers <peer-ip>:8770,<peer-ip>:8770
 """
 
 from __future__ import annotations

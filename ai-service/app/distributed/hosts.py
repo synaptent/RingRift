@@ -103,7 +103,10 @@ class HostConfig:
         """Get the HTTP worker URL for this host."""
         if self.worker_url:
             return self.worker_url
-        return f"http://{self.ssh_host}:{self.worker_port}"
+        host = self.ssh_host
+        if "@" in host:
+            host = host.split("@", 1)[1]
+        return f"http://{host}:{self.worker_port}"
 
 
 # Global host configuration cache

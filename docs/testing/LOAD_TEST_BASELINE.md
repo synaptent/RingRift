@@ -39,7 +39,7 @@ This harness uses the k6 `websocket-gameplay.js` scenario to drive a small swarm
   Alternatively, set `LOADTEST_EMAIL` / `LOADTEST_PASSWORD` when running k6 to use a different account.
 
 > **AWS public staging note (2025‑12‑12):** A remote smoke run against the
-> `ringrift-staging` host (`https://54.198.219.106`) confirmed auth works, but
+> `ringrift-staging` host confirmed auth works, but
 > `POST /api/games` is rate‑limited for normal users (returns 429 even at low
 > VU counts). For meaningful AWS load tests, either:
 >

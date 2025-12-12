@@ -83,53 +83,32 @@ class PipelineStats:
     errors: List[str] = field(default_factory=list)
 
 
-# Default sync sources - based on PLAN.md cluster
-DEFAULT_SYNC_SOURCES = [
-    SyncSource(
-        name="mac_studio",
-        host="armand@100.107.168.125",
-        remote_path="~/Development/RingRift/ai-service/data/selfplay/comprehensive",
-        ssh_key="~/.ssh/id_cluster",
-    ),
-    SyncSource(
-        name="mbp_16gb",
-        host="armand@100.66.142.46",
-        remote_path="~/Development/RingRift/ai-service/data/selfplay/comprehensive",
-    ),
-    SyncSource(
-        name="mbp_64gb",
-        host="armand@100.92.222.49",
-        remote_path="~/Development/RingRift/ai-service/data/selfplay/comprehensive",
-    ),
-    SyncSource(
-        name="lambda_h100",
-        host="ubuntu@209.20.157.81",
-        remote_path="~/ringrift/ai-service/data/selfplay/comprehensive",
-    ),
-    SyncSource(
-        name="lambda_a10",
-        host="ubuntu@150.136.65.197",
-        remote_path="~/ringrift/ai-service/data/selfplay/comprehensive",
-    ),
-    SyncSource(
-        name="aws_staging",
-        host="ubuntu@54.198.219.106",
-        remote_path="~/ringrift/ai-service/data/selfplay/comprehensive",
-        ssh_key="~/.ssh/ringrift-staging-key.pem",
-    ),
-    SyncSource(
-        name="aws_extra",
-        host="ubuntu@3.208.88.21",
-        remote_path="~/ringrift/ai-service/data/selfplay/comprehensive",
-        ssh_key="~/.ssh/ringrift-staging-key.pem",
-    ),
-    SyncSource(
-        name="vast_3090",
-        host="root@79.116.93.241",
-        remote_path="~/ringrift/ai-service/data/selfplay/comprehensive",
-        ssh_port=47070,
-    ),
-]
+# Default sync sources - loaded from config/distributed_hosts.yaml
+def load_sync_sources_from_config() -> List[SyncSource]:
+    """Load sync sources from distributed_hosts.yaml."""
+    import yaml
+    config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"
+    if not config_path.exists():
+        print(f"Warning: {config_path} not found. Using empty sync sources.")
+        return []
+
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    sources = []
+    for name, host_config in config.get("hosts", {}).items():
+        if host_config.get("status") != "ready":
+            continue
+        sources.append(SyncSource(
+            name=name.replace("-", "_"),
+            host=f"{host_config.get('ssh_user', 'ubuntu')}@{host_config.get('ssh_host', '')}",
+            remote_path=f"{host_config.get('ringrift_path', '~/ringrift')}/ai-service/data/selfplay/comprehensive",
+            ssh_key=host_config.get("ssh_key"),
+            ssh_port=host_config.get("ssh_port", 22),
+        ))
+    return sources
+
+DEFAULT_SYNC_SOURCES = load_sync_sources_from_config()
 
 
 class DataPipeline:

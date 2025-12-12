@@ -84,83 +84,37 @@ class PipelineState:
     errors: List[str] = field(default_factory=list)
 
 
-# Worker configurations - based on PLAN.md cluster
-# Local machines use Tailscale IPs (100.x.x.x)
-# Cloud machines use public IPs
-WORKERS = [
-    # === Local Mac Machines (Tailscale) ===
-    WorkerConfig(
-        name="mac-studio",
-        host="armand@100.107.168.125",
-        role="mixed",  # training + selfplay
-        capabilities=["square8", "square19", "hexagonal", "nn", "nnue", "mps"],
-        ssh_key="~/.ssh/id_cluster",
-        remote_path="~/Development/RingRift/ai-service",
-        max_parallel_jobs=4,
-    ),
-    WorkerConfig(
-        name="mbp-16gb",
-        host="armand@100.66.142.46",
-        role="selfplay",
-        capabilities=["square8", "square19", "hexagonal"],
-        remote_path="~/Development/RingRift/ai-service",
-        max_parallel_jobs=2,
-    ),
-    WorkerConfig(
-        name="mbp-64gb",
-        host="armand@100.92.222.49",
-        role="selfplay",
-        capabilities=["square8", "square19", "hexagonal"],
-        remote_path="~/Development/RingRift/ai-service",
-        max_parallel_jobs=4,
-    ),
-    # === AWS Instances ===
-    WorkerConfig(
-        name="aws-staging",
-        host="ubuntu@54.198.219.106",
-        role="selfplay",
-        capabilities=["square8", "square19", "hexagonal"],
-        ssh_key="~/.ssh/ringrift-staging-key.pem",
-        remote_path="~/ringrift/ai-service",
-        max_parallel_jobs=4,
-    ),
-    WorkerConfig(
-        name="aws-extra",
-        host="ubuntu@3.208.88.21",
-        role="selfplay",
-        capabilities=["square8", "square19", "hexagonal"],
-        ssh_key="~/.ssh/ringrift-staging-key.pem",
-        remote_path="~/ringrift/ai-service",
-        max_parallel_jobs=2,
-    ),
-    # === Lambda Labs GPU Instances ===
-    WorkerConfig(
-        name="lambda-h100",
-        host="ubuntu@209.20.157.81",
-        role="mixed",  # GPU selfplay + training
-        capabilities=["square8", "square19", "hexagonal", "gpu", "nn"],
-        remote_path="~/ringrift/ai-service",
-        max_parallel_jobs=8,
-    ),
-    WorkerConfig(
-        name="lambda-a10",
-        host="ubuntu@150.136.65.197",
-        role="selfplay",
-        capabilities=["square8", "square19", "hexagonal", "gpu"],
-        remote_path="~/ringrift/ai-service",
-        max_parallel_jobs=4,
-    ),
-    # === Vast.ai GPU Instance ===
-    WorkerConfig(
-        name="vast-3090",
-        host="root@79.116.93.241",
-        role="selfplay",
-        capabilities=["square8", "square19", "hexagonal", "gpu"],
-        ssh_port=47070,  # Non-standard Vast.ai port
-        remote_path="~/ringrift/ai-service",
-        max_parallel_jobs=4,
-    ),
-]
+# Worker configurations loaded from gitignored config file
+# See config/distributed_hosts.yaml for actual host configuration
+def load_workers_from_config() -> List[WorkerConfig]:
+    """Load worker configurations from distributed_hosts.yaml."""
+    import yaml
+    config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"
+    if not config_path.exists():
+        print(f"Warning: {config_path} not found. Using empty worker list.")
+        print("Copy config/distributed_hosts.example.yaml to config/distributed_hosts.yaml")
+        return []
+
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    workers = []
+    for name, host_config in config.get("hosts", {}).items():
+        if host_config.get("status") != "ready":
+            continue
+        workers.append(WorkerConfig(
+            name=name,
+            host=f"{host_config.get('ssh_user', 'ubuntu')}@{host_config.get('ssh_host', '')}",
+            role=host_config.get("role", "selfplay"),
+            capabilities=host_config.get("capabilities", ["square8"]),
+            ssh_key=host_config.get("ssh_key"),
+            ssh_port=host_config.get("ssh_port", 22),
+            remote_path=host_config.get("ringrift_path", "~/ringrift/ai-service"),
+            max_parallel_jobs=host_config.get("max_parallel_jobs", 2),
+        ))
+    return workers
+
+WORKERS = load_workers_from_config()
 
 # Default selfplay configuration per iteration
 DEFAULT_SELFPLAY_CONFIG = {

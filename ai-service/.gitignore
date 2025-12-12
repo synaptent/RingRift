@@ -10,6 +10,8 @@ config/orchestrator_hosts.sh
 
 # Machine-specific sync scripts with private IPs
 scripts/sync_to_mbp64.sh
+scripts/sync_selfplay_data.sh
+scripts/sync_to_mac_studio.sh
 
 # Orchestrator state and logs contain host-specific data
 logs/orchestrator/cluster_state.json

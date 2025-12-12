@@ -2289,8 +2289,22 @@ def _has_anomalies(records: List[GameRecord]) -> bool:
     only hard invariants or engine exceptions (not normal terminations such
     as max-moves cutoffs or completed games) are treated as anomalies.
     """
-    anomalous_reasons = {"no_legal_moves_for_current_player"}
-    anomalous_prefixes = ("step_exception:", "error_reset")
+    anomalous_reasons = {
+        "unknown",
+        "no_legal_moves_for_current_player",
+        "illegal_moves_in_forced_elimination",
+        "no_ai_for_current_player",
+        "ai_returned_no_move",
+        "ai_move_not_forced_elimination",
+        "recorded_player_mismatch",
+    }
+    anomalous_prefixes = (
+        "step_exception:",
+        "error_reset",
+        "ai_selected_illegal_move:",
+        "illegal_move_for_phase:",
+        "phase_move_mismatch:",
+    )
     return any(
         (rec.termination_reason in anomalous_reasons) or rec.termination_reason.startswith(anomalous_prefixes)
         for rec in records
