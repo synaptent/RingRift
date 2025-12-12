@@ -434,12 +434,31 @@ def apply_recovery_moves_vectorized(
 
         # Move marker
         state.marker_owner[g, from_y, from_x] = 0
-        state.marker_owner[g, to_y, to_x] = player
+        dest_height = state.stack_height[g, to_y, to_x].item()
+        dest_owner = state.stack_owner[g, to_y, to_x].item()
+
+        if dest_height > 0 and dest_owner > 0:
+            # Stack-strike recovery (RR-CANON-R112(b2)): sacrifice the marker
+            # and eliminate the attacked stack's top ring (credited to P).
+            new_height = max(0, dest_height - 1)
+
+            state.eliminated_rings[g, dest_owner] += 1
+            state.rings_caused_eliminated[g, player] += 1
+
+            state.stack_height[g, to_y, to_x] = new_height
+            if new_height == 0:
+                state.stack_owner[g, to_y, to_x] = 0
+        else:
+            # Normal recovery slide: marker occupies the destination cell.
+            state.marker_owner[g, to_y, to_x] = player
 
         # Deduct buried ring cost
         current_buried = state.buried_rings[g, player].item()
         if current_buried > 0:
             state.buried_rings[g, player] = current_buried - 1
+            # Buried ring extraction is a self-elimination (RR-CANON-R114/R115).
+            state.eliminated_rings[g, player] += 1
+            state.rings_caused_eliminated[g, player] += 1
 
 
 # =============================================================================
@@ -493,7 +512,8 @@ class BatchGameState:
 
     # Board state: (batch_size, board_size, board_size)
     stack_owner: torch.Tensor      # 0=empty, 1-4=player
-    stack_height: torch.Tensor     # 0-5
+    stack_height: torch.Tensor     # 0-5 (total rings in stack)
+    cap_height: torch.Tensor       # 0-5 (consecutive top rings of owner's color per RR-CANON-R101)
     marker_owner: torch.Tensor     # 0=none, 1-4=player
     territory_owner: torch.Tensor  # 0=neutral, 1-4=player
     is_collapsed: torch.Tensor     # bool
@@ -572,6 +592,7 @@ class BatchGameState:
         return cls(
             stack_owner=torch.zeros(shape_board, dtype=torch.int8, device=device),
             stack_height=torch.zeros(shape_board, dtype=torch.int8, device=device),
+            cap_height=torch.zeros(shape_board, dtype=torch.int8, device=device),
             marker_owner=torch.zeros(shape_board, dtype=torch.int8, device=device),
             territory_owner=torch.zeros(shape_board, dtype=torch.int8, device=device),
             is_collapsed=torch.zeros(shape_board, dtype=torch.bool, device=device),
@@ -643,6 +664,7 @@ class BatchGameState:
             if 0 <= x < board_size and 0 <= y < board_size:
                 batch.stack_owner[0, y, x] = stack.controlling_player
                 batch.stack_height[0, y, x] = len(stack.rings)
+                batch.cap_height[0, y, x] = stack.cap_height
 
         for key, marker in game_state.board.markers.items():
             x, y = map(int, key.split(","))
@@ -1129,7 +1151,10 @@ def _validate_paths_vectorized(
 ) -> torch.Tensor:
     """Validate movement paths in a semi-vectorized manner.
 
-    Checks that no opponent stacks block the path from origin to destination.
+    Per RR-CANON-R091, checks that no stacks (own OR opponent) block the
+    intermediate path cells. The destination is checked separately in
+    generate_movement_moves_batch.
+
     This is a hybrid approach: we iterate over moves but use tensor indexing
     for path cell lookups to reduce Python overhead.
 
@@ -1138,10 +1163,10 @@ def _validate_paths_vectorized(
         game_indices: (N,) game index for each candidate move
         from_positions: (N, 2) [y, x] origin positions
         to_positions: (N, 2) [y, x] destination positions
-        players: (N,) player number for each move
+        players: (N,) player number for each move (unused - all stacks block)
 
     Returns:
-        Boolean tensor (N,) - True if path is valid (no opponent blocking)
+        Boolean tensor (N,) - True if path is valid (no stacks on intermediate cells)
     """
     device = state.device
     N = game_indices.shape[0]
@@ -1152,25 +1177,25 @@ def _validate_paths_vectorized(
     valid = torch.ones(N, dtype=torch.bool, device=device)
 
     # Process in chunks for better memory efficiency
-    # For each move, we need to check all cells along the path
+    # For each move, we need to check all intermediate cells along the path
     for i in range(N):
         g = game_indices[i].item()
         from_y, from_x = from_positions[i, 0].item(), from_positions[i, 1].item()
         to_y, to_x = to_positions[i, 0].item(), to_positions[i, 1].item()
-        player = players[i].item()
 
         dy = 0 if to_y == from_y else (1 if to_y > from_y else -1)
         dx = 0 if to_x == from_x else (1 if to_x > from_x else -1)
         dist = max(abs(to_y - from_y), abs(to_x - from_x))
 
-        # Check each path cell (including destination)
-        for step in range(1, dist + 1):
+        # Check each INTERMEDIATE path cell (excluding destination)
+        # Per RR-CANON-R091: intermediate cells must contain no stack (any owner)
+        for step in range(1, dist):  # Exclude destination (dist)
             check_y = from_y + dy * step
             check_x = from_x + dx * step
             cell_owner = state.stack_owner[g, check_y, check_x].item()
 
-            # Opponent stack blocks the path
-            if cell_owner != 0 and cell_owner != player:
+            # ANY stack blocks the path (own or opponent)
+            if cell_owner != 0:
                 valid[i] = False
                 break
 
@@ -1186,12 +1211,13 @@ def generate_movement_moves_batch(
     Per RR-CANON-R090-R092:
     - Move in straight line (8 directions: N, NE, E, SE, S, SW, W, NW)
     - Distance must be >= stack height at origin
-    - Cannot pass through or land on opponent stacks (those are captures)
-    - Can pass through/land on empty spaces or own stacks
+    - Cannot pass through ANY stacks (own or opponent) on intermediate cells
+    - Cannot land on ANY stacks (landing on opponent is capture, not movement)
+    - Can land on empty spaces or markers
 
     Implementation uses a two-phase approach:
     1. Generate all candidate moves based on position/height constraints
-    2. Validate paths to filter out moves blocked by opponent stacks
+    2. Validate paths to filter out moves blocked by any stacks
 
     Args:
         state: Current batch game state
@@ -1249,13 +1275,17 @@ def generate_movement_moves_batch(
                     if not (0 <= to_y < board_size and 0 <= to_x < board_size):
                         break
 
-                    # Destination must be empty or own stack (not opponent)
-                    # Opponent destination is a capture, not movement
+                    # Per RR-CANON-R091: landing cell must not be collapsed
+                    if state.is_collapsed[g, to_y, to_x].item():
+                        # Collapsed space blocks further movement along this ray
+                        break
+
+                    # Per RR-CANON-R091: landing cell must contain NO stack (any owner)
+                    # Movement cannot land on ANY stack - that's what captures are for
                     dest_owner = state.stack_owner[g, to_y, to_x].item()
-                    if dest_owner != 0 and dest_owner != player:
-                        # This direction leads to capture territory
-                        # But we still need to check shorter distances
-                        continue
+                    if dest_owner != 0:
+                        # ANY stack (own or opponent) blocks landing and further movement
+                        break
 
                     # Add as candidate (path validation deferred)
                     candidate_game_idx.append(g)
@@ -1348,8 +1378,9 @@ def generate_capture_moves_batch(
     """Generate all valid capture moves for active games.
 
     Per RR-CANON-R100-R103:
-    - Capture by "overtaking": move onto opponent stack with equal or greater height
-    - Move in straight line, distance >= stack height
+    - Capture by "overtaking": move onto opponent stack with attacker cap_height >= target cap_height
+    - Move in straight line, distance >= stack height (total height, not cap)
+    - Path must be clear of ANY stacks (no passing through own or opponent stacks)
     - Captures merge stacks (attacker rings on top)
     - Defender's top ring is eliminated
 
@@ -1392,12 +1423,13 @@ def generate_capture_moves_batch(
             from_y = stack_positions[pos_idx, 0].item()
             from_x = stack_positions[pos_idx, 1].item()
             my_height = state.stack_height[g, from_y, from_x].item()
+            my_cap_height = state.cap_height[g, from_y, from_x].item()
 
             if my_height <= 0:
                 continue
 
             for dy, dx in directions:
-                # Move distance must be >= stack height
+                # Move distance must be >= stack height (total, not cap)
                 for dist in range(my_height, board_size):
                     to_y = from_y + dy * dist
                     to_x = from_x + dx * dist
@@ -1405,34 +1437,37 @@ def generate_capture_moves_batch(
                     if not (0 <= to_y < board_size and 0 <= to_x < board_size):
                         break
 
-                    # Check path is clear (can pass through empty or own stacks)
+                    # Per RR-CANON-R101: path from->target must be clear of ANY stacks
+                    # We check intermediate cells only (not destination which is the target)
                     path_clear = True
                     for step in range(1, dist):  # Don't check destination
                         check_y = from_y + dy * step
                         check_x = from_x + dx * step
                         cell_owner = state.stack_owner[g, check_y, check_x].item()
 
-                        # Path blocked by opponent stack
-                        if cell_owner != 0 and cell_owner != player:
+                        # ANY stack blocks the path (per RR-CANON-R101)
+                        if cell_owner != 0:
                             path_clear = False
                             break
 
                     if not path_clear:
+                        # Path blocked, cannot continue along this ray
                         break
 
                     # Check destination for capture
                     dest_owner = state.stack_owner[g, to_y, to_x].item()
                     if dest_owner != 0 and dest_owner != player:
-                        # Opponent stack - check if we can capture
-                        dest_height = state.stack_height[g, to_y, to_x].item()
-                        if my_height >= dest_height:
+                        # Opponent stack - check if we can capture using CAP HEIGHT
+                        # Per RR-CANON-R101: attacker.cap_height >= target.cap_height
+                        dest_cap_height = state.cap_height[g, to_y, to_x].item()
+                        if my_cap_height >= dest_cap_height:
                             # Valid capture!
                             all_game_idx.append(g)
                             all_from_y.append(from_y)
                             all_from_x.append(from_x)
                             all_to_y.append(to_y)
                             all_to_x.append(to_x)
-                        # Cannot continue past opponent stack
+                        # Cannot continue past opponent stack (regardless of capture validity)
                         break
 
     total_moves = len(all_game_idx)
@@ -1493,6 +1528,7 @@ def generate_chain_capture_moves_from_position(
       segments exist from the new landing position, the chain must continue.
 
     This function checks captures only from the specified position, not all stacks.
+    Uses cap_height comparison per RR-CANON-R101.
 
     Args:
         state: Current batch game state
@@ -1512,6 +1548,7 @@ def generate_chain_capture_moves_from_position(
         return []
 
     my_height = state.stack_height[game_idx, from_y, from_x].item()
+    my_cap_height = state.cap_height[game_idx, from_y, from_x].item()
     if my_height <= 0:
         return []
 
@@ -1523,7 +1560,7 @@ def generate_chain_capture_moves_from_position(
     captures = []
 
     for dy, dx in directions:
-        # Move distance must be >= stack height
+        # Move distance must be >= stack height (total, not cap)
         for dist in range(my_height, board_size):
             to_y = from_y + dy * dist
             to_x = from_x + dx * dist
@@ -1531,15 +1568,15 @@ def generate_chain_capture_moves_from_position(
             if not (0 <= to_y < board_size and 0 <= to_x < board_size):
                 break
 
-            # Check path is clear (can pass through empty or own stacks)
+            # Per RR-CANON-R101: path must be clear of ANY stacks
             path_clear = True
             for step in range(1, dist):  # Don't check destination
                 check_y = from_y + dy * step
                 check_x = from_x + dx * step
                 cell_owner = state.stack_owner[game_idx, check_y, check_x].item()
 
-                # Path blocked by opponent stack
-                if cell_owner != 0 and cell_owner != player:
+                # ANY stack blocks the path
+                if cell_owner != 0:
                     path_clear = False
                     break
 
@@ -1549,9 +1586,10 @@ def generate_chain_capture_moves_from_position(
             # Check destination for capture
             dest_owner = state.stack_owner[game_idx, to_y, to_x].item()
             if dest_owner != 0 and dest_owner != player:
-                # Opponent stack - check if we can capture
-                dest_height = state.stack_height[game_idx, to_y, to_x].item()
-                if my_height >= dest_height:
+                # Opponent stack - check if we can capture using CAP HEIGHT
+                # Per RR-CANON-R101: attacker.cap_height >= target.cap_height
+                dest_cap_height = state.cap_height[game_idx, to_y, to_x].item()
+                if my_cap_height >= dest_cap_height:
                     # Valid capture!
                     captures.append((to_y, to_x))
                 # Cannot continue past opponent stack
@@ -1660,8 +1698,13 @@ def generate_recovery_moves_batch(
     - "Line mode": slide completes a line of markers (preferred)
     - "Fallback mode": any adjacent slide if no line-forming recovery slide exists
       anywhere on the board (costs 1 buried ring)
-    - Note: This GPU implementation currently generates only empty-cell line/fallback
-      recovery slides; stack-strike recovery is handled in the CPU engines.
+    - Stack-strike (RR-CANON-R112(b2)): allow sliding onto an adjacent stack,
+      sacrificing the marker to eliminate that stack's top ring.
+
+    NOTE: This GPU implementation does not currently enforce the full
+    fallback-class gate ("no line-forming recovery slide exists anywhere");
+    it surfaces both empty-cell and stack-strike recovery options whenever the
+    player is recovery-eligible.
 
     Args:
         state: Current batch game state
@@ -1727,13 +1770,28 @@ def generate_recovery_moves_batch(
                 if not (0 <= to_y < board_size and 0 <= to_x < board_size):
                     continue
 
-                # Target must be empty (no stack, no marker, no territory)
-                if state.stack_owner[g, to_y, to_x].item() != 0:
+                # Target may be either:
+                # - empty cell (no stack, no marker, no territory/collapse), or
+                # - adjacent stack (stack-strike).
+                if getattr(state, "is_collapsed", None) is not None and state.is_collapsed[g, to_y, to_x].item():
                     continue
-                if state.marker_owner[g, to_y, to_x].item() != 0:
-                    continue
-                if state.territory_owner[g, to_y, to_x].item() != 0:
-                    continue
+
+                has_stack = state.stack_height[g, to_y, to_x].item() > 0 and state.stack_owner[g, to_y, to_x].item() > 0
+
+                if has_stack:
+                    # Stack-strike: destination is a stack; markers cannot coexist.
+                    if state.marker_owner[g, to_y, to_x].item() != 0:
+                        continue
+                    if state.territory_owner[g, to_y, to_x].item() != 0:
+                        continue
+                else:
+                    # Empty-cell slide: destination must be empty.
+                    if state.stack_owner[g, to_y, to_x].item() != 0:
+                        continue
+                    if state.marker_owner[g, to_y, to_x].item() != 0:
+                        continue
+                    if state.territory_owner[g, to_y, to_x].item() != 0:
+                        continue
 
                 # Valid recovery slide!
                 all_game_idx.append(g)
@@ -1843,8 +1901,11 @@ def apply_placement_moves_batch(
             state.move_history[g, move_idx, 5] = x  # to_x same as from for placement
 
         # Apply placement
+        # For a new single-ring placement, cap_height == stack_height == 1
+        # (the entire stack is owned by the placing player)
         state.stack_owner[g, y, x] = player
         state.stack_height[g, y, x] = 1
+        state.cap_height[g, y, x] = 1
         state.rings_in_hand[g, player] -= 1
 
         # Advance turn
@@ -1903,8 +1964,9 @@ def apply_movement_moves_batch(
             state.move_history[g, move_idx, 4] = to_y
             state.move_history[g, move_idx, 5] = to_x
 
-        # Get moving stack info
+        # Get moving stack info (both height and cap_height)
         moving_height = state.stack_height[g, from_y, from_x].item()
+        moving_cap_height = state.cap_height[g, from_y, from_x].item()
 
         # Process markers along path (simplified - flip opposing markers)
         dy = 0 if to_y == from_y else (1 if to_y > from_y else -1)
@@ -1928,23 +1990,18 @@ def apply_movement_moves_batch(
             state.is_collapsed[g, to_y, to_x] = True
             state.marker_owner[g, to_y, to_x] = 0  # Marker consumed
 
-        # Clear origin
+        # Clear origin (both height and cap_height)
         state.stack_owner[g, from_y, from_x] = 0
         state.stack_height[g, from_y, from_x] = 0
+        state.cap_height[g, from_y, from_x] = 0
 
-        # Handle destination
-        dest_owner = state.stack_owner[g, to_y, to_x].item()
-        dest_height = state.stack_height[g, to_y, to_x].item()
-
-        if dest_owner == 0:
-            # Landing on empty
-            new_height = moving_height - landing_ring_cost
-            state.stack_owner[g, to_y, to_x] = player
-            state.stack_height[g, to_y, to_x] = max(1, new_height)
-        elif dest_owner == player:
-            # Merging with own stack
-            new_height = dest_height + moving_height - landing_ring_cost
-            state.stack_height[g, to_y, to_x] = min(5, new_height)  # Cap at 5
+        # Handle destination - per RR-CANON-R091, movement cannot land on stacks
+        # Destination should always be empty (move generation guarantees this now)
+        new_height = max(1, moving_height - landing_ring_cost)
+        new_cap_height = max(1, moving_cap_height - landing_ring_cost)
+        state.stack_owner[g, to_y, to_x] = player
+        state.stack_height[g, to_y, to_x] = new_height
+        state.cap_height[g, to_y, to_x] = new_cap_height
 
         # Advance turn
         state.move_count[g] += 1
@@ -2002,8 +2059,9 @@ def apply_capture_moves_batch(
             state.move_history[g, move_idx, 4] = to_y
             state.move_history[g, move_idx, 5] = to_x
 
-        # Get attacking stack info
+        # Get attacking stack info (height and cap_height)
         attacker_height = state.stack_height[g, from_y, from_x].item()
+        attacker_cap_height = state.cap_height[g, from_y, from_x].item()
 
         # Get defender info
         defender_owner = state.stack_owner[g, to_y, to_x].item()
@@ -2027,15 +2085,20 @@ def apply_capture_moves_batch(
         state.eliminated_rings[g, defender_owner] += 1
         state.rings_caused_eliminated[g, player] += 1
 
-        # Clear origin
+        # Clear origin (height and cap_height)
         state.stack_owner[g, from_y, from_x] = 0
         state.stack_height[g, from_y, from_x] = 0
+        state.cap_height[g, from_y, from_x] = 0
 
-        # Merge stacks at destination
-        # Defender loses 1 ring (eliminated), attacker stacks on top
+        # Merge stacks at destination per RR-CANON-R102:
+        # - Defender loses 1 ring (eliminated from their cap)
+        # - Attacker rings go on top of defender's remaining rings
+        # - New cap_height is the attacker's original height (all top rings are attacker's)
         new_height = attacker_height + defender_height - 1
+        new_cap_height = attacker_cap_height  # Attacker's rings are now the entire cap
         state.stack_owner[g, to_y, to_x] = player
         state.stack_height[g, to_y, to_x] = min(5, new_height)
+        state.cap_height[g, to_y, to_x] = min(5, new_cap_height)
 
         # Place marker for attacker (capture marker)
         state.marker_owner[g, to_y, to_x] = player
