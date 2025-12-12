@@ -39,6 +39,190 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 
+# =============================================================================
+# Schema Normalization - handles old and new JSONL formats
+# =============================================================================
+
+# Mapping from board_size to board_type
+BOARD_SIZE_TO_TYPE = {
+    8: "square8",
+    19: "square19",
+    25: "square25",
+    11: "hexagonal",
+    13: "hexagonal",
+    15: "hexagonal",
+}
+
+# Mapping from old victory_type to normalized victory type
+OLD_VICTORY_TYPE_MAP = {
+    "ring_elimination": "elimination",
+    "elimination": "elimination",
+    "territory": "territory",
+    "lps": "lps",
+    "last_player_standing": "lps",
+    "timeout": "timeout",
+    "stalemate": "stalemate",
+    "draw": "draw",
+}
+
+# Mapping from new termination_reason format to normalized victory type
+TERMINATION_REASON_MAP = {
+    "status:completed:elimination": "elimination",
+    "status:completed:territory": "territory",
+    "status:completed:lps": "lps",
+    "status:completed:timeout": "timeout",
+    "status:completed:stalemate": "stalemate",
+    "status:completed:draw": "draw",
+    "status:completed:unknown": "unknown",
+}
+
+# AI type inference from file paths
+AI_PATH_PATTERNS = {
+    "mcts_nn": "mcts+nn",
+    "mcts-nn": "mcts+nn",
+    "mcts_only": "mcts",
+    "mcts-only": "mcts",
+    "descent_nn": "descent+nn",
+    "descent-nn": "descent+nn",
+    "descent_only": "descent",
+    "descent-only": "descent",
+    "nn_only": "neural_net",
+    "nn-only": "neural_net",
+    "heuristic_only": "heuristic",
+    "heuristic-only": "heuristic",
+    "random_only": "random",
+    "random-only": "random",
+    "gpu_heuristic": "gpu_heuristic",
+    "gpu_": "gpu_heuristic",
+    "cpu_canonical": "cpu_heuristic",
+    "fresh_cpu": "cpu_heuristic",
+    "hybrid": "hybrid_gpu",
+}
+
+
+def infer_ai_type(game: dict[str, Any], file_path: str = "") -> str:
+    """Infer AI opponent type from game data or file path."""
+    # Check explicit engine_mode first
+    engine_mode = game.get("engine_mode")
+    if engine_mode:
+        mode_map = {
+            "heuristic-only": "heuristic",
+            "mcts-only": "mcts",
+            "descent-only": "descent",
+            "random-only": "random",
+            "nn-only": "neural_net",
+            "mixed": "mixed",
+        }
+        return mode_map.get(engine_mode, engine_mode)
+
+    # Check ai_config or similar fields
+    ai_config = game.get("ai_config") or game.get("ai_type") or game.get("opponent_type")
+    if ai_config:
+        return str(ai_config)
+
+    # Infer from file path
+    if file_path:
+        path_lower = file_path.lower()
+        for pattern, ai_type in AI_PATH_PATTERNS.items():
+            if pattern in path_lower:
+                return ai_type
+
+    return "unknown"
+
+
+def normalize_game(game: dict[str, Any], file_path: str = "") -> dict[str, Any]:
+    """Normalize a game record to handle both old and new schema formats.
+
+    Old schema fields:
+      - board_size: int (8, 19, 25, etc.)
+      - victory_type: "ring_elimination", "timeout", etc.
+      - stalemate_tiebreaker: optional string
+
+    New schema fields:
+      - board_type: "square8", "square19", "hexagonal", etc.
+      - termination_reason: "status:completed:elimination", etc.
+
+    Returns a normalized game dict with consistent field names.
+    """
+    normalized = game.copy()
+
+    # --- Normalize board_type ---
+    if "board_type" not in normalized or normalized.get("board_type") == "unknown":
+        if "config" in game and "board_type" in game["config"]:
+            normalized["board_type"] = game["config"]["board_type"]
+        elif "board_size" in game:
+            board_size = game["board_size"]
+            normalized["board_type"] = BOARD_SIZE_TO_TYPE.get(board_size, f"square{board_size}")
+        elif "moves" in game and game["moves"]:
+            max_coord = 0
+            for move in game["moves"]:
+                if isinstance(move, dict):
+                    if "to" in move:
+                        max_coord = max(max_coord, move["to"].get("x", 0), move["to"].get("y", 0))
+            if max_coord <= 7:
+                normalized["board_type"] = "square8"
+            elif max_coord <= 18:
+                normalized["board_type"] = "square19"
+            else:
+                normalized["board_type"] = f"square{max_coord + 1}"
+        else:
+            normalized["board_type"] = "unknown"
+
+    # --- Normalize num_players ---
+    if "num_players" not in normalized:
+        if "config" in game and "num_players" in game["config"]:
+            normalized["num_players"] = game["config"]["num_players"]
+        elif "moves" in game and game["moves"]:
+            max_player = max(
+                (m.get("player", 1) for m in game["moves"] if isinstance(m, dict) and "player" in m),
+                default=2
+            )
+            normalized["num_players"] = max_player
+        else:
+            normalized["num_players"] = 2
+
+    # --- Normalize victory_type ---
+    victory_type = None
+
+    if "termination_reason" in game:
+        tr = game["termination_reason"]
+        if tr in TERMINATION_REASON_MAP:
+            victory_type = TERMINATION_REASON_MAP[tr]
+        elif tr.startswith("status:completed:"):
+            victory_type = tr.split(":")[-1]
+
+    if victory_type is None and "victory_type" in game:
+        old_vtype = game["victory_type"].lower() if isinstance(game["victory_type"], str) else str(game["victory_type"])
+        victory_type = OLD_VICTORY_TYPE_MAP.get(old_vtype, old_vtype)
+
+    if victory_type == "stalemate" and game.get("stalemate_tiebreaker"):
+        normalized["_stalemate_tiebreaker"] = game["stalemate_tiebreaker"].lower()
+
+    if victory_type:
+        normalized["victory_type"] = victory_type
+
+    # --- Infer AI type ---
+    normalized["_ai_type"] = infer_ai_type(game, file_path)
+
+    return normalized
+
+
+def is_completed_game(game: dict[str, Any]) -> bool:
+    """Check if a game record represents a completed game (not an eval pool position)."""
+    if game.get("game_status") == "active":
+        return False
+
+    has_moves = "moves" in game and len(game.get("moves", [])) > 0
+    has_victory = "victory_type" in game or "termination_reason" in game
+    has_winner = game.get("winner") is not None
+
+    is_eval_pool = "move_history" in game and "moves" not in game
+    if is_eval_pool:
+        return False
+
+    return has_moves or has_victory or has_winner
+
+
 @dataclass
 class GameStats:
     """Statistics for a single game configuration (board + player count)."""
@@ -202,8 +386,9 @@ def load_recovery_analysis(path: Path) -> dict[str, Any] | None:
 
 
 def load_jsonl_games(path: Path) -> list[dict[str, Any]]:
-    """Load games from a JSONL file."""
+    """Load completed games from a JSONL file (excludes eval pool positions)."""
     games = []
+    file_path_str = str(path)
     try:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
@@ -211,7 +396,12 @@ def load_jsonl_games(path: Path) -> list[dict[str, Any]]:
                 if not line:
                     continue
                 try:
-                    games.append(json.loads(line))
+                    game = json.loads(line)
+                    # Filter out eval pool positions and incomplete games
+                    if is_completed_game(game):
+                        # Normalize schema and infer AI type
+                        game = normalize_game(game, file_path_str)
+                        games.append(game)
                 except json.JSONDecodeError:
                     continue
     except OSError:
