@@ -275,7 +275,7 @@ class TestBatchConversion:
         batch_state = BatchGameState.from_single_game(state, device)
 
         assert batch_state.board_size == 19
-        assert batch_state.rings_in_hand[0, 1].item() == 48  # 48 rings on square19
+        assert batch_state.rings_in_hand[0, 1].item() == 60  # 60 rings on square19
 
 
 # =============================================================================

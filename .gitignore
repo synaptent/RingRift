@@ -181,3 +181,6 @@ PLAN.md
 
 # Selfplay analysis docs (generated reports with internal details)
 ai-service/docs/SELFPLAY_*.md
+
+# Cluster connection documentation (contains IPs/credentials)
+CLUSTER_CONNECTIONS.md

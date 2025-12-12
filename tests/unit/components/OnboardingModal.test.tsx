@@ -45,15 +45,16 @@ describe('OnboardingModal – canonical copy & rules‑UX telemetry', () => {
     fireEvent.click(nextButton);
 
     // Victory step copy should come from ONBOARDING_COPY.victoryConcepts[0]:
-    // "Win by eliminating a number of rings equal to the starting ring supply (ringsPerPlayer) – not just one opponent's set.
-    //  Eliminated rings are permanently removed; captured rings you carry in stacks do not count
-    //  toward this threshold."
+    // "Win by reaching the Ring Elimination victory threshold. In 2-player games it equals your
+    //  starting ring supply; in 3–4 player games it is higher (two thirds of your starting rings
+    //  plus one third of your opponents’ combined starting rings). Eliminated rings are permanently
+    //  removed; captured rings you carry in stacks do not count toward this threshold."
     const dialog = screen.getByRole('dialog');
     const text = dialog.textContent || '';
 
-    expect(text).toMatch(/Win by eliminating a number of rings equal to the starting ring supply/i);
-    // Match the "not just one opponent's set" part with fancy apostrophe (U+2019)
-    expect(text).toMatch(/not just one opponent.s set/i);
+    expect(text).toMatch(/Win by reaching the Ring Elimination victory threshold/i);
+    expect(text).toMatch(/2-player games it equals your starting ring supply/i);
+    expect(text).toMatch(/two thirds of your starting rings plus one third of your opponents/i);
     expect(text).toMatch(/Eliminated rings are permanently removed/i);
     expect(text).toMatch(/captured rings you carry in stacks do not count toward this threshold/i);
   });

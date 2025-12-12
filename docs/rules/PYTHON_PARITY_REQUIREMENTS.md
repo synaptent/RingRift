@@ -852,7 +852,7 @@ TS↔Python harnesses for these semantics:
 
 - `territory_line.single_point_swing.square19`
   - Category: `territory_processing`, board: `square19`.
-  - Single `process_territory_region` move that both collapses a region and forces mandatory self-elimination, causing a one-point swing in combined territory/elimination scoring sufficient to decide the winner.
+  - Single `choose_territory_option` move (legacy alias: `process_territory_region`) that both collapses a region and forces mandatory self-elimination, causing a one-point swing in combined territory/elimination scoring sufficient to decide the winner.
 
 **Decision-phase auto-exit (territory)**
 

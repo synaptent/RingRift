@@ -1,8 +1,23 @@
 import { GameEngine } from '../../src/server/game/GameEngine';
-import { Position, Player, TimeControl, RingStack, BoardState, BOARD_CONFIGS, positionToString } from '../../src/shared/types/game';
+import {
+  Position,
+  Player,
+  TimeControl,
+  RingStack,
+  BoardState,
+  BOARD_CONFIGS,
+  positionToString,
+} from '../../src/shared/types/game';
 import { findMaxCaptureChains } from '../../src/client/sandbox/sandboxCaptureSearch';
-import { CaptureBoardAdapters, CaptureApplyAdapters, applyCaptureSegmentOnBoard } from '../../src/client/sandbox/sandboxCaptures';
-import { applyMarkerEffectsAlongPathOnBoard, MarkerPathHelpers } from '../../src/client/sandbox/sandboxMovement';
+import {
+  CaptureBoardAdapters,
+  CaptureApplyAdapters,
+  applyCaptureSegmentOnBoard,
+} from '../../src/client/sandbox/sandboxCaptures';
+import {
+  applyMarkerEffectsAlongPathOnBoard,
+  MarkerPathHelpers,
+} from '../../src/client/sandbox/sandboxMovement';
 
 /**
  * Cyclic capture scenario on a square19 board.
@@ -61,7 +76,7 @@ describe('GameEngine cyclic capture scenarios (square19)', () => {
       playerNumber: 1,
       isReady: true,
       timeRemaining: timeControl.initialTime * 1000,
-      ringsInHand: 36,
+      ringsInHand: BOARD_CONFIGS.square19.ringsPerPlayer,
       eliminatedRings: 0,
       territorySpaces: 0,
     },
@@ -72,7 +87,7 @@ describe('GameEngine cyclic capture scenarios (square19)', () => {
       playerNumber: 2,
       isReady: true,
       timeRemaining: timeControl.initialTime * 1000,
-      ringsInHand: 36,
+      ringsInHand: BOARD_CONFIGS.square19.ringsPerPlayer,
       eliminatedRings: 0,
       territorySpaces: 0,
     },
@@ -83,7 +98,7 @@ describe('GameEngine cyclic capture scenarios (square19)', () => {
     gameState: any,
     playerNumber: number,
     height: number,
-    position: Position,
+    position: Position
   ): void {
     const rings = Array(height).fill(playerNumber);
     const stack: RingStack = {
@@ -141,7 +156,13 @@ describe('GameEngine cyclic capture scenarios (square19)', () => {
   }
 
   test('supports a cyclic chain capture around an inner square and terminates when distance < height', async () => {
-    const engine = new GameEngine('cyclic-square19', 'square19', players, timeControl, false) as any;
+    const engine = new GameEngine(
+      'cyclic-square19',
+      'square19',
+      players,
+      timeControl,
+      false
+    ) as any;
     const gameState = engine.gameState as any;
     const boardManager = engine.boardManager as any;
 
@@ -229,7 +250,7 @@ describe('GameEngine cyclic capture scenarios (square19)', () => {
 
     // Ensure no other players' stacks are present.
     const otherPlayerStacks = allStacks.filter(
-      (s) => s.controllingPlayer !== 1 && s.controllingPlayer !== 2,
+      (s) => s.controllingPlayer !== 1 && s.controllingPlayer !== 2
     );
     expect(otherPlayerStacks.length).toBe(0);
 
@@ -323,7 +344,7 @@ describe('GameEngine cyclic capture scenarios (square19)', () => {
       Y,
       1,
       { ...captureBoardAdapters, ...captureApplyAdapters },
-      { pruneVisitedPositions: false },
+      { pruneVisitedPositions: false }
     );
 
     expect(results.length).toBeGreaterThan(0);
@@ -428,11 +449,11 @@ describe('GameEngine cyclic capture scenarios (square19)', () => {
         seg.target,
         seg.landing,
         1,
-        execApplyAdapters,
+        execApplyAdapters
       );
       // eslint-disable-next-line no-console
       console.log(
-        `  segment ${idx + 1}: (${seg.from.x},${seg.from.y}) -> (${seg.target.x},${seg.target.y}) -> (${seg.landing.x},${seg.landing.y})`,
+        `  segment ${idx + 1}: (${seg.from.x},${seg.from.y}) -> (${seg.target.x},${seg.target.y}) -> (${seg.landing.x},${seg.landing.y})`
       );
     }
 
@@ -450,17 +471,17 @@ describe('GameEngine cyclic capture scenarios (square19)', () => {
     console.log(`    - Final overtaker position: ${execFinalKey}`);
     // eslint-disable-next-line no-console
     console.log(
-      `    - Final overtaker height: ${execFinal.stackHeight} (expected 2 + maxSegments = ${2 + bestLength})`,
+      `    - Final overtaker height: ${execFinal.stackHeight} (expected 2 + maxSegments = ${2 + bestLength})`
     );
     // eslint-disable-next-line no-console
     console.log(
-      `    - Overtaker on outer vertex: ${allowedOuterKeys.has(execFinalKey)} (allowed: W,X,Y,Z)`,
+      `    - Overtaker on outer vertex: ${allowedOuterKeys.has(execFinalKey)} (allowed: W,X,Y,Z)`
     );
     // eslint-disable-next-line no-console
     console.log(
       `    - Remaining target stacks (player 2): count=${execTargets.length}, heights=[${execTargets
         .map((s) => s.stackHeight)
-        .join(', ')}]`,
+        .join(', ')}]`
     );
 
     // Sanity check: total rings should be preserved (overtaking capture never eliminates).

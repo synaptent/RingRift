@@ -417,7 +417,7 @@ export const ONBOARDING_COPY: OnboardingCopy = {
       id: 'onboarding.victory.elimination',
       title: 'Ring Elimination',
       // UX_RULES_COPY_SPEC.md §3.1 – TeachingOverlay victory topic – elimination
-      body: 'Win by eliminating a number of rings equal to the starting ring supply (ringsPerPlayer) – not just one opponent’s set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold.',
+      body: 'Win by reaching the Ring Elimination victory threshold. In 2-player games it equals your starting ring supply; in 3–4 player games it is higher (two thirds of your starting rings plus one third of your opponents’ combined starting rings). Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold.',
     },
     {
       id: 'onboarding.victory.territory',
@@ -494,7 +494,7 @@ export const TEACHING_TOPICS_COPY: Record<string, TeachingTopicCopy> = {
     topicId: 'victory_elimination',
     heading: 'Victory: Elimination',
     // UX_RULES_COPY_SPEC.md §3.1 – TeachingOverlay victory topic – elimination
-    body: 'Win by eliminating a number of rings equal to the starting ring supply (ringsPerPlayer) – not just one opponent’s set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold.',
+    body: 'Win by reaching the Ring Elimination victory threshold. In 2-player games it equals your starting ring supply; in 3–4 player games it is higher (two thirds of your starting rings plus one third of your opponents’ combined starting rings). Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold.',
   },
   victory_territory: {
     topicId: 'victory_territory',

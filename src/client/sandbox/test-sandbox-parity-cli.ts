@@ -150,7 +150,11 @@ async function main() {
                 p.x === target.x && p.y === target.y && (p.z ?? null) === (target.z ?? null)
             )
         );
-      } else if (move.type === 'territory_claim' || move.type === 'process_territory_region') {
+      } else if (
+        move.type === 'territory_claim' ||
+        move.type === 'choose_territory_option' ||
+        move.type === 'process_territory_region'
+      ) {
         // Territory claim is automatic/interactive
         // Check if disconnected regions exist
         // We can use findDisconnectedRegionsOnBoard (imported internally)

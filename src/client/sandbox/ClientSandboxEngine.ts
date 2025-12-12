@@ -38,6 +38,7 @@ import {
   enumerateTerritoryEliminationMoves,
   applyCaptureSegment as applyCaptureSegmentAggregate,
   enumerateAllCaptureMoves as enumerateAllCaptureMovesAggregate,
+  computeRingEliminationVictoryThreshold,
   // Canonical placement aggregate API (TS SSOT)
   enumeratePlacementPositions,
   validatePlacementAggregate,
@@ -445,11 +446,11 @@ export class ClientSandboxEngine {
       maxPlayers: config.numPlayers,
       totalRingsInPlay: boardConfig.ringsPerPlayer * config.numPlayers,
       totalRingsEliminated: 0,
-      // Per RR-CANON-R061: victoryThreshold = round((1/3) × ownStartingRings + (2/3) × opponentsCombinedStartingRings)
-      // Simplified: round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
-      // Note: Using Math.round() to handle floating-point precision (e.g., 18 * (1/3 + 2/3*2) = 29.999... → 30)
-      victoryThreshold: Math.round(
-        boardConfig.ringsPerPlayer * (1 / 3 + (2 / 3) * (config.numPlayers - 1))
+      // Per RR-CANON-R061: victoryThreshold = round((2/3) × ownStartingRings + (1/3) × opponentsCombinedStartingRings)
+      // Simplified: round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
+      victoryThreshold: computeRingEliminationVictoryThreshold(
+        boardConfig.ringsPerPlayer,
+        config.numPlayers
       ),
       territoryVictoryThreshold: Math.floor(boardConfig.totalSpaces / 2) + 1,
     };
@@ -516,7 +517,7 @@ export class ClientSandboxEngine {
         },
       },
       // In traceMode (replay), skip auto-resolving territory decisions so explicit
-      // process_territory_region moves from the recording are used instead.
+      // choose_territory_option moves from the recording are used instead (legacy alias: process_territory_region).
       skipTerritoryAutoResolve: this.traceMode,
     });
   }
@@ -2644,11 +2645,11 @@ export class ClientSandboxEngine {
       };
 
       // Apply region-processing consequences via the shared helper using a
-      // synthetic process_territory_region Move so automatic processing
+      // synthetic choose_territory_option Move so automatic processing
       // shares semantics with explicit move application.
       const regionMove: Move = {
         id: `auto-process-region-${Date.now()}`,
-        type: 'process_territory_region',
+        type: 'choose_territory_option',
         player: movingPlayer,
         disconnectedRegions: [
           {
@@ -2854,7 +2855,7 @@ export class ClientSandboxEngine {
    * backend GameEngine, RuleEngine, and sandbox observe an identical
    * decision surface:
    *
-   * - process_territory_region: choose which eligible disconnected
+   * - choose_territory_option (legacy alias: process_territory_region): choose which eligible disconnected
    *   region to process first, subject to the self-elimination
    *   prerequisite from §12.2 / FAQ Q23.
    *
@@ -3287,16 +3288,17 @@ export class ClientSandboxEngine {
   }
 
   /**
-   * Test-only helper: apply a single process_territory_region Move using the
+   * Test-only helper: apply a single choose_territory_option Move (legacy
+   * alias: process_territory_region) using the
    * same canonical pipeline as applyCanonicalMove, returning a boolean that
    * indicates whether the move changed state. This exists so RulesMatrix
    * territory scenarios can exercise Q23 preconditions against the sandbox
    * without going through the full turn/phase machinery.
    */
   private async applyCanonicalProcessTerritoryRegion(move: Move): Promise<boolean> {
-    if (move.type !== 'process_territory_region') {
+    if (move.type !== 'choose_territory_option' && move.type !== 'process_territory_region') {
       throw new Error(
-        `ClientSandboxEngine.applyCanonicalProcessTerritoryRegion: expected process_territory_region, got ${move.type}`
+        `ClientSandboxEngine.applyCanonicalProcessTerritoryRegion: expected choose_territory_option (or legacy process_territory_region), got ${move.type}`
       );
     }
 
@@ -3372,7 +3374,7 @@ export class ClientSandboxEngine {
       //
       // IMPORTANT: Only advance if there are NO pending territory decisions.
       // If eligible disconnected regions exist, we must wait for explicit
-      // process_territory_region moves before advancing.
+      // choose_territory_option moves before advancing (legacy alias: process_territory_region).
       if (
         this.gameState.gameStatus === 'active' &&
         this.gameState.currentPhase === 'territory_processing' &&
@@ -3994,7 +3996,8 @@ export class ClientSandboxEngine {
         } else if (this.traceMode) {
           // PARITY FIX: In traceMode, if there are pending regions, do NOT
           // auto-process them. Python records territory decisions as explicit
-          // moves (process_territory_region), so we must let those recorded
+          // moves (choose_territory_option; legacy alias: process_territory_region),
+          // so we must let those recorded
           // moves arrive in sequence. Break here and wait for them.
           break;
         } else {
@@ -4150,7 +4153,7 @@ export class ClientSandboxEngine {
     const region = eligible[0];
     const move: Move = {
       id: `auto-replay-territory-${Date.now()}`,
-      type: 'process_territory_region',
+      type: 'choose_territory_option',
       player: state.currentPlayer,
       to: region.spaces[0],
       disconnectedRegions: [region],

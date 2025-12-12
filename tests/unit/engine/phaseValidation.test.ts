@@ -51,7 +51,11 @@ describe('phaseValidation', () => {
       expect(VALID_MOVES_BY_PHASE.movement).toContain('move_stack');
     });
 
-    it('includes process_territory_region in territory_processing phase', () => {
+    it('includes choose_territory_option in territory_processing phase', () => {
+      expect(VALID_MOVES_BY_PHASE.territory_processing).toContain('choose_territory_option');
+    });
+
+    it('includes legacy process_territory_region in territory_processing phase', () => {
       expect(VALID_MOVES_BY_PHASE.territory_processing).toContain('process_territory_region');
     });
 
@@ -189,6 +193,7 @@ describe('phaseValidation', () => {
 
     it('includes all territory processing moves', () => {
       const moves = getValidMoveTypesForPhase('territory_processing');
+      expect(moves).toContain('choose_territory_option');
       expect(moves).toContain('process_territory_region');
       expect(moves).toContain('eliminate_rings_from_stack');
       expect(moves).toContain('no_territory_action');

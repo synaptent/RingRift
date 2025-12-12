@@ -64,9 +64,56 @@ This pass focuses on four high-impact canonical clarifications and their propaga
 
 ## Known Follow-ups (Not Addressed Here)
 
-- **TS↔Python contract drift:** Python canonical contract includes move types not present in TS `MoveType` (e.g. `skip_recovery`, `choose_line_option`, `choose_territory_option`). Decide whether to implement on TS side or adjust the canonical contract so both languages match.
+- **TS↔Python contract drift:** Align the canonical MoveType surface across TS and Python, including (a) `choose_line_option` vs legacy `choose_line_reward`, and (b) `choose_territory_option` vs legacy `process_territory_region`.
 - **Legacy vs canonical replay support:** Some TS validation paths still mention backwards-compatibility allowances (e.g., legacy move types during forced elimination). If legacy support remains necessary, make it explicitly opt-in and keep canonical validators strict.
 
 Notes:
 
-- `skip_recovery` exists in TS; current drift is primarily around `choose_territory_option` (canonical + Python) and Python-only aliases like `choose_line_option`.
+- This tracker’s follow-up pass below focuses on eliminating those naming drifts while keeping legacy replay tolerant but clearly non-canonical.
+
+---
+
+## Follow-up Pass (2025-12-12): MoveType Contract Unification (P0)
+
+> **Goal:** Eliminate TS↔Python drift around phase↔MoveType mapping and “alias” move types by (1) choosing canonical names, (2) enforcing canonical strictness on write paths, and (3) keeping legacy tolerance explicit and opt-in for replay tooling only.
+
+### Canonical naming decisions (SSoT)
+
+- **Line option decision move:** canonical `choose_line_option`
+  - Legacy alias: `choose_line_reward` (accepted for replay only; non-canonical for new recordings).
+- **Territory region decision move:** canonical `choose_territory_option`
+  - Legacy alias: `process_territory_region` (accepted for replay only; non-canonical for new recordings).
+
+### Work items (tracked)
+
+1. **Canonical spec / docs naming sweep**
+   - Update `RULES_CANONICAL_SPEC.md` to use `choose_line_option` and `choose_territory_option`, treating `choose_line_reward` and `process_territory_region` as legacy aliases.
+   - Update API/architecture docs (e.g. `docs/architecture/CANONICAL_ENGINE_API.md`, `docs/architecture/RULES_ENGINE_ARCHITECTURE.md`) to match.
+
+2. **Python engine parity alignment**
+   - Update `ai-service/app/game_engine.py` to **emit** canonical choice moves:
+     - `choose_line_option` (instead of legacy `choose_line_reward`)
+     - `choose_territory_option` (instead of legacy `process_territory_region`)
+   - Keep legacy aliases accepted for replay only.
+
+3. **Canonical history contract strictness (Python)**
+   - Update `ai-service/app/rules/history_contract.py` to accept only canonical names for canonical history (`choose_line_option`, `choose_territory_option`, etc.).
+   - Ensure DB write-time checks (e.g. `ai-service/app/db/game_replay.py`) align with the updated contract.
+
+4. **Square19 ring-count sync ✅ DONE (2025-12-12)**
+   - Canonical values: `square19` = **60 rings/player**; victory thresholds **60/80/100** for 2/3/4 players.
+   - Synced TS + Python configs (`src/shared/types/game.ts`, `ai-service/app/rules/core.py`) and updated docs/tests that referenced legacy 48/80/112.
+   - Validation: `npm run lint`; focused Jest and pytest runs (including hex training encoder normalization and GPU parity tests where available).
+
+5. **Legacy replay tolerance as explicit opt-in (TS)**
+   - Gate phase coercions / compatibility allowances in `src/shared/engine/orchestration/turnOrchestrator.ts` behind an explicit replay option.
+   - Keep default behavior strict for canonical engines and canonical DB generation.
+
+### Verification commands (recommended)
+
+- **TS (focused):**
+  - `npm test -- tests/scenarios/FAQ_Q16_Q18.test.ts`
+  - `npm test -- tests/scenarios/MultiplayerRotation.test.ts`
+- **Python (focused):**
+  - `pytest ai-service/tests/rules/test_phase_machine.py`
+  - `pytest ai-service/tests/parity/test_recovery_parity.py`

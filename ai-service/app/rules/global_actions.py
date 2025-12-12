@@ -93,10 +93,10 @@ def has_phase_local_interactive_move(
     - ``movement`` / ``capture`` / ``chain_capture``:
         movement, capture, or ``recovery_slide`` moves.
     - ``line_processing``:
-        ``process_line`` or ``choose_line_reward``.
+        ``process_line`` or ``choose_line_option`` (legacy: ``choose_line_reward``).
     - ``territory_processing``:
-        ``process_territory_region``, ``eliminate_rings_from_stack``,
-        ``choose_territory_option``, or ``skip_territory_processing``.
+        ``choose_territory_option`` (legacy: ``process_territory_region``),
+        ``eliminate_rings_from_stack``, or ``skip_territory_processing``.
     - ``forced_elimination``:
         availability of forced-elimination options for the player.
 

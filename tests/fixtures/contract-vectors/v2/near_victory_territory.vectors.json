@@ -113,7 +113,7 @@
         },
         "move": {
           "id": "process-victory-region",
-          "type": "process_territory_region",
+          "type": "choose_territory_option",
           "player": 1,
           "to": { "x": 0, "y": 0 },
           "disconnectedRegions": [
@@ -252,7 +252,7 @@
         },
         "move": {
           "id": "process-victory-region-multi",
-          "type": "process_territory_region",
+          "type": "choose_territory_option",
           "player": 1,
           "to": { "x": 4, "y": 4 },
           "disconnectedRegions": [

@@ -410,8 +410,8 @@ Deprecated functions still exported, design-time stubs that throw, unused helper
 
 **MoveType Deprecations (keep for backwards compatibility):**
 
-- `line_formation` → Use `process_line` + `choose_line_reward`
-- `territory_claim` → Use `process_territory_region` + `skip_territory_processing`
+- `line_formation` → Use `process_line` + `choose_line_option` (legacy alias: `choose_line_reward`)
+- `territory_claim` → Use `choose_territory_option` (legacy alias: `process_territory_region`) + `skip_territory_processing`
 - `skip_placement` → Use `no_placement_action`
 
 **Assessment:**

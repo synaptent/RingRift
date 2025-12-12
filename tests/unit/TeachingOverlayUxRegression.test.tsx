@@ -72,8 +72,8 @@ describe('TeachingOverlay UX regression – rules-aware copy', () => {
     const dialog = screen.getByRole('dialog');
     const text = dialog.textContent || '';
 
-    // Elimination victory is based on reaching ringsPerPlayer (starting ring supply).
-    expect(text).toMatch(/eliminating a number of rings equal to the starting ring supply/i);
+    // Elimination victory is based on reaching the Ring Elimination victory threshold.
+    expect(text).toMatch(/Ring Elimination victory threshold/i);
 
     // Eliminated rings are permanently removed and distinct from captured rings.
     expect(text).toMatch(/Eliminated rings are permanently removed/i);

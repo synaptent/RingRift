@@ -13,7 +13,7 @@ import { findDisconnectedRegionsOnBoard as findDisconnectedRegionsSandbox } from
 const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true';
 
 (skipWithOrchestrator ? describe.skip : describe)(
-  'Territory detection parity at seed 5 process_territory_region step',
+  'Territory detection parity at seed 5 territory decision step',
   () => {
     const boardType: BoardType = 'square8';
     const numPlayers = 2;
@@ -54,12 +54,14 @@ const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true'
       return engine;
     }
 
-    test('shared vs backend vs sandbox detectors at first process_territory_region', async () => {
+    test('shared vs backend vs sandbox detectors at first territory decision', async () => {
       const trace = await runSandboxAITrace(boardType, numPlayers, seed, MAX_STEPS);
       expect(trace.entries.length).toBeGreaterThan(0);
 
       const targetIndex = trace.entries.findIndex(
-        (e) => e.action.type === 'process_territory_region'
+        (e) =>
+          e.action.type === 'choose_territory_option' ||
+          e.action.type === 'process_territory_region'
       );
       expect(targetIndex).toBeGreaterThanOrEqual(0);
 

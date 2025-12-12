@@ -356,6 +356,13 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
     """
     # Parse board
     board = deserialize_board_state(data.get("board", {}))
+    from app.rules.core import (
+        get_rings_per_player,
+        get_territory_victory_threshold,
+        get_victory_threshold,
+    )
+
+    rings_per_player = get_rings_per_player(board.type)
 
     # Parse players
     players_data = data.get("players", [])
@@ -375,7 +382,7 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
                 isReady=True,
                 timeRemaining=600000,
                 aiDifficulty=None,
-                ringsInHand=18,
+                ringsInHand=rings_per_player,
                 eliminatedRings=0,
                 territorySpaces=0,
             )
@@ -419,6 +426,12 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
             visitedPositions=[],
         )
 
+    max_players = int(data.get("maxPlayers", len(players)))
+    victory_threshold_default = get_victory_threshold(board.type, max_players)
+    territory_threshold_default = get_territory_victory_threshold(board.type)
+    total_rings_in_play_default = rings_per_player * max_players
+    total_rings_eliminated_default = int(sum(getattr(p, "eliminated_rings", 0) for p in players))
+
     return GameState(
         id=data.get("gameId", "test-game"),
         boardType=board.type,
@@ -435,14 +448,13 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
         createdAt=now,
         lastMoveAt=now,
         isRated=False,
-        maxPlayers=2,
-        # Fallback defaults for 2-player square8 when fields are missing from data.
-        # For actual calculations, use get_victory_threshold() and
-        # get_territory_victory_threshold() from app.rules.core.
-        totalRingsInPlay=data.get("totalRingsInPlay", 36),  # 2 × 18 for 2p square8
-        totalRingsEliminated=data.get("totalRingsEliminated", 0),
-        victoryThreshold=data.get("victoryThreshold", 18),  # Per RR-CANON-R061: = ringsPerPlayer for 2p
-        territoryVictoryThreshold=data.get("territoryVictoryThreshold", 33),  # floor(64/2)+1
+        maxPlayers=max_players,
+        # Fallback defaults for contract vectors / legacy fixtures that predate
+        # victory metadata fields.
+        totalRingsInPlay=data.get("totalRingsInPlay", total_rings_in_play_default),
+        totalRingsEliminated=data.get("totalRingsEliminated", total_rings_eliminated_default),
+        victoryThreshold=data.get("victoryThreshold", victory_threshold_default),
+        territoryVictoryThreshold=data.get("territoryVictoryThreshold", territory_threshold_default),
         chainCaptureState=chain_capture_state,
         mustMoveFromStackKey=None,
         zobristHash=None,

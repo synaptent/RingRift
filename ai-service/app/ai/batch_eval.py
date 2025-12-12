@@ -90,7 +90,7 @@ class BoardArrays:
         max_neighbors = 8 if board_type != BOARD_HEX else 6
         self.neighbor_indices = np.full((self.num_positions, max_neighbors), -1, dtype=np.int32)
 
-        # Victory conditions - default for square8 (per RR-CANON-R061: ringsPerPlayer)
+        # Victory conditions - default for square8 2-player (RR-CANON-R061: ringsPerPlayer for 2p)
         self.victory_rings = 18
         self.victory_territory = 33
 

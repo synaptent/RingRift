@@ -392,14 +392,14 @@ def test_default_engine_apply_move_matches_game_engine_for_process_line_syntheti
 
 
 @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
-def test_default_engine_apply_move_matches_game_engine_for_process_territory_region_synthetic(
+def test_default_engine_apply_move_matches_game_engine_for_choose_territory_option_synthetic(
 ) -> None:
-    """DefaultRulesEngine.apply_move matches GameEngine for PROCESS_TERRITORY_REGION.
+    """DefaultRulesEngine.apply_move matches GameEngine for CHOOSE_TERRITORY_OPTION.
 
     We construct a minimal disconnected-region scenario (mirroring the
     TerritoryMutator unit test), monkeypatch BoardManager helpers, and
     assert that DefaultRulesEngine.apply_move and GameEngine.apply_move
-    agree on the resulting state for a PROCESS_TERRITORY_REGION move.
+    agree on the resulting state for a CHOOSE_TERRITORY_OPTION move.
     """
     state = _make_base_game_state()
     state.current_phase = GamePhase.TERRITORY_PROCESSING
@@ -454,11 +454,9 @@ def test_default_engine_apply_move_matches_game_engine_for_process_territory_reg
         territory_moves = GameEngine._get_territory_processing_moves(state, 1)
         assert territory_moves, "Expected at least one territory move"
 
-        process_region_moves = [
-            m for m in territory_moves if m.type == MoveType.PROCESS_TERRITORY_REGION
-        ]
+        process_region_moves = [m for m in territory_moves if m.type == MoveType.CHOOSE_TERRITORY_OPTION]
         assert process_region_moves, (
-            "Expected at least one PROCESS_TERRITORY_REGION move from "
+            "Expected at least one CHOOSE_TERRITORY_OPTION move from "
             "_get_territory_processing_moves"
         )
         move = process_region_moves[0]

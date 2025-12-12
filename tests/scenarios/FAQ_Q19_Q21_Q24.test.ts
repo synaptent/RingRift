@@ -34,7 +34,7 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
         const gameState = engineAny.gameState;
 
         // Total rings: 2 × 18 = 36
-        // Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+        // Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
         // For 2p: round(18 × 1) = 18
         expect(gameState.victoryThreshold).toBe(18);
         expect(gameState.totalRingsInPlay).toBe(36);
@@ -51,7 +51,7 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
         const gameState = engineAny.gameState;
 
         // Total rings: 2 × 60 = 120
-        // Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+        // Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
         // For 2p: round(60 × 1) = 60
         expect(gameState.victoryThreshold).toBe(60);
         expect(gameState.totalRingsInPlay).toBe(120);
@@ -59,7 +59,7 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
     });
 
     describe('3-Player Games (Recommended)', () => {
-      it('should use correct thresholds for 3-player square8 (>27 rings)', () => {
+      it('should use correct thresholds for 3-player square8 (>18 rings)', () => {
         const players = [
           createTestPlayer(1, { ringsInHand: 18 }),
           createTestPlayer(2, { ringsInHand: 18 }),
@@ -71,12 +71,12 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
         const gameState = engineAny.gameState;
 
         // Total rings: 3 × 18 = 54
-        // Victory threshold per RR-CANON-R061: round(18 × (1/3 + 2/3 × 2)) = round(18 × 5/3) = 30
-        expect(gameState.victoryThreshold).toBe(30);
+        // Victory threshold per RR-CANON-R061: round(18 × (2/3 + 1/3 × 2)) = round(18 × 4/3) = 24
+        expect(gameState.victoryThreshold).toBe(24);
         expect(gameState.totalRingsInPlay).toBe(54);
       });
 
-      it('should use correct thresholds for 3-player square19 (>90 rings)', () => {
+      it('should use correct thresholds for 3-player square19 (>60 rings)', () => {
         const players = [
           createTestPlayer(1, { ringsInHand: 60 }),
           createTestPlayer(2, { ringsInHand: 60 }),
@@ -88,14 +88,14 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
         const gameState = engineAny.gameState;
 
         // Total rings: 3 × 60 = 180
-        // Victory threshold per RR-CANON-R061: round(60 × (1/3 + 2/3 × 2)) = round(60 × 5/3) = 100
-        expect(gameState.victoryThreshold).toBe(100);
+        // Victory threshold per RR-CANON-R061: round(60 × (2/3 + 1/3 × 2)) = round(60 × 4/3) = 80
+        expect(gameState.victoryThreshold).toBe(80);
         expect(gameState.totalRingsInPlay).toBe(180);
       });
     });
 
     describe('4-Player Games', () => {
-      it('should use correct thresholds for 4-player square19 (>120 rings)', () => {
+      it('should use correct thresholds for 4-player square19 (>60 rings)', () => {
         const players = [
           createTestPlayer(1, { ringsInHand: 60 }),
           createTestPlayer(2, { ringsInHand: 60 }),
@@ -108,12 +108,12 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
         const gameState = engineAny.gameState;
 
         // Total rings: 4 × 60 = 240
-        // Victory threshold per RR-CANON-R061: round(60 × (1/3 + 2/3 × 3)) = round(60 × 7/3) = 140
-        expect(gameState.victoryThreshold).toBe(140);
+        // Victory threshold per RR-CANON-R061: round(60 × (2/3 + 1/3 × 3)) = round(60 × 5/3) = 100
+        expect(gameState.victoryThreshold).toBe(100);
         expect(gameState.totalRingsInPlay).toBe(240);
       });
 
-      it('should use correct thresholds for 4-player hexagonal (>120 rings)', () => {
+      it('should use correct thresholds for 4-player hexagonal (>72 rings)', () => {
         // Hexagonal boards have 72 rings per player (per BOARD_CONFIGS)
         const players = [
           createTestPlayer(1, { ringsInHand: 72 }),
@@ -127,8 +127,8 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
         const gameState = engineAny.gameState;
 
         // Total rings: 4 × 72 = 288
-        // Victory threshold per RR-CANON-R061: round(72 × (1/3 + 2/3 × 3)) = round(72 × 7/3) = 168
-        expect(gameState.victoryThreshold).toBe(168);
+        // Victory threshold per RR-CANON-R061: round(72 × (2/3 + 1/3 × 3)) = round(72 × 5/3) = 120
+        expect(gameState.victoryThreshold).toBe(120);
         expect(gameState.totalRingsInPlay).toBe(288);
       });
     });
@@ -136,34 +136,30 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
 
   describe('FAQ Q21: Victory Thresholds per RR-CANON-R061', () => {
     it('should use player-count-based thresholds per RR-CANON-R061 formula', () => {
-      // FAQ Q21: Victory threshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
-      // This formula gives you 1/3 of your own rings + 2/3 of opponents' combined rings
+      // FAQ Q21: Victory threshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
+      // This formula gives you 2/3 of your own rings + 1/3 of opponents' combined rings.
 
       const testCases = [
-        // square8: 18 rings/player
-        { total: 36, threshold: 18, desc: '2p square8' }, // round(18 × (1/3 + 2/3 × 1)) = 18
-        { total: 54, threshold: 30, desc: '3p square8' }, // round(18 × (1/3 + 2/3 × 2)) = 30
-        { total: 72, threshold: 42, desc: '4p square8' }, // round(18 × (1/3 + 2/3 × 3)) = 42
-        // square19: 60 rings/player
-        { total: 120, threshold: 60, desc: '2p square19' }, // round(60 × (1/3 + 2/3 × 1)) = 60
-        { total: 180, threshold: 100, desc: '3p square19' }, // round(60 × (1/3 + 2/3 × 2)) = 100
-        { total: 240, threshold: 140, desc: '4p square19' }, // round(60 × (1/3 + 2/3 × 3)) = 140
-        // hexagonal: 72 rings/player
-        { total: 144, threshold: 72, desc: '2p hexagonal' }, // round(72 × (1/3 + 2/3 × 1)) = 72
-        { total: 216, threshold: 120, desc: '3p hexagonal' }, // round(72 × (1/3 + 2/3 × 2)) = 120
-        { total: 288, threshold: 168, desc: '4p hexagonal' }, // round(72 × (1/3 + 2/3 × 3)) = 168
+        { ringsPerPlayer: 18, numPlayers: 2, expected: 18, desc: '2p square8' },
+        { ringsPerPlayer: 18, numPlayers: 3, expected: 24, desc: '3p square8' },
+        { ringsPerPlayer: 18, numPlayers: 4, expected: 30, desc: '4p square8' },
+        { ringsPerPlayer: 60, numPlayers: 2, expected: 60, desc: '2p square19' },
+        { ringsPerPlayer: 60, numPlayers: 3, expected: 80, desc: '3p square19' },
+        { ringsPerPlayer: 60, numPlayers: 4, expected: 100, desc: '4p square19' },
+        { ringsPerPlayer: 72, numPlayers: 2, expected: 72, desc: '2p hexagonal' },
+        { ringsPerPlayer: 72, numPlayers: 3, expected: 96, desc: '3p hexagonal' },
+        { ringsPerPlayer: 72, numPlayers: 4, expected: 120, desc: '4p hexagonal' },
       ];
 
-      testCases.forEach(({ total, threshold, desc }) => {
-        // In 2p games, threshold is exactly 50% (ringsPerPlayer)
-        // In 3p/4p games, threshold scales up for balance
-        // All thresholds must be >= 50% to prevent ties
-        expect(threshold / total).toBeGreaterThanOrEqual(0.5);
+      testCases.forEach(({ ringsPerPlayer, numPlayers, expected }) => {
+        const opponentsCombinedStartingRings = ringsPerPlayer * (numPlayers - 1);
+        const threshold = Math.round((2 * ringsPerPlayer + opponentsCombinedStartingRings) / 3);
+        expect(threshold).toBe(expected);
 
-        // If one player has threshold, others cannot all reach threshold
-        const playerA = threshold;
-        const remaining = total - playerA;
-        expect(remaining).toBeLessThan(threshold * 2); // Can't have 2+ winners
+        // Sanity checks (must be a plausible in-game target).
+        const total = ringsPerPlayer * numPlayers;
+        expect(threshold).toBeGreaterThanOrEqual(ringsPerPlayer);
+        expect(threshold).toBeLessThan(total);
       });
     });
 

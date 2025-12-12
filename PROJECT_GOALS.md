@@ -263,7 +263,7 @@ Sections 6–8 collectively define what is in scope for the current v1.0 phase (
 **Board types (must have)**
 
 - 8×8 square board (18 rings/player, 64 spaces)
-- 19×19 square board (48 rings/player, 361 spaces)
+- 19×19 square board (60 rings/player, 361 spaces)
 - Hexagonal board (72 rings/player, 469 spaces, 13 per side)
 
 **Game modes (must have)**

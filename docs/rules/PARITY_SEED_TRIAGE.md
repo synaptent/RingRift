@@ -119,12 +119,12 @@ Use this document when deciding **which seeds/traces are worth preserving** as h
 
 #### Observed Divergence Points
 
-| Move # | Type                       | Description                                             | Status                                            |
-| ------ | -------------------------- | ------------------------------------------------------- | ------------------------------------------------- |
-| 12     | `overtaking_capture`       | Sandbox emits capture, backend only offers simple moves | **RESOLVED** - Unified via shared captureLogic.ts |
-| 43     | `territory`                | Checkpoint snapshot mismatch                            | **RESOLVED** - Tests pass                         |
-| 45     | `process_territory_region` | Territory decision phase differences                    | **RESOLVED** - Tests pass                         |
-| 64     | `phase`                    | Late-game move match failure at end of game             | Open                                              |
+| Move # | Type                                                                 | Description                                             | Status                                            |
+| ------ | -------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------- |
+| 12     | `overtaking_capture`                                                 | Sandbox emits capture, backend only offers simple moves | **RESOLVED** - Unified via shared captureLogic.ts |
+| 43     | `territory`                                                          | Checkpoint snapshot mismatch                            | **RESOLVED** - Tests pass                         |
+| 45     | `choose_territory_option` (legacy alias: `process_territory_region`) | Territory decision phase differences                    | **RESOLVED** - Tests pass                         |
+| 64     | `phase`                                                              | Late-game move match failure at end of game             | Open                                              |
 
 #### Resolution: Move 12 Capture Enumeration
 
@@ -300,7 +300,7 @@ The first actual divergence for Seed 5 now occurs at move 64 (end of game), whic
 
 - Different number of disconnected regions detected
 - Different gating logic for which regions can be processed
-- `process_territory_region` moves differ
+- `choose_territory_option` moves differ (legacy alias: `process_territory_region`)
 
 **Root Cause Candidates:**
 

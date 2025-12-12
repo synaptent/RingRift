@@ -35,10 +35,10 @@ Semantics must always match:
 
 **Global elimination threshold (R060–R061)**
 
-- Per RR-CANON-R061, the victory threshold is calculated as: `round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))`.
+- Per RR-CANON-R061, the victory threshold is calculated as: `round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))`.
 - For 2-player games, threshold = `ringsPerPlayer`: 18 (8×8), 60 (19×19), 72 (hexagonal).
-- For 3-player games, threshold increases: 30 (8×8), 100 (19×19), 120 (hexagonal).
-- For 4-player games, threshold increases further: 42 (8×8), 140 (19×19), 168 (hexagonal).
+- For 3-player games, threshold increases: 24 (8×8), 80 (19×19), 96 (hexagonal).
+- For 4-player games, threshold increases further: 30 (8×8), 100 (19×19), 120 (hexagonal).
 - A player wins by **Ring Elimination** when their credited eliminated rings reach or exceed this threshold.
 
 **Territory threshold (R062, R140–R145)**
@@ -83,18 +83,19 @@ This section defines the canonical labels and one‑liners used by:
 
 **HUD one‑liner**
 
-- `"Win by eliminating a number of rings equal to the starting ring supply per player."`
+- `"Win by eliminating enough rings to reach the victory threshold."`
 
 **Tooltip (multi‑line)**
 
-- Line 1: `"You win Ring Elimination when your eliminated rings reach or exceed the starting ring supply per player (ringsPerPlayer)."`
-- Line 2: `"Only *eliminated* rings count – captured rings you carry in stacks still remain in play."`
-- Line 3: `"Eliminations can come from movement onto markers, line rewards, territory processing, or forced elimination."`
+- Line 1: `"You win Ring Elimination when your eliminated rings reach or exceed the victory threshold."`
+- Line 2: `"The threshold depends on player count: in 2-player games it equals your starting ring supply; in 3–4 player games it is higher (two thirds of your starting rings plus one third of your opponents’ combined starting rings)."`
+- Line 3: `"Only *eliminated* rings count – captured rings you carry in stacks still remain in play."`
+- Line 4: `"Eliminations can come from movement onto markers, line rewards, territory processing, or forced elimination."`
 
 **TeachingOverlay victory topic – elimination**
 Short description (used in [`TeachingOverlay.TEACHING_CONTENT.victory_elimination`](src/client/components/TeachingOverlay.tsx:96)):
 
-- `"Win by eliminating a number of rings equal to the starting ring supply per player (ringsPerPlayer) – not just one opponent’s set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold."`
+- `"Win by reaching the Ring Elimination victory threshold. In 2-player games it equals your starting ring supply; in 3–4 player games it is higher (two thirds of your starting rings plus one third of your opponents’ combined starting rings). Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold."`
 
 ### 3.2 Territory Control
 

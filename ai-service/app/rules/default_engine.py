@@ -218,7 +218,12 @@ class DefaultRulesEngine(RulesEngine):
                     for m in moves
                     if (
                         state.current_phase == GamePhase.LINE_PROCESSING
-                        and m.type in {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_REWARD}
+                        and m.type
+                        in {
+                            MoveType.PROCESS_LINE,
+                            MoveType.CHOOSE_LINE_OPTION,
+                            MoveType.CHOOSE_LINE_REWARD,  # legacy alias
+                        }
                     )
                     or (
                         state.current_phase == GamePhase.TERRITORY_PROCESSING

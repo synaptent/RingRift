@@ -15,9 +15,9 @@
 > - Behavioural catalogue [`docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md`](docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:1).
 > - Edge‑case report [`docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md`](docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md:184).
 > - Final audit [`archive/FINAL_RULES_AUDIT_REPORT.md`](archive/FINAL_RULES_AUDIT_REPORT.md:136).
-> - Canonical copy baselines in [`docs/UX_RULES_COPY_SPEC.md`](docs/UX_RULES_COPY_SPEC.md:331).
-> - Telemetry schema in [`docs/UX_RULES_TELEMETRY_SPEC.md`](docs/UX_RULES_TELEMETRY_SPEC.md:1).
-> - Concept navigation index in [`docs/UX_RULES_CONCEPTS_INDEX.md`](docs/UX_RULES_CONCEPTS_INDEX.md:1) to keep reason codes aligned with rules anchors, teaching topics, and telemetry labels.
+> - Canonical copy baselines in [`docs/ux/UX_RULES_COPY_SPEC.md`](docs/ux/UX_RULES_COPY_SPEC.md:331).
+> - Telemetry schema in [`docs/ux/UX_RULES_TELEMETRY_SPEC.md`](docs/ux/UX_RULES_TELEMETRY_SPEC.md:1).
+> - Concept navigation index in [`docs/ux/UX_RULES_CONCEPTS_INDEX.md`](docs/ux/UX_RULES_CONCEPTS_INDEX.md:1) to keep reason codes aligned with rules anchors, teaching topics, and telemetry labels.
 
 This spec is **semantics‑first**. It does not define UI layout or styling; instead, it pins:
 
@@ -25,7 +25,7 @@ This spec is **semantics‑first**. It does not define UI layout or styling; ins
 - Canonical short **HUD banner titles**.
 - Canonical full **explanations** for VictoryModal and TeachingOverlay.
 - **Rules doc anchors** for deep links.
-- Mapping tables for HUD / VictoryModal / TeachingOverlay and `rules_context` used in [`UX_RULES_TELEMETRY_SPEC.md`](docs/UX_RULES_TELEMETRY_SPEC.md:172).
+- Mapping tables for HUD / VictoryModal / TeachingOverlay and `rules_context` used in [`UX_RULES_TELEMETRY_SPEC.md`](docs/ux/UX_RULES_TELEMETRY_SPEC.md:172).
 
 Code‑mode tasks are expected to:
 
@@ -37,7 +37,7 @@ Code‑mode tasks are expected to:
 
 ## 0. Iteration Log & Improvement History
 
-This spec is part of the rules‑UX improvement loop described in [`UX_RULES_IMPROVEMENT_LOOP.md`](docs/UX_RULES_IMPROVEMENT_LOOP.md:24). Concrete changes to weird‑state reason codes, HUD/VictoryModal copy, and TeachingOverlay routing are recorded in numbered iteration files under `docs/ux/rules_iterations/`:
+This spec is part of the rules‑UX improvement loop described in [`UX_RULES_IMPROVEMENT_LOOP.md`](docs/ux/UX_RULES_IMPROVEMENT_LOOP.md:24). Concrete changes to weird‑state reason codes, HUD/VictoryModal copy, and TeachingOverlay routing are recorded in numbered iteration files under `docs/ux/rules_iterations/`:
 
 - [`UX_RULES_IMPROVEMENT_ITERATION_0001.md`](docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0001.md:1) – Initial hotspot‑oriented plan for ANM/FE loops, structural stalemate, and mini‑regions.
 - [`UX_RULES_IMPROVEMENT_ITERATION_0002.md`](docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0002.md:1) – Backfilled record for W1–W5 work that aligned game‑end explanations (HUD + VictoryModal + TeachingOverlay) and telemetry with ANM/FE, structural stalemate, and territory mini‑regions.
@@ -78,7 +78,7 @@ Each reason code is intended to be stable across hosts (backend, sandbox, Python
 - HUD weird‑state banners.
 - VictoryModal explanations (where applicable).
 - TeachingOverlay topic routing.
-- Telemetry `payload.reason_code` and `rules_context` fields ([`UX_RULES_TELEMETRY_SPEC.md`](docs/UX_RULES_TELEMETRY_SPEC.md:218)).
+- Telemetry `payload.reason_code` and `rules_context` fields ([`UX_RULES_TELEMETRY_SPEC.md`](docs/ux/UX_RULES_TELEMETRY_SPEC.md:218)).
 
 #### RWS‑001 ANM_MOVEMENT_FE_BLOCKED
 
@@ -87,7 +87,7 @@ Each reason code is intended to be stable across hosts (backend, sandbox, Python
   - [`RR‑CANON‑R072`](RULES_CANONICAL_SPEC.md:210) (forced‑elimination entry).
   - [`RR‑CANON‑R100`](RULES_CANONICAL_SPEC.md:443) (forced elimination when blocked).
   - ANM‑SCEN‑01 in [`ACTIVE_NO_MOVES_BEHAVIOUR.md`](docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:39).
-- **Canonical `rules_context`:** `anm_forced_elimination` (see [`UX_RULES_TELEMETRY_SPEC.md`](docs/UX_RULES_TELEMETRY_SPEC.md:145)).
+- **Canonical `rules_context`:** `anm_forced_elimination` (see [`UX_RULES_TELEMETRY_SPEC.md`](docs/ux/UX_RULES_TELEMETRY_SPEC.md:145)).
 
 > Routine no‑action bookkeeping (`no_line_action`, `no_territory_action`) is **not treated as a weird state for UX surfaces**. These moves remain mandatory for canonical histories (RR‑CANON‑R075) and can still be tagged for telemetry/debugging, but HUD/Victory/Teaching overlays should not surface them unless there is an anomaly (e.g., a host surfaced an interactive banner but offered zero options).
 
@@ -121,7 +121,7 @@ Each reason code is intended to be stable across hosts (backend, sandbox, Python
 
 ## 3. Canonical Copy by Reason Code
 
-This section defines UX copy blocks per reason code. Where possible, it builds directly on the canonical baselines in [`UX_RULES_COPY_SPEC.md`](docs/UX_RULES_COPY_SPEC.md:331) §10.
+This section defines UX copy blocks per reason code. Where possible, it builds directly on the canonical baselines in [`UX_RULES_COPY_SPEC.md`](docs/ux/UX_RULES_COPY_SPEC.md:331) §10.
 
 ### 3.1 HUD Banners
 
@@ -137,7 +137,7 @@ This section defines UX copy blocks per reason code. Where possible, it builds d
 - **HUD body (other player):**  
   `"<Name> controls stacks but has no legal placements, movements, or captures. A cap will be removed from one of their stacks until a real move becomes available, following the forced-elimination rules."`
 
-These refine and specialise the general ANM and FE banners in [`UX_RULES_COPY_SPEC.md`](docs/UX_RULES_COPY_SPEC.md:347).
+These refine and specialise the general ANM and FE banners in [`UX_RULES_COPY_SPEC.md`](docs/ux/UX_RULES_COPY_SPEC.md:347).
 
 #### RWS‑002 ANM_LINE_NO_ACTIONS
 
@@ -220,7 +220,7 @@ Typically used as a **sub‑section** within a longer VictoryModal explanation w
 
 ### 3.3 TeachingOverlay Topics
 
-For each weird state, TeachingOverlay SHOULD offer a deep‑dive topic, either existing (per [`UX_RULES_COPY_SPEC.md`](docs/UX_RULES_COPY_SPEC.md:438)) or newly added.
+For each weird state, TeachingOverlay SHOULD offer a deep‑dive topic, either existing (per [`UX_RULES_COPY_SPEC.md`](docs/ux/UX_RULES_COPY_SPEC.md:438)) or newly added.
 
 #### RWS‑001 / RWS‑004 (ANM + Forced Elimination)
 
@@ -294,7 +294,7 @@ Suggested key names (in a small central dictionary):
 | `STRUCTURAL_STALEMATE_TIEBREAK`               | `hud.weird.structural_stalemate.title`     | `hud.weird.structural_stalemate.body`     |
 | `LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS` | `hud.weird.lps_early_win.title`            | `hud.weird.lps_early_win.body`            |
 
-All keys above MUST use copy drawn from §3.1, possibly via [`UX_RULES_COPY_SPEC.md`](docs/UX_RULES_COPY_SPEC.md:331) §10 consolidation.
+All keys above MUST use copy drawn from §3.1, possibly via [`UX_RULES_COPY_SPEC.md`](docs/ux/UX_RULES_COPY_SPEC.md:331) §10 consolidation.
 
 ### 4.2 VictoryModal Mapping: `reason_code → explanation_text_key, rules_doc_anchor`
 
@@ -319,7 +319,7 @@ For `ANM_LINE_NO_ACTIONS` and `ANM_TERRITORY_NO_ACTIONS`, VictoryModal typically
 
 ### 4.4 Telemetry Mapping: `reason_code → rules_context`
 
-This mapping MUST be used by the telemetry layer (see [`UX_RULES_TELEMETRY_SPEC.md`](docs/UX_RULES_TELEMETRY_SPEC.md:218)):
+This mapping MUST be used by the telemetry layer (see [`UX_RULES_TELEMETRY_SPEC.md`](docs/ux/UX_RULES_TELEMETRY_SPEC.md:218)):
 
 | Reason code                                   | `rules_context`                                                                 |
 | :-------------------------------------------- | :------------------------------------------------------------------------------ |
@@ -411,224 +411,16 @@ Current TypeScript and Python engines already expose termination / weird‑state
 
 ## 7. Relationship to Other UX Specs
 
-- [`UX_RULES_COPY_SPEC.md`](docs/UX_RULES_COPY_SPEC.md:331) remains the **canonical copy source** for generic movement, capture, lines, territory, and victory text. This document only defines **weird‑state‑specific overlays** on top.
-- [`UX_RULES_TELEMETRY_SPEC.md`](docs/UX_RULES_TELEMETRY_SPEC.md:172) relies on the `reason_code` and `rules_context` mappings in §4.4 for:
+- [`UX_RULES_COPY_SPEC.md`](docs/ux/UX_RULES_COPY_SPEC.md:331) remains the **canonical copy source** for generic movement, capture, lines, territory, and victory text. This document only defines **weird‑state‑specific overlays** on top.
+- [`UX_RULES_TELEMETRY_SPEC.md`](docs/ux/UX_RULES_TELEMETRY_SPEC.md:172) relies on the `reason_code` and `rules_context` mappings in §4.4 for:
   - `weird_state_banner_impression`,
   - `weird_state_details_open`,
   - `resign_after_weird_state`.
-- For the structured payload consumed by end-of-game UX surfaces, see [`UX_RULES_EXPLANATION_MODEL_SPEC.md`](docs/UX_RULES_EXPLANATION_MODEL_SPEC.md:1).
-- [`UX_RULES_TEACHING_SCENARIOS.md`](docs/UX_RULES_TEACHING_SCENARIOS.md:1) should reference the reason codes in §2 when defining flows that specifically demystify ANM/FE, structural stalemate, or LPS.
+- For the structured payload consumed by end-of-game UX surfaces, see [`UX_RULES_EXPLANATION_MODEL_SPEC.md`](docs/ux/UX_RULES_EXPLANATION_MODEL_SPEC.md:1).
+- [`UX_RULES_TEACHING_SCENARIOS.md`](docs/ux/UX_RULES_TEACHING_SCENARIOS.md:1) should reference the reason codes in §2 when defining flows that specifically demystify ANM/FE, structural stalemate, or LPS.
 
 Together, these documents give a complete blueprint for:
 
 - Explaining weird rules states consistently in HUD, VictoryModal, TeachingOverlay, and Sandbox.
 - Instrumenting them with low‑cardinality telemetry for W‑UX‑1 / W‑UX‑4.
 - Adding future curated scenarios and teaching flows that target the most confusing endings and forced‑move situations.
-
-# RingRift Weird / Complex Rules States UX Spec
-
-> **Doc Status (2025‑12‑05): Partially implemented – reason codes and HUD banners are wired for core ANM / forced‑elimination / stalemate cases; this doc is the contract for extending copy, surfaces, and telemetry.**
->
-> **Role:** Define a small, stable set of **weird / complex rules “reason codes”** and how they map to:
->
-> - HUD / VictoryModal banners and TeachingOverlay topics.
-> - Rules‑UX telemetry (`weird_state_type`, `reason_code`, `rules_context`).
-> - Curated scenarios and teaching flows.
-
-This spec complements:
-
-- `RULES_CANONICAL_SPEC.md` – semantics for ANM, forced elimination, territory edge cases.
-- `docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md` – ANM behaviour and forced elimination loops.
-- `UX_RULES_TELEMETRY_SPEC.md` – telemetry envelope and metrics.
-- `UX_RULES_TEACHING_SCENARIOS.md` – curated scenarios and flows.
-
----
-
-## 1. Taxonomy and Reason Codes
-
-We distinguish between:
-
-- A **coarse weird state type** used for metrics (`weird_state_type`).
-- A more **specific reason code** used for copy, TeachingOverlay topics, and sandbox scenarios.
-
-### 1.1 Coarse weird state types (metrics)
-
-These values are already wired in `RulesUxWeirdStateType` and exposed as the
-`weird_state_type` label on `ringrift_rules_ux_events_total`:
-
-- `active-no-moves-movement` – Active‑no‑moves (ANM) reached from movement phase.
-- `active-no-moves-line` – ANM reached while line processing decisions are pending.
-- `active-no-moves-territory` – ANM reached while territory / region decisions are pending.
-- `forced-elimination` – Forced elimination loop (ANM + elimination requirements).
-- `structural-stalemate` – No legal moves for any player and no remaining line/territory decisions.
-
-Any additional values MUST be rare and explicitly documented here before being
-added to `RulesUxWeirdStateType`.
-
-### 1.2 Reason codes (copy, flows, telemetry payload)
-
-Reason codes are **string constants** used in:
-
-- HUD / VictoryModal banner selection.
-- TeachingOverlay topics and flows.
-- `payload.reason_code` on rules‑UX telemetry events
-  (`weird_state_banner_impression`, `weird_state_details_open`,
-  `weird_state_overlay_*`, `resign_after_weird_state`).
-
-They are more specific than `weird_state_type` but still low‑cardinality.
-
-Initial set (to be kept small and stable):
-
-- `ANM_FE_FORCED_ELIMINATION` – Active‑no‑moves reached and at least one stack
-  must have rings eliminated; see `ACTIVE_NO_MOVES_BEHAVIOUR.md`.
-- `ANM_LAST_PLAYER_STANDING` – ANM resolution leads to a last‑player‑standing
-  outcome (other players cannot move or are eliminated).
-- `ANM_LINE_PROCESSING_DEADLOCK` – ANM reached while line rewards or penalties
-  are pending and cannot be fully resolved.
-- `ANM_TERRITORY_DISCONNECTION` – ANM related to territory disconnection /
-  mini‑regions during `territory_processing`.
-- `STRUCTURAL_STALEMATE_NO_MOVES` – No legal moves for any player, no pending
-  line or territory decisions, game ends by structural stalemate.
-
-Mapping from reason code → `weird_state_type`:
-
-| reason_code                     | weird_state_type            |
-| ------------------------------- | --------------------------- |
-| `ANM_FE_FORCED_ELIMINATION`     | `forced-elimination`        |
-| `ANM_LAST_PLAYER_STANDING`      | `active-no-moves-movement`  |
-| `ANM_LINE_PROCESSING_DEADLOCK`  | `active-no-moves-line`      |
-| `ANM_TERRITORY_DISCONNECTION`   | `active-no-moves-territory` |
-| `STRUCTURAL_STALEMATE_NO_MOVES` | `structural-stalemate`      |
-
-Any new reason codes MUST specify:
-
-- A mapping to exactly one `weird_state_type`.
-- A primary `rules_context` (see telemetry spec) for hotspot analysis.
-
----
-
-## 2. Surfaces and Copy Contract
-
-This section defines where weird‑state reason codes appear and what copy
-surfaces MUST exist. Concrete wording can evolve, but the **intent and
-information hierarchy** should remain.
-
-### 2.1 HUD weird‑state banners
-
-When `getWeirdStateBanner` (client) returns a non‑null banner, the HUD MUST:
-
-- Show a short, prominent banner with:
-  - A title (e.g. “Forced elimination required”).
-  - A one‑sentence summary.
-  - A “Details” affordance that opens TeachingOverlay or VictoryModal copy.
-- Emit telemetry:
-  - `weird_state_banner_impression` with `payload.reason_code` and
-    `rules_context` derived from the reason code.
-  - `rules_weird_state_help` when the user opens detailed help from this banner.
-
-Suggested title patterns:
-
-- `ANM_FE_FORCED_ELIMINATION` → “Forced elimination required”
-- `ANM_LAST_PLAYER_STANDING` → “No moves left – last player standing”
-- `ANM_LINE_PROCESSING_DEADLOCK` → “Line resolution locked up”
-- `ANM_TERRITORY_DISCONNECTION` → “Territory disconnected – special handling”
-- `STRUCTURAL_STALEMATE_NO_MOVES` → “No moves for any player (stalemate)”
-
-### 2.2 VictoryModal
-
-When a game ends due to a weird / complex rule:
-
-- The VictoryModal SHOULD:
-  - Show a compact banner or subheading explaining the reason code.
-  - Provide a “What happened?” / “See details” link to TeachingOverlay.
-- Telemetry:
-  - `weird_state_banner_impression` with `source = 'victory_modal'`.
-  - `weird_state_details_open` when the details link is clicked.
-
-### 2.3 TeachingOverlay
-
-When opened from a weird‑state banner or VictoryModal with `reason_code`:
-
-- TeachingOverlay MUST:
-  - Use a topic and intro text that explicitly names the weird state.
-  - Provide at least one diagram or annotated example matching the condition.
-  - Optionally offer a link to a curated sandbox scenario.
-- Telemetry:
-  - `weird_state_overlay_shown` / `weird_state_overlay_dismiss`.
-  - `teaching_step_started` / `teaching_step_completed` for multi‑step flows.
-
-The `rules_context` used here should be derived from reason code:
-
-- `ANM_FE_FORCED_ELIMINATION` → `anm_forced_elimination`
-- `ANM_LAST_PLAYER_STANDING` → `anm_last_player_standing`
-- `ANM_LINE_PROCESSING_DEADLOCK` → `line_reward_overlength` (or similar)
-- `ANM_TERRITORY_DISCONNECTION` → `territory_multi_region`
-- `STRUCTURAL_STALEMATE_NO_MOVES` → `structural_stalemate`
-
----
-
-## 3. Scenario and Teaching Flow Integration
-
-Curated scenarios that are specifically designed to illustrate weird states
-MUST:
-
-- Declare a `rulesConcept` aligned with the mappings above.
-- Use `reason_code` in their metadata where applicable.
-
-Examples:
-
-- `scenario_id = "anm_forced_elimination_loop_intro"`
-  - `rulesConcept = "anm_forced_elimination"`
-  - `reason_code = "ANM_FE_FORCED_ELIMINATION"`
-- `scenario_id = "territory_disconnection_intro"`
-  - `rulesConcept = "territory_multi_region"`
-  - `reason_code = "ANM_TERRITORY_DISCONNECTION"`
-
-When such a scenario is loaded in sandbox:
-
-- Sandbox MUST emit `sandbox_scenario_loaded` with:
-  - `rules_context` = `rulesConcept`.
-  - `payload.scenario_id` and, when applicable, `payload.flow_id`.
-- On completion, Sandbox MUST emit `sandbox_scenario_completed` with
-  `payload.success`, `moves_taken`, and `ms_to_complete`.
-
----
-
-## 4. Telemetry Integration Summary
-
-This section links the reason codes and weird‑state types back to the
-telemetry spec.
-
-- `weird_state_banner_impression`
-  - `payload.reason_code` – one of the reason codes above.
-  - `rules_context` – derived mapping.
-  - `weird_state_type` – taken from the reason‑code mapping table.
-- `weird_state_details_open`, `weird_state_overlay_*`
-  - MUST re‑use the same `reason_code`, `rules_context`, and
-    `weird_state_type` for the given `overlay_session_id`.
-- `resign_after_weird_state`
-  - MUST include `payload.reason_code`, `rules_context`,
-    and timing fields as per telemetry spec.
-
-Metrics:
-
-- `ringrift_rules_ux_events_total{type="rules_weird_state_resign", weird_state_type=...}`
-  gives a coarse view of resigns by weird state type.
-- Higher‑fidelity analysis of **which exact reason codes** are most
-  problematic should be performed via logs or offline processing of
-  `reason_code` from the event payloads.
-
----
-
-## 5. Change Management
-
-- Any new `weird_state_type` values MUST be:
-  - Added to `RulesUxWeirdStateType` in `src/shared/telemetry/rulesUxEvents.ts`.
-  - Documented in §1.1 with intended semantics.
-- Any new `reason_code` values MUST be:
-  - Documented in §1.2 with a mapping to `weird_state_type` and `rules_context`.
-  - Plumbed through HUD / TeachingOverlay / VictoryModal copy and sandbox
-    scenarios as appropriate.
-
-This keeps weird‑state UX, telemetry, and teaching flows aligned while
-allowing incremental expansion as the rules UI matures.

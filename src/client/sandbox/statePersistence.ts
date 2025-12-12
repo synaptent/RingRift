@@ -51,6 +51,7 @@ function inferCategoryFromPhase(phase: string): ScenarioCategory {
     case 'process_line':
     case 'choose_line_reward':
       return 'line_processing';
+    case 'choose_territory_option':
     case 'process_territory_region':
     case 'territory_processing':
       return 'territory_processing';

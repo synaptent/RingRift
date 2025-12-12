@@ -604,7 +604,7 @@ export function enumerateProcessLineMoves(
 ): Move[];
 
 /**
- * Enumerate choose_line_reward decision moves.
+ * Enumerate choose_line_option decision moves (legacy alias: choose_line_reward).
  */
 export function enumerateChooseLineRewardMoves(
   state: GameState,
@@ -625,7 +625,7 @@ export function applyProcessLineDecision(
 ): LineDecisionApplicationOutcome;
 
 /**
- * Apply choose_line_reward decision.
+ * Apply choose_line_option decision (legacy alias: choose_line_reward).
  */
 export function applyChooseLineRewardDecision(
   state: GameState,

@@ -25,6 +25,11 @@ from app.ai.neural_net import (  # noqa: E402
     ActionEncoderHex,
     P_HEX,
 )
+from app.rules.core import (  # noqa: E402
+    get_rings_per_player,
+    get_territory_victory_threshold,
+    get_victory_threshold,
+)
 
 
 def make_dummy_hex_game_state() -> GameState:
@@ -35,6 +40,7 @@ def make_dummy_hex_game_state() -> GameState:
     matches the canonical N=12 hex used by the neural-net encoder.
     """
     board = BoardState(type=BoardType.HEXAGONAL, size=13)
+    rings_per_player = get_rings_per_player(BoardType.HEXAGONAL)
 
     players = [
         Player(
@@ -45,7 +51,7 @@ def make_dummy_hex_game_state() -> GameState:
             isReady=True,
             timeRemaining=60,
             aiDifficulty=None,
-            ringsInHand=48,
+            ringsInHand=rings_per_player,
             eliminatedRings=0,
             territorySpaces=0,
         ),
@@ -57,7 +63,7 @@ def make_dummy_hex_game_state() -> GameState:
             isReady=True,
             timeRemaining=60,
             aiDifficulty=None,
-            ringsInHand=48,
+            ringsInHand=rings_per_player,
             eliminatedRings=0,
             territorySpaces=0,
         ),
@@ -80,8 +86,8 @@ def make_dummy_hex_game_state() -> GameState:
         maxPlayers=2,
         totalRingsInPlay=0,
         totalRingsEliminated=0,
-        victoryThreshold=3,
-        territoryVictoryThreshold=10,
+        victoryThreshold=get_victory_threshold(BoardType.HEXAGONAL, 2),
+        territoryVictoryThreshold=get_territory_victory_threshold(BoardType.HEXAGONAL),
         chainCaptureState=None,
         mustMoveFromStackKey=None,
         zobristHash=None,

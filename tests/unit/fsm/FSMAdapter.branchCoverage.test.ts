@@ -149,11 +149,11 @@ describe('FSMAdapter - Branch Coverage', () => {
       expect(move!.type).toBe('process_line');
     });
 
-    it('should convert CHOOSE_LINE_REWARD event to choose_line_reward move', () => {
+    it('should convert CHOOSE_LINE_REWARD event to choose_line_option move', () => {
       const event: TurnEvent = { type: 'CHOOSE_LINE_REWARD', choice: 'eliminate' };
       const move = eventToMove(event, 1, 50);
       expect(move).not.toBeNull();
-      expect(move!.type).toBe('choose_line_reward');
+      expect(move!.type).toBe('choose_line_option');
     });
 
     it('should convert NO_LINE_ACTION event to no_line_action move', () => {
@@ -163,11 +163,11 @@ describe('FSMAdapter - Branch Coverage', () => {
       expect(move!.type).toBe('no_line_action');
     });
 
-    it('should convert PROCESS_REGION event to process_territory_region move', () => {
+    it('should convert PROCESS_REGION event to choose_territory_option move', () => {
       const event: TurnEvent = { type: 'PROCESS_REGION', regionIndex: 0 };
       const move = eventToMove(event, 1, 60);
       expect(move).not.toBeNull();
-      expect(move!.type).toBe('process_territory_region');
+      expect(move!.type).toBe('choose_territory_option');
     });
 
     it('should convert ELIMINATE_FROM_STACK event to eliminate_rings_from_stack move', () => {

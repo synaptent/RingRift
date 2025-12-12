@@ -523,7 +523,7 @@ function LpsTrackingIndicator({
 
 /**
  * Victory progress indicator showing ring elimination and territory control progress.
- * Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+ * Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
  * Per RR-CANON-R062: territoryThreshold = floor(totalSpaces/2)+1
  */
 function VictoryProgressIndicator({
@@ -1180,11 +1180,11 @@ export function VictoryConditionsPanel({ className = '' }: { className?: string 
           <div className="flex-1">
             <div className="flex items-center gap-1">
               <span>
-                Ring Elimination – Win by eliminating ringsPerPlayer rings (starting ring supply).
+                Ring Elimination – Win by eliminating enough rings to reach the victory threshold.
               </span>
               <Tooltip
                 content={
-                  'You win Ring Elimination when the rings you have eliminated exceed 50% of all rings in the game.\nOnly eliminated rings count – captured rings you carry in stacks remain in play.\nEliminations can come from movement onto markers, line rewards, territory processing, or forced elimination.'
+                  'You win Ring Elimination when your eliminated rings reach or exceed the victory threshold.\nThe threshold depends on player count: in 2-player games it equals your starting ring supply; in 3–4 player games it is higher (two thirds of your starting rings plus one third of your opponents’ combined starting rings).\nOnly eliminated rings count – captured rings you carry in stacks still remain in play.\nEliminations can come from movement onto markers, line rewards, territory processing, or forced elimination.'
                 }
               >
                 <span

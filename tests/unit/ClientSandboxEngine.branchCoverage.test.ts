@@ -473,7 +473,7 @@ describe('ClientSandboxEngine branch coverage', () => {
         interactionHandler: new MockInteractionHandler(),
       });
       const state = engine.getGameState();
-      // Per RR-CANON-R061: round(18 × (1/3 + 2/3 × 1)) = 18
+      // Per RR-CANON-R061: round(18 × (2/3 + 1/3 × 1)) = 18
       expect(state.victoryThreshold).toBe(18);
     });
 
@@ -483,8 +483,8 @@ describe('ClientSandboxEngine branch coverage', () => {
         interactionHandler: new MockInteractionHandler(),
       });
       const state = engine.getGameState();
-      // Per RR-CANON-R061: round(18 × (1/3 + 2/3 × 2)) = 30
-      expect(state.victoryThreshold).toBe(30);
+      // Per RR-CANON-R061: round(18 × (2/3 + 1/3 × 2)) = 24
+      expect(state.victoryThreshold).toBe(24);
     });
 
     it('square8 4p has correct victory threshold', () => {
@@ -493,8 +493,8 @@ describe('ClientSandboxEngine branch coverage', () => {
         interactionHandler: new MockInteractionHandler(),
       });
       const state = engine.getGameState();
-      // Per RR-CANON-R061: round(18 × (1/3 + 2/3 × 3)) = 42
-      expect(state.victoryThreshold).toBe(42);
+      // Per RR-CANON-R061: round(18 × (2/3 + 1/3 × 3)) = 30
+      expect(state.victoryThreshold).toBe(30);
     });
 
     it('territory victory threshold is correct', () => {

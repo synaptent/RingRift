@@ -12,14 +12,15 @@
  */
 
 import { GameEngine } from '../../src/server/game/GameEngine';
-import type {
-  Position,
-  Player,
-  TimeControl,
-  GameState,
-  Move,
-  BoardState,
-  Stack,
+import {
+  BOARD_CONFIGS,
+  type Position,
+  type Player,
+  type TimeControl,
+  type GameState,
+  type Move,
+  type BoardState,
+  type Stack,
 } from '../../src/shared/types/game';
 import { createTestPlayer, createTestBoard, pos, posStr } from '../utils/fixtures';
 import {
@@ -54,7 +55,7 @@ function createMultiPlayerEngine(
   numPlayers: number,
   ringsPerPlayer?: number
 ): GameEngine {
-  const rings = ringsPerPlayer ?? (boardType === 'square8' ? 18 : 36);
+  const rings = ringsPerPlayer ?? BOARD_CONFIGS[boardType].ringsPerPlayer;
   const players = Array.from({ length: numPlayers }, (_, i) =>
     createTestPlayer(i + 1, { ringsInHand: rings })
   );
@@ -120,8 +121,8 @@ describe('MultiplayerRotation: 3-Player Game Scenarios', () => {
       // Total rings in play should be 54 (3 × 18)
       expect(state.totalRingsInPlay).toBe(54);
 
-      // Per RR-CANON-R061: round(18 × (1/3 + 2/3 × 2)) = 30
-      expect(state.victoryThreshold).toBe(30);
+      // Per RR-CANON-R061: round(18 × (2/3 + 1/3 × 2)) = 24
+      expect(state.victoryThreshold).toBe(24);
     });
   });
 
@@ -146,7 +147,7 @@ describe('MultiplayerRotation: 3-Player Game Scenarios', () => {
 describe('MultiplayerRotation: 4-Player Game Scenarios', () => {
   describe('Turn Rotation Order', () => {
     it('should initialize 4-player game with correct player configuration', () => {
-      const engine = createMultiPlayerEngine('rotation-4p-basic', 'square19', 4, 36);
+      const engine = createMultiPlayerEngine('rotation-4p-basic', 'square19', 4);
       const state = getGameState(engine);
 
       // Initial state: P1's turn
@@ -162,7 +163,7 @@ describe('MultiplayerRotation: 4-Player Game Scenarios', () => {
     });
 
     it('should validate 4-player turn calculation helpers', () => {
-      const engine = createMultiPlayerEngine('rotation-4p-calc', 'square19', 4, 36);
+      const engine = createMultiPlayerEngine('rotation-4p-calc', 'square19', 4, 60);
       const state = getGameState(engine);
 
       // Test modular arithmetic for 4-player rotation
@@ -177,15 +178,15 @@ describe('MultiplayerRotation: 4-Player Game Scenarios', () => {
     });
 
     it('should calculate correct victory threshold for 4-player square19', () => {
-      // square19 ringsPerPlayer = 48 per BOARD_CONFIGS
-      const engine = createMultiPlayerEngine('4p-threshold', 'square19', 4, 48);
+      // square19 ringsPerPlayer = 60 per BOARD_CONFIGS
+      const engine = createMultiPlayerEngine('4p-threshold', 'square19', 4, 60);
       const state = getGameState(engine);
 
-      // Total rings: 4 × 48 = 192
-      expect(state.totalRingsInPlay).toBe(192);
+      // Total rings: 4 × 60 = 240
+      expect(state.totalRingsInPlay).toBe(240);
 
-      // Per RR-CANON-R061: round(48 × (1/3 + 2/3 × 3)) = 112
-      expect(state.victoryThreshold).toBe(112);
+      // Per RR-CANON-R061: round(60 × (2/3 + 1/3 × 3)) = 100
+      expect(state.victoryThreshold).toBe(100);
     });
   });
 
@@ -266,16 +267,16 @@ describe('MultiplayerRotation: Victory Conditions', () => {
       const state = getGameState(engine);
 
       // With 3 players × 18 rings = 54 total rings
-      // Per RR-CANON-R061: round(18 × (1/3 + 2/3 × 2)) = 30
+      // Per RR-CANON-R061: round(18 × (2/3 + 1/3 × 2)) = 24
       expect(state.totalRingsInPlay).toBe(54);
-      expect(state.victoryThreshold).toBe(30);
+      expect(state.victoryThreshold).toBe(24);
 
-      // Set P2 to have 27 eliminated rings (close to threshold)
-      state.board.eliminatedRings = { '1': 0, '2': 27, '3': 0 };
-      state.totalRingsEliminated = 27;
+      // Set P2 to have 23 eliminated rings (close to threshold)
+      state.board.eliminatedRings = { '1': 0, '2': 23, '3': 0 };
+      state.totalRingsEliminated = 23;
 
       // P2 is close to losing - one more elimination and they reach threshold
-      expect(state.board.eliminatedRings['2']).toBe(27);
+      expect(state.board.eliminatedRings['2']).toBe(23);
     });
 
     it('should correctly calculate winner based on eliminated rings', () => {

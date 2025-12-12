@@ -220,7 +220,7 @@ export interface HUDViewModel {
     | undefined;
   /**
    * Victory progress tracking for ring-elimination and territory-control.
-   * Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+   * Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
    * Per RR-CANON-R062: territoryThreshold = floor(totalSpaces/2)+1
    */
   victoryProgress?: {
@@ -1794,8 +1794,7 @@ function getVictoryMessage(
     case 'ring_elimination':
       return {
         title: `🏆 ${winnerName} Wins!`,
-        description:
-          'Victory by eliminating a number of rings equal to the starting ring supply per player.',
+        description: 'Victory by Ring Elimination: eliminated rings reached the victory threshold.',
         titleColorClass,
       };
     case 'territory_control':

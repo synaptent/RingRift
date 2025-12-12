@@ -93,8 +93,8 @@ export interface SandboxAdapterDeps {
   callbacks?: SandboxAdapterCallbacks;
   /**
    * When true, territory decision (region_order) auto-resolution is skipped.
-   * This is used in traceMode/replay contexts where explicit process_territory_region
-   * moves should be replayed instead of auto-resolving.
+   * This is used in traceMode/replay contexts where explicit choose_territory_option
+   * moves should be replayed instead of auto-resolving (legacy alias: process_territory_region).
    */
   skipTerritoryAutoResolve?: boolean;
 }
@@ -256,8 +256,12 @@ export class SandboxOrchestratorAdapter {
       // Helper to run processTurn and accumulate phase metadata
       let phasesTraversed: string[] = [];
       const processTurnOptions: ProcessTurnOptions = {
+        // Sandbox is intentionally replay-tolerant to support traceMode,
+        // legacy recordings, and AI-driven multi-player flows.
+        replayCompatibility: true,
         // In replay/traceMode, don't auto-process single territory regions so
-        // explicit process_territory_region moves from the recording are used.
+        // explicit choose_territory_option moves from the recording are used
+        // (legacy alias: process_territory_region).
         skipSingleTerritoryAutoProcess: this.skipTerritoryAutoResolve,
         // In replay/traceMode, also avoid auto-processing single-line
         // line_processing phases; instead, surface explicit process_line
@@ -304,7 +308,8 @@ export class SandboxOrchestratorAdapter {
 
         // Territory decisions (region_order) are skipped when skipTerritoryAutoResolve
         // is enabled. This is used in replay/traceMode contexts where explicit
-        // process_territory_region moves should come from the recording.
+        // choose_territory_option moves should come from the recording
+        // (legacy alias: process_territory_region).
         if (decision.type === 'region_order' && this.skipTerritoryAutoResolve) {
           break;
         }

@@ -379,8 +379,8 @@ describe('MovementValidator', () => {
         currentPhase: 'movement',
         currentPlayer: 1,
         players: [
-          createTestPlayer(1, { ringsInHand: 36 }),
-          createTestPlayer(2, { ringsInHand: 36 }),
+          createTestPlayer(1, { ringsInHand: 72 }),
+          createTestPlayer(2, { ringsInHand: 72 }),
         ],
       });
       state.board = createTestBoard('hexagonal');

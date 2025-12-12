@@ -828,7 +828,7 @@ AI heuristics have been optimized for multi-player:
   - `PLAYER_FOCUS_RING_CLASSES` with player-specific colors (emerald/sky/amber/fuchsia)
   - `getPlayerFocusRingClass()` helper for consistent styling
 - [x] Implement keyboard shortcuts for common actions
-  - `KeyboardShortcutsHelp.tsx` now shows Board Navigation, Game Actions, Dialog Navigation, and General shortcuts
+  - `BoardControlsOverlay.tsx` shows Board Navigation, Game Actions, Dialog Navigation, and General shortcuts
   - Game Actions: ? (help), R (resign), M (mute), F (fullscreen), Ctrl+Z/Ctrl+Shift+Z (undo/redo sandbox)
 - [x] Create `useKeyboardNavigation` hook for board interactions
   - Grid-based focus management for square8, square19, and hexagonal boards
@@ -848,7 +848,7 @@ AI heuristics have been optimized for multi-player:
 **Files Modified:**
 
 - `src/client/hooks/index.ts` - Exports for new hooks
-- `src/client/components/KeyboardShortcutsHelp.tsx` - Added Game Actions section with Home/End
+- `src/client/components/BoardControlsOverlay.tsx` - Added Game Actions section with Home/End
 
 ### 14.2 Screen Reader Support (P1) ✅ SUBSTANTIALLY COMPLETE (Dec 5, 2025)
 

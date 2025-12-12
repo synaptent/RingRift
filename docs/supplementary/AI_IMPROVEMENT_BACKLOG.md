@@ -146,7 +146,7 @@ Canonical mapping (see `AI_ARCHITECTURE.md` §1.2):
 ### 3.2 Line processing (Option 2 granularity)
 
 - [ ] **Expose and handle “which 3 markers to collapse” in overlength lines**
-  - Extend Python move/choice representations so an overlength line can specify **which segment** of 3 markers is collapsed (Option 2), matching TS’s `choose_line_reward` moves and `LineRewardChoice`.
+  - Extend Python move/choice representations so an overlength line can specify **which segment** of 3 markers is collapsed (Option 2), matching TS’s `choose_line_option` moves (legacy alias: `choose_line_reward`) and `LineRewardChoice`.
   - Update Python `GameEngine` and mutators to respect this choice.
   - Add parity tests that:
     - Use TS to generate overlength-line scenarios with different Option 2 choices.

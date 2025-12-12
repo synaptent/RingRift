@@ -584,7 +584,7 @@ def compute_fsm_orchestration(
                     # Turn ends - next player
                     next_phase = GamePhase.RING_PLACEMENT
                     next_player = _next_active_player(game_state)
-        elif move_type in (MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_REWARD):
+        elif move_type in (MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_OPTION, MoveType.CHOOSE_LINE_REWARD):
             # Check for more lines
             line_moves = [
                 m
@@ -669,7 +669,8 @@ def compute_fsm_orchestration(
         elif move_type not in (
             MoveType.NO_LINE_ACTION,
             MoveType.PROCESS_LINE,
-            MoveType.CHOOSE_LINE_REWARD,
+            MoveType.CHOOSE_LINE_OPTION,
+            MoveType.CHOOSE_LINE_REWARD,  # legacy alias
         ):
             pending_decision_type = "no_line_action_required"
 

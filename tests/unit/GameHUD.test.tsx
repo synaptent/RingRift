@@ -395,7 +395,7 @@ describe('GameHUD', () => {
     fireEvent.mouseEnter(eliminationTrigger);
     let tooltip = screen.getByRole('tooltip');
     expect(tooltip).toHaveTextContent(
-      /You win Ring Elimination when the rings you have eliminated exceed 50% of all rings in the game/
+      /You win Ring Elimination when your eliminated rings reach or exceed the victory threshold/
     );
     fireEvent.mouseLeave(eliminationTrigger);
     expect(screen.queryByRole('tooltip')).toBeNull();

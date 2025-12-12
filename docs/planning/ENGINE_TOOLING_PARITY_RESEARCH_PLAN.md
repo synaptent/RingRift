@@ -723,8 +723,8 @@ To complement broad parity soaks and DB‑health checks, later waves will define
 ### D.1 Goals and scope
 
 - Exercise the **hard corners of the rules** in a controlled way:
-  - Line formation and collapse, including multiple concurrent lines and both `process_line` / `choose_line_reward` decisions.
-  - Territory processing: disconnected regions, `process_territory_region`, `eliminate_rings_from_stack`, automatic elimination from hand, and structural stalemates.
+  - Line formation and collapse, including multiple concurrent lines and both `process_line` / `choose_line_option` decisions (legacy alias: `choose_line_reward`).
+  - Territory processing: disconnected regions, `choose_territory_option` (legacy alias: `process_territory_region`), `eliminate_rings_from_stack`, automatic elimination from hand, and structural stalemates.
   - Capture and chain capture: long chains (3+ segments), forced continuation vs legal termination, and correct phase transitions.
   - Pie rule: `swap_sides` offered and taken/declined in 2‑player games.
   - LPS and multi‑player: 3p/4p games ending via `last_player_standing` (R172) rather than pure ring/territory thresholds.

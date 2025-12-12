@@ -602,14 +602,18 @@ class GameEngine:
         ):
             GameEngine._apply_line_formation(new_state, move)
         elif move.type in (
+            # Canonical territory decision move (legacy alias: PROCESS_TERRITORY_REGION).
+            MoveType.CHOOSE_TERRITORY_OPTION,
+            # Legacy alias retained for replay compatibility.
             MoveType.PROCESS_TERRITORY_REGION,
             MoveType.ELIMINATE_RINGS_FROM_STACK,
             MoveType.TERRITORY_CLAIM,
-            MoveType.CHOOSE_TERRITORY_OPTION,
         ):
-            # PROCESS_TERRITORY_REGION mirrors TS territory processing;
-            # ELIMINATE_RINGS_FROM_STACK is the canonical explicit
-            # self-elimination decision move, implemented here by reusing the
+            # Territory decisions:
+            # - choose_territory_option (legacy alias: process_territory_region)
+            # - eliminate_rings_from_stack (mandatory self-elimination prerequisite)
+            #
+            # Note: eliminate_rings_from_stack is implemented by reusing the
             # forced-elimination helper.
             if move.type == MoveType.ELIMINATE_RINGS_FROM_STACK:
                 GameEngine._apply_forced_elimination(new_state, move)
@@ -703,10 +707,10 @@ class GameEngine:
         - CHAIN_CAPTURE:
             OVERTAKING_CAPTURE, CONTINUE_CAPTURE_SEGMENT
         - LINE_PROCESSING:
-            PROCESS_LINE, CHOOSE_LINE_REWARD, NO_LINE_ACTION
+            PROCESS_LINE, CHOOSE_LINE_OPTION (legacy: CHOOSE_LINE_REWARD), NO_LINE_ACTION
         - TERRITORY_PROCESSING:
-            PROCESS_TERRITORY_REGION, ELIMINATE_RINGS_FROM_STACK,
-            SKIP_TERRITORY_PROCESSING, NO_TERRITORY_ACTION
+            CHOOSE_TERRITORY_OPTION (legacy: PROCESS_TERRITORY_REGION),
+            ELIMINATE_RINGS_FROM_STACK, SKIP_TERRITORY_PROCESSING, NO_TERRITORY_ACTION
         - FORCED_ELIMINATION:
             FORCED_ELIMINATION
 
@@ -765,12 +769,14 @@ class GameEngine:
         elif phase == GamePhase.LINE_PROCESSING:
             allowed = {
                 MoveType.PROCESS_LINE,
+                MoveType.CHOOSE_LINE_OPTION,
                 MoveType.CHOOSE_LINE_REWARD,
                 MoveType.NO_LINE_ACTION,
             }
         elif phase == GamePhase.TERRITORY_PROCESSING:
             allowed = {
-                MoveType.PROCESS_TERRITORY_REGION,
+                MoveType.CHOOSE_TERRITORY_OPTION,
+                MoveType.PROCESS_TERRITORY_REGION,  # legacy alias
                 MoveType.ELIMINATE_RINGS_FROM_STACK,
                 MoveType.SKIP_TERRITORY_PROCESSING,
                 MoveType.NO_TERRITORY_ACTION,
@@ -1203,7 +1209,7 @@ class GameEngine:
         Do NOT auto-generate moves here - that would cause replay parity issues.
         The AI/player selects the appropriate move which is then applied.
 
-        Explicit territory decision moves (PROCESS_TERRITORY_REGION,
+        Explicit territory decision moves (CHOOSE_TERRITORY_OPTION,
         ELIMINATE_RINGS_FROM_STACK, etc.) are handled separately in
         _update_phase and are treated as phase-preserving.
         """
@@ -1286,7 +1292,7 @@ class GameEngine:
         skipped. Players who have rings (even if only buried in stacks
         controlled by others) are NOT skipped - they may be recovery-eligible.
 
-        Used after PROCESS_TERRITORY_REGION and ELIMINATE_RINGS_FROM_STACK
+        Used after CHOOSE_TERRITORY_OPTION and ELIMINATE_RINGS_FROM_STACK
         where forced elimination should not be triggered at the transition.
 
         Mirrors TS turnLogic.advanceTurnAndPhase player-skipping behaviour.
@@ -2864,7 +2870,11 @@ class GameEngine:
         Per RR-CANON-R076, this helper returns **only interactive moves**:
 
         - One PROCESS_LINE move per player-owned line.
-        - One CHOOSE_LINE_REWARD move per overlength line (length > required).
+        - For each player-owned line whose length is at least the effective
+          reward threshold for the board/player-count combination, one or more
+          CHOOSE_LINE_OPTION moves that encode:
+            - collapse-all (full line), and
+            - for overlength lines: each minimum-collapse contiguous segment.
 
         It does **not** fabricate `NO_LINE_ACTION` bookkeeping moves. When the
         player has no lines to process, this function returns an empty list and
@@ -2900,26 +2910,47 @@ class GameEngine:
                 )
             )
 
-        # For overlength lines, enumerate all CHOOSE_LINE_REWARD options:
-        # - Option 1 (COLLAPSE_ALL): collapse entire line, eliminate one ring
-        # - Option 2 (MINIMUM_COLLAPSE): collapse exactly required_len consecutive
-        #   markers, no ring elimination. Generate one move per valid segment.
+        # Enumerate CHOOSE_LINE_OPTION moves for each line, mirroring
+        # src/shared/engine/lineDecisionHelpers.ts:enumerateChooseLineRewardMoves.
         #
-        # This mirrors TS LineAggregate.enumerateChooseLineRewardMoves.
+        # Semantics:
+        # - If line_len < required_len: no choose-line-option moves.
+        # - If line_len == required_len: a single collapse-all move.
+        # - If line_len > required_len:
+        #   - one collapse-all move, and
+        #   - one minimum-collapse move per contiguous segment of length required_len.
         for idx, line in enumerate(player_lines):
             line_len = len(line.positions)
-            if line_len <= required_len:
+            if line_len < required_len:
                 continue
 
             first_pos = line.positions[0]
             line_key = first_pos.to_key()
             move_number = len(game_state.move_history) + 1
 
-            # Option 1: Collapse all markers (collapsed_markers = full line)
+            # Exact-length line: a single collapse-all variant.
+            if line_len == required_len:
+                moves.append(
+                    Move(
+                        id=f"choose-line-option-{idx}-{line_key}-all",
+                        type=MoveType.CHOOSE_LINE_OPTION,
+                        player=player_number,
+                        to=first_pos,
+                        formed_lines=(line,),  # type: ignore[arg-type]
+                        collapsed_markers=tuple(line.positions),
+                        timestamp=game_state.last_move_at,
+                        thinkTime=0,
+                        moveNumber=move_number,
+                    )
+                )
+                continue
+
+            # Overlength line (> required_len).
+            # Option 1: collapse all markers (collapsed_markers = full line).
             moves.append(
                 Move(
-                    id=f"choose-line-reward-{idx}-{line_key}-all",
-                    type=MoveType.CHOOSE_LINE_REWARD,
+                    id=f"choose-line-option-{idx}-{line_key}-all",
+                    type=MoveType.CHOOSE_LINE_OPTION,
                     player=player_number,
                     to=first_pos,
                     formed_lines=(line,),  # type: ignore[arg-type]
@@ -2930,15 +2961,14 @@ class GameEngine:
                 )
             )
 
-            # Option 2: Enumerate all valid minimum-collapse segments of
-            # length required_len along the line.
+            # Option 2: enumerate all valid minimum-collapse segments of length required_len.
             max_start = line_len - required_len
             for start in range(max_start + 1):
                 segment = tuple(line.positions[start : start + required_len])
                 moves.append(
                     Move(
-                        id=f"choose-line-reward-{idx}-{line_key}-min-{start}",
-                        type=MoveType.CHOOSE_LINE_REWARD,
+                        id=f"choose-line-option-{idx}-{line_key}-min-{start}",
+                        type=MoveType.CHOOSE_LINE_OPTION,
                         player=player_number,
                         to=first_pos,
                         formed_lines=(line,),  # type: ignore[arg-type]
@@ -2963,13 +2993,9 @@ class GameEngine:
         `getValidEliminationDecisionMoves` while obeying R076:
 
         - When at least one disconnected region satisfies the
-          self-elimination prerequisite, emit one PROCESS_TERRITORY_REGION
-          move per such region.
-        - When no such regions exist but the player controls stacks with
-          positive cap height, emit one ELIMINATE_RINGS_FROM_STACK move per
-          such stack.
-        - When neither regions nor elimination targets exist, return an empty
-          list; `get_phase_requirement` will then surface a
+          self-elimination prerequisite, emit one CHOOSE_TERRITORY_OPTION
+          move per such region (legacy alias: PROCESS_TERRITORY_REGION).
+        - When no eligible regions exist, return an empty list; `get_phase_requirement` will then surface a
           `NO_TERRITORY_ACTION_REQUIRED` requirement so hosts can emit an
           explicit `no_territory_action` bookkeeping move.
         """
@@ -3012,8 +3038,8 @@ class GameEngine:
                 )
                 moves.append(
                     Move(
-                        id=f"process-region-{idx}-{rep.to_key()}",
-                        type=MoveType.PROCESS_TERRITORY_REGION,
+                        id=f"choose-territory-option-{idx}-{rep.to_key()}",
+                        type=MoveType.CHOOSE_TERRITORY_OPTION,
                         player=player_number,
                         to=rep,
                         disconnected_regions=(safe_region,),  # type: ignore[arg-type]
@@ -3704,23 +3730,22 @@ class GameEngine:
         if move.type in (MoveType.PROCESS_LINE, MoveType.LINE_FORMATION):
             # PROCESS_LINE / LINE_FORMATION always collapse the entire line.
             positions_to_collapse = list(target_line.positions)
-        elif move.type == MoveType.CHOOSE_LINE_REWARD:
-            # Reward choice for overlength lines. When collapsed_markers is
-            # provided, it encodes the user's choice; otherwise we default to
-            # the minimum-collapse behaviour (first required_len markers).
+        elif move.type in (MoveType.CHOOSE_LINE_OPTION, MoveType.CHOOSE_LINE_REWARD):
+            # CHOOSE_LINE_OPTION is the canonical line option decision surface.
+            # CHOOSE_LINE_REWARD is a legacy alias retained for replay.
+            #
+            # When collapsed_markers is provided, it encodes the user's choice;
+            # otherwise fall back to legacy placement_count semantics:
+            # 1 → minimum collapse, >1 → collapse all.
             markers_to_collapse = getattr(move, "collapsed_markers", None)
             if markers_to_collapse:
                 positions_to_collapse = list(markers_to_collapse)
             else:
-                positions_to_collapse = list(target_line.positions[:required_len])
-        else:
-            # Legacy CHOOSE_LINE_OPTION continues to honour placement_count
-            # as an option selector: 1 → minimum collapse, >1 → collapse all.
-            option = move.placement_count or 1
-            if option == 1:
-                positions_to_collapse = list(target_line.positions[:required_len])
-            else:
-                positions_to_collapse = list(target_line.positions)
+                option = move.placement_count or 1
+                if option == 1:
+                    positions_to_collapse = list(target_line.positions[:required_len])
+                else:
+                    positions_to_collapse = list(target_line.positions)
 
         # 4. Apply collapses. TS's LineAggregate increments territorySpaces
         # by the number of collapsed marker positions (collapsedKeys.size).

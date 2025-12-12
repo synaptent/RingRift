@@ -54,14 +54,14 @@ important groups are:
 
 - **Lines**
   - Marker‑line geometry: [`lineDetection.ts`](src/shared/engine/lineDetection.ts:21)
-  - Canonical decision helpers: [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) – enumerate and apply `process_line` and `choose_line_reward` decision `Move`s, and standardise when a line collapse grants a ring‑elimination opportunity (via `pendingLineRewardElimination`) for all hosts.
+  - Canonical decision helpers: [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) – enumerate and apply `process_line` and `choose_line_option` decision `Move`s (legacy alias: `choose_line_reward`), and standardise when a line collapse grants a ring‑elimination opportunity (via `pendingLineRewardElimination`) for all hosts.
   - Aggregate: [`LineAggregate.ts`](src/shared/engine/aggregates/LineAggregate.ts:1)
 
 - **Territory (detection, borders, processing)**
   - Region detection: [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36)
   - Border‑marker expansion: [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35)
   - Region processing pipeline (Q23 / self‑elimination compatible): [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1)
-  - Canonical decision helpers: [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) – enumerates and applies `process_territory_region` and `eliminate_rings_from_stack` decisions, enforcing Q23, S‑invariant, and per‑player elimination bookkeeping for backend and sandbox hosts.
+  - Canonical decision helpers: [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) – enumerates and applies `choose_territory_option` and `eliminate_rings_from_stack` decisions (legacy alias: `process_territory_region`), enforcing Q23, S‑invariant, and per‑player elimination bookkeeping for backend and sandbox hosts.
   - Aggregate: [`TerritoryAggregate.ts`](src/shared/engine/aggregates/TerritoryAggregate.ts:1)
 
 - **Placement**
@@ -164,12 +164,12 @@ truth:
      [`core.validateCaptureSegmentOnBoard`](src/shared/engine/core.ts:1).
    - Lines (geometry, aggregation, decision phases): [`lineDetection.ts`](src/shared/engine/lineDetection.ts:21),
      [`LineAggregate.ts`](src/shared/engine/aggregates/LineAggregate.ts:1),
-     [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) for `process_line` / `choose_line_reward` decisions and when line collapses grant `eliminate_rings_from_stack` opportunities.
+     [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) for `process_line` / `choose_line_option` decisions (legacy alias: `choose_line_reward`) and when line collapses grant `eliminate_rings_from_stack` opportunities.
 
 - Territory (detection, borders, processing, decisions, aggregates): [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36),
   [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35),
   [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1),
-  [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) for `process_territory_region` / `eliminate_rings_from_stack` decisions, Q23 gating, and elimination bookkeeping,
+  [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) for `choose_territory_option` / `eliminate_rings_from_stack` decisions (legacy alias: `process_territory_region`), Q23 gating, and elimination bookkeeping,
   [`TerritoryAggregate.ts`](src/shared/engine/aggregates/TerritoryAggregate.ts:1).
 - Placement: [`PlacementValidator.ts`](src/shared/engine/validators/PlacementValidator.ts:1),
   [`PlacementMutator.ts`](src/shared/engine/mutators/PlacementMutator.ts:1),
@@ -194,12 +194,12 @@ truth:
    - Lines:
      [`lineDetection.shared.test.ts`](tests/unit/lineDetection.shared.test.ts:1),
      [`LineDetectionParity.rules.test.ts`](tests/unit/LineDetectionParity.rules.test.ts:1),
-     [`lineDecisionHelpers.shared.test.ts`](tests/unit/lineDecisionHelpers.shared.test.ts:1) – **canonical** line‑decision enumeration and application (`process_line`, `choose_line_reward`) and when line collapses grant eliminations.
+     [`lineDecisionHelpers.shared.test.ts`](tests/unit/lineDecisionHelpers.shared.test.ts:1) – **canonical** line‑decision enumeration and application (`process_line`, `choose_line_option`) and when line collapses grant eliminations.
    - Territory:
      [`territoryBorders.shared.test.ts`](tests/unit/territoryBorders.shared.test.ts:1),
      [`territoryProcessing.shared.test.ts`](tests/unit/territoryProcessing.shared.test.ts:1),
      [`territoryProcessing.rules.test.ts`](tests/unit/territoryProcessing.rules.test.ts:1),
-     [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) – **canonical** `process_territory_region` / `eliminate_rings_from_stack` decision semantics, including Q23 and S‑invariant bookkeeping.
+     [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) – **canonical** `choose_territory_option` / `eliminate_rings_from_stack` decision semantics (legacy alias: `process_territory_region`), including Q23 and S‑invariant bookkeeping.
    - Placement:
      [`placement.shared.test.ts`](tests/unit/placement.shared.test.ts:1).
    - Victory:
@@ -269,7 +269,7 @@ truth:
 To ensure the Python engine behaves exactly like the TypeScript engine:
 
 - **Shared Types:** Domain models (`GameState`, `Move`, etc.) are structurally identical.
-- **Unified Move Model:** Both engines use the same extended Move types (`continue_capture_segment`, `process_line`, `process_territory_region`) for complex phases.
+- **Unified Move Model:** Both engines use the same extended Move types (`continue_capture_segment`, `process_line`, `choose_territory_option`; legacy alias: `process_territory_region`) for complex phases.
 - **Hashing:** `hash_game_state` produces identical output (modulo known extensions like `:must_move=`) for state verification.
 - **S-Invariant:** Both engines compute the same progress metric (`S = markers + collapsed + eliminated`) to guarantee termination.
 
@@ -331,9 +331,9 @@ The canonical **multi-phase turn sequence** (ring_placement → movement / captu
         - Detect chain-capture continuation via `getChainCaptureContinuationInfo` and set `currentPhase = 'chain_capture'`, maintaining an internal `chainCaptureState`.
         - On chain exhaustion, clear `chainCaptureState` and transition into `line_processing` when lines exist (or apply RR‑CANON‑R204 when not).
       - `getValidLineProcessingMoves(playerNumber)`:
-        - Thin adapter over `enumerateProcessLineMoves` and `enumerateChooseLineRewardMoves` to surface canonical `process_line` / `choose_line_reward` Moves for the current player.
+        - Thin adapter over `enumerateProcessLineMoves` and `enumerateChooseLineRewardMoves` to surface canonical `process_line` / `choose_line_option` Moves for the current player (legacy alias: `choose_line_reward`).
       - `getValidTerritoryProcessingMoves(playerNumber)`:
-        - Thin adapter over `enumerateProcessTerritoryRegionMoves` to surface canonical `process_territory_region` Moves, with elimination decisions delegated to shared helpers.
+        - Thin adapter over `enumerateProcessTerritoryRegionMoves` to surface canonical `choose_territory_option` Moves (legacy alias: `process_territory_region`), with elimination decisions delegated to shared helpers.
       - `getValidMoves(playerNumber)`:
         - Wraps the shared `RuleEngine.getValidMoves` and layers in:
           - `chain_capture`-specific behaviour (restricted `continue_capture_segment` options).
@@ -350,9 +350,9 @@ The canonical **multi-phase turn sequence** (ring_placement → movement / captu
           - Movement / capture + chain-capture enumeration (`_apply_chain_capture` and `enumerate_capture_moves_py`).
           - Line-processing and Territory-processing decision phases.
       - `_get_line_processing_moves`:
-        - Adapts BoardManager line detection + TS-style line decision semantics into Python `Move` instances (`PROCESS_LINE`, `CHOOSE_LINE_REWARD`), matching `getValidLineProcessingMoves` in the TS backend.
+        - Adapts BoardManager line detection + TS-style line decision semantics into Python `Move` instances (`PROCESS_LINE`, `CHOOSE_LINE_OPTION`; legacy alias: `CHOOSE_LINE_REWARD`), matching `getValidLineProcessingMoves` in the TS backend.
       - `_get_territory_processing_moves`:
-        - Mirrors TS Territory decision enumeration for `PROCESS_TERRITORY_REGION` and `ELIMINATE_RINGS_FROM_STACK`, using the same Q23 gating as the shared engine.
+        - Mirrors TS Territory decision enumeration for `CHOOSE_TERRITORY_OPTION` (legacy alias: `PROCESS_TERRITORY_REGION`) and `ELIMINATE_RINGS_FROM_STACK`, using the same Q23 gating as the shared engine.
       - `_update_phase` / `_advance_to_line_processing` / `_end_turn`:
         - Implement the phase transitions described by RR‑CANON‑R208/R209:
           - `movement` / `capture` → `chain_capture` (when continuation exists).
@@ -365,15 +365,15 @@ To safely evolve `DefaultRulesEngine` toward a mutator-driven architecture, we
 maintain explicit equivalence tests that assert its behaviour stays in
 lockstep with `GameEngine.apply_move` for key move families.
 
-| Move Family                 | Move Types                   | Test File                                                   | Scenario Source                                                                                                                                                                                                                                                                                                   |
-| :-------------------------- | :--------------------------- | :---------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Placement**               | `place_ring`                 | `ai-service/tests/rules/test_default_engine_equivalence.py` | Env-driven via `RingRiftEnv` on SQUARE8 + SQUARE19                                                                                                                                                                                                                                                                |
-| **Movement**                | `move_stack`                 | `ai-service/tests/rules/test_default_engine_equivalence.py` | Env-driven via `RingRiftEnv` until first movement                                                                                                                                                                                                                                                                 |
-| **Capture – Initial**       | `overtaking_capture`         | `ai-service/tests/rules/test_default_engine_equivalence.py` | Synthetic overtaking segment + env-driven capture search                                                                                                                                                                                                                                                          |
-| **Capture – Continuation**  | `continue_capture_segment`   | `ai-service/tests/rules/test_default_engine_equivalence.py` | Env-driven: apply first capture, then continue chain                                                                                                                                                                                                                                                              |
-| **Line Processing**         | `process_line`               | `ai-service/tests/rules/test_default_engine_equivalence.py` | Synthetic line via `BoardManager.find_all_lines` monkeypatch; canonical TS semantics live in [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) and are enforced by [`lineDecisionHelpers.shared.test.ts`](tests/unit/lineDecisionHelpers.shared.test.ts:1)                                   |
-| **Territory – Region**      | `process_territory_region`   | `ai-service/tests/rules/test_default_engine_equivalence.py` | Synthetic disconnected region via `BoardManager.find_disconnected_regions`; canonical TS semantics live in [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) and are enforced by [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) |
-| **Territory – Elimination** | `eliminate_rings_from_stack` | `ai-service/tests/rules/test_default_engine_equivalence.py` | Synthetic single capped stack via `_get_territory_processing_moves`; elimination bookkeeping must match the shared helpers in [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) and `TerritoryMutator`                                                                             |
+| Move Family                 | Move Types                                                           | Test File                                                   | Scenario Source                                                                                                                                                                                                                                                                                                   |
+| :-------------------------- | :------------------------------------------------------------------- | :---------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Placement**               | `place_ring`                                                         | `ai-service/tests/rules/test_default_engine_equivalence.py` | Env-driven via `RingRiftEnv` on SQUARE8 + SQUARE19                                                                                                                                                                                                                                                                |
+| **Movement**                | `move_stack`                                                         | `ai-service/tests/rules/test_default_engine_equivalence.py` | Env-driven via `RingRiftEnv` until first movement                                                                                                                                                                                                                                                                 |
+| **Capture – Initial**       | `overtaking_capture`                                                 | `ai-service/tests/rules/test_default_engine_equivalence.py` | Synthetic overtaking segment + env-driven capture search                                                                                                                                                                                                                                                          |
+| **Capture – Continuation**  | `continue_capture_segment`                                           | `ai-service/tests/rules/test_default_engine_equivalence.py` | Env-driven: apply first capture, then continue chain                                                                                                                                                                                                                                                              |
+| **Line Processing**         | `process_line`                                                       | `ai-service/tests/rules/test_default_engine_equivalence.py` | Synthetic line via `BoardManager.find_all_lines` monkeypatch; canonical TS semantics live in [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) and are enforced by [`lineDecisionHelpers.shared.test.ts`](tests/unit/lineDecisionHelpers.shared.test.ts:1)                                   |
+| **Territory – Region**      | `choose_territory_option` (legacy alias: `process_territory_region`) | `ai-service/tests/rules/test_default_engine_equivalence.py` | Synthetic disconnected region via `BoardManager.find_disconnected_regions`; canonical TS semantics live in [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) and are enforced by [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) |
+| **Territory – Elimination** | `eliminate_rings_from_stack`                                         | `ai-service/tests/rules/test_default_engine_equivalence.py` | Synthetic single capped stack via `_get_territory_processing_moves`; elimination bookkeeping must match the shared helpers in [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) and `TerritoryMutator`                                                                             |
 
 Additionally, TS-generated trace fixtures are replayed through both engines:
 

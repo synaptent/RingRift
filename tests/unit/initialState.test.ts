@@ -284,8 +284,8 @@ describe('initialState', () => {
       expect(state.players).toHaveLength(3);
       expect(state.players[2].playerNumber).toBe(3);
       expect(state.maxPlayers).toBe(3);
-      // Per RR-CANON-R061: round(18 * (1/3 + 2/3 * 2)) = round(18 * 5/3) = 30
-      expect(state.victoryThreshold).toBe(30);
+      // Per RR-CANON-R061: round(18 * (2/3 + 1/3 * 2)) = round(18 * 4/3) = 24
+      expect(state.victoryThreshold).toBe(24);
     });
 
     it('should handle 4 players', () => {
@@ -319,8 +319,8 @@ describe('initialState', () => {
       expect(state.players).toHaveLength(4);
       expect(state.players[3].playerNumber).toBe(4);
       expect(state.maxPlayers).toBe(4);
-      // Per RR-CANON-R061: round(18 * (1/3 + 2/3 * 3)) = round(18 * 7/3) = 42
-      expect(state.victoryThreshold).toBe(42);
+      // Per RR-CANON-R061: round(18 * (2/3 + 1/3 * 3)) = round(18 * 5/3) = 30
+      expect(state.victoryThreshold).toBe(30);
     });
 
     it('should handle mixed human/AI players', () => {

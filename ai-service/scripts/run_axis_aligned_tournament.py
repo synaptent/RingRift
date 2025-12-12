@@ -65,6 +65,7 @@ from app.ai.heuristic_weights import (  # type: ignore  # noqa: E402
 from app.rules.default_engine import (  # type: ignore  # noqa: E402
     DefaultRulesEngine,
 )
+from app.rules.core import BOARD_CONFIGS  # type: ignore  # noqa: E402
 from app.utils.progress_reporter import SoakProgressReporter  # noqa: E402
 
 
@@ -129,18 +130,9 @@ def _create_game_state(
     tournament behaviour aligned with the training harness while
     remaining self-contained.
     """
-    if board_type == BoardType.SQUARE8:
-        size = 8
-        rings_per_player = 18
-    elif board_type == BoardType.SQUARE19:
-        size = 19
-        rings_per_player = 36
-    elif board_type == BoardType.HEXAGONAL:
-        size = 13  # Canonical hex: size=13, radius=12
-        rings_per_player = 72
-    else:
-        size = 8
-        rings_per_player = 18
+    config = BOARD_CONFIGS.get(board_type, BOARD_CONFIGS[BoardType.SQUARE8])
+    size = config.size
+    rings_per_player = config.rings_per_player
 
     now = datetime.now()
 

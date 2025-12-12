@@ -28,7 +28,8 @@ import { snapshotFromGameState, snapshotsEqual, diffSnapshots } from '../utils/s
  * Goal:
  *   - For a two-region layout where both regions are eligible for the same
  *     moving player, verify that backend GameEngine and ClientSandboxEngine:
- *       1) Enumerate the same process_territory_region decisions from
+ *       1) Enumerate the same choose_territory_option decisions (legacy alias:
+ *          process_territory_region) from
  *          getValidMoves / sandbox territory helpers,
  *       2) Process both regions in the same region-key order,
  *       3) Surface explicit eliminate_rings_from_stack decisions once all
@@ -384,7 +385,6 @@ const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true'
       const sandboxFinalSnap = snapshotFromGameState('sandbox-final', sandboxFinal);
 
       if (!snapshotsEqual(backendFinalSnap, sandboxFinalSnap)) {
-        // eslint-disable-next-line no-console
         console.error('[TerritoryDecisions.GameEngine_vs_Sandbox] final snapshot mismatch', {
           diff: diffSnapshots(backendFinalSnap, sandboxFinalSnap),
         });

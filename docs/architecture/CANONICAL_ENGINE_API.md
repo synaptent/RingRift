@@ -137,8 +137,9 @@ MoveType:
   'place_ring' | 'move_ring' | 'build_stack' | 'move_stack' |
   'overtaking_capture' | 'continue_capture_segment' | 'skip_capture' |
   'swap_sides' |
-  'process_line' | 'choose_line_reward' |
-  'process_territory_region' | 'skip_territory_processing' | 'eliminate_rings_from_stack' |
+  'process_line' | 'choose_line_option' | // legacy alias: 'choose_line_reward'
+  'choose_territory_option' | // legacy alias: 'process_territory_region'
+  'skip_territory_processing' | 'eliminate_rings_from_stack' |
   'forced_elimination' |
   'line_formation' | 'territory_claim' | 'skip_placement'
 ```
@@ -624,8 +625,8 @@ validateMove(state: GameState, move: Move): ValidationResult;
 //   - movement: move_stack, move_ring, overtaking_capture,
 //     continue_capture_segment.
 //   - capture / chain_capture: capture segments + skip_capture.
-//   - line_processing: process_line / choose_line_reward.
-//   - territory_processing: process_territory_region /
+//   - line_processing: process_line / choose_line_option. (legacy alias: choose_line_reward)
+//   - territory_processing: choose_territory_option /
 //     eliminate_rings_from_stack (+ skip_territory_processing).
 //   - forced_elimination: forced_elimination options.
 // - When a phase has no interactive actions, getValidMoves returns an
@@ -942,8 +943,8 @@ The **type alignment** between orchestrator decisions, PlayerChoice, and WebSock
 
 - Orchestrator `DecisionType` ↔ `PlayerChoiceType` ↔ WebSocket payloads:
   - `DecisionType: 'line_order'` ↔ `PlayerChoiceType: 'line_order'` ↔ `LineOrderChoice.options[*].moveId` (canonical `process_line` Move.id).
-  - `DecisionType: 'line_reward'` ↔ `PlayerChoiceType: 'line_reward_option'` ↔ `LineRewardChoice.moveIds[option_*]` (canonical `choose_line_reward` Move.id per option).
-  - `DecisionType: 'region_order'` ↔ `PlayerChoiceType: 'region_order'` ↔ `RegionOrderChoice.options[*].moveId` (canonical `process_territory_region` Move.id).
+  - `DecisionType: 'line_reward'` ↔ `PlayerChoiceType: 'line_reward_option'` ↔ `LineRewardChoice.moveIds[option_*]` (canonical `choose_line_option` Move.id per option; legacy alias: `choose_line_reward`).
+  - `DecisionType: 'region_order'` ↔ `PlayerChoiceType: 'region_order'` ↔ `RegionOrderChoice.options[*].moveId` (canonical `choose_territory_option` Move.id; legacy alias: `process_territory_region`).
   - `DecisionType: 'elimination_target'` ↔ `PlayerChoiceType: 'ring_elimination'` ↔ `RingEliminationChoice.options[*].moveId` (canonical `eliminate_rings_from_stack` Move.id).
   - `DecisionType: 'capture_direction'` ↔ `PlayerChoiceType: 'capture_direction'` ↔ `CaptureDirectionChoice.options[*]` (currently matched structurally; future work may attach explicit `moveId`s for the corresponding capture `Move`).
   - `DecisionType: 'chain_capture'` – handled today via additional `Move` submissions for follow-up segments (no dedicated `PlayerChoiceType`); UIs guide the player to select further capture segments by sending more canonical capture moves.
@@ -1100,7 +1101,7 @@ async function applyPlayerMove(state: GameState, move: Move, delegates: TurnProc
   if (result.status === 'awaiting_decision' && result.pendingDecision) {
     // For this example, assume:
     // result.pendingDecision.type === 'line_reward'
-    // result.pendingDecision.options: Move[] of type 'choose_line_reward'
+    // result.pendingDecision.options: Move[] of type 'choose_line_option' (legacy alias: 'choose_line_reward')
     return result.pendingDecision;
   }
 
@@ -1112,7 +1113,7 @@ At this point the orchestrator knows **everything needed to resolve the rules**:
 
 - `pendingDecision.type === 'line_reward'` (or `'line_order'`, `'region_order'`, etc.)
 - `pendingDecision.options: Move[]` – each `Move` is a fully validated
-  `choose_line_reward` action with a stable `Move.id`.
+  `choose_line_option` action with a stable `Move.id` (legacy alias: `choose_line_reward`).
 
 ##### Step 2: Backend adapter builds a `PlayerChoice`
 
@@ -1155,7 +1156,7 @@ function buildLineRewardChoice(
 The same pattern is used for other decision types:
 
 - `LineOrderChoice.options[*].moveId` → canonical `'process_line'` `Move.id`.
-- `RegionOrderChoice.options[*].moveId` → canonical `'process_territory_region'` `Move.id`.
+- `RegionOrderChoice.options[*].moveId` → canonical `'choose_territory_option'` `Move.id` (legacy alias: `'process_territory_region'`).
 - `RingEliminationChoice.options[*].moveId` → canonical `'eliminate_rings_from_stack'` `Move.id`.
 
 ##### Step 3: WebSocket transport: `player_choice_required` / `player_choice_response`

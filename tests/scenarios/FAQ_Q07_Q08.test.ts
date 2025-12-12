@@ -160,8 +160,8 @@ describeOrSkip('FAQ Q7-Q8: Line Formation & Collapse', () => {
           'faq-q7-square19-backend',
           'square19',
           [
-            createTestPlayer(1, { ringsInHand: 36, eliminatedRings: 0 }),
-            createTestPlayer(2, { ringsInHand: 36, eliminatedRings: 0 }),
+            createTestPlayer(1, { ringsInHand: 60, eliminatedRings: 0 }),
+            createTestPlayer(2, { ringsInHand: 60, eliminatedRings: 0 }),
           ],
           timeControl,
           false

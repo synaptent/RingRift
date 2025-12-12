@@ -64,12 +64,10 @@ def phase_move_contract() -> Dict[CanonicalPhase, Tuple[str, ...]]:
         ),
         "line_processing": (
             "process_line",
-            "choose_line_reward",
             "choose_line_option",
             "no_line_action",
         ),
         "territory_processing": (
-            "process_territory_region",
             "choose_territory_option",
             "eliminate_rings_from_stack",
             "skip_territory_processing",

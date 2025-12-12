@@ -154,7 +154,7 @@ export const VALID_MOVES_BY_PHASE: Record<GamePhase, readonly MoveType[]> = {
   movement: ['move_stack', 'no_movement_action'],
   line_processing: ['process_line', 'no_line_action', 'eliminate_rings_from_stack'],
   territory_processing: [
-    'process_territory_region',
+    'choose_territory_option', // legacy alias: 'process_territory_region'
     'no_territory_action',
     'eliminate_rings_from_stack',
   ],

@@ -28,8 +28,7 @@ Player P wins by LPS if:
 
 1. **First round:** P takes at least one real action; all other players have NO real actions available.
 2. **Second round:** P remains the only player who has taken any real action and takes at least one real action.
-3. **Third round:** P remains the only player who has taken any real action and takes at least one real action.
-4. **Victory declared:** After the third round completes (after all required no-action/FE moves are recorded), P wins by LPS.
+3. **Victory declared:** After the second round completes (after all required no-action/FE moves are recorded), P wins by LPS.
 
 ### Forced Elimination Mechanic (RR-CANON-R100)
 
@@ -53,7 +52,7 @@ This is crucial: FE removes **all consecutive top rings of your color** from a c
 
 - **Philosophy:** As long as a player has material on the board, they are "alive" and participating.
 - **Effect:** A player completely trapped must be whittled down cap-by-cap until they have no stacks left.
-- **Consequence:** LPS becomes functionally identical to "Eliminate all opponent rings," just with a different trigger. It removes the unique "checkmate by immobilization" victory path.
+- **Consequence:** LPS becomes functionally identical to "reach the Ring Elimination victory threshold," just with a different trigger. It removes the unique "checkmate by immobilization" victory path.
 
 ---
 

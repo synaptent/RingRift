@@ -293,10 +293,10 @@ class TestFSMParityTerritoryProcessing:
         assert legacy_phase == GamePhase.RING_PLACEMENT
         assert legacy_player == 2
 
-    def test_process_territory_region_empty_board_ends_turn(self):
-        """PROCESS_TERRITORY_REGION on empty board should end turn."""
+    def test_choose_territory_option_empty_board_ends_turn(self):
+        """CHOOSE_TERRITORY_OPTION on empty board should end turn."""
         state = _make_game_state(GamePhase.TERRITORY_PROCESSING, current_player=1)
-        move = _make_move(MoveType.PROCESS_TERRITORY_REGION, player=1)
+        move = _make_move(MoveType.CHOOSE_TERRITORY_OPTION, player=1)
 
         fsm_result, legacy_phase, legacy_player, parity_ok = _run_parity_check(state, move)
 

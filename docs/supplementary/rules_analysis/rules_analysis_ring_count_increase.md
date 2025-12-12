@@ -1,23 +1,30 @@
 # Rules Analysis: Increasing Ring Counts for 19x19 and Hexagonal Boards
 
-**Status:** Historical proposal. Canonical ring counts are now 18 / 60 / 72 (square8 / square19 / hex); the proposed square19 increase to 60 and hex value of 72 were adopted.
+**Status:** Historical analysis. Canonical ring counts are now 18 / 60 / 72 (square8 / square19 / hex); this document discusses earlier, lower ring-count baselines and is kept for context.
 
-## Proposed Change
+**Canonical reference (today):**
 
-| Board Type | Current Rings/Player | Proposed Rings/Player | Change |
-| ---------- | -------------------- | --------------------- | ------ |
-| square8    | 18                   | 18 (no change)        | -      |
-| square19   | 36                   | 48                    | +33%   |
-| hexagonal  | 48                   | 72                    | +50%   |
+- square19: 60 rings/player; ring-elimination victory thresholds are 60/80/100 for 2/3/4 players.
+- hexagonal: 72 rings/player; ring-elimination victory thresholds are 72/96/120 for 2/3/4 players.
+
+## Historical proposal (legacy values)
+
+| Board Type | Rings/Player (then) | Proposed Rings/Player (then) | Change |
+| ---------- | ------------------- | ---------------------------- | ------ |
+| square8    | 18                  | 18 (no change)               | -      |
+| square19   | 36                  | 48                           | +33%   |
+| hexagonal  | 48                  | 72                           | +50%   |
 
 **Rationale:** In self-play games, LPS victories appear to dominate over Territory and Ring Elimination victories. The goal is to achieve better balance among the three victory paths.
 
 ---
 
-## Current Rule References
+## Historical rule references (pre-canonical)
 
 ### Ring Counts (RR-CANON-R020)
 
+> **Note:** The quoted values below are historical and no longer match the canonical rules docs.
+>
 > "For each board type, each player P has a fixed personal supply of rings of P's own colour:
 >
 > - square8: 18 rings
@@ -26,7 +33,7 @@
 
 ### Victory Thresholds
 
-- **Ring Elimination (RR-CANON-R061):** `victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))` — scales with player count (e.g., 18/30/42 for square8 with 2/3/4 players; 48/80/112 for square19)
+- **Ring Elimination (RR-CANON-R061):** `victoryThreshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))` — scales with player count (e.g., 18/24/30 for square8 with 2/3/4 players; 60/80/100 for square19; 72/96/120 for hex).
 - **Territory (RR-CANON-R062):** `territoryVictoryThreshold = floor(totalSpaces / 2) + 1`
 - **LPS (RR-CANON-R172):** Player is only one with "real actions" for 2 consecutive full rounds
 

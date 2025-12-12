@@ -92,6 +92,7 @@ from app.ai.heuristic_weights import (  # type: ignore  # noqa: E402
 from app.rules.default_engine import (  # type: ignore  # noqa: E402
     DefaultRulesEngine,
 )
+from app.rules.core import BOARD_CONFIGS  # type: ignore  # noqa: E402
 from app.training.eval_pools import (  # type: ignore  # noqa: E402
     load_state_pool,
 )
@@ -317,18 +318,9 @@ def create_game_state(
     GameState
         Fresh game state ready for play.
     """
-    if board_type == BoardType.SQUARE8:
-        size = 8
-        rings_per_player = 18
-    elif board_type == BoardType.SQUARE19:
-        size = 19
-        rings_per_player = 36
-    elif board_type == BoardType.HEXAGONAL:
-        size = 13  # Canonical hex: size=13, radius=12
-        rings_per_player = 48
-    else:
-        size = 8
-        rings_per_player = 18
+    config = BOARD_CONFIGS.get(board_type, BOARD_CONFIGS[BoardType.SQUARE8])
+    size = config.size
+    rings_per_player = config.rings_per_player
 
     now = datetime.now()
 
@@ -1543,6 +1535,10 @@ class CMAESConfig:
     queue_timeout: float = 600.0  # Timeout for collecting queue results
     # Deployment mode for host selection (local, lan, aws, hybrid)
     mode: str = "local"
+    # GPU acceleration using ParallelGameRunner from gpu_parallel_games.py
+    gpu: bool = False
+    # Batch size for GPU evaluation (games per batch)
+    gpu_batch_size: int = 64
 
 
 def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
@@ -2506,6 +2502,26 @@ def main():
             "runs with the selfplay data available at that time."
         ),
     )
+    # GPU acceleration arguments
+    parser.add_argument(
+        "--gpu",
+        action="store_true",
+        help=(
+            "Use GPU-accelerated fitness evaluation via ParallelGameRunner. "
+            "Provides ~6x speedup on CUDA GPUs. Requires PyTorch with CUDA or MPS. "
+            "Falls back to CPU batch evaluation if no GPU is available."
+        ),
+    )
+    parser.add_argument(
+        "--gpu-batch-size",
+        type=int,
+        default=64,
+        help=(
+            "Batch size for GPU evaluation (games per batch). Higher values "
+            "increase throughput but require more GPU memory. Default: 64. "
+            "Recommended: 32-128 for consumer GPUs, 256-512 for datacenter GPUs."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -2593,6 +2609,8 @@ def main():
         queue_backend=args.queue_backend,
         queue_timeout=args.queue_timeout,
         mode=args.mode,
+        gpu=args.gpu,
+        gpu_batch_size=args.gpu_batch_size,
     )
 
     # Validate mutually exclusive modes

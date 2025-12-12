@@ -41,6 +41,11 @@ from app.models import (
 )
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.heuristic_weights import BASE_V1_BALANCED_WEIGHTS
+from app.rules.core import (
+    BOARD_CONFIGS,
+    get_victory_threshold,
+    get_territory_victory_threshold,
+)
 from app.rules.default_engine import DefaultRulesEngine
 
 
@@ -49,27 +54,11 @@ def create_game_state(
     num_players: int = 2,
 ) -> GameState:
     """Create an initial game state for profiling."""
-    # RR-CANON-R061: victoryThreshold = ringsPerPlayer
-    if board_type == BoardType.SQUARE8:
-        size = 8
-        rings_per_player = 18
-        victory_threshold = 18  # ringsPerPlayer
-        territory_threshold = 33
-    elif board_type == BoardType.SQUARE19:
-        size = 19
-        rings_per_player = 48
-        victory_threshold = 48  # ringsPerPlayer
-        territory_threshold = 181
-    elif board_type == BoardType.HEXAGONAL:
-        size = 13  # Canonical hex: size=13, radius=12
-        rings_per_player = 72
-        victory_threshold = 72  # ringsPerPlayer
-        territory_threshold = 235  # >234 for 469 cells
-    else:
-        size = 8
-        rings_per_player = 18
-        victory_threshold = 18  # ringsPerPlayer
-        territory_threshold = 33
+    config = BOARD_CONFIGS.get(board_type, BOARD_CONFIGS[BoardType.SQUARE8])
+    size = config.size
+    rings_per_player = config.rings_per_player
+    victory_threshold = get_victory_threshold(board_type, num_players)
+    territory_threshold = get_territory_victory_threshold(board_type)
 
     now = datetime.now()
 

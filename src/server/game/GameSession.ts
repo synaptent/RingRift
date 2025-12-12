@@ -1663,11 +1663,20 @@ export class GameSession {
     }
 
     if (phase === 'territory_processing') {
-      if (moves.some((m) => m.type === 'process_territory_region')) {
+      if (
+        moves.some(
+          (m) => m.type === 'choose_territory_option' || m.type === 'process_territory_region'
+        )
+      ) {
         return {
           choiceType: 'region_order',
           choiceKind: 'territory_region_order',
-          candidateTypes: ['process_territory_region', 'skip_territory_processing'],
+          candidateTypes: [
+            'choose_territory_option',
+            // Legacy alias accepted for replay only.
+            'process_territory_region',
+            'skip_territory_processing',
+          ],
         };
       }
       if (moves.some((m) => m.type === 'eliminate_rings_from_stack')) {

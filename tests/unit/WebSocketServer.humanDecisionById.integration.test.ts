@@ -133,7 +133,10 @@ describe('WebSocketServer.handlePlayerMoveById (human decision phases)', () => {
     await serverAny.handlePlayerMoveById(fakeSocket, { gameId, moveId: decisionMove.id });
 
     // Session manager should have been invoked with a lock.
-    expect(serverAny.sessionManager.withGameLock).toHaveBeenCalledWith(gameId, expect.any(Function));
+    expect(serverAny.sessionManager.withGameLock).toHaveBeenCalledWith(
+      gameId,
+      expect.any(Function)
+    );
     expect(serverAny.sessionManager.getOrCreateSession).toHaveBeenCalledWith(gameId);
 
     // Verify the session's handlePlayerMoveById was called
@@ -143,7 +146,7 @@ describe('WebSocketServer.handlePlayerMoveById (human decision phases)', () => {
     expect(fakeEngine.makeMoveById).toHaveBeenCalledWith(1, decisionMove.id);
   });
 
-  it('applies a canonical process_territory_region Move for a human in territory_processing via player_move_by_id and emits game_state', async () => {
+  it('applies a canonical choose_territory_option Move for a human in territory_processing via player_move_by_id and emits game_state', async () => {
     const httpServerStub: any = {};
     const wsServer = new WebSocketServer(httpServerStub as any);
     const serverAny: any = wsServer as any;
@@ -161,7 +164,7 @@ describe('WebSocketServer.handlePlayerMoveById (human decision phases)', () => {
 
     const territoryDecisionMove: Move = {
       id: 'process-region-0-0,1',
-      type: 'process_territory_region',
+      type: 'choose_territory_option',
       player: 1,
       // Territory decisions identify the region via disconnectedRegions[0].
       disconnectedRegions: [],
@@ -213,7 +216,10 @@ describe('WebSocketServer.handlePlayerMoveById (human decision phases)', () => {
     });
 
     expect(serverAny.sessionManager.getOrCreateSession).toHaveBeenCalledWith(gameId);
-    expect(fakeSession.handlePlayerMoveById).toHaveBeenCalledWith(fakeSocket, territoryDecisionMove.id);
+    expect(fakeSession.handlePlayerMoveById).toHaveBeenCalledWith(
+      fakeSocket,
+      territoryDecisionMove.id
+    );
     expect(fakeEngine.makeMoveById).toHaveBeenCalledWith(1, territoryDecisionMove.id);
   });
 
@@ -291,7 +297,10 @@ describe('WebSocketServer.handlePlayerMoveById (human decision phases)', () => {
     });
 
     expect(serverAny.sessionManager.getOrCreateSession).toHaveBeenCalledWith(gameId);
-    expect(fakeSession.handlePlayerMoveById).toHaveBeenCalledWith(fakeSocket, eliminationDecisionMove.id);
+    expect(fakeSession.handlePlayerMoveById).toHaveBeenCalledWith(
+      fakeSocket,
+      eliminationDecisionMove.id
+    );
     expect(fakeEngine.makeMoveById).toHaveBeenCalledWith(1, eliminationDecisionMove.id);
   });
 });

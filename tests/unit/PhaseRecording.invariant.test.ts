@@ -55,14 +55,15 @@ const PHASE_TO_VALID_MOVE_TYPES: Partial<Record<GamePhase, MoveType[]>> = {
   movement: ['move_stack', 'move_ring', 'build_stack', 'no_movement_action'],
   capture: ['overtaking_capture', 'skip_capture'],
   chain_capture: ['continue_capture_segment', 'overtaking_capture'],
-  line_processing: ['process_line', 'choose_line_reward', 'no_line_action'],
+  line_processing: ['process_line', 'choose_line_option', 'choose_line_reward', 'no_line_action'],
   territory_processing: [
+    'choose_territory_option',
     'process_territory_region',
     'eliminate_rings_from_stack',
     'skip_territory_processing',
     'no_territory_action',
   ],
-  forced_elimination: ['forced_elimination', 'eliminate_rings_from_stack'],
+  forced_elimination: ['forced_elimination'],
 };
 
 /**
@@ -169,9 +170,11 @@ function inferPhaseFromMoveType(moveType: MoveType): GamePhase | null {
     case 'continue_capture_segment':
       return 'chain_capture';
     case 'process_line':
+    case 'choose_line_option':
     case 'choose_line_reward':
     case 'no_line_action':
       return 'line_processing';
+    case 'choose_territory_option':
     case 'process_territory_region':
     case 'skip_territory_processing':
     case 'no_territory_action':
@@ -303,8 +306,11 @@ describe('INV-PHASE-RECORDING invariant (RR-CANON-R074/R075)', () => {
 
     it('correctly infers processing phases', () => {
       expect(inferPhaseFromMoveType('process_line')).toBe('line_processing');
+      expect(inferPhaseFromMoveType('choose_line_option')).toBe('line_processing');
+      expect(inferPhaseFromMoveType('choose_line_reward')).toBe('line_processing');
       expect(inferPhaseFromMoveType('no_line_action')).toBe('line_processing');
-      expect(inferPhaseFromMoveType('process_territory_region')).toBe('territory_processing');
+      expect(inferPhaseFromMoveType('choose_territory_option')).toBe('territory_processing');
+      expect(inferPhaseFromMoveType('process_territory_region')).toBe('territory_processing'); // legacy alias
       expect(inferPhaseFromMoveType('no_territory_action')).toBe('territory_processing');
     });
 
@@ -312,59 +318,59 @@ describe('INV-PHASE-RECORDING invariant (RR-CANON-R074/R075)', () => {
       expect(inferPhaseFromMoveType('forced_elimination')).toBe('forced_elimination');
     });
   });
-describe('isMoveValidForPhase', () => {
-  it('validates ring_placement moves', () => {
-    const move: Move = {
-      id: 'm1',
-      type: 'place_ring',
-      player: 1,
-      to: { x: 0, y: 0 },
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: 1,
-    };
-    expect(isMoveValidForPhase(move, 'ring_placement')).toBe(true);
-    expect(isMoveValidForPhase(move, 'movement')).toBe(false);
-  });
+  describe('isMoveValidForPhase', () => {
+    it('validates ring_placement moves', () => {
+      const move: Move = {
+        id: 'm1',
+        type: 'place_ring',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      };
+      expect(isMoveValidForPhase(move, 'ring_placement')).toBe(true);
+      expect(isMoveValidForPhase(move, 'movement')).toBe(false);
+    });
 
-  it('validates no_*_action moves', () => {
-    const noPlacementMove: Move = {
-      id: 'm1',
-      type: 'no_placement_action',
-      player: 1,
-      to: { x: 0, y: 0 },
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: 1,
-    };
-    expect(isMoveValidForPhase(noPlacementMove, 'ring_placement')).toBe(true);
+    it('validates no_*_action moves', () => {
+      const noPlacementMove: Move = {
+        id: 'm1',
+        type: 'no_placement_action',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      };
+      expect(isMoveValidForPhase(noPlacementMove, 'ring_placement')).toBe(true);
 
-    const noMovementMove: Move = {
-      id: 'm2',
-      type: 'no_movement_action',
-      player: 1,
-      to: { x: 0, y: 0 },
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: 2,
-    };
-    expect(isMoveValidForPhase(noMovementMove, 'movement')).toBe(true);
-  });
+      const noMovementMove: Move = {
+        id: 'm2',
+        type: 'no_movement_action',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 2,
+      };
+      expect(isMoveValidForPhase(noMovementMove, 'movement')).toBe(true);
+    });
 
-  it('validates forced_elimination moves', () => {
-    const forcedElimMove: Move = {
-      id: 'm1',
-      type: 'forced_elimination',
-      player: 1,
-      to: { x: 0, y: 0 },
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: 1,
-    };
-    expect(isMoveValidForPhase(forcedElimMove, 'forced_elimination')).toBe(true);
-    expect(isMoveValidForPhase(forcedElimMove, 'movement')).toBe(false);
+    it('validates forced_elimination moves', () => {
+      const forcedElimMove: Move = {
+        id: 'm1',
+        type: 'forced_elimination',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      };
+      expect(isMoveValidForPhase(forcedElimMove, 'forced_elimination')).toBe(true);
+      expect(isMoveValidForPhase(forcedElimMove, 'movement')).toBe(false);
+    });
   });
-});
   describe('checkPhaseRecordingInvariant', () => {
     it('detects missing ring_placement phase record', () => {
       const moves: PhaseAnnotatedMove[] = [

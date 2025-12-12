@@ -141,7 +141,9 @@ describe('VictoryModal', () => {
 
     expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
     expect(
-      screen.getByText(/Victory by eliminating a number of rings equal to the starting ring supply/)
+      screen.getByText(
+        /Victory by Ring Elimination: eliminated rings reached the victory threshold/i
+      )
     ).toBeInTheDocument();
   });
 
@@ -563,7 +565,9 @@ describe('VictoryModal', () => {
     // Title and description come from the view model path
     expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
     expect(
-      screen.getByText(/Victory by eliminating a number of rings equal to the starting ring supply/)
+      screen.getByText(
+        /Victory by Ring Elimination: eliminated rings reached the victory threshold/i
+      )
     ).toBeInTheDocument();
 
     // Stats table is rendered via the view model finalStats
@@ -845,7 +849,7 @@ describe('VictoryModal', () => {
       // Should fall back to standard ring elimination copy
       expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
       expect(
-        screen.getByText(/eliminating a number of rings equal to the starting ring supply/i)
+        screen.getByText(/eliminated rings reached the victory threshold/i)
       ).toBeInTheDocument();
     });
 
@@ -897,7 +901,7 @@ describe('VictoryModal', () => {
       // Should use standard legacy copy
       expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
       expect(
-        screen.getByText(/eliminating a number of rings equal to the starting ring supply/i)
+        screen.getByText(/eliminated rings reached the victory threshold/i)
       ).toBeInTheDocument();
     });
 

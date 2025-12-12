@@ -243,7 +243,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 - **Primary Responsibility:** Canonical enumeration and application of line-related decision moves.
 - **Key Concerns:**
   - Enumerate `process_line` moves from the current board.
-  - Enumerate `choose_line_reward` options when a collapse grants a reward.
+  - Enumerate `choose_line_option` options when a collapse grants a reward (legacy alias: `choose_line_reward`).
   - Apply those decisions to `GameState` including marker collapse, ring elimination, and pending reward elimination flags.
 - **Concern Type:** `QUERY` + `MUTATION`.
 
@@ -251,7 +251,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 - **Primary Responsibility:** Domain façade for the line subsystem.
 - **Typical Responsibilities:**
-  - Provide orchestrator-ready functions for `process_line` and `choose_line_reward` decision phases.
+  - Provide orchestrator-ready functions for `process_line` and `choose_line_option` decision phases (legacy alias: `choose_line_reward`).
   - Coordinate detection and decision/helpers to maintain consistent line semantics across hosts.
 - **Concern Type:** `AGGREGATE`.
 
@@ -281,7 +281,7 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 - **Primary Responsibility:** Enumerate and apply Territory decision moves.
 - **Key Concerns:**
-  - `process_territory_region` decision enumeration and application.
+  - `choose_territory_option` decision enumeration and application (legacy alias: `process_territory_region`).
   - `eliminate_rings_from_stack` decision enumeration and application.
   - Shared implementation for backend and sandbox hosts.
 - **Concern Type:** `QUERY` + `MUTATION`.

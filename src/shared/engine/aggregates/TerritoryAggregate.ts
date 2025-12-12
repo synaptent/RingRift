@@ -173,7 +173,7 @@ export interface TerritoryEnumerationOptions {
 }
 
 /**
- * Result of applying a `process_territory_region` decision.
+ * Result of applying a `choose_territory_option` decision (legacy alias: `process_territory_region`).
  */
 export interface TerritoryProcessApplicationOutcome {
   /** Next GameState after applying the region-processing consequences. */
@@ -633,7 +633,7 @@ export function enumerateTerritoryDecisions(
 }
 
 /**
- * Enumerate `process_territory_region` decision moves for the specified player.
+ * Enumerate `choose_territory_option` decision moves for the specified player.
  */
 export function enumerateProcessTerritoryRegionMoves(
   state: GameState,
@@ -666,7 +666,7 @@ export function enumerateProcessTerritoryRegionMoves(
 
     moves.push({
       id: `process-region-${index}-${regionKey}`,
-      type: 'process_territory_region',
+      type: 'choose_territory_option',
       player,
       to: representative ?? { x: 0, y: 0 },
       disconnectedRegions: [region],
@@ -691,7 +691,7 @@ export function enumerateTerritoryEliminationMoves(
 
   // Per RR-CANON-R075/R076, eliminate_rings_from_stack moves are ONLY valid
   // in the forced_elimination phase. In territory_processing, elimination is
-  // handled via process_territory_region moves that include self-elimination
+  // handled via choose_territory_option moves that include self-elimination
   // costs when regions exist. When no regions exist, the orchestrator
   // transitions to forced_elimination phase where this function will be called.
   //
@@ -841,7 +841,7 @@ export function applyTerritoryDecision(
     if (decision.type === 'process_region' && decision.region) {
       const move: Move = {
         id: `process-region-${positionToString(decision.region.spaces[0])}`,
-        type: 'process_territory_region',
+        type: 'choose_territory_option',
         player: decision.player,
         to: decision.region.spaces[0],
         disconnectedRegions: [decision.region],
@@ -955,15 +955,15 @@ export function applyTerritoryRegion(
 }
 
 /**
- * Apply a `process_territory_region` move.
+ * Apply a `choose_territory_option` move (legacy alias: `process_territory_region`).
  */
 export function applyProcessTerritoryRegionDecision(
   state: GameState,
   move: Move
 ): TerritoryProcessApplicationOutcome {
-  if (move.type !== 'process_territory_region' && move.type !== 'choose_territory_option') {
+  if (move.type !== 'choose_territory_option' && move.type !== 'process_territory_region') {
     throw new Error(
-      `applyProcessTerritoryRegionDecision expected move.type === 'process_territory_region' (or legacy 'choose_territory_option'), got '${move.type}'`
+      `applyProcessTerritoryRegionDecision expected move.type === 'choose_territory_option' (or legacy 'process_territory_region'), got '${move.type}'`
     );
   }
 
@@ -1017,7 +1017,7 @@ export function applyProcessTerritoryRegionDecision(
   // recording or territory detection bug and must fail fast.
   if (region.controllingPlayer === 0) {
     throw new Error(
-      `Non-canonical territory region: controllingPlayer=0 for process_territory_region (move ${move.id ?? ''})`
+      `Non-canonical territory region: controllingPlayer=0 for choose_territory_option (move ${move.id ?? ''})`
     );
   }
 

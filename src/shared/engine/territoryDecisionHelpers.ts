@@ -59,7 +59,8 @@ import type { TerritoryProcessingContext } from './territoryProcessing';
  * The helpers defined here sit one level above those primitives and express
  * the canonical **decision surface** as `Move` instances:
  *
- * - `process_territory_region` – choose which disconnected region to process.
+ * - `choose_territory_option` – choose which disconnected region to process.
+ *   - Legacy alias: `process_territory_region` (accepted for replay only).
  *   - One move per processable region.
  * - `eliminate_rings_from_stack` – pay the mandatory self-elimination cost
  *   after processing a region (or other elimination-triggering effects).
@@ -106,7 +107,7 @@ export interface TerritoryEnumerationOptions {
 }
 
 /**
- * Enumerate `process_territory_region` decision moves for the specified
+ * Enumerate `choose_territory_option` decision moves for the specified
  * player in the current `GameState`.
  *
  * Semantics:
@@ -116,7 +117,7 @@ export interface TerritoryEnumerationOptions {
  *   by [`canProcessTerritoryRegion`](src/shared/engine/territoryProcessing.ts:1):
  *   the player must control at least one stack outside the region.
  * - Each returned {@link Move} has:
- *   - `type: 'process_territory_region'`,
+ *   - `type: 'choose_territory_option'`,
  *   - `player: player`,
  *   - `disconnectedRegions[0]` describing the region geometry, and
  *   - `to` set to a representative position inside the region for UI/debug.
@@ -176,7 +177,7 @@ export function enumerateProcessTerritoryRegionMoves(
 
     moves.push({
       id: `process-region-${index}-${regionKey}`,
-      type: 'process_territory_region',
+      type: 'choose_territory_option',
       player,
       to: representative ?? { x: 0, y: 0 },
       disconnectedRegions: [region],
@@ -250,9 +251,9 @@ export function applyProcessTerritoryRegionDecision(
   state: GameState,
   move: Move
 ): TerritoryProcessApplicationOutcome {
-  if (move.type !== 'process_territory_region' && move.type !== 'choose_territory_option') {
+  if (move.type !== 'choose_territory_option' && move.type !== 'process_territory_region') {
     throw new Error(
-      `applyProcessTerritoryRegionDecision expected move.type === 'process_territory_region' (or legacy 'choose_territory_option'), got '${move.type}'`
+      `applyProcessTerritoryRegionDecision expected move.type === 'choose_territory_option' (or legacy 'process_territory_region'), got '${move.type}'`
     );
   }
 
@@ -260,7 +261,7 @@ export function applyProcessTerritoryRegionDecision(
 
   // Prefer the concrete Territory attached to the Move when present, mirroring
   // how backend GameEngine and ClientSandboxEngine currently construct
-  // process_territory_region moves. This avoids re-running region detection in
+  // choose_territory_option moves. This avoids re-running region detection in
   // the common case and keeps traces stable.
   let region: Territory | undefined =
     move.disconnectedRegions && move.disconnectedRegions.length > 0

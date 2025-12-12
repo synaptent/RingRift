@@ -42,6 +42,7 @@ from app.training.hex_augmentation import (
     HexSymmetryTransform,
     augment_hex_sample,
 )
+from app.rules.core import get_rings_per_player
 
 
 def create_hex_game_state(
@@ -50,6 +51,7 @@ def create_hex_game_state(
     phase: GamePhase = GamePhase.MOVEMENT,
 ) -> GameState:
     """Create a basic hex game state for testing."""
+    rings_per_player = get_rings_per_player(BoardType.HEXAGONAL)
     players = [
         Player(
             id="p1",
@@ -58,7 +60,7 @@ def create_hex_game_state(
             playerNumber=1,
             isReady=True,
             timeRemaining=600,
-            ringsInHand=48,
+            ringsInHand=rings_per_player,
             eliminatedRings=0,
             territorySpaces=0,
             aiDifficulty=10,
@@ -70,7 +72,7 @@ def create_hex_game_state(
             playerNumber=2,
             isReady=True,
             timeRemaining=600,
-            ringsInHand=48,
+            ringsInHand=rings_per_player,
             eliminatedRings=0,
             territorySpaces=0,
             aiDifficulty=10,
@@ -100,9 +102,9 @@ def create_hex_game_state(
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=96,
+        totalRingsInPlay=0,  # Total rings placed on board (empty state)
         totalRingsEliminated=0,
-        victoryThreshold=72,  # RR-CANON-R061: ringsPerPlayer for hexagonal
+        victoryThreshold=rings_per_player,  # RR-CANON-R061: 2p threshold == ringsPerPlayer
         territoryVictoryThreshold=235,
         chainCaptureState=None,
         mustMoveFromStackKey=None,
@@ -257,8 +259,9 @@ class TestHexStateEncoder:
         _, globals_vec = encoder.encode(hex_state)
 
         # Check normalized ring counts
-        assert globals_vec[5] == 18.0 / 48.0  # Current player rings
-        assert globals_vec[6] == 20.0 / 48.0  # Opponent rings
+        rings_per_player = get_rings_per_player(BoardType.HEXAGONAL)
+        assert globals_vec[5] == pytest.approx(18.0 / rings_per_player)  # Current player rings
+        assert globals_vec[6] == pytest.approx(20.0 / rings_per_player)  # Opponent rings
 
     def test_encode_with_history(self, encoder, hex_state):
         """Test encoding with history frames."""

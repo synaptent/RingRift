@@ -315,6 +315,9 @@ export { SQUARE_MOORE_DIRECTIONS, HEX_DIRECTIONS } from './core';
 // Stack Calculations
 export { calculateCapHeight, countRingsOnBoardForPlayer, countRingsInPlayForPlayer } from './core';
 
+// Victory Thresholds
+export { computeRingEliminationVictoryThreshold } from './core';
+
 // Marker Effects
 export { applyMarkerEffectsAlongPathOnBoard } from './core';
 

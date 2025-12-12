@@ -180,7 +180,7 @@ This mismatch in responsibilities leads directly to:
 This pattern is consistent with the intended semantics captured in the TS shared engine:
 
 - Region detection and Q23 gating live in [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:1) and [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1).
-- Explicit territory decisions (region selection and elimination from a stack) are modelled as `process_territory_region` and `eliminate_rings_from_stack` moves via [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1).
+- Explicit territory decisions (region selection and elimination from a stack) are modelled as `choose_territory_option` (legacy alias: `process_territory_region`) and `eliminate_rings_from_stack` moves via [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1).
 - Forced elimination for a **blocked** next player is a host-level concern handled in TS turn logic (backend `GameEngine` / `TurnEngine` equivalents), not part of the explicit territory decision mutators.
 
 The Python mutator contracts were unintentionally holding `TerritoryMutator.apply` responsible for **both** the explicit decision and the subsequent host-level forced elimination, which is beyond its design scope.

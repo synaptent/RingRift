@@ -286,7 +286,7 @@ This document tracks the FSM extension roadmap, now largely complete.
 
 ### Line Processing Moves and `lineIndex`
 
-**Requirement:** All line processing moves (`process_line`, `choose_line_reward`, `choose_line_option`) MUST include a valid `lineIndex` field that references a formed line in `board.formedLines`.
+**Requirement:** All line processing moves (`process_line`, `choose_line_option`; legacy alias: `choose_line_reward`) MUST include a valid `lineIndex` field that references a formed line in `board.formedLines`.
 
 | Field       | Type     | Description                                              |
 | ----------- | -------- | -------------------------------------------------------- |

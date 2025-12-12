@@ -28,6 +28,7 @@ from app.ai.neural_net import (
     _pos_from_key,
 )
 from app.rules.geometry import BoardGeometry
+from app.rules.core import get_rings_per_player
 
 
 def encode_legal_moves(
@@ -419,13 +420,14 @@ class HexStateEncoder:
         )
 
         if my_player:
-            # Hex uses 48 rings per player
-            globals_vec[5] = my_player.rings_in_hand / 48.0
-            globals_vec[7] = my_player.eliminated_rings / 48.0
+            rings_per_player = float(get_rings_per_player(state.board.type))
+            globals_vec[5] = my_player.rings_in_hand / rings_per_player
+            globals_vec[7] = my_player.eliminated_rings / rings_per_player
 
         if opp_player:
-            globals_vec[6] = opp_player.rings_in_hand / 48.0
-            globals_vec[8] = opp_player.eliminated_rings / 48.0
+            rings_per_player = float(get_rings_per_player(state.board.type))
+            globals_vec[6] = opp_player.rings_in_hand / rings_per_player
+            globals_vec[8] = opp_player.eliminated_rings / rings_per_player
 
         # Turn indicator (index 9)
         globals_vec[9] = 1.0

@@ -502,27 +502,30 @@ def generate_markdown_report(report: AnalysisReport) -> str:
     # Detailed Victory Type Distribution (raw)
     lines.append("## 2. Detailed Victory Type Distribution")
     lines.append("")
-    lines.append("| Board/Players | Games | Territory | LPS | Stalemate | Ring Elim | Draw |")
-    lines.append("|---------------|-------|-----------|-----|-----------|-----------|------|")
+    lines.append("| Board/Players  | Games | Territory   | Elimination | LPS        | Stalemate   | Timeout    |")
+    lines.append("|----------------|-------|-------------|-------------|------------|-------------|------------|")
 
     for (board_type, num_players), stats in sorted(report.stats_by_config.items()):
         if stats.total_games == 0:
             continue
         territory = stats.victory_types.get("territory", 0)
+        ring_elim = stats.victory_types.get("ring_elimination", 0)
         lps = stats.victory_types.get("lps", 0)
         stalemate = stats.victory_types.get("stalemate", 0)
-        ring_elim = stats.victory_types.get("ring_elimination", 0)
+        timeout = stats.victory_types.get("timeout", 0)
 
-        territory_pct = f"{100 * territory / stats.total_games:.1f}%" if territory else "0%"
-        lps_pct = f"{100 * lps / stats.total_games:.1f}%" if lps else "0%"
-        stalemate_pct = f"{100 * stalemate / stats.total_games:.1f}%" if stalemate else "0%"
-        ring_elim_pct = f"{100 * ring_elim / stats.total_games:.1f}%" if ring_elim else "0%"
-        draw_pct = f"{100 * stats.draws / stats.total_games:.1f}%" if stats.draws else "0%"
+        def fmt_pct(count: int, width: int = 11) -> str:
+            if count == 0:
+                return "-".center(width)
+            val = f"{count} ({100 * count / stats.total_games:.0f}%)"
+            return val.ljust(width)
 
+        board_col = f"{board_type} {num_players}p".ljust(14)
+        games_col = str(stats.total_games).rjust(5)
         lines.append(
-            f"| {board_type} {num_players}p | {stats.total_games} | "
-            f"{territory_pct} ({territory}) | {lps_pct} ({lps}) | "
-            f"{stalemate_pct} ({stalemate}) | {ring_elim_pct} ({ring_elim}) | {draw_pct} |"
+            f"| {board_col} | {games_col} | "
+            f"{fmt_pct(territory)} | {fmt_pct(ring_elim)} | "
+            f"{fmt_pct(lps, 10)} | {fmt_pct(stalemate)} | {fmt_pct(timeout, 10)} |"
         )
 
     lines.append("")

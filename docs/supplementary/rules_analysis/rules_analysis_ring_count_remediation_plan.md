@@ -14,18 +14,14 @@ Ensure all parts of the codebase and documentation align with the canonical spec
 
 ## Steps
 
-### 1. Update Documentation (`ringrift_complete_rules.md`)
+### 1. Update Documentation (`ringrift_complete_rules.md`, `ringrift_compact_rules.md`, `RULES_CANONICAL_SPEC.md`)
 
-- **Section 1.3 (Quick Start Guide)**: Change "36 for 19x19/Hexagonal" to "48 for 19x19, 72 for Hexagonal".
-- **Section 3.2.1**: Change "36 in the 19x19 version, 48 in the Hexagonal version" to "48 in the 19x19 version, 72 in the Hexagonal version".
-- **Section 6.2**: Change "36 for 19x19/Hexagonal" to "48 for 19x19, 72 for Hexagonal".
-- **Section 16.3**: Change "instead of 36" to "instead of 48".
+- Ensure all board-config and threshold references match **18 / 60 / 72** (square8 / square19 / hex).
 
-### 2. Update Python AI Service (`ai-service/app/game_engine.py`)
+### 2. Update TS + Python Board Configs
 
-- **Method `_estimate_rings_per_player`**:
-  - Update `SQUARE19` return value from `36` to `48`.
-  - Update `HEXAGONAL` return value from `48` to `72`.
+- **TypeScript:** `src/shared/types/game.ts` `BOARD_CONFIGS.square19.ringsPerPlayer = 60`.
+- **Python:** `ai-service/app/rules/core.py` `BOARD_CONFIGS[BoardType.SQUARE19].rings_per_player = 60`.
 
 ### 3. Verify Test Fixtures (`src/server/game/testFixtures/decisionPhaseFixtures.ts`)
 

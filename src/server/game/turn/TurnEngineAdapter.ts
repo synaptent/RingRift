@@ -222,6 +222,9 @@ export class TurnEngineAdapter {
       const processTurnOptions = replayMode
         ? {
             breakOnDecisionRequired: true,
+            replayCompatibility: true,
+            skipSingleTerritoryAutoProcess: true,
+            skipAutoLineProcessing: true,
           }
         : {};
       const result = await processTurnAsync(beforeState, move, delegates, processTurnOptions);

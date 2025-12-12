@@ -380,7 +380,7 @@ Status legend:
   - Backend decision-phase integration in [`TypeScript.GameEngine.getValidLineProcessingMoves`](src/server/game/GameEngine.ts:1199) and [`TypeScript.GameEngine.applyDecisionMove`](src/server/game/GameEngine.ts:1258), including `pendingLineRewardElimination` and explicit `eliminate_rings_from_stack` moves.
   - Sandbox canonical application path in:
     - [`TypeScript.ClientSandboxEngine.getValidLineProcessingMovesForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1492), which now calls the shared `enumerateProcessLineMoves()` / `enumerateChooseLineRewardMoves()` helpers and `findLinesForPlayer()` directly.
-    - [`TypeScript.ClientSandboxEngine.processLinesForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1515), which applies `process_line` / `choose_line_reward` Moves via `applyProcessLineDecision()` / `applyChooseLineRewardDecision()` and then enforces sandbox-specific automatic cap elimination and history recording policy.
+    - [`TypeScript.ClientSandboxEngine.processLinesForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1515), which applies `process_line` / `choose_line_option` Moves (legacy alias: `choose_line_reward`) via `applyProcessLineDecision()` / `applyChooseLineRewardDecision()` and then enforces sandbox-specific automatic cap elimination and history recording policy.
   - Legacy non-move-driven helper (historical only; module now removed):
     - Former server helper `lineProcessing.ts` exposed [`TypeScript.lineProcessing.processLinesForCurrentPlayer`], but its behaviour has since been consolidated into shared `lineDecisionHelpers` + backend `GameEngine`/`RuleEngine` flows. The file `src/server/game/rules/lineProcessing.ts` no longer exists in the current tree.
 - **Supporting / tests**
@@ -420,13 +420,13 @@ Status legend:
 **R144–R145 Region processing order and collapse/elimination (HC, with both legacy and move-driven implementations)**
 
 - **Primary implementation**
-  - Shared canonical region-application logic [`TypeScript.territoryProcessing.applyTerritoryRegion`](src/shared/engine/territoryProcessing.ts:172) and end-to-end decision helpers [`TypeScript.territoryDecisionHelpers.enumerateProcessTerritoryRegionMoves`](src/shared/engine/territoryDecisionHelpers.ts:123) and `applyProcessTerritoryRegionDecision()`.
+  - Shared canonical region-application logic [`TypeScript.territoryProcessing.applyTerritoryRegion`](src/shared/engine/territoryProcessing.ts:172) and end-to-end decision helpers [`TypeScript.territoryDecisionHelpers.enumerateProcessTerritoryRegionMoves`](src/shared/engine/territoryDecisionHelpers.ts:123) (canonical `choose_territory_option` MoveType; legacy alias: `process_territory_region`) and `applyProcessTerritoryRegionDecision()`.
   - Backend integration:
-    - RuleEngine decision move generation for `process_territory_region` and `eliminate_rings_from_stack` (territory context) in [`TypeScript.RuleEngine.getValidMoves`](src/server/game/RuleEngine.ts:839).
+    - RuleEngine decision move generation for `choose_territory_option` (legacy alias: `process_territory_region`) and `eliminate_rings_from_stack` (territory context) in [`TypeScript.RuleEngine.getValidMoves`](src/server/game/RuleEngine.ts:839).
     - Legacy automatic processor [`TypeScript.territoryProcessing.processDisconnectedRegionsForCurrentPlayer`](src/server/game/rules/territoryProcessing.ts:41), now partly replaced by move-driven phases in `GameEngine`.
   - Sandbox integration:
-    - Region discovery and automatic processing in [`TypeScript.ClientSandboxEngine.processDisconnectedRegionsForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:2057), which now drives `process_territory_region` and in-loop self-elimination via shared `applyProcessTerritoryRegionDecision()` and `applyEliminateRingsFromStackDecision()`.
-    - Canonical move application in [`TypeScript.ClientSandboxEngine.applyCanonicalMoveInternal`](src/client/sandbox/ClientSandboxEngine.ts:1746) for `process_territory_region` and `eliminate_rings_from_stack`.
+    - Region discovery and automatic processing in [`TypeScript.ClientSandboxEngine.processDisconnectedRegionsForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:2057), which now drives `choose_territory_option` (legacy alias: `process_territory_region`) and in-loop self-elimination via shared `applyProcessTerritoryRegionDecision()` and `applyEliminateRingsFromStackDecision()`.
+    - Canonical move application in [`TypeScript.ClientSandboxEngine.applyCanonicalMoveInternal`](src/client/sandbox/ClientSandboxEngine.ts:1746) for `choose_territory_option` (legacy alias: `process_territory_region`) and `eliminate_rings_from_stack`.
     - Flags `_pendingTerritorySelfElimination` and `_pendingLineRewardElimination` used to mirror backend phase behaviour in sandbox parity traces.
 - **Supporting / tests**
   - Territory region and self-elimination tests under [`tests/unit/territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts).
@@ -641,7 +641,7 @@ This section lists the major rules-related components and the canonical rules th
 
 - [`TypeScript.territoryDecisionHelpers`](src/shared/engine/territoryDecisionHelpers.ts:1)
   - **Rules:** R144–R145 (move-driven region processing and elimination decisions), R143 (via use of `canProcessTerritoryRegion()`).
-  - **Notes:** Canonical move shapes for `process_territory_region` and `eliminate_rings_from_stack` in territory context.
+  - **Notes:** Canonical move shapes for `choose_territory_option` (legacy alias: `process_territory_region`) and `eliminate_rings_from_stack` in territory context.
 
 - [`TypeScript.turnLogic`](src/shared/engine/turnLogic.ts:135)
   - **Rules:** R070–R072 (turn phases and deterministic progression), R100 (forced elimination entry via delegates), R172–R173 (last-player-standing and stalemate readiness via legal-action checks).

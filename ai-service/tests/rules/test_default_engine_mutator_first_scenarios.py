@@ -107,14 +107,14 @@ def test_mutator_first_env_smoke_for_place_ring_and_move_stack(
         pytest.skip("Could not find a MOVE_STACK move within 30 plies")
 
 
-def test_mutator_first_process_territory_region_synthetic() -> None:
+def test_mutator_first_choose_territory_option_synthetic() -> None:
     """Mutator-first territory processing matches canonical semantics.
 
     This mirrors the synthetic territory scenario from
-    ``test_default_engine_apply_move_matches_game_engine_for_process_territory_region_synthetic``,
+    ``test_default_engine_apply_move_matches_game_engine_for_choose_territory_option_synthetic``,
     but runs with ``mutator_first=True`` enabled to ensure the full
     mutator-driven orchestration path agrees with ``GameEngine.apply_move``
-    for PROCESS_TERRITORY_REGION moves (including the downstream
+    for CHOOSE_TERRITORY_OPTION moves (including the downstream
     forced-elimination and territory bookkeeping).
     """
     state = _make_base_game_state()
@@ -167,12 +167,9 @@ def test_mutator_first_process_territory_region_synthetic() -> None:
         territory_moves = GameEngine._get_territory_processing_moves(state, 1)
         assert territory_moves, "Expected at least one territory move"
 
-        process_region_moves = [
-            m for m in territory_moves
-            if m.type == MoveType.PROCESS_TERRITORY_REGION
-        ]
+        process_region_moves = [m for m in territory_moves if m.type == MoveType.CHOOSE_TERRITORY_OPTION]
         assert process_region_moves, (
-            "Expected at least one PROCESS_TERRITORY_REGION move from "
+            "Expected at least one CHOOSE_TERRITORY_OPTION move from "
             "_get_territory_processing_moves in mutator-first test"
         )
         move = process_region_moves[0]

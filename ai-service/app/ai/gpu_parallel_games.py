@@ -785,11 +785,21 @@ class BatchGameState:
 
         now = datetime.now()
 
-        # Compute victory thresholds for the game state
-        # These depend on board size and number of players
-        rings_per_player = self.board_size * self.board_size // 4  # Approximate
-        victory_threshold = rings_per_player  # Approximate
-        territory_threshold = (self.board_size * self.board_size) // 2  # Approximate
+        # Compute canonical victory thresholds for shadow validation.
+        # Per RR-CANON-R061/R062 these depend on the board type and player count.
+        from app.rules.core import (
+            get_rings_per_player,
+            get_territory_victory_threshold,
+            get_victory_threshold,
+        )
+
+        rings_per_player = get_rings_per_player(board_type)
+        victory_threshold = get_victory_threshold(board_type, self.num_players)
+        territory_threshold = get_territory_victory_threshold(board_type)
+        total_rings_in_play = rings_per_player * self.num_players
+        total_rings_eliminated = int(
+            self.eliminated_rings[game_idx, 1 : self.num_players + 1].sum().item()
+        )
 
         return GameState(
             id=f"gpu_game_{game_idx}",
@@ -807,8 +817,8 @@ class BatchGameState:
             lastMoveAt=now,
             isRated=False,
             maxPlayers=self.num_players,
-            totalRingsInPlay=0,  # Not tracked in GPU state
-            totalRingsEliminated=0,  # Not tracked in GPU state
+            totalRingsInPlay=total_rings_in_play,
+            totalRingsEliminated=total_rings_eliminated,
             victoryThreshold=victory_threshold,
             territoryVictoryThreshold=territory_threshold,
         )
@@ -2811,9 +2821,9 @@ def evaluate_positions_batch(
     total_spaces = {8: 64, 19: 361, 13: 469}.get(board_size, board_size * board_size)
     territory_victory_threshold = (total_spaces // 2) + 1  # 33 for 8x8, 181 for 19x19, 235 for hex
     rings_per_player = {8: 18, 19: 60, 13: 72}.get(board_size, 18)  # Per BOARD_CONFIGS
-    # Per RR-CANON-R061: victoryThreshold = round((1/3)*ownStartingRings + (2/3)*opponentsCombinedStartingRings)
-    # Simplified: round(ringsPerPlayer * (1/3 + 2/3*(numPlayers-1)))
-    ring_victory_threshold = round(rings_per_player * (1 / 3 + (2 / 3) * (num_players - 1)))
+    # Per RR-CANON-R061: victoryThreshold = round((2/3)*ownStartingRings + (1/3)*opponentsCombinedStartingRings)
+    # Simplified: round(ringsPerPlayer * (2/3 + 1/3*(numPlayers-1)))
+    ring_victory_threshold = round(rings_per_player * (2 / 3 + (1 / 3) * (num_players - 1)))
 
     # Weight mapping: support both old 8-weight format and new 45-weight format
     def get_weight(new_key: str, old_key: str = None, default: float = 0.0) -> float:
@@ -4178,16 +4188,17 @@ class ParallelGameRunner:
         - RR-CANON-R172: Last-player-standing (only player with real actions)
 
         Victory thresholds per RR-CANON-R061/R062:
-        - victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+        - victoryThreshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
         - territoryVictoryThreshold = floor(totalSpaces / 2) + 1
         """
         active_mask = self.state.get_active_mask()
 
         # Calculate canonical thresholds per RR-CANON-R061
-        # Ring elimination: victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
-        # Must match create_batch() initialization: {8: 18, 19: 48}
-        rings_per_player = {8: 18, 19: 48}.get(self.board_size, 18)
-        ring_elimination_threshold = round(rings_per_player * (1/3 + (2/3) * (self.num_players - 1)))
+        # Ring elimination: victoryThreshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
+        # This is: (2/3 × ownStartingRings) + (1/3 × combinedOpponentRings)
+        # Must match create_batch() initialization: {8: 18, 19: 60}
+        rings_per_player = {8: 18, 19: 60}.get(self.board_size, 18)
+        ring_elimination_threshold = round(rings_per_player * (2/3 + (1/3) * (self.num_players - 1)))
 
         # totalSpaces = board_size * board_size for square boards
         total_spaces = self.board_size * self.board_size

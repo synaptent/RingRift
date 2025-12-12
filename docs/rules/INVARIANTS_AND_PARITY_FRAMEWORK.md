@@ -144,8 +144,8 @@ For any valid `GameState state` with `state.gameStatus == ACTIVE` and `state.cur
     - `PhaseMoves(state, P)` is the set of phase-local interactive moves currently available to P in `state.currentPhase`:
       - in `ring_placement`: placements and `skip_placement`;
       - in `movement` / `capture` / `chain_capture`: non-capture moves and overtaking capture segments/chains;
-      - in `line_processing`: `process_line` and `choose_line_reward` decisions;
-      - in `territory_processing`: `process_territory_region`, `choose_territory_option`, and `eliminate_rings_from_stack` decisions.
+      - in `line_processing`: `process_line` and `choose_line_option` decisions (legacy alias: `choose_line_reward`);
+      - in `territory_processing`: `choose_territory_option` and `eliminate_rings_from_stack` decisions (legacy alias: `process_territory_region`).
 
     - `ForcedElim(state, P)` is `{ forced_elimination }` exactly when the precondition of [`RR-CANON-R100`](RULES_CANONICAL_SPEC.md:379) holds in `state` for P (P controls at least one stack and has **no** legal placement, non-capture movement, or overtaking capture). Otherwise it is the empty set.
 
@@ -220,13 +220,13 @@ Intuitively, ANM means "P still has material but literally no way to act": no pl
 
 - **INV-PHASE-CONSISTENCY (decision phases and automatic exits)**
   - Phase progression must be deterministic and consistent with [`RR-CANON-R070`–`RR-CANON-R072`](RULES_CANONICAL_SPEC.md:192) and the ANM cluster [`RR-CANON-R204`](RULES_CANONICAL_SPEC.md:256):
-    - If `currentPhase == line_processing` and the moving player P has **no** legal line decisions (`process_line` / `choose_line_reward`), the engine must **immediately** advance out of `line_processing`:
+    - If `currentPhase == line_processing` and the moving player P has **no** legal line decisions (`process_line` / `choose_line_option`), the engine must **immediately** advance out of `line_processing`:
       - either into `territory_processing` for P if any Territory decisions exist; or
       - directly to victory evaluation and turn rotation per [`RR-CANON-R170`–`RR-CANON-R173`](RULES_CANONICAL_SPEC.md:523).
 
       It is illegal to remain in `line_processing` with `gameStatus == ACTIVE` and `ANM(state, P) == true`. This captures the shape in ANM-SCEN-05.
 
-    - If `currentPhase == territory_processing` and P has **no** legal Territory decisions (`process_territory_region`, `choose_territory_option`, `eliminate_rings_from_stack`), the engine must:
+    - If `currentPhase == territory_processing` and P has **no** legal Territory decisions (`choose_territory_option`, `eliminate_rings_from_stack`), the engine must:
       - either apply forced elimination for P if required by [`RR-CANON-R072` / `RR-CANON-R100`](RULES_CANONICAL_SPEC.md:379); or
       - end the turn, rotate `currentPlayer` to the next player with turn-material, and evaluate victory per [`RR-CANON-R170`–`RR-CANON-R173`](RULES_CANONICAL_SPEC.md:523).
 

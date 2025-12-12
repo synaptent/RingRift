@@ -709,14 +709,14 @@ useGlobalGameShortcuts({
 
 ### Accessibility Files Reference
 
-| File                                              | Purpose                     |
-| ------------------------------------------------- | --------------------------- |
-| `src/client/contexts/AccessibilityContext.tsx`    | User preferences management |
-| `src/client/hooks/useKeyboardNavigation.ts`       | Board keyboard navigation   |
-| `src/client/components/ScreenReaderAnnouncer.tsx` | Live region announcements   |
-| `src/client/components/KeyboardShortcutsHelp.tsx` | Shortcuts help dialog       |
-| `src/client/styles/accessibility.css`             | Accessibility CSS utilities |
-| `docs/ACCESSIBILITY.md`                           | Full accessibility guide    |
+| File                                              | Purpose                       |
+| ------------------------------------------------- | ----------------------------- |
+| `src/client/contexts/AccessibilityContext.tsx`    | User preferences management   |
+| `src/client/hooks/useKeyboardNavigation.ts`       | Board keyboard navigation     |
+| `src/client/components/ScreenReaderAnnouncer.tsx` | Live region announcements     |
+| `src/client/components/BoardControlsOverlay.tsx`  | In-game controls/help overlay |
+| `src/client/styles/accessibility.css`             | Accessibility CSS utilities   |
+| `docs/ACCESSIBILITY.md`                           | Full accessibility guide      |
 
 ---
 

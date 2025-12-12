@@ -48,6 +48,7 @@ import { findDisconnectedRegions } from '../territoryDetection';
 import { enumerateChainCaptureSegments } from '../aggregates/CaptureAggregate';
 import { hasAnyGlobalMovementOrCapture, playerHasAnyRings } from '../globalActions';
 import { isEligibleForRecovery } from '../playerStateHelpers';
+import { VALID_MOVES_BY_PHASE, isMoveValidInPhase } from '../phaseValidation';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TURN ROTATION HELPERS
@@ -300,7 +301,7 @@ export function eventToMove(event: TurnEvent, player: number, moveNumber: number
       return { ...baseMove, type: 'no_line_action', to: { x: 0, y: 0 } };
 
     case 'PROCESS_REGION':
-      return { ...baseMove, type: 'process_territory_region', to: { x: 0, y: 0 } };
+      return { ...baseMove, type: 'choose_territory_option', to: { x: 0, y: 0 } };
 
     case 'ELIMINATE_FROM_STACK':
       return {
@@ -1219,7 +1220,7 @@ export function validateMoveWithFSM(
   // Validate player attribution: the move must be from the current player.
   // Exceptions for player mismatch:
   // - Bookkeeping moves (no_*_action): may be auto-injected at turn boundaries
-  // - process_territory_region: Python may detect more regions than TS, causing
+  // - choose_territory_option (legacy alias: process_territory_region): Python may detect more regions than TS, causing
   //   TS to transition players before all Python-recorded territory moves complete
   // - forced_elimination: Python records the player whose rings are being eliminated,
   //   which may differ from the current turn's player in multiplayer games
@@ -1229,6 +1230,7 @@ export function validateMoveWithFSM(
     move.type === 'no_movement_action' ||
     move.type === 'no_line_action' ||
     move.type === 'no_territory_action' ||
+    move.type === 'choose_territory_option' ||
     move.type === 'process_territory_region' ||
     move.type === 'forced_elimination';
 
@@ -1361,44 +1363,10 @@ function getExpectedEventTypes(state: TurnState): TurnEvent['type'][] {
 }
 
 /**
- * Canonical mapping from GamePhase → allowed MoveType values.
- *
- * This encodes the same contract that previously lived in
- * assertPhaseMoveInvariant / isPhaseValidForMoveType in turnOrchestrator
- * and is now centralised in the FSM adapter.
- */
-const PHASE_ALLOWED_MOVE_TYPES: Record<GamePhase, ReadonlyArray<MoveType>> = {
-  ring_placement: ['place_ring', 'skip_placement', 'no_placement_action'],
-  movement: [
-    'move_stack',
-    'move_ring',
-    'overtaking_capture',
-    'continue_capture_segment',
-    'no_movement_action',
-    'recovery_slide',
-    'skip_recovery',
-  ],
-  capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture'],
-  chain_capture: ['overtaking_capture', 'continue_capture_segment'],
-  line_processing: ['process_line', 'choose_line_option', 'choose_line_reward', 'no_line_action'],
-  territory_processing: [
-    'process_territory_region',
-    'choose_territory_option',
-    'eliminate_rings_from_stack',
-    'skip_territory_processing',
-    'no_territory_action',
-  ],
-  // Also allow 'eliminate_rings_from_stack' for backwards compatibility with
-  // historical game logs that recorded this move type during forced_elimination.
-  forced_elimination: ['forced_elimination', 'eliminate_rings_from_stack'],
-  game_over: [],
-};
-
-/**
  * Get the set of canonical MoveType values allowed for a given GamePhase.
  */
 export function getAllowedMoveTypesForPhase(phase: GamePhase): ReadonlyArray<MoveType> {
-  return PHASE_ALLOWED_MOVE_TYPES[phase] ?? [];
+  return VALID_MOVES_BY_PHASE[phase] ?? [];
 }
 
 /**
@@ -1410,29 +1378,7 @@ export function getAllowedMoveTypesForPhase(phase: GamePhase): ReadonlyArray<Mov
  * contract used by the orchestrator.
  */
 export function isMoveTypeValidForPhase(phase: GamePhase, moveType: MoveType): boolean {
-  // Resign and timeout are allowed from any phase - player can always forfeit
-  // or run out of time. Both result in game termination.
-  if (moveType === 'resign' || moveType === 'timeout') {
-    return true;
-  }
-
-  // Meta / legacy moves are allowed in any phase for historical compatibility.
-  if (
-    moveType === 'swap_sides' ||
-    moveType === 'line_formation' ||
-    moveType === 'territory_claim'
-  ) {
-    return true;
-  }
-
-  const allowedForPhase = PHASE_ALLOWED_MOVE_TYPES[phase];
-  if (!allowedForPhase) {
-    // Unknown/legacy phases default to permissive behaviour, matching the
-    // previous orchestrator helpers.
-    return true;
-  }
-
-  return allowedForPhase.includes(moveType);
+  return isMoveValidInPhase(moveType, phase);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1883,14 +1829,18 @@ export function computeFSMOrchestration(
 
   // Post-transition adjustment for territory processing: The pure FSM expects
   // a two-step process (PROCESS_REGION then ELIMINATE_FROM_STACK for internal
-  // eliminations), but the game engine's process_territory_region move handles
+  // eliminations), but the game engine's choose_territory_option move handles
   // internal eliminations atomically. If the FSM stays in territory_processing
-  // after a process_territory_region move, transition to turn_end because:
+  // after a choose_territory_option move (legacy alias: process_territory_region),
+  // transition to turn_end because:
   // 1. The game engine atomically processes the region (including internal eliminations)
   // 2. The orchestrator will surface another pending decision if more regions exist
   // 3. The FSM can't accurately predict whether more regions exist post-move
-  if (move.type === 'process_territory_region' && nextState.phase === 'territory_processing') {
-    // Always transition to turn_end after process_territory_region
+  if (
+    (move.type === 'choose_territory_option' || move.type === 'process_territory_region') &&
+    nextState.phase === 'territory_processing'
+  ) {
+    // Always transition to turn_end after choose_territory_option
     // The orchestrator handles surfacing additional region decisions if needed
     // Use computeNextNonEliminatedPlayer to skip permanently eliminated players (RR-CANON-R201)
     const computedNextPlayer = computeNextNonEliminatedPlayer(

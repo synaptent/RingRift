@@ -254,60 +254,61 @@ describeOrSkip('FAQ Q16-Q18: Victory Conditions & Control Transfer', () => {
     });
 
     it('should not allow simultaneous winners (RR-CANON-R061 threshold prevents it)', () => {
-      // FAQ Q18: With RR-CANON-R061 formula, only one player can win via ring elimination
+      // FAQ Q18: Only one player can win via ring elimination at a time.
+      //
+      // With the updated RR-CANON-R061 threshold, this is no longer guaranteed by
+      // simple "threshold > 50% of total rings" arithmetic in 3p/4p games.
+      //
+      // Instead, uniqueness is ensured by the scoring and timing model:
+      // - RR-CANON-R060 credits eliminated rings to the causing player (the mover).
+      // - Victory is checked after each full turn; only the current player's
+      //   eliminatedRingsTotal can increase during that turn.
+      // - Therefore, at the end-of-turn victory check, at most the current player
+      //   can newly reach `victoryThreshold`. States with multiple players
+      //   simultaneously ≥ `victoryThreshold` are unreachable in canonical play.
 
-      // Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
-      // For 3-player square8: round(18 × (1/3 + 2/3 × 2)) = round(18 × 5/3) = 30
+      const victoryThreshold = 24; // 3p square8: round(18 × 4/3) = 24
 
-      // Mathematical proof: If total rings = 54 (3 players on square8)
-      // Player A has 30 rings eliminated (= threshold)
-      // Remaining eliminated: 54 - 30 = 24
-      // No other player can have >= 30
+      // Start of Player A's turn: everyone below threshold.
+      const start = { a: 23, b: 23, c: 23 };
+      expect(start.a).toBeLessThan(victoryThreshold);
+      expect(start.b).toBeLessThan(victoryThreshold);
+      expect(start.c).toBeLessThan(victoryThreshold);
 
-      // This is a structural property of the rules, not a runtime test
-
-      const totalRings = 54; // 3 players × 18 rings
-      const victoryThreshold = 30; // Per RR-CANON-R061 for 3p square8
-
-      // If Player A has >= victoryThreshold
-      const playerAEliminated = 30;
-      expect(playerAEliminated).toBeGreaterThanOrEqual(victoryThreshold);
-
-      // Remaining rings for all other players combined
-      const remainingEliminated = totalRings - playerAEliminated;
-      expect(remainingEliminated).toBeLessThan(victoryThreshold);
-
-      // No other single player can also reach threshold
-      // This validates RR-CANON-R061 prevents simultaneous victories
+      // End of Player A's turn: only A's eliminated total increases (RR-CANON-R060).
+      const end = { a: 24, b: start.b, c: start.c };
+      expect(end.a).toBeGreaterThanOrEqual(victoryThreshold);
+      expect(end.b).toBeLessThan(victoryThreshold);
+      expect(end.c).toBeLessThan(victoryThreshold);
     });
   });
 
   describe('Cross-Board Victory Consistency', () => {
     it('should use same victory formula on square8, square19, and hex', () => {
-      // Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+      // Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
       // Threshold scales with player count
 
       // Helper to calculate canonical threshold
       const calcThreshold = (ringsPerPlayer: number, numPlayers: number) =>
-        Math.round(ringsPerPlayer * (1 / 3 + (2 / 3) * (numPlayers - 1)));
+        Math.round(ringsPerPlayer * (2 / 3 + (1 / 3) * (numPlayers - 1)));
 
       const configs = [
         // Square8: ringsPerPlayer = 18
         { boardType: 'square8', players: 2, ringsPerPlayer: 18, threshold: calcThreshold(18, 2) }, // 18
-        { boardType: 'square8', players: 3, ringsPerPlayer: 18, threshold: calcThreshold(18, 3) }, // 30
-        { boardType: 'square8', players: 4, ringsPerPlayer: 18, threshold: calcThreshold(18, 4) }, // 42
-        // Square19: ringsPerPlayer = 48
-        { boardType: 'square19', players: 2, ringsPerPlayer: 48, threshold: calcThreshold(48, 2) }, // 48
-        { boardType: 'square19', players: 3, ringsPerPlayer: 48, threshold: calcThreshold(48, 3) }, // 80
-        { boardType: 'square19', players: 4, ringsPerPlayer: 48, threshold: calcThreshold(48, 4) }, // 112
+        { boardType: 'square8', players: 3, ringsPerPlayer: 18, threshold: calcThreshold(18, 3) }, // 24
+        { boardType: 'square8', players: 4, ringsPerPlayer: 18, threshold: calcThreshold(18, 4) }, // 30
+        // Square19: ringsPerPlayer = 60
+        { boardType: 'square19', players: 2, ringsPerPlayer: 60, threshold: calcThreshold(60, 2) }, // 60
+        { boardType: 'square19', players: 3, ringsPerPlayer: 60, threshold: calcThreshold(60, 3) }, // 80
+        { boardType: 'square19', players: 4, ringsPerPlayer: 60, threshold: calcThreshold(60, 4) }, // 100
         // Hexagonal: ringsPerPlayer = 72
         { boardType: 'hexagonal', players: 2, ringsPerPlayer: 72, threshold: calcThreshold(72, 2) }, // 72
-        { boardType: 'hexagonal', players: 3, ringsPerPlayer: 72, threshold: calcThreshold(72, 3) }, // 120
-        { boardType: 'hexagonal', players: 4, ringsPerPlayer: 72, threshold: calcThreshold(72, 4) }, // 168
+        { boardType: 'hexagonal', players: 3, ringsPerPlayer: 72, threshold: calcThreshold(72, 3) }, // 96
+        { boardType: 'hexagonal', players: 4, ringsPerPlayer: 72, threshold: calcThreshold(72, 4) }, // 120
       ];
 
       configs.forEach((config) => {
-        // Per RR-CANON-R061: threshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+        // Per RR-CANON-R061: threshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
         const expectedThreshold = calcThreshold(config.ringsPerPlayer, config.players);
         expect(config.threshold).toBe(expectedThreshold);
 

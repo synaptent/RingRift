@@ -150,7 +150,8 @@ class LightweightState:
         self.players: Dict[int, LightweightPlayer] = {}
         self.current_player: int = 1
         self.current_phase: LightweightPhase = LightweightPhase.RING_PLACEMENT
-        self.victory_rings: int = 18  # Default for square8 (RR-CANON-R061: ringsPerPlayer)
+        # Default for square8 2-player (RR-CANON-R061: ringsPerPlayer for 2p).
+        self.victory_rings: int = 18
         self.victory_territory: int = 33
         self._position_key_cache: Dict[Tuple[int, int], str] = {}
 
@@ -209,9 +210,17 @@ class LightweightState:
         )
         state.current_phase = LightweightPhase(phase_str)
 
-        # Victory conditions
-        state.victory_rings = getattr(game_state, "victory_threshold", 18)  # RR-CANON-R061: ringsPerPlayer
-        state.victory_territory = getattr(game_state, "territory_victory_threshold", 33)
+        # Victory conditions (RR-CANON-R061/R062).
+        from app.rules.core import get_territory_victory_threshold, get_victory_threshold
+
+        num_players = len(game_state.players)
+        default_victory_threshold = get_victory_threshold(game_state.board.type, num_players)
+        default_territory_threshold = get_territory_victory_threshold(game_state.board.type)
+
+        state.victory_rings = getattr(game_state, "victory_threshold", default_victory_threshold)
+        state.victory_territory = getattr(
+            game_state, "territory_victory_threshold", default_territory_threshold
+        )
 
         return state
 

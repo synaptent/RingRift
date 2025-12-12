@@ -203,25 +203,25 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.3, 5–7, 9; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§9.2, 11–13, 15.4 Q6, Q11–Q12.
 
 - **[RR-CANON-R061] Ring-elimination victory threshold.**
-  - `victoryThreshold = round((1/3) × ringsPerPlayer + (2/3) × opponentsCombinedStartingRings)`
+  - `victoryThreshold = round((2/3) × ringsPerPlayer + (1/3) × opponentsCombinedStartingRings)`
   - Where:
     - `ringsPerPlayer` = starting rings in hand for this player (from board config)
     - `opponentsCombinedStartingRings` = `ringsPerPlayer × (numPlayers - 1)`
-  - Simplified formula: `victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))`
+  - Simplified formula: `victoryThreshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))`
   - **Implementation note**: Use `round()` instead of `floor()` to avoid floating-point precision errors (e.g., `18 × 5/3 = 29.999...` would incorrectly floor to 29).
   - For standard board configurations with N players:
     - `square8` (18 rings/player):
-      - 2 players: `round(18 × (1/3 + 2/3 × 1)) = round(18 × 1) = 18`
-      - 3 players: `round(18 × (1/3 + 2/3 × 2)) = round(18 × 5/3) = 30`
-      - 4 players: `round(18 × (1/3 + 2/3 × 3)) = round(18 × 7/3) = 42`
+      - 2 players: `round(18 × (2/3 + 1/3 × 1)) = round(18 × 1) = 18`
+      - 3 players: `round(18 × (2/3 + 1/3 × 2)) = round(18 × 4/3) = 24`
+      - 4 players: `round(18 × (2/3 + 1/3 × 3)) = round(18 × 5/3) = 30`
     - `square19` (60 rings/player):
       - 2 players: `round(60 × 1) = 60`
-      - 3 players: `round(60 × 5/3) = 100`
-      - 4 players: `round(60 × 7/3) = 140`
+      - 3 players: `round(60 × 4/3) = 80`
+      - 4 players: `round(60 × 5/3) = 100`
     - `hexagonal` (72 rings/player):
       - 2 players: `round(72 × 1) = 72`
-      - 3 players: `round(72 × 5/3) = 120`
-      - 4 players: `round(72 × 7/3) = 168`
+      - 3 players: `round(72 × 4/3) = 96`
+      - 4 players: `round(72 × 5/3) = 120`
   - A player wins by elimination when their credited eliminated ring total reaches or exceeds `victoryThreshold`.
   - Rationale: In multi-player games, a player must eliminate more rings to win, proportional to the total rings controlled by opponents.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §7.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.3, 13.1, 16.3, 16.9.4.5.
@@ -287,7 +287,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - performs a forced elimination or explicit elimination decision (RR-CANON-R100, RR-CANON-R205).
   - A **voluntary forgo decision** is any choice by P to decline an otherwise legal action that the rules allow them to take at that point in the turn (for example, `skip_placement` when placements are legal, or `skip_capture` when a capture is optional).
   - Canonical constraint:
-    - Whenever P performs a turn action **or** voluntarily forgoes an available action, that decision MUST be represented as an explicit, player-visible move or choice in the game record and engine APIs (e.g., `place_ring`, `move_stack`, `overtaking_capture`, `process_line`, `choose_line_reward`, `process_territory_region`, `eliminate_rings_from_stack`, `skip_placement`, `skip_capture`, `skip_territory_processing`).
+    - Whenever P performs a turn action **or** voluntarily forgoes an available action, that decision MUST be represented as an explicit, player-visible move or choice in the game record and engine APIs (e.g., `place_ring`, `move_stack`, `overtaking_capture`, `process_line`, `choose_line_option`, `choose_territory_option`, `eliminate_rings_from_stack`, `skip_placement`, `skip_capture`, `skip_territory_processing`).
     - Engines and hosts MUST NOT treat such actions or voluntary skips as implicit side effects of other moves or silently "assume" them without recording a corresponding decision.
     - Internal helper steps that are logically equivalent to a rules-level action (for example, auto-collapsing a single exact-length line, auto-processing a single Territory region, or auto-selecting a self-elimination target) are permitted **only** as UX conveniences when they also surface and persist a concrete move/choice in the canonical history.
   - This applies uniformly to:
@@ -307,8 +307,8 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - `place_ring`, `skip_placement`,
       - `move_stack` / `move_ring`,
       - `overtaking_capture`, `continue_capture_segment`,
-      - `process_line`, `choose_line_reward`,
-      - `process_territory_region`, `choose_territory_option`,
+      - `process_line`, `choose_line_option` (legacy alias: `choose_line_reward`),
+      - `choose_territory_option` (legacy alias: `process_territory_region`),
       - `eliminate_rings_from_stack`, or
       - a host-level `forced_elimination` action modelled as an explicit move.
     - Replay engines MUST NOT inject extra collapses, region resolutions, or forced eliminations solely as a consequence of "advancing phases" or "resolving ANM" when consuming a canonical recording; if such work is required by the rules, it must appear as explicit moves/choices in the recording itself.
@@ -346,8 +346,8 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - A legal **interactive move** for P in the current phase:
       - In `ring_placement`: any legal `place_ring` or explicit `skip_placement` move.
       - In `movement`, `capture`, or `chain_capture`: any legal non-capture movement or overtaking capture segment/chain under RR-CANON-R090–R103.
-      - In `line_processing`: any legal `process_line` or `choose_line_reward` decision for P under RR-CANON-R120–R122.
-      - In `territory_processing`: any legal `process_territory_region`, `choose_territory_option`, or `eliminate_rings_from_stack` decision for P under RR-CANON-R140–R145.
+      - In `line_processing`: any legal `process_line` or `choose_line_option` decision for P under RR-CANON-R120–R122.
+      - In `territory_processing`: any legal `choose_territory_option` or `eliminate_rings_from_stack` decision for P under RR-CANON-R140–R145.
     - A legal **forced-elimination** action for P under RR-CANON-R100 (see RR-CANON-R205).
   - Global legal actions are defined uniformly for all supported board types (`square8`, `square19`, `hexagonal`) and for all supported player counts (2–4 players).
 
@@ -389,12 +389,12 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 - **[RR-CANON-R204] Phase-local behaviour and decision-phase exits.**
   - In addition to RR-CANON-R070–R072, the following phase-specific rules must hold for the current player P in any `GameState` with `gameStatus == ACTIVE`:
     - **Line-processing exit.**
-      - If `currentPhase == line_processing` and P has no legal line decisions (no `process_line` or `choose_line_reward` moves), the engine must immediately advance out of `line_processing`:
+      - If `currentPhase == line_processing` and P has no legal line decisions (no `process_line` or `choose_line_option` moves), the engine must immediately advance out of `line_processing`:
         - to `territory_processing` if any Territory decisions exist for P; otherwise
         - to victory evaluation and turn rotation per RR-CANON-R170–R173.
       - It is illegal to leave the game in `gameStatus == ACTIVE` and `currentPhase == line_processing` with `ANM(state, P) == true`.
     - **Territory-processing exit.**
-      - If `currentPhase == territory_processing` and P has no legal Territory decisions (no `process_territory_region`, `choose_territory_option`, or `eliminate_rings_from_stack` moves), the engine must:
+      - If `currentPhase == territory_processing` and P has no legal Territory decisions (no `choose_territory_option` or `eliminate_rings_from_stack` moves), the engine must:
         - transition to `forced_elimination` phase if P had no actions in all prior phases (placement, movement, capture, line, territory) but still controls at least one stack; or
         - call end-of-turn, rotate `currentPlayer` to the next non-permanently-eliminated player per RR-CANON-R201, and evaluate victory per RR-CANON-R170–R173.
       - It is illegal to leave the game in `gameStatus == ACTIVE` and `currentPhase == territory_processing` with `ANM(state, P) == true`.
@@ -453,7 +453,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - For any turn in which an interactive action by the current player P (placement, movement, capture, or chain-capture segment) creates at least one new line owned by P and/or disconnects a Territory region they control, the canonical sequence of phases is:
     1. **Interactive phase:** `ring_placement`, `movement`, or `capture` in which the triggering action occurs. A chain-capture may immediately follow per RR-CANON-R209.
     2. **Chain capture (if any):** zero or more `chain_capture` segments while additional overtaking segments remain from the current chain origin (RR-CANON-R090–R103, RR-CANON-R209).
-    3. **Line processing:** a single `line_processing` phase in which P may apply `process_line` / `choose_line_reward` decisions for any eligible lines they own (RR-CANON-R120–R122).
+    3. **Line processing:** a single `line_processing` phase in which P may apply `process_line` / `choose_line_option` decisions for any eligible lines they own (RR-CANON-R120–R122).
     4. **Territory processing:** upon exiting `line_processing`, if any disconnected regions for P satisfy the Q23 prerequisite (RR-CANON-R140–R145 and §7.3), a `territory_processing` phase is entered and Territory decisions are applied; otherwise, the engine skips directly to victory evaluation and turn rotation (RR-CANON-R170–R173).
   - Within a single turn, no other interactive phase may interleave between `line_processing` and `territory_processing`, and the engine must not re-enter `movement` or `capture` before the line+Territory consequences of the triggering action have been fully resolved. RR-CANON-R204’s phase-exit rules must be applied so that ANM states are never left pending between these phases.
   - References:
@@ -723,7 +723,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - After `recovery_slide`, the engine does **not** enter a separate `line_processing` phase (unless overlength).
   - **Phase: `territory_processing` (if cascades exist)**
     - If the line collapse creates disconnected territory regions per RR-CANON-R140–R142, the engine enters `territory_processing` as usual.
-    - P processes each claimable region via standard `process_territory_region` decisions.
+    - P processes each claimable region via standard `choose_territory_option` decisions.
     - Self-elimination for each territory claim uses `eliminate_rings_from_stack`:
       - **Normal territory processing:** eliminates the entire cap (all consecutive top rings of P's colour) from a P-controlled stack outside the region.
       - **Recovery context:** uses `eliminationMode: 'buried_extraction'` to extract P's bottommost buried ring instead of eliminating a cap.
@@ -774,7 +774,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
         decision in the `line_processing` phase (for example:
         - a `process_line` decision for every exact-length line, including
           the case where L is the **only** eligible line; and
-        - a `process_line` decision followed by a `choose_line_reward`
+        - a `process_line` decision followed by a `choose_line_option`
           decision for overlength lines when a reward choice is available).
       - Apply collapse/elimination for L per RR-CANON-R122 as a consequence
         of that explicit decision.
@@ -797,7 +797,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
         - **Option 1 (max Territory):** collapse **all len** markers in the line and then eliminate one ring from a controlled stack as above.
         - **Option 2 (ring preservation):** choose any contiguous subsegment of length requiredLen within the line; collapse exactly those requiredLen markers; eliminate **no** rings.
       - This choice between Option 1 and Option 2 is always an explicit,
-        player-visible decision (typically via `choose_line_reward`); engines
+        player-visible decision (typically via `choose_line_option`); engines
         must not silently default to either option for overlength lines.
   - After each processed line, update all counters and recompute lines.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §5.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.5, 11.2–11.3, 15.4 Q7, Q22.
@@ -810,13 +810,13 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 >   1. P1 plays their interactive move (e.g., a `move_stack`).
 >   2. The engine detects one eligible line for P1. Even though it is the only line, P1 must process it via an explicit `process_line` decision:
 >      - One `process_line` move is recorded for that line.
->      - Collapse and any required line-reward elimination are applied as consequences of that move (and, when applicable, a follow-up `choose_line_reward` decision for overlength lines).
+>      - Collapse and any required line-reward elimination are applied as consequences of that move (and, when applicable, a follow-up `choose_line_option` decision for overlength lines).
 >   3. No other lines remain; the engine does **not** auto-collapse additional markers or perform extra eliminations between moves.
 >   4. Because no Territory regions were disconnected, there is no `territory_processing` phase for this turn; the engine proceeds directly to victory checks and turn rotation.
 > - Replay behaviour:
 >   - A canonical GameReplayDB for this turn records:
 >     - the original `move_stack` (or `overtaking_capture`), and
->     - the explicit `process_line` (and `choose_line_reward`, if needed).
+>     - the explicit `process_line` (and `choose_line_option`, if needed).
 >   - Canonical replay must reach the post-line state **only** by applying those explicit moves in order; it may not inject additional collapses or eliminations between them.
 
 ---
@@ -1105,7 +1105,7 @@ Below are the most important differences, categorized by type, with canonical in
      surfacing a separate line-processing decision.
    - RR-CANON-R121–R122 clarify that **all** line processing—both exact-length
      and overlength—must be expressed as explicit, player-visible decisions in
-     the `line_processing` phase (`process_line` / `choose_line_reward` +
+     the `line_processing` phase (`process_line` / `choose_line_option` +
      any required self-elimination decisions). Engines must not silently
      process lines as a side effect of other moves, even when there is only
      one eligible line.

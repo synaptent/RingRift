@@ -47,8 +47,8 @@ export type BoardType = 'square8' | 'square19' | 'hexagonal';
  *     - 'no_line_action'     – forced no-op when no line decisions exist (RR-CANON-R075).
  * - 'territory_processing'
  *   - Canonical MoveType values (unified model used by both engines):
- *     - 'process_territory_region' – choose which disconnected region to resolve first.
- *       - Legacy alias: 'choose_territory_option' (accepted for replay only).
+ *     - 'choose_territory_option' – choose which disconnected region to resolve first.
+ *       - Legacy alias: 'process_territory_region' (accepted for replay only).
  *     - 'eliminate_rings_from_stack' – explicit self-elimination decision where the
  *                                      moving player chooses an on-board stack to
  *                                      sacrifice rings from as part of the mandatory
@@ -125,9 +125,9 @@ export type MoveType =
   // Legacy alias for choose_line_option; accepted for replay only.
   | 'choose_line_reward'
   // Territory-processing decisions (see GamePhase 'territory_processing').
-  | 'process_territory_region'
-  // Canonical alias for process_territory_region; accepted for replay/parity.
   | 'choose_territory_option'
+  // Legacy alias for choose_territory_option; accepted for replay/parity.
+  | 'process_territory_region'
   // Voluntary skip: player has eligible regions but chooses not to process them.
   | 'skip_territory_processing'
   // Forced no-op: player entered territory_processing but has no eligible regions.
@@ -167,10 +167,10 @@ export type MoveType =
   // ═══════════════════════════════════════════════════════════════════════════
   // DEPRECATED MOVE TYPES - Retained for backwards compatibility only
   // ═══════════════════════════════════════════════════════════════════════════
-  // @deprecated Use 'process_line' + 'choose_line_reward' instead.
+  // @deprecated Use 'process_line' + 'choose_line_option' instead.
   // Retained for historical game recordings and UI display.
   | 'line_formation'
-  // @deprecated Use 'process_territory_region' + 'skip_territory_processing' instead.
+  // @deprecated Use 'choose_territory_option' + 'skip_territory_processing' instead.
   // Retained for historical game recordings and UI display.
   | 'territory_claim';
 export type PlayerType = 'human' | 'ai';
@@ -379,7 +379,7 @@ export interface LineInfo {
  *   - type: 'process_line'
  *     - Required:
  *       - formedLines[0] – identifies the line to process (positions, owner, direction).
- *   - type: 'choose_line_reward'
+ *   - type: 'choose_line_option' (legacy alias: 'choose_line_reward')
  *     - Required:
  *       - formedLines[0] – identifies the line being rewarded.
  *       - collapsedMarkers – subset of marker positions chosen for collapse
@@ -615,7 +615,7 @@ export interface SwapSidesMove extends MoveBase {
 
 /** Line processing moves. */
 export interface LineProcessingMove extends MoveBase {
-  type: 'process_line' | 'choose_line_reward';
+  type: 'process_line' | 'choose_line_option' | 'choose_line_reward';
   to: Position;
   from?: undefined;
   formedLines?: LineInfo[];
@@ -625,7 +625,7 @@ export interface LineProcessingMove extends MoveBase {
 
 /** Territory processing moves. */
 export interface TerritoryProcessingMove extends MoveBase {
-  type: 'process_territory_region' | 'eliminate_rings_from_stack';
+  type: 'choose_territory_option' | 'process_territory_region' | 'eliminate_rings_from_stack';
   to: Position;
   from?: undefined;
   claimedTerritory?: Territory[];
@@ -851,7 +851,7 @@ export interface GameState {
   // RingRift specific state
   totalRingsInPlay: number; // Total rings placed on board
   totalRingsEliminated: number; // Total rings eliminated from game
-  victoryThreshold: number; // Rings needed to win (per RR-CANON-R061: round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1))))
+  victoryThreshold: number; // Rings needed to win (per RR-CANON-R061: round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1))))
   territoryVictoryThreshold: number; // Territory spaces needed to win (>50% of board)
 
   /**
@@ -1036,7 +1036,7 @@ export interface LineRewardChoice extends PlayerChoiceBase {
   type: 'line_reward_option';
   options: Array<'option_1_collapse_all_and_eliminate' | 'option_2_min_collapse_no_elimination'>;
   /**
-   * Optional map of option strings to canonical 'choose_line_reward' Move IDs.
+   * Optional map of option strings to canonical 'choose_line_option' Move IDs.
    * This allows transports/AI to map the selected option directly to a Move.id.
    */
   moveIds?: {

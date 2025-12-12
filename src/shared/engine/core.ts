@@ -119,6 +119,26 @@ export function countRingsInPlayForPlayer(state: GameState, playerNumber: number
 }
 
 /**
+ * Compute the ring-elimination victory threshold for a game.
+ *
+ * Rule reference:
+ * - RR-CANON-R061 – Ring-elimination victory threshold.
+ *
+ * Canonical formula:
+ * - victoryThreshold = round((2/3) × ringsPerPlayer + (1/3) × opponentsCombinedStartingRings)
+ * - opponentsCombinedStartingRings = ringsPerPlayer × (numPlayers - 1)
+ *
+ * Simplified:
+ * - victoryThreshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
+ */
+export function computeRingEliminationVictoryThreshold(
+  ringsPerPlayer: number,
+  numPlayers: number
+): number {
+  return Math.round(ringsPerPlayer * (2 / 3 + (1 / 3) * (numPlayers - 1)));
+}
+
+/**
  * Calculate cap height for a ring stack.
  *
  * Rule Reference: RR-CANON-R145 - Cap height is consecutive rings of

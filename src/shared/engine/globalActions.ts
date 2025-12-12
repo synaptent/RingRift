@@ -213,7 +213,7 @@ export function hasAnyGlobalMovementOrCapture(state: GameState, player: number):
  * - line_processing:
  *   - at least one process_line or choose_line_option decision.
  * - territory_processing:
- *   - at least one process_territory_region or eliminate_rings_from_stack
+ *   - at least one choose_territory_option or eliminate_rings_from_stack
  *     decision.
  *
  * For non-active players this helper always returns false.

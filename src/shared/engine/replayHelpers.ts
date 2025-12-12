@@ -104,7 +104,15 @@ export function reconstructStateAtMove(record: GameRecord, moveIndex: number): G
       moveNumber: rec.moveNumber,
     } as Move;
 
-    const result = processTurn(state, move);
+    const result = processTurn(state, move, {
+      // Replay is intentionally tolerant for legacy logs / parity fixtures, but
+      // must preserve canonical phase bookkeeping for modern GameRecords.
+      replayCompatibility: true,
+      // Do not auto-apply single-line/single-region post-move processing when
+      // replaying explicit canonical histories.
+      skipAutoLineProcessing: true,
+      skipSingleTerritoryAutoProcess: true,
+    });
     state = result.nextState;
   }
 

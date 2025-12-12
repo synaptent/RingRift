@@ -1434,7 +1434,7 @@ class GameReplayDB:
                     break
                 # Check if the next move is already a territory action
                 # Only auto-inject if the next move ISN'T a territory action
-                if next_type not in ("no_territory_action", "process_territory_region"):
+                if next_type not in ("no_territory_action", "process_territory_region", "choose_territory_option"):
                     # Need to inject NO_TERRITORY_ACTION to advance
                     no_territory_move = Move(
                         id="auto-inject-no-territory",
@@ -1453,7 +1453,7 @@ class GameReplayDB:
                 # Check if we need to inject NO_LINE_ACTION
                 # Only if the next move isn't already a line action
                 # (next_type already computed above at loop start)
-                if next_type not in ("no_line_action", "process_line", "choose_line_reward"):
+                if next_type not in ("no_line_action", "process_line", "choose_line_option", "choose_line_reward"):
                     no_line_move = Move(
                         id="auto-inject-no-line",
                         type=MoveType.NO_LINE_ACTION,

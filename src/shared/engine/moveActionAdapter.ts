@@ -282,7 +282,7 @@ function resolveRegionIdFromMove(move: Move, state: EngineGameState): string {
   const territories = state.board.territories as unknown as Map<string, Territory>;
   if (!territories || territories.size === 0) {
     throw new MoveMappingError(
-      'No territories available on state for process_territory_region Move',
+      'No territories available on state for choose_territory_option Move',
       move
     );
   }
@@ -463,7 +463,7 @@ function actionToProcessTerritoryMove(
   }
   const representative = region.spaces[0] ?? { x: 0, y: 0 };
   return {
-    type: 'process_territory_region',
+    type: 'choose_territory_option',
     player: action.playerId,
     to: representative,
     disconnectedRegions: [region],

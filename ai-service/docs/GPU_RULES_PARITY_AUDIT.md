@@ -45,7 +45,7 @@ This document provides a comprehensive audit of the GPU implementation against c
 | RR-CANON-R140 | Territory Processing        | Flood-fill from collapsed spaces                               |
 | RR-CANON-R150 | Cap Eligibility (Territory) | Multicolor OR single-color height>1; NOT height-1              |
 | RR-CANON-R110 | Recovery Mechanics          | Marker slide + territory processing                            |
-| RR-CANON-R061 | Victory Threshold           | round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))         |
+| RR-CANON-R061 | Victory Threshold           | round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))         |
 | RR-CANON-R200 | Victory Conditions          | Ring Elimination, Territory (>50%), LPS (2 consecutive rounds) |
 
 ### 1.2 FSM Phase Order

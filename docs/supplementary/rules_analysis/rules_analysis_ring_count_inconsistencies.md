@@ -16,17 +16,12 @@ According to `RULES_CANONICAL_SPEC.md` (RR-CANON-R020):
 
 ### 1. Documentation Inconsistencies
 
-- **`ringrift_complete_rules.md`**:
-  - **Section 1.1**: Correctly lists 18 (8x8), 48 (19x19), 72 (Hex).
-  - **Section 1.2.1 (Table)**: Correctly lists 18 (8x8), 48 (19x19), 72 (Hex).
-  - **Section 1.3 (Quick Start Guide)**: Incorrectly states "36 for 19x19/Hexagonal".
-  - **Section 3.2.1**: Incorrectly states "36 in the 19x19 version, 48 in the Hexagonal version".
-  - **Section 6.2**: Incorrectly states "36 for 19x19/Hexagonal".
-  - **Section 15.1 (FAQ)**: Correctly states "48 rings per player" for 19x19 default.
-  - **Section 16.1 (Table)**: Correctly lists 18 (8x8), 48 (19x19), 72 (Hex).
-  - **Section 16.3**: Incorrectly states "Each player has 18 rings... instead of 36".
-  - **Section 16.9.2**: Correctly states "Each player has 48 rings".
-  - **Section 16.10**: Correctly lists 18 (8x8), 48 (19x19), 72 (Hex).
+Primary rulebook references have been updated to match **18 / 60 / 72**:
+
+- `RULES_CANONICAL_SPEC.md` (RR-CANON-R020 / R061 examples)
+- `ringrift_compact_rules.md` (board config table + threshold examples)
+- `ringrift_complete_rules.md` (version tables, setup sections, FAQ defaults)
+- `ringrift_simple_human_rules.md` (board overview + threshold list)
 
 ### 2. Codebase Consistency (TypeScript)
 
@@ -34,25 +29,23 @@ According to `RULES_CANONICAL_SPEC.md` (RR-CANON-R020):
   - `square8`: 18
   - `square19`: 60
   - `hexagonal`: 72
-- **`src/client/adapters/gameViewModels.ts`**: `BOARD_CONFIGS_LOCAL` correctly defines:
-  - `square8`: 18
-  - `square19`: 60
-  - `hexagonal`: 72
+- **`src/client/adapters/gameViewModels.ts`**: HUD ring stats read `ringsPerPlayer` from shared `BOARD_CONFIGS` (no local duplication).
 
 ### 3. Codebase Consistency (Python)
 
-- **`ai-service/app/game_engine.py`**: `_estimate_rings_per_player` method has **INCORRECT** values:
-  - `square8`: 18 (Correct)
-  - `square19`: 36 (**INCORRECT** - should be 48)
-  - `hexagonal`: 48 (**INCORRECT** - should be 72)
+- **`ai-service/app/rules/core.py`** mirrors TS `BOARD_CONFIGS`:
+  - square8: 18
+  - square19: 60
+  - hexagonal: 72
+- **`ai-service/app/game_engine.py`** reads ring caps from `app.rules.core.BOARD_CONFIGS` for TS-aligned semantics.
 
 ### 4. Test Fixtures & Analysis Docs
 
-- **`rules_analysis_ring_count_increase.md`**: This document discusses the increase, confirming the intent to move to 48/72. It lists the "current" (old) values as 36/48 and proposed as 48/72, and the canonical spec now uses 48/72.
-- **`src/server/game/testFixtures/decisionPhaseFixtures.ts`**: Mentions "on square8, each player has 19 rings" in a comment, which contradicts the 18 ring standard.
+- **Test fixtures:** `tests/utils/fixtures.ts` and the sample config tests in `tests/unit/board.test.ts` have been updated to match canonical counts.
+- **Historical analysis docs:** Some older analysis/proposal documents may still reference pre-canonical ring counts; treat those sections as historical unless explicitly updated.
 
 ## Remediation Plan
 
-1.  **Update `ringrift_complete_rules.md`**: Fix all instances of outdated ring counts (36 for 19x19, 48 for Hex) to match the canonical spec (60 for 19x19, 72 for Hex).
-2.  **Update `ai-service/app/game_engine.py`**: Correct the `_estimate_rings_per_player` method to return 60 for `square19` and 72 for `hexagonal`.
-3.  **Verify `decisionPhaseFixtures.ts`**: Correct the comment about 19 rings on square8 if it's intended to be standard play, or clarify if it's a specific test scenario override.
+1. ✅ Update canonical rules docs to **18 / 60 / 72**.
+2. ✅ Update TS + Python `BOARD_CONFIGS` to **18 / 60 / 72**.
+3. ✅ Update tests/fixtures that encoded old ring counts.

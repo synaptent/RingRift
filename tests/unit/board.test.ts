@@ -167,9 +167,9 @@ describe('Board Configurations', () => {
 
     expect(config.type).toBe('square19');
     expect(config.size).toBe(19);
-    expect(config.ringsPerPlayer).toBe(36);
-    expect(config.minLineLength).toBe(5);
-    expect(config.adjacencyType).toBe('von_neumann');
+    expect(config.ringsPerPlayer).toBe(60);
+    expect(config.minLineLength).toBe(4);
+    expect(config.adjacencyType).toBe('moore');
   });
 
   it('should provide correct configuration for hexagonal', () => {
@@ -177,7 +177,7 @@ describe('Board Configurations', () => {
 
     expect(config.type).toBe('hexagonal');
     expect(config.size).toBe(13); // radius=12
-    expect(config.ringsPerPlayer).toBe(48);
+    expect(config.ringsPerPlayer).toBe(72);
     expect(config.minLineLength).toBe(4);
     expect(config.adjacencyType).toBe('hexagonal');
   });

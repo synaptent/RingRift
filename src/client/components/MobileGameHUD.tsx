@@ -176,7 +176,7 @@ function MobileLpsIndicator({
 /**
  * Compact mobile victory progress indicator.
  * Shows ring elimination and territory progress when meaningful.
- * Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
+ * Per RR-CANON-R061: victoryThreshold = round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
  * Per RR-CANON-R062: territoryThreshold = floor(totalSpaces/2)+1
  */
 function MobileVictoryProgress({

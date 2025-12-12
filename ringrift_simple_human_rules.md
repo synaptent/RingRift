@@ -34,7 +34,7 @@ During the game you:
 
 You win by achieving **any one** of three victory conditions:
 
-1. Eliminating a number of rings equal to the starting ring supply per player.
+1. Eliminating enough rings to reach the Ring Elimination victory threshold (depends on player count).
 2. Controlling more than half of all board spaces as your territory.
 3. Becoming the **Last Player Standing** in terms of "real actions".
 
@@ -57,7 +57,7 @@ There are three standard boards:
 
 - **19×19 square** (full version)
   - 361 spaces.
-  - **48 rings** per player.
+  - **60 rings** per player.
   - Territory victory: **>180** spaces.
   - Lines: **4+** markers in a row.
 
@@ -311,16 +311,15 @@ normal play, exactly one of these will apply first.
 
 ### 5.1 Ring Elimination Victory
 
-You win by eliminating a number of rings equal to one third of your starting
-rings in hand plus two thirds of your opponents' combined starting rings in
-hand. In multi-player games, more rings must be eliminated to win since more
-total rings are in play.
+You win by eliminating a number of rings equal to two thirds of your starting
+rings in hand plus one third of your opponents' combined starting rings in
+hand. In multi-player games, the threshold increases with player count.
 
 Thresholds:
 
-- 8×8 (18 rings/player): **18** (2p), **30** (3p), **42** (4p) rings eliminated.
-- 19×19 (48 rings/player): **48** (2p), **80** (3p), **112** (4p) rings eliminated.
-- Hex (72 rings/player): **72** (2p), **120** (3p), **168** (4p) rings eliminated.
+- 8×8 (18 rings/player): **18** (2p), **24** (3p), **30** (4p) rings eliminated.
+- 19×19 (60 rings/player): **60** (2p), **80** (3p), **100** (4p) rings eliminated.
+- Hex (72 rings/player): **72** (2p), **96** (3p), **120** (4p) rings eliminated.
 
 Your eliminated‑rings total includes:
 
@@ -335,8 +334,9 @@ It does **not** include:
 - Rings still on the board (even if buried in your stacks),
 - Rings captured by overtaking but not eliminated.
 
-Because the threshold equals the starting ring supply and the first player
-to reach it wins, **no two players can meet this condition simultaneously**.
+Because only the acting player's eliminated total can increase on their turn
+and the game ends immediately when the threshold is reached, **no two players
+can meet this condition simultaneously**.
 
 ### 5.2 Territory Victory
 

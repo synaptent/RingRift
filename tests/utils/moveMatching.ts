@@ -125,11 +125,12 @@ export function movesLooselyMatch(a: Move, b: Move): boolean {
   // For territory-processing decisions, require that the disconnected
   // region being processed matches exactly (up to set equality of
   // spaces) when both moves carry region metadata. This prevents the
-  // trace replay harness from treating *any* process_territory_region
+  // trace replay harness from treating *any* choose_territory_option
+  // (legacy alias: process_territory_region)
   // Move for the same player as equivalent and instead ensures we
   // select the backend candidate whose region geometry matches the
   // sandbox trace.
-  if (a.type === 'process_territory_region') {
+  if (a.type === 'choose_territory_option' || a.type === 'process_territory_region') {
     const aRegion = a.disconnectedRegions && a.disconnectedRegions[0];
     const bRegion = b.disconnectedRegions && b.disconnectedRegions[0];
 

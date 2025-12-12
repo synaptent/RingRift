@@ -4,9 +4,9 @@
 export const RulesUxPhrases = {
   victory: {
     ringElimination: [
-      // Ring Elimination – winning by eliminating ringsPerPlayer (starting ring supply) globally.
-      // Shared substring between VictoryModal copy and telemetry text.
-      'eliminating a number of rings equal to the starting ring supply',
+      // Ring Elimination – winning by reaching the victoryThreshold (RR-CANON-R061).
+      // Shared substring between VictoryModal copy and telemetry / teaching text.
+      'victory threshold',
       // Used primarily by TeachingOverlay and curated scenarios.
       'Eliminated rings are permanently removed',
     ],

@@ -44,7 +44,7 @@ export type MoveType = GameMoveType;
  * - capture: overtaking_capture, continue_capture_segment, skip_capture
  * - chain_capture: overtaking_capture, continue_capture_segment
  * - line_processing: process_line, choose_line_option (legacy: choose_line_reward), no_line_action
- * - territory_processing: process_territory_region (legacy: choose_territory_option), eliminate_rings_from_stack, no_territory_action, skip_territory_processing
+ * - territory_processing: choose_territory_option (legacy: process_territory_region), eliminate_rings_from_stack, no_territory_action, skip_territory_processing
  * - forced_elimination: forced_elimination
  * - game_over: none (game ended)
  *
@@ -88,8 +88,8 @@ export const VALID_MOVES_BY_PHASE: Readonly<Record<GamePhase, readonly MoveType[
     'line_formation',
   ],
   territory_processing: [
-    'process_territory_region',
     'choose_territory_option',
+    'process_territory_region',
     'eliminate_rings_from_stack', // Self-elimination for territory
     'no_territory_action',
     'skip_territory_processing',

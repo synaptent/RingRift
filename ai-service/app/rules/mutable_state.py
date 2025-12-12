@@ -39,6 +39,7 @@ from app.models import (
     TimeControl,
     ChainCaptureState,
 )
+from app.rules.core import get_effective_line_length
 from app.ai.zobrist import ZobristHash
 
 
@@ -1516,7 +1517,7 @@ class MutableGameState:
         self._make_eliminate_rings_from_stack(move, undo)
 
     def _make_process_line(self, move: Move, undo: MoveUndo) -> None:
-        """Apply line processing move (PROCESS_LINE, CHOOSE_LINE_REWARD, etc.).
+        """Apply line processing move (PROCESS_LINE, CHOOSE_LINE_OPTION, etc.).
 
         Converts marker positions into collapsed territory.
         """
@@ -1537,28 +1538,29 @@ class MutableGameState:
             # we just collapse the single position if no line info
             line_positions = [move.to]
 
-        # Determine which positions to collapse based on move type
-        # For SQUARE8, min length is 3; otherwise 4
-        required_len = 3 if self._board_type == BoardType.SQUARE8 else 4
+        # Determine which positions to collapse based on move type.
+        # Use canonical effective line length (board + player count aware).
+        required_len = get_effective_line_length(self._board_type, self._max_players)
 
         positions_to_collapse: List[Position]
         if move.type in (MoveType.PROCESS_LINE, MoveType.LINE_FORMATION):
             # Full line collapse
             positions_to_collapse = list(line_positions)
-        elif move.type == MoveType.CHOOSE_LINE_REWARD:
-            # May be partial based on collapsed_markers
+        elif move.type in (MoveType.CHOOSE_LINE_OPTION, MoveType.CHOOSE_LINE_REWARD):
+            # CHOOSE_LINE_OPTION is canonical; CHOOSE_LINE_REWARD is a legacy alias.
+            #
+            # Prefer collapsed_markers when present (explicit option encoding);
+            # otherwise fall back to placement_count semantics:
+            # 1 → minimum collapse, >1 → collapse all.
             markers = getattr(move, 'collapsed_markers', None)
             if markers:
                 positions_to_collapse = list(markers)
             else:
-                positions_to_collapse = list(line_positions[:required_len])
-        else:
-            # CHOOSE_LINE_OPTION uses placement_count
-            option = move.placement_count or 1
-            if option == 1:
-                positions_to_collapse = list(line_positions[:required_len])
-            else:
-                positions_to_collapse = list(line_positions)
+                option = move.placement_count or 1
+                if option == 1:
+                    positions_to_collapse = list(line_positions[:required_len])
+                else:
+                    positions_to_collapse = list(line_positions)
 
         # Collapse each position
         # IMPORTANT: TS's collapseLinePositions returns rings from any stacks

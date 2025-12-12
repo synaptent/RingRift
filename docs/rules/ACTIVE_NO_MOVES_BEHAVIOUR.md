@@ -106,7 +106,7 @@ The scenarios below capture concrete shapes that have historically exercised the
 - **Shape:**
   - `gameStatus == ACTIVE`.
   - `currentPhase == territory_processing`.
-  - The moving player P has just applied a `process_territory_region` or related decision.
+  - The moving player P has just applied a `choose_territory_option` (legacy alias: `process_territory_region`) or related decision.
   - There are **no further territory-processing moves** for P (no more eligible regions, no pending self-elimination), and no forced-elimination moves.
   - P may or may not still have turn-material after the region is processed.
 - **Historical issue:** Earlier Python versions could remain in ACTIVE / TERRITORY_PROCESSING with no legal moves for P after applying a territory decision, diverging from TS turn logic, which always advances out of `territory_processing` when no decisions remain.
@@ -128,7 +128,7 @@ The scenarios below capture concrete shapes that have historically exercised the
   - `gameStatus == ACTIVE`.
   - `currentPhase == line_processing`.
   - All eligible lines have already been processed, or the moving player P has declined to process further lines where optional.
-  - `get_valid_moves(state, P) == []` for the line-processing surface (no `process_line` / `choose_line_reward` moves).
+  - `get_valid_moves(state, P) == []` for the line-processing surface (no `process_line` / `choose_line_option` moves; legacy alias: `choose_line_reward`).
 - **Historical issue:** A Python invariant snapshot captured a state where the game remained ACTIVE / LINE_PROCESSING with no legal decisions for the current player, whereas TS turn logic always auto-advanced when the line decision surface emptied.
 - **Expected canonical behaviour:**
   - When no line decisions remain for P, the engine must immediately advance:

@@ -238,9 +238,9 @@ describeOrSkip('FAQ Q22-Q23: Graduated Line Rewards & Territory Prerequisites', 
           'faq-q23-negative-backend',
           'square19',
           [
-            createTestPlayer(1, { ringsInHand: 36, eliminatedRings: 0 }),
-            createTestPlayer(2, { ringsInHand: 36, eliminatedRings: 0 }),
-            createTestPlayer(3, { ringsInHand: 36, eliminatedRings: 0 }),
+            createTestPlayer(1, { ringsInHand: 60, eliminatedRings: 0 }),
+            createTestPlayer(2, { ringsInHand: 60, eliminatedRings: 0 }),
+            createTestPlayer(3, { ringsInHand: 60, eliminatedRings: 0 }),
           ],
           timeControl,
           false
@@ -359,9 +359,9 @@ describeOrSkip('FAQ Q22-Q23: Graduated Line Rewards & Territory Prerequisites', 
           'faq-q23-positive-backend',
           'square19',
           [
-            createTestPlayer(1, { ringsInHand: 36, eliminatedRings: 0 }),
-            createTestPlayer(2, { ringsInHand: 36, eliminatedRings: 0 }),
-            createTestPlayer(3, { ringsInHand: 36, eliminatedRings: 0 }),
+            createTestPlayer(1, { ringsInHand: 60, eliminatedRings: 0 }),
+            createTestPlayer(2, { ringsInHand: 60, eliminatedRings: 0 }),
+            createTestPlayer(3, { ringsInHand: 60, eliminatedRings: 0 }),
           ],
           timeControl,
           false
@@ -552,9 +552,18 @@ describeOrSkip('FAQ Q22-Q23: Graduated Line Rewards & Territory Prerequisites', 
         'faq-q23-hex-backend',
         'hexagonal',
         [
-          createTestPlayer(1, { ringsInHand: 36, eliminatedRings: 0 }),
-          createTestPlayer(2, { ringsInHand: 36, eliminatedRings: 0 }),
-          createTestPlayer(3, { ringsInHand: 36, eliminatedRings: 0 }),
+          createTestPlayer(1, {
+            ringsInHand: BOARD_CONFIGS.hexagonal.ringsPerPlayer,
+            eliminatedRings: 0,
+          }),
+          createTestPlayer(2, {
+            ringsInHand: BOARD_CONFIGS.hexagonal.ringsPerPlayer,
+            eliminatedRings: 0,
+          }),
+          createTestPlayer(3, {
+            ringsInHand: BOARD_CONFIGS.hexagonal.ringsPerPlayer,
+            eliminatedRings: 0,
+          }),
         ],
         timeControl,
         false

@@ -1443,18 +1443,19 @@ def train_model(
                 )
     elif model_version == 'v3':
         # V3 architecture with spatial policy heads and rank distribution output
+        v3_num_players = MAX_PLAYERS if multi_player else num_players
         model = RingRiftCNN_v3(
             board_size=board_size,
             in_channels=14,  # 14 spatial feature channels per frame
             global_features=20,  # Must match _extract_features() which returns 20 globals
             history_length=config.history_length,
             policy_size=policy_size,
-            num_players=num_players,
+            num_players=v3_num_players,
         )
         if not distributed or is_main_process():
             logger.info(
                 f"Initializing RingRiftCNN_v3 with board_size={board_size}, "
-                f"policy_size={policy_size}, num_players={num_players}"
+                f"policy_size={policy_size}, num_players={v3_num_players}"
             )
     elif multi_player:
         # Multi-player mode: use RingRiftCNN_v2 with multi-player value loss
@@ -1689,6 +1690,20 @@ def train_model(
                     "Dataset contains multi-player value vectors (values_mp). "
                     "Consider using --multi-player flag for multi-player training."
                 )
+        # If multi-player training was requested but streaming data does not
+        # include vector value targets, fail fast to avoid silent shape issues.
+        if multi_player and not train_streaming_loader.has_multi_player_values:
+            if not distributed or is_main_process():
+                logger.error(
+                    "multi_player=True but streaming dataset does not contain "
+                    "'values_mp' / 'num_players'. Regenerate data with "
+                    "multi-player value targets or disable --multi-player."
+                )
+            if distributed:
+                cleanup_distributed()
+            raise ValueError(
+                "Multi-player training requested but streaming dataset lacks values_mp."
+            )
 
         train_sampler = None
         train_size = train_samples
@@ -1945,7 +1960,13 @@ def train_model(
                 use_amp = device.type == 'cuda'
 
                 with torch.amp.autocast('cuda', enabled=use_amp):
-                    value_pred, policy_pred = model(features, globals_vec)
+                    out = model(features, globals_vec)
+                    # V3 models return (values, policy_logits, rank_dist). We
+                    # ignore the rank distribution for v1/v2 training losses.
+                    if isinstance(out, tuple) and len(out) == 3:
+                        value_pred, policy_pred, _rank_dist_pred = out
+                    else:
+                        value_pred, policy_pred = out
 
                     # Apply log_softmax to policy prediction for KLDivLoss
                     policy_log_probs = torch.log_softmax(policy_pred, dim=1)
@@ -1962,7 +1983,16 @@ def train_model(
                             value_pred, value_targets, effective_num_players
                         )
                     else:
-                        value_loss = value_criterion(value_pred, value_targets)
+                        # Scalar training uses only the first value head,
+                        # matching NeuralNetAI.evaluate_batch behaviour.
+                        if value_pred.ndim == 2:
+                            value_pred_scalar = value_pred[:, 0]
+                        else:
+                            value_pred_scalar = value_pred
+                        value_loss = value_criterion(
+                            value_pred_scalar.reshape(-1),
+                            value_targets.reshape(-1),
+                        )
 
                     policy_loss = policy_criterion(
                         policy_log_probs,
@@ -2074,7 +2104,11 @@ def train_model(
                         val_batch_num_players = val_batch_num_players.to(device)
 
                     # For DDP, forward through the wrapped model
-                    value_pred, policy_pred = model(features, globals_vec)
+                    out = model(features, globals_vec)
+                    if isinstance(out, tuple) and len(out) == 3:
+                        value_pred, policy_pred, _rank_dist_pred = out
+                    else:
+                        value_pred, policy_pred = out
 
                     policy_log_probs = torch.log_softmax(policy_pred, dim=1)
 
@@ -2088,7 +2122,14 @@ def train_model(
                             value_pred, value_targets, effective_val_num_players
                         )
                     else:
-                        v_loss = value_criterion(value_pred, value_targets)
+                        if value_pred.ndim == 2:
+                            value_pred_scalar = value_pred[:, 0]
+                        else:
+                            value_pred_scalar = value_pred
+                        v_loss = value_criterion(
+                            value_pred_scalar.reshape(-1),
+                            value_targets.reshape(-1),
+                        )
                     p_loss = policy_criterion(
                         policy_log_probs, policy_targets
                     )

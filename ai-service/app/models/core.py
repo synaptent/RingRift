@@ -79,12 +79,14 @@ class MoveType(str, Enum):
 
     # Line Processing
     PROCESS_LINE = "process_line"
+    # Legacy alias for CHOOSE_LINE_OPTION; retained for replay compatibility.
     CHOOSE_LINE_REWARD = "choose_line_reward"
     # Forced no-op: player entered line_processing but had no lines or line
     # rewards. Mirrors TS MoveType 'no_line_action' and RR-CANON-R075.
     NO_LINE_ACTION = "no_line_action"
 
     # Territory Processing
+    # Legacy alias for CHOOSE_TERRITORY_OPTION; retained for replay compatibility.
     PROCESS_TERRITORY_REGION = "process_territory_region"
     # Voluntary skip: player has eligible regions but chooses not to
     # process them.
@@ -108,6 +110,7 @@ class MoveType(str, Enum):
 
     # Canonical choice moves
     CHOOSE_LINE_OPTION = "choose_line_option"
+    # Canonical territory region decision (legacy alias: PROCESS_TERRITORY_REGION).
     CHOOSE_TERRITORY_OPTION = "choose_territory_option"
 
     # Recovery (RR-CANON-R110–R115)
@@ -249,8 +252,8 @@ class Move(BaseModel):
     - For capture moves, `capture_target` identifies the overtaken stack.
     - For line/territory decision moves, `formed_lines` and
       `disconnected_regions` allow the Python parity harness to
-      construct canonical `process_line` and `process_territory_region`
-      Moves that match the TS engines.
+      construct canonical `process_line` and `choose_territory_option`
+      Moves that match the TS engines (legacy alias: `process_territory_region`).
     """
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 

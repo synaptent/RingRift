@@ -58,7 +58,7 @@ class TestBoardConfigParity:
 
     @pytest.mark.parametrize("board_type,expected_rings", [
         (BoardType.SQUARE8, 18),
-        (BoardType.SQUARE19, 48),
+        (BoardType.SQUARE19, 60),
         (BoardType.HEXAGONAL, 72),
     ])
     def test_rings_per_player_matches(self, board_type, expected_rings):
@@ -69,16 +69,16 @@ class TestBoardConfigParity:
     @pytest.mark.parametrize("board_type,num_players,expected_threshold", [
         # 2-player: threshold = ringsPerPlayer
         (BoardType.SQUARE8, 2, 18),
-        (BoardType.SQUARE19, 2, 48),
+        (BoardType.SQUARE19, 2, 60),
         (BoardType.HEXAGONAL, 2, 72),
-        # 3-player: threshold = round(ringsPerPlayer * 5/3)
-        (BoardType.SQUARE8, 3, 30),
+        # 3-player: threshold = round(ringsPerPlayer * 4/3)
+        (BoardType.SQUARE8, 3, 24),
         (BoardType.SQUARE19, 3, 80),
-        (BoardType.HEXAGONAL, 3, 120),
-        # 4-player: threshold = round(ringsPerPlayer * 7/3)
-        (BoardType.SQUARE8, 4, 42),
-        (BoardType.SQUARE19, 4, 112),
-        (BoardType.HEXAGONAL, 4, 168),
+        (BoardType.HEXAGONAL, 3, 96),
+        # 4-player: threshold = round(ringsPerPlayer * 5/3)
+        (BoardType.SQUARE8, 4, 30),
+        (BoardType.SQUARE19, 4, 100),
+        (BoardType.HEXAGONAL, 4, 120),
     ])
     def test_victory_threshold_matches(self, board_type, num_players, expected_threshold):
         """Verify victory threshold calculation matches RR-CANON-R061."""

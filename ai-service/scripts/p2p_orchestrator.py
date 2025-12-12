@@ -101,6 +101,7 @@ class NodeRole(str, Enum):
 class JobType(str, Enum):
     """Types of jobs nodes can run."""
     SELFPLAY = "selfplay"
+    GPU_SELFPLAY = "gpu_selfplay"  # GPU-accelerated parallel selfplay
     TRAINING = "training"
     CMAES = "cmaes"
 
@@ -1256,10 +1257,13 @@ class P2POrchestrator:
 
                 # Start jobs (max 2 at a time to avoid overwhelming)
                 for _ in range(min(needed, 2)):
+                    # Choose GPU selfplay for GPU nodes, CPU selfplay otherwise
+                    job_type = JobType.GPU_SELFPLAY if node.has_gpu else JobType.SELFPLAY
+
                     if node.node_id == self.node_id:
-                        await self._start_local_job(JobType.SELFPLAY)
+                        await self._start_local_job(job_type)
                     else:
-                        await self._request_remote_job(node, JobType.SELFPLAY)
+                        await self._request_remote_job(node, job_type)
 
     async def _cleanup_local_disk(self):
         """Clean up disk space on local node.
@@ -1372,6 +1376,60 @@ class P2POrchestrator:
                     self.local_jobs[job_id] = job
 
                 print(f"[P2P] Started {job_type.value} job {job_id} (PID {proc.pid})")
+                self._save_state()
+                return job
+
+            elif job_type == JobType.GPU_SELFPLAY:
+                # GPU-accelerated parallel selfplay using run_gpu_selfplay.py
+                # Only start on nodes with GPU (check done in _manage_cluster_jobs)
+                batch_size = 256 if "5090" in self.self_info.gpu_name.lower() else 128
+
+                cmd = [
+                    "python3",
+                    f"{self.ringrift_path}/ai-service/scripts/run_gpu_selfplay.py",
+                    "--num-games", "1000",
+                    "--board-size", "8" if board_type == "square8" else "19",
+                    "--num-players", str(num_players),
+                    "--batch-size", str(batch_size),
+                    "--output-dir", f"{self.ringrift_path}/ai-service/data/selfplay/gpu_{board_type}_{num_players}p",
+                ]
+
+                # Create output directory
+                output_dir = Path(f"{self.ringrift_path}/ai-service/data/selfplay/gpu_{board_type}_{num_players}p")
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                # Start process with GPU environment
+                env = os.environ.copy()
+                env["PYTHONPATH"] = f"{self.ringrift_path}/ai-service"
+                env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+                # Ensure CUDA is visible
+                if "CUDA_VISIBLE_DEVICES" not in env:
+                    env["CUDA_VISIBLE_DEVICES"] = "0"
+
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=open(output_dir / "gpu_run.log", "a"),
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    cwd=self.ringrift_path,
+                )
+
+                job = ClusterJob(
+                    job_id=job_id,
+                    job_type=job_type,
+                    node_id=self.node_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    engine_mode="gpu",
+                    pid=proc.pid,
+                    started_at=time.time(),
+                    status="running",
+                )
+
+                with self.jobs_lock:
+                    self.local_jobs[job_id] = job
+
+                print(f"[P2P] Started GPU selfplay job {job_id} (PID {proc.pid}, batch={batch_size})")
                 self._save_state()
                 return job
 

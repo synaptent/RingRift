@@ -1,6 +1,7 @@
 import { GameEngine } from '../../src/server/game/GameEngine';
 import {
   BoardType,
+  BOARD_CONFIGS,
   GameState,
   Player,
   Position,
@@ -23,9 +24,10 @@ import { territoryRuleScenarios, TerritoryRuleScenario } from './rulesMatrix';
 describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)', () => {
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
 
-  function createPlayers(): Player[] {
+  function createPlayers(boardType: BoardType): Player[] {
     // Match the shape used in GameEngine.territory.scenarios.test.ts: three
     // human players with full ringsInHand and zero eliminated/territory.
+    const ringsInHand = BOARD_CONFIGS[boardType].ringsPerPlayer;
     return [
       {
         id: 'p1',
@@ -34,7 +36,7 @@ describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)',
         playerNumber: 1,
         isReady: true,
         timeRemaining: timeControl.initialTime * 1000,
-        ringsInHand: 36,
+        ringsInHand,
         eliminatedRings: 0,
         territorySpaces: 0,
       },
@@ -45,7 +47,7 @@ describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)',
         playerNumber: 2,
         isReady: true,
         timeRemaining: timeControl.initialTime * 1000,
-        ringsInHand: 36,
+        ringsInHand,
         eliminatedRings: 0,
         territorySpaces: 0,
       },
@@ -56,7 +58,7 @@ describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)',
         playerNumber: 3,
         isReady: true,
         timeRemaining: timeControl.initialTime * 1000,
-        ringsInHand: 36,
+        ringsInHand,
         eliminatedRings: 0,
         territorySpaces: 0,
       },
@@ -74,7 +76,7 @@ describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)',
   test.skip.each<TerritoryRuleScenario>(q23Scenarios)(
     '%s → backend GameEngine territory processing respects self-elimination prerequisite',
     async (scenario) => {
-      const players = createPlayers();
+      const players = createPlayers(scenario.boardType as BoardType);
       const engine = new GameEngine(
         'rules-matrix-territory',
         scenario.boardType as BoardType,

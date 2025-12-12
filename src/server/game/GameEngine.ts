@@ -15,6 +15,7 @@ import {
   getEffectiveLineLengthThreshold,
   positionToString,
   calculateCapHeight,
+  computeRingEliminationVictoryThreshold,
   computeProgressSnapshot,
   summarizeBoard,
   hashGameState,
@@ -245,11 +246,11 @@ export class GameEngine {
       maxPlayers: players.length,
       totalRingsInPlay: boardConfig.ringsPerPlayer * players.length,
       totalRingsEliminated: 0,
-      // Per RR-CANON-R061: victoryThreshold = round((1/3) × ownStartingRings + (2/3) × opponentsCombinedStartingRings)
-      // Simplified: round(ringsPerPlayer × (1/3 + 2/3 × (numPlayers - 1)))
-      // Note: Using Math.round() to handle floating-point precision (e.g., 18 * (1/3 + 2/3*2) = 29.999... → 30)
-      victoryThreshold: Math.round(
-        boardConfig.ringsPerPlayer * (1 / 3 + (2 / 3) * (players.length - 1))
+      // Per RR-CANON-R061: victoryThreshold = round((2/3) × ownStartingRings + (1/3) × opponentsCombinedStartingRings)
+      // Simplified: round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))
+      victoryThreshold: computeRingEliminationVictoryThreshold(
+        boardConfig.ringsPerPlayer,
+        players.length
       ),
       territoryVictoryThreshold: Math.floor(boardConfig.totalSpaces / 2) + 1,
     };
@@ -1322,7 +1323,7 @@ export class GameEngine {
     *
     * - Disconnected-region detection.
     * - Q23 self-elimination gating (must control a stack outside the region).
-    * - Move ID / payload conventions for process_territory_region.
+    * - Move ID / payload conventions for choose_territory_option.
     */
   private getValidTerritoryProcessingMoves(playerNumber: number): Move[] {
     return enumerateProcessTerritoryRegionMoves(this.gameState, playerNumber);
@@ -2807,7 +2808,7 @@ export class GameEngine {
         continue;
       }
 
-      // Decision moves (process_line, process_territory_region, etc.) should
+      // Decision moves (process_line, choose_territory_option, etc.) should
       // be submitted explicitly by the client/AI and recorded in the trace.
       // Do NOT auto-apply them here, as that would cause the backend to
       // advance past phases that should be represented as discrete moves.

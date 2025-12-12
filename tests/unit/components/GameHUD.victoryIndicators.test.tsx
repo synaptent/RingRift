@@ -3,7 +3,7 @@
  *
  * Tests compliance with:
  * - RR-CANON-R172: LPS requires 2 consecutive rounds where only 1 player has real actions
- * - RR-CANON-R061: Ring elimination threshold = ringsPerPlayer (starting ring supply)
+ * - RR-CANON-R061: Ring elimination victory threshold (victoryThreshold)
  * - RR-CANON-R062: Territory threshold = floor(totalSpaces/2)+1
  */
 import React from 'react';
@@ -165,7 +165,7 @@ describe('VictoryProgressIndicator', () => {
     const viewModel = baseHudViewModel({
       victoryProgress: {
         ringElimination: {
-          threshold: 19, // Per RR-CANON-R061 for 2P square8
+          threshold: 18, // Per RR-CANON-R061 for 2P square8
           leader: { playerNumber: 1, eliminated: 3, percentage: 15 },
         },
         territory: {
@@ -183,7 +183,7 @@ describe('VictoryProgressIndicator', () => {
     const viewModel = baseHudViewModel({
       victoryProgress: {
         ringElimination: {
-          threshold: 19,
+          threshold: 18,
           leader: { playerNumber: 1, eliminated: 5, percentage: 26 },
         },
         territory: {
@@ -197,7 +197,7 @@ describe('VictoryProgressIndicator', () => {
     const indicator = screen.getByTestId('hud-victory-progress');
     expect(indicator).toBeInTheDocument();
     expect(indicator).toHaveTextContent('Rings:');
-    expect(indicator).toHaveTextContent('Alice: 5/19');
+    expect(indicator).toHaveTextContent('Alice: 5/18');
     // Territory should not show (below threshold)
     expect(indicator).not.toHaveTextContent('Territory:');
   });
@@ -206,7 +206,7 @@ describe('VictoryProgressIndicator', () => {
     const viewModel = baseHudViewModel({
       victoryProgress: {
         ringElimination: {
-          threshold: 19,
+          threshold: 18,
           leader: { playerNumber: 1, eliminated: 2, percentage: 10 },
         },
         territory: {
@@ -229,7 +229,7 @@ describe('VictoryProgressIndicator', () => {
     const viewModel = baseHudViewModel({
       victoryProgress: {
         ringElimination: {
-          threshold: 19,
+          threshold: 18,
           leader: { playerNumber: 1, eliminated: 8, percentage: 42 },
         },
         territory: {
@@ -242,7 +242,7 @@ describe('VictoryProgressIndicator', () => {
 
     const indicator = screen.getByTestId('hud-victory-progress');
     expect(indicator).toHaveTextContent('Rings:');
-    expect(indicator).toHaveTextContent('Alice: 8/19');
+    expect(indicator).toHaveTextContent('Alice: 8/18');
     expect(indicator).toHaveTextContent('Territory:');
     expect(indicator).toHaveTextContent('Alice: 12/33');
   });
@@ -251,7 +251,7 @@ describe('VictoryProgressIndicator', () => {
     const viewModel = baseHudViewModel({
       victoryProgress: {
         ringElimination: {
-          threshold: 19,
+          threshold: 18,
           leader: null,
         },
         territory: {
@@ -269,7 +269,7 @@ describe('VictoryProgressIndicator', () => {
     const viewModel = baseHudViewModel({
       victoryProgress: {
         ringElimination: {
-          threshold: 19,
+          threshold: 18,
           leader: { playerNumber: 99, eliminated: 5, percentage: 26 },
         },
         territory: {
@@ -281,6 +281,6 @@ describe('VictoryProgressIndicator', () => {
     render(<GameHUD viewModel={viewModel} timeControl={baseTimeControl} />);
 
     const indicator = screen.getByTestId('hud-victory-progress');
-    expect(indicator).toHaveTextContent('P99: 5/19');
+    expect(indicator).toHaveTextContent('P99: 5/18');
   });
 });

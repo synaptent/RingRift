@@ -272,7 +272,7 @@ describeOrSkip('FAQ Q1-Q6: Basic Mechanics', () => {
       const engine = new GameEngine(
         'faq-q3-backend',
         'square19',
-        [createTestPlayer(1, { ringsInHand: 36 }), createTestPlayer(2, { ringsInHand: 36 })],
+        [createTestPlayer(1, { ringsInHand: 60 }), createTestPlayer(2, { ringsInHand: 60 })],
         timeControl,
         false
       );
@@ -631,7 +631,7 @@ describeOrSkip('FAQ Q1-Q6: Basic Mechanics', () => {
       const engine = new GameEngine(
         'faq-q2-q3-unified-backend',
         'square19',
-        [createTestPlayer(1, { ringsInHand: 36 }), createTestPlayer(2, { ringsInHand: 36 })],
+        [createTestPlayer(1, { ringsInHand: 60 }), createTestPlayer(2, { ringsInHand: 60 })],
         timeControl,
         false
       );

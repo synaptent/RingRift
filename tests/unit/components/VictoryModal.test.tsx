@@ -303,7 +303,7 @@ describe('VictoryModal – GameEndExplanation-driven copy', () => {
     expect(screen.getByText(/Alice Wins/i)).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Victory by eliminating a number of rings equal to the starting ring supply/i
+        /Victory by Ring Elimination: eliminated rings reached the victory threshold/i
       )
     ).toBeInTheDocument();
   });

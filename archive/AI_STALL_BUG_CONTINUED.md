@@ -16,6 +16,8 @@ Changed `stack.stackHeight` to `stack.rings.length` in ring counting logic (line
 
 Player 4 stalls when it reaches EXACTLY the 36-ring cap:
 
+> **Note:** The numbers in this writeup are from a legacy hex configuration. The canonical radius-12 hex ring supply is now **72 rings per player**.
+
 ```
 [Sandbox AI Debug] Placement candidates before filtering: {"count":267,"player":4,"ringsInHand":13,"hasAnyActionFromStacks":true,"playerStacksCount":8}
 [Sandbox AI Debug] Ring supply calculation: {"player":4,"ringsOnBoard":36,"perPlayerCap":36,"remainingByCap":0,"remainingBySupply":13,"maxAvailableGlobal":0}
@@ -118,7 +120,7 @@ if (maxAvailableGlobal <= 0) {
 - Board: "Full Hex" (hexagonal)
 - Players: 4 AI players
 - Original stall reproduced when a hex AI reached the **old** 36-ring cap
-  (radius-10 hex). With the new radius-12 hex cap of **48 rings**, retest to
+  (radius-10 hex). With the canonical radius-12 hex cap of **72 rings**, retest to
   confirm the stall no longer triggers or adjust logic accordingly.
 
 ---
@@ -144,8 +146,8 @@ if (maxAvailableGlobal <= 0) {
 ## Key Variables in Stall Scenario
 
 - `current.ringsInHand`: 13 (rings still need to be placed)
-- `ringsOnBoard`: 36 (exactly at cap)
-- `perPlayerCap`: 36
+- `ringsOnBoard`: 36 (legacy example; canonical cap is 72)
+- `perPlayerCap`: 36 (legacy example; canonical cap is 72)
 - `remainingByCap`: 0 (at limit)
 - `maxAvailableGlobal`: 0 (can't place more rings)
 - `hasAnyActionFromStacks`: true (has 8 stacks with legal moves)

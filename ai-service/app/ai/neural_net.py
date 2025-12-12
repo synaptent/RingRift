@@ -1434,7 +1434,7 @@ class RingRiftCNN_v3_Lite(nn.Module):
 def multi_player_value_loss(
     pred_values: torch.Tensor,
     target_values: torch.Tensor,
-    num_players: int,
+    num_players: Union[int, torch.Tensor],
 ) -> torch.Tensor:
     """
     MSE loss for multi-player value predictions.
@@ -1448,21 +1448,85 @@ def multi_player_value_loss(
         Predicted values of shape (batch, MAX_PLAYERS).
     target_values : torch.Tensor
         Target values of shape (batch, MAX_PLAYERS).
-    num_players : int
-        Number of active players in the game (2, 3, or 4).
+    num_players : int | torch.Tensor
+        Either a single integer active player count (2, 3, or 4), or a
+        per-sample tensor of shape (batch,) with values in [1, MAX_PLAYERS].
 
     Returns
     -------
     torch.Tensor
         Scalar MSE loss averaged over active players.
     """
-    # Create mask for active players
-    mask = torch.zeros_like(target_values)
-    mask[:, :num_players] = 1.0
+    if pred_values.shape != target_values.shape:
+        raise ValueError(
+            "multi_player_value_loss expects pred_values and target_values to "
+            f"share the same shape; got pred_values={tuple(pred_values.shape)} "
+            f"target_values={tuple(target_values.shape)}."
+        )
+    if pred_values.ndim != 2:
+        raise ValueError(
+            "multi_player_value_loss expects 2D tensors of shape "
+            "(batch, max_players); got "
+            f"pred_values.ndim={pred_values.ndim}."
+        )
+
+    batch_size, max_players = target_values.shape
+
+    # Create mask for active players.
+    if isinstance(num_players, int):
+        n = int(num_players)
+        if n < 1 or n > max_players:
+            raise ValueError(
+                f"num_players must be in [1, {max_players}], got {n}."
+            )
+        mask = torch.zeros_like(target_values)
+        mask[:, :n] = 1.0
+    else:
+        num_players_tensor = num_players.to(
+            device=target_values.device,
+            dtype=torch.long,
+        )
+        if num_players_tensor.ndim == 0:
+            n = int(num_players_tensor.item())
+            if n < 1 or n > max_players:
+                raise ValueError(
+                    f"num_players must be in [1, {max_players}], got {n}."
+                )
+            mask = torch.zeros_like(target_values)
+            mask[:, :n] = 1.0
+        elif num_players_tensor.ndim == 1:
+            if int(num_players_tensor.shape[0]) != int(batch_size):
+                raise ValueError(
+                    "Per-sample num_players tensor must have shape (batch,), "
+                    f"got {tuple(num_players_tensor.shape)} for batch_size={batch_size}."
+                )
+            if torch.any(num_players_tensor < 1) or torch.any(num_players_tensor > max_players):
+                raise ValueError(
+                    "Per-sample num_players tensor contains values outside "
+                    f"[1, {max_players}]."
+                )
+
+            player_idx = torch.arange(
+                max_players,
+                device=target_values.device,
+            ).unsqueeze(0)
+            mask = (
+                player_idx < num_players_tensor.unsqueeze(1)
+            ).to(dtype=target_values.dtype)
+        else:
+            raise ValueError(
+                "Per-sample num_players tensor must be a scalar or 1D tensor; "
+                f"got ndim={num_players_tensor.ndim}."
+            )
 
     # Compute masked MSE
     squared_errors = ((pred_values - target_values) ** 2) * mask
-    loss = squared_errors.sum() / mask.sum()
+    denom = mask.sum()
+    if float(denom.item()) <= 0.0:
+        raise ValueError(
+            "multi_player_value_loss mask has zero active entries; check num_players."
+        )
+    loss = squared_errors.sum() / denom
 
     return loss
 

@@ -3,7 +3,7 @@
  *
  * Tests compliance with:
  * - RR-CANON-R172: LPS requires 2 consecutive rounds where only 1 player has real actions
- * - RR-CANON-R061: Ring elimination threshold = ringsPerPlayer (starting ring supply)
+ * - RR-CANON-R061: Ring elimination victory threshold (victoryThreshold)
  * - RR-CANON-R062: Territory threshold = floor(totalSpaces/2)+1
  */
 import React from 'react';
@@ -144,7 +144,7 @@ describe('MobileVictoryProgress', () => {
     const viewModel = baseHudViewModel({
       victoryProgress: {
         ringElimination: {
-          threshold: 19,
+          threshold: 18,
           leader: { playerNumber: 1, eliminated: 4, percentage: 21 }, // 21% < 25%
         },
         territory: {
@@ -162,7 +162,7 @@ describe('MobileVictoryProgress', () => {
     const viewModel = baseHudViewModel({
       victoryProgress: {
         ringElimination: {
-          threshold: 19,
+          threshold: 18,
           leader: { playerNumber: 1, eliminated: 5, percentage: 26 },
         },
         territory: {
@@ -175,7 +175,7 @@ describe('MobileVictoryProgress', () => {
 
     const indicator = screen.getByTestId('mobile-victory-progress');
     expect(indicator).toBeInTheDocument();
-    expect(indicator).toHaveTextContent('5/19');
+    expect(indicator).toHaveTextContent('5/18');
     // Should show only rings, not territory (below threshold)
   });
 
@@ -183,7 +183,7 @@ describe('MobileVictoryProgress', () => {
     const viewModel = baseHudViewModel({
       victoryProgress: {
         ringElimination: {
-          threshold: 19,
+          threshold: 18,
           leader: { playerNumber: 1, eliminated: 2, percentage: 10 },
         },
         territory: {
@@ -203,7 +203,7 @@ describe('MobileVictoryProgress', () => {
     const viewModel = baseHudViewModel({
       victoryProgress: {
         ringElimination: {
-          threshold: 19,
+          threshold: 18,
           leader: { playerNumber: 1, eliminated: 8, percentage: 42 },
         },
         territory: {
@@ -215,7 +215,7 @@ describe('MobileVictoryProgress', () => {
     render(<MobileGameHUD viewModel={viewModel} />);
 
     const indicator = screen.getByTestId('mobile-victory-progress');
-    expect(indicator).toHaveTextContent('8/19');
+    expect(indicator).toHaveTextContent('8/18');
     expect(indicator).toHaveTextContent('12/33');
   });
 
@@ -223,7 +223,7 @@ describe('MobileVictoryProgress', () => {
     const viewModel = baseHudViewModel({
       victoryProgress: {
         ringElimination: {
-          threshold: 19,
+          threshold: 18,
           leader: null,
         },
         territory: {

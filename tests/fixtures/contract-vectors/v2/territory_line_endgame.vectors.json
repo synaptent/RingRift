@@ -196,7 +196,7 @@
         },
         "move": {
           "id": "single-point-swing",
-          "type": "process_territory_region",
+          "type": "choose_territory_option",
           "player": 2,
           "to": {
             "x": 9,
@@ -278,7 +278,7 @@
         },
         "move": {
           "id": "decision-auto-exit",
-          "type": "process_territory_region",
+          "type": "choose_territory_option",
           "player": 1,
           "to": {
             "x": 0,

@@ -6,7 +6,7 @@
 >
 > **Inputs:** Canonical rules semantics and edge‑case analysis from [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:181), [`ringrift_complete_rules.md`](ringrift_complete_rules.md:591), [`docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md`](docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:1), and [`docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md`](docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md:184) plus UX findings in [`docs/supplementary/RULES_DOCS_UX_AUDIT.md`](docs/supplementary/RULES_DOCS_UX_AUDIT.md:23).
 >
-> **Downstream:** Implementation tasks in Code mode should treat this file and [`UX_RULES_WEIRD_STATES_SPEC.md`](docs/UX_RULES_WEIRD_STATES_SPEC.md:1), [`UX_RULES_TEACHING_SCENARIOS.md`](docs/UX_RULES_TEACHING_SCENARIOS.md:1), and [`UX_RULES_IMPROVEMENT_LOOP.md`](docs/UX_RULES_IMPROVEMENT_LOOP.md:1) as the contract for wiring telemetry and metrics.
+> **Downstream:** Implementation tasks in Code mode should treat this file and [`UX_RULES_WEIRD_STATES_SPEC.md`](docs/ux/UX_RULES_WEIRD_STATES_SPEC.md:1), [`UX_RULES_TEACHING_SCENARIOS.md`](docs/ux/UX_RULES_TEACHING_SCENARIOS.md:1), and [`UX_RULES_IMPROVEMENT_LOOP.md`](docs/ux/UX_RULES_IMPROVEMENT_LOOP.md:1) as the contract for wiring telemetry and metrics.
 
 ---
 
@@ -192,7 +192,7 @@ Emitted whenever a weird/complex rules state banner is shown in the HUD (e.g. fo
 **Required:**
 
 - `source = 'hud'`.
-- `payload.reason_code` – **must** reference a stable reason code defined in [`UX_RULES_WEIRD_STATES_SPEC.md`](docs/UX_RULES_WEIRD_STATES_SPEC.md:1) (e.g. `ANM_FE_FORCED_ELIMINATION`).
+- `payload.reason_code` – **must** reference a stable reason code defined in [`UX_RULES_WEIRD_STATES_SPEC.md`](docs/ux/UX_RULES_WEIRD_STATES_SPEC.md:1) (e.g. `ANM_FE_FORCED_ELIMINATION`).
 - `rules_context` – derived from reason code (e.g. `anm_forced_elimination`, `structural_stalemate`).
 - `overlay_session_id` – new UUID used for subsequent `weird_state_*` events related to the same occurrence.
 
@@ -248,7 +248,7 @@ Emitted by the sandbox when a curated scenario is loaded or completed.
 **Required:**
 
 - `source = 'sandbox'`.
-- `payload.scenario_id` – must match scenario ids defined in [`UX_RULES_TEACHING_SCENARIOS.md`](docs/UX_RULES_TEACHING_SCENARIOS.md:1).
+- `payload.scenario_id` – must match scenario ids defined in [`UX_RULES_TEACHING_SCENARIOS.md`](docs/ux/UX_RULES_TEACHING_SCENARIOS.md:1).
 - `payload.flow_id` (if part of a teaching flow).
 - `rules_context` – derived from scenario metadata `rulesConcept`.
 
@@ -260,7 +260,7 @@ Emitted by the sandbox when a curated scenario is loaded or completed.
 
 ### 3.9 `teaching_step_started` / `teaching_step_completed`
 
-Emitted whenever the user enters or completes a step in a multi‑step teaching flow (see [`UX_RULES_TEACHING_SCENARIOS.md`](docs/UX_RULES_TEACHING_SCENARIOS.md:1)).
+Emitted whenever the user enters or completes a step in a multi‑step teaching flow (see [`UX_RULES_TEACHING_SCENARIOS.md`](docs/ux/UX_RULES_TEACHING_SCENARIOS.md:1)).
 
 **Required:**
 
@@ -498,9 +498,9 @@ Principles:
 
 ## 8. Relationship to W‑UX‑2/3/4
 
-- [`UX_RULES_WEIRD_STATES_SPEC.md`](docs/UX_RULES_WEIRD_STATES_SPEC.md:1) defines **reason codes** and copy for weird / confusing states. `reason_code` in this file MUST match those codes exactly.
-- [`UX_RULES_TEACHING_SCENARIOS.md`](docs/UX_RULES_TEACHING_SCENARIOS.md:1) defines **scenario ids** and teaching flows; `scenario_id`, `flow_id`, and `rules_context` values in events are derived from that metadata.
-- [`UX_RULES_IMPROVEMENT_LOOP.md`](docs/UX_RULES_IMPROVEMENT_LOOP.md:1) assumes the metrics and hotspot queries described here are available and stable; any schema changes that affect:
+- [`UX_RULES_WEIRD_STATES_SPEC.md`](docs/ux/UX_RULES_WEIRD_STATES_SPEC.md:1) defines **reason codes** and copy for weird / confusing states. `reason_code` in this file MUST match those codes exactly.
+- [`UX_RULES_TEACHING_SCENARIOS.md`](docs/ux/UX_RULES_TEACHING_SCENARIOS.md:1) defines **scenario ids** and teaching flows; `scenario_id`, `flow_id`, and `rules_context` values in events are derived from that metadata.
+- [`UX_RULES_IMPROVEMENT_LOOP.md`](docs/ux/UX_RULES_IMPROVEMENT_LOOP.md:1) assumes the metrics and hotspot queries described here are available and stable; any schema changes that affect:
   - `ringrift_rules_ux_events_total`,
   - `ringrift_games_started_total`,
   - `ringrift_rules_ux_help_sessions_total`
@@ -668,4 +668,4 @@ For each high‑severity `rules_context`:
    - across the same time window before/after the change.
    - Treat reductions in reopen and resign‑after‑weird rates as evidence that the UX change improved understanding.
 
-This runbook should be used alongside the broader improvement loop in [`UX_RULES_IMPROVEMENT_LOOP.md`](docs/UX_RULES_IMPROVEMENT_LOOP.md:1), which covers scheduling, ownership, and how rules‑UX telemetry feeds back into the canonical specs and teaching surfaces.
+This runbook should be used alongside the broader improvement loop in [`UX_RULES_IMPROVEMENT_LOOP.md`](docs/ux/UX_RULES_IMPROVEMENT_LOOP.md:1), which covers scheduling, ownership, and how rules‑UX telemetry feeds back into the canonical specs and teaching surfaces.

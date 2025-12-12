@@ -871,7 +871,7 @@ export const victoryRuleScenarios: VictoryRuleScenario[] = [
       faqRefs: ['Q18', 'Q21'],
     },
     description:
-      'Ring-elimination victory on square8: a player reaches the starting ring supply (ringsPerPlayer = 18) as eliminated rings (including rings eliminated via lines, territory, disconnected regions, forced elimination, and stalemate conversion), triggering an immediate win regardless of remaining stacks or territory.',
+      'Ring-elimination victory on square8: a player reaches the ring-elimination victory threshold (18 for 2-player square8) as eliminated rings (including rings eliminated via lines, territory, disconnected regions, forced elimination, and stalemate conversion), triggering an immediate win regardless of remaining stacks or territory.',
   },
   {
     kind: 'victory',

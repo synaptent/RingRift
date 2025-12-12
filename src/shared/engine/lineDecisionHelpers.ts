@@ -330,11 +330,11 @@ export function enumerateProcessLineMoves(
  * - For a line whose length equals the board-configured minimum (`L`):
  *   - Only an implicit "collapse all" option exists; engines may choose to
  *     represent this either as a `process_line` move with no subsequent
- *     `choose_line_reward`, or as a single `choose_line_reward` move with
+ *     `choose_line_option`, or as a single `choose_line_option` move with
  *     `selection: 'COLLAPSE_ALL'`.
  * - For a line longer than `L`:
- *   - One `choose_line_reward` move with collapse-all semantics.
- *   - One or more `choose_line_reward` moves with minimum-collapse semantics
+ *   - One `choose_line_option` move with collapse-all semantics.
+ *   - One or more `choose_line_option` moves with minimum-collapse semantics
  *     and `collapsedMarkers` set to each legal contiguous segment of length
  *     `L` along the line.
  *

@@ -1106,7 +1106,7 @@
       "id": "multi_phase.line_then_multi_region_territory.square8.step2_regionB",
       "version": "v2",
       "category": "turn",
-      "description": "Step 2 of the mixed line + multi-region territory turn on square8: Player 1 processes Region B via process_territory_region.",
+      "description": "Step 2 of the mixed line + multi-region territory turn on square8: Player 1 processes Region B via choose_territory_option.",
       "tags": [
         "multi_phase",
         "turn",
@@ -1222,7 +1222,7 @@
         },
         "move": {
           "id": "square-multi-region-regionB",
-          "type": "process_territory_region",
+          "type": "choose_territory_option",
           "player": 1,
           "disconnectedRegions": [
             {
@@ -1260,7 +1260,7 @@
       "id": "multi_phase.line_then_multi_region_territory.square8.step3_regionA",
       "version": "v2",
       "category": "turn",
-      "description": "Step 3 of the mixed line + multi-region territory turn on square8: Player 1 processes Region A via process_territory_region.",
+      "description": "Step 3 of the mixed line + multi-region territory turn on square8: Player 1 processes Region A via choose_territory_option.",
       "tags": [
         "multi_phase",
         "turn",
@@ -1356,7 +1356,7 @@
         },
         "move": {
           "id": "square-multi-region-regionA",
-          "type": "process_territory_region",
+          "type": "choose_territory_option",
           "player": 1,
           "disconnectedRegions": [
             {
@@ -1470,7 +1470,7 @@
       "id": "multi_phase.line_then_multi_region_territory.square19.step2_regionB",
       "version": "v2",
       "category": "turn",
-      "description": "Mixed line + multi-region territory sequence (square19) \u2013 step 2: Player 1 processes Region B via process_territory_region.",
+      "description": "Mixed line + multi-region territory sequence (square19) \u2013 step 2: Player 1 processes Region B via choose_territory_option.",
       "tags": [
         "multi_phase",
         "turn",
@@ -1525,7 +1525,7 @@
         },
         "move": {
           "id": "square19-multi-region-regionB",
-          "type": "process_territory_region",
+          "type": "choose_territory_option",
           "player": 1,
           "disconnectedRegions": [],
           "to": {
@@ -1548,7 +1548,7 @@
       "id": "multi_phase.line_then_multi_region_territory.square19.step3_regionA",
       "version": "v2",
       "category": "turn",
-      "description": "Mixed line + multi-region territory sequence (square19) \u2013 step 3: Player 1 processes Region A via process_territory_region.",
+      "description": "Mixed line + multi-region territory sequence (square19) \u2013 step 3: Player 1 processes Region A via choose_territory_option.",
       "tags": [
         "multi_phase",
         "turn",
@@ -1603,7 +1603,7 @@
         },
         "move": {
           "id": "square19-multi-region-regionA",
-          "type": "process_territory_region",
+          "type": "choose_territory_option",
           "player": 1,
           "disconnectedRegions": [],
           "to": {
@@ -1702,7 +1702,7 @@
       "id": "multi_phase.line_then_multi_region_territory.hex.step2_regionB",
       "version": "v2",
       "category": "turn",
-      "description": "Mixed line + multi-region territory sequence (hexagonal) \u2013 step 2: Player 1 processes Region B via process_territory_region (metadata only).",
+      "description": "Mixed line + multi-region territory sequence (hexagonal) \u2013 step 2: Player 1 processes Region B via choose_territory_option (metadata only).",
       "tags": [
         "multi_phase",
         "turn",
@@ -1757,7 +1757,7 @@
         },
         "move": {
           "id": "hex-multi-region-regionB",
-          "type": "process_territory_region",
+          "type": "choose_territory_option",
           "player": 1,
           "disconnectedRegions": [],
           "to": {
@@ -1781,7 +1781,7 @@
       "id": "multi_phase.line_then_multi_region_territory.hex.step3_regionA",
       "version": "v2",
       "category": "turn",
-      "description": "Mixed line + multi-region territory sequence (hexagonal) \u2013 step 3: Player 1 processes Region A via process_territory_region (metadata only).",
+      "description": "Mixed line + multi-region territory sequence (hexagonal) \u2013 step 3: Player 1 processes Region A via choose_territory_option (metadata only).",
       "tags": [
         "multi_phase",
         "turn",
@@ -1836,7 +1836,7 @@
         },
         "move": {
           "id": "hex-multi-region-regionA",
-          "type": "process_territory_region",
+          "type": "choose_territory_option",
           "player": 1,
           "disconnectedRegions": [],
           "to": {

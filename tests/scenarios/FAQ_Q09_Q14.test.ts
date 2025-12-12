@@ -643,7 +643,7 @@ describeOrSkip('FAQ Q9-Q14: Edge Cases & Special Mechanics', () => {
       const engine = new GameEngine(
         'faq-integration-backend',
         'square19',
-        [createTestPlayer(1, { ringsInHand: 36 }), createTestPlayer(2, { ringsInHand: 36 })],
+        [createTestPlayer(1, { ringsInHand: 60 }), createTestPlayer(2, { ringsInHand: 60 })],
         timeControl,
         false
       );

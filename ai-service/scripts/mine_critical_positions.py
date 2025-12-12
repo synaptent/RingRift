@@ -41,6 +41,7 @@ from app.models import (
     TimeControl,
 )
 from app.ai.heuristic_ai import HeuristicAI
+from app.rules.core import BOARD_CONFIGS
 from app.rules.default_engine import DefaultRulesEngine
 from app.db import GameReplayDB
 
@@ -102,15 +103,9 @@ def create_game_state(board_type_str: str, seed: int) -> GameState:
     """Create initial game state for a board type."""
     board_type = BOARD_TYPE_MAP.get(board_type_str, BoardType.SQUARE8)
 
-    if board_type == BoardType.SQUARE8:
-        size = 8
-        rings_per_player = 18
-    elif board_type == BoardType.SQUARE19:
-        size = 19
-        rings_per_player = 36
-    else:
-        size = 13  # Canonical hex: size=13, radius=12
-        rings_per_player = 48
+    config = BOARD_CONFIGS.get(board_type, BOARD_CONFIGS[BoardType.SQUARE8])
+    size = config.size
+    rings_per_player = config.rings_per_player
 
     board = BoardState(
         type=board_type,

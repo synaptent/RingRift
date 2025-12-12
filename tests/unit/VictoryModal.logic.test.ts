@@ -242,7 +242,7 @@ describe('VictoryModal Logic', () => {
       {
         reason: 'ring_elimination',
         expectedTitlePattern: /Wins!/,
-        expectedDescPattern: /eliminating all opponent rings/,
+        expectedDescPattern: /victory threshold/,
       },
       {
         reason: 'territory_control',

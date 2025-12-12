@@ -312,7 +312,9 @@ function getTerritoryDecisionMovesForSandboxAI(
   // 1. Prefer explicit region‑processing moves when present, but treat
   //    skip_territory_processing as a sibling option so the AI can choose
   //    to defer additional region processing when the rules allow.
-  const regionMoves = allMoves.filter((m) => m.type === 'process_territory_region');
+  const regionMoves = allMoves.filter(
+    (m) => m.type === 'choose_territory_option' || m.type === 'process_territory_region'
+  );
   const skipMoves = allMoves.filter((m) => m.type === 'skip_territory_processing');
   if (regionMoves.length > 0 || skipMoves.length > 0) {
     return [...regionMoves, ...skipMoves];

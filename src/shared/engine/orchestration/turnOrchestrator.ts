@@ -1214,7 +1214,8 @@ export interface ProcessTurnOptions {
   /**
    * When true, even single territory regions will return a decision instead
    * of being auto-processed. This is used in replay contexts where explicit
-   * process_territory_region moves from recordings should be used.
+   * choose_territory_option moves from recordings should be used
+   * (legacy alias: process_territory_region).
    */
   skipSingleTerritoryAutoProcess?: boolean;
 
@@ -1235,6 +1236,19 @@ export interface ProcessTurnOptions {
    * resolution.
    */
   breakOnDecisionRequired?: boolean;
+
+  /**
+   * Enable legacy/parity replay tolerance.
+   *
+   * When true, the orchestrator may coerce `currentPhase` and/or `currentPlayer`
+   * to match the incoming recorded move type in order to replay legacy logs and
+   * TS↔Python parity fixtures that were produced before strict canonical phase
+   * bookkeeping was enforced.
+   *
+   * Canonical write paths should keep this **false** so that phase/move
+   * mismatches fail fast instead of being silently corrected.
+   */
+  replayCompatibility?: boolean;
 }
 
 /**
@@ -1251,134 +1265,138 @@ export function processTurn(
   move: Move,
   options?: ProcessTurnOptions
 ): ProcessTurnResult {
-  // Replay-tolerance: when the recorded move type disagrees with the current
-  // phase (e.g., territory moves applied while state says forced_elimination),
-  // coerce the phase to the canonical phase for the move type. This keeps
-  // host-level bookkeeping explicit and avoids injecting forced_elimination
-  // into territory replay, matching RR-CANON-R075/R076.
-  if (
-    state.gameStatus === 'active' &&
-    state.currentPhase === 'forced_elimination' &&
-    (move.type === 'process_territory_region' ||
-      move.type === 'choose_territory_option' ||
-      move.type === 'eliminate_rings_from_stack' ||
-      move.type === 'skip_territory_processing' ||
-      move.type === 'no_territory_action')
-  ) {
-    state = { ...state, currentPhase: 'territory_processing' as GamePhase };
-  } else if (
-    state.gameStatus === 'active' &&
-    state.currentPhase === 'forced_elimination' &&
-    (move.type === 'process_line' ||
-      move.type === 'choose_line_option' ||
-      move.type === 'choose_line_reward' ||
-      move.type === 'no_line_action')
-  ) {
-    state = { ...state, currentPhase: 'line_processing' as GamePhase };
-  } else if (
-    state.gameStatus === 'active' &&
-    state.currentPhase === 'forced_elimination' &&
-    (move.type === 'place_ring' ||
-      move.type === 'skip_placement' ||
-      move.type === 'no_placement_action')
-  ) {
-    state = { ...state, currentPhase: 'ring_placement' as GamePhase };
-  } else if (
-    // Replay-tolerance for TS/Python parity: When in territory_processing, movement,
-    // line_processing, or ring_placement and a placement move comes in for a different
-    // player, this indicates Python skipped intermediate players (who had no turn-material)
-    // and advanced to the next active player. Coerce to ring_placement and update the
-    // current player. This handles RR-CANON-R073 turn rotation and player-skip semantics.
-    state.gameStatus === 'active' &&
-    (state.currentPhase === 'territory_processing' ||
-      state.currentPhase === 'movement' ||
-      state.currentPhase === 'line_processing' ||
-      state.currentPhase === 'ring_placement') &&
-    (move.type === 'place_ring' ||
-      move.type === 'skip_placement' ||
-      move.type === 'no_placement_action') &&
-    move.player !== state.currentPlayer
-  ) {
-    state = {
-      ...state,
-      currentPhase: 'ring_placement' as GamePhase,
-      currentPlayer: move.player,
-    };
-  } else if (
-    // Replay-tolerance for TS/Python parity: When in ring_placement/movement
-    // and a forced_elimination move comes in, coerce the phase to forced_elimination.
-    // This happens when Python's phase machine recorded forced_elimination but TS's
-    // replay engine has already advanced to the next turn's start phase.
-    state.gameStatus === 'active' &&
-    (state.currentPhase === 'ring_placement' || state.currentPhase === 'movement') &&
-    move.type === 'forced_elimination'
-  ) {
-    state = { ...state, currentPhase: 'forced_elimination' as GamePhase };
-  } else if (
-    // Replay-tolerance for TS/Python parity: When in line_processing and a capture
-    // move comes in, coerce the phase back to movement/chain_capture. This happens
-    // when Python records captures with the pre-move phase (movement) but TS's
-    // post-move processing has already advanced to line_processing.
-    state.gameStatus === 'active' &&
-    state.currentPhase === 'line_processing' &&
-    (move.type === 'overtaking_capture' || move.type === 'continue_capture_segment')
-  ) {
-    // Coerce to the appropriate capture phase based on move type
-    const targetPhase = move.type === 'continue_capture_segment' ? 'chain_capture' : 'movement';
-    state = { ...state, currentPhase: targetPhase as GamePhase };
-  } else if (
-    // Replay-tolerance for TS/Python parity: When in ring_placement/movement/line_processing
-    // and a territory move comes in, coerce to territory_processing. This happens when
-    // Python records multiple territory moves or TS's bridge processing advanced past territory.
-    state.gameStatus === 'active' &&
-    (state.currentPhase === 'ring_placement' ||
-      state.currentPhase === 'movement' ||
-      state.currentPhase === 'line_processing') &&
-    (move.type === 'process_territory_region' ||
-      move.type === 'no_territory_action' ||
-      move.type === 'eliminate_rings_from_stack')
-  ) {
-    state = { ...state, currentPhase: 'territory_processing' as GamePhase };
-  } else if (
-    // Sandbox AI multi-player tolerance: When in territory_processing but a capture/movement
-    // move comes in from the next player (due to async state synchronization), coerce back to
-    // the appropriate phase and player. This happens when sandbox AI enumerates moves before
-    // the orchestrator has fully advanced through all post-move phases.
-    // Also handles no_movement_action for TS/Python parity: when Python's turn rotation advances
-    // past territory_processing but TS's post-move phases didn't run (RR-CANON-R073).
-    state.gameStatus === 'active' &&
-    state.currentPhase === 'territory_processing' &&
-    (move.type === 'overtaking_capture' ||
-      move.type === 'continue_capture_segment' ||
-      move.type === 'move_stack' ||
-      move.type === 'move_ring' ||
-      move.type === 'no_movement_action')
-  ) {
-    const targetPhase =
-      move.type === 'continue_capture_segment'
-        ? 'chain_capture'
-        : move.type === 'overtaking_capture' ||
-            move.type === 'move_stack' ||
-            move.type === 'move_ring' ||
-            move.type === 'no_movement_action'
-          ? 'movement'
-          : state.currentPhase;
-    // Also coerce the currentPlayer to match the move's player if they differ
-    const targetPlayer = move.player !== state.currentPlayer ? move.player : state.currentPlayer;
-    state = { ...state, currentPhase: targetPhase as GamePhase, currentPlayer: targetPlayer };
-  } else if (
-    // Replay-tolerance for TS/Python parity: When in movement phase but a line-processing
-    // move comes in (no_line_action, process_line, choose_line_option), coerce to line_processing.
-    // This happens when Python's post-capture processing advanced to line_processing but TS's
-    // replay stayed in movement phase due to timing differences in phase advancement.
-    state.gameStatus === 'active' &&
-    state.currentPhase === 'movement' &&
-    (move.type === 'no_line_action' ||
-      move.type === 'process_line' ||
-      move.type === 'choose_line_option' ||
-      move.type === 'choose_line_reward')
-  ) {
-    state = { ...state, currentPhase: 'line_processing' as GamePhase };
+  if (options?.replayCompatibility) {
+    // Replay-tolerance: when the recorded move type disagrees with the current
+    // phase (e.g., territory moves applied while state says forced_elimination),
+    // coerce the phase to the canonical phase for the move type. This keeps
+    // host-level bookkeeping explicit and avoids injecting forced_elimination
+    // into territory replay, matching RR-CANON-R075/R076.
+    if (
+      state.gameStatus === 'active' &&
+      state.currentPhase === 'forced_elimination' &&
+      (move.type === 'process_territory_region' ||
+        move.type === 'choose_territory_option' ||
+        move.type === 'eliminate_rings_from_stack' ||
+        move.type === 'skip_territory_processing' ||
+        move.type === 'no_territory_action')
+    ) {
+      state = { ...state, currentPhase: 'territory_processing' as GamePhase };
+    } else if (
+      state.gameStatus === 'active' &&
+      state.currentPhase === 'forced_elimination' &&
+      (move.type === 'process_line' ||
+        move.type === 'choose_line_option' ||
+        move.type === 'choose_line_reward' ||
+        move.type === 'no_line_action')
+    ) {
+      state = { ...state, currentPhase: 'line_processing' as GamePhase };
+    } else if (
+      state.gameStatus === 'active' &&
+      state.currentPhase === 'forced_elimination' &&
+      (move.type === 'place_ring' ||
+        move.type === 'skip_placement' ||
+        move.type === 'no_placement_action')
+    ) {
+      state = { ...state, currentPhase: 'ring_placement' as GamePhase };
+    } else if (
+      // Replay-tolerance for TS/Python parity: When in territory_processing, movement,
+      // line_processing, or ring_placement and a placement move comes in for a different
+      // player, this indicates Python skipped intermediate players (who had no turn-material)
+      // and advanced to the next active player. Coerce to ring_placement and update the
+      // current player. This handles RR-CANON-R073 turn rotation and player-skip semantics.
+      state.gameStatus === 'active' &&
+      (state.currentPhase === 'territory_processing' ||
+        state.currentPhase === 'movement' ||
+        state.currentPhase === 'line_processing' ||
+        state.currentPhase === 'ring_placement') &&
+      (move.type === 'place_ring' ||
+        move.type === 'skip_placement' ||
+        move.type === 'no_placement_action') &&
+      move.player !== state.currentPlayer
+    ) {
+      state = {
+        ...state,
+        currentPhase: 'ring_placement' as GamePhase,
+        currentPlayer: move.player,
+      };
+    } else if (
+      // Replay-tolerance for TS/Python parity: When in ring_placement/movement
+      // and a forced_elimination move comes in, coerce the phase to forced_elimination.
+      // This happens when Python's phase machine recorded forced_elimination but TS's
+      // replay engine has already advanced to the next turn's start phase.
+      state.gameStatus === 'active' &&
+      (state.currentPhase === 'ring_placement' || state.currentPhase === 'movement') &&
+      move.type === 'forced_elimination'
+    ) {
+      state = { ...state, currentPhase: 'forced_elimination' as GamePhase };
+    } else if (
+      // Replay-tolerance for TS/Python parity: When in line_processing and a capture
+      // move comes in, coerce the phase back to movement/chain_capture. This happens
+      // when Python records captures with the pre-move phase (movement) but TS's
+      // post-move processing has already advanced to line_processing.
+      state.gameStatus === 'active' &&
+      state.currentPhase === 'line_processing' &&
+      (move.type === 'overtaking_capture' || move.type === 'continue_capture_segment')
+    ) {
+      // Coerce to the appropriate capture phase based on move type
+      const targetPhase = move.type === 'continue_capture_segment' ? 'chain_capture' : 'movement';
+      state = { ...state, currentPhase: targetPhase as GamePhase };
+    } else if (
+      // Replay-tolerance for TS/Python parity: When in ring_placement/movement/line_processing
+      // and a territory move comes in, coerce to territory_processing. This happens when
+      // Python records multiple territory moves or TS's bridge processing advanced past territory.
+      state.gameStatus === 'active' &&
+      (state.currentPhase === 'ring_placement' ||
+        state.currentPhase === 'movement' ||
+        state.currentPhase === 'line_processing') &&
+      (move.type === 'choose_territory_option' ||
+        move.type === 'process_territory_region' ||
+        move.type === 'no_territory_action' ||
+        move.type === 'eliminate_rings_from_stack' ||
+        move.type === 'skip_territory_processing')
+    ) {
+      state = { ...state, currentPhase: 'territory_processing' as GamePhase };
+    } else if (
+      // Sandbox AI multi-player tolerance: When in territory_processing but a capture/movement
+      // move comes in from the next player (due to async state synchronization), coerce back to
+      // the appropriate phase and player. This happens when sandbox AI enumerates moves before
+      // the orchestrator has fully advanced through all post-move phases.
+      // Also handles no_movement_action for TS/Python parity: when Python's turn rotation advances
+      // past territory_processing but TS's post-move phases didn't run (RR-CANON-R073).
+      state.gameStatus === 'active' &&
+      state.currentPhase === 'territory_processing' &&
+      (move.type === 'overtaking_capture' ||
+        move.type === 'continue_capture_segment' ||
+        move.type === 'move_stack' ||
+        move.type === 'move_ring' ||
+        move.type === 'no_movement_action')
+    ) {
+      const targetPhase =
+        move.type === 'continue_capture_segment'
+          ? 'chain_capture'
+          : move.type === 'overtaking_capture' ||
+              move.type === 'move_stack' ||
+              move.type === 'move_ring' ||
+              move.type === 'no_movement_action'
+            ? 'movement'
+            : state.currentPhase;
+      // Also coerce the currentPlayer to match the move's player if they differ
+      const targetPlayer = move.player !== state.currentPlayer ? move.player : state.currentPlayer;
+      state = { ...state, currentPhase: targetPhase as GamePhase, currentPlayer: targetPlayer };
+    } else if (
+      // Replay-tolerance for TS/Python parity: When in movement phase but a line-processing
+      // move comes in (no_line_action, process_line, choose_line_option), coerce to line_processing.
+      // This happens when Python's post-capture processing advanced to line_processing but TS's
+      // replay stayed in movement phase due to timing differences in phase advancement.
+      state.gameStatus === 'active' &&
+      state.currentPhase === 'movement' &&
+      (move.type === 'no_line_action' ||
+        move.type === 'process_line' ||
+        move.type === 'choose_line_option' ||
+        move.type === 'choose_line_reward')
+    ) {
+      state = { ...state, currentPhase: 'line_processing' as GamePhase };
+    }
   }
 
   // Enforce canonical phase→MoveType mapping for ACTIVE states. This ensures
@@ -1540,7 +1558,9 @@ export function processTurn(
   // immediately after territory decisions. The next player must start in
   // ring_placement and emit no_* actions as needed.
   const suppressForcedEliminationForTerritory =
-    move.type === 'process_territory_region' || move.type === 'eliminate_rings_from_stack';
+    move.type === 'choose_territory_option' ||
+    move.type === 'process_territory_region' ||
+    move.type === 'eliminate_rings_from_stack';
 
   // If the turn is otherwise complete but the current player is blocked
   // with stacks and only a forced-elimination action is available, surface
@@ -1626,8 +1646,8 @@ export function processTurn(
         moveNumber: state.moveHistory.length + 1,
       });
     } else {
-      // Territory-phase moves (process_territory_region, no_territory_action,
-      // skip_territory_processing) have their post-move phase/player semantics
+      // Territory-phase moves (choose_territory_option, no_territory_action,
+      // skip_territory_processing; legacy alias: process_territory_region) have their post-move phase/player semantics
       // driven by the shared orchestrator + TurnStateMachine helpers
       // (onLineProcessingComplete / onTerritoryProcessingComplete), which are
       // already aligned with Python's phase_machine. To avoid double-advancing
@@ -1636,6 +1656,7 @@ export function processTurn(
       // nextPhase/nextPlayer for these moves. FSM is still used for validation
       // and for non-territory phases.
       const isTerritoryPhaseMove =
+        move.type === 'choose_territory_option' ||
         move.type === 'process_territory_region' ||
         move.type === 'no_territory_action' ||
         move.type === 'skip_territory_processing';
@@ -1656,7 +1677,8 @@ export function processTurn(
       } else if (!isTerritoryPhaseMove) {
         // Apply FSM-derived state for all **non-territory** moves.
         //
-        // For territory-processing moves themselves (process_territory_region,
+        // For territory-processing moves themselves (choose_territory_option,
+        // process_territory_region legacy alias,
         // no_territory_action, skip_territory_processing), the canonical
         // post-move behaviour is:
         //   - Recompute remaining territory regions for the active player.
@@ -2157,12 +2179,13 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
  * - line_processing:
  *     process_line, choose_line_option (legacy: choose_line_reward), no_line_action
  * - territory_processing:
- *     process_territory_region (legacy: choose_territory_option), eliminate_rings_from_stack,
+ *     choose_territory_option (legacy: process_territory_region), eliminate_rings_from_stack,
  *     skip_territory_processing, no_territory_action
  * - forced_elimination:
  *     forced_elimination
  *
- * swap_sides is permitted in any phase as a meta-move. Legacy move
+ * swap_sides is permitted in the early interactive phases (ring_placement,
+ * movement, capture, chain_capture) as a meta-move. Legacy move
  * types (line_formation, territory_claim) are accepted for historical
  * recordings but should be treated as non-canonical by hosts.
  */
@@ -2568,13 +2591,13 @@ function processPostMovePhases(
 
       if (regions.length > 1) {
         // Multiple regions: player must choose order via explicit
-        // process_territory_region moves constructed by the host.
+        // choose_territory_option moves constructed by the host.
         return {
           pendingDecision: createRegionOrderDecision(updatedState, regions),
         };
       } else if (regions.length === 1) {
         // Single region: per RR-CANON-R075/R076, the core rules layer does
-        // not auto-apply PROCESS_TERRITORY_REGION. Surface a region_order
+        // not auto-apply CHOOSE_TERRITORY_OPTION. Surface a region_order
         // decision even when there is only one region; hosts may auto-select
         // the only option for live UX but must still emit the explicit move.
         return {
@@ -2585,10 +2608,11 @@ function processPostMovePhases(
         // Per RR-CANON-R075/R076, return a pending decision requiring an explicit
         // no_territory_action move. The core rules layer does NOT auto-generate moves.
         // EXCEPTION: If the original move was already a territory-related move
-        // (no_territory_action, process_territory_region, or eliminate_rings_from_stack),
+        // (no_territory_action, choose_territory_option, or eliminate_rings_from_stack),
         // we don't need to return another pending decision - that move IS the territory phase action.
         const isTerritoryPhaseMove =
           originalMoveType === 'no_territory_action' ||
+          originalMoveType === 'choose_territory_option' ||
           originalMoveType === 'process_territory_region' ||
           originalMoveType === 'eliminate_rings_from_stack';
         if (!isTerritoryPhaseMove) {

@@ -292,7 +292,7 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
         ]
         if remaining_lines:
             # Stay in line_processing; hosts will surface the next PROCESS_LINE or
-            # CHOOSE_LINE_REWARD move.
+            # CHOOSE_LINE_OPTION move (legacy: CHOOSE_LINE_REWARD).
             game_state.current_phase = GamePhase.LINE_PROCESSING
         else:
             _on_line_processing_complete(game_state, trace_mode=trace_mode)
@@ -342,16 +342,19 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
 
         if remaining_regions:
             # Stay in territory_processing and keep the current player; hosts will
-            # surface the next PROCESS_TERRITORY_REGION decision.
+            # surface the next CHOOSE_TERRITORY_OPTION decision.
             game_state.current_phase = GamePhase.TERRITORY_PROCESSING
         else:
             _on_territory_processing_complete(game_state, trace_mode=trace_mode)
 
-    elif last_move.type == MoveType.PROCESS_TERRITORY_REGION:
-        # After processing a disconnected territory region, re-evaluate whether
-        # more territory decisions remain for the **same player**. This mirrors
-        # the TS orchestrator which stays in territory_processing until all
-        # regions are resolved.
+    elif last_move.type in (
+        MoveType.CHOOSE_TERRITORY_OPTION,
+        MoveType.PROCESS_TERRITORY_REGION,  # legacy alias
+    ):
+        # After processing a disconnected territory region (choose_territory_option;
+        # legacy alias: process_territory_region), re-evaluate whether more territory
+        # decisions remain for the **same player**. This mirrors the TS orchestrator
+        # which stays in territory_processing until all regions are resolved.
         remaining_regions = GameEngine._get_territory_processing_moves(
             game_state,
             current_player,
@@ -359,7 +362,7 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
 
         if remaining_regions:
             # Stay in territory_processing and keep the current player; hosts will
-            # surface the next PROCESS_TERRITORY_REGION decision.
+            # surface the next CHOOSE_TERRITORY_OPTION decision.
             game_state.current_phase = GamePhase.TERRITORY_PROCESSING
         else:
             # No further territory decisions remain; delegate to the shared
@@ -376,10 +379,6 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
         # this player and delegate to the canonical post-territory helper.
         _on_territory_processing_complete(game_state, trace_mode=trace_mode)
 
-    elif last_move.type in (
-        MoveType.TERRITORY_CLAIM,
-        MoveType.CHOOSE_TERRITORY_OPTION,
-    ):
-        # Territory option choices are phase-preserving; explicit turn
-        # rotation is driven by PROCESS_TERRITORY_REGION / elimination.
+    elif last_move.type == MoveType.TERRITORY_CLAIM:
+        # Legacy territory claim move; kept for replay compatibility.
         pass

@@ -188,8 +188,9 @@ def replay_game_and_find_recovery_opportunities(
 
     # Set initial rings in hand
     for p in range(1, num_players + 1):
-        rings_per_player = 36 // num_players  # Approximate
-        board.rings_in_hand[p] = rings_per_player
+        # Default to 0; prefer the authoritative initial_state player payload
+        # when available (rings_per_player depends on board type).
+        board.rings_in_hand[p] = 0
 
     # Load initial state if provided
     if initial_state:
