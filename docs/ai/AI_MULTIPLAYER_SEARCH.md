@@ -92,3 +92,21 @@ Key invariant:
    - Paranoid is a pragmatic interim. A MaxN-style value vector (or rank-aware
      scalar utility) would be the principled long-term approach once the value
      model is reliable and debuggable.
+   - **Staged plan:** after the v2 multi-player encoder + **vector value head**
+     are trained end-to-end on canonical data, add MaxN as an **optional**
+     search mode. Keep Paranoid as the default for human-facing play and
+     robustness against coalition/leader‑punish behaviour.
+   - **Promotion criteria:** only promote MaxN for a board/player‑count tier if
+     canonical tournaments show a clear strength win without introducing
+     stalling or parity/correctness regressions.
+4. **Best‑Reply Search (BRS) / Best‑Reply Reduction**
+   - Potential intermediate between Paranoid and full MaxN: each opponent ply
+     expands only that player’s single “best reply” (according to their own
+     utility), rather than a full opponent branching factor.
+   - **Why not now:** BRS is extremely evaluation‑dependent; with today’s scalar
+     heuristics/threat proxies it is unstable and will under‑model implicit
+     coalitions common in 3P/4P RingRift.
+   - **When to add:** after vector utilities exist. Treat as a
+     **config‑gated experiment** for large boards if MaxN is too expensive but
+     Paranoid is too pessimistic. Promote only if tournaments show a durable
+     strength/cost advantage.

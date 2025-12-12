@@ -1494,7 +1494,7 @@ class ZobristHash:
 **Backups**
 
 - **Value discounting for long lines:** optionally discount value by ply to prefer faster wins / delay losses.
-- **Multi‑player backup with vector values:** once v2 vector value head is canonical, back up per‑player utilities (Max‑N / Paranoid variants) instead of scalar sign‑flip hacks.
+- **Multi‑player backup with vector values:** once v2 vector value head is canonical, back up per‑player utilities using principled multi‑player backups (MaxN as baseline; Paranoid remains default for robustness; optionally evaluate Best‑Reply Search as a cheaper compromise) instead of scalar sign‑flip hacks.
 
 **Rollouts**
 
@@ -1510,7 +1510,7 @@ class ZobristHash:
 **Backups / proofs**
 
 - **Terminal proof propagation:** promote `PROVEN_WIN/LOSS/DRAW` statuses aggressively (already scaffolded via `NodeStatus`) to cut search.
-- **Vector Max‑N / Paranoid backup:** same as MCTS — switch to per‑player utilities once vector value head is live.
+- **Vector Max‑N / Paranoid backup:** same as MCTS — switch to per‑player utilities once vector value head is live, with MaxN + optional Best‑Reply Search behind config flags and Paranoid kept as the safe default.
 
 **Expansion**
 
