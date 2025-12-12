@@ -5,7 +5,7 @@
 > - Canonical list of current, code-verified issues and gaps.
 > - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
 
-**Last Updated:** December 11, 2025
+**Last Updated:** December 12, 2025
 **Status:** Code-verified assessment based on actual implementation
 **Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) · [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) · [docs/PARITY_SEED_TRIAGE.md](./docs/PARITY_SEED_TRIAGE.md)
 
@@ -870,13 +870,11 @@ These issues have been addressed but are kept here for context:
      This matches Python's `_check_victory` implementation.
 
   > **Note (Dec 2025):** `victoryLogic.ts` was removed. All victory logic is now in
-  > `src/shared/engine/aggregates/VictoryAggregate.ts`.
-  3. ✅ **TS Replay Early Termination** (`scripts/selfplay-db-ts-replay.ts:1020-1167`):
-     Added `evaluateVictory()` call after each move to detect victory mid-replay.
-     When victory is detected, emits `ts-replay-early-victory` and `ts-replay-game-ended`
-     events, then terminates replay. This matches Python's behavior of stopping
-     game progression when victory conditions are met.
-
+  > `src/shared/engine/aggregates/VictoryAggregate.ts`. 3. ✅ **TS Replay Early Termination** (`scripts/selfplay-db-ts-replay.ts:1020-1167`):
+  > Added `evaluateVictory()` call after each move to detect victory mid-replay.
+  > When victory is detected, emits `ts-replay-early-victory` and `ts-replay-game-ended`
+  > events, then terminates replay. This matches Python's behavior of stopping
+  > game progression when victory conditions are met.
   4. ✅ **Parity Checker Move Count Handling** (`ai-service/scripts/check_ts_python_replay_parity.py:734-752, 1088-1118, 1558-1563`):
      - Captures final summary from `ts-replay-game-ended` event
      - Accepts move count difference when TS terminated early due to valid victory
@@ -978,6 +976,48 @@ These issues have been addressed but are kept here for context:
   failures when replaying Python-generated games through TS engine. 4P soak
   tests now complete successfully. 3P/4P games with recovery actions now
   maintain correct `controllingPlayer` state after extraction.
+
+---
+
+## 🟡 P3 – Test Alignment Items (Dec 12, 2025)
+
+### P3.1 – Python Move Type Canonicalization
+
+**Component(s):** `ai-service/tests/parity/test_line_and_territory_scenario_parity.py`, `ai-service/tests/rules/test_fsm_fixtures.py`
+**Severity:** Low (test alignment, not production code)
+**Status:** Known test expectation mismatches after move type canonicalization
+
+**Details:**
+Recent TS engine changes canonicalized move types:
+
+- `process_territory_region` → `choose_territory_option`
+- `choose_line_reward` → `choose_line_option`
+
+Python parity tests still expect the old move type names. 10 tests in `test_line_and_territory_scenario_parity.py` and 1 test in `test_fsm_fixtures.py` fail due to this.
+
+**Impact:** Test failures only; Python engine runtime behavior unaffected. These tests verify cross-engine parity and need updating to use canonical move type names.
+
+### P3.2 – DescentAI Uncertainty Selection Tests
+
+**Component(s):** `ai-service/tests/test_descent_uncertainty_selection.py`, `ai-service/tests/test_mcts_dynamic_selection.py`
+**Severity:** Low (new AI feature tests need alignment)
+**Status:** 8 tests failing after DescentAI batched evaluation improvements
+
+**Details:**
+Recent improvements to `descent_ai.py` (async neural net evaluation, batch expansion) changed internal selection behavior. Unit tests that mock specific selection patterns need updating to match new implementation.
+
+**Impact:** Test failures only; AI gameplay quality unaffected. These are white-box tests that need realignment with improved implementation.
+
+### P3.3 – Q23 Mini-Region Territory Test
+
+**Component(s):** `ai-service/tests/test_territory_and_forced_elimination_property.py::test_territory_processing_q23_region_property`
+**Severity:** Low (edge case detection algorithm)
+**Status:** Skipped in TS, failing in Python
+
+**Details:**
+The Q23 FAQ scenario involves mini-region detection during territory processing. Both TS and Python implementations may need algorithm refinement for correct mini-region identification.
+
+**Impact:** Edge case behavior; normal gameplay unaffected.
 
 ---
 
