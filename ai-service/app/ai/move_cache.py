@@ -92,10 +92,20 @@ class MoveCache:
         }
 
     def _compute_key(self, state: 'GameState', player: int) -> str:
-        """Compute a hash key for the game state."""
+        """Compute a hash key for the game state.
+
+        CRITICAL: The cache key must include move_history length because
+        meta-moves like swap_sides (pie rule) depend on history state.
+        swap_sides is only legal once, and its eligibility is determined by
+        move_history - not by board position. Without tracking history length,
+        the cache can return stale moves that include swap_sides after it's
+        already been used.
+        """
+        history_len = len(state.move_history) if state.move_history else 0
+
         # Use Zobrist hash if available (fast)
         if state.zobrist_hash is not None:
-            return f"{state.zobrist_hash}_{player}_{state.current_phase.value}"
+            return f"{state.zobrist_hash}_{player}_{state.current_phase.value}_{history_len}"
 
         # Fallback: compute hash from board state
         board = state.board
@@ -106,6 +116,7 @@ class MoveCache:
             f"s:{board.size}",
             f"p:{player}",
             f"ph:{state.current_phase.value}",
+            f"hl:{history_len}",  # History length for swap_sides eligibility
         ]
 
         # Add stack positions (sorted for determinism)
