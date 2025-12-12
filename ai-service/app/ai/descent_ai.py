@@ -24,7 +24,7 @@ import torch
 
 from .base import BaseAI
 from .bounded_transposition_table import BoundedTranspositionTable
-from .game_state_utils import infer_num_players
+from .game_state_utils import infer_num_players, victory_progress_for_player
 from .neural_net import (
     NeuralNetAI,
     INVALID_MOVE_INDEX,
@@ -1099,12 +1099,21 @@ class DescentAI(BaseAI):
             ]
             if num_players <= 2:
                 opp_elim = sum(opp_elims)
+                val = (my_elim - opp_elim) * 0.05
             else:
-                # Multi-player: treat the most threatening opponent as the
-                # primary adversary.
-                opp_elim = max(opp_elims, default=0)
-
-            val = (my_elim - opp_elim) * 0.05
+                # Multi-player Paranoid reduction: compare victory progress
+                # (max of territory/elimination/LPS proximity) against the
+                # leading opponent.
+                my_prog = victory_progress_for_player(state, self.player_number)
+                opp_prog = max(
+                    (
+                        victory_progress_for_player(state, pid)
+                        for pid in state.players.keys()
+                        if pid != self.player_number
+                    ),
+                    default=0.0,
+                )
+                val = my_prog - opp_prog
 
         # Clamp value to (-0.99, 0.99) to reserve 1.0/-1.0 for proven
         # terminal states.

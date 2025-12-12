@@ -49,9 +49,9 @@ Key invariant:
   - **Disabled for 3P/4P** (auto-cleared) because the current NeuralNetAI
     encoding/value wiring is 2-player oriented.
 - Heuristic scalarization:
-  - Uses a simple “most threatening opponent” aggregation (currently a max over
-    opponent eliminated-ring counts) to avoid “diluting” opponent pressure by
-    summing multiple weaker opponents.
+  - Uses a “most threatening opponent” selector based on **victory progress**
+    (max of territory-control, ring-elimination, and LPS proximity) so Paranoid
+    search reacts to whichever canonical win path is closest.
 
 ### MCTSAI
 
@@ -80,8 +80,9 @@ Key invariant:
      (rank distribution / per-player values) and add canonical checkpoints for
      3P/4P.
 2. **Threat modeling**
-   - Replace DescentAI’s current “max eliminated rings” proxy with a
-     victory-proximity or NN-based “most threatening opponent” selector.
+   - Victory-progress threat selection is now used for scalarization.
+     Next step is to thread the same selector into neural-backed 3P/4P search
+     once multi-player NN value heads are promoted.
 3. **MaxN / vector-valued search**
    - Paranoid is a pragmatic interim. A MaxN-style value vector (or rank-aware
      scalar utility) would be the principled long-term approach once the value

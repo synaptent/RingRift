@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from app.ai.descent_ai import DescentAI
 from app.ai.mcts_ai import MCTSAI, MCTSNode, MCTSNodeLite
 from app.ai.minimax_ai import MinimaxAI
+from app.ai.game_state_utils import select_threat_opponent, victory_progress_for_player
 from app.models import (
     AIConfig,
     BoardState,
@@ -160,6 +161,43 @@ class TestMCTSParanoidBackprop(unittest.TestCase):
         # to the root player should flip.
         self.assertEqual(n2.wins, -10.0)
         self.assertEqual(root.wins, 10.0)
+
+
+class TestThreatOpponentSelection(unittest.TestCase):
+    def test_select_threat_opponent_prefers_territory_leader(self) -> None:
+        game_state = _make_square8_state(num_players=3)
+
+        # Player 2 is one space from territory victory.
+        game_state.players[1].territory_spaces = (
+            game_state.territory_victory_threshold - 1
+        )
+        game_state.players[1].eliminated_rings = 0
+
+        # Player 3 has some eliminations but is further from any win path.
+        game_state.players[2].eliminated_rings = 10
+        game_state.players[2].territory_spaces = 0
+
+        threat = select_threat_opponent(game_state, perspective_player_number=1)
+        self.assertEqual(threat, 2)
+
+    def test_select_threat_opponent_accounts_for_lps_proximity(self) -> None:
+        game_state = _make_square8_state(num_players=3)
+
+        # LPS threat: player 3 has already been exclusive for one round.
+        game_state.lps_consecutive_exclusive_player = 3
+        game_state.lps_consecutive_exclusive_rounds = 1
+
+        # Even if player 2 is ahead on material, LPS proximity should dominate.
+        game_state.players[1].territory_spaces = 20  # ~60% progress
+        game_state.players[1].eliminated_rings = 9   # 50% progress
+
+        threat = select_threat_opponent(game_state, perspective_player_number=1)
+        self.assertEqual(threat, 3)
+
+        self.assertGreater(
+            victory_progress_for_player(game_state, 3),
+            victory_progress_for_player(game_state, 2),
+        )
 
     def test_incremental_backprop_does_not_flip_between_opponents(self) -> None:
         class FakeMutableState:

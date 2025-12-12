@@ -1457,3 +1457,108 @@ class ZobristHash:
 3. **Cross-board validation** - Validate strength consistency across Square8, Square19, and Hex
 4. **Cloud-distributed execution** - Leverage Lambda/Vast.ai for faster tournament completion
 5. **Continuous strength monitoring** - Integrate tournament into CI for regression detection
+
+---
+
+## 11. MCTS + Descent Strength Maximization Roadmap (v2.x+)
+
+> **Purpose:** Exhaustive, future‑facing list of upgrades to push top‑tier playing strength for `MCTSAI` (D7–D8) and `DescentAI` (D9–D10).  
+> **Constraints:** All training/self‑play inputs must be canonical (`canonical_*.db` passing parity + history gates). Search must stay rules‑correct and TS↔Python‑parity‑aligned.
+
+### 11.1 Shared Search Upgrades (applies to both MCTS and Descent)
+
+**Throughput → strength**
+
+- **Async + batched NN inference:** collect leaf states across workers/threads, evaluate as GPU batches, and feed results back into the tree (higher sims/sec for same wall‑clock).
+- **Kernelized move generation:** keep pushing hot loops (valid‑move generation, line/territory filters) into Numba/CUDA paths once GPU parity is complete.
+- **Phase‑aware move ordering:** reuse encoder + heuristics to order legal moves by phase (captures/line/territory moves first), improving both pruning and tree focus.
+- **Unified transposition caching:** cache NN evals, legal moves, and terminal proofs keyed by canonical state hash; share across turns via subtree/TT reuse.
+
+**Correctness‑preserving pruning**
+
+- **Safe dominance pruning:** skip provably dominated moves within a phase (e.g., identical destinations after symmetry/rotation), guarded by parity fixtures.
+- **Early terminal proofing:** propagate proven win/loss/draw up the tree immediately to avoid wasting sims in dead subtrees.
+
+### 11.2 MCTS‑Specific Strength Upgrades
+
+**Tree policy / math**
+
+- **Dynamic `c_puct` and FPU:** make exploration constant depend on root visits/entropy; use phase‑specific FPU to prevent over‑exploring junk actions.
+- **RAVE tapering:** decay or disable RAVE as NN priors strengthen; tune `rave_k` per board/phase.
+- **Root Dirichlet noise for self‑play:** add `α`‑scaled Dirichlet noise only at root during self‑play; keep evaluation deterministic.
+- **Temperature schedule:** high temperature early turn / early game, anneal to argmax late game to sharpen endgame play.
+- **Progressive widening:** on large action spaces (square19/hex), expand only top‑K prior moves until node visit threshold is met.
+- **Virtual loss + multi‑threading:** enable parallel rollouts on CPU/GPU without collapsing onto the same branch; lock‑free or fine‑grain locks on node stats.
+- **Full transposition tree:** merge node statistics for identical states reached via different move orders (especially in chain/territory sequences).
+
+**Backups**
+
+- **Value discounting for long lines:** optionally discount value by ply to prefer faster wins / delay losses.
+- **Multi‑player backup with vector values:** once v2 vector value head is canonical, back up per‑player utilities (Max‑N / Paranoid variants) instead of scalar sign‑flip hacks.
+
+**Rollouts**
+
+- **Heuristic playout fallback:** when NN is missing or low‑confidence, run cheap heuristic rollouts to stabilize Q estimates.
+
+### 11.3 Descent‑Specific Strength Upgrades (UBFM / Best‑First)
+
+**Selection**
+
+- **Exploratory descent:** replace purely greedy best‑child descent with a soft/PUCT‑style selector to prevent local traps.
+- **Uncertainty‑aware scores:** maintain `(mean, variance)` or confidence bounds per child and descend on optimistic bounds.
+
+**Backups / proofs**
+
+- **Terminal proof propagation:** promote `PROVEN_WIN/LOSS/DRAW` statuses aggressively (already scaffolded via `NodeStatus`) to cut search.
+- **Vector Max‑N / Paranoid backup:** same as MCTS — switch to per‑player utilities once vector value head is live.
+
+**Expansion**
+
+- **Progressive widening:** mirror MCTS widening to focus on NN‑preferred candidates first.
+- **TT sharing across turns:** preserve and reuse TT entries across consecutive moves to speed convergence.
+
+### 11.4 Neural Network Upgrades to Support Search
+
+**Targets / data**
+
+- **Default to soft search targets:** always train policy on `mcts_visits` or `descent_softmax`; keep 1‑hots only for ablations.
+- **Canonical reanalysis:** periodically re‑run search with the latest NN over recent canonical games to refresh policy/value targets (AlphaZero reanalysis).
+- **Prioritized replay:** sample positions proportional to policy‑KL/value‑TD error + late‑game/rare‑phase boosts.
+- **Stronger symmetry augmentation:** full dihedral rotations/reflections for square boards; 6‑fold rotational symmetries for hex, phase‑safe only.
+- **Vector value targets (3–4p):** finish v2 dataset export + training + inference wiring and enable NN‑backed multiplayer search.
+- **Optional rank‑distribution head:** auxiliary output predicting final rank histogram for richer multiplayer supervision.
+
+**Architecture**
+
+- **Consolidate around `RingRiftCNN_v3` backbone:** increase depth/width for square19/hex; keep lite variants for latency tiers.
+- **Attention / SE blocks:** add lightweight channel/spatial attention to improve long‑range territory/line reasoning.
+- **Phase embedding:** inject a learned phase token so policy/value can specialize per phase without overfitting.
+- **Auxiliary heads:** territory‑potential / line‑completion probability heads to regularize and stabilize training.
+- **Mixed precision + `torch.compile`:** speed up training and inference to unlock more sims and larger batches.
+
+### 11.5 Self‑Play / Curriculum Strength Improvements
+
+- **Engine‑mix curriculum:** start with Descent‑heavy exploration, shift toward MCTS‑heavy fine‑tuning as policy stabilizes.
+- **Temperature + resign curriculum:** phase‑aware temperature decay; conservative resign thresholds early in training.
+- **Opponent pools / league:** keep a rolling pool of past best models and sample opponents to prevent cycling.
+- **Cross‑board warm starts:** pretrain on square8, then finetune square19/hex using shared backbone weights.
+
+### 11.6 Evaluation / Promotion Tightening (to prevent false gains)
+
+- **Significance‑gated promotion:** require Wilson/SPR T‑test confidence that win‑rate > threshold before promotion.
+- **Cross‑engine eval:** every candidate must beat both Descent and MCTS baselines at matched budgets.
+- **Cross‑board sanity:** periodic tournaments on square8/square19/hex to prevent board‑specific regressions.
+- **Nightly regression tournaments:** automate “current best vs previous best” tournaments to catch strength drift.
+
+### 11.7 Recommended Implementation Slices (Strength‑First)
+
+| Slice | Goal                                                          | Priority | Dependencies                | Primary files                                                                                       |
+| ----- | ------------------------------------------------------------- | -------- | --------------------------- | --------------------------------------------------------------------------------------------------- |
+| S11‑A | Root Dirichlet noise + temperature schedules (self‑play only) | HIGH     | None                        | `app/ai/mcts_ai.py`, `scripts/run_self_play_soak.py`                                                |
+| S11‑B | Progressive widening for square19/hex                         | HIGH     | Policy priors stable        | `app/ai/mcts_ai.py`, `app/ai/descent_ai.py`                                                         |
+| S11‑C | Async/batched NN leaf evaluation                              | HIGH     | GPU parity + batching infra | `app/ai/gpu_batch.py`, `app/ai/mcts_ai.py`, `app/ai/descent_ai.py`                                  |
+| S11‑D | Vector value head end‑to‑end + enable multiplayer NN search   | HIGH     | v2 datasets                 | `app/ai/neural_net.py`, `app/training/train.py`, `scripts/export_replay_dataset.py`, search engines |
+| S11‑E | Canonical reanalysis pipeline                                 | MED      | S11‑C                       | `scripts/run_improvement_loop.py`, `scripts/export_replay_dataset.py`                               |
+| S11‑F | Significance‑gated promotion in curriculum/tier gates         | MED      | Distributed tournaments     | `app/training/curriculum.py`, `scripts/run_tier_gate.py`                                            |
+| S11‑G | RAVE tapering + dynamic c_puct/FPU                            | MED      | S11‑A                       | `app/ai/mcts_ai.py`                                                                                 |
+| S11‑H | Uncertainty‑aware Descent selection                           | MED      | S11‑D                       | `app/ai/descent_ai.py`                                                                              |

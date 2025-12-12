@@ -38,6 +38,8 @@ from ..models import (
     GamePhase,
 )
 from ..rules.geometry import BoardGeometry
+from ..rules.core import get_rings_per_player
+from .game_state_utils import infer_num_players, select_threat_opponent
 
 logger = logging.getLogger(__name__)
 
@@ -3488,17 +3490,53 @@ class NeuralNetAI(BaseAI):
         except ValueError:
             pass
 
-        # Rings info
+        # Rings info (current-player perspective, plus a single "threat opponent"
+        # for multi-player Paranoid reductions).
         my_player = next(
-            (p for p in game_state.players if p.player_number == game_state.current_player),
-            None,
-        )
-        opp_player = next(
-            (p for p in game_state.players if p.player_number != game_state.current_player),
+            (
+                p
+                for p in game_state.players
+                if p.player_number == game_state.current_player
+            ),
             None,
         )
 
-        ring_norm = 48.0  # hex supply per player
+        opp_player = None
+        num_players = infer_num_players(game_state)
+        if num_players <= 2:
+            opp_player = next(
+                (
+                    p
+                    for p in game_state.players
+                    if p.player_number != game_state.current_player
+                ),
+                None,
+            )
+        else:
+            threat_pid = select_threat_opponent(
+                game_state, game_state.current_player
+            )
+            if threat_pid is not None:
+                opp_player = next(
+                    (
+                        p
+                        for p in game_state.players
+                        if p.player_number == threat_pid
+                    ),
+                    None,
+                )
+            if opp_player is None:
+                # Defensive fallback: pick any non-current opponent.
+                opp_player = next(
+                    (
+                        p
+                        for p in game_state.players
+                        if p.player_number != game_state.current_player
+                    ),
+                    None,
+                )
+
+        ring_norm = float(get_rings_per_player(board.type))
         if my_player:
             globals[5] = my_player.rings_in_hand / ring_norm
             globals[7] = my_player.eliminated_rings / ring_norm
