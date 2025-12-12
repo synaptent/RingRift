@@ -507,7 +507,7 @@ def build_soak_command(job: JobConfig, is_remote: bool = False) -> str:
         f"--record-db {job.output_db}",
         "--verbose 10",
         "--gc-interval 5",
-    ]
+    ])
 
     # Add memory constraints for large boards
     if job.board_type in ("square19", "hexagonal"):
