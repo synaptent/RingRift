@@ -18,6 +18,12 @@ Typical usage (from ai-service/):
     --db data/games/selfplay_square8_parity_gate.db \\
     --summary parity_gate.square8.json
 
+Progress / observability:
+  - Long-running stages stream progress to **stderr**.
+  - When ``--summary`` is set, a heartbeat refreshes the JSON with elapsed time
+    and best-effort DB row counts (games + moves). You can watch it with:
+      `tail -f parity_gate.square8.json`
+
 The intent is to make it easy to:
   - Generate fresh, canonical self-play DBs per board type, and
   - Gate training pipelines on those DBs passing basic parity checks.
@@ -97,6 +103,28 @@ def _start_heartbeat(
     stop_event = threading.Event()
     started = time.monotonic()
 
+    def _try_read_db_counts(path: Path) -> Dict[str, int]:
+        """Best-effort progress counters for the GameReplayDB SQLite file."""
+        try:
+            import sqlite3
+
+            uri = f"file:{path.as_posix()}?mode=ro"
+            conn = sqlite3.connect(uri, uri=True, timeout=0.1)
+            cur = conn.cursor()
+            counts: Dict[str, int] = {}
+            for table in ("games", "game_moves"):
+                try:
+                    cur.execute(f"SELECT COUNT(*) FROM {table}")
+                    row = cur.fetchone()
+                    if row and row[0] is not None:
+                        counts[f"db_{table}_count"] = int(row[0])
+                except Exception:
+                    continue
+            conn.close()
+            return counts
+        except Exception:
+            return {}
+
     def _beat() -> None:
         while not stop_event.wait(heartbeat_seconds):
             payload = dict(stage_payload)
@@ -110,10 +138,13 @@ def _start_heartbeat(
                     payload["heartbeat"]["db_size_bytes"] = db_path.stat().st_size
                 except OSError:
                     pass
+                payload["heartbeat"].update(_try_read_db_counts(db_path))
             _write_json(summary_path, payload)
             print(
                 f"[parity-gate] heartbeat: stage={stage_label} "
-                f"elapsed={payload['heartbeat']['elapsed_sec']}s",
+                f"elapsed={payload['heartbeat']['elapsed_sec']}s "
+                f"games={payload['heartbeat'].get('db_games_count', '?')} "
+                f"moves={payload['heartbeat'].get('db_game_moves_count', '?')}",
                 file=sys.stderr,
                 flush=True,
             )

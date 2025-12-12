@@ -345,7 +345,8 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - A legal **ring placement** move for P, as defined by RR-CANON-R080–R082, on the current board type. This is evaluated using the hypothetical effect of `place_ring` on `state` (respecting `ringsInHand[P]`, `ringsPerPlayer`, and the no-dead-placement rule), and does **not** depend on `currentPhase`; placements are considered globally available whenever they would be legal when P next enters `ring_placement`.
     - A legal **interactive move** for P in the current phase:
       - In `ring_placement`: any legal `place_ring` or explicit `skip_placement` move.
-      - In `movement`, `capture`, or `chain_capture`: any legal non-capture movement or overtaking capture segment/chain under RR-CANON-R090–R103.
+      - In `movement`: any legal non-capture movement, overtaking capture segment/chain under RR-CANON-R090–R103, and (when recovery-eligible) any legal `recovery_slide` / `skip_recovery` under RR-CANON-R110–R115.
+      - In `capture` or `chain_capture`: any legal overtaking capture segment/chain under RR-CANON-R090–R103.
       - In `line_processing`: any legal `process_line` or `choose_line_option` decision for P under RR-CANON-R120–R122.
       - In `territory_processing`: any legal `choose_territory_option` or `eliminate_rings_from_stack` decision for P under RR-CANON-R140–R145.
     - A legal **forced-elimination** action for P under RR-CANON-R100 (see RR-CANON-R205).
@@ -702,11 +703,13 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 
       ```json
       {
-        type: 'recovery_slide',
-        markerFrom: PosKey,        // source marker position
-        markerTo: PosKey,          // adjacent destination
-        extractionStack: PosKey,   // stack for buried ring extraction
-        recoveryMode: 'line' | 'fallback' | 'stack_strike'  // which success criterion was met
+        "type": "recovery_slide",
+        "from": Position,                  // source marker position
+        "to": Position,                    // adjacent destination
+        "recoveryMode": "line" | "fallback" | "stack_strike",
+        "recoveryOption": 1 | 2,           // line mode only (overlength); exact-length uses Option 1
+        "collapsePositions": Position[],   // Option 2 only (exactly lineLength positions)
+        "extractionStacks": PosKey[]       // 1 stack for Option 1/fallback/stack_strike; empty for Option 2
       }
       ```
 
@@ -720,24 +723,28 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 
     - Effect of `recovery_slide` depends on `recoveryMode`:
       - **When `recoveryMode == 'line'`:**
-        - Marker moves from `markerFrom` to `markerTo`.
+        - Marker moves from `from` to `to`.
         - Original cell becomes empty (no departure marker).
         - Line of at least `lineLength` is detected and collapsed.
-        - All markers in the line become collapsed spaces owned by P.
-        - Buried ring extracted from `extractionStack` (self-elimination for line).
-        - P's `territorySpaces` increases by line length.
-        - P's `eliminatedRingsTotal` increases by 1.
+        - If `recoveryOption == 2` (overlength only):
+          - Collapse exactly `lineLength` markers specified by `collapsePositions`.
+          - No buried ring extraction occurs (`extractionStacks` is empty).
+        - Otherwise (Option 1, including all exact-length lines):
+          - Collapse all markers in the formed line.
+          - Extract one buried ring from the single stack in `extractionStacks` (self-elimination for the recovery line).
+        - P's `territorySpaces` increases by the number of collapsed markers.
+        - P's `eliminatedRingsTotal` increases by 1 exactly when a buried ring extraction occurs (Option 1).
       - **When `recoveryMode == 'fallback'`:**
-        - Marker moves from `markerFrom` to `markerTo`.
+        - Marker moves from `from` to `to`.
         - Original cell becomes empty (no departure marker).
         - No line processing occurs.
-        - Buried ring extracted from `extractionStack` (self-elimination cost).
+        - Buried ring extracted from the single stack in `extractionStacks` (self-elimination cost).
         - P's `eliminatedRingsTotal` increases by 1.
       - **When `recoveryMode == 'stack_strike'`:**
-        - `markerTo` must be an adjacent cell that contains a stack.
-        - Marker at `markerFrom` is removed from play (it does not occupy `markerTo`).
-        - Eliminate the top ring of the attacked stack at `markerTo` and credit it to P.
-        - Buried ring extracted from `extractionStack` (recovery fallback cost).
+        - `to` must be an adjacent cell that contains a stack.
+        - Marker at `from` is removed from play (it does not occupy `to`).
+        - Eliminate the top ring of the attacked stack at `to` and credit it to P.
+        - Buried ring extracted from the single stack in `extractionStacks` (recovery fallback cost).
         - No line processing occurs.
         - P's `eliminatedRingsTotal` increases by 2 (one attacked ring + one self-elimination ring).
 
@@ -749,25 +756,18 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - If the recovery slide (line or fallback) creates disconnected territory regions per RR-CANON-R140–R142, the engine enters `territory_processing` as usual.
     - P processes each claimable region via standard `choose_territory_option` decisions.
     - Self-elimination for each territory claim uses `eliminate_rings_from_stack`:
-      - **Normal territory processing:** eliminates the entire cap (all consecutive top rings of P's colour) from a P-controlled stack outside the region.
-      - **Recovery context:** uses `eliminationMode: 'buried_extraction'` to extract P's bottommost buried ring instead of eliminating a cap.
+      - **Normal territory processing:** `eliminationContext: 'territory'` eliminates the entire cap (all consecutive top rings of P's colour) from an eligible P-controlled stack outside the region.
+      - **Recovery context:** `eliminationContext: 'recovery'` extracts one buried ring of P from a stack outside the region (stack need not be controlled by P; it must contain a buried ring of P).
 
       ```json
       {
-        type: 'eliminate_rings_from_stack',
-        targetStack: PosKey,
-        eliminationMode: 'cap' | 'buried_extraction'  // 'cap' for normal, 'buried_extraction' for recovery
+        "type": "eliminate_rings_from_stack",
+        "targetStack": PosKey,
+        "eliminationContext": "territory" | "recovery"
       }
       ```
 
-    - When `eliminationMode == 'cap'` (normal territory):
-      - Eliminate all consecutive top rings of P's colour from `targetStack`.
-      - All eliminated rings credited to P as self-eliminated.
-    - When `eliminationMode == 'buried_extraction'` (recovery):
-      - Extract P's bottommost ring from `targetStack`.
-      - Stack height decreases; rings above shift down.
-      - Ring credited to P as self-eliminated.
-    - If P has no valid elimination target (no controlled stacks outside region for normal, no buried rings outside region for recovery), that region cannot be processed and `no_territory_action` is recorded for it.
+    - If P has no valid elimination target (no eligible controlled stack outside region for normal, or no buried ring outside region for recovery), that region cannot be processed and `no_territory_action` is recorded for it.
 
   - **Turn completion:**
     - After all processing completes, victory checks per RR-CANON-R170–R173.
@@ -936,11 +936,11 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - On P's turn in that round, P has at least one legal real action available at the start of their action **and takes at least one such action**; and
       - On every other player's turns in that same round, those players have **no** legal real action available at the start of their action (they may have only forced-elimination actions, or no legal actions at all).
     - **Second round:** After the first round completes (including all line and Territory processing), on the following round P remains the only player who has taken any legal real action.
-    - **Victory declared:** After the second round completes (including all post-movement processing), and after every other seat (including empty seats with no stacks and no rings) has recorded its required no-action or forced-elimination moves for that round, P is declared the winner by last-player-standing. This happens before the first seat begins any action in a subsequent round.
+    - **Victory declared:** After the second round completes (including all post-movement processing), and after every other seat still in turn rotation (i.e., every non-permanently-eliminated player) has recorded its required no-action or forced-elimination moves for that round, P is declared the winner by last-player-standing. This happens before the first seat begins any action in a subsequent round.
   - Players who still have rings on the board (including rings buried inside mixed-colour stacks) but whose only legal actions on their turns are forced eliminations, or who have no legal actions at all, are **temporarily inactive** for last-player-standing purposes. A player is temporarily inactive on their own turns when either:
     - they control no stacks on the board and have no legal placements (because they have no rings in hand or all placements would be illegal); or
     - they do control stacks but have no legal placements, no legal moves or overtaking captures, and no other legal turn actions at all, so their only possible turn action is forced elimination (RR-CANON-R100).
-  - **Empty/temporarily inactive seats still take turns:** All seats, including those with no stacks and no rings in hand, must still traverse every phase of their turn and record the canonical no-action/FE moves required by RR-CANON-R075. There is no skipping of empty seats for LPS purposes; their turns are needed to satisfy the two full-round condition.
+  - **Empty/temporarily inactive seats still take turns:** All non-permanently-eliminated seats, including those with no stacks and no rings in hand, must still traverse every phase of their turn and record the canonical no-action/FE moves required by RR-CANON-R075. Permanently eliminated players are removed from turn rotation (RR‑CANON‑R201) and do not participate in the full-round count.
   - Temporarily inactive players prevent an LPS victory until they have been continuously in this "no real actions" state on each of their turns throughout both qualifying rounds above. A temporarily inactive player can return to full activity if they regain a real action, most commonly by gaining control of a multicolour stack whose top ring becomes their colour or by reduction of the height of a stack they control so that it can move again. If any such player regains a real action before both rounds have been completed, the last-player-standing condition is not met and must be re-established from that point.
   - References: [`ringrift_simple_human_rules.md`](ringrift_simple_human_rules.md:321) §5.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1376) §13.3.
 

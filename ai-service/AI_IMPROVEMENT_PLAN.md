@@ -1352,7 +1352,28 @@ python scripts/run_distributed_tournament.py \
   --worker-label mac-studio
 ```
 
-### 10.2.1 SSH Multi-Host Tournament Orchestration (New)
+### 10.2.1 Neural Checkpoint Compatibility (Fix)
+
+Neural tiers (D6–D10) depend on `AIConfig.nn_model_id` resolving to a compatible
+checkpoint under `ai-service/models/`.
+
+Recent failure mode:
+
+- **Checkpoint-shape mismatch** (e.g. V3 checkpoints trained with `num_players=2`)
+  loaded into a default-constructed model with `num_players=4`, triggering
+  size mismatches in `value_fc2` / `rank_dist_fc2` and causing search AIs to
+  fall back to heuristic rollouts.
+
+**Fix (2025-12-12):** `NeuralNetAI` now infers `num_players` from
+`value_fc2.weight.shape[0]` during initialization and constructs `RingRiftCNN_v2`
+/ `RingRiftCNN_v3` with matching `num_players` before loading the checkpoint.
+This restores neural evaluation for V3 checkpoints and eliminates the
+`checkpoint=212 expected=148` class of mismatches when metadata is missing.
+
+**Debug tool:** `scripts/inspect_nn_checkpoint.py` prints inferred filters,
+`num_players`, and value-head shapes for a given checkpoint/model-id.
+
+### 10.2.2 SSH Multi-Host Tournament Orchestration (New)
 
 **Location:** `scripts/run_ssh_distributed_tournament.py`
 

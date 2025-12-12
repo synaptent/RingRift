@@ -350,6 +350,25 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Retries per shard on failure (default: 1).",
     )
     parser.add_argument(
+        "--run-id",
+        type=str,
+        default=None,
+        help=(
+            "Optional explicit run id (used for remote shard dir + report naming). "
+            "Defaults to a random short uuid."
+        ),
+    )
+    parser.add_argument(
+        "--output-root",
+        type=str,
+        default=None,
+        help=(
+            "Optional explicit local output root directory for this run "
+            "(writes manifest.json, shards/, tournament_<run-id>.json, report_<run-id>.json). "
+            "When unset, uses output-dir/ssh_tournament_<board>_<ts>_<run-id>."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print plan only; do not SSH.",
@@ -444,11 +463,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     assignments = assign_matchups_to_worker_slots(matchups, worker_slots, cost_fn)
 
-    run_id = str(uuid.uuid4())[:8]
+    run_id = (args.run_id or "").strip() or str(uuid.uuid4())[:8]
     started_at = time.time()
     ts = time.strftime("%Y%m%d_%H%M%S", time.gmtime(started_at))
 
-    local_root = Path(args.output_dir) / f"ssh_tournament_{args.board}_{ts}_{run_id}"
+    if args.output_root:
+        local_root = Path(args.output_root)
+    else:
+        local_root = Path(args.output_dir) / f"ssh_tournament_{args.board}_{ts}_{run_id}"
     local_shards_dir = local_root / "shards"
     local_shards_dir.mkdir(parents=True, exist_ok=True)
 
@@ -617,4 +639,3 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
-

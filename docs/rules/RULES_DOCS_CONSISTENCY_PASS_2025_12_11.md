@@ -143,3 +143,41 @@ Notes:
 
 - `npm run ssot-check`
 - `pytest ai-service/tests/rules/test_fsm_parity.py`
+
+---
+
+## Follow-up Pass (2025-12-12): Recovery + Turn-Rotation Semantics Sweep (Docs + Copy)
+
+> **Goal:** Remove remaining drift around recovery reachability, turn rotation, and ANM/LPS terminology by aligning the canonical spec and all derived docs to RR‑CANON‑R110/R112/R114/R115 and RR‑CANON‑R201.
+
+### Canonical spec updates
+
+- Updated RR‑CANON‑R200 global legal actions to include recovery moves in `movement` when recovery-eligible.
+- Updated RR‑CANON‑R172 LPS wording to clarify that “full rounds” include only non‑permanently‑eliminated seats (per RR‑CANON‑R201 turn rotation).
+- Updated RR‑CANON‑R115 recovery recording semantics to:
+  - Use `from`/`to`, `recoveryMode`, `recoveryOption`, `collapsePositions`, `extractionStacks` fields.
+  - Specify recovery-context territory self‑elimination via `eliminationContext: 'recovery'` (paired with RR‑CANON‑R114).
+
+### Derived / associated docs aligned
+
+- `docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md` – replaced “fully eliminated for turn rotation” with canonical permanent elimination terminology and updated rotation expectations.
+- `docs/rules/INVARIANTS_AND_PARITY_FRAMEWORK.md` – updated formal invariant statements to allow temporarily eliminated players to remain `currentPlayer`, and redefined `INV-ANM-TURN-MATERIAL-SKIP` in terms of permanent elimination skip.
+- `docs/supplementary/rules_analysis/rules_analysis_recovery_action_interactions.md` – updated recovery semantics (global fallback, stack-strike, Option 1/2 costs) and marked projections/checklists as historical where appropriate.
+- `docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md` – clarified forbidden placement uses `no_placement_action`, not `skip_placement`.
+- `docs/ux/UX_RULES_TEACHING_GAP_ANALYSIS.md`, `docs/ux/UX_RULES_TEACHING_SCENARIOS.md` – updated teaching terminology (“permanently eliminated”).
+- `docs/planning/WAVE_2025_12.md` – clarified legacy replay notes about “skipping players with no turn-material”.
+- `ai-service/docs/SELFPLAY_ANALYSIS_REPORT_2025_12_10.md` – added a prominent “resolved” banner so the historical recovery contradiction isn’t treated as current.
+
+### Code comment alignment (no rules changes)
+
+- Clarified recovery eligibility wording in:
+  - `src/shared/engine/playerStateHelpers.ts`
+  - `ai-service/app/rules/core.py`
+  - `ai-service/tests/parity/test_recovery_parity.py`
+- Clarified GPU recovery docstring to note current GPU implementation coverage:
+  - `ai-service/app/ai/gpu_parallel_games.py`
+
+### Follow-ups (implementation work)
+
+- **Recovery→Territory payment (RR‑CANON‑R114):** Implement recovery-context territory self-elimination (buried extraction) for `territory_processing` when a recovery slide creates a disconnection; thread `eliminationContext: 'recovery'` through TS+Python move models + validators and add parity tests.
+- **GPU recovery parity:** If GPU self-play is used for canonical data, implement stack‑strike recovery in the GPU batch engine (or explicitly gate GPU mode as non‑canonical).

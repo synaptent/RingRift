@@ -2618,6 +2618,7 @@ class NeuralNetAI(BaseAI):
         # checkpoint=212 vs expected=148) when metadata cannot be read.
         num_res_blocks = 12
         num_filters = 192
+        num_players_override = 4
         policy_size_override: Optional[int] = None
         model_class_name: Optional[str] = None
         memory_tier_override: Optional[str] = None
@@ -2636,6 +2637,7 @@ class NeuralNetAI(BaseAI):
                         if isinstance(cfg, dict):
                             num_res_blocks = int(cfg.get("num_res_blocks") or num_res_blocks)
                             num_filters = int(cfg.get("num_filters") or num_filters)
+                            num_players_override = int(cfg.get("num_players") or num_players_override)
                             policy_size_override = (
                                 int(cfg.get("policy_size"))
                                 if cfg.get("policy_size") is not None
@@ -2717,6 +2719,27 @@ class NeuralNetAI(BaseAI):
                                 )
                                 num_filters = inferred_filters
 
+                        # Infer num_players from the value head when metadata is absent.
+                        #
+                        # V2 checkpoints are typically trained with num_players=4 even for 2p,
+                        # but V3 checkpoints may be trained with num_players matching the
+                        # target configuration (e.g. 2p → value_fc2.out_features == 2).
+                        #
+                        # If we initialize the model with the wrong num_players, we will hit
+                        # shape mismatches for value_fc2 / rank_dist_fc2 and neural tiers will
+                        # silently fall back to heuristic rollouts in search AIs.
+                        value_fc2_weight = state_dict.get("value_fc2.weight")
+                        if value_fc2_weight is not None and hasattr(value_fc2_weight, "shape"):
+                            inferred_players = int(value_fc2_weight.shape[0])
+                            if inferred_players in (2, 3, 4) and inferred_players != num_players_override:
+                                logger.warning(
+                                    "Checkpoint metadata num_players=%s disagrees with weights (%s); "
+                                    "using inferred value.",
+                                    num_players_override,
+                                    inferred_players,
+                                )
+                                num_players_override = inferred_players
+
                         # Infer policy_size when metadata is absent (common for legacy exports).
                         if policy_size_override is None:
                             policy_fc2_weight = state_dict.get("policy_fc2.weight")
@@ -2784,6 +2807,7 @@ class NeuralNetAI(BaseAI):
                 num_filters=num_filters,
                 history_length=self.history_length,
                 policy_size=policy_size_override,
+                num_players=num_players_override,
             )
         else:
             # NOTE: in_channels=14 and global_features=20 are canonical for all boards.
@@ -2933,6 +2957,37 @@ class NeuralNetAI(BaseAI):
                         msg = (
                             "Model checkpoint incompatible with current feature shape "
                             f"(value_fc1 in_features: checkpoint={actual_in}, expected={expected_in})"
+                        )
+                        if allow_fresh:
+                            logger.warning("%s; using fresh weights (allow_fresh_weights=True).", msg)
+                            return
+                        raise RuntimeError(msg)
+
+                # Guard: reject checkpoints whose value head output shape does not
+                # match the current model's num_players.
+                vf2_weight = state_dict.get("value_fc2.weight")
+                if vf2_weight is not None and hasattr(self.model, "value_fc2"):
+                    expected_out = int(getattr(self.model.value_fc2, "out_features", 0))
+                    actual_out = int(vf2_weight.shape[0])
+                    if expected_out and actual_out != expected_out:
+                        msg = (
+                            "Model checkpoint incompatible with current num_players "
+                            f"(value_fc2 out_features: checkpoint={actual_out}, expected={expected_out})"
+                        )
+                        if allow_fresh:
+                            logger.warning("%s; using fresh weights (allow_fresh_weights=True).", msg)
+                            return
+                        raise RuntimeError(msg)
+
+                # Guard: V3.1 rank distribution head depends on num_players^2.
+                rd_weight = state_dict.get("rank_dist_fc2.weight")
+                if rd_weight is not None and hasattr(self.model, "rank_dist_fc2"):
+                    expected_rd_out = int(getattr(self.model.rank_dist_fc2, "out_features", 0))
+                    actual_rd_out = int(rd_weight.shape[0])
+                    if expected_rd_out and actual_rd_out != expected_rd_out:
+                        msg = (
+                            "Model checkpoint incompatible with current num_players "
+                            f"(rank_dist_fc2 out_features: checkpoint={actual_rd_out}, expected={expected_rd_out})"
                         )
                         if allow_fresh:
                             logger.warning("%s; using fresh weights (allow_fresh_weights=True).", msg)

@@ -305,12 +305,13 @@ class Move(BaseModel):
     # Recovery-specific metadata
     recovery_option: Optional[int] = Field(None, alias="recoveryOption")
     # Recovery mode: which success criterion was met (RR-CANON-R112)
-    # "line" (a), "territory" (b), or "fallback" (c)
+    # "line" (a), "fallback" (b1), or "stack_strike" (b2)
     recovery_mode: Optional[str] = Field(None, alias="recoveryMode")
     collapse_positions: Optional[Tuple[Position, ...]] = Field(
         default=None, alias="collapsePositions"
     )
-    # Stack position keys from which to extract buried rings (for Option 1)
+    # Stack position keys from which to extract buried rings (Option 1/fallback/stack_strike).
+    # Option 2 uses no extraction (empty list).
     extraction_stacks: Optional[Tuple[str, ...]] = Field(
         default=None, alias="extractionStacks"
     )

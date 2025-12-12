@@ -167,10 +167,13 @@ def main() -> int:
 
     conv1 = state_dict.get("conv1.weight")
     value_fc1 = state_dict.get("value_fc1.weight")
+    value_fc2 = state_dict.get("value_fc2.weight")
+    rank_dist_fc2 = state_dict.get("rank_dist_fc2.weight")
     policy_fc = state_dict.get("policy_fc.weight")
 
     inferred_filters = _shape(conv1)[0] if _shape(conv1) else None
     inferred_in_features = _shape(value_fc1)[1] if _shape(value_fc1) else None
+    inferred_num_players = _shape(value_fc2)[0] if _shape(value_fc2) else None
 
     print(f"Checkpoint: {path}")
     print(f"Size: {path.stat().st_size / (1024 * 1024):.2f} MiB")
@@ -179,10 +182,14 @@ def main() -> int:
     print(f"Config.num_filters: {cfg.get('num_filters')}")
     print(f"Config.num_res_blocks: {cfg.get('num_res_blocks')}")
     print(f"Config.policy_size: {cfg.get('policy_size')}")
+    print(f"Config.num_players: {cfg.get('num_players')}")
     print(f"Config.global_features: {cfg.get('global_features')}")
     print(f"Config.history_length: {cfg.get('history_length')}")
     print(f"conv1.weight.shape: {_shape(conv1)}  (filters inferred={inferred_filters})")
     print(f"value_fc1.weight.shape: {_shape(value_fc1)}  (in_features inferred={inferred_in_features})")
+    print(f"value_fc2.weight.shape: {_shape(value_fc2)}  (num_players inferred={inferred_num_players})")
+    if rank_dist_fc2 is not None:
+        print(f"rank_dist_fc2.weight.shape: {_shape(rank_dist_fc2)}")
     print(f"policy_fc.weight.shape: {_shape(policy_fc)}")
 
     # Basic compatibility checks.
@@ -192,6 +199,14 @@ def main() -> int:
             ok = False
             print(
                 f"Mismatch: metadata num_filters={cfg['num_filters']} vs weights={inferred_filters}",
+                file=sys.stderr,
+            )
+
+    if inferred_num_players is not None and cfg.get("num_players") is not None:
+        if int(cfg["num_players"]) != int(inferred_num_players):
+            ok = False
+            print(
+                f"Mismatch: metadata num_players={cfg['num_players']} vs weights={inferred_num_players}",
                 file=sys.stderr,
             )
 
@@ -214,4 +229,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

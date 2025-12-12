@@ -1126,7 +1126,7 @@ This section captures the **single source of truth** for ring placement semantic
     - `controlsAnyStack == true` _and_ `hasAnyMoveOrCapture == false`.
   - **Optional:** `ringsInHand[P] > 0`, `controlsAnyStack == true`, and `hasAnyMoveOrCapture == true`.
 - Engines must treat these conditions as **rules-level constraints**:
-  - When placement is forbidden, the `ring_placement` phase must be skipped automatically or represented as a non-optional `skip_placement` that has no strategic choice.
+  - When placement is forbidden (`ringsInHand[P] == 0`), the player still enters `ring_placement` and records an explicit `no_placement_action` bookkeeping move, then proceeds to `movement`. Hosts must not use `skip_placement` as a stand-in for forbidden placement.
   - When placement is mandatory, hosts must _not_ offer a `skip_placement` choice.
   - When placement is optional, hosts may expose either a `place_ring` move or a `skip_placement` move.
 

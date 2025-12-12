@@ -507,9 +507,16 @@ def build_soak_command(job: JobConfig, is_remote: bool = False) -> str:
         "OMP_NUM_THREADS=1",
         "MKL_NUM_THREADS=1",
     ]
-    # Propagate experimental recovery flag if set
-    if os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "").lower() in ("1", "true"):
-        cmd_parts.append("RINGRIFT_RECOVERY_STACK_STRIKE_V1=1")
+    # Propagate recovery-stack-strike flag across hosts when explicitly set.
+    #
+    # Canonical default is enabled; setting this to 0 is a non-canonical ablation
+    # mode for baseline comparisons. For distributed runs we must make the
+    # setting explicit to avoid mixing semantics across machines.
+    raw_stack_strike = os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1")
+    if raw_stack_strike is not None:
+        raw_norm = raw_stack_strike.strip().lower()
+        enabled = raw_norm in ("1", "true", "yes", "on")
+        cmd_parts.append(f"RINGRIFT_RECOVERY_STACK_STRIKE_V1={'1' if enabled else '0'}")
     cmd_parts.extend([
         "python",
         "scripts/run_self_play_soak.py",

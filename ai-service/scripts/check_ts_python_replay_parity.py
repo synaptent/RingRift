@@ -451,7 +451,7 @@ def replay_python_post_move_summaries(
     """
     progress_every = int(os.environ.get("RINGRIFT_PARITY_PROGRESS_EVERY", "250") or "250")
     if progress_every > 0:
-        print(f"[py-replay] start {game_id}", file=sys.stderr)
+        print(f"[py-replay] start {game_id}", file=sys.stderr, flush=True)
 
     state = db.get_initial_state(game_id)
     if state is None:
@@ -491,7 +491,7 @@ def replay_python_post_move_summaries(
         )
 
         if progress_every > 0 and total_moves > 0 and (idx + 1) % progress_every == 0:
-            print(f"[py-replay] {game_id} n={idx + 1}/{total_moves}", file=sys.stderr)
+            print(f"[py-replay] {game_id} n={idx + 1}/{total_moves}", file=sys.stderr, flush=True)
 
     return summaries
 
@@ -669,7 +669,7 @@ def run_ts_replay(
 
     progress_every = int(os.environ.get("RINGRIFT_PARITY_PROGRESS_EVERY", "250") or "250")
     if progress_every > 0:
-        print(f"[ts-replay] start {game_id} ({db_path.name})", file=sys.stderr)
+        print(f"[ts-replay] start {game_id} ({db_path.name})", file=sys.stderr, flush=True)
 
     total_ts_moves = 0
 
@@ -748,7 +748,7 @@ def run_ts_replay(
             )
 
             if progress_every > 0 and total_ts_moves > 0 and k % progress_every == 0:
-                print(f"[ts-replay] {game_id} k={k}/{total_ts_moves}", file=sys.stderr)
+                print(f"[ts-replay] {game_id} k={k}/{total_ts_moves}", file=sys.stderr, flush=True)
 
             # Cross-check the explicit db_move_index emitted by the TS harness
             # against the implicit k->move_index contract (k = db_move_index + 1).

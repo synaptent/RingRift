@@ -25,6 +25,9 @@ Example:
 
 - `ringrift_v4_sq8_2p.pth` currently loads as `RingRiftCNN_v2` (192 filters),
   with `value_fc1.in_features = 212 = 192 + 20`.
+- `ringrift_v5_sq8_2p_2xh100.pth` currently loads as `RingRiftCNN_v3`
+  (architecture version `v3.1.0`, spatial policy heads). The “v5” prefix is
+  similarly a checkpoint lineage, not a Python class name.
 
 ## Usage
 
@@ -153,6 +156,19 @@ Speedup: 1.9x
   and tried to load a canonical 192-filter checkpoint. Ensure you are running
   the current `app/ai/neural_net.py` loader and that your scripts do not force
   legacy defaults / deprecated model IDs.
+
+- If you see errors like:
+  - `value_fc2 out_features: checkpoint=2 expected=4` or
+  - `rank_dist_fc2 out_features: checkpoint=4 expected=16`
+    it usually means you are trying to load a checkpoint trained for a different
+    `num_players` configuration (common with V3 checkpoints). The loader now
+    infers `num_players` from `value_fc2.weight.shape[0]` during initialization;
+    make sure your runtime has the updated loader and that `nn_model_id` resolves
+    to the intended checkpoint file.
+
+- Use `scripts/inspect_nn_checkpoint.py` to debug what a given checkpoint will
+  load as (model class, architecture version, inferred filters, inferred
+  `num_players`, and value-head shapes).
 
 - [ ] Checkpoint conversion utility (default ↔ MPS)
 - [ ] Unified checkpoint format supporting both architectures

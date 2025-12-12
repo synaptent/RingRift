@@ -268,6 +268,32 @@ class DistributedTournamentState:
 
 
 @dataclass
+class SSHTournamentRun:
+    """State for an SSH-distributed difficulty-tier tournament (leader-triggered)."""
+
+    job_id: str
+    run_id: str
+    tiers: str
+    board: str
+    games_per_matchup: int
+    pid: int = 0
+    status: str = "running"  # running, completed, failed, cancelled
+    started_at: float = 0.0
+    completed_at: float = 0.0
+    output_root: str = ""
+    manifest_path: str = ""
+    checkpoint_path: str = ""
+    report_path: str = ""
+    log_path: str = ""
+    command: List[str] = field(default_factory=list)
+    return_code: Optional[int] = None
+    error_message: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class ImprovementLoopState:
     """State for improvement loop coordination."""
     job_id: str
@@ -514,6 +540,7 @@ class P2POrchestrator:
         # Distributed job state tracking (leader-only)
         self.distributed_cmaes_state: Dict[str, DistributedCMAESState] = {}
         self.distributed_tournament_state: Dict[str, DistributedTournamentState] = {}
+        self.ssh_tournament_runs: Dict[str, SSHTournamentRun] = {}
         self.improvement_loop_state: Dict[str, ImprovementLoopState] = {}
 
         # Phase 2: Distributed data sync state
@@ -544,6 +571,7 @@ class P2POrchestrator:
         self.manifest_lock = threading.Lock()
         self.sync_lock = threading.Lock()
         self.training_lock = threading.Lock()
+        self.ssh_tournament_lock = threading.Lock()
 
         # State persistence
         self.db_path = STATE_DIR / f"{node_id}_state.db"
@@ -2383,6 +2411,214 @@ print(wins / total)
             })
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_ssh_tournament_start(self, request: web.Request) -> web.Response:
+        """Start an SSH-distributed difficulty-tier tournament (leader only).
+
+        This is a thin wrapper that runs `scripts/run_ssh_distributed_tournament.py`
+        as a subprocess and tracks its status locally on the leader node.
+        """
+        try:
+            if self.role != NodeRole.LEADER:
+                return web.json_response({
+                    "error": "Only the leader can start SSH tournaments",
+                    "leader_id": self.leader_id,
+                }, status=403)
+
+            data = await request.json()
+
+            tiers = str(data.get("tiers") or "D1-D10")
+            board = str(data.get("board") or data.get("board_type") or "square8").strip().lower()
+            if board == "hexagonal":
+                board = "hex"
+            if board not in ("square8", "square19", "hex"):
+                return web.json_response({"error": f"Invalid board: {board!r}"}, status=400)
+
+            games_per_matchup = int(data.get("games_per_matchup", 50) or 50)
+            seed = int(data.get("seed", 1) or 1)
+            think_time_scale = float(data.get("think_time_scale", 1.0) or 1.0)
+            max_moves = int(data.get("max_moves", 300) or 300)
+            wilson_confidence = float(data.get("wilson_confidence", 0.95) or 0.95)
+            nn_model_id = data.get("nn_model_id") or None
+            config_path = data.get("config") or None
+            include_nonready = bool(data.get("include_nonready", False))
+            max_parallel_per_host = data.get("max_parallel_per_host")
+            remote_output_dir = str(data.get("remote_output_dir") or "results/tournaments/ssh_shards")
+            job_timeout_sec = int(data.get("job_timeout_sec", 6 * 60 * 60) or (6 * 60 * 60))
+            retries = int(data.get("retries", 1) or 1)
+            dry_run = bool(data.get("dry_run", False))
+
+            requested_run_id = str(data.get("run_id") or "").strip()
+            job_id = requested_run_id or f"ssh_tournament_{uuid.uuid4().hex[:8]}"
+            run_id = job_id
+
+            hosts = data.get("hosts")
+            hosts_spec: Optional[str] = None
+            if isinstance(hosts, list):
+                hosts_spec = ",".join(str(h).strip() for h in hosts if str(h).strip())
+            elif isinstance(hosts, str) and hosts.strip():
+                hosts_spec = hosts.strip()
+
+            output_root = str(
+                data.get("output_root") or f"results/tournaments/p2p_orchestrator/{run_id}"
+            )
+
+            report_path = str(Path(output_root) / f"report_{run_id}.json")
+            checkpoint_path = str(Path(output_root) / f"tournament_{run_id}.json")
+            manifest_path = str(Path(output_root) / "manifest.json")
+
+            log_dir = STATE_DIR / "ssh_tournaments"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = str(log_dir / f"{run_id}.log")
+
+            cmd: List[str] = [
+                sys.executable,
+                "scripts/run_ssh_distributed_tournament.py",
+                "--tiers", tiers,
+                "--board", board,
+                "--games-per-matchup", str(games_per_matchup),
+                "--seed", str(seed),
+                "--think-time-scale", str(think_time_scale),
+                "--max-moves", str(max_moves),
+                "--wilson-confidence", str(wilson_confidence),
+                "--remote-output-dir", remote_output_dir,
+                "--job-timeout-sec", str(job_timeout_sec),
+                "--retries", str(retries),
+                "--run-id", run_id,
+                "--output-root", output_root,
+            ]
+            if nn_model_id:
+                cmd.extend(["--nn-model-id", str(nn_model_id)])
+            if config_path:
+                cmd.extend(["--config", str(config_path)])
+            if hosts_spec:
+                cmd.extend(["--hosts", hosts_spec])
+            if include_nonready:
+                cmd.append("--include-nonready")
+            if max_parallel_per_host is not None:
+                cmd.extend(["--max-parallel-per-host", str(int(max_parallel_per_host))])
+            if dry_run:
+                cmd.append("--dry-run")
+
+            env = os.environ.copy()
+            env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
+
+            cwd = os.path.join(self.ringrift_path, "ai-service")
+            with open(log_path, "ab") as log_file:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=log_file,
+                    stderr=asyncio.subprocess.STDOUT,
+                    env=env,
+                    cwd=cwd,
+                )
+
+            run_state = SSHTournamentRun(
+                job_id=job_id,
+                run_id=run_id,
+                tiers=tiers,
+                board=board,
+                games_per_matchup=games_per_matchup,
+                pid=proc.pid,
+                status="running",
+                started_at=time.time(),
+                output_root=output_root,
+                manifest_path=manifest_path,
+                checkpoint_path=checkpoint_path,
+                report_path=report_path,
+                log_path=log_path,
+                command=cmd,
+            )
+
+            with self.ssh_tournament_lock:
+                self.ssh_tournament_runs[job_id] = run_state
+
+            asyncio.create_task(self._monitor_ssh_tournament_process(job_id, proc))
+
+            return web.json_response({"success": True, "job": run_state.to_dict()})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_ssh_tournament_status(self, request: web.Request) -> web.Response:
+        """Get status of SSH-distributed tournaments."""
+        try:
+            job_id = request.query.get("job_id")
+
+            with self.ssh_tournament_lock:
+                if job_id:
+                    job = self.ssh_tournament_runs.get(job_id)
+                    if not job:
+                        return web.json_response({"error": "Tournament not found"}, status=404)
+                    return web.json_response(job.to_dict())
+
+                return web.json_response({
+                    jid: job.to_dict() for jid, job in self.ssh_tournament_runs.items()
+                })
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_ssh_tournament_cancel(self, request: web.Request) -> web.Response:
+        """Cancel a running SSH tournament (best-effort)."""
+        try:
+            if self.role != NodeRole.LEADER:
+                return web.json_response({
+                    "error": "Only the leader can cancel SSH tournaments",
+                    "leader_id": self.leader_id,
+                }, status=403)
+
+            data = await request.json()
+            job_id = data.get("job_id")
+            if not job_id:
+                return web.json_response({"error": "job_id is required"}, status=400)
+
+            with self.ssh_tournament_lock:
+                job = self.ssh_tournament_runs.get(job_id)
+            if not job:
+                return web.json_response({"error": "Tournament not found"}, status=404)
+
+            if job.status != "running":
+                return web.json_response({
+                    "success": False,
+                    "error": f"Cannot cancel tournament in status: {job.status}",
+                }, status=400)
+
+            try:
+                os.kill(job.pid, signal.SIGTERM)
+            except Exception as e:
+                return web.json_response({
+                    "success": False,
+                    "error": f"Failed to signal process: {e}",
+                }, status=500)
+
+            with self.ssh_tournament_lock:
+                job.status = "cancelled"
+                job.completed_at = time.time()
+
+            return web.json_response({"success": True, "job_id": job_id})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _monitor_ssh_tournament_process(self, job_id: str, proc) -> None:
+        """Monitor a tournament subprocess and update status."""
+        try:
+            return_code = await proc.wait()
+            with self.ssh_tournament_lock:
+                job = self.ssh_tournament_runs.get(job_id)
+                if not job:
+                    return
+                job.return_code = return_code
+                job.completed_at = time.time()
+                if job.status != "cancelled":
+                    job.status = "completed" if return_code == 0 else "failed"
+                    if return_code != 0:
+                        job.error_message = f"Process exited with code {return_code}"
+        except Exception as e:
+            with self.ssh_tournament_lock:
+                job = self.ssh_tournament_runs.get(job_id)
+                if job and job.status != "cancelled":
+                    job.status = "failed"
+                    job.completed_at = time.time()
+                    job.error_message = str(e)
 
     async def _run_distributed_tournament(self, job_id: str):
         """Main coordinator loop for distributed tournament."""
@@ -4946,6 +5182,9 @@ print(json.dumps({{
         app.router.add_post('/tournament/match', self.handle_tournament_match)
         app.router.add_get('/tournament/status', self.handle_tournament_status)
         app.router.add_post('/tournament/result', self.handle_tournament_result)
+        app.router.add_post('/tournament/ssh_start', self.handle_ssh_tournament_start)
+        app.router.add_get('/tournament/ssh_status', self.handle_ssh_tournament_status)
+        app.router.add_post('/tournament/ssh_cancel', self.handle_ssh_tournament_cancel)
 
         # Improvement loop routes
         app.router.add_post('/improvement/start', self.handle_improvement_start)
