@@ -23,6 +23,10 @@ Status tags:
 - **next** Promote true multi-player NN checkpoints:
   - Stable encoder for multi-player (not current‑player scalar).
   - Per-player value / rank‑dist interpretation for MaxN‑style utilities.
+- **next** Add optional multi-player search modes once vector utilities exist:
+  - **MaxN** (vector-valued) as the principled long-term mode.
+  - **BRS / best‑reply reduction** as a cost‑controlled intermediate.
+  - Keep **Paranoid** as default until tournaments show clear gains.
 
 ## Swap (Pie Rule) in 2P
 

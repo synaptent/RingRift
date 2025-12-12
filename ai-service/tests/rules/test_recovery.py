@@ -487,6 +487,55 @@ class TestExpandedRecovery:
         fallback_slides = [m for m in moves if m.type == MoveType.RECOVERY_SLIDE and m.recovery_mode == "fallback"]
         assert len(fallback_slides) > 0, "Should have fallback recovery slide options"
 
+    def test_stack_strike_targets_when_enabled_and_no_line(self, monkeypatch):
+        """Experimental v1: stack-strike targets appear when enabled and no line exists."""
+        from app.rules.recovery import enumerate_expanded_recovery_targets, get_expanded_recovery_moves
+
+        monkeypatch.setenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "1")
+        state = create_test_state()
+
+        # Single marker adjacent to an opponent-controlled stack; no line possible.
+        add_marker(state, Position(x=3, y=2), 1)
+        add_stack(state, Position(x=3, y=3), [2, 2])  # attacked stack controlled by P2
+        add_stack(state, Position(x=0, y=0), [1, 2])  # buried P1 ring for extraction
+
+        targets = enumerate_expanded_recovery_targets(state, 1)
+        strike_targets = [t for t in targets if t.recovery_mode == "stack_strike"]
+        assert len(strike_targets) > 0
+
+        moves = get_expanded_recovery_moves(state, 1)
+        strike_moves = [m for m in moves if m.type == MoveType.RECOVERY_SLIDE and m.recovery_mode == "stack_strike"]
+        assert len(strike_moves) > 0
+
+    def test_apply_stack_strike_eliminates_top_ring_and_sacrifices_marker(self, monkeypatch):
+        """Experimental v1: applying stack-strike removes marker and top ring."""
+        from app.rules.recovery import apply_recovery_slide
+
+        monkeypatch.setenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "1")
+        state = create_test_state()
+        add_marker(state, Position(x=3, y=2), 1)
+        add_stack(state, Position(x=3, y=3), [2, 2])  # attacked stack
+        add_stack(state, Position(x=0, y=0), [1, 2])  # extraction stack (buried P1)
+
+        move = Move(
+            id="recovery-stack-strike-test",
+            type=MoveType.RECOVERY_SLIDE,
+            player=1,
+            from_pos=Position(x=3, y=2),
+            to=Position(x=3, y=3),
+            recoveryMode="stack_strike",
+            extraction_stacks=("0,0",),
+            timestamp=datetime.now(),
+            thinkTime=0,
+            moveNumber=len(state.move_history) + 1,
+        )
+
+        outcome = apply_recovery_slide(state, move)
+        assert outcome.success is True
+        assert "3,2" not in state.board.markers
+        assert "3,3" not in state.board.markers
+        assert state.board.stacks["3,3"].stack_height == 1
+
     def test_line_mode_prioritized_over_fallback(self):
         """Test that line recovery is returned instead of fallback when a line can be formed."""
         from app.rules.recovery import enumerate_expanded_recovery_targets

@@ -43,6 +43,7 @@ import { BOARD_CONFIGS, positionToString, stringToPosition } from '../../types/g
 import { getEffectiveLineLengthThreshold } from '../rulesConfig';
 import { isEligibleForRecovery, countBuriedRings } from '../playerStateHelpers';
 import { calculateCapHeight } from '../core';
+import { flagEnabled } from '../../utils/envFlags';
 
 // ===============================================================================
 // Types
@@ -59,8 +60,12 @@ export type RecoveryOption = 1 | 2;
  * Recovery mode type - which success criterion was met (RR-CANON-R112).
  * - "line": Condition (a) - completes a line of at least lineLength markers
  * - "fallback": Condition (b) - no line available, any adjacent slide is permitted (including territory disconnection)
+ * - "stack_strike": Experimental (v1) fallback-class recovery. When enabled via
+ *   RINGRIFT_RECOVERY_STACK_STRIKE_V1=1 and no line-forming recovery exists,
+ *   a player may slide a marker onto an adjacent stack to eliminate that stack's
+ *   top ring; the marker is removed. Costs 1 buried ring extraction.
  */
-export type RecoveryMode = 'line' | 'fallback';
+export type RecoveryMode = 'line' | 'fallback' | 'stack_strike';
 
 /**
  * A valid recovery slide move.
@@ -70,7 +75,7 @@ export interface RecoverySlideMove extends Move {
   player: number;
   /** Source marker position */
   from: Position;
-  /** Adjacent destination (empty cell) */
+  /** Adjacent destination (empty cell for line/fallback; stack cell for stack_strike) */
   to: Position;
   /**
    * Which recovery criterion was satisfied (RR-CANON-R112).
@@ -94,7 +99,7 @@ export interface RecoverySlideMove extends Move {
    * Stacks from which to extract buried rings for self-elimination cost.
    * - For line mode Option 1: Length must be 1
    * - For line mode Option 2: Length must be 0 (empty array)
-   * - For fallback mode: Length must be 1
+   * - For fallback/stack_strike mode: Length must be 1
    * Each string is a position key (e.g., "3,4").
    */
   extractionStacks: string[];
@@ -273,6 +278,7 @@ export function enumerateExpandedRecoverySlideTargets(
   }
 
   const directions = getAdjacencyDirections(state.board.type);
+  const stackStrikeEnabled = flagEnabled('RINGRIFT_RECOVERY_STACK_STRIKE_V1');
   const targets: ExpandedRecoverySlideTarget[] = [];
 
   for (const [posKey, marker] of state.board.markers) {
@@ -284,9 +290,26 @@ export function enumerateExpandedRecoverySlideTargets(
       const toPos = addPositions(fromPos, dir);
 
       if (!isValidPosition(toPos, state.board)) continue;
-      if (getStack(toPos, state.board)) continue;
       if (getMarker(toPos, state.board) !== undefined) continue;
       if (isCollapsedSpace(toPos, state.board)) continue;
+
+      const destStack = getStack(toPos, state.board);
+      if (destStack) {
+        if (stackStrikeEnabled) {
+          targets.push({
+            from: fromPos,
+            to: toPos,
+            formedLineLength: 1,
+            isOverlength: false,
+            option1Cost: 1,
+            option2Available: false,
+            option2Cost: 0,
+            linePositions: [],
+            recoveryMode: 'stack_strike',
+          });
+        }
+        continue;
+      }
 
       targets.push({
         from: fromPos,
@@ -334,6 +357,7 @@ export function hasAnyRecoveryMove(state: GameState, playerNumber: number): bool
   // Use early-exit enumeration
   const lineLength = getEffectiveLineLengthThreshold(state.board.type, state.players.length);
   const directions = getAdjacencyDirections(state.board.type);
+  const stackStrikeEnabled = flagEnabled('RINGRIFT_RECOVERY_STACK_STRIKE_V1');
   let validFallbackExists = false;
 
   for (const [posKey, marker] of state.board.markers) {
@@ -345,9 +369,15 @@ export function hasAnyRecoveryMove(state: GameState, playerNumber: number): bool
       const toPos = addPositions(fromPos, dir);
 
       if (!isValidPosition(toPos, state.board)) continue;
-      if (getStack(toPos, state.board)) continue;
-      if (getMarker(toPos, state.board) !== undefined) continue;
       if (isCollapsedSpace(toPos, state.board)) continue;
+      const destStack = getStack(toPos, state.board);
+      if (destStack) {
+        if (stackStrikeEnabled) {
+          validFallbackExists = true;
+        }
+        continue;
+      }
+      if (getMarker(toPos, state.board) !== undefined) continue;
 
       const lineInfo = getFormedLineInfo(state.board, fromPos, toPos, playerNumber);
       const formedLineLength = lineInfo.length;
@@ -463,6 +493,7 @@ export function validateRecoverySlide(
 ): RecoveryValidationResult {
   const { player, from, to, option, collapsePositions, extractionStacks } = move;
   const buriedRingCount = countBuriedRings(state.board, player);
+  const stackStrikeEnabled = flagEnabled('RINGRIFT_RECOVERY_STACK_STRIKE_V1');
 
   // Check eligibility
   if (!isEligibleForRecovery(state, player)) {
@@ -493,33 +524,69 @@ export function validateRecoverySlide(
     };
   }
 
-  // Check to position is empty
-  if (getStack(to, state.board)) {
-    return {
-      valid: false,
-      reason: 'Destination has a stack',
-      code: 'RECOVERY_DEST_HAS_STACK',
-    };
-  }
-  if (getMarker(to, state.board) !== undefined) {
-    return {
-      valid: false,
-      reason: 'Destination has a marker',
-      code: 'RECOVERY_DEST_HAS_MARKER',
-    };
-  }
-  if (isCollapsedSpace(to, state.board)) {
-    return {
-      valid: false,
-      reason: 'Destination is collapsed space',
-      code: 'RECOVERY_DEST_COLLAPSED',
-    };
+  const destStack = getStack(to, state.board);
+  const destMarker = getMarker(to, state.board);
+  const destCollapsed = isCollapsedSpace(to, state.board);
+
+  // Destination validation depends on mode.
+  if (move.recoveryMode === 'stack_strike') {
+    if (!stackStrikeEnabled) {
+      return {
+        valid: false,
+        reason: 'Stack-strike recovery is not enabled',
+        code: 'RECOVERY_STACK_STRIKE_DISABLED',
+      };
+    }
+    if (!destStack) {
+      return {
+        valid: false,
+        reason: 'Stack-strike recovery requires a destination stack',
+        code: 'RECOVERY_STACK_STRIKE_NO_STACK',
+      };
+    }
+    if (destMarker !== undefined) {
+      return {
+        valid: false,
+        reason: 'Destination has a marker',
+        code: 'RECOVERY_DEST_HAS_MARKER',
+      };
+    }
+    if (destCollapsed) {
+      return {
+        valid: false,
+        reason: 'Destination is collapsed space',
+        code: 'RECOVERY_DEST_COLLAPSED',
+      };
+    }
+  } else {
+    // Line/fallback require empty destination.
+    if (destStack) {
+      return {
+        valid: false,
+        reason: 'Destination has a stack',
+        code: 'RECOVERY_DEST_HAS_STACK',
+      };
+    }
+    if (destMarker !== undefined) {
+      return {
+        valid: false,
+        reason: 'Destination has a marker',
+        code: 'RECOVERY_DEST_HAS_MARKER',
+      };
+    }
+    if (destCollapsed) {
+      return {
+        valid: false,
+        reason: 'Destination is collapsed space',
+        code: 'RECOVERY_DEST_COLLAPSED',
+      };
+    }
   }
 
   // Check for fallback mode (RR-CANON-R112(b))
   // Fallback slides bypass line formation check but still cost 1 buried ring
   const { recoveryMode } = move;
-  if (recoveryMode === 'fallback') {
+  if (recoveryMode === 'fallback' || recoveryMode === 'stack_strike') {
     // RR-CANON-R112(b): fallback repositioning is only legal when no line-forming
     // recovery slide exists anywhere for this player.
     const lineTargets = enumerateRecoverySlideTargets(state, player);
@@ -763,10 +830,78 @@ export function applyRecoverySlide(
   const nextState = cloneGameState(state);
   const board = nextState.board;
 
-  // 1. Move the marker from -> to
   const fromKey = positionToString(from);
   const toKey = positionToString(to);
 
+  // Experimental stack-strike recovery (v1).
+  if (recoveryMode === 'stack_strike') {
+    if (!flagEnabled('RINGRIFT_RECOVERY_STACK_STRIKE_V1')) {
+      throw new Error('Stack-strike recovery is not enabled');
+    }
+
+    // 1. Remove the marker (sacrificed).
+    board.markers.delete(fromKey);
+
+    // 2. Eliminate top ring of the attacked stack and credit to recovering player.
+    const attackedStack = board.stacks.get(toKey);
+    if (!attackedStack || attackedStack.rings.length === 0) {
+      throw new Error('Stack-strike recovery requires a destination stack');
+    }
+
+    attackedStack.rings.shift(); // rings[0] is top ring
+    attackedStack.stackHeight--;
+
+    (nextState as GameState & { totalRingsEliminated?: number }).totalRingsEliminated =
+      ((nextState as GameState & { totalRingsEliminated?: number }).totalRingsEliminated || 0) + 1;
+    board.eliminatedRings[player] = (board.eliminatedRings[player] || 0) + 1;
+    const playerState = nextState.players.find((p) => p.playerNumber === player);
+    if (playerState) {
+      playerState.eliminatedRings++;
+    }
+
+    if (attackedStack.rings.length === 0) {
+      board.stacks.delete(toKey);
+    } else {
+      attackedStack.controllingPlayer = attackedStack.rings[0];
+      attackedStack.capHeight = calculateCapHeight(attackedStack.rings);
+    }
+
+    // 3. Extract buried ring(s) for recovery cost (same as fallback).
+    let extractionCount = 0;
+    for (const stackKey of extractionStacks) {
+      const stack = board.stacks.get(stackKey);
+      if (!stack) continue;
+
+      const ringIndex = stack.rings.lastIndexOf(player);
+      if (ringIndex === -1) continue;
+
+      stack.rings.splice(ringIndex, 1);
+      stack.stackHeight--;
+      extractionCount++;
+
+      if (playerState) {
+        playerState.eliminatedRings++;
+      }
+
+      if (stack.rings.length === 0) {
+        board.stacks.delete(stackKey);
+      } else {
+        stack.controllingPlayer = stack.rings[0];
+        stack.capHeight = calculateCapHeight(stack.rings);
+      }
+    }
+
+    return {
+      nextState,
+      formedLine: undefined,
+      collapsedPositions: [],
+      optionUsed: undefined,
+      extractionCount,
+      territoryGained: 0,
+    };
+  }
+
+  // 1. Move the marker from -> to
   board.markers.delete(fromKey);
   board.markers.set(toKey, {
     player,

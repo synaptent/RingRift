@@ -2015,7 +2015,9 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       // Only auto-select if no extraction stacks were provided in the move
       if (
         recoveryMove.extractionStacks.length === 0 &&
-        (recoveryMove.option === 1 || recoveryMove.recoveryMode === 'fallback')
+        (recoveryMove.option === 1 ||
+          recoveryMove.recoveryMode === 'fallback' ||
+          recoveryMove.recoveryMode === 'stack_strike')
       ) {
         for (const [stackKey, stack] of state.board.stacks) {
           const hasBuriedRing = stack.rings.slice(1).includes(move.player); // rings[0] is top, check all except top
@@ -3052,6 +3054,22 @@ export function getValidMoves(state: GameState): Move[] {
               thinkTime: 0,
               moveNumber,
               recoveryMode: 'fallback',
+              extractionStacks: [],
+            } as Move);
+            continue;
+          }
+          if (target.recoveryMode === 'stack_strike') {
+            // Experimental (v1) fallback-class recovery: marker sacrifice to strike adjacent stack.
+            recoveryMoves.push({
+              id: `recovery-stack-strike-${target.from.x},${target.from.y}-${target.to.x},${target.to.y}-${moveNumber}`,
+              type: 'recovery_slide',
+              player,
+              from: target.from,
+              to: target.to,
+              timestamp: new Date(),
+              thinkTime: 0,
+              moveNumber,
+              recoveryMode: 'stack_strike',
               extractionStacks: [],
             } as Move);
             continue;

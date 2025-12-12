@@ -16,6 +16,7 @@ import {
 
 import {
   enumerateRecoverySlideTargets,
+  enumerateExpandedRecoverySlideTargets,
   hasAnyRecoveryMove,
   calculateRecoveryCost,
   validateRecoverySlide,
@@ -1610,5 +1611,95 @@ describe('Extraction Stack Choice', () => {
     const result = validateRecoverySlide(state, move);
     expect(result.valid).toBe(false);
     expect(result.code).toBe('RECOVERY_NO_BURIED_RING_IN_STACK');
+  });
+});
+
+describe('Experimental stack-strike recovery (v1)', () => {
+  const FLAG = 'RINGRIFT_RECOVERY_STACK_STRIKE_V1';
+  const prevFlag = process.env[FLAG];
+
+  beforeAll(() => {
+    process.env[FLAG] = '1';
+  });
+
+  afterAll(() => {
+    if (prevFlag === undefined) {
+      delete process.env[FLAG];
+    } else {
+      process.env[FLAG] = prevFlag;
+    }
+  });
+
+  function createStackStrikeState(): GameState {
+    const board = createTestBoard('square8');
+    addMarker(board, pos(3, 2), 1);
+    // Attacked stack adjacent to marker, controlled by P2.
+    addStackWithRings(board, pos(3, 3), [2, 2]);
+    // Extraction stack with buried P1 ring, controlled by P2.
+    addStackWithRings(board, pos(7, 7), [1, 2]);
+
+    return createTestGameState({
+      board,
+      players: [
+        {
+          id: 'p1',
+          username: 'P1',
+          type: 'human',
+          playerNumber: 1,
+          isReady: true,
+          timeRemaining: 600,
+          ringsInHand: 0,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+        },
+        {
+          id: 'p2',
+          username: 'P2',
+          type: 'human',
+          playerNumber: 2,
+          isReady: true,
+          timeRemaining: 600,
+          ringsInHand: 5,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+        },
+      ],
+    });
+  }
+
+  test('enumerates stack_strike targets when no line recovery exists', () => {
+    const state = createStackStrikeState();
+    const targets = enumerateExpandedRecoverySlideTargets(state, 1);
+    const strikeTargets = targets.filter((t) => t.recoveryMode === 'stack_strike');
+    expect(strikeTargets.length).toBeGreaterThan(0);
+    expect(strikeTargets.some((t) => t.to.x === 3 && t.to.y === 3)).toBe(true);
+  });
+
+  test('applies stack_strike by sacrificing marker and eliminating top ring', () => {
+    const state = createStackStrikeState();
+    const move: RecoverySlideMove = {
+      type: 'recovery_slide',
+      player: 1,
+      from: pos(3, 2),
+      to: pos(3, 3),
+      recoveryMode: 'stack_strike',
+      extractionStacks: [posStr(7, 7)],
+    };
+
+    const validation = validateRecoverySlide(state, move);
+    expect(validation.valid).toBe(true);
+
+    const outcome = applyRecoverySlide(state, move);
+
+    expect(outcome.nextState.board.markers.has(posStr(3, 2))).toBe(false);
+    expect(outcome.nextState.board.markers.has(posStr(3, 3))).toBe(false);
+
+    const attackedStack = outcome.nextState.board.stacks.get(posStr(3, 3));
+    expect(attackedStack).toBeDefined();
+    expect(attackedStack!.stackHeight).toBe(1);
+    expect(attackedStack!.rings).toEqual([2]);
+
+    const p1 = outcome.nextState.players.find((p) => p.playerNumber === 1)!;
+    expect(p1.eliminatedRings).toBe(2);
   });
 });

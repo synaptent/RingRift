@@ -32,6 +32,7 @@ be updated—never the other way around.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Literal
 from datetime import datetime
@@ -59,8 +60,12 @@ RecoveryOption = Literal[1, 2]
 # Recovery mode type alias (which success criterion was met per RR-CANON-R112)
 # - "line": Condition (a) - completes a line of at least lineLength markers
 # - "fallback": Condition (b) - no line available, but any adjacent slide is legal
+# - "stack_strike": Experimental (v1) fallback-class recovery. When enabled via
+#   RINGRIFT_RECOVERY_STACK_STRIKE_V1=1 and no line-forming recovery exists,
+#   a player may slide a marker onto an adjacent stack to eliminate that stack's
+#   top ring; the marker is removed. Costs 1 buried ring extraction.
 # Note: Territory disconnection was removed as a recovery criterion
-RecoveryMode = Literal["line", "fallback"]
+RecoveryMode = Literal["line", "fallback", "stack_strike"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -569,8 +574,15 @@ def enumerate_expanded_recovery_targets(
     line_length = get_effective_line_length(board.type, len(state.players))
     buried_ring_count = count_buried_rings(board, player)
 
+    stack_strike_enabled = os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "").lower() in {
+        "1",
+        "true",
+        "TRUE",
+    }
+
     # Track all valid slide destinations for fallback
     all_valid_slides: List[Tuple[Position, Position]] = []
+    all_valid_stack_strikes: List[Tuple[Position, Position]] = []
 
     # Find all markers owned by the player
     player_marker_positions: List[Position] = []
@@ -587,7 +599,21 @@ def enumerate_expanded_recovery_targets(
         for direction in directions:
             to_pos = _add_direction(marker_pos, direction, 1)
 
-            # Check if slide is valid
+            # Shared destination validity checks (for empty fallback vs stack-strike).
+            if not BoardManager.is_valid_position(to_pos, board.type, board.size):
+                continue
+            if BoardManager.is_collapsed_space(to_pos, board):
+                continue
+            to_key = to_pos.to_key()
+            if to_key in board.markers:
+                continue
+
+            dest_stack = BoardManager.get_stack(to_pos, board)
+            if dest_stack is not None:
+                if stack_strike_enabled:
+                    all_valid_stack_strikes.append((marker_pos, to_pos))
+                continue
+
             if not _can_marker_slide_to(board, marker_pos, to_pos, player):
                 continue
 
@@ -646,6 +672,15 @@ def enumerate_expanded_recovery_targets(
                     min_cost=1,
                 )
             )
+        for from_pos, to_pos in all_valid_stack_strikes:
+            targets.append(
+                ExpandedRecoveryTarget(
+                    from_pos=from_pos,
+                    to_pos=to_pos,
+                    recovery_mode="stack_strike",
+                    min_cost=1,
+                )
+            )
 
     return targets
 
@@ -678,6 +713,11 @@ def has_any_recovery_move(state: GameState, player: int) -> bool:
 
     board = state.board
     line_length = get_effective_line_length(board.type, len(state.players))
+    stack_strike_enabled = os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "").lower() in {
+        "1",
+        "true",
+        "TRUE",
+    }
     valid_fallback_exists = False
 
     # Check for line recovery or valid fallback
@@ -689,6 +729,17 @@ def has_any_recovery_move(state: GameState, player: int) -> bool:
         directions = _get_moore_directions(board.type)
         for direction in directions:
             to_pos = _add_direction(marker.position, direction, 1)
+            # Experimental stack-strike recovery counts as a fallback-class move.
+            if (
+                stack_strike_enabled
+                and BoardManager.is_valid_position(to_pos, board.type, board.size)
+                and not BoardManager.is_collapsed_space(to_pos, board)
+                and to_pos.to_key() not in board.markers
+                and BoardManager.get_stack(to_pos, board) is not None
+            ):
+                valid_fallback_exists = True
+                continue
+
             if not _can_marker_slide_to(board, marker.position, to_pos, player):
                 continue
 
@@ -782,6 +833,74 @@ def validate_recovery_slide(
             valid=False,
             reason="Recovery slide requires to position",
         )
+    recovery_mode = getattr(move, "recovery_mode", None)
+    stack_strike_enabled = os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "").lower() in {
+        "1",
+        "true",
+        "TRUE",
+    }
+
+    # Fallback-class recovery (fallback or stack_strike) bypasses line checks.
+    if recovery_mode in {"fallback", "stack_strike"}:
+        line_targets = enumerate_recovery_slide_targets(state, player)
+        if line_targets:
+            return RecoveryValidationResult(
+                valid=False,
+                reason="Fallback-class recovery is only allowed when no line-forming recovery exists",
+            )
+
+        buried_rings = count_buried_rings(board, player)
+        if buried_rings < 1:
+            return RecoveryValidationResult(
+                valid=False,
+                reason="Fallback-class recovery requires at least 1 buried ring",
+            )
+
+        if recovery_mode == "fallback":
+            if not _can_marker_slide_to(board, move.from_pos, move.to, player):
+                return RecoveryValidationResult(
+                    valid=False,
+                    reason="Invalid fallback destination (not adjacent or occupied)",
+                )
+        else:
+            if not stack_strike_enabled:
+                return RecoveryValidationResult(
+                    valid=False,
+                    reason="Stack-strike recovery is not enabled",
+                )
+            if not _is_adjacent(board.type, move.from_pos, move.to):
+                return RecoveryValidationResult(
+                    valid=False,
+                    reason="Destination is not adjacent",
+                )
+            if not BoardManager.is_valid_position(move.to, board.type, board.size):
+                return RecoveryValidationResult(
+                    valid=False,
+                    reason="Invalid destination position",
+                )
+            if BoardManager.is_collapsed_space(move.to, board):
+                return RecoveryValidationResult(
+                    valid=False,
+                    reason="Destination is collapsed space",
+                )
+            if move.to.to_key() in board.markers:
+                return RecoveryValidationResult(
+                    valid=False,
+                    reason="Destination has a marker",
+                )
+            if BoardManager.get_stack(move.to, board) is None:
+                return RecoveryValidationResult(
+                    valid=False,
+                    reason="Stack-strike recovery requires a destination stack",
+                )
+
+        return RecoveryValidationResult(
+            valid=True,
+            line_positions=[],
+            is_overlength=False,
+            option_used=None,
+            cost=1,
+        )
 
     if not _can_marker_slide_to(board, move.from_pos, move.to, player):
         return RecoveryValidationResult(
@@ -799,35 +918,12 @@ def validate_recovery_slide(
     )
 
     line_length = get_effective_line_length(board.type, len(state.players))
-    completes, markers_count, line_positions = _would_complete_line_at(board, player, move.to, line_length)
-
-    # Check for fallback mode (RR-CANON-R112(b))
-    # If recovery_mode is 'fallback', any adjacent slide is valid per RR-CANON-R112(b)
-    recovery_mode = getattr(move, "recovery_mode", None)
-    is_fallback = recovery_mode == "fallback"
-
-    # For fallback mode, all adjacent slides are now permitted per RR-CANON-R112(b)
-    # Territory disconnection is ALLOWED - the old restriction has been removed
-    if is_fallback:
-        # Restore marker before returning
-        del board.markers[to_key]
-        board.markers[from_key] = from_marker
-
-        # Fallback mode valid - costs 1 buried ring
-        buried_rings = count_buried_rings(board, player)
-        if buried_rings < 1:
-            return RecoveryValidationResult(
-                valid=False,
-                reason="Fallback recovery requires at least 1 buried ring",
-            )
-
-        return RecoveryValidationResult(
-            valid=True,
-            line_positions=[],  # No line in fallback
-            is_overlength=False,
-            option_used=None,
-            cost=1,  # Fallback always costs 1
-        )
+    completes, markers_count, line_positions = _would_complete_line_at(
+        board,
+        player,
+        move.to,
+        line_length,
+    )
 
     # Restore marker for line-based validation
     del board.markers[to_key]
@@ -966,76 +1062,101 @@ def apply_recovery_slide(
     player = move.player
     board = state.board
 
-    # Move the marker
     from_key = move.from_pos.to_key()
     to_key = move.to.to_key()
-
-    del board.markers[from_key]
-    board.markers[to_key] = MarkerInfo(
-        position=move.to,
-        player=player,
-        type="regular",
-    )
-
-    # Check for fallback mode (RR-CANON-R112(b))
     recovery_mode = getattr(move, "recovery_mode", None)
-    is_fallback = recovery_mode == "fallback"
 
-    if is_fallback:
-        # Fallback mode: no line collapse, just marker move + ring extraction
-        # Per RR-CANON-R115: fallback costs 1 buried ring, no line processing
-        cost = 1
-        collapsed_positions = []  # No line collapse in fallback mode
-        effective_option = None  # No option applies
-        line_positions = []  # No line formed in fallback mode
-    else:
-        # Line mode: find and collapse the completed line
-        line_length = get_effective_line_length(board.type, len(state.players))
-        _, markers_count, line_positions = _would_complete_line_at(board, player, move.to, line_length)
+    if recovery_mode == "stack_strike":
+        # Experimental stack-strike recovery (v1): sacrifice marker to strike adjacent stack.
+        del board.markers[from_key]
 
-        is_overlength = markers_count > line_length
+        attacked = board.stacks.get(to_key)
+        if not attacked or attacked.stack_height == 0:
+            return RecoveryApplicationOutcome(success=False, error="No stack to strike")
 
-        # Determine effective option
-        if option is not None:
-            effective_option = option
-        elif getattr(move, "recovery_option", None) is not None:
-            effective_option = getattr(move, "recovery_option")
-        elif is_overlength:
-            # Default to Option 2 (free) for overlength if not specified
-            effective_option = 2
-        else:
-            effective_option = 1
+        attacked.rings.pop()  # rings stored bottom->top; pop removes top
+        attacked.stack_height -= 1
 
-        # Determine which positions to collapse
-        if effective_option == 2 and collapse_positions is not None:
-            positions_to_collapse = collapse_positions
-        elif effective_option == 2 and is_overlength:
-            # Default: collapse the first lineLength positions
-            positions_to_collapse = line_positions[:line_length]
-        else:
-            # Option 1: collapse all
-            positions_to_collapse = line_positions
-
-        # Collapse markers - markers become territory (collapsed spaces)
-        # Note: Territory cascade should be handled by the turn orchestrator;
-        # here we mutate board state to reflect collapsed spaces and removed markers.
-        collapsed_positions = list(positions_to_collapse)
-        for pos in collapsed_positions:
-            key = pos.to_key()
-            # Remove marker (if still present after the slide)
-            if key in board.markers:
-                del board.markers[key]
-            # Mark territory for the player
-            board.collapsed_spaces[key] = player
-
-        # Update player's territory count for collapsed markers
+        # Credit elimination to recovering player.
+        player_id_str = str(player)
+        board.eliminated_rings[player_id_str] = board.eliminated_rings.get(player_id_str, 0) + 1
+        state.total_rings_eliminated += 1
         for p in state.players:
             if p.player_number == player:
-                p.territory_spaces = getattr(p, "territory_spaces", 0) + len(collapsed_positions)
+                p.eliminated_rings += 1
                 break
 
-        # Calculate cost (Option 1 only)
-        cost = calculate_recovery_cost(effective_option)
+        if attacked.stack_height == 0:
+            del board.stacks[to_key]
+        else:
+            attacked.controlling_player = attacked.rings[-1]
+            cap_height = 0
+            for r in reversed(attacked.rings):
+                if r == attacked.controlling_player:
+                    cap_height += 1
+                else:
+                    break
+            attacked.cap_height = cap_height
+
+        cost = 1
+        collapsed_positions = []
+        effective_option = None
+        line_positions = []
+    else:
+        # Move the marker
+        del board.markers[from_key]
+        board.markers[to_key] = MarkerInfo(
+            position=move.to,
+            player=player,
+            type="regular",
+        )
+
+        if recovery_mode == "fallback":
+            # Fallback mode: no line collapse, just marker move + ring extraction
+            cost = 1
+            collapsed_positions = []
+            effective_option = None
+            line_positions = []
+        else:
+            # Line mode: find and collapse the completed line
+            line_length = get_effective_line_length(board.type, len(state.players))
+            _, markers_count, line_positions = _would_complete_line_at(
+                board, player, move.to, line_length
+            )
+
+            is_overlength = markers_count > line_length
+
+            if option is not None:
+                effective_option = option
+            elif getattr(move, "recovery_option", None) is not None:
+                effective_option = getattr(move, "recovery_option")
+            elif is_overlength:
+                effective_option = 2
+            else:
+                effective_option = 1
+
+            if effective_option == 2 and collapse_positions is not None:
+                positions_to_collapse = collapse_positions
+            elif effective_option == 2 and is_overlength:
+                positions_to_collapse = line_positions[:line_length]
+            else:
+                positions_to_collapse = line_positions
+
+            collapsed_positions = list(positions_to_collapse)
+            for pos in collapsed_positions:
+                key = pos.to_key()
+                if key in board.markers:
+                    del board.markers[key]
+                board.collapsed_spaces[key] = player
+
+            for p in state.players:
+                if p.player_number == player:
+                    p.territory_spaces = getattr(p, "territory_spaces", 0) + len(
+                        collapsed_positions
+                    )
+                    break
+
+            cost = calculate_recovery_cost(effective_option)
 
     # Extract buried rings to pay cost
     # Per RR-CANON-R113: Extract the bottommost ring from chosen stack(s)
@@ -1259,6 +1380,17 @@ def get_expanded_recovery_moves(state: GameState, player: int) -> List[Move]:
                 moves.append(
                     Move(
                         recoveryMode="fallback",
+                        extraction_stacks=(extraction_stack_key,),
+                        **base_kwargs,
+                    )
+                )
+        elif target.recovery_mode == "stack_strike":
+            eligible = enumerate_eligible_extraction_stacks(state.board, player)
+            if eligible:
+                extraction_stack_key = eligible[0].position_key
+                moves.append(
+                    Move(
+                        recoveryMode="stack_strike",
                         extraction_stacks=(extraction_stack_key,),
                         **base_kwargs,
                     )
