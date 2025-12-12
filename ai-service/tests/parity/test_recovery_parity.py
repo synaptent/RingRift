@@ -168,7 +168,8 @@ class TestRecoveryEligibility:
         """Player IS eligible even if they have rings in hand.
 
         Recovery eligibility is independent of rings in hand.
-        Players with rings may choose recovery over placement.
+        Players with rings in hand may reach recovery by skipping placement
+        and then using recovery in movement.
         """
         state = make_test_state(
             stacks={

@@ -206,7 +206,8 @@ export function countBuriedRings(board: BoardState, playerNumber: number): numbe
  * - They have at least one buried ring
  *
  * Note: Recovery eligibility is independent of rings in hand.
- * Players with rings may choose recovery over placement.
+ * Players with rings in hand may reach recovery by voluntarily recording
+ * skip_placement in ring_placement and then using recovery in movement.
  *
  * @param state - Current game state
  * @param playerNumber - Player to check

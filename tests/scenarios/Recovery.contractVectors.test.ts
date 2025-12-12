@@ -130,8 +130,9 @@ describe('Recovery Action Contract Vectors', () => {
     });
 
     it('should allow recovery when player has rings in hand per RR-CANON-R110', () => {
-      // Per RR-CANON-R110: "Recovery eligibility is independent of rings in hand.
-      // Players with rings may choose recovery over placement."
+      // Per RR-CANON-R110: "Recovery eligibility is independent of rings in hand."
+      // A player with rings in hand may reach recovery by recording skip_placement
+      // and then using recovery in movement.
       const vector = vectors.find((v) => v.id === 'recovery.exact_length_option1');
       if (!vector) return;
 

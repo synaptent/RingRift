@@ -166,8 +166,9 @@ describe('isEligibleForRecovery', () => {
   });
 
   test('returns true even when player has rings in hand (per RR-CANON-R201)', () => {
-    // Per RR-CANON-R201: "Recovery eligibility is independent of rings in hand.
-    // Players with rings may choose recovery over placement."
+    // Per RR-CANON-R201: "Recovery eligibility is independent of rings in hand."
+    // A player with rings in hand may reach recovery by recording skip_placement
+    // and then using recovery in movement.
     const board = createTestBoard('square8');
     addMarker(board, pos(4, 4), 1);
     addStackWithRings(board, pos(5, 5), [1, 2]); // P1 has buried ring

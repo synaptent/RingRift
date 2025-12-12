@@ -272,6 +272,8 @@ def apply_capture_moves_vectorized(
         if defender_owner > 0:
             current_elim = state.eliminated_rings[g, defender_owner].item()
             state.eliminated_rings[g, defender_owner] = current_elim + 1
+            # Credit the attacking player for causing the elimination (RR-CANON-R060)
+            state.rings_caused_eliminated[g, player] += 1
 
         # Merge stacks
         if defender_new_height > 0:
@@ -372,6 +374,8 @@ def apply_movement_moves_vectorized(
         if landing_ring_cost > 0:
             current_elim = state.eliminated_rings[g, player].item()
             state.eliminated_rings[g, player] = current_elim + landing_ring_cost
+            # Player eliminates their own ring for landing cost (self-elimination counts for victory)
+            state.rings_caused_eliminated[g, player] += landing_ring_cost
 
         # Update destination
         state.stack_height[g, to_y, to_x] = max(1, new_height)
@@ -1639,10 +1643,14 @@ def generate_recovery_moves_batch(
     - Player must have at least one marker on the board
     - Player must have buried rings (can afford the recovery cost)
     - Recovery eligibility is independent of rings in hand; players with rings
-      may choose recovery over placement (RR-CANON-R110).
+      in hand may reach recovery by recording skip_placement and then using
+      recovery in movement (RR-CANON-R110).
     - Recovery slides a marker to an adjacent empty cell
     - "Line mode": slide completes a line of markers (preferred)
-    - "Fallback mode": any adjacent slide if no line possible (costs 1 buried ring)
+    - "Fallback mode": any adjacent slide if no line-forming recovery slide exists
+      anywhere on the board (costs 1 buried ring)
+    - Note: This GPU implementation currently generates only empty-cell line/fallback
+      recovery slides; stack-strike recovery is handled in the CPU engines.
 
     Args:
         state: Current batch game state
