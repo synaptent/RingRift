@@ -2153,17 +2153,17 @@ def run_gpu_self_play_soak(
     game_records: List[GameRecord] = []
     for i, gpu_rec in enumerate(gpu_records):
         record = GameRecord(
-            game_id=gpu_rec.get("game_id", str(i)),
-            board_type="square8",
+            index=i,
             num_players=2,
+            board_type="square8",
             engine_mode="gpu-heuristic",
-            p1_config={"type": "gpu-heuristic", "difficulty": 5},
-            p2_config={"type": "gpu-heuristic", "difficulty": 5},
+            seed=seed,
+            length=gpu_rec.get("move_count", 0),
+            status="completed",
             winner=gpu_rec.get("winner", 0),
             termination_reason=gpu_rec.get("victory_type", "unknown"),
-            move_count=gpu_rec.get("move_count", 0),
-            duration_seconds=gpu_rec.get("game_time_seconds", 0.0),
-            timestamp=gpu_rec.get("timestamp", datetime.now().isoformat()),
+            victory_type=gpu_rec.get("victory_type"),
+            stalemate_tiebreaker=gpu_rec.get("stalemate_tiebreaker"),
         )
         game_records.append(record)
 
