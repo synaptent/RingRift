@@ -380,7 +380,15 @@ def run_gpu_selfplay(
     Returns:
         Statistics dict
     """
-    os.makedirs(output_dir, exist_ok=True)
+    # Create output directory with explicit error handling
+    output_dir = os.path.abspath(output_dir)  # Resolve to absolute path
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        logger.info(f"Output directory created/verified: {output_dir}")
+    except OSError as e:
+        logger.error(f"Failed to create output directory {output_dir}: {e}")
+        raise
+
     np.random.seed(seed)
     torch.manual_seed(seed)
 
@@ -429,6 +437,8 @@ def run_gpu_selfplay(
     stats["seed"] = seed
 
     stats_file = os.path.join(output_dir, "stats.json")
+    # Ensure directory exists right before write (handles race conditions on remote hosts)
+    os.makedirs(os.path.dirname(stats_file) or ".", exist_ok=True)
     with open(stats_file, "w") as f:
         json.dump(stats, f, indent=2)
 

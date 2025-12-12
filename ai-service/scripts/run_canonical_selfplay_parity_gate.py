@@ -131,6 +131,7 @@ def run_selfplay_soak(
     max_moves: int,
     num_players: int,
     difficulty_band: str,
+    include_training_data_jsonl: bool = False,
     soak_timeout_seconds: int | None = None,
 ) -> Dict[str, Any]:
     """Run a small Python self-play soak and record games to db_path."""
@@ -172,6 +173,8 @@ def run_selfplay_soak(
         "--fail-on-anomaly",
         *extra_args,
     ]
+    if include_training_data_jsonl:
+        cmd.append("--include-training-data")
 
     # Enable strict invariant by default so soak respects ANM constraints.
     env_overrides = {
@@ -377,6 +380,15 @@ def main() -> None:
         help="Optional path to write the parity gate JSON summary. When omitted, prints to stdout only.",
     )
     parser.add_argument(
+        "--include-training-data-jsonl",
+        action="store_true",
+        help=(
+            "Include full move history + initial_state in the JSONL log emitted by "
+            "run_self_play_soak.py. Useful for analysis scripts but can be large on "
+            "long games."
+        ),
+    )
+    parser.add_argument(
         "--parity-progress-every",
         type=int,
         default=200,
@@ -527,6 +539,7 @@ def main() -> None:
             max_moves,
             args.num_players,
             args.difficulty_band,
+            include_training_data_jsonl=bool(args.include_training_data_jsonl),
             soak_timeout_seconds=args.soak_timeout_seconds or None,
         )
         if selfplay_heartbeat_stop is not None:
@@ -590,6 +603,8 @@ def main() -> None:
         "max_moves": max_moves,
         "hosts": args.hosts.split(",") if args.hosts else None,
         "soak_returncode": soak_result.get("returncode"),
+        "soak_summary_path": soak_result.get("summary_path"),
+        "soak_log_jsonl_path": soak_result.get("log_jsonl_path"),
         "parity_summary": parity_summary,
         "passed_canonical_parity_gate": bool(passed),
     }
