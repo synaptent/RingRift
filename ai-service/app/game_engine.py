@@ -1484,7 +1484,19 @@ class GameEngine:
         # anywhere (controlled, buried, or in hand), attempt a single defensive
         # rotation via _end_turn before treating the shape as an invariant
         # violation.
-        if not GameEngine._player_has_any_rings(game_state, current_player):
+        #
+        # IMPORTANT: only apply this defensive rotation at turn boundaries
+        # (i.e., when the just-applied move belongs to a different player).
+        #
+        # During a player's own turn they may self-eliminate their last ring
+        # (e.g., recovery fallback cost via buried-ring extraction). In that
+        # case the canonical trace still requires phase traversal to be
+        # recorded (e.g., no_line_action / no_territory_action) before normal
+        # turn rotation skips the permanently eliminated player.
+        if (
+            triggering_move.player != current_player
+            and not GameEngine._player_has_any_rings(game_state, current_player)
+        ):
             previous_player = current_player
             GameEngine._end_turn(game_state)
 
@@ -2837,7 +2849,8 @@ class GameEngine:
         # game immediately on the turn boundary but Python waits for the
         # next bookkeeping move.
 
-        if game_state.lps_consecutive_exclusive_rounds < 2:
+        lps_threshold = getattr(game_state, 'lps_rounds_required', 2)
+        if game_state.lps_consecutive_exclusive_rounds < lps_threshold:
             return
 
         candidate = game_state.lps_consecutive_exclusive_player

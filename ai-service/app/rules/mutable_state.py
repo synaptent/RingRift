@@ -337,6 +337,7 @@ class MutableGameState:
         self._lps_exclusive_player_for_completed_round: Optional[int] = None
         self._lps_consecutive_exclusive_rounds: int = 0
         self._lps_consecutive_exclusive_player: Optional[int] = None
+        self._lps_rounds_required: int = 2  # Configurable LPS threshold
 
         # Immutable reference fields (for context and conversion back)
         self._id: str = ""
@@ -412,6 +413,7 @@ class MutableGameState:
         mutable._lps_consecutive_exclusive_player = (
             state.lps_consecutive_exclusive_player
         )
+        mutable._lps_rounds_required = getattr(state, 'lps_rounds_required', 2)
 
         # Copy immutable reference fields
         mutable._id = state.id
@@ -518,6 +520,7 @@ class MutableGameState:
             lpsExclusivePlayerForCompletedRound=lps_exclusive,
             lpsConsecutiveExclusiveRounds=self._lps_consecutive_exclusive_rounds,
             lpsConsecutiveExclusivePlayer=self._lps_consecutive_exclusive_player,
+            lpsRoundsRequired=self._lps_rounds_required,
         )
 
     def _compute_zobrist_hash(self) -> int:
@@ -620,6 +623,62 @@ class MutableGameState:
     def must_move_from_stack_key(self) -> Optional[str]:
         """Stack key that must be moved from (after placement)."""
         return self._must_move_from_stack_key
+
+    # LPS tracking properties (for game_engine.py compatibility)
+    @property
+    def lps_consecutive_exclusive_rounds(self) -> int:
+        """Number of consecutive rounds with exclusive player."""
+        return self._lps_consecutive_exclusive_rounds
+
+    @lps_consecutive_exclusive_rounds.setter
+    def lps_consecutive_exclusive_rounds(self, value: int) -> None:
+        self._lps_consecutive_exclusive_rounds = value
+
+    @property
+    def lps_consecutive_exclusive_player(self) -> Optional[int]:
+        """Player who has been exclusive for consecutive rounds."""
+        return self._lps_consecutive_exclusive_player
+
+    @lps_consecutive_exclusive_player.setter
+    def lps_consecutive_exclusive_player(self, value: Optional[int]) -> None:
+        self._lps_consecutive_exclusive_player = value
+
+    @property
+    def lps_rounds_required(self) -> int:
+        """Number of consecutive exclusive rounds required for LPS victory."""
+        return self._lps_rounds_required
+
+    @property
+    def lps_round_index(self) -> int:
+        """Current LPS round index."""
+        return self._lps_round_index
+
+    @lps_round_index.setter
+    def lps_round_index(self, value: int) -> None:
+        self._lps_round_index = value
+
+    @property
+    def lps_current_round_actor_mask(self) -> Dict[int, bool]:
+        """Actor mask for current LPS round."""
+        return self._lps_current_round_actor_mask
+
+    @property
+    def lps_current_round_first_player(self) -> Optional[int]:
+        """First player of current LPS round."""
+        return self._lps_current_round_first_player
+
+    @lps_current_round_first_player.setter
+    def lps_current_round_first_player(self, value: Optional[int]) -> None:
+        self._lps_current_round_first_player = value
+
+    @property
+    def lps_exclusive_player_for_completed_round(self) -> Optional[int]:
+        """Exclusive player for last completed round."""
+        return self._lps_exclusive_player_for_completed_round
+
+    @lps_exclusive_player_for_completed_round.setter
+    def lps_exclusive_player_for_completed_round(self, value: Optional[int]) -> None:
+        self._lps_exclusive_player_for_completed_round = value
 
     # =========================================================================
     # Helper Methods

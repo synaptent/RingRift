@@ -426,10 +426,18 @@ class GameState(BaseModel):
         alias="lpsCurrentRoundFirstPlayer",
     )
     # Number of consecutive completed rounds where the same player was the
-    # exclusive real-action holder. LPS victory requires 2 consecutive rounds.
+    # exclusive real-action holder. LPS victory requires lps_rounds_required
+    # consecutive rounds (default 2).
     lps_consecutive_exclusive_rounds: int = Field(
         0,
         alias="lpsConsecutiveExclusiveRounds",
+    )
+    # Configurable LPS threshold: how many consecutive exclusive rounds
+    # are required for LPS victory. Default is 2 (traditional), can be
+    # increased to 3+ for longer games or larger boards.
+    lps_rounds_required: int = Field(
+        2,
+        alias="lpsRoundsRequired",
     )
     # The player who has been exclusive for consecutive rounds.
     lps_consecutive_exclusive_player: Optional[int] = Field(
