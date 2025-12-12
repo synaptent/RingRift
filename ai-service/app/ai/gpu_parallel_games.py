@@ -563,6 +563,7 @@ class BatchGameState:
         num_players: int = 2,
         device: Optional[torch.device] = None,
         max_history_moves: int = 500,
+        rings_per_player: Optional[int] = None,
     ) -> "BatchGameState":
         """Create a batch of initialized game states.
 
@@ -572,6 +573,7 @@ class BatchGameState:
             num_players: Number of players (2-4)
             device: GPU device (auto-detected if None)
             max_history_moves: Maximum moves to track in history
+            rings_per_player: Starting rings per player (None = board default)
 
         Returns:
             Initialized BatchGameState with all games ready to start
@@ -585,7 +587,16 @@ class BatchGameState:
 
         # Starting rings per player based on board size (per RR-CANON-R020)
         # square8: 18, square19: 72, hexagonal: 96
-        starting_rings = {8: 18, 19: 72, 13: 96}.get(board_size, 18)
+        # Allow override for ablation studies; when None, use get_board_ruleset()
+        # which respects environment variable overrides.
+        if rings_per_player is not None:
+            starting_rings = rings_per_player
+        else:
+            from app.models import BoardType
+            from app.rules.core import get_board_ruleset
+            board_type_map = {8: BoardType.SQUARE8, 19: BoardType.SQUARE19, 13: BoardType.HEXAGONAL}
+            board_type = board_type_map.get(board_size, BoardType.SQUARE8)
+            starting_rings = get_board_ruleset(board_type).rings_per_player
 
         rings = torch.zeros(shape_players, dtype=torch.int16, device=device)
         rings[:, 1:num_players+1] = starting_rings
@@ -862,6 +873,7 @@ class BatchGameState:
         # Compute canonical victory thresholds for shadow validation.
         # Per RR-CANON-R061/R062 these depend on the board type and player count.
         from app.rules.core import (
+            get_board_ruleset,
             get_rings_per_player,
             get_territory_victory_threshold,
             get_victory_threshold,
@@ -921,7 +933,7 @@ class BatchGameState:
             lpsConsecutiveExclusiveRounds=int(
                 self.lps_consecutive_exclusive_rounds[game_idx].item()
             ),
-            lpsRoundsRequired=2,
+            lpsRoundsRequired=get_board_ruleset(board_type).lps_rounds_required,
             lpsConsecutiveExclusivePlayer=lps_consecutive_player,
         )
 
@@ -3528,7 +3540,8 @@ class ParallelGameRunner:
         state_sample_rate: float = 0.01,
         state_threshold: float = 0.001,
         swap_enabled: bool = True,
-        lps_victory_rounds: int = 2,
+        lps_victory_rounds: Optional[int] = None,
+        rings_per_player: Optional[int] = None,
     ):
         """Initialize parallel game runner.
 
@@ -3545,13 +3558,24 @@ class ParallelGameRunner:
             state_threshold: Maximum state divergence rate before halt
             swap_enabled: Enable pie rule (swap_sides) for 2-player games (RR-CANON R180-R184)
             lps_victory_rounds: Number of consecutive rounds one player must have exclusive
-                               real actions to win via LPS (default 2, set to 3 for longer games)
+                               real actions to win via LPS (None = board default, respects env vars)
+            rings_per_player: Starting rings per player (None = board default, respects env vars)
         """
+        from app.models import BoardType
+        from app.rules.core import get_board_ruleset
+
         self.batch_size = batch_size
         self.board_size = board_size
         self.num_players = num_players
         self.swap_enabled = swap_enabled
-        self.lps_victory_rounds = lps_victory_rounds
+
+        # Resolve ruleset values from centralized config when not provided.
+        # This respects environment variable overrides (e.g., RINGRIFT_SQUARE19_RINGS_PER_PLAYER=96)
+        board_type_map = {8: BoardType.SQUARE8, 19: BoardType.SQUARE19, 13: BoardType.HEXAGONAL}
+        board_type = board_type_map.get(board_size, BoardType.SQUARE8)
+        ruleset = get_board_ruleset(board_type)
+        self.lps_victory_rounds = lps_victory_rounds if lps_victory_rounds is not None else ruleset.lps_rounds_required
+        self.rings_per_player = rings_per_player if rings_per_player is not None else ruleset.rings_per_player
 
         if device is None:
             self.device = get_device()
@@ -3566,6 +3590,7 @@ class ParallelGameRunner:
             board_size=board_size,
             num_players=num_players,
             device=self.device,
+            rings_per_player=rings_per_player,
         )
 
         # Shadow validation for GPU/CPU parity checking (Phase 2 - move generation)
@@ -3612,6 +3637,7 @@ class ParallelGameRunner:
             board_size=self.board_size,
             num_players=self.num_players,
             device=self.device,
+            rings_per_player=self.rings_per_player,
         )
 
     @torch.no_grad()

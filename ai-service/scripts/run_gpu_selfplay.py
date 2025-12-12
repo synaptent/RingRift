@@ -142,6 +142,8 @@ class GPUSelfPlayGenerator:
         shadow_validation: bool = False,
         shadow_sample_rate: float = 0.05,
         shadow_threshold: float = 0.001,
+        lps_victory_rounds: int = 2,
+        rings_per_player: Optional[int] = None,
     ):
         self.board_size = board_size
         self.num_players = num_players
@@ -150,6 +152,8 @@ class GPUSelfPlayGenerator:
         self.device = device or get_device()
         self.engine_mode = engine_mode
         self.shadow_validation = shadow_validation
+        self.lps_victory_rounds = lps_victory_rounds
+        self.rings_per_player = rings_per_player
         # For random-only mode, use None weights (uniform random)
         # For heuristic-only mode, use provided weights or defaults
         if engine_mode == "random-only":
@@ -165,6 +169,8 @@ class GPUSelfPlayGenerator:
             shadow_validation=shadow_validation,
             shadow_sample_rate=shadow_sample_rate,
             shadow_threshold=shadow_threshold,
+            lps_victory_rounds=lps_victory_rounds,
+            rings_per_player=rings_per_player,
         )
 
         # Log shadow validation status
@@ -387,6 +393,8 @@ def run_gpu_selfplay(
     shadow_validation: bool = False,
     shadow_sample_rate: float = 0.05,
     shadow_threshold: float = 0.001,
+    lps_victory_rounds: int = 2,
+    rings_per_player: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Run GPU-accelerated self-play generation.
 
@@ -403,6 +411,8 @@ def run_gpu_selfplay(
         shadow_validation: Enable shadow validation (GPU/CPU parity checking)
         shadow_sample_rate: Fraction of moves to validate (default 5%)
         shadow_threshold: Max divergence rate before error (default 0.1%)
+        lps_victory_rounds: LPS victory threshold (default 2)
+        rings_per_player: Starting rings per player (None = board default)
 
     Returns:
         Statistics dict
@@ -430,6 +440,8 @@ def run_gpu_selfplay(
     logger.info(f"Engine mode: {engine_mode}")
     logger.info(f"Batch size: {batch_size}")
     logger.info(f"Max moves: {max_moves}")
+    logger.info(f"LPS victory rounds: {lps_victory_rounds}")
+    logger.info(f"Rings per player: {rings_per_player or 'board default'}")
     logger.info(f"Shadow validation: {shadow_validation}")
     if shadow_validation:
         logger.info(f"  Sample rate: {shadow_sample_rate:.1%}")
@@ -448,6 +460,8 @@ def run_gpu_selfplay(
         shadow_validation=shadow_validation,
         shadow_sample_rate=shadow_sample_rate,
         shadow_threshold=shadow_threshold,
+        lps_victory_rounds=lps_victory_rounds,
+        rings_per_player=rings_per_player,
     )
 
     # Generate games
@@ -581,6 +595,20 @@ def main():
         help="Max divergence rate before error (default: 0.001 = 0.1%%)",
     )
 
+    # Game rule configuration
+    parser.add_argument(
+        "--lps-victory-rounds",
+        type=int,
+        default=2,
+        help="LPS victory threshold in consecutive rounds (default: 2)",
+    )
+    parser.add_argument(
+        "--rings-per-player",
+        type=int,
+        default=None,
+        help="Starting rings per player (default: board default - 18/72/96)",
+    )
+
     args = parser.parse_args()
 
     if args.benchmark_only:
@@ -620,6 +648,8 @@ def main():
         shadow_validation=args.shadow_validation,
         shadow_sample_rate=args.shadow_sample_rate,
         shadow_threshold=args.shadow_threshold,
+        lps_victory_rounds=args.lps_victory_rounds,
+        rings_per_player=args.rings_per_player,
     )
 
 
