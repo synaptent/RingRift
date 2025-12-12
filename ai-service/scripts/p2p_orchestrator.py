@@ -90,6 +90,7 @@ GRACEFUL_SHUTDOWN_BEFORE_UPDATE = True  # Stop jobs before updating
 
 # Shared auth token (optional but strongly recommended if any node is public)
 AUTH_TOKEN_ENV = "RINGRIFT_CLUSTER_AUTH_TOKEN"
+AUTH_TOKEN_FILE_ENV = "RINGRIFT_CLUSTER_AUTH_TOKEN_FILE"
 
 # Data manifest collection settings
 MANIFEST_JSONL_LINECOUNT_MAX_BYTES = 64 * 1024 * 1024  # Skip line-counting for huge JSONL files
@@ -578,10 +579,24 @@ class P2POrchestrator:
 
         # Optional auth token used to protect mutating endpoints and cluster control.
         # Default is allow-all unless a token is configured.
-        self.auth_token = (auth_token or os.environ.get(AUTH_TOKEN_ENV, "")).strip()
+        env_token = (os.environ.get(AUTH_TOKEN_ENV, "")).strip()
+        token_from_arg = (auth_token or "").strip()
+        token = token_from_arg or env_token
+
+        if not token:
+            token_file = (os.environ.get(AUTH_TOKEN_FILE_ENV, "")).strip()
+            if token_file:
+                try:
+                    token = Path(token_file).read_text().strip()
+                except Exception as e:
+                    print(f"[P2P] Auth: failed to read {AUTH_TOKEN_FILE_ENV}={token_file}: {e}")
+
+        self.auth_token = token.strip()
         self.require_auth = bool(require_auth)
         if self.require_auth and not self.auth_token:
-            raise ValueError(f"--require-auth set but {AUTH_TOKEN_ENV} / --auth-token is empty")
+            raise ValueError(
+                f"--require-auth set but {AUTH_TOKEN_ENV}/{AUTH_TOKEN_FILE_ENV}/--auth-token is empty"
+            )
 
         # Node state
         self.role = NodeRole.FOLLOWER

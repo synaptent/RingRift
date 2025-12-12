@@ -29,8 +29,8 @@
     <dict>
       <key>PYTHONUNBUFFERED</key>
       <string>1</string>
-      <key>RINGRIFT_CLUSTER_AUTH_TOKEN</key>
-      <string>__SET_ME__</string>
+      <key>RINGRIFT_CLUSTER_AUTH_TOKEN_FILE</key>
+      <string>__RINGRIFT_AI_SERVICE_DIR__/config/p2p_orchestrator.token</string>
     </dict>
 
     <key>RunAtLoad</key>

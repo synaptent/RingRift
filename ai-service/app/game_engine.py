@@ -3174,6 +3174,26 @@ class GameEngine:
         return moves
 
     @staticmethod
+    def _did_current_turn_include_recovery_slide(
+        game_state: GameState,
+        player_number: int,
+    ) -> bool:
+        """
+        True iff the current player's turn (as recorded in move_history) includes
+        a RECOVERY_SLIDE.
+
+        Mirrors the TS helper used to decide whether territory processing should
+        use the recovery self-elimination context (RR-CANON-R114) for any
+        disconnected regions created by the recovery slide.
+        """
+        for move in reversed(game_state.move_history):
+            if move.player != player_number:
+                break
+            if move.type == MoveType.RECOVERY_SLIDE:
+                return True
+        return False
+
+    @staticmethod
     def _get_territory_processing_moves(
         game_state: GameState,
         player_number: int,
@@ -3184,6 +3204,9 @@ class GameEngine:
         Mirrors TS `getValidTerritoryProcessingDecisionMoves` and
         `getValidEliminationDecisionMoves` while obeying R076:
 
+        - When a territory region was just processed this turn, emit the
+          mandatory ELIMINATE_RINGS_FROM_STACK follow-up moves first
+          (RR-CANON-R145; recovery context RR-CANON-R114).
         - When at least one disconnected region satisfies the
           self-elimination prerequisite, emit one CHOOSE_TERRITORY_OPTION
           move per such region (legacy alias: PROCESS_TERRITORY_REGION).
@@ -3192,6 +3215,72 @@ class GameEngine:
           explicit `no_territory_action` bookkeeping move.
         """
         board = game_state.board
+
+        # Mandatory self-elimination (RR-CANON-R145 / RR-CANON-R114) is modelled
+        # as an explicit ELIMINATE_RINGS_FROM_STACK move after a region is
+        # processed. When that elimination is pending, it must be resolved
+        # before offering further CHOOSE_TERRITORY_OPTION decisions.
+        last_move = game_state.move_history[-1] if game_state.move_history else None
+        if (
+            last_move is not None
+            and last_move.player == player_number
+            and last_move.type
+            in (
+                MoveType.CHOOSE_TERRITORY_OPTION,
+                MoveType.PROCESS_TERRITORY_REGION,  # legacy alias
+            )
+        ):
+            move_number = len(game_state.move_history) + 1
+            elimination_context = (
+                "recovery"
+                if GameEngine._did_current_turn_include_recovery_slide(game_state, player_number)
+                else "territory"
+            )
+
+            processed_region_keys: set[str] = set()
+            processed_regions = list(getattr(last_move, "disconnected_regions", None) or [])
+            if processed_regions:
+                processed_region_keys = {p.to_key() for p in processed_regions[0].spaces}
+
+            elimination_moves: list[Move] = []
+            for pos_key, stack in board.stacks.items():
+                if processed_region_keys and pos_key in processed_region_keys:
+                    continue
+
+                if elimination_context == "recovery":
+                    # RR-CANON-R114: recovery-context territory self-elimination
+                    # is a buried-ring extraction. Stack need not be controlled.
+                    if stack.stack_height <= 1:
+                        continue
+                    if player_number not in (stack.rings[:-1] or []):
+                        continue
+                else:
+                    # RR-CANON-R145: normal territory self-elimination requires
+                    # an eligible cap target controlled by the player.
+                    if stack.controlling_player != player_number:
+                        continue
+                    is_multicolor = stack.stack_height > stack.cap_height
+                    is_single_color_tall = (
+                        stack.stack_height == stack.cap_height and stack.stack_height > 1
+                    )
+                    if not (is_multicolor or is_single_color_tall):
+                        continue
+
+                elimination_moves.append(
+                    Move(
+                        id=f"eliminate-rings-from-stack-{move_number}-{pos_key}",
+                        type=MoveType.ELIMINATE_RINGS_FROM_STACK,
+                        player=player_number,
+                        to=stack.position,
+                        elimination_context=elimination_context,
+                        timestamp=game_state.last_move_at,
+                        thinkTime=0,
+                        moveNumber=move_number,
+                    )  # type: ignore
+                )
+
+            return elimination_moves
+
         regions = BoardManager.find_disconnected_regions(
             board,
             player_number,
@@ -3259,21 +3348,31 @@ class GameEngine:
         player_number: int,
     ) -> bool:
         """
-        Self-elimination prerequisite for territory processing (RR-CANON-R082).
+        Self-elimination prerequisite for territory processing.
 
         Mirrors TS canProcessTerritoryRegion:
 
-        - Player must have at least one **eligible cap target** outside the
-          region's spaces.
-        - An eligible cap target must be either:
-          (1) A multicolor stack controlled by the player (with other players'
-              rings buried beneath the player's cap), OR
-          (2) A single-color stack of height > 1 consisting entirely of the
-              player's colour.
-        - A height-1 standalone ring is NOT an eligible cap target.
+        - Normal territory context (RR-CANON-R145): Player must have at least one
+          eligible cap target outside the region.
+        - Recovery context (RR-CANON-R114): Player must have at least one eligible
+          buried-ring extraction target outside the region (stack need not be controlled).
         """
         board = game_state.board
         region_keys = {p.to_key() for p in region.spaces}
+
+        if GameEngine._did_current_turn_include_recovery_slide(game_state, player_number):
+            # RR-CANON-R114: recovery-context prerequisite is the existence of
+            # a stack outside the region that contains a buried ring of the
+            # player (not at top).
+            for stack in board.stacks.values():
+                if stack.position.to_key() in region_keys:
+                    continue
+                if stack.stack_height <= 1:
+                    continue
+                if player_number in (stack.rings[:-1] or []):
+                    return True
+            return False
+
         player_stacks = BoardManager.get_player_stacks(board, player_number)
 
         for stack in player_stacks:
@@ -4236,6 +4335,7 @@ class GameEngine:
         Mirrors the TS applyEliminateRingsFromStackDecision behaviour:
         - For line context (RR-CANON-R122): Eliminate exactly ONE ring
         - For territory/forced context (RR-CANON-R145, R100): Eliminate entire cap
+        - For recovery context (RR-CANON-R113/R114): Extract exactly ONE buried ring
 
         Uses the shared _eliminate_top_ring_at helper, so that board.eliminated_rings,
         total_rings_eliminated, and per-player eliminated_rings remain in
@@ -4253,9 +4353,17 @@ class GameEngine:
         # Determine how many rings to eliminate based on context (RR-CANON-R022, R122):
         # - 'line': Eliminate exactly ONE ring (per RR-CANON-R122)
         # - 'territory' or 'forced' or None: Eliminate entire cap (per RR-CANON-R145, R100)
+        # - 'recovery': Extract exactly ONE buried ring (per RR-CANON-R113/R114)
         elimination_context = getattr(move, 'elimination_context', None)
         if elimination_context == 'line':
             rings_to_eliminate = 1
+        elif elimination_context == 'recovery':
+            GameEngine._extract_buried_ring_at(
+                game_state,
+                pos,
+                credited_player=move.player,
+            )
+            return
         else:
             # Per TS parity (globalActions.ts line 458): use max(1, cap_height) to
             # handle degenerate legacy states where cap_height metadata is 0 or
