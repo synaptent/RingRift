@@ -220,14 +220,42 @@ def get_best_nn_model_id() -> str:
     """Find the best available neural network model.
 
     Preference order:
-    1. ringrift_v3 (latest training run, largest model)
-    2. sq8_2p_nn_baseline (v2 fallback)
-    3. ringrift_v1 (legacy)
+    1. ringrift_v4_sq8_2p (canonical, stable id)
+    2. ringrift_v3_sq8_2p (fallback)
+    3. sq8_2p_nn_baseline (legacy fallback; may have reduced policy head)
+
+    Notes:
+      - "v4" here refers to the model *ID/lineage* (checkpoint naming), not a
+        separate architecture class. The checkpoint metadata declares the
+        actual model class (e.g., RingRiftCNN_v2).
+      - We intentionally do NOT fall back to deprecated ringrift_v1/v1_mps ids
+        because they are often missing and silently disable neural evaluation.
     """
     import glob
     import os
 
     models_dir = os.path.join(os.path.dirname(__file__), "..", "models")
+
+    def _is_usable(path: str) -> bool:
+        try:
+            if not os.path.isfile(path):
+                return False
+            if os.path.getsize(path) <= 1000:
+                return False
+            # Avoid specialized artifacts unless explicitly requested.
+            if "h100" in os.path.basename(path).lower():
+                return False
+            return True
+        except OSError:
+            return False
+
+    # Prefer canonical v4 checkpoints when present.
+    v4_candidates = [
+        os.path.join(models_dir, "ringrift_v4_sq8_2p.pth"),
+        *sorted(glob.glob(os.path.join(models_dir, "ringrift_v4_sq8_2p_*.pth"))),
+    ]
+    if any(_is_usable(p) for p in v4_candidates):
+        return "ringrift_v4_sq8_2p"
 
     # Check for v3 models first (prefer latest timestamp)
     v3_patterns = [
@@ -236,7 +264,7 @@ def get_best_nn_model_id() -> str:
     for pattern in v3_patterns:
         matches = sorted(glob.glob(pattern))
         # Filter out empty files and get latest
-        valid_matches = [m for m in matches if os.path.getsize(m) > 1000]
+        valid_matches = [m for m in matches if _is_usable(m)]
         if valid_matches:
             # Return model ID without path and extension
             basename = os.path.basename(valid_matches[-1])
@@ -249,25 +277,36 @@ def get_best_nn_model_id() -> str:
     ]
     for pattern in v2_patterns:
         matches = sorted(glob.glob(pattern))
-        valid_matches = [m for m in matches if os.path.getsize(m) > 1000]
+        valid_matches = [m for m in matches if _is_usable(m)]
         if valid_matches:
             return "sq8_2p_nn_baseline"
 
-    # Legacy fallback
-    return "ringrift_v1"
+    raise RuntimeError(
+        "No usable neural network checkpoints found under ai-service/models/. "
+        "Expected at least one of: ringrift_v4_sq8_2p*.pth, ringrift_v3_sq8_2p*.pth. "
+        "Provide --nn-model-id explicitly, or run training to produce a checkpoint."
+    )
 
 
-def create_ai_for_tier(tier: str, player_number: int, seed: int) -> Any:
+def create_ai_for_tier(
+    tier: str,
+    player_number: int,
+    seed: int,
+    *,
+    nn_model_id: Optional[str] = None,
+) -> Any:
     """Create an AI instance for the given difficulty tier."""
     profile = DIFFICULTY_PROFILES[tier]
     difficulty = int(tier[1:])
     use_nn = profile.get("use_neural_net", False)
 
-    # Auto-select best available NN model for neural-enabled tiers
-    nn_model_id = None
-    if use_nn:
-        nn_model_id = get_best_nn_model_id()
-        logger.info(f"Using neural model: {nn_model_id} for tier {tier}")
+    # Auto-select best available CNN model for neural-enabled tiers that use it.
+    # Note: D4 (Minimax) uses NNUE, not the CNN policy/value net; do not
+    # override nn_model_id there unless explicitly provided for NNUE.
+    effective_nn_model_id = None
+    if use_nn and profile["ai_type"] in {AIType.MCTS, AIType.DESCENT}:
+        effective_nn_model_id = nn_model_id or get_best_nn_model_id()
+        logger.debug("Using neural model %s for tier %s", effective_nn_model_id, tier)
 
     config = AIConfig(
         difficulty=difficulty,
@@ -275,7 +314,8 @@ def create_ai_for_tier(tier: str, player_number: int, seed: int) -> Any:
         think_time=profile["think_time_ms"],
         rng_seed=seed,
         use_neural_net=use_nn,
-        nn_model_id=nn_model_id,
+        nn_model_id=effective_nn_model_id,
+        allow_fresh_weights=False,
     )
 
     ai_class = AI_CLASSES[profile["ai_type"]]
@@ -289,6 +329,7 @@ def run_single_game(
     seed: int,
     max_moves: int = 300,
     worker_name: str = "local",
+    nn_model_id: Optional[str] = None,
 ) -> MatchResult:
     """Run a single game between two AI tiers."""
     game_id = str(uuid.uuid4())[:8]
@@ -297,8 +338,8 @@ def run_single_game(
     state = create_initial_state(board_type, num_players=2)
     engine = GameEngine()
 
-    ai_a = create_ai_for_tier(tier_a, 1, seed)
-    ai_b = create_ai_for_tier(tier_b, 2, seed + 1)
+    ai_a = create_ai_for_tier(tier_a, 1, seed, nn_model_id=nn_model_id)
+    ai_b = create_ai_for_tier(tier_b, 2, seed + 1, nn_model_id=nn_model_id)
 
     move_count = 0
     while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
@@ -349,12 +390,16 @@ class DistributedTournament:
         max_workers: int = 8,
         output_dir: str = "results/tournaments",
         resume_file: Optional[str] = None,
+        nn_model_id: Optional[str] = None,
     ):
         self.tiers = sorted(tiers, key=lambda t: int(t[1:]))
         self.games_per_matchup = games_per_matchup
         self.board_type = board_type
         self.max_workers = max_workers
         self.output_dir = Path(output_dir)
+        # CNN policy/value model id used by neural tiers (MCTS/Descent).
+        # When omitted, get_best_nn_model_id() picks a canonical v4 checkpoint.
+        self.nn_model_id = nn_model_id
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         if resume_file and os.path.exists(resume_file):
@@ -436,6 +481,7 @@ class DistributedTournament:
                 actual_a, actual_b,
                 self.board_type, seed,
                 worker_name=worker_name,
+                nn_model_id=self.nn_model_id,
             )
 
             if game_idx % 2 == 1:
@@ -640,6 +686,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Quick mode: 10 games per matchup, tiers D1-D4 only",
     )
+    parser.add_argument(
+        "--nn-model-id",
+        type=str,
+        default="auto",
+        help=(
+            "CNN model id/prefix for neural tiers (MCTS/Descent). "
+            "Use 'auto' to select the best available local checkpoint "
+            "(default: auto)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -660,6 +716,19 @@ def main() -> None:
     }
     board_type = board_map[args.board]
 
+    nn_model_id: Optional[str] = None
+    needs_cnn_model = any(
+        DIFFICULTY_PROFILES[t].get("use_neural_net", False)
+        and DIFFICULTY_PROFILES[t]["ai_type"] in {AIType.MCTS, AIType.DESCENT}
+        for t in tiers
+    )
+    if needs_cnn_model:
+        if args.nn_model_id and args.nn_model_id.lower() != "auto":
+            nn_model_id = args.nn_model_id
+        else:
+            nn_model_id = get_best_nn_model_id()
+        logger.info("Using CNN nn_model_id=%s for neural tiers", nn_model_id)
+
     tournament = DistributedTournament(
         tiers=tiers,
         games_per_matchup=games_per_matchup,
@@ -667,6 +736,7 @@ def main() -> None:
         max_workers=args.workers,
         output_dir=args.output_dir,
         resume_file=args.resume,
+        nn_model_id=nn_model_id,
     )
 
     report = tournament.run()

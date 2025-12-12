@@ -394,6 +394,7 @@ def _resolve_default_nn_model_id(
     Canonical NN checkpoints currently exist only for square8 2-player games.
     To keep mixed/nn-only soaks robust:
     - Prefer the active improvement-loop best checkpoint when present.
+    - Prefer v4 square8 2p checkpoints when present.
     - Prefer v3 square8 2p checkpoints when present.
     - Fall back to the stable sq8_2p baseline prefix otherwise.
     - Return None for other boards/player-counts so callers can disable NN
@@ -411,9 +412,15 @@ def _resolve_default_nn_model_id(
         return best_prefix
 
     if board_type == BoardType.SQUARE8 and num_players == 2:
-        for prefix in ("ringrift_v3_sq8_2p", "sq8_2p_nn_baseline"):
+        for prefix in ("ringrift_v4_sq8_2p", "ringrift_v3_sq8_2p", "sq8_2p_nn_baseline"):
             matches = glob.glob(os.path.join(models_dir, f"{prefix}*.pth"))
-            if any(os.path.getsize(p) > 0 for p in matches):
+            matches = [
+                p
+                for p in matches
+                if os.path.getsize(p) > 0
+                and "h100" not in os.path.basename(p).lower()
+            ]
+            if matches:
                 return prefix
         return "sq8_2p_nn_baseline"
     return None

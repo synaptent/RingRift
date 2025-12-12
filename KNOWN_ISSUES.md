@@ -680,6 +680,14 @@ These issues have been addressed but are kept here for context:
   - P18.4-\*: Orchestrator Phase 4 (100% rollout)
   - P18.5-\*: Extended contract vectors (54 cases, 0 mismatches) and swap_sides parity
     See [WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md](./WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md) Section 3 for details.
+- **AI Fix (Dec 12, 2025): HeuristicAI move-cache key correctness** –
+  Fixed `ai-service/app/ai/move_cache.py` to include `mustMoveFromStackKey`,
+  `rulesOptions`, board geometry, per-player counters (rings/score meta), and
+  `maxPlayers` (in addition to phase/player and move-history length) in the
+  cache key. This prevents stale cached move surfaces that can cause illegal
+  move selections around `swap_sides`, ring placement availability, and
+  post-placement movement constraints. Regression coverage in
+  `ai-service/tests/test_move_cache_key.py`.
 - **Python ELIMINATE_RINGS_FROM_STACK Phase Handling (Dec 2025)** –
   Fixed Python engine phase transitions after ELIMINATE_RINGS_FROM_STACK moves
   in `ai-service/app/game_engine.py`. The fix distinguishes terminal vs
@@ -874,13 +882,12 @@ These issues have been addressed but are kept here for context:
   > Added `evaluateVictory()` call after each move to detect victory mid-replay.
   > When victory is detected, emits `ts-replay-early-victory` and `ts-replay-game-ended`
   > events, then terminates replay. This matches Python's behavior of stopping
-  > game progression when victory conditions are met.
-  4. ✅ **Parity Checker Move Count Handling** (`ai-service/scripts/check_ts_python_replay_parity.py:734-752, 1088-1118, 1558-1563`):
-     - Captures final summary from `ts-replay-game-ended` event
-     - Accepts move count difference when TS terminated early due to valid victory
-       detection (both engines show "completed" with matching state hash)
-     - Updated divergence classification to only flag move count differences when
-       explicitly marked as mismatch (not when early victory was acceptably detected)
+  > game progression when victory conditions are met. 4. ✅ **Parity Checker Move Count Handling** (`ai-service/scripts/check_ts_python_replay_parity.py:734-752, 1088-1118, 1558-1563`):
+  - Captures final summary from `ts-replay-game-ended` event
+  - Accepts move count difference when TS terminated early due to valid victory
+    detection (both engines show "completed" with matching state hash)
+  - Updated divergence classification to only flag move count differences when
+    explicitly marked as mismatch (not when early victory was acceptably detected)
 
   **Validation:** All canonical parity tests pass:
   - 48 contract vectors passed (36 skipped for multi-phase orchestrator tests)

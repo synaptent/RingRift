@@ -124,8 +124,8 @@ def parse_move(move_dict: Dict[str, Any]) -> Move:
         placement_count=move_dict.get("placement_count"),
         stack_moved=move_dict.get("stack_moved"),
         minimum_distance=move_dict.get("minimum_distance"),
-        # Required fields with defaults
-        timestamp=move_dict.get("timestamp", ""),
+        # Required fields with defaults - use epoch time if timestamp missing
+        timestamp=move_dict.get("timestamp") or "1970-01-01T00:00:00Z",
         thinkTime=move_dict.get("think_time", move_dict.get("thinkTime", 0)),
         moveNumber=move_dict.get("move_number", move_dict.get("moveNumber", 0)),
     )

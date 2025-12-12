@@ -1,7 +1,7 @@
 # RingRift GPU Pipeline Roadmap
 
 > **Document Status:** Living document for GPU acceleration strategy
-> **Last Updated:** 2025-12-11
+> **Last Updated:** 2025-12-12
 > **Author:** AI Assistant with human review
 
 ## Executive Summary
@@ -144,12 +144,13 @@ def _step_movement_phase(self, mask, weights_list):
 | Rule                            | Canonical Spec                                                | GPU Implementation    | Impact                               |
 | ------------------------------- | ------------------------------------------------------------- | --------------------- | ------------------------------------ |
 | **Line length (8×8)**           | 4 for 2-player, 3 for 3-4 player (RR-CANON-R120)              | ✅ Player-count-aware | ~~CRITICAL~~ **FIXED 2025-12-11**    |
-| **Overlength line choice**      | Option 1 (all + eliminate) or Option 2 (subset, no eliminate) | Always Option 1       | Training learns suboptimal line play |
-| **Chain capture continuation**  | Must continue until no captures available                     | Single capture only   | Misses multi-capture sequences       |
+| **Overlength line choice**      | Option 1 (all + eliminate) or Option 2 (subset, no eliminate) | ✅ Probabilistic 1/2  | **FIXED** - 30% Option 2 probability |
+| **Chain capture continuation**  | Must continue until no captures available                     | ✅ Full chain support | **FIXED 2025-12-11**                 |
 | **Cap eligibility (territory)** | Multicolor OR single-color height>1; NOT height-1             | Any controlled stack  | Allows invalid eliminations          |
 | **Cap eligibility (line)**      | Any controlled stack including height-1                       | Same as territory     | Correct by accident                  |
 | **Cap eligibility (forced)**    | Any controlled stack including height-1                       | Same                  | Correct                              |
-| **Recovery cascade**            | Territory processing after recovery line                      | Not implemented       | Misses territory gains               |
+| **Recovery cascade**            | Territory processing after recovery line                      | ✅ Cascade check      | **FIXED** - returns to LINE phase    |
+| **Swap sides (pie rule)**       | P2 can swap after P1's first turn (R180-R184)                 | ✅ Heuristic-based    | **ADDED 2025-12-12**                 |
 | **Marker removal on landing**   | Remove marker, eliminate top ring                             | Simplified            | May miss eliminations                |
 
 ### 3.2 Locations of Rule Simplifications
@@ -1535,6 +1536,74 @@ runner = ParallelGameRunner(
 #### Test Results
 
 83 GPU tests passing (69 original + 14 new StateValidator tests).
+
+---
+
+### Phase 4 Progress (2025-12-12)
+
+**Session Focus:** Swap sides (pie rule) implementation and hybrid mode fixes
+
+#### Completed Implementations
+
+##### 1. Swap Sides (Pie Rule) for GPU Selfplay (RR-CANON R180-R184)
+
+**Location:** `gpu_parallel_games.py:_check_and_apply_swap_sides()`, `BatchGameState.swap_offered`
+
+**Implementation:**
+
+- Added `swap_offered: torch.Tensor` field to BatchGameState to track pie rule state
+- Added `swap_enabled: bool = True` parameter to ParallelGameRunner
+- Implemented `_check_and_apply_swap_sides()` method:
+  - Checks eligibility: 2p game, P2's turn, not yet offered
+  - Uses position evaluation heuristic (stack + territory advantage) to decide acceptance
+  - Applies swap by exchanging all board ownership between P1 and P2 (vectorized)
+  - Swaps player stats: rings_in_hand, territory_count, eliminated_rings, buried_rings
+
+```python
+runner = ParallelGameRunner(
+    batch_size=64,
+    swap_enabled=True,  # Enable pie rule (default)
+)
+```
+
+##### 2. Hybrid Mode Bookkeeping Fix (RR-CANON-R076)
+
+**Location:** `hybrid_gpu.py:HybridSelfPlayRunner.run_game()`
+
+**Issue:** Hybrid mode games terminated after 2 moves at LINE_PROCESSING phase when no lines existed.
+
+**Fix:** Added bookkeeping move handling when `get_valid_moves()` returns empty:
+
+- Call `GameEngine.get_phase_requirement()` to check for phase requirements
+- Synthesize bookkeeping moves (NO_LINE_ACTION, NO_TERRITORY_ACTION, etc.)
+- Continue game loop instead of terminating
+
+##### 3. Move Type Names for Training Compatibility
+
+**Location:** `gpu_parallel_games.py:get_move_history()`
+
+**Fix:** Updated move type names to match canonical MoveType enum values for jsonl_to_npz.py compatibility:
+
+- `ring_placement` → `place_ring`
+- `movement` → `move_stack`
+- `capture` → `overtaking_capture`
+- `skip` → `skip_capture`
+- Added `recovery_slide` mapping
+
+#### Performance Benchmarks (MPS/Apple Silicon)
+
+| Mode     | Throughput     | Avg Moves | Rule Fidelity  |
+| -------- | -------------- | --------- | -------------- |
+| Pure GPU | 0.07 games/sec | 56        | Simplified     |
+| Hybrid   | 0.11 games/sec | 100       | Full CPU rules |
+
+**Note:** Hybrid mode is slightly faster on MPS due to CPU caching and simpler evaluation overhead. CUDA GPUs should show opposite results.
+
+#### Test Results
+
+- GPU soak test: 8 games, all completed with ring_elimination victory, 0 invariant violations
+- Hybrid mode: Games complete with proper victory detection (winner=2, 104 moves)
+- Swap sides: Offered in all 2p games, heuristic-based acceptance working
 
 ---
 

@@ -102,3 +102,12 @@ def test_move_cache_key_includes_max_players() -> None:
     assert get_cached_moves(two_player, 1) == ["m"]
     assert get_cached_moves(three_player, 1) is None
 
+
+def test_move_cache_key_includes_player_meta() -> None:
+    base = _make_state(zobrist_hash=31337)
+    p1 = base.players[0].model_copy(update={"rings_in_hand": 0})
+    changed = base.model_copy(update={"players": [p1, *base.players[1:]]})
+
+    cache_moves(base, 1, ["m"])
+    assert get_cached_moves(base, 1) == ["m"]
+    assert get_cached_moves(changed, 1) is None

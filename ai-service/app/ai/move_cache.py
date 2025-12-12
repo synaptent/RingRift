@@ -7,6 +7,7 @@ Uses LRU eviction to bound memory usage.
 
 from __future__ import annotations
 
+import json
 import os
 from collections import OrderedDict
 from typing import Dict, List, Optional, TYPE_CHECKING
@@ -34,6 +35,9 @@ class MoveCache:
     - Marker positions and owners
     - Collapsed spaces
     - Current player and phase
+    - must_move_from_stack_key (movement constraints)
+    - rulesOptions (e.g. swapRuleEnabled)
+    - move_history length (meta-move eligibility, e.g. swap_sides)
     """
 
     def __init__(self, max_size: int = MOVE_CACHE_SIZE):
@@ -94,36 +98,90 @@ class MoveCache:
     def _compute_key(self, state: 'GameState', player: int) -> str:
         """Compute a hash key for the game state.
 
-        CRITICAL: The cache key must include move_history length because
-        meta-moves like swap_sides (pie rule) depend on history state.
-        swap_sides is only legal once, and its eligibility is determined by
-        move_history - not by board position. Without tracking history length,
-        the cache can return stale moves that include swap_sides after it's
-        already been used.
+        CRITICAL: Legal move generation depends on small pieces of metadata
+        that are NOT captured by board structure alone:
+
+        - move_history length: meta-moves like swap_sides (pie rule) depend on
+          it and do not change the board hash.
+        - must_move_from_stack_key: constrains legal movement/capture options
+          after certain placements; this is not encoded in board geometry.
+        - rulesOptions: rule toggles like swapRuleEnabled can change the move
+          surface even when the board is identical.
         """
         history_len = len(state.move_history) if state.move_history else 0
+        must_move_key = state.must_move_from_stack_key or ""
+
+        board = state.board
+        board_type = board.type.value if hasattr(board.type, "value") else str(board.type)
+        board_size = getattr(board, "size", 0)
+
+        # Player meta affects legal moves (e.g. rings_in_hand determines whether
+        # PLACE_RING moves are legal). Encode a small, deterministic digest so
+        # cached move lists cannot bleed between positions with identical board
+        # structure but different per-player counters.
+        players_digest = ""
+        players = getattr(state, "players", None) or []
+        if players:
+            players_meta = sorted(
+                f"{p.player_number}:{p.rings_in_hand}:{p.eliminated_rings}:{p.territory_spaces}"
+                for p in players
+            )
+            players_digest = hashlib.md5("|".join(players_meta).encode()).hexdigest()
+
+        max_players = getattr(state, "max_players", None)
+        if max_players is None:
+            max_players = len(players) if players else 0
+
+        phase_value = (
+            state.current_phase.value
+            if hasattr(state.current_phase, "value")
+            else str(state.current_phase)
+        )
+
+        rules_options = state.rules_options or {}
+        if rules_options:
+            rules_str = json.dumps(
+                rules_options,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+            rules_digest = hashlib.md5(rules_str.encode()).hexdigest()
+        else:
+            rules_digest = ""
 
         # Use Zobrist hash if available (fast)
         if state.zobrist_hash is not None:
-            return f"{state.zobrist_hash}_{player}_{state.current_phase.value}_{history_len}"
+            # Include board metadata so identical hashes on different boards
+            # (e.g. square8 vs square19) never reuse move surfaces.
+            return (
+                f"{board_type}:{board_size}:{max_players}:{players_digest}:"
+                f"{state.zobrist_hash}:{player}:{phase_value}:{history_len}:"
+                f"{must_move_key}:{rules_digest}"
+            )
 
         # Fallback: compute hash from board state
-        board = state.board
-
         # Build a deterministic string representation
         parts = [
-            f"t:{board.type.value}",
-            f"s:{board.size}",
+            f"t:{board_type}",
+            f"s:{board_size}",
+            f"mp:{max_players}",
+            f"pm:{players_digest}",
             f"p:{player}",
-            f"ph:{state.current_phase.value}",
+            f"ph:{phase_value}",
             f"hl:{history_len}",  # History length for swap_sides eligibility
+            f"mm:{must_move_key}",
+            f"ro:{rules_digest}",
         ]
 
         # Add stack positions (sorted for determinism)
         stack_keys = sorted(board.stacks.keys())
         for key in stack_keys:
             stack = board.stacks[key]
-            parts.append(f"st:{key}:{stack.controlling_player}:{len(stack.rings)}")
+            rings_str = ",".join(str(r) for r in stack.rings)
+            parts.append(
+                f"st:{key}:{stack.controlling_player}:{stack.stack_height}:{rings_str}"
+            )
 
         # Add marker positions
         marker_keys = sorted(board.markers.keys())

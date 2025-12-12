@@ -74,12 +74,20 @@ def _resolve_default_reanalysis_nn_model_id(
 
     models_dir = AI_SERVICE_ROOT / "models"
     candidates = [
+        "ringrift_v4_sq8_2p",
         "ringrift_v3_sq8_2p",
         "sq8_2p_nn_baseline",
     ]
     for prefix in candidates:
         matches = list(models_dir.glob(f"{prefix}*.pth"))
-        if any(p.is_file() and p.stat().st_size > 0 for p in matches):
+        matches = [
+            p
+            for p in matches
+            if p.is_file()
+            and p.stat().st_size > 0
+            and "h100" not in p.name.lower()
+        ]
+        if matches:
             return prefix
     return None
 
