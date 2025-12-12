@@ -2777,11 +2777,18 @@ class GameEngine:
 
         board = game_state.board
 
-        # Active players are those with at least one stack or a ring in hand.
+        # Active players for LPS tracking are those with any material remaining
+        # in the game (RR-CANON-R172 / RR-CANON-R175): rings on the board in
+        # any stack (including buried rings) or rings in hand.
+        #
+        # IMPORTANT: Do NOT use "turn-material" (RR-CANON-R201) here. A player
+        # with only buried rings (no controlled stacks, no rings in hand) still
+        # has material and must be included in LPS round tracking (TS parity:
+        # playerHasMaterial uses countRingsInPlayForPlayer, which counts buried
+        # rings).
         active_players: List[int] = []
         for player in game_state.players:
-            has_stacks = any(stack.controlling_player == player.player_number for stack in board.stacks.values())
-            if has_stacks or player.rings_in_hand > 0:
+            if GameEngine._player_has_any_rings(game_state, player.player_number):
                 active_players.append(player.player_number)
 
         if not active_players:

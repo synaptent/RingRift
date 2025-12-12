@@ -457,5 +457,116 @@ def test_lps_victory_can_be_awarded_at_turn_start_even_if_ring_placement_is_anm(
     assert state.winner == 1
 
 
+def test_lps_round_finalization_includes_players_with_buried_rings() -> None:
+    """LPS round tracking must treat buried rings as material (TS parity).
+
+    Regression test for a parity bug where Python used "turn-material" to
+    compute activePlayers during LPS round finalization, excluding players who
+    had only buried rings (no controlled stacks, no rings in hand). This could
+    incorrectly mark a round as "exclusive" and lead to premature LPS wins.
+
+    Canonical reference:
+      - RR-CANON-R172 / RR-CANON-R175: active players for LPS are those with
+        any rings in play (including buried) or in hand.
+      - TS playerHasMaterial uses countRingsInPlayForPlayer (includes buried).
+    """
+    now = datetime.now()
+    board = BoardState(type=BoardType.SQUARE8, size=8)
+
+    players = [
+        Player(
+            id="p1",
+            username="p1",
+            type="human",
+            playerNumber=1,
+            isReady=True,
+            timeRemaining=60,
+            aiDifficulty=None,
+            ringsInHand=1,
+            eliminatedRings=0,
+            territorySpaces=0,
+        ),
+        Player(
+            id="p2",
+            username="p2",
+            type="human",
+            playerNumber=2,
+            isReady=True,
+            timeRemaining=60,
+            aiDifficulty=None,
+            ringsInHand=1,
+            eliminatedRings=0,
+            territorySpaces=0,
+        ),
+    ]
+
+    state = GameState(
+        id="lps-buried-material-round-finalization",
+        boardType=BoardType.SQUARE8,
+        board=board,
+        players=players,
+        currentPhase=GamePhase.RING_PLACEMENT,
+        currentPlayer=1,
+        moveHistory=[],
+        timeControl=TimeControl(initialTime=60, increment=0, type="blitz"),
+        spectators=[],
+        gameStatus=GameStatus.ACTIVE,
+        createdAt=now,
+        lastMoveAt=now,
+        isRated=False,
+        maxPlayers=2,
+        totalRingsInPlay=0,
+        totalRingsEliminated=0,
+        victoryThreshold=3,
+        territoryVictoryThreshold=10,
+        chainCaptureState=None,
+        mustMoveFromStackKey=None,
+        zobristHash=0,
+        rngSeed=None,
+        lpsRoundIndex=0,
+        lpsCurrentRoundActorMask={},
+        lpsExclusivePlayerForCompletedRound=None,
+        lpsCurrentRoundFirstPlayer=None,
+        lpsConsecutiveExclusiveRounds=0,
+        lpsConsecutiveExclusivePlayer=None,
+    )
+
+    original = GameEngine._has_real_action_for_player
+    try:
+        # Round 1: both players have real actions (so the round is NOT exclusive).
+        GameEngine._has_real_action_for_player = staticmethod(lambda _s, _pid: True)  # type: ignore[assignment]
+
+        state.current_player = 1
+        GameEngine._update_lps_round_tracking_for_current_player(state)  # type: ignore[attr-defined]
+
+        state.current_player = 2
+        GameEngine._update_lps_round_tracking_for_current_player(state)  # type: ignore[attr-defined]
+
+        # Before cycling back to the first player, remove P1's turn-material
+        # while keeping material via a buried ring in a P2-controlled stack.
+        state.players[0].rings_in_hand = 0
+        state.players[1].rings_in_hand = 0
+
+        pos = Position(x=0, y=0)
+        state.board.stacks[pos.to_key()] = RingStack(
+            position=pos,
+            rings=[1, 2],  # P1 ring buried, P2 controls the stack
+            stackHeight=2,
+            capHeight=1,
+            controllingPlayer=2,
+        )
+
+        # Cycle back to P1: this finalizes the previous round. Because BOTH
+        # players acted in the round, there must be no exclusive player.
+        state.current_player = 1
+        GameEngine._update_lps_round_tracking_for_current_player(state)  # type: ignore[attr-defined]
+
+        assert state.lps_exclusive_player_for_completed_round is None
+        assert state.lps_consecutive_exclusive_rounds == 0
+        assert state.lps_consecutive_exclusive_player is None
+    finally:
+        GameEngine._has_real_action_for_player = original
+
+
 if __name__ == "__main__":
     unittest.main()
