@@ -169,6 +169,7 @@ The scenarios below capture concrete shapes that have historically exercised the
 - **Expected canonical behaviour (RR-CANON):**
   - Per [`RR-CANON-R172`](RULES_CANONICAL_SPEC.md:700) and clarifications in [`ringrift_complete_rules.md`](../../ringrift_complete_rules.md:1376) §13.3, P should win by Last Player Standing once the “exclusive real-action” condition has held for **two consecutive full rounds** (P takes at least one real action on each of their turns; all others have none).
   - Forced eliminations for other players keep the game legal (no ANM), but do **not** count as real actions that would block Last-Player-Standing victory.
+  - **Turn-start timing vs forced no-ops:** LPS is evaluated at the **start** of the candidate’s next interactive turn (ring_placement / movement / capture / chain_capture) using “has any real action” semantics that are **not** limited to the current phase. As a result, LPS may trigger even when the candidate begins in `ring_placement` with `ringsInHand == 0` (i.e., their next recorded move would be the forced bookkeeping `no_placement_action` before movement becomes available). In that case the game ends immediately on the turn boundary and the `no_placement_action` must **not** be recorded after termination.
 - **Current implementation status:**
   - TS and Python engines now implement explicit early LPS detection via the shared LPS tracker:
     - Shared TS helpers in [`src/shared/engine/lpsTracking.ts`](../../src/shared/engine/lpsTracking.ts:1) (`updateLpsTracking`, `evaluateLpsVictory`).

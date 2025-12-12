@@ -153,10 +153,17 @@ def _get_state_hash(self, game_state: GameState) -> int:
 
 ```python
 ai1 = DescentAI(1, AIConfig(difficulty=5, think_time=500, randomness=0.1, rngSeed=config.seed))
-ai2 = DescentAI(2, AIConfig(difficulty=5, think_time=500, randomness=0.1, rngSeed=config.seed))
+ai2 = DescentAI(2, AIConfig(difficulty=5, think_time=500, randomness=0.1, rngSeed=config.seed + 1))
 ```
 
-**Impact:** Both self-play players use the same seed. While they play different sides, the deterministic behavior may limit exploration diversity.
+**Status (2025-12-12):** ✅ **RESOLVED**
+
+**Impact (historical):** When both self-play players used the same seed, their
+stochastic tie-breaking and exploration were more correlated than necessary.
+
+**Fix:** Use distinct per-player RNG seeds and reset/reseed AI instances per
+game during dataset generation (`BaseAI.reset_for_new_game`), so each game is
+reproducible in isolation under a base seed while avoiding correlated streams.
 
 #### 1.3.5 Hex-Specific Model Not Trained
 
@@ -400,7 +407,11 @@ TrainConfig(
 
 ### Priority 4: Self-Play Diversity Enhancement (Medium Impact, Low Effort)
 
-**Current State:** Both self-play players share the same RNG seed.
+**Status (2025-12-12):** ✅ **IMPLEMENTED**
+
+**Current State:** Self-play drivers now use distinct per-player RNG streams and
+reseed per game when a base seed is supplied (keeping games reproducible and
+independent).
 
 **Proposed Solution:**
 
@@ -419,8 +430,8 @@ TrainConfig(
 **Implementation:**
 
 ```python
-ai1 = DescentAI(1, AIConfig(rngSeed=config.seed + 1))
-ai2 = DescentAI(2, AIConfig(rngSeed=config.seed + 2))
+ai1 = DescentAI(1, AIConfig(rngSeed=config.seed))
+ai2 = DescentAI(2, AIConfig(rngSeed=config.seed + 1))
 ```
 
 ---
@@ -1450,7 +1461,28 @@ class ZobristHash:
 
 **File Modified:** `app/ai/zobrist.py`
 
-### 10.7 Future Work
+### 10.7 LPS Turn-Start Parity Fix (2025-12-12)
+
+**Issue:** TS↔Python parity divergence on 3P/4P games where Last-Player-Standing
+(RR-CANON-R172) is awarded **at the start of the candidate’s turn** even when
+the turn begins in `ring_placement` with a forced no-op (`ringsInHand == 0`).
+
+- TS evaluates LPS on the turn boundary (before the forced `no_placement_action`),
+  so the game can end immediately after the previous player’s final
+  `no_territory_action`.
+- Python incorrectly deferred LPS whenever `globalActions.isANMState(state)` was
+  true, causing it to keep the game ACTIVE for one extra bookkeeping move and
+  desynchronizing parity replays.
+
+**Fix:** Remove ANM deferral from `GameEngine._maybe_apply_lps_victory_at_turn_start`
+and add a regression test that constructs an ANM `ring_placement` boundary where
+P1 has real actions (movement/capture) and others do not.
+
+- File modified: `app/game_engine.py`
+- Test updated: `tests/test_lps_and_ring_caps.py`
+- Related rules doc clarification: `docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md` (ANM‑SCEN‑07)
+
+### 10.8 Future Work
 
 1. ~~**Fix RandomAI ZobristHash issue**~~ ✅ RESOLVED (thread-safe singleton)
 2. **Extended tournament** - Run full D1-D10 tournament with 100+ games per matchup

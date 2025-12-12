@@ -871,6 +871,30 @@ def generate_dataset(
         else:
             engine_stats[game_engine_type] += num_players
 
+        # Reset/reseed AIs per game to:
+        # - keep games reproducible under a base seed, and
+        # - avoid correlated RNG streams between players when running self-play.
+        # We reseed even when AI instances are reused across games ("single"
+        # engine mode) so that each game is reproducible in isolation.
+        for pn in range(1, num_players + 1):
+            ai = ai_players.get(pn)
+            if ai is None:
+                continue
+            try:
+                derived = None
+                if seed is not None:
+                    # Deterministic per-(game,player,engine) seed.
+                    base_seed = int(seed) & 0xFFFFFFFF
+                    eng = player_engines.get(pn, engine)
+                    derived = (base_seed + game_idx * 1_000_003 + pn * 97_911) & 0xFFFFFFFF
+                    if eng == "mcts":
+                        derived ^= 0xA5A5A5A5
+                ai.reset_for_new_game(rng_seed=derived)
+            except Exception:
+                # Best-effort: if an AI does not expose reset_for_new_game for
+                # some reason, keep going (self-play should still run).
+                pass
+
         print(f"Game {game_idx+1} started (engine: {game_engine_type})")
         move_count = 0
 

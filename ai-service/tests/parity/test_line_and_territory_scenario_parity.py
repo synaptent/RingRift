@@ -193,26 +193,19 @@ def test_line_and_territory_scenario_parity(board_type: BoardType, monkeypatch: 
     # === 1) Line processing (Option 2: min collapse, no elimination) ===
     line_moves = GameEngine._get_line_processing_moves(state, 1)
 
-    # Canonical path: CHOOSE_LINE_REWARD (TS-aligned).
+    # Canonical path: CHOOSE_LINE_OPTION (TS-aligned), legacy alias: CHOOSE_LINE_REWARD.
     # Option 2 = minimum collapse = collapsed_markers length equals required_length.
-    # Legacy path: CHOOSE_LINE_OPTION with placement_count == 2.
     option_moves = [
         m
         for m in line_moves
         if (
-            (
-                m.type == MoveType.CHOOSE_LINE_REWARD
-                and hasattr(m, "collapsed_markers")
-                and m.collapsed_markers is not None
-                and len(m.collapsed_markers) == required_length
-            )
-            or (
-                m.type == MoveType.CHOOSE_LINE_OPTION
-                and (m.placement_count or 0) == 2
-            )
+            m.type in (MoveType.CHOOSE_LINE_OPTION, MoveType.CHOOSE_LINE_REWARD)
+            and hasattr(m, "collapsed_markers")
+            and m.collapsed_markers is not None
+            and len(m.collapsed_markers) == required_length
         )
     ]
-    assert option_moves, "Expected at least one Option 2/CHOOSE_LINE_REWARD move"
+    assert option_moves, "Expected at least one Option 2/CHOOSE_LINE_OPTION move"
     line_move = option_moves[0]
 
     GameEngine._apply_line_formation(state, line_move)
@@ -317,14 +310,14 @@ def test_get_valid_moves_line_processing_surfaces_only_line_decisions(
     moves = GameEngine.get_valid_moves(state, 1)
     assert moves, "Expected line-processing moves in LINE_PROCESSING"
 
-    # Only PROCESS_LINE and CHOOSE_LINE_REWARD should be surfaced.
-    allowed_types = {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_REWARD}
+    # Only PROCESS_LINE and CHOOSE_LINE_OPTION (canonical) / CHOOSE_LINE_REWARD (legacy) should be surfaced.
+    allowed_types = {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_OPTION, MoveType.CHOOSE_LINE_REWARD}
     assert all(m.type in allowed_types for m in moves)
 
     process_moves = [m for m in moves if m.type == MoveType.PROCESS_LINE]
-    reward_moves = [m for m in moves if m.type == MoveType.CHOOSE_LINE_REWARD]
+    reward_moves = [m for m in moves if m.type in (MoveType.CHOOSE_LINE_OPTION, MoveType.CHOOSE_LINE_REWARD)]
     assert process_moves, "Expected at least one PROCESS_LINE move"
-    assert reward_moves, "Expected at least one CHOOSE_LINE_REWARD move"
+    assert reward_moves, "Expected at least one CHOOSE_LINE_OPTION/CHOOSE_LINE_REWARD move"
 
     # Reward moves must reference the same synthetic line and use either the
     # full line or required-length segments as collapsed_markers.
@@ -426,9 +419,9 @@ def test_get_valid_moves_territory_processing_pre_elimination(
     moves = GameEngine.get_valid_moves(state, 1)
     assert moves, "Expected territory-processing moves"
 
-    # Only PROCESS_TERRITORY_REGION should be surfaced.
+    # Only CHOOSE_TERRITORY_OPTION (canonical) / PROCESS_TERRITORY_REGION (legacy) should be surfaced.
     assert all(
-        m.type == MoveType.PROCESS_TERRITORY_REGION for m in moves
+        m.type in (MoveType.CHOOSE_TERRITORY_OPTION, MoveType.PROCESS_TERRITORY_REGION) for m in moves
     )
 
     # Each move should carry the disconnected region geometry and point
@@ -707,8 +700,8 @@ def test_overlength_line_option2_segments_exhaustive(
     moves = GameEngine.get_valid_moves(state, 1)
     assert moves, "Expected line-processing moves in LINE_PROCESSING"
 
-    reward_moves = [m for m in moves if m.type == MoveType.CHOOSE_LINE_REWARD]
-    assert reward_moves, "Expected CHOOSE_LINE_REWARD moves for overlength line"
+    reward_moves = [m for m in moves if m.type in (MoveType.CHOOSE_LINE_OPTION, MoveType.CHOOSE_LINE_REWARD)]
+    assert reward_moves, "Expected CHOOSE_LINE_OPTION/CHOOSE_LINE_REWARD moves for overlength line"
 
     line_len = len(line_positions)
     # Option‑1: collapse‑all reward, identified by the canonical "-all" suffix

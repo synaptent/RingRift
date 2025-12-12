@@ -160,8 +160,8 @@ def test_territory_processing_q23_region_property(
     assert terr_moves, "expected territory-processing moves"
 
     for move in terr_moves:
-        # All surfaced moves must be PROCESS_TERRITORY_REGION decisions.
-        assert move.type == MoveType.PROCESS_TERRITORY_REGION
+        # All surfaced moves must be CHOOSE_TERRITORY_OPTION (canonical) / PROCESS_TERRITORY_REGION (legacy).
+        assert move.type in (MoveType.CHOOSE_TERRITORY_OPTION, MoveType.PROCESS_TERRITORY_REGION)
         assert move.disconnected_regions
         region = list(move.disconnected_regions)[0]
         region_spaces = list(region.spaces)

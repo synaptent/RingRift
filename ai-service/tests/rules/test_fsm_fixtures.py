@@ -59,7 +59,7 @@ _EVENT_TO_MOVE_TYPE: Dict[str, Optional[MoveType]] = {
     "NO_LINE_ACTION": MoveType.NO_LINE_ACTION,
     "PROCESS_LINE": MoveType.PROCESS_LINE,
     "NO_TERRITORY_ACTION": MoveType.NO_TERRITORY_ACTION,
-    "PROCESS_REGION": MoveType.PROCESS_TERRITORY_REGION,
+    "PROCESS_REGION": MoveType.CHOOSE_TERRITORY_OPTION,  # Canonical type (legacy: PROCESS_TERRITORY_REGION)
     "FORCED_ELIMINATE": MoveType.FORCED_ELIMINATION,
     "_ADVANCE_TURN": None,  # Internal FSM event, not a move type
     "RESIGN": None,  # Not a move type
