@@ -2,26 +2,26 @@
 
 This plan outlines the steps to fix the ring count inconsistencies identified in `rules_analysis_ring_count_inconsistencies.md`.
 
-**Status:** Canonical docs now use **18 / 60 / 72** ring counts; verify whether any code paths or fixtures still assume older values before proceeding with remaining steps.
+**Status:** ✅ **COMPLETE** - Canonical docs and code now use **18 / 72 / 96** ring counts across all configs, tests, and documentation.
 
 ## Objective
 
 Ensure all parts of the codebase and documentation align with the canonical specification (RR-CANON-R020):
 
 - **square8**: 18 rings
-- **square19**: 60 rings
-- **hexagonal**: 72 rings
+- **square19**: 72 rings
+- **hexagonal**: 96 rings
 
 ## Steps
 
 ### 1. Update Documentation (`ringrift_complete_rules.md`, `ringrift_compact_rules.md`, `RULES_CANONICAL_SPEC.md`)
 
-- Ensure all board-config and threshold references match **18 / 60 / 72** (square8 / square19 / hex).
+- ✅ All board-config and threshold references match **18 / 72 / 96** (square8 / square19 / hex).
 
 ### 2. Update TS + Python Board Configs
 
-- **TypeScript:** `src/shared/types/game.ts` `BOARD_CONFIGS.square19.ringsPerPlayer = 60`.
-- **Python:** `ai-service/app/rules/core.py` `BOARD_CONFIGS[BoardType.SQUARE19].rings_per_player = 60`.
+- ✅ **TypeScript:** `src/shared/types/game.ts` `BOARD_CONFIGS.square19.ringsPerPlayer = 72`.
+- ✅ **Python:** `ai-service/app/rules/core.py` `BOARD_CONFIGS[BoardType.SQUARE19].rings_per_player = 72`.
 
 ### 3. Verify Test Fixtures (`src/server/game/testFixtures/decisionPhaseFixtures.ts`)
 

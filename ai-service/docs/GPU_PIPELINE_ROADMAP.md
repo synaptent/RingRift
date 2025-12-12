@@ -1109,7 +1109,7 @@ rings_per_player = {8: 18, 19: 48}.get(board_size, 18)  # Missing hex config
 
 ```python
 total_spaces = {8: 64, 19: 361, 13: 469}.get(board_size, board_size * board_size)
-rings_per_player = {8: 18, 19: 48, 13: 72}.get(board_size, 18)
+rings_per_player = {8: 18, 19: 72, 13: 96}.get(board_size, 18)
 ```
 
 **Verification:** Added hex board types to parameterized victory threshold tests.

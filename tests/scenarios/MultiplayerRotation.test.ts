@@ -163,7 +163,7 @@ describe('MultiplayerRotation: 4-Player Game Scenarios', () => {
     });
 
     it('should validate 4-player turn calculation helpers', () => {
-      const engine = createMultiPlayerEngine('rotation-4p-calc', 'square19', 4, 60);
+      const engine = createMultiPlayerEngine('rotation-4p-calc', 'square19', 4, 72);
       const state = getGameState(engine);
 
       // Test modular arithmetic for 4-player rotation
@@ -178,15 +178,15 @@ describe('MultiplayerRotation: 4-Player Game Scenarios', () => {
     });
 
     it('should calculate correct victory threshold for 4-player square19', () => {
-      // square19 ringsPerPlayer = 60 per BOARD_CONFIGS
-      const engine = createMultiPlayerEngine('4p-threshold', 'square19', 4, 60);
+      // square19 ringsPerPlayer = 72 per BOARD_CONFIGS
+      const engine = createMultiPlayerEngine('4p-threshold', 'square19', 4, 72);
       const state = getGameState(engine);
 
-      // Total rings: 4 × 60 = 240
-      expect(state.totalRingsInPlay).toBe(240);
+      // Total rings: 4 × 72 = 288
+      expect(state.totalRingsInPlay).toBe(288);
 
-      // Per RR-CANON-R061: round(60 × (2/3 + 1/3 × 3)) = 100
-      expect(state.victoryThreshold).toBe(100);
+      // Per RR-CANON-R061: round(72 × (2/3 + 1/3 × 3)) = 120
+      expect(state.victoryThreshold).toBe(120);
     });
   });
 

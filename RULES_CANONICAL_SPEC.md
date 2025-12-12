@@ -91,8 +91,8 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 - **[RR-CANON-R020] Rings per player (own-colour supply cap).**
   - For each board type, each player P has a fixed personal supply of rings of P's **own colour**:
     - `square8`: 18 rings.
-    - `square19`: 60 rings.
-    - `hexagonal`: 72 rings.
+    - `square19`: 72 rings.
+    - `hexagonal`: 96 rings.
   - At all times, the total number of rings of P's colour that are **in play** (on the board in any stack, regardless of which player currently controls those stacks, plus in P's hand) must be ≤ this `ringsPerPlayer` value for the chosen board type.
   - Rings of other colours that P has captured and that are buried in stacks P controls **do not** count against P's `ringsPerPlayer` cap; they continue to belong, by colour, to their original owners for conservation, elimination, and victory accounting.
   - Eliminated rings of P's colour are permanently out of play and do not refresh or expand P's supply beyond `ringsPerPlayer`; they only change how much of that fixed supply is currently eliminated versus still in play.
@@ -214,14 +214,14 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - 2 players: `round(18 × (2/3 + 1/3 × 1)) = round(18 × 1) = 18`
       - 3 players: `round(18 × (2/3 + 1/3 × 2)) = round(18 × 4/3) = 24`
       - 4 players: `round(18 × (2/3 + 1/3 × 3)) = round(18 × 5/3) = 30`
-    - `square19` (60 rings/player):
-      - 2 players: `round(60 × 1) = 60`
-      - 3 players: `round(60 × 4/3) = 80`
-      - 4 players: `round(60 × 5/3) = 100`
-    - `hexagonal` (72 rings/player):
+    - `square19` (72 rings/player):
       - 2 players: `round(72 × 1) = 72`
       - 3 players: `round(72 × 4/3) = 96`
       - 4 players: `round(72 × 5/3) = 120`
+    - `hexagonal` (96 rings/player):
+      - 2 players: `round(96 × 1) = 96`
+      - 3 players: `round(96 × 4/3) = 128`
+      - 4 players: `round(96 × 5/3) = 160`
   - A player wins by elimination when their credited eliminated ring total reaches or exceeds `victoryThreshold`.
   - Rationale: In multi-player games, a player must eliminate more rings to win, proportional to the total rings controlled by opponents.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §7.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.3, 13.1, 16.3, 16.9.4.5.
@@ -630,19 +630,23 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 - **[RR-CANON-R111] Recovery action marker slide.**
   - When P performs a recovery action:
     - P selects one of their existing markers on the board.
-    - P slides that marker to an **adjacent empty cell**:
+    - P slides that marker to an **adjacent destination cell**:
       - For square boards: Moore neighborhood (8 directions, including diagonals).
       - For hexagonal boards: hex-adjacency (6 directions).
     - The destination cell must be:
       - Not collapsed.
-      - Empty (no stack, no marker).
-    - The marker slide does **not** create a departure marker at the original position; the original cell becomes empty.
+      - Not contain a marker.
+      - If `recoveryMode ∈ {'line','fallback'}`: empty (no stack).
+      - If `recoveryMode == 'stack_strike'`: contains a stack (see RR-CANON-R112(b2)).
+    - The recovery move does **not** create a departure marker at the original position; the original cell becomes empty.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.2.
 
 - **[RR-CANON-R112] Recovery action success criteria.**
   - A recovery marker slide is legal if **either** of these conditions is satisfied:
     - **(a) Line formation:** The resulting marker position completes a line of **at least `lineLength`** consecutive markers of P's colour (as defined by `lineAdjacency` for the board type).
-    - **(b) Fallback repositioning:** If no slide satisfies condition (a), any adjacent slide is permitted, including slides that cause territory disconnection.
+    - **(b) Fallback-class recovery:** If no slide satisfies condition (a), one of the following adjacent recovery actions is permitted:
+      - **(b1) Fallback repositioning:** Slide a marker to an adjacent empty cell (including slides that cause territory disconnection).
+      - **(b2) Stack-strike:** Slide a marker onto an adjacent stack; the marker is removed from play and the attacked stack's top ring is eliminated and credited to P.
   - The minimum required length for line formation:
     - `square8` 2-player: 4 markers.
     - `square8` 3-4 player: 3 markers.
@@ -652,7 +656,10 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - **Option 1** (if chosen): Collapse all markers in the line to territory and pay the self-elimination cost (one buried ring extraction).
     - **Option 2** (if chosen): Collapse exactly `lineLength` consecutive markers of the player's choice to territory **without** paying any self-elimination cost. The remaining markers stay on the board.
     - This mirrors normal line reward semantics (RR-CANON-R130–R134).
-  - **Fallback recovery (condition b):** If no line-forming slide exists, P may slide any marker to an adjacent empty cell (including slides that cause territory disconnection). This costs one buried ring extraction but does not trigger line processing.
+  - **Fallback-class recovery (condition b):** If no line-forming slide exists, P may either:
+    - **Fallback repositioning (b1):** Slide any marker to an adjacent empty cell (including slides that cause territory disconnection).
+    - **Stack-strike (b2):** Slide any marker onto an adjacent stack, sacrificing the marker to eliminate that stack's top ring.
+    - In both cases, P pays the recovery fallback cost (one buried ring extraction) and no line processing occurs.
   - **Skip option:** P may elect to skip recovery entirely, preserving buried rings for a future turn.
   - If no slide satisfies (a) or (b), and P does not skip, P has no legal recovery action and remains temporarily eliminated.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.3.
@@ -689,7 +696,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
         markerFrom: PosKey,        // source marker position
         markerTo: PosKey,          // adjacent destination
         extractionStack: PosKey,   // stack for buried ring extraction
-        recoveryMode: 'line' | 'fallback'  // which success criterion was met
+        recoveryMode: 'line' | 'fallback' | 'stack_strike'  // which success criterion was met
       }
       ```
 
@@ -716,6 +723,13 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
         - No line processing occurs.
         - Buried ring extracted from `extractionStack` (self-elimination cost).
         - P's `eliminatedRingsTotal` increases by 1.
+      - **When `recoveryMode == 'stack_strike'`:**
+        - `markerTo` must be an adjacent cell that contains a stack.
+        - Marker at `markerFrom` is removed from play (it does not occupy `markerTo`).
+        - Eliminate the top ring of the attacked stack at `markerTo` and credit it to P.
+        - Buried ring extracted from `extractionStack` (recovery fallback cost).
+        - No line processing occurs.
+        - P's `eliminatedRingsTotal` increases by 2 (one attacked ring + one self-elimination ring).
 
   - **Line processing bundled into `recovery_slide` (line mode only):**
     - For `recoveryMode == 'line'`, the line collapse and self-elimination are bundled into the `recovery_slide` move effect.

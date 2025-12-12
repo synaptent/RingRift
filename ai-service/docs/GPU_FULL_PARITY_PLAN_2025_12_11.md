@@ -1,6 +1,6 @@
 # GPU Full Parity Plan - 2025-12-11
 
-> **Status:** 100% Complete - Full rules parity achieved
+> **Status:** ~85% Complete - Core rules implemented, stack-strike recovery missing
 > **Purpose:** Achieve full rules parity between GPU and CPU paths
 > **SSoT:** RULES_CANONICAL_SPEC.md defines canonical rules; this doc tracks GPU compliance
 > **Last Updated:** 2025-12-11 (Updated after comprehensive verification)
@@ -15,7 +15,7 @@ After comprehensive code analysis, the GPU implementation (`gpu_parallel_games.p
 | Territory processing (R140-R146) | "Stub only"         | ✅ IMPLEMENTED | Flood-fill with cap eligibility check                 |
 | Vectorized move selection        | "Pending"           | ✅ IMPLEMENTED | `select_moves_vectorized()` with segment-wise softmax |
 | Shadow validation                | "Complete"          | ✅ INTEGRATED  | 5% sample rate, 0.1% threshold                        |
-| Recovery moves (R110-R115)       | Not documented      | ✅ IMPLEMENTED | `generate_recovery_moves_batch()`                     |
+| Recovery moves (R110-R115)       | Not documented      | ⚠️ PARTIAL     | Empty-cell slides only, stack-strike v1 missing       |
 
 ---
 
@@ -64,15 +64,19 @@ while chain_depth < max_chain_depth:
 
 **Status:** COMPLETE
 
-### Recovery Moves (RR-CANON-R110-R115) ✅
+### Recovery Moves (RR-CANON-R110-R115) ⚠️ PARTIAL
 
-**Location:** `gpu_parallel_games.py:3271-3290`
+**Location:** `gpu_parallel_games.py:1620-1752`
 
-- `generate_recovery_moves_batch()` for marker sliding
+- `generate_recovery_moves_batch()` for marker sliding to **empty cells only**
 - Cost deduction from buried_rings
 - Applied via `apply_recovery_moves_vectorized()`
 
-**Status:** COMPLETE
+**Gap:** Stack-strike v1 NOT implemented. CPU path allows sliding onto opponent stacks (sacrificing marker to eliminate top ring) when no line-forming option exists. GPU only supports empty-cell slides.
+
+**Impact:** GPU may have higher stalemate rates on complex board states.
+
+**Status:** PARTIAL - Empty-cell slides only, stack-strike v1 missing
 
 ---
 

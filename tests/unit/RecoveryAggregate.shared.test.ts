@@ -1614,7 +1614,7 @@ describe('Extraction Stack Choice', () => {
   });
 });
 
-describe('Experimental stack-strike recovery (v1)', () => {
+describe('Stack-strike recovery (v1)', () => {
   const FLAG = 'RINGRIFT_RECOVERY_STACK_STRIKE_V1';
   const prevFlag = process.env[FLAG];
 

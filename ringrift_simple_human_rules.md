@@ -57,13 +57,13 @@ There are three standard boards:
 
 - **19×19 square** (full version)
   - 361 spaces.
-  - **60 rings** per player.
+  - **72 rings** per player.
   - Territory victory: **>180** spaces.
   - Lines: **4+** markers in a row.
 
 - **Hexagonal** (radius 12; 13 cells per side)
   - 469 spaces.
-  - **72 rings** per player.
+  - **96 rings** per player.
   - Territory victory: **>234** spaces.
   - Lines: **4+** markers along hex directions.
 
@@ -205,15 +205,19 @@ If you control **no stacks** but have **markers on the board** and **buried ring
 Recovery eligibility is independent of rings in hand; players with rings may choose
 recovery over placement:
 
-1. **Slide** one of your markers to an adjacent empty cell.
+1. **Slide** one of your markers to an adjacent destination:
+   - **Empty cell** (normal recovery slide), or
+   - **Adjacent stack** (stack-strike, only in fallback-class recovery).
 2. The slide is legal if **either**:
    - **(a) Line formation:** Completes a line of **at least** `lineLength` of your markers (4 for 8×8 2-player, 3 for 8×8 3–4 player, 4 for 19×19/Hex).
-   - **(b) Fallback:** If no line-forming slide exists, any adjacent slide is permitted (including slides that cause territory disconnection).
+   - **(b) Fallback-class recovery:** If no line-forming slide exists, one of the following adjacent recovery actions is permitted:
+     - **(b1) Fallback repositioning:** Slide to an adjacent empty cell (including slides that cause territory disconnection).
+     - **(b2) Stack-strike:** Slide onto an adjacent stack; your marker is removed and the stack's top ring is eliminated and credited to you.
 3. **Skip option:** You may skip recovery entirely to save your buried rings.
 4. **Line recovery (a):** Overlength lines follow standard Option 1 / Option 2 semantics:
    - **Option 1:** Collapse all markers; pay one buried ring extraction.
    - **Option 2:** Collapse exactly `lineLength` markers of your choice; pay nothing.
-5. **Fallback recovery (b):** Costs one buried ring extraction, no line processing.
+5. **Fallback-class recovery (b):** Costs one buried ring extraction and does not trigger line processing. In stack-strike (b2), the marker is sacrificed and the attacked stack's top ring is also eliminated.
 6. **Pay the cost** by extracting your bottommost ring from any stack containing your buried rings:
    - That ring is permanently eliminated (credited to you).
    - The stack shrinks by 1; its new top ring determines control.
@@ -318,8 +322,8 @@ hand. In multi-player games, the threshold increases with player count.
 Thresholds:
 
 - 8×8 (18 rings/player): **18** (2p), **24** (3p), **30** (4p) rings eliminated.
-- 19×19 (60 rings/player): **60** (2p), **80** (3p), **100** (4p) rings eliminated.
-- Hex (72 rings/player): **72** (2p), **96** (3p), **120** (4p) rings eliminated.
+- 19×19 (72 rings/player): **72** (2p), **96** (3p), **120** (4p) rings eliminated.
+- Hex (96 rings/player): **96** (2p), **128** (3p), **160** (4p) rings eliminated.
 
 Your eliminated‑rings total includes:
 

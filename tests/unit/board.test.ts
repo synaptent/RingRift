@@ -167,7 +167,7 @@ describe('Board Configurations', () => {
 
     expect(config.type).toBe('square19');
     expect(config.size).toBe(19);
-    expect(config.ringsPerPlayer).toBe(60);
+    expect(config.ringsPerPlayer).toBe(72);
     expect(config.minLineLength).toBe(4);
     expect(config.adjacencyType).toBe('moore');
   });
@@ -177,7 +177,7 @@ describe('Board Configurations', () => {
 
     expect(config.type).toBe('hexagonal');
     expect(config.size).toBe(13); // radius=12
-    expect(config.ringsPerPlayer).toBe(72);
+    expect(config.ringsPerPlayer).toBe(96);
     expect(config.minLineLength).toBe(4);
     expect(config.adjacencyType).toBe('hexagonal');
   });

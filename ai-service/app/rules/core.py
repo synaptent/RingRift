@@ -78,8 +78,8 @@ def get_victory_threshold(board_type: BoardType, num_players: int) -> int:
 
     This is: (2/3 × ownStartingRings) + (1/3 × combinedOpponentRings)
     For 2-player games, this equals ringsPerPlayer (must eliminate all opponent rings).
-    For 3-player: 24 (8×8), 80 (19×19), 96 (hex)
-    For 4-player: 30 (8×8), 100 (19×19), 120 (hex)
+    For 3-player: 24 (8×8), 96 (19×19), 128 (hex)
+    For 4-player: 30 (8×8), 120 (19×19), 160 (hex)
     """
     rings_per_player = BOARD_CONFIGS[board_type].rings_per_player
     return round(rings_per_player * (2/3 + (1/3) * (num_players - 1)))

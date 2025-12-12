@@ -1,16 +1,19 @@
 # Experimental Recovery Stack‑Strike v1
 
-Status: **experimental**. This rule is **not canonical** and is gated behind an
-environment flag. Canonical RR‑CANON recovery semantics remain unchanged when
-the flag is off.
+Status: **canonical** (RR‑CANON‑R112(b2)). This rule is now part of the
+canonical recovery fallback semantics in `RULES_CANONICAL_SPEC.md`.
+
+The environment flag `RINGRIFT_RECOVERY_STACK_STRIKE_V1=0` may still be used as
+a **non‑canonical debug/ablation mode** for legacy comparisons, but disabling it
+produces non‑canonical trajectories and must not be used for canonical replay
+DB generation or training data.
 
 ## Rule Summary
 
 When a player is eligible for recovery in the movement phase (RR‑CANON‑R110),
 and **no line‑forming recovery slide exists** for them anywhere on the board
 (RR‑CANON‑R112(a) is impossible), then if
-`RINGRIFT_RECOVERY_STACK_STRIKE_V1=1` they may choose a **stack‑strike**
-recovery slide:
+they may choose a **stack‑strike** recovery slide:
 
 - Slide a marker onto an **adjacent stack**.
 - The sliding marker is **removed from play** (not placed at destination).
@@ -41,19 +44,17 @@ Allowing a low‑power stack strike aims to:
 ## Implementation Notes
 
 - **TS SSoT**: `src/shared/engine/aggregates/RecoveryAggregate.ts` adds
-  `RecoveryMode = "stack_strike"` and enumerates/apply/validate under the flag.
+  `RecoveryMode = "stack_strike"` and enumerates/apply/validate (canonical).
 - **Python mirror**: `ai-service/app/rules/recovery.py` matches TS semantics and
-  emits `recoveryMode="stack_strike"` moves when enabled.
-- **Flag gate**:
-  - TS reads via `flagEnabled("RINGRIFT_RECOVERY_STACK_STRIKE_V1")`.
+  emits `recoveryMode="stack_strike"` moves (canonical).
+- **Debug/ablation flag (non-canonical)**:
+  - TS reads via `isRecoveryStackStrikeV1Enabled()` in `src/shared/utils/envFlags.ts`.
   - Python reads via `os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1")`.
-
-Flag off preserves canonical behaviour exactly.
 
 ## Evaluation Plan
 
 Run fresh distributed canonical self‑play + TS↔Python parity gates with the
-flag on, then compare to baseline:
+canonical rules, then compare to baseline variants if needed:
 
 - `square19` 2P
 - `hexagonal` 3P

@@ -731,7 +731,7 @@ def has_any_recovery_move(state: GameState, player: int) -> bool:
         directions = _get_moore_directions(board.type)
         for direction in directions:
             to_pos = _add_direction(marker.position, direction, 1)
-            # Experimental stack-strike recovery counts as a fallback-class move.
+            # Stack-strike recovery counts as a fallback-class move (RR-CANON-R112(b2)).
             if (
                 stack_strike_enabled
                 and BoardManager.is_valid_position(to_pos, board.type, board.size)
@@ -1070,7 +1070,7 @@ def apply_recovery_slide(
     recovery_mode = getattr(move, "recovery_mode", None)
 
     if recovery_mode == "stack_strike":
-        # Experimental stack-strike recovery (v1): sacrifice marker to strike adjacent stack.
+        # Stack-strike recovery (v1, RR-CANON-R112(b2)): sacrifice marker to strike adjacent stack.
         del board.markers[from_key]
 
         attacked = board.stacks.get(to_key)

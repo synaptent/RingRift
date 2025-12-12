@@ -488,7 +488,7 @@ class TestExpandedRecovery:
         assert len(fallback_slides) > 0, "Should have fallback recovery slide options"
 
     def test_stack_strike_targets_when_enabled_and_no_line(self, monkeypatch):
-        """Experimental v1: stack-strike targets appear when enabled and no line exists."""
+        """Stack-strike v1: targets appear when enabled and no line exists."""
         from app.rules.recovery import enumerate_expanded_recovery_targets, get_expanded_recovery_moves
 
         monkeypatch.setenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "1")
@@ -508,7 +508,7 @@ class TestExpandedRecovery:
         assert len(strike_moves) > 0
 
     def test_apply_stack_strike_eliminates_top_ring_and_sacrifices_marker(self, monkeypatch):
-        """Experimental v1: applying stack-strike removes marker and top ring."""
+        """Stack-strike v1: applying removes marker and top ring."""
         from app.rules.recovery import apply_recovery_slide
 
         monkeypatch.setenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "1")

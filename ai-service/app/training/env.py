@@ -31,11 +31,11 @@ logger = logging.getLogger(__name__)
 #   Max placements ~36, max movements ~36*10, captures reduce rings
 #   Conservative estimate: 150 moves for 2p, +50 per additional player
 #
-# - Square19: 361 cells, 60 rings/player (2p) = 120 total rings
+# - Square19: 361 cells, 72 rings/player (2p) = 144 total rings
 #   Much larger board, longer games expected
 #   Conservative estimate: 400 moves for 2p, +100 per additional player
 #
-# - Hexagonal: 469 cells (radius 12), 72 rings/player (2p) = 144 total rings
+# - Hexagonal: 469 cells (radius 12), 96 rings/player (2p) = 192 total rings
 #   Similar to Square19 scale
 #   Conservative estimate: 400 moves for 2p, +100 per additional player
 #

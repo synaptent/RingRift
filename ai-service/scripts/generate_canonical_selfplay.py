@@ -176,6 +176,16 @@ def run_selfplay_and_parity(
                 file=sys.stderr,
                 flush=True,
             )
+            if (
+                num_existing_games > 5000
+                and (not parity_limit_games_per_db or parity_limit_games_per_db <= 0)
+            ):
+                print(
+                    "[generate_canonical_selfplay] WARNING: parity-only mode will check ALL games "
+                    "in this DB; consider setting --parity-limit-games-per-db for a quick smoke pass.",
+                    file=sys.stderr,
+                    flush=True,
+                )
         cmd = [
             sys.executable,
             "scripts/check_ts_python_replay_parity.py",
@@ -185,6 +195,8 @@ def run_selfplay_and_parity(
             "canonical",
             "--view",
             "post_move",
+            "--progress-every",
+            "25",
             "--summary-json",
             str(summary_path),
         ]

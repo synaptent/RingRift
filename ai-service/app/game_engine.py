@@ -1610,8 +1610,8 @@ class GameEngine:
         BOARD_CONFIGS[boardType].ringsPerPlayer from the shared TS types:
 
         - square8   → 18 rings per player
-        - square19  → 60 rings per player
-        - hexagonal → 72 rings per player
+        - square19  → 72 rings per player
+        - hexagonal → 96 rings per player
         """
         from app.rules.core import BOARD_CONFIGS
         board_type = game_state.board.type

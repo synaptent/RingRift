@@ -2597,6 +2597,17 @@ class NeuralNetAI(BaseAI):
                                 memory_tier_override = "low"
                             else:
                                 memory_tier_override = "high"
+                    # Fallback: check for top-level policy_size (e.g., non-versioned checkpoints)
+                    if policy_size_override is None and checkpoint.get("policy_size") is not None:
+                        policy_size_override = int(checkpoint["policy_size"])
+                        logger.info(
+                            "Using top-level policy_size=%s from checkpoint",
+                            policy_size_override,
+                        )
+                        # Also default to RingRiftCNN_v2 if no model class specified
+                        # (ensures we use the direct instantiation path that respects policy_size)
+                        if model_class_name is None:
+                            model_class_name = "RingRiftCNN_v2"
 
                     # Cross-check metadata against the actual weight shapes.
                     # This hardens against metadata drift and protects callers

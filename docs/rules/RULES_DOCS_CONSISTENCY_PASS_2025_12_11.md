@@ -100,9 +100,10 @@ Notes:
    - Update `ai-service/app/rules/history_contract.py` to accept only canonical names for canonical history (`choose_line_option`, `choose_territory_option`, etc.).
    - Ensure DB write-time checks (e.g. `ai-service/app/db/game_replay.py`) align with the updated contract.
 
-4. **Square19 ring-count sync ✅ DONE (2025-12-12)**
-   - Canonical values: `square19` = **60 rings/player**; victory thresholds **60/80/100** for 2/3/4 players.
-   - Synced TS + Python configs (`src/shared/types/game.ts`, `ai-service/app/rules/core.py`) and updated docs/tests that referenced legacy 48/80/112.
+4. **Square19/Hex ring-count sync ✅ DONE (2025-12-12)**
+   - Canonical values: `square19` = **72 rings/player**; victory thresholds **72/96/120** for 2/3/4 players.
+   - Canonical values: `hexagonal` = **96 rings/player**; victory thresholds **96/128/160** for 2/3/4 players.
+   - Synced TS + Python configs (`src/shared/types/game.ts`, `ai-service/app/rules/core.py`) and updated docs/tests.
    - Validation: `npm run lint`; focused Jest and pytest runs (including hex training encoder normalization and GPU parity tests where available).
 
 5. **Legacy replay tolerance as explicit opt-in (TS)**

@@ -20,7 +20,6 @@ import time
 from enum import Enum
 
 import numpy as np
-import torch
 
 from .base import BaseAI
 from .bounded_transposition_table import BoundedTranspositionTable
@@ -144,6 +143,20 @@ class DescentAI(BaseAI):
         self.nn_batcher: Optional[AsyncNeuralBatcher] = (
             AsyncNeuralBatcher(self.neural_net) if self.neural_net else None
         )
+        # Optional async NN evaluation to overlap CPU expansion with background
+        # inference. Enabled via env var and only when a non-CPU device is used.
+        async_env = os.environ.get("RINGRIFT_DESCENT_ASYNC_NN_EVAL", "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self.enable_async_nn_eval: bool = False
+        if async_env and self.neural_net is not None:
+            dev = getattr(self.neural_net, "device", "cpu")
+            dev_type = dev if isinstance(dev, str) else getattr(dev, "type", "cpu")
+            if dev_type != "cpu":
+                self.enable_async_nn_eval = True
 
         # Memory configuration for bounded structures
         self.memory_config = memory_config or MemoryConfig.from_env()
@@ -174,6 +187,33 @@ class DescentAI(BaseAI):
         self.use_incremental_search: bool = getattr(
             config, 'use_incremental_search', True
         )
+
+    def _default_nn_batch_size(self) -> int:
+        """Default NN batch size for Descent leaf evaluation.
+
+        Callers can override via RINGRIFT_DESCENT_LEAF_BATCH_SIZE.
+        """
+        env_val = os.environ.get("RINGRIFT_DESCENT_LEAF_BATCH_SIZE")
+        if env_val:
+            try:
+                parsed = int(env_val)
+                if parsed > 0:
+                    return parsed
+            except ValueError:
+                pass
+
+        if not self.neural_net:
+            return 8
+
+        device = getattr(self.neural_net, "device", "cpu")
+        dev_str = device if isinstance(device, str) else getattr(device, "type", "cpu")
+        if dev_str == "cuda":
+            return 32
+        if dev_str == "mps":
+            return 16
+        if dev_str == "cpu":
+            return 8
+        return 16
 
     # ------------------------------------------------------------------
     # Progressive widening helpers (large boards only).
@@ -623,96 +663,40 @@ class DescentAI(BaseAI):
             move_probs: Dict[str, float] = {}
             if self.neural_net:
                 try:
-                    # Decide whether to use the hex-specific network based on
-                    # the current board geometry. NeuralNetAI now lazily
-                    # initializes the correct model (HexNeuralNet for hex boards).
-                    use_hex_nn = (
+                    _, policy_batch = (
+                        self.nn_batcher.evaluate([state])
+                        if self.nn_batcher is not None
+                        else self.neural_net.evaluate_batch([state])
+                    )
+                    policy_probs = policy_batch[0]
+
+                    use_hex_encoder = (
                         self.hex_encoder is not None
                         and state.board.type == BoardType.HEXAGONAL
                     )
 
-                    if use_hex_nn:
-                        # Single-state batch for the hex model. NeuralNetAI's
-                        # model will be HexNeuralNet after lazy initialization.
-                        feats, globs = self.neural_net._extract_features(state)
-                        tensor_input = torch.FloatTensor(
-                            np.array([feats])
-                        ).to(self.neural_net.device)
-                        globals_input = torch.FloatTensor(
-                            np.array([globs])
-                        ).to(self.neural_net.device)
-
-                        # Ensure model is initialized for hex board type
-                        self.neural_net._ensure_model_initialized(state.board.type)
-
-                        with torch.no_grad():
-                            _, policy_logits_tensor = self.neural_net.model(
-                                tensor_input,
-                                globals_input,
-                                hex_mask=None,
-                            )
-                        policy_logits = policy_logits_tensor.cpu().numpy()[0]
-
-                        valid_indices: List[int] = []
-                        valid_moves_list: List[Move] = []
-                        for m in valid_moves:
-                            idx = self.hex_encoder.encode_move(m, state.board)
-                            if idx != INVALID_MOVE_INDEX:
-                                valid_indices.append(idx)
-                                valid_moves_list.append(m)
-
-                        if valid_indices:
-                            logits = policy_logits[valid_indices]
-                            # Stable softmax over just the legal moves.
-                            logits = logits - np.max(logits)
-                            exps = np.exp(logits)
-                            probs = exps / np.sum(exps)
-
-                            for m, p in zip(valid_moves_list, probs):
-                                move_probs[str(m)] = float(p)
-                        else:
-                            # If no legal move can be represented in the hex
-                            # policy head, fall back to a uniform prior.
-                            uniform = 1.0 / len(valid_moves)
-                            for m in valid_moves:
-                                move_probs[str(m)] = uniform
-                    else:
-                        # Use the shared square/canonical network path. We
-                        # evaluate just this single state and reuse the
-                        # resulting policy logits below.
-                        _, policy_batch = self.neural_net.evaluate_batch(
-                            [state]
+                    total_prob = 0.0
+                    for m in valid_moves:
+                        idx = (
+                            self.hex_encoder.encode_move(m, state.board)  # type: ignore[union-attr]
+                            if use_hex_encoder
+                            else self.neural_net.encode_move(m, state.board)
                         )
-                        policy_logits = policy_batch[0]
+                        if (
+                            idx != INVALID_MOVE_INDEX
+                            and 0 <= idx < len(policy_probs)
+                        ):
+                            p = float(policy_probs[idx])
+                            move_probs[str(m)] = p
+                            total_prob += p
 
-                        valid_indices = []
-                        valid_moves_list = []
+                    if total_prob > 0:
+                        for move_key in move_probs:
+                            move_probs[move_key] /= total_prob
+                    else:
+                        uniform = 1.0 / len(valid_moves)
                         for m in valid_moves:
-                            # Encode using canonical coordinates derived from
-                            # the current board geometry. Moves that fall
-                            # outside the fixed 19×19 policy grid return
-                            # INVALID_MOVE_INDEX and are skipped.
-                            idx = self.neural_net.encode_move(m, state.board)
-                            if idx != INVALID_MOVE_INDEX:
-                                valid_indices.append(idx)
-                                valid_moves_list.append(m)
-
-                        if valid_indices:
-                            logits = policy_logits[valid_indices]
-                            # Stable softmax
-                            logits = logits - np.max(logits)
-                            exps = np.exp(logits)
-                            probs = exps / np.sum(exps)
-
-                            for m, p in zip(valid_moves_list, probs):
-                                move_probs[str(m)] = float(p)
-                        else:
-                            # If all legal moves are outside the canonical
-                            # policy grid (e.g. board larger than 19×19),
-                            # fall back to a uniform prior over legal moves.
-                            uniform = 1.0 / len(valid_moves)
-                            for m in valid_moves:
-                                move_probs[str(m)] = uniform
+                            move_probs[str(m)] = uniform
                 except Exception:
                     # Fallback if NN fails entirely (e.g. missing weights)
                     pass
@@ -1016,102 +1000,40 @@ class DescentAI(BaseAI):
             move_probs: Dict[str, float] = {}
             if self.neural_net:
                 try:
-                    # Decide whether to use the hex-specific network based on
-                    # the current board geometry. NeuralNetAI now lazily
-                    # initializes the correct model (HexNeuralNet for hex boards).
-                    use_hex_nn = (
+                    _, policy_batch = (
+                        self.nn_batcher.evaluate([immutable])
+                        if self.nn_batcher is not None
+                        else self.neural_net.evaluate_batch([immutable])
+                    )
+                    policy_probs = policy_batch[0]
+
+                    use_hex_encoder = (
                         self.hex_encoder is not None
                         and state.board_type == BoardType.HEXAGONAL
                     )
 
-                    if use_hex_nn:
-                        # Single-state batch for the hex model. NeuralNetAI's
-                        # model will be HexNeuralNet after lazy initialization.
-                        feats, globs = self.neural_net._extract_features(
-                            immutable
+                    total_prob = 0.0
+                    for m in valid_moves:
+                        idx = (
+                            self.hex_encoder.encode_move(m, immutable.board)  # type: ignore[union-attr]
+                            if use_hex_encoder
+                            else self.neural_net.encode_move(m, immutable.board)
                         )
-                        tensor_input = torch.FloatTensor(
-                            np.array([feats])
-                        ).to(self.neural_net.device)
-                        globals_input = torch.FloatTensor(
-                            np.array([globs])
-                        ).to(self.neural_net.device)
+                        if (
+                            idx != INVALID_MOVE_INDEX
+                            and 0 <= idx < len(policy_probs)
+                        ):
+                            p = float(policy_probs[idx])
+                            move_probs[str(m)] = p
+                            total_prob += p
 
-                        # Ensure model is initialized for hex board type
-                        self.neural_net._ensure_model_initialized(state.board_type)
-
-                        with torch.no_grad():
-                            _, policy_logits_tensor = self.neural_net.model(
-                                tensor_input,
-                                globals_input,
-                                hex_mask=None,
-                            )
-                        policy_logits = policy_logits_tensor.cpu().numpy()[0]
-
-                        valid_indices: List[int] = []
-                        valid_moves_list: List[Move] = []
-                        for m in valid_moves:
-                            idx = self.hex_encoder.encode_move(
-                                m, immutable.board
-                            )
-                            if idx != INVALID_MOVE_INDEX:
-                                valid_indices.append(idx)
-                                valid_moves_list.append(m)
-
-                        if valid_indices:
-                            logits = policy_logits[valid_indices]
-                            # Stable softmax over just the legal moves.
-                            logits = logits - np.max(logits)
-                            exps = np.exp(logits)
-                            probs = exps / np.sum(exps)
-
-                            for m, p in zip(valid_moves_list, probs):
-                                move_probs[str(m)] = float(p)
-                        else:
-                            # If no legal move can be represented in the hex
-                            # policy head, fall back to a uniform prior.
-                            uniform = 1.0 / len(valid_moves)
-                            for m in valid_moves:
-                                move_probs[str(m)] = uniform
+                    if total_prob > 0:
+                        for move_key in move_probs:
+                            move_probs[move_key] /= total_prob
                     else:
-                        # Use the shared square/canonical network path. We
-                        # evaluate just this single state and reuse the
-                        # resulting policy logits below.
-                        _, policy_batch = self.neural_net.evaluate_batch(
-                            [immutable]
-                        )
-                        policy_logits = policy_batch[0]
-
-                        valid_indices = []
-                        valid_moves_list = []
+                        uniform = 1.0 / len(valid_moves)
                         for m in valid_moves:
-                            # Encode using canonical coordinates derived from
-                            # the current board geometry. Moves that fall
-                            # outside the fixed 19×19 policy grid return
-                            # INVALID_MOVE_INDEX and are skipped.
-                            idx = self.neural_net.encode_move(
-                                m, immutable.board
-                            )
-                            if idx != INVALID_MOVE_INDEX:
-                                valid_indices.append(idx)
-                                valid_moves_list.append(m)
-
-                        if valid_indices:
-                            logits = policy_logits[valid_indices]
-                            # Stable softmax
-                            logits = logits - np.max(logits)
-                            exps = np.exp(logits)
-                            probs = exps / np.sum(exps)
-
-                            for m, p in zip(valid_moves_list, probs):
-                                move_probs[str(m)] = float(p)
-                        else:
-                            # If all legal moves are outside the canonical
-                            # policy grid (e.g. board larger than 19×19),
-                            # fall back to a uniform prior over legal moves.
-                            uniform = 1.0 / len(valid_moves)
-                            for m in valid_moves:
-                                move_probs[str(m)] = uniform
+                            move_probs[str(m)] = uniform
                 except Exception:
                     # Fallback if NN fails entirely (e.g. missing weights)
                     pass
@@ -1390,6 +1312,34 @@ class DescentAI(BaseAI):
             return [self.evaluate_position(s) for s in game_states]
 
         try:
+            if self.nn_batcher and self.enable_async_nn_eval:
+                batch_size = int(self._default_nn_batch_size())
+                step = max(1, batch_size)
+                max_pending = 2
+
+                adjusted: List[float] = []
+                pending: list[tuple[List[GameState], Any]] = []
+
+                def _drain_one() -> None:
+                    chunk, fut = pending.pop(0)
+                    values, _policy = fut.result()
+                    for val, st in zip(values, chunk):
+                        v = float(val)
+                        if st.current_player != self.player_number:
+                            v = -v
+                        adjusted.append(max(-0.99, min(0.99, v)))
+
+                for i in range(0, len(game_states), step):
+                    chunk = game_states[i:i + step]
+                    pending.append((chunk, self.nn_batcher.submit(chunk)))
+                    if len(pending) >= max_pending:
+                        _drain_one()
+
+                while pending:
+                    _drain_one()
+
+                return adjusted
+
             if self.nn_batcher:
                 values, _ = self.nn_batcher.evaluate(game_states)
             else:
@@ -1491,7 +1441,11 @@ class DescentAI(BaseAI):
         val = 0.0
         if self.neural_net:
             try:
-                val = self.neural_net.evaluate_position(game_state)
+                if self.nn_batcher:
+                    values, _ = self.nn_batcher.evaluate([game_state])
+                    val = float(values[0]) if values else 0.0
+                else:
+                    val = self.neural_net.evaluate_position(game_state)
                 # NeuralNetAI encodes features relative to the state's
                 # current_player. For Paranoid-style reductions (root vs
                 # opponent coalition), convert the resulting value into this

@@ -19,8 +19,8 @@ For each board type, define a static configuration:
 | BoardType | size | totalSpaces | ringsPerPlayer | lineLength       | movementAdjacency | lineAdjacency | territoryAdjacency  | boardGeometry   |
 | --------- | ---- | ----------- | -------------- | ---------------- | ----------------- | ------------- | ------------------- | --------------- |
 | square8   | 8    | 64          | 18             | 4 (2p), 3 (3–4p) | Moore (8-dir)     | Moore         | Von Neumann (4-dir) | orthogonal grid |
-| square19  | 19   | 361         | 60             | 4                | Moore             | Moore         | Von Neumann         | orthogonal grid |
-| hexagonal | 13   | 469         | 72             | 4                | Hex (6-dir)       | Hex           | Hex                 | hex coordinates |
+| square19  | 19   | 361         | 72             | 4                | Moore             | Moore         | Von Neumann         | orthogonal grid |
+| hexagonal | 13   | 469         | 96             | 4                | Hex (6-dir)       | Hex           | Hex                 | hex coordinates |
 
 - **Ring supply semantics:** For each player P, `ringsPerPlayer` is the maximum number of rings of P's own colour that may ever be in play: all of P's rings currently on the board in any stack (regardless of which player controls those stacks) plus all of P's rings in hand must never exceed this value. Rings of other colours that P has captured and that are buried in stacks P controls do **not** count against P's `ringsPerPlayer` cap; they remain, by colour, part of the original owner's supply for conservation and victory accounting.
   - Quick supply check: `ringsInHand[P] + ringsOfColorOnBoard[P] + eliminatedRings[P] = ringsPerPlayer` and therefore `ringsInHand[P] + ringsOfColorOnBoard[P] ≤ ringsPerPlayer` once eliminations occur.
@@ -180,10 +180,14 @@ However, as long as any stacks remain on the board, it is never legal for the ga
 
 A player who controls **zero stacks**, has **at least one marker**, and has **at least one buried ring** (their ring at a non-top position in some stack) may perform a recovery action during the movement phase. Recovery eligibility is independent of rings in hand; players with rings may choose recovery over placement:
 
-1. **Marker slide:** Move one of your markers to an adjacent empty cell (Moore adjacency for square, hex-adjacency for hex).
+1. **Marker slide:** Select one of your markers and slide it to an adjacent destination:
+   - **Empty cell** (no stack, no marker, not collapsed): normal recovery slide.
+   - **Adjacent stack** (stack-strike, RR-CANON-R112(b2)): only in fallback-class recovery; the marker is sacrificed and does not occupy the destination.
 2. **Success criteria:** Legal if **either**:
    - **(a) Line formation:** Completes a line of **at least** `lineLength` consecutive markers of your colour. The line must be uninterrupted—collapsed spaces, opponent markers, or stacks break the line and segments on either side do not count toward the length requirement.
-   - **(b) Fallback:** If no line-forming slide exists, any adjacent slide is permitted (including slides that cause territory disconnection).
+   - **(b) Fallback-class recovery:** If no line-forming slide exists, one of the following adjacent recovery actions is permitted:
+     - **(b1) Fallback repositioning:** Slide to an adjacent empty cell (including slides that cause territory disconnection).
+     - **(b2) Stack-strike:** Slide onto an adjacent stack, sacrificing the marker to eliminate that stack's top ring (credited to you).
 3. **Skip option:** You may skip recovery entirely, preserving buried rings for later.
 4. **Line recovery (condition a):** If the line exceeds `lineLength`:
    - **Option 1:** Collapse all markers and pay self-elimination (one buried ring extraction).
@@ -194,7 +198,7 @@ A player who controls **zero stacks**, has **at least one marker**, and has **at
    - Stack height decreases by 1; control determined by new top ring.
 7. **Cascade processing (line recovery only):** If line collapse creates territory regions, process normally. Each territory's self-elimination cost requires extracting another buried ring from a stack **outside** that region. If no buried rings remain outside claimable regions, those territories cannot be claimed.
 
-Move types: `recovery_slide` (with `recoveryMode: 'line' | 'fallback'`), `skip_recovery`.
+Move types: `recovery_slide` (with `recoveryMode: 'line' | 'fallback' | 'stack_strike'`), `skip_recovery`.
 
 ---
 
@@ -460,8 +464,8 @@ For player `P`:
   - Note: Use `round()` to avoid floating-point precision errors.
 - For standard board types with N players:
   - square8 (18 rings/player): 2P = 18, 3P = 24, 4P = 30
-  - square19 (60 rings/player): 2P = 60, 3P = 80, 4P = 100
-  - hexagonal (72 rings/player): 2P = 72, 3P = 96, 4P = 120
+  - square19 (72 rings/player): 2P = 72, 3P = 96, 4P = 120
+  - hexagonal (96 rings/player): 2P = 96, 3P = 128, 4P = 160
 - This cannot occur for multiple players simultaneously by construction.
 
 ### 7.2 Territory-control victory

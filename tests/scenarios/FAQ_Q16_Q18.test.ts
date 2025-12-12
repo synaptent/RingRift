@@ -297,14 +297,14 @@ describeOrSkip('FAQ Q16-Q18: Victory Conditions & Control Transfer', () => {
         { boardType: 'square8', players: 2, ringsPerPlayer: 18, threshold: calcThreshold(18, 2) }, // 18
         { boardType: 'square8', players: 3, ringsPerPlayer: 18, threshold: calcThreshold(18, 3) }, // 24
         { boardType: 'square8', players: 4, ringsPerPlayer: 18, threshold: calcThreshold(18, 4) }, // 30
-        // Square19: ringsPerPlayer = 60
-        { boardType: 'square19', players: 2, ringsPerPlayer: 60, threshold: calcThreshold(60, 2) }, // 60
-        { boardType: 'square19', players: 3, ringsPerPlayer: 60, threshold: calcThreshold(60, 3) }, // 80
-        { boardType: 'square19', players: 4, ringsPerPlayer: 60, threshold: calcThreshold(60, 4) }, // 100
-        // Hexagonal: ringsPerPlayer = 72
-        { boardType: 'hexagonal', players: 2, ringsPerPlayer: 72, threshold: calcThreshold(72, 2) }, // 72
-        { boardType: 'hexagonal', players: 3, ringsPerPlayer: 72, threshold: calcThreshold(72, 3) }, // 96
-        { boardType: 'hexagonal', players: 4, ringsPerPlayer: 72, threshold: calcThreshold(72, 4) }, // 120
+        // Square19: ringsPerPlayer = 72
+        { boardType: 'square19', players: 2, ringsPerPlayer: 72, threshold: calcThreshold(72, 2) }, // 72
+        { boardType: 'square19', players: 3, ringsPerPlayer: 72, threshold: calcThreshold(72, 3) }, // 96
+        { boardType: 'square19', players: 4, ringsPerPlayer: 72, threshold: calcThreshold(72, 4) }, // 120
+        // Hexagonal: ringsPerPlayer = 96
+        { boardType: 'hexagonal', players: 2, ringsPerPlayer: 96, threshold: calcThreshold(96, 2) }, // 96
+        { boardType: 'hexagonal', players: 3, ringsPerPlayer: 96, threshold: calcThreshold(96, 3) }, // 128
+        { boardType: 'hexagonal', players: 4, ringsPerPlayer: 96, threshold: calcThreshold(96, 4) }, // 160
       ];
 
       configs.forEach((config) => {

@@ -98,7 +98,7 @@ BoardType.HEXAGONAL: BoardConfig(
     size=13,          # side length
     radius=12,        # hex radius
     total_cells=469,  # 3*12^2 + 3*12 + 1
-    rings_per_player=72
+    rings_per_player=96
 )
 ```
 

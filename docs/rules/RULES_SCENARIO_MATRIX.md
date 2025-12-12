@@ -441,7 +441,7 @@ npm test -- FAQ_Q22_Q23    # Graduated rewards & territory prerequisites
 | Q18 | Multiple victory conditions     | [`tests/scenarios/FAQ_Q16_Q18.test.ts`](tests/scenarios/FAQ_Q16_Q18.test.ts:1)         | square8                | ✅ COVERED | Ring elimination precedence; ringsPerPlayer threshold prevents simultaneous wins                                                |
 | Q19 | 2 or 4 player games             | [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) | square8, square19, hex | ✅ COVERED | All player counts 2-4; threshold validation                                                                                     |
 | Q20 | Territory rules 8×8 vs 19×19    | [`tests/scenarios/FAQ_Q09_Q14.test.ts`](tests/scenarios/FAQ_Q09_Q14.test.ts:1)         | square8, square19      | ✅ COVERED | Both use Von Neumann for territory                                                                                              |
-| Q21 | Victory thresholds              | [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) | square8, square19, hex | ✅ COVERED | ringsPerPlayer threshold (18/60/72); prevents ties                                                                              |
+| Q21 | Victory thresholds              | [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) | square8, square19, hex | ✅ COVERED | ringsPerPlayer threshold (18/72/96); prevents ties                                                                              |
 | Q22 | Graduated line rewards          | [`tests/scenarios/FAQ_Q22_Q23.test.ts`](tests/scenarios/FAQ_Q22_Q23.test.ts:1)         | square8, square19      | ✅ COVERED | Option 1 vs Option 2 strategic choices                                                                                          |
 | Q23 | Self-elimination prerequisite   | [`tests/scenarios/FAQ_Q22_Q23.test.ts`](tests/scenarios/FAQ_Q22_Q23.test.ts:1)         | square8, square19, hex | ✅ COVERED | Must have outside stack to process region                                                                                       |
 | Q24 | Forced elimination when blocked | [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) | square8                | ✅ COVERED | Must eliminate cap when no moves available                                                                                      |
@@ -496,7 +496,7 @@ npm test -- FAQ_Q22_Q23    # Graduated rewards & territory prerequisites
 #### [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) - Player Counts & Forced Elimination
 
 - **FAQ Q19**: 2, 3, and 4 player configurations
-- **FAQ Q21**: Victory thresholds scale with player count (8×8: 18/24/30; 19×19: 60/80/100; hex: 72/96/120)
+- **FAQ Q21**: Victory thresholds scale with player count (8×8: 18/24/30; 19×19: 72/96/120; hex: 96/128/160)
 - **FAQ Q24**: Forced elimination when blocked with stacks
 - **FAQ Q11**: Rings in hand count as eliminated in stalemate
 - **Coverage**: Player count variations, threshold calculations, forced elimination, stalemate

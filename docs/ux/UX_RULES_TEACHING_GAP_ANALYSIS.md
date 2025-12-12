@@ -278,7 +278,10 @@ Coverage was assessed by reviewing:
 
 **Canonical Rules:**
 
-- Recovery action allows a "temporarily eliminated" player (no stacks, no rings in hand, but has markers and buried rings) to slide a marker to complete a line of at least `lineLength`, extracting buried ring(s) as self-elimination cost.
+- Recovery action allows a "temporarily eliminated" player (no stacks, has markers, and has buried rings; eligibility is independent of rings in hand) to act during movement via `recovery_slide`.
+- A recovery slide is legal if either:
+  - (a) it completes a line of at least `lineLength` markers (then collapse + pay via buried ring extraction), or
+  - (b) if no line-forming slide exists, fallback-class recovery is allowed: adjacent empty-cell repositioning **or** stack-strike onto an adjacent stack (sacrificing the marker to eliminate the stack’s top ring), both paid via buried ring extraction.
 - For exact-length lines: cost is 1 buried ring (Option 1).
 - For overlength lines: Option 1 collapses all markers (cost: 1 buried ring), Option 2 collapses minimum length (cost: 0).
 - Recovery is **NOT** a real action for LPS purposes (like forced elimination).

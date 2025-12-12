@@ -108,14 +108,14 @@ export const BOARD_CONFIGS = {
   square19: {
     type: 'square19' as BoardType,
     size: 19,
-    ringsPerPlayer: 60,
+    ringsPerPlayer: 72,
     minLineLength: 4,
     adjacencyType: 'moore' as const,
   },
   hexagonal: {
     type: 'hexagonal' as BoardType,
     size: 13, // radius=12
-    ringsPerPlayer: 72,
+    ringsPerPlayer: 96,
     minLineLength: 4, // Same as other boards
     adjacencyType: 'hexagonal' as const,
   },

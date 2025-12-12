@@ -71,13 +71,30 @@ RING_PLACEMENT → MOVEMENT → LINE_PROCESSING → TERRITORY_PROCESSING → (ne
 
 ### 2.2 Medium Gaps (Training Quality Impact: MEDIUM)
 
-| Gap                           | Canonical Behavior                       | GPU Implementation | Impact                               | Location                                       |
-| ----------------------------- | ---------------------------------------- | ------------------ | ------------------------------------ | ---------------------------------------------- |
-| **Recovery Cascade**          | Territory processing after recovery line | Not implemented    | Misses territory gains from recovery | `gpu_parallel_games.py:_step_recovery_phase()` |
-| **Marker Removal on Landing** | Remove marker, eliminate top ring        | Simplified         | May miss eliminations                | `gpu_parallel_games.py:apply_movement_batch()` |
-| **LPS Victory**               | 2 consecutive rounds without progress    | Not tracked        | LPS victory path broken              | `gpu_parallel_games.py:check_victory_batch()`  |
+| Gap                           | Canonical Behavior                            | GPU Implementation     | Impact                               | Location                                                |
+| ----------------------------- | --------------------------------------------- | ---------------------- | ------------------------------------ | ------------------------------------------------------- |
+| **Recovery Stack-Strike V1**  | Slide onto opponent stack, eliminate top ring | Empty-cell slides only | GPU has higher stalemate rates       | `gpu_parallel_games.py:generate_recovery_moves_batch()` |
+| **Recovery Cascade**          | Territory processing after recovery line      | Not implemented        | Misses territory gains from recovery | `gpu_parallel_games.py:_step_recovery_phase()`          |
+| **Marker Removal on Landing** | Remove marker, eliminate top ring             | Simplified             | May miss eliminations                | `gpu_parallel_games.py:apply_movement_batch()`          |
+| **LPS Victory**               | 2 consecutive rounds without progress         | Not tracked            | LPS victory path broken              | `gpu_parallel_games.py:check_victory_batch()`           |
 
-### 2.3 Fixed Gaps (Completed)
+### 2.3 Ring Count Update (2025-12-12)
+
+Ring counts updated for better victory type balance:
+
+| Board Type | Old Value | New Value | Notes                                       |
+| ---------- | --------- | --------- | ------------------------------------------- |
+| square19   | 60        | **72**    | +20% for better elimination/territory rates |
+| hexagonal  | 72        | **96**    | +33% for better victory balance             |
+
+Updated locations:
+
+- `src/shared/types/game.ts` - TypeScript BOARD_CONFIGS
+- `ai-service/app/rules/core.py` - Python BOARD_CONFIGS
+- `ai-service/app/ai/gpu_kernels.py` - GPU evaluation/victory functions
+- `ai-service/app/ai/gpu_parallel_games.py` - GPU game state initialization
+
+### 2.4 Fixed Gaps (Completed)
 
 | Gap                        | Fix Date   | Notes                                    |
 | -------------------------- | ---------- | ---------------------------------------- |

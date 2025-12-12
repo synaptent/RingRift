@@ -453,8 +453,8 @@ docker-compose up -d           # Full stack in Docker
 | Board Type | Size | Total Spaces | Rings/Player | Line Length (2p) | Line Length (3-4p) |
 | ---------- | ---- | ------------ | ------------ | ---------------- | ------------------ |
 | square8    | 8    | 64           | 18           | 4                | 3                  |
-| square19   | 19   | 361          | 60           | 4                | 4                  |
-| hexagonal  | 13   | 469          | 72           | 4                | 4                  |
+| square19   | 19   | 361          | 72           | 4                | 4                  |
+| hexagonal  | 13   | 469          | 96           | 4                | 4                  |
 
 ### Victory Thresholds (Ring Elimination per RR-CANON-R061)
 
@@ -463,8 +463,8 @@ Formula: `round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))`
 | Board Type | 2-player | 3-player | 4-player |
 | ---------- | -------- | -------- | -------- |
 | square8    | 18       | 24       | 30       |
-| square19   | 60       | 80       | 100      |
-| hexagonal  | 72       | 96       | 120      |
+| square19   | 72       | 96       | 120      |
+| hexagonal  | 96       | 128      | 160      |
 
 ---
 

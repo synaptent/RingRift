@@ -31,7 +31,7 @@ from .neural_net import (
     HexNeuralNet_v2,
     get_memory_tier,
 )
-from ..models import GameState, Move, MoveType, AIConfig, BoardType
+from ..models import GameState, Move, MoveType, AIConfig, BoardType, GamePhase
 from ..rules.mutable_state import MutableGameState, MoveUndo
 from ..utils.memory_config import MemoryConfig
 
@@ -152,32 +152,47 @@ class MCTSNode:
         self.untried_moves: List[Move] = []
         self.prior = 0.0
         self.policy_map: Dict[str, float] = {}
+        # Whether the side to move at this node is the root player (AI player).
+        # Populated by MCTSAI during tree construction/traversal.
+        self.to_move_is_root: bool = True
 
-    def uct_select_child(self) -> "MCTSNode":
+    def uct_select_child(
+        self,
+        *,
+        c_puct: float = 1.0,
+        rave_k: float = 1000.0,
+        fpu_reduction: float = 0.0,
+    ) -> "MCTSNode":
         """Select child using PUCT formula with RAVE."""
         # PUCT = Q + c_puct * P * sqrt(N) / (1 + n)
         # RAVE: Value = (1 - beta) * Q + beta * AMAF
 
-        c_puct = 1.0  # Exploration constant
-        rave_k = 1000.0  # RAVE equivalence parameter
-
         def puct_value(child: "MCTSNode") -> float:
-            # Calculate Q (MC value)
+            parent_is_root = bool(getattr(self, "to_move_is_root", True))
+            child_is_root = bool(getattr(child, "to_move_is_root", parent_is_root))
+            flip = parent_is_root != child_is_root
+
+            # Q(s,a) in the parent's perspective (root vs opponent coalition).
+            parent_q = self.wins / self.visits if self.visits > 0 else 0.0
             if child.visits == 0:
-                q_value = 0.0
+                q_value = parent_q - float(fpu_reduction)
             else:
                 q_value = child.wins / child.visits
+                if flip:
+                    q_value = -q_value
 
-            # Calculate AMAF (RAVE value)
+            # AMAF (RAVE) value, also in the parent's perspective.
             if child.amaf_visits == 0:
                 amaf_value = 0.0
             else:
                 amaf_value = child.amaf_wins / child.amaf_visits
+                if flip:
+                    amaf_value = -amaf_value
 
-            # Calculate beta for RAVE
-            beta = math.sqrt(rave_k / (3 * self.visits + rave_k))
+            beta = 0.0
+            if rave_k > 0:
+                beta = math.sqrt(float(rave_k) / (3 * self.visits + float(rave_k)))
 
-            # Combined value
             combined_value = (1 - beta) * q_value + beta * amaf_value
 
             # Prior probability P(s, a)
@@ -233,13 +248,15 @@ class MCTSNodeLite:
     """
     __slots__ = [
         'parent', 'move', 'children', 'wins', 'visits',
-        'amaf_wins', 'amaf_visits', 'untried_moves', 'prior', 'policy_map'
+        'amaf_wins', 'amaf_visits', 'untried_moves', 'prior', 'policy_map',
+        'to_move_is_root',
     ]
 
     def __init__(
         self,
         parent: Optional["MCTSNodeLite"] = None,
-        move: Optional[Move] = None
+        move: Optional[Move] = None,
+        to_move_is_root: bool = True,
     ):
         self.parent: Optional["MCTSNodeLite"] = parent
         self.move: Optional[Move] = move
@@ -251,6 +268,7 @@ class MCTSNodeLite:
         self.untried_moves: List[Move] = []
         self.prior = 0.0
         self.policy_map: Dict[str, float] = {}
+        self.to_move_is_root: bool = bool(to_move_is_root)
 
     def is_leaf(self) -> bool:
         """Check if this is a leaf node (no children)."""
@@ -260,23 +278,37 @@ class MCTSNodeLite:
         """Check if all moves have been tried."""
         return len(self.untried_moves) == 0
 
-    def uct_select_child(self) -> "MCTSNodeLite":
+    def uct_select_child(
+        self,
+        *,
+        c_puct: float = 1.0,
+        rave_k: float = 1000.0,
+        fpu_reduction: float = 0.0,
+    ) -> "MCTSNodeLite":
         """Select child using PUCT formula with RAVE."""
-        c_puct = 1.0
-        rave_k = 1000.0
-
         def puct_value(child: "MCTSNodeLite") -> float:
+            parent_is_root = bool(getattr(self, "to_move_is_root", True))
+            child_is_root = bool(getattr(child, "to_move_is_root", parent_is_root))
+            flip = parent_is_root != child_is_root
+
+            parent_q = self.wins / self.visits if self.visits > 0 else 0.0
             if child.visits == 0:
-                q_value = 0.0
+                q_value = parent_q - float(fpu_reduction)
             else:
                 q_value = child.wins / child.visits
+                if flip:
+                    q_value = -q_value
 
             if child.amaf_visits == 0:
                 amaf_value = 0.0
             else:
                 amaf_value = child.amaf_wins / child.amaf_visits
+                if flip:
+                    amaf_value = -amaf_value
 
-            beta = math.sqrt(rave_k / (3 * self.visits + rave_k))
+            beta = 0.0
+            if rave_k > 0:
+                beta = math.sqrt(float(rave_k) / (3 * self.visits + float(rave_k)))
             combined_value = (1 - beta) * q_value + beta * amaf_value
 
             num_children = max(1, len(self.children))
@@ -291,10 +323,19 @@ class MCTSNodeLite:
     def add_child(
         self,
         move: Move,
-        prior: Optional[float] = None
+        prior: Optional[float] = None,
+        to_move_is_root: Optional[bool] = None,
     ) -> "MCTSNodeLite":
         """Add a new child node."""
-        child = MCTSNodeLite(parent=self, move=move)
+        child = MCTSNodeLite(
+            parent=self,
+            move=move,
+            to_move_is_root=(
+                bool(to_move_is_root)
+                if to_move_is_root is not None
+                else bool(getattr(self, "to_move_is_root", True))
+            ),
+        )
         if prior is not None:
             child.prior = prior
         if move in self.untried_moves:
@@ -787,6 +828,88 @@ class MCTSAI(HeuristicAI):
 
         return moves, probs
 
+    # ------------------------------------------------------------------
+    # Dynamic PUCT / FPU / RAVE tuning (strength-focused).
+    # ------------------------------------------------------------------
+
+    def _normalized_entropy(self, priors: List[float]) -> float:
+        """Return normalized Shannon entropy of priors in [0, 1]."""
+        if not priors:
+            return 0.0
+        total = float(sum(priors))
+        if total <= 0.0:
+            return 1.0
+        if len(priors) <= 1:
+            return 0.0
+        inv_total = 1.0 / total
+        ent = 0.0
+        for p in priors:
+            if p <= 0.0:
+                continue
+            pn = float(p) * inv_total
+            ent -= pn * math.log(pn)
+        denom = math.log(len(priors))
+        if denom <= 0.0:
+            return 0.0
+        return max(0.0, min(1.0, ent / denom))
+
+    def _dynamic_c_puct(self, parent_visits: int, priors: List[float]) -> float:
+        """Compute a dynamic exploration constant based on priors + visits."""
+        entropy = self._normalized_entropy(priors)
+        visit_term = min(1.0, math.log1p(max(0, int(parent_visits))) / 6.0)
+
+        # Conservative baseline; allow more exploration for high-entropy priors.
+        base = 1.0
+        cpuct = base + 0.8 * entropy + 0.4 * visit_term
+        return float(max(0.25, min(4.0, cpuct)))
+
+    def _rave_k_for_node(self, parent_visits: int, priors: List[float]) -> float:
+        """Compute an effective RAVE k that tapers with visits/difficulty."""
+        entropy = self._normalized_entropy(priors)
+
+        # Higher difficulties rely more on NN priors; taper RAVE sooner.
+        diff = int(getattr(self.config, "difficulty", 5))
+        difficulty_scale = max(0.2, 1.0 - 0.12 * max(0, diff - 5))
+
+        visit_scale = 1.0 / (1.0 + max(0, int(parent_visits)) / 200.0)
+        entropy_scale = 0.5 + 0.5 * entropy
+
+        base_k = 1000.0
+        return float(max(0.0, base_k * difficulty_scale * visit_scale * entropy_scale))
+
+    def _fpu_reduction_for_phase(self, phase: GamePhase) -> float:
+        """Phase-aware First-Play Urgency reduction (larger => less widening)."""
+        phase_map = {
+            GamePhase.RING_PLACEMENT: 0.05,
+            GamePhase.MOVEMENT: 0.10,
+            GamePhase.CAPTURE: 0.12,
+            GamePhase.CHAIN_CAPTURE: 0.12,
+            GamePhase.LINE_PROCESSING: 0.16,
+            GamePhase.TERRITORY_PROCESSING: 0.20,
+            GamePhase.FORCED_ELIMINATION: 0.22,
+        }
+        return float(phase_map.get(phase, 0.10))
+
+    def _puct_params_for_node(
+        self,
+        node: Any,
+        phase: GamePhase,
+    ) -> tuple[float, float, float]:
+        children = getattr(node, "children", None) or []
+        if not children:
+            priors: List[float] = []
+        else:
+            uniform = 1.0 / max(1, len(children))
+            priors = [
+                float(getattr(c, "prior", 0.0) or 0.0) or uniform for c in children
+            ]
+
+        visits = int(getattr(node, "visits", 0) or 0)
+        c_puct = self._dynamic_c_puct(visits, priors)
+        rave_k = self._rave_k_for_node(visits, priors)
+        fpu_reduction = self._fpu_reduction_for_phase(phase)
+        return c_puct, rave_k, fpu_reduction
+
     def clear_search_tree(self) -> None:
         """Clear cached search tree nodes to free memory.
 
@@ -913,6 +1036,7 @@ class MCTSAI(HeuristicAI):
         # Progressive widening on large boards benefits from NN priors at the root.
         # Seed them once up-front so early expansions focus on top-prior moves.
         self._maybe_seed_root_priors(root, game_state)
+        root.to_move_is_root = game_state.current_player == self.player_number
 
         board_type = game_state.board.type
         end_time = time.time() + time_limit
@@ -955,7 +1079,16 @@ class MCTSAI(HeuristicAI):
                     (not node.untried_moves)
                     or (not self._can_expand_node(node, board_type))
                 ):
-                    node = node.uct_select_child()
+                    node.to_move_is_root = state.current_player == self.player_number
+                    c_puct, rave_k, fpu_red = self._puct_params_for_node(
+                        node,
+                        state.current_phase,
+                    )
+                    node = node.uct_select_child(
+                        c_puct=c_puct,
+                        rave_k=rave_k,
+                        fpu_reduction=fpu_red,
+                    )
                     if node.move is not None:
                         state = self.rules_engine.apply_move(state, node.move)
                         played_moves.append(node.move)
@@ -971,6 +1104,7 @@ class MCTSAI(HeuristicAI):
                         prior = node.policy_map[m_key]
 
                     child = node.add_child(m, state, prior=prior)
+                    child.to_move_is_root = state.current_player == self.player_number
                     node = child
                     node_count += 1
                     played_moves.append(m)
@@ -1757,6 +1891,7 @@ class MCTSAI(HeuristicAI):
 
         # Seed NN priors at root for large boards to align with progressive widening.
         self._maybe_seed_root_priors(root, game_state)
+        root.to_move_is_root = game_state.current_player == self.player_number
 
         end_time = time.time() + time_limit
         default_batch_size = self._default_leaf_batch_size()
@@ -1798,7 +1933,13 @@ class MCTSAI(HeuristicAI):
                     path_undos.append(undo)
 
                     prior = node.policy_map.get(str(m))
-                    child = node.add_child(m, prior=prior)
+                    child = node.add_child(
+                        m,
+                        prior=prior,
+                        to_move_is_root=(
+                            mutable_state.current_player == self.player_number
+                        ),
+                    )
                     node = child
                     node_count += 1
                     played_moves.append(m)
@@ -1884,7 +2025,16 @@ class MCTSAI(HeuristicAI):
             not node.untried_moves
             or not self._can_expand_node(node, board_type)
         ):
-            node = node.uct_select_child()
+            node.to_move_is_root = mutable_state.current_player == self.player_number
+            c_puct, rave_k, fpu_red = self._puct_params_for_node(
+                node,
+                mutable_state.current_phase,
+            )
+            node = node.uct_select_child(
+                c_puct=c_puct,
+                rave_k=rave_k,
+                fpu_reduction=fpu_red,
+            )
             if node.move is not None:
                 undo = mutable_state.make_move(node.move)
                 path_undos.append(undo)
