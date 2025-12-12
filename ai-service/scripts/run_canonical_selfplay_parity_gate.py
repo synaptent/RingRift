@@ -30,6 +30,8 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -47,6 +49,7 @@ def _run_cmd(
     *,
     capture_output: bool = True,
     stream_to_stderr: bool = False,
+    timeout_seconds: int | None = None,
 ) -> subprocess.CompletedProcess:
     """Run a subprocess and return the completed process."""
     env = os.environ.copy()
@@ -61,16 +64,63 @@ def _run_cmd(
         stdout = sys.stderr
         stderr = sys.stderr
 
-    proc = subprocess.run(
-        cmd,
-        cwd=str(cwd or AI_SERVICE_ROOT),
-        env=env,
-        text=True,
-        capture_output=capture_output and not stream_to_stderr,
-        stdout=stdout,
-        stderr=stderr,
-    )
-    return proc
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd or AI_SERVICE_ROOT),
+            env=env,
+            text=True,
+            capture_output=capture_output and not stream_to_stderr,
+            stdout=stdout,
+            stderr=stderr,
+            timeout=timeout_seconds,
+        )
+        return proc
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(cmd, returncode=124)
+
+
+def _write_json(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _start_heartbeat(
+    summary_path: Path,
+    stage_payload: Dict[str, Any],
+    *,
+    heartbeat_seconds: int,
+    db_path: Path | None = None,
+    stage_label: str,
+) -> threading.Event:
+    """Periodically update the summary JSON so long-running stages are observable."""
+    stop_event = threading.Event()
+    started = time.monotonic()
+
+    def _beat() -> None:
+        while not stop_event.wait(heartbeat_seconds):
+            payload = dict(stage_payload)
+            payload["heartbeat"] = {
+                "stage": stage_label,
+                "elapsed_sec": round(time.monotonic() - started, 1),
+                "ts_unix": time.time(),
+            }
+            if db_path is not None:
+                try:
+                    payload["heartbeat"]["db_size_bytes"] = db_path.stat().st_size
+                except OSError:
+                    pass
+            _write_json(summary_path, payload)
+            print(
+                f"[parity-gate] heartbeat: stage={stage_label} "
+                f"elapsed={payload['heartbeat']['elapsed_sec']}s",
+                file=sys.stderr,
+                flush=True,
+            )
+
+    thread = threading.Thread(target=_beat, daemon=True)
+    thread.start()
+    return stop_event
 
 
 def run_selfplay_soak(
@@ -81,6 +131,7 @@ def run_selfplay_soak(
     max_moves: int,
     num_players: int,
     difficulty_band: str,
+    soak_timeout_seconds: int | None = None,
 ) -> Dict[str, Any]:
     """Run a small Python self-play soak and record games to db_path."""
     logs_dir = AI_SERVICE_ROOT / "logs" / "selfplay"
@@ -133,6 +184,7 @@ def run_selfplay_soak(
         # in line/territory phases, matching TS orchestration.
         "RINGRIFT_FORCE_BOOKKEEPING_MOVES": "1",
         "PYTHONPATH": str(AI_SERVICE_ROOT),
+        "PYTHONUNBUFFERED": "1",
         # Keep OpenMP usage conservative for long-running soaks and
         # avoid environment-specific SHM issues on some platforms.
         "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1"),
@@ -151,6 +203,7 @@ def run_selfplay_soak(
         env_overrides=env_overrides,
         capture_output=False,
         stream_to_stderr=True,
+        timeout_seconds=soak_timeout_seconds,
     )
 
     soak_summary: Dict[str, Any] | None = None
@@ -170,7 +223,12 @@ def run_selfplay_soak(
     return result
 
 
-def run_parity_check(db_path: Path) -> Dict[str, Any]:
+def run_parity_check(
+    db_path: Path,
+    *,
+    progress_every: int = 200,
+    parity_timeout_seconds: int | None = None,
+) -> Dict[str, Any]:
     """Run the TS↔Python parity harness on a single DB and return the parsed summary.
 
     This always invokes the parity script in **canonical** mode with
@@ -193,7 +251,12 @@ def run_parity_check(db_path: Path) -> Dict[str, Any]:
         "--summary-json",
         str(summary_path),
     ]
-    env_overrides = {"PYTHONPATH": str(AI_SERVICE_ROOT)}
+    if progress_every and progress_every > 0:
+        cmd += ["--progress-every", str(progress_every)]
+    env_overrides = {
+        "PYTHONPATH": str(AI_SERVICE_ROOT),
+        "PYTHONUNBUFFERED": "1",
+    }
     print(
         f"[parity-gate] parity check: db={db_path.name}",
         file=sys.stderr,
@@ -205,6 +268,7 @@ def run_parity_check(db_path: Path) -> Dict[str, Any]:
         env_overrides=env_overrides,
         capture_output=False,
         stream_to_stderr=True,
+        timeout_seconds=parity_timeout_seconds,
     )
 
     summary: Dict[str, Any]
@@ -312,6 +376,36 @@ def main() -> None:
         default=None,
         help="Optional path to write the parity gate JSON summary. When omitted, prints to stdout only.",
     )
+    parser.add_argument(
+        "--parity-progress-every",
+        type=int,
+        default=200,
+        help=(
+            "Emit TS↔Python parity progress to stderr every N replay steps (0 disables). "
+            "Default: 200."
+        ),
+    )
+    parser.add_argument(
+        "--soak-timeout-seconds",
+        type=int,
+        default=0,
+        help="Optional wall-clock timeout for the self-play soak (0 disables).",
+    )
+    parser.add_argument(
+        "--parity-timeout-seconds",
+        type=int,
+        default=0,
+        help="Optional wall-clock timeout for the parity check (0 disables).",
+    )
+    parser.add_argument(
+        "--heartbeat-seconds",
+        type=int,
+        default=60,
+        help=(
+            "Emit a heartbeat to stderr and refresh the --summary JSON every N seconds "
+            "while long-running stages are executing (0 disables). Default: 60."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -321,6 +415,19 @@ def main() -> None:
     parity_summary: Dict[str, Any] | Dict[str, Any]
     soak_result: Dict[str, Any] = {}
     dbs_to_check: list[Path] = [db_path]
+
+    summary_path: Path | None = None
+    if args.summary:
+        summary_path = Path(args.summary).resolve()
+        _write_json(
+            summary_path,
+            {
+                "stage": "starting",
+                "board_type": args.board_type,
+                "num_players": args.num_players,
+                "db_path": str(db_path),
+            },
+        )
 
     # Auto-select max_moves when not provided.
     if args.max_moves and args.max_moves > 0:
@@ -376,6 +483,7 @@ def main() -> None:
             cwd=AI_SERVICE_ROOT,
             capture_output=False,
             stream_to_stderr=True,
+            timeout_seconds=args.soak_timeout_seconds or None,
         )
         soak_result = {
             "returncode": proc.returncode,
@@ -390,6 +498,27 @@ def main() -> None:
         else:
             parity_summary = run_parity_checks(dbs_to_check)
     else:
+        if summary_path is not None:
+            selfplay_stage = {
+                "stage": "selfplay_running",
+                "board_type": args.board_type,
+                "num_players": args.num_players,
+                "db_path": str(db_path),
+                "num_games": args.num_games,
+                "difficulty_band": args.difficulty_band,
+                "seed": args.seed,
+                "max_moves": max_moves,
+            }
+            _write_json(summary_path, selfplay_stage)
+            heartbeat_stop: threading.Event | None = None
+            if args.heartbeat_seconds and args.heartbeat_seconds > 0:
+                heartbeat_stop = _start_heartbeat(
+                    summary_path,
+                    selfplay_stage,
+                    heartbeat_seconds=args.heartbeat_seconds,
+                    db_path=db_path,
+                    stage_label="selfplay",
+                )
         soak_result = run_selfplay_soak(
             args.board_type,
             args.num_games,
@@ -398,8 +527,35 @@ def main() -> None:
             max_moves,
             args.num_players,
             args.difficulty_band,
+            soak_timeout_seconds=args.soak_timeout_seconds or None,
         )
-        parity_summary = run_parity_check(db_path)
+        if summary_path is not None and "heartbeat_stop" in locals() and heartbeat_stop is not None:
+            heartbeat_stop.set()
+        if summary_path is not None:
+            parity_stage = {
+                "stage": "parity_running",
+                "board_type": args.board_type,
+                "num_players": args.num_players,
+                "db_path": str(db_path),
+                "soak_returncode": soak_result.get("returncode"),
+            }
+            _write_json(summary_path, parity_stage)
+            heartbeat_stop = None
+            if args.heartbeat_seconds and args.heartbeat_seconds > 0:
+                heartbeat_stop = _start_heartbeat(
+                    summary_path,
+                    parity_stage,
+                    heartbeat_seconds=args.heartbeat_seconds,
+                    db_path=db_path,
+                    stage_label="parity",
+                )
+        parity_summary = run_parity_check(
+            db_path,
+            progress_every=args.parity_progress_every,
+            parity_timeout_seconds=args.parity_timeout_seconds or None,
+        )
+        if summary_path is not None and "heartbeat_stop" in locals() and heartbeat_stop is not None:
+            heartbeat_stop.set()
 
     # Basic gate: soak must succeed and the canonical parity gate must pass.
     #
@@ -422,6 +578,7 @@ def main() -> None:
             passed = parity_rc == 0 and passed_gate
 
     gate_summary: Dict[str, Any] = {
+        "stage": "complete",
         "board_type": args.board_type,
         "num_players": args.num_players,
         "db_path": str(db_path),
@@ -437,10 +594,7 @@ def main() -> None:
     }
 
     if args.summary:
-        summary_path = Path(args.summary).resolve()
-        summary_path.parent.mkdir(parents=True, exist_ok=True)
-        with summary_path.open("w", encoding="utf-8") as f:
-            json.dump(gate_summary, f, indent=2, sort_keys=True)
+        _write_json(Path(args.summary).resolve(), gate_summary)
 
     print(json.dumps(gate_summary, indent=2, sort_keys=True))
 

@@ -220,6 +220,7 @@ def process_jsonl_file(
     sample_every: int,
     history_length: int,
     current_games: int,
+    gpu_selfplay_mode: bool = False,
 ) -> Tuple[
     List[np.ndarray],  # features
     List[np.ndarray],  # globals

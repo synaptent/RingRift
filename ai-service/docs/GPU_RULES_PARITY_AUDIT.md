@@ -71,12 +71,11 @@ RING_PLACEMENT → MOVEMENT → LINE_PROCESSING → TERRITORY_PROCESSING → (ne
 
 ### 2.2 Medium Gaps (Training Quality Impact: MEDIUM)
 
-| Gap                           | Canonical Behavior                            | GPU Implementation     | Impact                               | Location                                                |
-| ----------------------------- | --------------------------------------------- | ---------------------- | ------------------------------------ | ------------------------------------------------------- |
-| **Recovery Stack-Strike V1**  | Slide onto opponent stack, eliminate top ring | Empty-cell slides only | GPU has higher stalemate rates       | `gpu_parallel_games.py:generate_recovery_moves_batch()` |
-| **Recovery Cascade**          | Territory processing after recovery line      | Not implemented        | Misses territory gains from recovery | `gpu_parallel_games.py:_step_recovery_phase()`          |
-| **Marker Removal on Landing** | Remove marker, eliminate top ring             | Simplified             | May miss eliminations                | `gpu_parallel_games.py:apply_movement_batch()`          |
-| **LPS Victory**               | 2 consecutive rounds without progress         | Not tracked            | LPS victory path broken              | `gpu_parallel_games.py:check_victory_batch()`           |
+| Gap                           | Canonical Behavior                       | GPU Implementation | Impact                               | Location                                       |
+| ----------------------------- | ---------------------------------------- | ------------------ | ------------------------------------ | ---------------------------------------------- |
+| **Recovery Cascade**          | Territory processing after recovery line | Not implemented    | Misses territory gains from recovery | `gpu_parallel_games.py:_step_recovery_phase()` |
+| **Marker Removal on Landing** | Remove marker, eliminate top ring        | Simplified         | May miss eliminations                | `gpu_parallel_games.py:apply_movement_batch()` |
+| **LPS Victory**               | 2 consecutive rounds without progress    | Not tracked        | LPS victory path broken              | `gpu_parallel_games.py:check_victory_batch()`  |
 
 ### 2.3 Ring Count Update (2025-12-12)
 
@@ -96,12 +95,13 @@ Updated locations:
 
 ### 2.4 Fixed Gaps (Completed)
 
-| Gap                        | Fix Date   | Notes                                    |
-| -------------------------- | ---------- | ---------------------------------------- |
-| Line length (square8 3-4p) | 2025-12-11 | Now player-count-aware per RR-CANON-R120 |
-| Adjacency calculation      | 2025-12-11 | Vectorized using tensor operations       |
-| Victory threshold formula  | 2025-12-11 | Uses RR-CANON-R061 formula               |
-| Buried rings tracking      | 2025-12-11 | Fixed indexing bugs                      |
+| Gap                        | Fix Date   | Notes                                                        |
+| -------------------------- | ---------- | ------------------------------------------------------------ |
+| Line length (square8 3-4p) | 2025-12-11 | Now player-count-aware per RR-CANON-R120                     |
+| Adjacency calculation      | 2025-12-11 | Vectorized using tensor operations                           |
+| Victory threshold formula  | 2025-12-11 | Uses RR-CANON-R061 formula                                   |
+| Buried rings tracking      | 2025-12-11 | Fixed indexing bugs                                          |
+| Recovery Stack-Strike V1   | 2025-12-12 | Recovery can now target opponent stacks, eliminates top ring |
 
 ---
 
