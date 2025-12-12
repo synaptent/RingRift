@@ -220,231 +220,246 @@ function createSandboxEngineFromInitial(initial: GameState): ClientSandboxEngine
   return engine;
 }
 
-describe('Backend vs Sandbox internal-state parity diagnostics (square8 / 2p / seed=5)', () => {
-  const boardType: BoardType = 'square8';
-  const numPlayers = 2;
-  const seed = 5;
-  const MAX_STEPS = 80; // generous upper bound; actual game ends earlier
+// This harness is sandbox-internal and relies on ClientSandboxEngine traceMode
+// metadata. It is skipped by default and should be enabled only for targeted
+// adapter debugging while sandbox coercions are still present.
+const enableSandboxInternalParity = process.env.RINGRIFT_ENABLE_SANDBOX_INTERNAL_PARITY === '1';
+const maybeDescribe = enableSandboxInternalParity ? describe : describe.skip;
 
-  test('logs earliest divergence in GameState and internal metadata across full seed-5 trace', async () => {
-    const trace = await runSandboxAITrace(boardType, numPlayers, seed, MAX_STEPS);
-    expect(trace.entries.length).toBeGreaterThan(0);
+maybeDescribe(
+  'Backend vs Sandbox internal-state parity diagnostics (square8 / 2p / seed=5)',
+  () => {
+    const boardType: BoardType = 'square8';
+    const numPlayers = 2;
+    const seed = 5;
+    const MAX_STEPS = 80; // generous upper bound; actual game ends earlier
 
-    const moves: Move[] = trace.entries.map((e) => e.action as Move);
+    test('logs earliest divergence in GameState and internal metadata across full seed-5 trace', async () => {
+      const trace = await runSandboxAITrace(boardType, numPlayers, seed, MAX_STEPS);
+      expect(trace.entries.length).toBeGreaterThan(0);
 
-    const backendEngine = createBackendEngineFromInitialState(trace.initialState);
-    const sandboxEngine = createSandboxEngineFromInitial(trace.initialState);
+      const moves: Move[] = trace.entries.map((e) => e.action as Move);
 
-    // Any-cast views used for invariant helpers and internal LPS/material
-    // checks without widening the public engine surface.
-    const backendAny: any = backendEngine;
-    const sandboxAny: any = sandboxEngine;
+      const backendEngine = createBackendEngineFromInitialState(trace.initialState);
+      const sandboxEngine = createSandboxEngineFromInitial(trace.initialState);
 
-    let firstGameStateMismatchIndex = -1;
-    let firstInternalMismatchIndex = -1;
-    let firstSemanticLpsMismatchIndex = -1;
+      // Any-cast views used for invariant helpers and internal LPS/material
+      // checks without widening the public engine surface.
+      const backendAny: any = backendEngine;
+      const sandboxAny: any = sandboxEngine;
 
-    for (let i = 0; i < moves.length; i++) {
-      const move = moves[i];
+      let firstGameStateMismatchIndex = -1;
+      let firstInternalMismatchIndex = -1;
+      let firstSemanticLpsMismatchIndex = -1;
 
-      // --- Apply move i to backend ---
-      const backendStateBefore = backendEngine.getGameState();
-      const backendValidMoves = backendEngine.getValidMoves(backendStateBefore.currentPlayer);
-      const matching = findMatchingBackendMove(move, backendValidMoves);
+      for (let i = 0; i < moves.length; i++) {
+        const move = moves[i];
 
-      if (!matching) {
-        console.error('[Seed5 InternalParity] No matching backend move', {
-          index: i,
-          moveNumber: move.moveNumber,
-          type: move.type,
-          player: move.player,
-          backendCurrentPlayer: backendStateBefore.currentPlayer,
-          backendCurrentPhase: backendStateBefore.currentPhase,
-          backendValidMovesCount: backendValidMoves.length,
-        });
-        firstGameStateMismatchIndex = i;
-        break;
-      }
+        // --- Apply move i to backend ---
+        const backendStateBefore = backendEngine.getGameState();
+        const backendValidMoves = backendEngine.getValidMoves(backendStateBefore.currentPlayer);
+        const matching = findMatchingBackendMove(move, backendValidMoves);
 
-      const { id, timestamp, moveNumber, ...payload } = matching as any;
-      const backendResult = await backendEngine.makeMove(
-        payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
-      );
-      if (!backendResult.success) {
-        console.error('[Seed5 InternalParity] Backend makeMove failed', {
-          index: i,
-          moveNumber: move.moveNumber,
-          type: move.type,
-          player: move.player,
-          backendMoveNumber: (matching as any).moveNumber,
-          error: backendResult.error,
-        });
-        firstGameStateMismatchIndex = i;
-        break;
-      }
-
-      // Step through automatic phases after each move so backend reaches the
-      // same stopping point as the sandbox (which fully processes its
-      // post-move consequences inside applyCanonicalMove / advanceAfterMovement).
-      await backendEngine.stepAutomaticPhasesForTesting();
-
-      // --- Apply move i to sandbox ---
-      await sandboxEngine.applyCanonicalMove(move);
-
-      const backendAfter = backendEngine.getGameState();
-      const sandboxAfter = sandboxEngine.getGameState();
-
-      const backendSnap = snapshotFromGameState(`backend-step-${i}`, backendAfter);
-      const sandboxSnap = snapshotFromGameState(`sandbox-step-${i}`, sandboxAfter);
-
-      const backendInternal = normaliseBackendInternalState(backendEngine as any);
-      const sandboxInternal = normaliseSandboxInternalState(sandboxEngine as any);
-
-      // Invariant-style diagnostics: detect "active but no real actions" states
-      // for each host. This mirrors the Python invariants used in the rules
-      // service and helps pinpoint where forced elimination / skipping should
-      // have triggered but did not.
-      const backendHasMaterialAndNoRealAction = (() => {
-        if (backendAfter.gameStatus !== 'active') {
-          return false;
+        if (!matching) {
+          console.error('[Seed5 InternalParity] No matching backend move', {
+            index: i,
+            moveNumber: move.moveNumber,
+            type: move.type,
+            player: move.player,
+            backendCurrentPlayer: backendStateBefore.currentPlayer,
+            backendCurrentPhase: backendStateBefore.currentPhase,
+            backendValidMovesCount: backendValidMoves.length,
+          });
+          firstGameStateMismatchIndex = i;
+          break;
         }
-        if (
-          typeof backendAny.playerHasMaterial !== 'function' ||
-          typeof backendAny.hasAnyRealActionForPlayer !== 'function'
-        ) {
-          return false;
+
+        const { id, timestamp, moveNumber, ...payload } = matching as any;
+        const backendResult = await backendEngine.makeMove(
+          payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+        );
+        if (!backendResult.success) {
+          console.error('[Seed5 InternalParity] Backend makeMove failed', {
+            index: i,
+            moveNumber: move.moveNumber,
+            type: move.type,
+            player: move.player,
+            backendMoveNumber: (matching as any).moveNumber,
+            error: backendResult.error,
+          });
+          firstGameStateMismatchIndex = i;
+          break;
         }
-        const p = backendAfter.currentPlayer;
-        const hasMaterial = backendAny.playerHasMaterial(p) === true;
-        const hasReal = backendAny.hasAnyRealActionForPlayer(backendAfter, p) === true;
-        return hasMaterial && !hasReal;
-      })();
 
-      const sandboxHasMaterialAndNoRealAction = (() => {
-        if (sandboxAfter.gameStatus !== 'active') {
-          return false;
+        // Step through automatic phases after each move so backend reaches the
+        // same stopping point as the sandbox (which fully processes its
+        // post-move consequences inside applyCanonicalMove / advanceAfterMovement).
+        await backendEngine.stepAutomaticPhasesForTesting();
+
+        // --- Apply move i to sandbox ---
+        await sandboxEngine.applyCanonicalMove(move);
+
+        const backendAfter = backendEngine.getGameState();
+        const sandboxAfter = sandboxEngine.getGameState();
+
+        const backendSnap = snapshotFromGameState(`backend-step-${i}`, backendAfter);
+        const sandboxSnap = snapshotFromGameState(`sandbox-step-${i}`, sandboxAfter);
+
+        const backendInternal = normaliseBackendInternalState(backendEngine as any);
+        const sandboxInternal = normaliseSandboxInternalState(sandboxEngine as any);
+
+        // Invariant-style diagnostics: detect "active but no real actions" states
+        // for each host. This mirrors the Python invariants used in the rules
+        // service and helps pinpoint where forced elimination / skipping should
+        // have triggered but did not.
+        const backendHasMaterialAndNoRealAction = (() => {
+          if (backendAfter.gameStatus !== 'active') {
+            return false;
+          }
+          if (
+            typeof backendAny.playerHasMaterial !== 'function' ||
+            typeof backendAny.hasAnyRealActionForPlayer !== 'function'
+          ) {
+            return false;
+          }
+          const p = backendAfter.currentPlayer;
+          const hasMaterial = backendAny.playerHasMaterial(p) === true;
+          const hasReal = backendAny.hasAnyRealActionForPlayer(backendAfter, p) === true;
+          return hasMaterial && !hasReal;
+        })();
+
+        const sandboxHasMaterialAndNoRealAction = (() => {
+          if (sandboxAfter.gameStatus !== 'active') {
+            return false;
+          }
+          if (
+            typeof sandboxAny.playerHasMaterial !== 'function' ||
+            typeof sandboxAny.hasAnyRealActionForPlayer !== 'function'
+          ) {
+            return false;
+          }
+          const p = sandboxAfter.currentPlayer;
+          const hasMaterial = sandboxAny.playerHasMaterial(p) === true;
+          const hasReal = sandboxAny.hasAnyRealActionForPlayer(p) === true;
+          return hasMaterial && !hasReal;
+        })();
+
+        if (backendHasMaterialAndNoRealAction || sandboxHasMaterialAndNoRealAction) {
+          console.warn('[Seed5 InternalParity] ACTIVE_NO_MOVES invariant hit', {
+            index: i,
+            moveNumber: move.moveNumber,
+            type: move.type,
+            player: move.player,
+            backend: {
+              currentPlayer: backendAfter.currentPlayer,
+              currentPhase: backendAfter.currentPhase,
+              gameStatus: backendAfter.gameStatus,
+              hasMaterialAndNoRealAction: backendHasMaterialAndNoRealAction,
+            },
+            sandbox: {
+              currentPlayer: sandboxAfter.currentPlayer,
+              currentPhase: sandboxAfter.currentPhase,
+              gameStatus: sandboxAfter.gameStatus,
+              hasMaterialAndNoRealAction: sandboxHasMaterialAndNoRealAction,
+            },
+          });
         }
-        if (
-          typeof sandboxAny.playerHasMaterial !== 'function' ||
-          typeof sandboxAny.hasAnyRealActionForPlayer !== 'function'
-        ) {
-          return false;
+
+        const backendSemanticLps = getBackendSemanticLpsSnapshot(
+          backendEngine as any,
+          backendAfter
+        );
+        const sandboxSemanticLps = getSandboxSemanticLpsSnapshot(sandboxEngine as any);
+
+        const gameStatesEqual = snapshotsEqual(backendSnap, sandboxSnap);
+        const internalsEqual = JSON.stringify(backendInternal) === JSON.stringify(sandboxInternal);
+        const semanticLpsEqual =
+          JSON.stringify(backendSemanticLps) === JSON.stringify(sandboxSemanticLps);
+
+        // Around the late-game tail, always log a compact view even if equal.
+        if (i >= 60 && i <= 64) {
+          // eslint-disable-next-line no-console
+          console.log('[Seed5 InternalParity] tail window snapshot', {
+            index: i,
+            moveNumber: move.moveNumber,
+            type: move.type,
+            player: move.player,
+            backend: {
+              currentPlayer: backendAfter.currentPlayer,
+              currentPhase: backendAfter.currentPhase,
+              gameStatus: backendAfter.gameStatus,
+              winner: backendAfter.winner,
+              internal: backendInternal,
+              semanticLps: backendSemanticLps,
+            },
+            sandbox: {
+              currentPlayer: sandboxAfter.currentPlayer,
+              currentPhase: sandboxAfter.currentPhase,
+              gameStatus: sandboxAfter.gameStatus,
+              winner: sandboxAfter.winner,
+              internal: sandboxInternal,
+              semanticLps: sandboxSemanticLps,
+            },
+            gameStatesEqual,
+            internalsEqual,
+            semanticLpsEqual,
+          });
         }
-        const p = sandboxAfter.currentPlayer;
-        const hasMaterial = sandboxAny.playerHasMaterial(p) === true;
-        const hasReal = sandboxAny.hasAnyRealActionForPlayer(p) === true;
-        return hasMaterial && !hasReal;
-      })();
 
-      if (backendHasMaterialAndNoRealAction || sandboxHasMaterialAndNoRealAction) {
-        console.warn('[Seed5 InternalParity] ACTIVE_NO_MOVES invariant hit', {
-          index: i,
-          moveNumber: move.moveNumber,
-          type: move.type,
-          player: move.player,
-          backend: {
-            currentPlayer: backendAfter.currentPlayer,
-            currentPhase: backendAfter.currentPhase,
-            gameStatus: backendAfter.gameStatus,
-            hasMaterialAndNoRealAction: backendHasMaterialAndNoRealAction,
-          },
-          sandbox: {
-            currentPlayer: sandboxAfter.currentPlayer,
-            currentPhase: sandboxAfter.currentPhase,
-            gameStatus: sandboxAfter.gameStatus,
-            hasMaterialAndNoRealAction: sandboxHasMaterialAndNoRealAction,
-          },
-        });
+        if (!gameStatesEqual && firstGameStateMismatchIndex === -1) {
+          firstGameStateMismatchIndex = i;
+          const diff = diffSnapshots(backendSnap, sandboxSnap);
+
+          console.error('[Seed5 InternalParity] FIRST GameState mismatch', {
+            index: i,
+            moveNumber: move.moveNumber,
+            type: move.type,
+            player: move.player,
+            diff,
+          });
+        }
+
+        if (!internalsEqual && firstInternalMismatchIndex === -1) {
+          firstInternalMismatchIndex = i;
+
+          console.error('[Seed5 InternalParity] FIRST internal-state mismatch', {
+            index: i,
+            moveNumber: move.moveNumber,
+            type: move.type,
+            player: move.player,
+            backendInternal,
+            sandboxInternal,
+          });
+        }
+
+        if (!semanticLpsEqual && firstSemanticLpsMismatchIndex === -1 && gameStatesEqual) {
+          firstSemanticLpsMismatchIndex = i;
+
+          console.error(
+            '[Seed5 InternalParity] FIRST semantic LPS mismatch (with equal GameState)',
+            {
+              index: i,
+              moveNumber: move.moveNumber,
+              type: move.type,
+              player: move.player,
+              backendSemanticLps,
+              sandboxSemanticLps,
+            }
+          );
+        }
       }
 
-      const backendSemanticLps = getBackendSemanticLpsSnapshot(backendEngine as any, backendAfter);
-      const sandboxSemanticLps = getSandboxSemanticLpsSnapshot(sandboxEngine as any);
+      // eslint-disable-next-line no-console
+      console.log('[Seed5 InternalParity] summary', {
+        seed,
+        totalMoves: moves.length,
+        firstGameStateMismatchIndex,
+        firstInternalMismatchIndex,
+        firstSemanticLpsMismatchIndex,
+      });
 
-      const gameStatesEqual = snapshotsEqual(backendSnap, sandboxSnap);
-      const internalsEqual = JSON.stringify(backendInternal) === JSON.stringify(sandboxInternal);
-      const semanticLpsEqual =
-        JSON.stringify(backendSemanticLps) === JSON.stringify(sandboxSemanticLps);
-
-      // Around the late-game tail, always log a compact view even if equal.
-      if (i >= 60 && i <= 64) {
-        // eslint-disable-next-line no-console
-        console.log('[Seed5 InternalParity] tail window snapshot', {
-          index: i,
-          moveNumber: move.moveNumber,
-          type: move.type,
-          player: move.player,
-          backend: {
-            currentPlayer: backendAfter.currentPlayer,
-            currentPhase: backendAfter.currentPhase,
-            gameStatus: backendAfter.gameStatus,
-            winner: backendAfter.winner,
-            internal: backendInternal,
-            semanticLps: backendSemanticLps,
-          },
-          sandbox: {
-            currentPlayer: sandboxAfter.currentPlayer,
-            currentPhase: sandboxAfter.currentPhase,
-            gameStatus: sandboxAfter.gameStatus,
-            winner: sandboxAfter.winner,
-            internal: sandboxInternal,
-            semanticLps: sandboxSemanticLps,
-          },
-          gameStatesEqual,
-          internalsEqual,
-          semanticLpsEqual,
-        });
-      }
-
-      if (!gameStatesEqual && firstGameStateMismatchIndex === -1) {
-        firstGameStateMismatchIndex = i;
-        const diff = diffSnapshots(backendSnap, sandboxSnap);
-
-        console.error('[Seed5 InternalParity] FIRST GameState mismatch', {
-          index: i,
-          moveNumber: move.moveNumber,
-          type: move.type,
-          player: move.player,
-          diff,
-        });
-      }
-
-      if (!internalsEqual && firstInternalMismatchIndex === -1) {
-        firstInternalMismatchIndex = i;
-
-        console.error('[Seed5 InternalParity] FIRST internal-state mismatch', {
-          index: i,
-          moveNumber: move.moveNumber,
-          type: move.type,
-          player: move.player,
-          backendInternal,
-          sandboxInternal,
-        });
-      }
-
-      if (!semanticLpsEqual && firstSemanticLpsMismatchIndex === -1 && gameStatesEqual) {
-        firstSemanticLpsMismatchIndex = i;
-
-        console.error('[Seed5 InternalParity] FIRST semantic LPS mismatch (with equal GameState)', {
-          index: i,
-          moveNumber: move.moveNumber,
-          type: move.type,
-          player: move.player,
-          backendSemanticLps,
-          sandboxSemanticLps,
-        });
-      }
-    }
-
-    // eslint-disable-next-line no-console
-    console.log('[Seed5 InternalParity] summary', {
-      seed,
-      totalMoves: moves.length,
-      firstGameStateMismatchIndex,
-      firstInternalMismatchIndex,
-      firstSemanticLpsMismatchIndex,
+      // Diagnostic harness: ensure we at least exercised the trace.
+      expect(moves.length).toBeGreaterThan(0);
     });
-
-    // Diagnostic harness: ensure we at least exercised the trace.
-    expect(moves.length).toBeGreaterThan(0);
-  });
-});
+  }
+);

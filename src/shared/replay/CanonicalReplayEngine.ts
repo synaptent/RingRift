@@ -135,9 +135,22 @@ export class CanonicalReplayEngine {
 
     // Initialize state
     if (initialState && typeof initialState === 'object') {
-      // Deserialize provided initial state
       const sanitized = this.sanitizeInitialState(initialState);
-      this.currentState = deserializeGameState(sanitized as SerializedGameState);
+
+      // If the caller passed a live GameState (with Map-backed board fields),
+      // reuse it directly. Otherwise treat it as a serialized recording.
+      const maybeState = sanitized as any;
+      const hasLiveBoardMaps =
+        maybeState.board &&
+        (maybeState.board.stacks instanceof Map ||
+          maybeState.board.markers instanceof Map ||
+          maybeState.board.collapsedSpaces instanceof Map);
+
+      if (hasLiveBoardMaps) {
+        this.currentState = sanitized as GameState;
+      } else {
+        this.currentState = deserializeGameState(sanitized as SerializedGameState);
+      }
     } else {
       // Create fresh initial state
       this.currentState = this.createFreshState(gameId, boardType, numPlayers);

@@ -1,11 +1,7 @@
 import { BoardType, GameState, Move } from '../../src/shared/types/game';
 import { runSandboxAITrace, createBackendEngineFromInitialState } from '../utils/traces';
 import { findMatchingBackendMove } from '../utils/moveMatching';
-import {
-  ClientSandboxEngine,
-  SandboxConfig,
-  SandboxInteractionHandler,
-} from '../../src/client/sandbox/ClientSandboxEngine';
+import { CanonicalReplayEngine } from '../../src/shared/replay';
 import {
   snapshotFromGameState,
   snapshotsEqual,
@@ -100,38 +96,13 @@ const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true'
       };
     }
 
-    function createSandboxEngineFromInitial(initial: GameState): ClientSandboxEngine {
-      const config: SandboxConfig = {
+    function createReplayEngineFromInitial(initial: GameState): CanonicalReplayEngine {
+      return new CanonicalReplayEngine({
+        gameId: initial.id,
         boardType: initial.boardType,
         numPlayers: initial.players.length,
-        playerKinds: initial.players
-          .slice()
-          .sort((a, b) => a.playerNumber - b.playerNumber)
-          .map((p) => p.type as 'human' | 'ai'),
-      };
-
-      const handler: SandboxInteractionHandler = {
-        async requestChoice(choice: any) {
-          const options = ((choice as any).options as any[]) ?? [];
-          const selectedOption = options.length > 0 ? options[0] : undefined;
-
-          return {
-            choiceId: (choice as any).id,
-            playerNumber: (choice as any).playerNumber,
-            choiceType: (choice as any).type,
-            selectedOption,
-          } as any;
-        },
-      };
-
-      const engine = new ClientSandboxEngine({
-        config,
-        interactionHandler: handler,
-        traceMode: true,
+        initialState: initial,
       });
-      const engineAny: any = engine;
-      engineAny.gameState = initial;
-      return engine;
     }
 
     test('collects backend vs sandbox checkpoints for seed=5 move index 43', async () => {
@@ -146,7 +117,7 @@ const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true'
       expect(targetMove).toBeDefined();
 
       const backendEngine = createBackendEngineFromInitialState(trace.initialState);
-      const sandboxEngine = createSandboxEngineFromInitial(trace.initialState);
+      const sandboxEngine = createReplayEngineFromInitial(trace.initialState);
 
       // --- Replay prefix moves 0..42 without checkpoints ---
       for (let i = 0; i < 43; i++) {
@@ -190,8 +161,13 @@ const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true'
           );
         }
 
-        // Sandbox: apply the canonical move directly.
-        await sandboxEngine.applyCanonicalMove(move);
+        // Canonical replay engine: apply the canonical move directly.
+        const replayResult = await sandboxEngine.applyMove(move);
+        if (!replayResult.success) {
+          throw new Error(
+            `Replay applyMove failed during prefix replay at moveNumber=${move.moveNumber}: ${replayResult.error}`
+          );
+        }
       }
 
       // --- Attach checkpoint hooks for move 43 ---
@@ -214,8 +190,7 @@ const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true'
       // Synthetic pre-move checkpoint so both engines share a common label.
       const backendAny: any = backendEngine;
       backendAny.debugCheckpoint('before-move-43');
-      const sandboxAny: any = sandboxEngine;
-      sandboxAny.debugCheckpoint('before-move-43');
+      sandboxEngine.debugCheckpoint('before-move-43');
 
       // --- Apply target move index 43 with checkpoints enabled ---
       {
@@ -255,7 +230,12 @@ const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true'
           );
         }
 
-        await sandboxEngine.applyCanonicalMove(targetMove);
+        const sandboxResult = await sandboxEngine.applyMove(targetMove);
+        if (!sandboxResult.success) {
+          throw new Error(
+            `Replay applyMove failed for target move (moveNumber=${targetMove.moveNumber}): ${sandboxResult.error}`
+          );
+        }
       }
 
       // --- Compare checkpoints by label ---

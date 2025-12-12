@@ -1,11 +1,7 @@
 import { BoardType, GameState, Move } from '../../src/shared/types/game';
 import { runSandboxAITrace, createBackendEngineFromInitialState } from '../utils/traces';
 import { findMatchingBackendMove } from '../utils/moveMatching';
-import {
-  ClientSandboxEngine,
-  SandboxConfig,
-  SandboxInteractionHandler,
-} from '../../src/client/sandbox/ClientSandboxEngine';
+import { CanonicalReplayEngine } from '../../src/shared/replay';
 import {
   snapshotFromGameState,
   snapshotsEqual,
@@ -94,38 +90,13 @@ describe('Backend vs Sandbox prefix diagnostics (square8 / 2p / seed=5)', () => 
     };
   }
 
-  function createSandboxEngineFromInitial(initial: GameState): ClientSandboxEngine {
-    const config: SandboxConfig = {
+  function createReplayEngineFromInitial(initial: GameState): CanonicalReplayEngine {
+    return new CanonicalReplayEngine({
+      gameId: initial.id,
       boardType: initial.boardType,
       numPlayers: initial.players.length,
-      playerKinds: initial.players
-        .slice()
-        .sort((a, b) => a.playerNumber - b.playerNumber)
-        .map((p) => p.type as 'human' | 'ai'),
-    };
-
-    const handler: SandboxInteractionHandler = {
-      async requestChoice(choice: any) {
-        const options = ((choice as any).options as any[]) ?? [];
-        const selectedOption = options.length > 0 ? options[0] : undefined;
-
-        return {
-          choiceId: (choice as any).id,
-          playerNumber: (choice as any).playerNumber,
-          choiceType: (choice as any).type,
-          selectedOption,
-        } as any;
-      },
-    };
-
-    const engine = new ClientSandboxEngine({
-      config,
-      interactionHandler: handler,
-      traceMode: true,
+      initialState: initial,
     });
-    const engineAny: any = engine;
-    engineAny.gameState = initial;
-    return engine;
   }
 
   test('logs per-prefix backend vs sandbox state and first snapshot divergence for seed=5', async () => {
@@ -135,7 +106,7 @@ describe('Backend vs Sandbox prefix diagnostics (square8 / 2p / seed=5)', () => 
     const moves: Move[] = trace.entries.map((e) => e.action as Move);
 
     const backendEngine = createBackendEngineFromInitialState(trace.initialState);
-    const sandboxEngine = createSandboxEngineFromInitial(trace.initialState);
+    const replayEngine = createReplayEngineFromInitial(trace.initialState);
 
     let firstMismatchIndex = -1;
 
@@ -144,9 +115,8 @@ describe('Backend vs Sandbox prefix diagnostics (square8 / 2p / seed=5)', () => 
 
       // Snapshot + internal flags BEFORE applying move i
       const backendStateBefore = backendEngine.getGameState();
-      const sandboxStateBefore = sandboxEngine.getGameState();
+      const sandboxStateBefore = replayEngine.getState();
       const backendAny: any = backendEngine;
-      const sandboxAny: any = sandboxEngine;
 
       // eslint-disable-next-line no-console
       console.log('[Seed5 PrefixDiagnostics] before step', {
@@ -169,9 +139,6 @@ describe('Backend vs Sandbox prefix diagnostics (square8 / 2p / seed=5)', () => 
           currentPhase: sandboxStateBefore.currentPhase,
           gameStatus: sandboxStateBefore.gameStatus,
           totalRingsEliminated: sandboxStateBefore.totalRingsEliminated,
-          pendingTerritorySelfElimination: sandboxAny._pendingTerritorySelfElimination === true,
-          hasPlacedThisTurn: sandboxAny._hasPlacedThisTurn === true,
-          mustMoveFromStackKey: sandboxAny._mustMoveFromStackKey,
         },
       });
 
@@ -210,12 +177,22 @@ describe('Backend vs Sandbox prefix diagnostics (square8 / 2p / seed=5)', () => 
         break;
       }
 
-      // Sandbox: apply canonical move directly.
-      await sandboxEngine.applyCanonicalMove(move);
+      // Canonical replay engine: apply canonical move directly.
+      const replayResult = await replayEngine.applyMove(move);
+      if (!replayResult.success) {
+        console.error('[Seed5 PrefixDiagnostics] replay applyMove failed', {
+          index: i,
+          moveNumber: move.moveNumber,
+          type: move.type,
+          error: replayResult.error,
+        });
+        firstMismatchIndex = i;
+        break;
+      }
 
       // AFTER applying move i, compare snapshots.
       const backendAfter = backendEngine.getGameState();
-      const sandboxAfter = sandboxEngine.getGameState();
+      const sandboxAfter = replayEngine.getState();
 
       const backendSnap = snapshotFromGameState(`backend-step-${i}`, backendAfter);
       const sandboxSnap = snapshotFromGameState(`sandbox-step-${i}`, sandboxAfter);

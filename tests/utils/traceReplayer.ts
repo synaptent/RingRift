@@ -1,13 +1,9 @@
 import { GameState, Move } from '../../src/shared/types/game';
 import { GameEngine } from '../../src/server/game/GameEngine';
-import { ClientSandboxEngine } from '../../src/client/sandbox/ClientSandboxEngine';
-import { createBackendEngineFromInitialState, createSandboxEngineFromInitialState } from './traces';
+import { CanonicalReplayEngine } from '../../src/shared/replay';
+import { createBackendEngineFromInitialState } from './traces';
 import { findMatchingBackendMove } from './moveMatching';
-import {
-  snapshotFromGameState,
-  snapshotsEqual,
-  ComparableSnapshot,
-} from './stateSnapshots';
+import { snapshotFromGameState, snapshotsEqual, ComparableSnapshot } from './stateSnapshots';
 
 /**
  * Minimal shared trace replay helpers so parity harnesses can agree on a
@@ -62,7 +58,7 @@ class BackendEngineHandle implements EngineHandle {
       // the replay. Callers can treat this as a divergence.
       // We deliberately log minimally here; higher-level harnesses may emit
       // richer diagnostics once the mismatching prefix has been found.
-      // eslint-disable-next-line no-console
+
       console.error('[TraceReplayer.Backend] No matching backend move', {
         sandboxMove: {
           type: move.type,
@@ -85,7 +81,6 @@ class BackendEngineHandle implements EngineHandle {
     );
 
     if (!result.success) {
-      // eslint-disable-next-line no-console
       console.error('[TraceReplayer.Backend] makeMove failed', {
         backendMoveNumber: (matching as any).moveNumber,
         error: result.error,
@@ -103,18 +98,18 @@ class BackendEngineHandle implements EngineHandle {
   }
 }
 
-class SandboxEngineHandle implements EngineHandle {
-  constructor(private engine: ClientSandboxEngine) {}
+class ReplayEngineHandle implements EngineHandle {
+  constructor(private engine: CanonicalReplayEngine) {}
 
   getState(): GameState {
-    return this.engine.getGameState();
+    return this.engine.getState() as GameState;
   }
 
   async applyCanonicalMove(move: Move): Promise<boolean> {
-    const before = this.engine.getGameState();
-    await this.engine.applyCanonicalMove(move);
-    const after = this.engine.getGameState();
-    return JSON.stringify(before) !== JSON.stringify(after);
+    const before = this.engine.getState();
+    const result = await this.engine.applyMove(move);
+    const after = this.engine.getState();
+    return result.success && JSON.stringify(before) !== JSON.stringify(after);
   }
 }
 
@@ -127,10 +122,15 @@ export const backendAdapter: EngineAdapter = {
 };
 
 export const sandboxAdapter: EngineAdapter = {
-  name: 'sandbox',
+  name: 'canonical-replay',
   create(initial: GameState): EngineHandle {
-    const engine = createSandboxEngineFromInitialState(initial);
-    return new SandboxEngineHandle(engine);
+    const engine = new CanonicalReplayEngine({
+      gameId: initial.id,
+      boardType: initial.boardType,
+      numPlayers: initial.players.length,
+      initialState: initial,
+    });
+    return new ReplayEngineHandle(engine);
   },
 };
 
