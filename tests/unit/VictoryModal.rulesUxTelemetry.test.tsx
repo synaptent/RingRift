@@ -150,7 +150,7 @@ describe('VictoryModal rules-UX telemetry for weird states', () => {
       type: 'weird_state_banner_impression',
       rulesContext: 'anm_forced_elimination',
       reasonCode: 'FE_SEQUENCE_CURRENT_PLAYER',
-      weirdStateType: 'active-no-moves-movement',
+      weirdStateType: 'forced-elimination',
       boardType: 'square8',
       numPlayers: players.length,
       isSandbox: false,

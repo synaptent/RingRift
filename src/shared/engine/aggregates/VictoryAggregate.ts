@@ -4,9 +4,8 @@
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * This aggregate consolidates all victory condition evaluation and tie-breaker
- * logic from:
- *
- * - victoryLogic.ts → victory evaluation, game end detection
+ * logic. It provides stateless evaluation of immediate victory conditions that
+ * can be checked after any move.
  *
  * Rule Reference: Section 13 - Victory Conditions
  *
@@ -16,12 +15,51 @@
  * - RR-CANON-R172: Last player standing (all opponents eliminated)
  * - RR-CANON-R173: Game termination conditions
  * - RR-CANON-R174: Tie-breaking rules (most markers → most rings → shared victory)
- * - Full-round requirement for Last Player Standing
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ARCHITECTURAL NOTE: LPS Tracking Separation
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The evaluateVictory() function in this module does NOT include round-based
+ * LPS (Last-Player-Standing) detection (R172's full-round requirement).
+ * This is intentional.
+ *
+ * Why LPS tracking is separate (in lpsTracking.ts):
+ * 1. **State persistence**: LPS detection requires tracking state across turns
+ *    (round index, exclusive player, consecutive round counts). This state
+ *    persists across multiple moves and must be managed by the host engine.
+ *
+ * 2. **Stateless evaluation**: evaluateVictory() is a pure function that takes
+ *    a snapshot of GameState and returns a verdict. It has no side effects and
+ *    doesn't track turn-to-turn state. This makes it safe to call speculatively.
+ *
+ * 3. **Different timing**: evaluateVictory() checks immediate conditions (ring
+ *    elimination, territory threshold, bare-board stalemate) that can trigger
+ *    after any move. LPS evaluation requires updating tracking at each turn
+ *    start, then checking victory conditions.
+ *
+ * To check both victory types, use the helper pattern:
+ * ```typescript
+ * import { evaluateVictory } from './aggregates/VictoryAggregate';
+ * import { evaluateLpsVictory, updateLpsTracking } from './lpsTracking';
+ *
+ * // After each move:
+ * const baseVerdict = evaluateVictory(state);
+ * if (baseVerdict.isGameOver) { ... }
+ *
+ * // At turn start (interactive phases):
+ * updateLpsTracking(lpsState, { currentPlayer, activePlayers, hasRealAction });
+ * const lpsVerdict = evaluateLpsVictory({ gameState, lps, hasAnyRealAction, hasMaterial });
+ * if (lpsVerdict.isVictory) { ... }
+ * ```
+ *
+ * See: lpsTracking.ts for round-based LPS victory detection
+ * See: scripts/selfplay-db-ts-replay.ts for evaluateVictoryWithLps() helper
  *
  * Design principles:
  * - Pure functions: No side effects, return new state
  * - Type safety: Full TypeScript typing
- * - Backward compatibility: Source files continue to export their functions
+ * - Stateless: All state comes from GameState parameter
  */
 
 import type { GameState, BoardState, BoardType, Position, Player } from '../../types/game';

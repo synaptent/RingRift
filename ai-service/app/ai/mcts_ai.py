@@ -22,6 +22,7 @@ import torch
 
 from .bounded_transposition_table import BoundedTranspositionTable
 from .heuristic_ai import HeuristicAI
+from .game_state_utils import infer_num_players
 from .neural_net import (
     NeuralNetAI,
     INVALID_MOVE_INDEX,
@@ -675,6 +676,30 @@ class MCTSAI(HeuristicAI):
         Routes to incremental (make/unmake) or legacy (immutable) search
         based on the use_incremental_search configuration.
         """
+        # Current MCTS implementation assumes a 2-player zero-sum game and uses
+        # negamax-style backpropagation. Multi-player support requires a
+        # different backup/selection rule (e.g., MaxN or vector-valued MCTS).
+        # Until that is implemented, fall back to a deterministic heuristic
+        # move and a 1-hot policy distribution for safety/correctness.
+        num_players = infer_num_players(game_state)
+        if num_players != 2:
+            logger.warning(
+                "MCTSAI multi-player mode is not supported yet; "
+                "falling back to heuristic move selection",
+                extra={
+                    "num_players": num_players,
+                    "player_number": self.player_number,
+                },
+            )
+            selected = super().select_move(game_state)
+            if selected is None:
+                return None, None
+            valid_moves_fallback = self.get_valid_moves(game_state)
+            policy = {
+                str(m): (1.0 if m == selected else 0.0) for m in valid_moves_fallback
+            }
+            return selected, policy
+
         # Get all valid moves for this AI player via the rules engine
         valid_moves = self.get_valid_moves(game_state)
 
@@ -840,92 +865,104 @@ class MCTSAI(HeuristicAI):
     ) -> None:
         """Evaluate leaf nodes using neural network or heuristic rollout."""
         if self.neural_net:
-            states = [leaf[1] for leaf in leaves]
+            try:
+                states = [leaf[1] for leaf in leaves]
 
-            cached_results: List[Tuple[int, float, Any]] = []
-            uncached_indices: List[int] = []
-            uncached_states: List[GameState] = []
+                cached_results: List[Tuple[int, float, Any]] = []
+                uncached_indices: List[int] = []
+                uncached_states: List[GameState] = []
 
-            for i, state in enumerate(states):
-                state_hash = state.zobrist_hash or 0
-                cached = self.transposition_table.get(state_hash)
-                if cached is not None:
-                    cached_results.append((i, cached[0], cached[1]))
-                else:
-                    uncached_indices.append(i)
-                    uncached_states.append(state)
+                for i, state in enumerate(states):
+                    state_hash = state.zobrist_hash or 0
+                    cached = self.transposition_table.get(state_hash)
+                    if cached is not None:
+                        cached_results.append((i, cached[0], cached[1]))
+                    else:
+                        uncached_indices.append(i)
+                        uncached_states.append(state)
 
-            values: List[float] = [0.0] * len(states)
-            policies: List[Any] = [None] * len(states)
+                values: List[float] = [0.0] * len(states)
+                policies: List[Any] = [None] * len(states)
 
-            for idx, val, pol in cached_results:
-                values[idx] = val
-                policies[idx] = pol
+                for idx, val, pol in cached_results:
+                    values[idx] = val
+                    policies[idx] = pol
 
-            use_hex_nn = (
-                self.hex_model is not None
-                and self.hex_encoder is not None
-                and states
-                and states[0].board.type == BoardType.HEXAGONAL
-            )
-
-            if uncached_states:
-                if use_hex_nn:
-                    eval_values, eval_policies = self._evaluate_hex_batch(
-                        uncached_states
-                    )
-                else:
-                    eval_values, eval_policies = (
-                        self.neural_net.evaluate_batch(uncached_states)
-                    )
-
-                for j, orig_idx in enumerate(uncached_indices):
-                    values[orig_idx] = eval_values[j]
-                    policies[orig_idx] = eval_policies[j]
-
-                    state_hash = uncached_states[j].zobrist_hash or 0
-                    self.transposition_table.put(
-                        state_hash,
-                        (eval_values[j], eval_policies[j]),
-                    )
-
-            # Process results
-            for i in range(len(leaves)):
-                value = values[i]
-                policy = policies[i]
-                node, state, played_moves = leaves[i]
-
-                if policy is None:
-                    continue
-
-                self._update_node_policy_legacy(
-                    node, state, policy, bool(use_hex_nn)
+                use_hex_nn = (
+                    self.hex_model is not None
+                    and self.hex_encoder is not None
+                    and states
+                    and states[0].board.type == BoardType.HEXAGONAL
                 )
 
-                # Backpropagation
-                current_val = float(value) if value is not None else 0.0
-                curr_node: Optional[MCTSNode] = node
+                if uncached_states:
+                    if use_hex_nn:
+                        eval_values, eval_policies = self._evaluate_hex_batch(
+                            uncached_states
+                        )
+                    else:
+                        eval_values, eval_policies = (
+                            self.neural_net.evaluate_batch(uncached_states)
+                        )
 
-                while curr_node is not None:
-                    curr_node.update(current_val, played_moves)
-                    current_val = -current_val
-                    curr_node = curr_node.parent
-        else:
-            # Fallback to Heuristic Rollout
-            for node, state, played_moves in leaves:
-                result = self._heuristic_rollout_legacy(state)
+                    for j, orig_idx in enumerate(uncached_indices):
+                        values[orig_idx] = eval_values[j]
+                        policies[orig_idx] = eval_policies[j]
 
-                if state.current_player == self.player_number:
-                    val_for_leaf_player = result
-                else:
-                    val_for_leaf_player = -result
+                        state_hash = uncached_states[j].zobrist_hash or 0
+                        self.transposition_table.put(
+                            state_hash,
+                            (eval_values[j], eval_policies[j]),
+                        )
 
-                current_val = val_for_leaf_player
-                curr_node: Optional[MCTSNode] = node
-                while curr_node is not None:
-                    curr_node.update(current_val, played_moves)
-                    current_val = -current_val
-                    curr_node = curr_node.parent
+                # Process results
+                for i in range(len(leaves)):
+                    value = values[i]
+                    policy = policies[i]
+                    node, state, played_moves = leaves[i]
+
+                    if policy is None:
+                        continue
+
+                    self._update_node_policy_legacy(
+                        node, state, policy, bool(use_hex_nn)
+                    )
+
+                    # Backpropagation (two-player negamax convention)
+                    current_val = float(value) if value is not None else 0.0
+                    curr_node: Optional[MCTSNode] = node
+
+                    while curr_node is not None:
+                        curr_node.update(current_val, played_moves)
+                        current_val = -current_val
+                        curr_node = curr_node.parent
+
+                return
+
+            except Exception:
+                # Common causes: missing/incompatible NN checkpoints. Degrade
+                # to heuristic rollouts instead of failing the whole request.
+                logger.warning(
+                    "MCTS neural evaluation failed; falling back to heuristic rollouts",
+                    exc_info=True,
+                )
+                self.neural_net = None
+
+        # Fallback to Heuristic Rollout
+        for node, state, played_moves in leaves:
+            result = self._heuristic_rollout_legacy(state)
+
+            if state.current_player == self.player_number:
+                val_for_leaf_player = result
+            else:
+                val_for_leaf_player = -result
+
+            current_val = val_for_leaf_player
+            curr_node: Optional[MCTSNode] = node
+            while curr_node is not None:
+                curr_node.update(current_val, played_moves)
+                current_val = -current_val
+                curr_node = curr_node.parent
 
     def _evaluate_hex_batch(
         self, states: List[GameState]
@@ -950,7 +987,11 @@ class MCTSAI(HeuristicAI):
             )
             policy_probs = torch.softmax(policy_logits, dim=1)
 
-        eval_values = values_tensor.cpu().numpy().flatten().tolist()
+        values_np = values_tensor.detach().cpu().numpy()
+        if values_np.ndim == 2:
+            eval_values = values_np[:, 0].astype(np.float32).tolist()
+        else:
+            eval_values = values_np.reshape(values_np.shape[0]).astype(np.float32).tolist()
         eval_policies = policy_probs.cpu().numpy()
 
         return eval_values, list(eval_policies)
@@ -1290,113 +1331,123 @@ class MCTSAI(HeuristicAI):
         evaluate, then unmake to return to root.
         """
         if self.neural_net:
-            # Batch evaluation - collect states
-            states: List[GameState] = []
-            for node, path_undos, played_moves in leaves:
-                # Replay path to reach this leaf
-                for undo in path_undos:
-                    mutable_state.make_move(undo.move)
+            try:
+                # Batch evaluation - collect states
+                states: List[GameState] = []
+                for node, path_undos, played_moves in leaves:
+                    # Replay path to reach this leaf
+                    for undo in path_undos:
+                        mutable_state.make_move(undo.move)
 
-                # Convert to immutable for evaluation
-                immutable = mutable_state.to_immutable()
-                states.append(immutable)
+                    # Convert to immutable for evaluation
+                    immutable = mutable_state.to_immutable()
+                    states.append(immutable)
 
-                # Unmake to return to root
-                for undo in reversed(path_undos):
-                    mutable_state.unmake_move(undo)
+                    # Unmake to return to root
+                    for undo in reversed(path_undos):
+                        mutable_state.unmake_move(undo)
 
-            # Check transposition table
-            cached_results: List[Tuple[int, float, Any]] = []
-            uncached_indices: List[int] = []
-            uncached_states: List[GameState] = []
+                # Check transposition table
+                cached_results: List[Tuple[int, float, Any]] = []
+                uncached_indices: List[int] = []
+                uncached_states: List[GameState] = []
 
-            for i, state in enumerate(states):
-                state_hash = state.zobrist_hash or 0
-                cached = self.transposition_table.get(state_hash)
-                if cached is not None:
-                    cached_results.append((i, cached[0], cached[1]))
-                else:
-                    uncached_indices.append(i)
-                    uncached_states.append(state)
+                for i, state in enumerate(states):
+                    state_hash = state.zobrist_hash or 0
+                    cached = self.transposition_table.get(state_hash)
+                    if cached is not None:
+                        cached_results.append((i, cached[0], cached[1]))
+                    else:
+                        uncached_indices.append(i)
+                        uncached_states.append(state)
 
-            values: List[float] = [0.0] * len(states)
-            policies: List[Any] = [None] * len(states)
+                values: List[float] = [0.0] * len(states)
+                policies: List[Any] = [None] * len(states)
 
-            for idx, val, pol in cached_results:
-                values[idx] = val
-                policies[idx] = pol
+                for idx, val, pol in cached_results:
+                    values[idx] = val
+                    policies[idx] = pol
 
-            use_hex_nn = (
-                self.hex_model is not None
-                and self.hex_encoder is not None
-                and states
-                and states[0].board.type == BoardType.HEXAGONAL
-            )
+                use_hex_nn = (
+                    self.hex_model is not None
+                    and self.hex_encoder is not None
+                    and states
+                    and states[0].board.type == BoardType.HEXAGONAL
+                )
 
-            if uncached_states:
-                if use_hex_nn:
-                    eval_values, eval_policies = self._evaluate_hex_batch(
-                        uncached_states
-                    )
-                else:
-                    eval_values, eval_policies = (
-                        self.neural_net.evaluate_batch(uncached_states)
-                    )
+                if uncached_states:
+                    if use_hex_nn:
+                        eval_values, eval_policies = self._evaluate_hex_batch(
+                            uncached_states
+                        )
+                    else:
+                        eval_values, eval_policies = (
+                            self.neural_net.evaluate_batch(uncached_states)
+                        )
 
-                for j, orig_idx in enumerate(uncached_indices):
-                    values[orig_idx] = eval_values[j]
-                    policies[orig_idx] = eval_policies[j]
+                    for j, orig_idx in enumerate(uncached_indices):
+                        values[orig_idx] = eval_values[j]
+                        policies[orig_idx] = eval_policies[j]
 
-                    state_hash = uncached_states[j].zobrist_hash or 0
-                    self.transposition_table.put(
-                        state_hash,
-                        (eval_values[j], eval_policies[j]),
-                    )
+                        state_hash = uncached_states[j].zobrist_hash or 0
+                        self.transposition_table.put(
+                            state_hash,
+                            (eval_values[j], eval_policies[j]),
+                        )
 
-            # Process results and backpropagate
-            for i, (node, path_undos, played_moves) in enumerate(leaves):
-                value = values[i]
-                policy = policies[i]
-                state = states[i]
+                # Process results and backpropagate
+                for i, (node, path_undos, played_moves) in enumerate(leaves):
+                    value = values[i]
+                    policy = policies[i]
+                    state = states[i]
 
-                if policy is not None:
-                    self._update_node_policy_lite(
-                        node, state, policy, bool(use_hex_nn)
-                    )
+                    if policy is not None:
+                        self._update_node_policy_lite(
+                            node, state, policy, bool(use_hex_nn)
+                        )
 
-                # Backpropagation
-                current_val = float(value) if value is not None else 0.0
-                curr_node: Optional[MCTSNodeLite] = node
+                    # Backpropagation (two-player negamax convention)
+                    current_val = float(value) if value is not None else 0.0
+                    curr_node: Optional[MCTSNodeLite] = node
 
-                while curr_node is not None:
-                    curr_node.update(current_val, played_moves)
-                    current_val = -current_val
-                    curr_node = curr_node.parent
-        else:
-            # Fallback to Heuristic Rollout with make/unmake
-            for node, path_undos, played_moves in leaves:
-                # Replay path to reach this leaf
-                for undo in path_undos:
-                    mutable_state.make_move(undo.move)
+                    while curr_node is not None:
+                        curr_node.update(current_val, played_moves)
+                        current_val = -current_val
+                        curr_node = curr_node.parent
 
-                # Perform rollout
-                result = self._heuristic_rollout_mutable(mutable_state)
+                return
 
-                # Unmake to return to root
-                for undo in reversed(path_undos):
-                    mutable_state.unmake_move(undo)
+            except Exception:
+                logger.warning(
+                    "MCTS neural evaluation failed; falling back to heuristic rollouts",
+                    exc_info=True,
+                )
+                self.neural_net = None
 
-                if mutable_state.current_player == self.player_number:
-                    val_for_leaf_player = result
-                else:
-                    val_for_leaf_player = -result
+        # Fallback to Heuristic Rollout with make/unmake
+        for node, path_undos, played_moves in leaves:
+            # Replay path to reach this leaf
+            for undo in path_undos:
+                mutable_state.make_move(undo.move)
 
-                current_val = val_for_leaf_player
-                curr_node: Optional[MCTSNodeLite] = node
-                while curr_node is not None:
-                    curr_node.update(current_val, played_moves)
-                    current_val = -current_val
-                    curr_node = curr_node.parent
+            # Perform rollout
+            result = self._heuristic_rollout_mutable(mutable_state)
+
+            # Unmake to return to root
+            for undo in reversed(path_undos):
+                mutable_state.unmake_move(undo)
+
+            if mutable_state.current_player == self.player_number:
+                val_for_leaf_player = result
+            else:
+                val_for_leaf_player = -result
+
+            current_val = val_for_leaf_player
+            curr_node: Optional[MCTSNodeLite] = node
+            while curr_node is not None:
+                curr_node.update(current_val, played_moves)
+                current_val = -current_val
+                curr_node = curr_node.parent
 
     def _heuristic_rollout_mutable(
         self, mutable_state: MutableGameState

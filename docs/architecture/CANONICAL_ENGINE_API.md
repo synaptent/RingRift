@@ -88,8 +88,8 @@ export type { Validator, Mutator };
 export type { TurnAdvanceResult, PerTurnState } from './turnLogic';
 export type { TurnLogicDelegates } from './turnLogic';
 
-// Victory
-export type { VictoryResult, VictoryReason } from './victoryLogic';
+// Victory (consolidated in VictoryAggregate - victoryLogic.ts removed Dec 2025)
+export type { VictoryResult, VictoryReason } from './aggregates/VictoryAggregate';
 
 // Placement
 export type { PlacementContext, PlacementValidationResult } from './validators/PlacementValidator';
@@ -455,7 +455,9 @@ if (regions.length > 0) {
 
 ### 3.6 Victory Domain
 
-**Location:** [`victoryLogic.ts`](../src/shared/engine/victoryLogic.ts)
+**Location:** [`aggregates/VictoryAggregate.ts`](../src/shared/engine/aggregates/VictoryAggregate.ts)
+
+> **Note (Dec 2025):** `victoryLogic.ts` was removed. All victory logic is now in `VictoryAggregate.ts`.
 
 ```typescript
 // Evaluation
@@ -725,7 +727,7 @@ interface PendingDecision {
 ```
 
 > **Victory reasons:** The orchestrator's `VictoryState.reason` union is a superset of the
-> rules-level `VictoryResult.reason` from `victoryLogic.ts`—it adds host/transport reasons
+> rules-level `VictoryResult.reason` from `VictoryAggregate.ts`—it adds host/transport reasons
 > such as `'stalemate_resolution'` and `'resignation'`. Rules semantics for ring-elimination
 > and territory-control victories, last-player-standing, and `game_completed` remain anchored
 > to `evaluateVictory(...)` in the shared engine; adapters may layer additional host-level
@@ -857,7 +859,7 @@ Beneath the orchestrator, the domain aggregates and helper modules under `src/sh
 - [`PlacementAggregate`](../src/shared/engine/aggregates/PlacementAggregate.ts) together with [`placementHelpers.ts`](../src/shared/engine/placementHelpers.ts) for placement, multi-ring placement on empty cells, stacking rules, and the no-dead-placement rule.
 - [`LineAggregate`](../src/shared/engine/aggregates/LineAggregate.ts) together with helpers such as [`lineDetection.ts`](../src/shared/engine/lineDetection.ts) and [`lineDecisionHelpers.ts`](../src/shared/engine/lineDecisionHelpers.ts) for line detection and line-reward decisions.
 - [`TerritoryAggregate`](../src/shared/engine/aggregates/TerritoryAggregate.ts) together with helpers such as [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts), [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts), and [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts) for Territory disconnection, Q23 self-elimination prerequisites, and explicit Territory decisions.
-- Victory helpers such as [`victoryLogic.ts`](../src/shared/engine/victoryLogic.ts) and [`VictoryAggregate`](../src/shared/engine/aggregates/VictoryAggregate.ts) for ring-elimination, Territory-control, and last-player-standing victory semantics.
+- [`VictoryAggregate`](../src/shared/engine/aggregates/VictoryAggregate.ts) for ring-elimination, territory-control, and last-player-standing victory semantics.
 
 Hosts (backend and sandbox) must treat these aggregates and helpers as the **only authoritative implementation** of movement, capture, placement, line, Territory, and victory rules semantics. Production hosts must go through the orchestrator (`processTurn` / `processTurnAsync` together with `validateMove` / `getValidMoves` / `hasValidMoves`) via [`TurnEngineAdapter`](../src/server/game/turn/TurnEngineAdapter.ts) or [`SandboxOrchestratorAdapter`](../src/client/sandbox/SandboxOrchestratorAdapter.ts); direct calls into aggregates or helpers are reserved for tests, diagnostics, and tooling. For a design-level view of these aggregates see [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](./DOMAIN_AGGREGATE_DESIGN.md), and for rule-ID → implementation mapping see [`docs/rules/RULES_IMPLEMENTATION_MAPPING.md`](../rules/RULES_IMPLEMENTATION_MAPPING.md). For consolidation and rollout details, see [`docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md`](./SHARED_ENGINE_CONSOLIDATION_PLAN.md) and [`docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md`](./ORCHESTRATOR_ROLLOUT_PLAN.md).
 
@@ -1355,7 +1357,7 @@ From an `IN_PROGRESS` game two independent processes may produce a terminal resu
 
 1. **Rules‑level termination**
    - Victory, resignation, or loss on time according to the rules and time‑control configuration.
-   - Implemented via `ClockManager` / `GameSession` timers and evaluated through [`victoryLogic.evaluateVictory`](../src/shared/engine/victoryLogic.ts:51).
+   - Implemented via `ClockManager` / `GameSession` timers and evaluated through [`VictoryAggregate.evaluateVictory`](../src/shared/engine/aggregates/VictoryAggregate.ts).
 
 2. **Abandonment due to reconnection‑window expiry**
    - When a player’s state moves from `DISCONNECTED_PENDING` to `DISCONNECTED_FINAL` because the reconnection window expired, `GameSession.handleAbandonmentForDisconnectedPlayer` may end the game (for example, awarding a rated win to the remaining human opponent in a 2‑player game).
@@ -1756,7 +1758,7 @@ import {
   enumerateProcessTerritoryRegionMoves,
   applyProcessTerritoryRegionDecision,
 } from '@shared/engine/territoryDecisionHelpers';
-import { evaluateVictory } from '@shared/engine/victoryLogic';
+import { evaluateVictory } from '@shared/engine'; // from VictoryAggregate
 import { advanceTurnAndPhase } from '@shared/engine/turnLogic';
 
 async function executeTurn(state: GameState, player: number): Promise<GameState> {

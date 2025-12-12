@@ -14,6 +14,8 @@ import {
 } from './TeachingOverlay';
 import {
   getWeirdStateReasonForGameResult,
+  getRulesContextForReason,
+  getWeirdStateTypeForReason,
   getTeachingTopicForReason,
   isSurfaceableWeirdStateReason,
   isSurfaceableWeirdStateType,
@@ -494,37 +496,22 @@ export function VictoryModal({
     const effectiveExplanation = gameEndExplanation ?? null;
     const fallbackWeirdInfo = getWeirdStateReasonForGameResult(effectiveGameResultLocal);
 
-    // Prefer reason codes / rules contexts from GameEndExplanation when present,
-    // but fall back to the coarse mapping from GameResult for structural-stalemate
-    // and LPS endings. In both cases we rely on getWeirdStateReasonForGameResult
-    // to provide the coarse weirdStateType classification.
-    let reasonCode = effectiveExplanation?.weirdStateContext?.reasonCodes?.[0];
-    if (
-      effectiveExplanation?.weirdStateContext?.primaryReasonCode &&
-      effectiveExplanation.weirdStateContext.reasonCodes?.length
-    ) {
-      reasonCode = effectiveExplanation.weirdStateContext.primaryReasonCode;
-    }
+    const reasonCode =
+      effectiveExplanation?.weirdStateContext?.primaryReasonCode ??
+      effectiveExplanation?.weirdStateContext?.reasonCodes?.[0] ??
+      fallbackWeirdInfo?.reasonCode;
 
-    let rulesContext =
-      effectiveExplanation?.weirdStateContext?.rulesContextTags &&
-      effectiveExplanation.weirdStateContext.rulesContextTags.length > 0
-        ? effectiveExplanation.weirdStateContext.rulesContextTags[0]
-        : undefined;
-
-    const weirdStateType = fallbackWeirdInfo?.weirdStateType;
-
-    if (!reasonCode || !rulesContext || !weirdStateType) {
-      if (!fallbackWeirdInfo) {
-        return;
-      }
-      reasonCode = fallbackWeirdInfo.reasonCode;
-      rulesContext = fallbackWeirdInfo.rulesContext;
-    }
-
-    if (!reasonCode || !rulesContext || !weirdStateType) {
+    if (!reasonCode) {
       return;
     }
+
+    const rulesContext =
+      (effectiveExplanation?.weirdStateContext?.rulesContextTags &&
+      effectiveExplanation.weirdStateContext.rulesContextTags.length > 0
+        ? effectiveExplanation.weirdStateContext.rulesContextTags[0]
+        : undefined) ?? getRulesContextForReason(reasonCode);
+
+    const weirdStateType = getWeirdStateTypeForReason(reasonCode);
 
     if (
       !isSurfaceableWeirdStateReason(reasonCode) ||
@@ -589,46 +576,29 @@ export function VictoryModal({
   // Prefer weird-state reason codes / rules contexts from GameEndExplanation when
   // available; otherwise fall back to GameResult-based mapping.
   const fallbackWeirdInfo = getWeirdStateReasonForGameResult(effectiveGameResult);
-  const weirdStateInfo =
-    effectiveExplanation?.weirdStateContext &&
-    effectiveExplanation.weirdStateContext.reasonCodes &&
-    effectiveExplanation.weirdStateContext.reasonCodes.length > 0
-      ? {
-          reasonCode:
-            effectiveExplanation.weirdStateContext.primaryReasonCode ??
-            effectiveExplanation.weirdStateContext.reasonCodes[0],
-          rulesContext:
-            effectiveExplanation.weirdStateContext.rulesContextTags &&
-            effectiveExplanation.weirdStateContext.rulesContextTags.length > 0
-              ? effectiveExplanation.weirdStateContext.rulesContextTags[0]
-              : fallbackWeirdInfo?.rulesContext,
-          weirdStateType: fallbackWeirdInfo?.weirdStateType,
-        }
-      : fallbackWeirdInfo;
+  const reasonCode =
+    effectiveExplanation?.weirdStateContext?.primaryReasonCode ??
+    effectiveExplanation?.weirdStateContext?.reasonCodes?.[0] ??
+    fallbackWeirdInfo?.reasonCode;
+
+  const weirdStateInfo = reasonCode
+    ? {
+        reasonCode,
+        rulesContext:
+          (effectiveExplanation?.weirdStateContext?.rulesContextTags &&
+          effectiveExplanation.weirdStateContext.rulesContextTags.length > 0
+            ? effectiveExplanation.weirdStateContext.rulesContextTags[0]
+            : undefined) ?? getRulesContextForReason(reasonCode),
+        weirdStateType: getWeirdStateTypeForReason(reasonCode),
+      }
+    : null;
 
   const surfaceableWeirdStateInfo =
     weirdStateInfo &&
     isSurfaceableWeirdStateReason(weirdStateInfo.reasonCode) &&
-    (weirdStateInfo.weirdStateType === undefined ||
-      isSurfaceableWeirdStateType(weirdStateInfo.weirdStateType))
+    isSurfaceableWeirdStateType(weirdStateInfo.weirdStateType)
       ? weirdStateInfo
       : null;
-
-  // If we have a canonical GameEndExplanation, use it to drive the weird-state
-  // info panel for game-end scenarios (structural stalemate, etc.) preferentially.
-  if (effectiveExplanation?.uxCopy?.shortSummaryKey) {
-    const key = effectiveExplanation.uxCopy.shortSummaryKey;
-    if (key.startsWith('game_end.lps.with_anm_fe')) {
-      // For LPS involving ANM/FE, surface a banner explaining why the game ended
-      // even if it looks like players still have material.
-      // We map this to the 'forced_elimination' teaching topic as it's the most relevant.
-      if (!weirdStateInfo) {
-        // Synthesize a weirdStateInfo if one wasn't derived from reason codes
-        // (though it likely was).
-        // This ensures the "What happened?" link appears.
-      }
-    }
-  }
 
   let weirdStateTeachingTopic: TeachingTopic | null = null;
   if (surfaceableWeirdStateInfo) {
@@ -665,9 +635,7 @@ export function VictoryModal({
       ? {
           reasonCode: surfaceableWeirdStateInfo.reasonCode,
           rulesContext: surfaceableWeirdStateInfo.rulesContext,
-          ...(surfaceableWeirdStateInfo.weirdStateType !== undefined
-            ? { weirdStateType: surfaceableWeirdStateInfo.weirdStateType }
-            : {}),
+          weirdStateType: surfaceableWeirdStateInfo.weirdStateType,
           boardType: gameSummary.boardType,
           numPlayers: gameSummary.playerCount,
           isRanked: gameState?.isRated ?? false,
@@ -697,10 +665,6 @@ export function VictoryModal({
     if (!overlaySessionId) {
       overlaySessionId = newOverlaySessionId();
       overlaySessionIdRef.current = overlaySessionId;
-    }
-
-    if (!surfaceableWeirdStateInfo.weirdStateType) {
-      return;
     }
 
     void logRulesUxEvent({

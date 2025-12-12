@@ -1,15 +1,14 @@
 /**
- * victoryLogic.branchCoverage.test.ts
+ * victory.evaluateVictory.branchCoverage.test.ts
  *
- * Branch coverage tests for victoryLogic.ts targeting uncovered branches:
+ * Branch coverage tests for victory logic (in VictoryAggregate.ts) targeting:
  * - evaluateVictory: primary victories, bare-board terminality, stalemate ladder
  * - getLastActor: history, moveHistory, turn order fallback
- * - hasAnyLegalPlacementOnBareBoard: placement validation
- * - forEachBoardPosition: hexagonal vs square iteration
- * - isValidBoardPosition: position validation
+ *
+ * Location: src/shared/engine/aggregates/VictoryAggregate.ts
  */
 
-import { evaluateVictory, getLastActor } from '../../src/shared/engine/victoryLogic';
+import { evaluateVictory, getLastActor } from '../../src/shared/engine';
 import type { GameState, RingStack } from '../../src/shared/engine/types';
 import type { Position, BoardType, Marker, Move, HistoryEntry } from '../../src/shared/types/game';
 import { positionToString } from '../../src/shared/types/game';
@@ -102,7 +101,7 @@ function collapseSpace(state: GameState, position: Position, player: number): vo
   state.board.collapsedSpaces.set(key, player);
 }
 
-describe('victoryLogic branch coverage', () => {
+describe('victory evaluateVictory branch coverage', () => {
   describe('evaluateVictory', () => {
     describe('empty players check', () => {
       it('returns game not over when players array is empty', () => {

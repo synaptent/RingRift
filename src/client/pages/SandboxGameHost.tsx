@@ -65,6 +65,8 @@ import { useSandboxPersistence } from '../hooks/useSandboxPersistence';
 import { useSandboxEvaluation } from '../hooks/useSandboxEvaluation';
 import { useSandboxScenarios, type LoadedScenario } from '../hooks/useSandboxScenarios';
 import { useGameSoundEffects } from '../hooks/useGameSoundEffects';
+import { useGlobalGameShortcuts } from '../hooks/useKeyboardNavigation';
+import { useSoundOptional } from '../contexts/SoundContext';
 
 const BOARD_PRESETS: Array<{
   value: BoardType;
@@ -388,6 +390,59 @@ export const SandboxGameHost: React.FC = () => {
 
   // Help / controls overlay for the active sandbox host
   const [showBoardControls, setShowBoardControls] = useState(false);
+
+  // Sidebar density: keep replay/diagnostics tools available without
+  // overwhelming onboarding and casual sandbox sessions.
+  const sandboxAdvancedSidebarStorageKey = 'ringrift_sandbox_sidebar_show_advanced';
+  const [showAdvancedSidebarPanels, setShowAdvancedSidebarPanels] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return localStorage.getItem(sandboxAdvancedSidebarStorageKey) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(
+        sandboxAdvancedSidebarStorageKey,
+        showAdvancedSidebarPanels ? 'true' : 'false'
+      );
+    } catch {
+      // Storage might be disabled; ignore.
+    }
+  }, [sandboxAdvancedSidebarStorageKey, showAdvancedSidebarPanels]);
+
+  const sound = useSoundOptional();
+
+  useGlobalGameShortcuts({
+    onShowHelp: () => {
+      if (!isConfigured || !sandboxEngine) {
+        return;
+      }
+      setShowBoardControls((prev) => !prev);
+    },
+    onToggleMute: () => {
+      if (!sound) {
+        return;
+      }
+      const nextMuted = !sound.muted;
+      sound.toggleMute();
+      toast(nextMuted ? 'Muted' : 'Sound on', { id: 'mute-toggle' });
+    },
+    onToggleFullscreen: () => {
+      if (typeof document === 'undefined') return;
+
+      if (document.fullscreenElement) {
+        void document.exitFullscreen?.();
+        return;
+      }
+
+      void document.documentElement.requestFullscreen?.();
+    },
+  });
 
   // Ref for resolving pending player choices in sandbox mode
   const sandboxChoiceResolverRef = useRef<
@@ -1604,9 +1659,17 @@ export const SandboxGameHost: React.FC = () => {
       .getValidMoves(sandboxGameState.currentPlayer)
       .some((m) => m.type === 'skip_capture');
 
-  // Keyboard shortcuts for sandbox overlay:
-  // - "?" (Shift + "/") toggles the Board Controls overlay when a sandbox game is active.
-  // - "Escape" closes the overlay when open.
+  const canSkipRecoveryForTouch =
+    !!sandboxGameState &&
+    sandboxGameState.currentPhase === 'movement' &&
+    !!sandboxEngine &&
+    sandboxEngine
+      .getValidMoves(sandboxGameState.currentPlayer)
+      .some((m) => m.type === 'skip_recovery');
+
+  // Most global keyboard shortcuts are handled via useGlobalGameShortcuts.
+  // Keep a narrow Escape handler here so the overlay closes even if it is
+  // mocked in tests or rendered outside the focus trap.
   useEffect(() => {
     if (!isConfigured || !sandboxEngine) {
       return;
@@ -1623,12 +1686,6 @@ export const SandboxGameHost: React.FC = () => {
         if (isEditableTag || isContentEditable) {
           return;
         }
-      }
-
-      if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
-        event.preventDefault();
-        setShowBoardControls((prev) => !prev);
-        return;
       }
 
       if (event.key === 'Escape' && showBoardControls) {
@@ -2243,6 +2300,7 @@ export const SandboxGameHost: React.FC = () => {
                     onCellContextMenu={
                       isInReplayMode ? undefined : (pos) => handleSandboxCellContextMenu(pos)
                     }
+                    onShowKeyboardHelp={() => setShowBoardControls(true)}
                     showMovementGrid={overlays.showMovementGrid}
                     showCoordinateLabels={
                       sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
@@ -2324,15 +2382,6 @@ export const SandboxGameHost: React.FC = () => {
           </section>
 
           <aside className="w-full lg:w-80 flex-shrink-0 space-y-3 sm:space-y-4 text-sm text-slate-100">
-            {/* Replay Panel - Game Database Browser */}
-            <ReplayPanel
-              onStateChange={setReplayState}
-              onReplayModeChange={setIsInReplayMode}
-              onForkFromPosition={handleForkFromReplay}
-              onAnimationChange={setReplayAnimation}
-              defaultCollapsed={true}
-            />
-
             {/* Unified Game HUD - full HUD on desktop, compact HUD on mobile */}
             {sandboxHudVM &&
               (isMobile ? (
@@ -2427,266 +2476,324 @@ export const SandboxGameHost: React.FC = () => {
                 </div>
               )}
 
-            {/* History Playback Controls - visible when there's move history.
-                When no internal snapshots are available (e.g. imported self-play
-                snapshots), we render the panel in a disabled state with a hint
-                instead of allowing a no-op slider. */}
-            {!isInReplayMode && sandboxGameState && sandboxGameState.moveHistory.length > 0 && (
-              <HistoryPlaybackPanel
-                totalMoves={sandboxGameState.moveHistory.length}
-                currentMoveIndex={
-                  isViewingHistory ? historyViewIndex : sandboxGameState.moveHistory.length
-                }
-                isViewingHistory={isViewingHistory}
-                onMoveIndexChange={(index) => {
-                  setHistoryViewIndex(index);
-                  // If at end, exit history view
-                  if (index >= sandboxGameState.moveHistory.length) {
-                    setIsViewingHistory(false);
-                  }
-                }}
-                onExitHistoryView={() => {
-                  setIsViewingHistory(false);
-                  setHistoryViewIndex(sandboxGameState.moveHistory.length);
-                }}
-                onEnterHistoryView={() => {
-                  setIsViewingHistory(true);
-                }}
-                // New: pass a flag so the panel can disable scrubbing for
-                // scenarios without snapshots (self-play snapshots, some fixtures).
-                hasSnapshots={hasHistorySnapshots}
-              />
-            )}
+            <details
+              className="p-3 border border-slate-700 rounded-2xl bg-slate-900/60"
+              open={showAdvancedSidebarPanels || isInReplayMode}
+              onToggle={(event) => {
+                setShowAdvancedSidebarPanels(event.currentTarget.open);
+              }}
+              data-testid="sandbox-advanced-sidebar-panels"
+            >
+              <summary className="cursor-pointer select-none text-sm font-semibold text-slate-200">
+                Advanced panels
+                <span className="ml-2 text-[11px] font-normal text-slate-400">
+                  (replays, logs, recording)
+                </span>
+              </summary>
+              {(showAdvancedSidebarPanels || isInReplayMode) && (
+                <div className="mt-3 space-y-3">
+                  {/* Replay Panel - Game Database Browser */}
+                  <ReplayPanel
+                    onStateChange={setReplayState}
+                    onReplayModeChange={setIsInReplayMode}
+                    onForkFromPosition={handleForkFromReplay}
+                    onAnimationChange={setReplayAnimation}
+                    defaultCollapsed={true}
+                  />
 
-            {/* Move History - compact notation display */}
-            {!isInReplayMode && sandboxGameState && (
-              <MoveHistory
-                moves={sandboxGameState.moveHistory}
-                boardType={sandboxGameState.boardType}
-                currentMoveIndex={
-                  isViewingHistory ? historyViewIndex - 1 : sandboxGameState.moveHistory.length - 1
-                }
-                onMoveClick={(index) => {
-                  // Jump to the state after this move (index+1)
-                  setIsViewingHistory(true);
-                  setHistoryViewIndex(index + 1);
-                }}
-                notationOptions={((): MoveNotationOptions | undefined => {
-                  if (
-                    sandboxGameState.boardType === 'square8' ||
-                    sandboxGameState.boardType === 'square19'
-                  ) {
-                    const size = sandboxBoardState?.size ?? 0;
-                    return {
-                      boardType: sandboxGameState.boardType,
-                      boardSizeOverride: size > 0 ? size : undefined,
-                      squareRankFromBottom: true,
-                    };
-                  }
-                  return undefined;
-                })()}
-              />
-            )}
-
-            <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60">
-              <GameEventLog viewModel={sandboxEventLogViewModel} />
-            </div>
-
-            {/* Recording Status Panel */}
-            <div className="p-3 border border-slate-700 rounded-2xl bg-slate-900/60">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">Recording:</span>
-                  {gameSaveStatus === 'idle' && autoSaveGames && (
-                    <span className="flex items-center gap-1 text-xs text-slate-400">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Ready
-                    </span>
-                  )}
-                  {gameSaveStatus === 'idle' && !autoSaveGames && (
-                    <span className="text-xs text-slate-500">Disabled</span>
-                  )}
-                  {gameSaveStatus === 'saving' && (
-                    <span className="flex items-center gap-1 text-xs text-amber-400">
-                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                      Saving...
-                    </span>
-                  )}
-                  {gameSaveStatus === 'saved' && (
-                    <span className="flex items-center gap-1 text-xs text-emerald-400">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                      Saved to server
-                    </span>
-                  )}
-                  {gameSaveStatus === 'saved-local' && (
-                    <span className="flex items-center gap-1 text-xs text-amber-300">
-                      <span className="w-2 h-2 rounded-full bg-amber-300" />
-                      Saved locally
-                    </span>
-                  )}
-                  {gameSaveStatus === 'error' && (
-                    <span className="flex items-center gap-1 text-xs text-red-400">
-                      <span className="w-2 h-2 rounded-full bg-red-400" />
-                      Failed
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setAutoSaveGames(!autoSaveGames)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
-                    autoSaveGames
-                      ? 'bg-emerald-900/40 text-emerald-300 border border-emerald-700'
-                      : 'bg-slate-800 text-slate-400 border border-slate-600'
-                  }`}
-                  title={autoSaveGames ? 'Click to disable recording' : 'Click to enable recording'}
-                >
-                  {autoSaveGames ? 'ON' : 'OFF'}
-                </button>
-              </div>
-              {pendingLocalGames > 0 && (
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    {syncState?.status === 'syncing' ? (
-                      <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                    ) : syncState?.status === 'offline' ? (
-                      <span className="w-2 h-2 rounded-full bg-slate-500" />
-                    ) : syncState?.status === 'error' ? (
-                      <span className="w-2 h-2 rounded-full bg-red-400" />
-                    ) : (
-                      <span className="w-2 h-2 rounded-full bg-amber-400" />
+                  {/* History Playback Controls - visible when there's move history.
+                    When no internal snapshots are available (e.g. imported self-play
+                    snapshots), we render the panel in a disabled state with a hint
+                    instead of allowing a no-op slider. */}
+                  {!isInReplayMode &&
+                    sandboxGameState &&
+                    sandboxGameState.moveHistory.length > 0 && (
+                      <HistoryPlaybackPanel
+                        totalMoves={sandboxGameState.moveHistory.length}
+                        currentMoveIndex={
+                          isViewingHistory ? historyViewIndex : sandboxGameState.moveHistory.length
+                        }
+                        isViewingHistory={isViewingHistory}
+                        onMoveIndexChange={(index) => {
+                          setHistoryViewIndex(index);
+                          // If at end, exit history view
+                          if (index >= sandboxGameState.moveHistory.length) {
+                            setIsViewingHistory(false);
+                          }
+                        }}
+                        onExitHistoryView={() => {
+                          setIsViewingHistory(false);
+                          setHistoryViewIndex(sandboxGameState.moveHistory.length);
+                        }}
+                        onEnterHistoryView={() => {
+                          setIsViewingHistory(true);
+                        }}
+                        // New: pass a flag so the panel can disable scrubbing for
+                        // scenarios without snapshots (self-play snapshots, some fixtures).
+                        hasSnapshots={hasHistorySnapshots}
+                      />
                     )}
-                    <span className="text-[10px] text-amber-400">
-                      {pendingLocalGames} game{pendingLocalGames !== 1 ? 's' : ''}{' '}
-                      {syncState?.status === 'syncing'
-                        ? 'syncing...'
-                        : syncState?.status === 'offline'
-                          ? '(offline)'
-                          : 'pending'}
-                    </span>
+
+                  {/* Move History - compact notation display */}
+                  {!isInReplayMode && sandboxGameState && (
+                    <MoveHistory
+                      moves={sandboxGameState.moveHistory}
+                      boardType={sandboxGameState.boardType}
+                      currentMoveIndex={
+                        isViewingHistory
+                          ? historyViewIndex - 1
+                          : sandboxGameState.moveHistory.length - 1
+                      }
+                      onMoveClick={(index) => {
+                        // Jump to the state after this move (index+1)
+                        setIsViewingHistory(true);
+                        setHistoryViewIndex(index + 1);
+                      }}
+                      notationOptions={((): MoveNotationOptions | undefined => {
+                        if (
+                          sandboxGameState.boardType === 'square8' ||
+                          sandboxGameState.boardType === 'square19'
+                        ) {
+                          const size = sandboxBoardState?.size ?? 0;
+                          return {
+                            boardType: sandboxGameState.boardType,
+                            boardSizeOverride: size > 0 ? size : undefined,
+                            squareRankFromBottom: true,
+                          };
+                        }
+                        return undefined;
+                      })()}
+                    />
+                  )}
+
+                  <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60">
+                    <GameEventLog viewModel={sandboxEventLogViewModel} />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => GameSyncService.triggerSync()}
-                    disabled={syncState?.status === 'syncing' || syncState?.status === 'offline'}
-                    className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-900/40 text-blue-300 border border-blue-700 hover:bg-blue-800/40 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                    title="Sync pending games to server"
-                  >
-                    Sync
-                  </button>
+
+                  {/* Recording Status Panel */}
+                  <div className="p-3 border border-slate-700 rounded-2xl bg-slate-900/60">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">Recording:</span>
+                        {gameSaveStatus === 'idle' && autoSaveGames && (
+                          <span className="flex items-center gap-1 text-xs text-slate-400">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            Ready
+                          </span>
+                        )}
+                        {gameSaveStatus === 'idle' && !autoSaveGames && (
+                          <span className="text-xs text-slate-500">Disabled</span>
+                        )}
+                        {gameSaveStatus === 'saving' && (
+                          <span className="flex items-center gap-1 text-xs text-amber-400">
+                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                            Saving...
+                          </span>
+                        )}
+                        {gameSaveStatus === 'saved' && (
+                          <span className="flex items-center gap-1 text-xs text-emerald-400">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                            Saved to server
+                          </span>
+                        )}
+                        {gameSaveStatus === 'saved-local' && (
+                          <span className="flex items-center gap-1 text-xs text-amber-300">
+                            <span className="w-2 h-2 rounded-full bg-amber-300" />
+                            Saved locally
+                          </span>
+                        )}
+                        {gameSaveStatus === 'error' && (
+                          <span className="flex items-center gap-1 text-xs text-red-400">
+                            <span className="w-2 h-2 rounded-full bg-red-400" />
+                            Failed
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAutoSaveGames(!autoSaveGames)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
+                          autoSaveGames
+                            ? 'bg-emerald-900/40 text-emerald-300 border border-emerald-700'
+                            : 'bg-slate-800 text-slate-400 border border-slate-600'
+                        }`}
+                        title={
+                          autoSaveGames ? 'Click to disable recording' : 'Click to enable recording'
+                        }
+                      >
+                        {autoSaveGames ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+                    {pendingLocalGames > 0 && (
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          {syncState?.status === 'syncing' ? (
+                            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                          ) : syncState?.status === 'offline' ? (
+                            <span className="w-2 h-2 rounded-full bg-slate-500" />
+                          ) : syncState?.status === 'error' ? (
+                            <span className="w-2 h-2 rounded-full bg-red-400" />
+                          ) : (
+                            <span className="w-2 h-2 rounded-full bg-amber-400" />
+                          )}
+                          <span className="text-[10px] text-amber-400">
+                            {pendingLocalGames} game{pendingLocalGames !== 1 ? 's' : ''}{' '}
+                            {syncState?.status === 'syncing'
+                              ? 'syncing...'
+                              : syncState?.status === 'offline'
+                                ? '(offline)'
+                                : 'pending'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => GameSyncService.triggerSync()}
+                          disabled={
+                            syncState?.status === 'syncing' || syncState?.status === 'offline'
+                          }
+                          className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-900/40 text-blue-300 border border-blue-700 hover:bg-blue-800/40 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                          title="Sync pending games to server"
+                        >
+                          Sync
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {developerToolsEnabled && (
+                    <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <h2 className="font-semibold">AI Evaluation (sandbox)</h2>
+                        <button
+                          type="button"
+                          onClick={requestSandboxEvaluation}
+                          disabled={!sandboxEngine || !sandboxGameState || isSandboxAnalysisRunning}
+                          className="px-3 py-1 rounded-full border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 disabled:opacity-60 disabled:cursor-not-allowed transition"
+                        >
+                          {isSandboxAnalysisRunning ? 'Evaluating…' : 'Request evaluation'}
+                        </button>
+                      </div>
+                      <EvaluationPanel
+                        evaluationHistory={sandboxEvaluationHistory}
+                        players={sandboxGameState?.players ?? []}
+                      />
+                      {sandboxEvaluationError && (
+                        <p
+                          className="text-xs text-amber-400"
+                          data-testid="sandbox-evaluation-error"
+                        >
+                          {sandboxEvaluationError}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </details>
 
-            {developerToolsEnabled && (
-              <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="font-semibold">AI Evaluation (sandbox)</h2>
-                  <button
-                    type="button"
-                    onClick={requestSandboxEvaluation}
-                    disabled={!sandboxEngine || !sandboxGameState || isSandboxAnalysisRunning}
-                    className="px-3 py-1 rounded-full border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 disabled:opacity-60 disabled:cursor-not-allowed transition"
-                  >
-                    {isSandboxAnalysisRunning ? 'Evaluating…' : 'Request evaluation'}
-                  </button>
-                </div>
-                <EvaluationPanel
-                  evaluationHistory={sandboxEvaluationHistory}
-                  players={sandboxGameState?.players ?? []}
-                />
-                {sandboxEvaluationError && (
-                  <p className="text-xs text-amber-400" data-testid="sandbox-evaluation-error">
-                    {sandboxEvaluationError}
-                  </p>
-                )}
-              </div>
-            )}
-
-            <SandboxTouchControlsPanel
-              selectedPosition={selected}
-              selectedStackDetails={selectedStackDetails}
-              validTargets={primaryValidTargets}
-              isCaptureDirectionPending={!!sandboxCaptureChoice}
-              captureTargets={sandboxCaptureTargets}
-              // Multi-segment capture undo is not yet exposed by the sandbox
-              // engine; this remains a no-op until the underlying rules
-              // pipeline supports segment-level rewind.
-              canUndoSegment={false}
-              onClearSelection={() => {
-                clearSandboxSelection();
-              }}
-              onUndoSegment={() => {
-                // no-op for now
-              }}
-              // For now, treat "Finish move" as an explicit selection reset that
-              // clears highlights without issuing additional engine actions.
-              onApplyMove={() => {
-                clearSandboxSelection();
-              }}
-              showMovementGrid={overlays.showMovementGrid}
-              onToggleMovementGrid={(next) => setShowMovementGrid(next)}
-              showValidTargets={overlays.showValidTargets}
-              onToggleValidTargets={(next) => setShowValidTargets(next)}
-              showLineOverlays={overlays.showLineOverlays}
-              onToggleLineOverlays={
-                developerToolsEnabled ? (next) => setShowLineOverlays(next) : undefined
-              }
-              showTerritoryOverlays={overlays.showTerritoryOverlays}
-              onToggleTerritoryOverlays={
-                developerToolsEnabled ? (next) => setShowTerritoryOverlays(next) : undefined
-              }
-              phaseLabel={sandboxPhaseDetails.label}
-              phaseHint={sandboxTouchPhaseHint}
-              canSkipTerritoryProcessing={canSkipTerritoryProcessing}
-              onSkipTerritoryProcessing={() => {
-                if (!sandboxPendingChoice || sandboxPendingChoice.type !== 'region_order') {
-                  return;
+            {(isMobile || showAdvancedSidebarPanels) && (
+              <SandboxTouchControlsPanel
+                selectedPosition={selected}
+                selectedStackDetails={selectedStackDetails}
+                validTargets={primaryValidTargets}
+                isCaptureDirectionPending={!!sandboxCaptureChoice}
+                captureTargets={sandboxCaptureTargets}
+                // Multi-segment capture undo is not yet exposed by the sandbox
+                // engine; this remains a no-op until the underlying rules
+                // pipeline supports segment-level rewind.
+                canUndoSegment={false}
+                onClearSelection={() => {
+                  clearSandboxSelection();
+                }}
+                onUndoSegment={() => {
+                  // no-op for now
+                }}
+                // For now, treat "Finish move" as an explicit selection reset that
+                // clears highlights without issuing additional engine actions.
+                onApplyMove={() => {
+                  clearSandboxSelection();
+                }}
+                showMovementGrid={overlays.showMovementGrid}
+                onToggleMovementGrid={(next) => setShowMovementGrid(next)}
+                showValidTargets={overlays.showValidTargets}
+                onToggleValidTargets={(next) => setShowValidTargets(next)}
+                showLineOverlays={overlays.showLineOverlays}
+                onToggleLineOverlays={
+                  developerToolsEnabled ? (next) => setShowLineOverlays(next) : undefined
                 }
-                const currentChoice = sandboxPendingChoice;
-                const options = (currentChoice.options ?? []) as Array<{
-                  regionId: string;
-                  size: number;
-                  representativePosition: Position;
-                  moveId: string;
-                }>;
-                const skipOption =
-                  options.find((opt) => opt.regionId === 'skip' || opt.size <= 0) ?? options[0];
-                const resolver = sandboxChoiceResolverRef.current;
-                if (resolver) {
-                  resolver({
-                    choiceId: currentChoice.id,
-                    playerNumber: currentChoice.playerNumber,
-                    choiceType: currentChoice.type,
-                    selectedOption: skipOption,
-                  } as PlayerChoiceResponseFor<PlayerChoice>);
-                  sandboxChoiceResolverRef.current = null;
+                showTerritoryOverlays={overlays.showTerritoryOverlays}
+                onToggleTerritoryOverlays={
+                  developerToolsEnabled ? (next) => setShowTerritoryOverlays(next) : undefined
                 }
-                setSandboxPendingChoice(null);
-                setSandboxStateVersion((v) => v + 1);
-                maybeRunSandboxAiIfNeeded();
-              }}
-              canSkipCapture={canSkipCaptureForTouch}
-              onSkipCapture={
-                canSkipCaptureForTouch && sandboxEngine && sandboxGameState
-                  ? async () => {
-                      const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
-                      const skipMove = moves.find((m) => m.type === 'skip_capture');
-                      if (!skipMove) {
-                        return;
+                phaseLabel={sandboxPhaseDetails.label}
+                phaseHint={sandboxTouchPhaseHint}
+                canSkipTerritoryProcessing={canSkipTerritoryProcessing}
+                onSkipTerritoryProcessing={() => {
+                  if (!sandboxPendingChoice || sandboxPendingChoice.type !== 'region_order') {
+                    return;
+                  }
+                  const currentChoice = sandboxPendingChoice;
+                  const options = (currentChoice.options ?? []) as Array<{
+                    regionId: string;
+                    size: number;
+                    representativePosition: Position;
+                    moveId: string;
+                  }>;
+                  const skipOption =
+                    options.find((opt) => opt.regionId === 'skip' || opt.size <= 0) ?? options[0];
+                  const resolver = sandboxChoiceResolverRef.current;
+                  if (resolver) {
+                    resolver({
+                      choiceId: currentChoice.id,
+                      playerNumber: currentChoice.playerNumber,
+                      choiceType: currentChoice.type,
+                      selectedOption: skipOption,
+                    } as PlayerChoiceResponseFor<PlayerChoice>);
+                    sandboxChoiceResolverRef.current = null;
+                  }
+                  setSandboxPendingChoice(null);
+                  setSandboxStateVersion((v) => v + 1);
+                  maybeRunSandboxAiIfNeeded();
+                }}
+                canSkipCapture={canSkipCaptureForTouch}
+                onSkipCapture={
+                  canSkipCaptureForTouch && sandboxEngine && sandboxGameState
+                    ? async () => {
+                        const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
+                        const skipMove = moves.find((m) => m.type === 'skip_capture');
+                        if (!skipMove) {
+                          return;
+                        }
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- canonical move accepts polymorphic move type
+                        await sandboxEngine.applyCanonicalMove(skipMove as any);
+                        setSandboxStateVersion((v) => v + 1);
+                        clearSandboxSelection();
+                        maybeRunSandboxAiIfNeeded();
                       }
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- canonical move accepts polymorphic move type
-                      await sandboxEngine.applyCanonicalMove(skipMove as any);
-                      setSandboxStateVersion((v) => v + 1);
-                      clearSandboxSelection();
-                      maybeRunSandboxAiIfNeeded();
-                    }
-                  : undefined
-              }
-              autoSaveGames={autoSaveGames}
-              onToggleAutoSave={(next) => setAutoSaveGames(next)}
-              gameSaveStatus={gameSaveStatus}
-            />
+                    : undefined
+                }
+                canSkipRecovery={canSkipRecoveryForTouch}
+                onSkipRecovery={
+                  canSkipRecoveryForTouch && sandboxEngine && sandboxGameState
+                    ? async () => {
+                        const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
+                        const skipMove = moves.find((m) => m.type === 'skip_recovery');
+                        if (!skipMove) {
+                          return;
+                        }
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- canonical move accepts polymorphic move type
+                        await sandboxEngine.applyCanonicalMove(skipMove as any);
+                        setSandboxStateVersion((v) => v + 1);
+                        clearSandboxSelection();
+                        maybeRunSandboxAiIfNeeded();
+                      }
+                    : undefined
+                }
+                autoSaveGames={autoSaveGames}
+                onToggleAutoSave={(next) => setAutoSaveGames(next)}
+                gameSaveStatus={gameSaveStatus}
+              />
+            )}
 
             <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
               <h2 className="font-semibold">Phase Guide</h2>

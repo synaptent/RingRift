@@ -39,7 +39,7 @@ import type { ConnectionStatus } from '../domain/GameAPI';
 import { getChoiceViewModel, getChoiceViewModelForType } from './choiceViewModels';
 import type { ChoiceKind } from './choiceViewModels';
 import { getWeirdStateBanner, type WeirdStateBanner } from '../utils/gameStateWeirdness';
-import type { GameEndExplanation } from '../..//shared/engine/gameEndExplanation';
+import type { GameEndExplanation } from '../../shared/engine/gameEndExplanation';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HUD View Model
@@ -909,24 +909,28 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
     };
   };
 
-  // If we have a canonical GameEndExplanation, use it to drive the weird-state
-  // banner for game-end scenarios (structural stalemate, etc.) preferentially.
-  if (gameEndExplanation?.uxCopy?.shortSummaryKey) {
-    const key = gameEndExplanation.uxCopy.shortSummaryKey;
-    if (key.startsWith('game_end.structural_stalemate')) {
+  // Prefer canonical GameEndExplanation when provided so HUD copy stays aligned
+  // across backend/sandbox hosts and VictoryModal.
+  if (gameEndExplanation) {
+    if (gameEndExplanation.outcomeType === 'structural_stalemate') {
       weirdState = {
         type: 'structural-stalemate',
         title: 'Structural stalemate',
         body: 'No legal placements, movements, captures, or forced eliminations remain for any player. The game ends here and the final score is computed from territory and eliminated rings.',
         tone: 'critical',
       };
-    } else if (key.startsWith('game_end.lps.with_anm_fe')) {
-      // For LPS involving ANM/FE, surface a banner explaining why the game ended
-      // even if it looks like players still have material.
+    } else if (gameEndExplanation.outcomeType === 'last_player_standing') {
+      const winnerVm = players.find((p) => p.id === gameEndExplanation.winnerPlayerId);
+      const winnerLabel = winnerVm
+        ? winnerVm.isUserPlayer
+          ? 'You'
+          : winnerVm.username
+        : 'A player';
+      const subject = winnerLabel === 'You' ? 'You were' : `${winnerLabel} was`;
       weirdState = {
-        type: 'forced-elimination', // Reuse FE styling for LPS-FE endings
-        title: 'Last Player Standing (via Forced Elimination)',
-        body: 'The game ended because only one player could make real moves for two consecutive full rounds. Other players were blocked or forced to eliminate rings.',
+        type: 'last-player-standing',
+        title: 'Last Player Standing',
+        body: `${subject} the only player able to make real moves (placements, movements, or captures) for two consecutive full rounds. Other players either had no real moves or could only perform forced eliminations, which do not count as real moves for Last Player Standing even though they still permanently eliminate rings.`,
         tone: 'warning',
       };
     }
@@ -979,6 +983,19 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
           body: isUser
             ? 'Because you control stacks but have no legal real moves on some of your turns (no placements, movements, or captures), forced elimination repeatedly removes caps from your stacks. Each removal permanently eliminates rings and counts toward Ring Elimination.'
             : `Because ${label} controls stacks but has no legal real moves on some of their turns (no placements, movements, or captures), forced elimination repeatedly removes caps from their stacks. Each removal permanently eliminates rings and counts toward Ring Elimination.`,
+          tone: 'warning',
+        };
+        break;
+      }
+      case 'last-player-standing': {
+        const winnerNumber = weird.winner;
+        const winnerLabel =
+          typeof winnerNumber === 'number' ? resolvePlayerLabel(winnerNumber).label : 'A player';
+        const subject = winnerLabel === 'You' ? 'You were' : `${winnerLabel} was`;
+        weirdState = {
+          type: weird.type,
+          title: 'Last Player Standing',
+          body: `${subject} the only player able to make real moves (placements, movements, or captures) for two consecutive full rounds. Other players either had no real moves or could only perform forced eliminations, which do not count as real moves for Last Player Standing even though they still permanently eliminate rings.`,
           tone: 'warning',
         };
         break;
@@ -1733,12 +1750,14 @@ function getVictoryMessage(
 
   const winnerName = winner?.username || `Player ${winner?.playerNumber || '?'}`;
 
-  const key = explanation?.uxCopy?.detailedSummaryKey ?? explanation?.uxCopy?.shortSummaryKey ?? '';
+  const victoryReasonCode = explanation?.victoryReasonCode;
+  const outcomeType = explanation?.outcomeType;
 
-  // Prefer more specific copy variants based on uxCopy keys when available.
-  // These keys follow patterns documented in UX_RULES_EXPLANATION_MODEL_SPEC
-  // (e.g., game_end.lps.with_anm_fe.detailed, game_end.structural_stalemate.tiebreak.detailed).
-  if (key.startsWith('game_end.lps.')) {
+  // Prefer explanation-driven copy when a canonical GameEndExplanation is present.
+  if (
+    victoryReasonCode === 'victory_last_player_standing' ||
+    outcomeType === 'last_player_standing'
+  ) {
     const subject = userWon ? 'You' : winnerName;
     const verb = userWon ? 'were' : 'was';
     return {
@@ -1748,7 +1767,10 @@ function getVictoryMessage(
     };
   }
 
-  if (key.startsWith('game_end.structural_stalemate.')) {
+  if (
+    victoryReasonCode === 'victory_structural_stalemate_tiebreak' ||
+    outcomeType === 'structural_stalemate'
+  ) {
     return {
       title: '🧱 Structural Stalemate',
       description:
@@ -1757,7 +1779,11 @@ function getVictoryMessage(
     };
   }
 
-  if (key.startsWith('game_end.territory_mini_region')) {
+  const key = explanation?.uxCopy?.detailedSummaryKey ?? explanation?.uxCopy?.shortSummaryKey ?? '';
+  if (
+    key.startsWith('game_end.territory_mini_region') ||
+    explanation?.primaryConceptId === 'territory_mini_region'
+  ) {
     return {
       title: `🏰 ${winnerName} Wins!`,
       description:

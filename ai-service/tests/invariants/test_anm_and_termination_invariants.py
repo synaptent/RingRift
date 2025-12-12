@@ -68,9 +68,20 @@ from tests.parity.test_anm_global_actions_parity import (  # noqa: E402
 # so the invariant is correctly satisfied.
 
 
-# INV-ANM-TURN-MATERIAL-SKIP (R201)
+# INV-ANM-TURN-MATERIAL-SKIP (RR-CANON-R201)
+#
+# Per canonical rules (RR-CANON-R201):
+# - A player has "turn-material" if they control stacks OR have rings in hand
+# - A player is "permanently eliminated" if they have NO rings anywhere
+#   (no controlled stacks, no rings in hand, no buried rings)
+# - Only PERMANENTLY ELIMINATED players are skipped in turn rotation
+# - Players without turn-material but with buried rings still get turns
+#   (they may use recovery slides in MOVEMENT phase)
+#
+# This test verifies that when P1 has no stacks and no rings in hand,
+# they are skipped (in this test P1 is fully eliminated with no buried rings).
 def test_end_turn_skips_fully_eliminated_player() -> None:
-    """_end_turn skips players with no turn material in ACTIVE games."""
+    """_end_turn skips permanently eliminated players (no rings anywhere)."""
 
     state = _make_base_game_state()
     state.game_status = GameStatus.ACTIVE

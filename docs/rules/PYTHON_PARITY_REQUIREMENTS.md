@@ -2,7 +2,7 @@
 
 > **SSoT alignment:** This document is a derived parity/contract view over the canonical TS rules engine. It explains how the Python rules implementation in `ai-service/app/**` is validated against the **Canonical TS rules surface** (`src/shared/engine/**` helpers + aggregates + orchestrator + contracts and v2 contract vectors), and how parity fixtures/tests are maintained. It does not define new rules semantics.
 >
-> **Doc Status (2025-12-06): Active (with historical TypeScript implementation details)**
+> **Doc Status (2025-12-11): Active (with historical TypeScript implementation details)**
 >
 > - Canonical TS rules surface is the helpers + aggregates + orchestrator stack under `src/shared/engine/`: `core.ts`, movement/capture/line/territory/victory helpers, `aggregates/*Aggregate.ts`, and `orchestration/turnOrchestrator.ts` / `phaseStateMachine.ts`, plus contract vectors in `src/shared/engine/contracts/**` and `tests/fixtures/contract-vectors/v2/*.json`.
 > - Function and class names under `validators/*.ts` and `mutators/*.ts` in the tables below should be read as **semantic anchors**, not necessarily 1:1 concrete TS files. As of this date, only `validators/PlacementValidator.ts` and a subset of `mutators/*Mutator.ts` exist on the TS side; the rest of the semantics are expressed via helpers, aggregates, and the orchestrator and are exercised by:
@@ -196,10 +196,19 @@ AI‑only concern.
 
 ### 2.7 Victory Domain
 
-| TS Function                                                 | TS File           | Python Function                                                       | Python File      | Parity Status | Notes          |
-| ----------------------------------------------------------- | ----------------- | --------------------------------------------------------------------- | ---------------- | ------------- | -------------- |
-| [`evaluateVictory()`](../src/shared/engine/victoryLogic.ts) | `victoryLogic.ts` | [`GameEngine._check_victory()`](../ai-service/app/game_engine.py:269) | `game_engine.py` | ✅ MATCHED    | Different name |
-| [`getLastActor()`](../src/shared/engine/victoryLogic.ts)    | `victoryLogic.ts` | Inline in `_check_victory()`                                          | `game_engine.py` | ✅ MATCHED    | Inline         |
+| TS Function                                                                         | TS File               | Python Function                                                           | Python File      | Parity Status | Notes                               |
+| ----------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------- | ---------------- | ------------- | ----------------------------------- |
+| [`evaluateVictory()`](../src/shared/engine/aggregates/VictoryAggregate.ts)          | `VictoryAggregate.ts` | [`GameEngine._check_victory()`](../ai-service/app/game_engine.py:269)     | `game_engine.py` | ✅ MATCHED    | Different name                      |
+| [`getLastActor()`](../src/shared/engine/aggregates/VictoryAggregate.ts)             | `VictoryAggregate.ts` | Inline in `_check_victory()`                                              | `game_engine.py` | ✅ MATCHED    | Inline                              |
+| [`countTotalRingsForPlayer()`](../src/shared/engine/aggregates/VictoryAggregate.ts) | `VictoryAggregate.ts` | [`count_rings_in_play_for_player()`](../ai-service/app/game_engine.py:98) | `game_engine.py` | ✅ MATCHED    | Added Dec 2025 for Early LPS parity |
+
+> **Note (Dec 2025):** `victoryLogic.ts` was removed. All victory logic is now in `VictoryAggregate.ts`.
+
+**Note (Dec 2025):** The `evaluateVictory()` function was updated to:
+
+- Count territory directly from `collapsedSpaces` map (not `player.territorySpaces`)
+- Use `countTotalRingsForPlayer()` for Early LPS detection (includes buried rings)
+  These changes align TS with Python's `_check_victory()` semantics. See [AI_PIPELINE_PARITY_FIXES.md](../ai/AI_PIPELINE_PARITY_FIXES.md) for details.
 
 ### 2.8 Turn Management
 
@@ -904,3 +913,70 @@ From the Python perspective:
   - New regression seeds or invariant failures discovered by Python strict-invariant soaks (see [`STRICT_INVARIANT_SOAKS.md`](docs/STRICT_INVARIANT_SOAKS.md:1)) SHOULD, where possible, be promoted into additional contract vectors under one of the families above, extending this catalogue rather than inventing unrelated ID patterns.
 
 This P18.5-1 catalogue, together with [`CONTRACT_VECTORS_DESIGN.md`](docs/CONTRACT_VECTORS_DESIGN.md:1), serves as the Python-facing specification for extended contract vectors; TS generator implementations and future Python assertion expansions should treat these IDs as stable references.
+
+---
+
+## 9. Replay Parity Infrastructure (Dec 2025)
+
+### 9.1 Overview
+
+The replay parity infrastructure validates that TS and Python engines produce identical game states when replaying recorded selfplay games. This is critical for AI training data consistency.
+
+**Key Components:**
+
+- `scripts/selfplay-db-ts-replay.ts` - TS replay engine for selfplay DBs
+- `ai-service/scripts/check_ts_python_replay_parity.py` - Cross-engine parity checker
+- `ai-service/app/db/game_replay.py` - Game recording and retrieval
+
+### 9.2 State Hash Parity
+
+Both engines use an identical hash algorithm for state comparison:
+
+```
+Fingerprint Format: meta#players#stacks#markers#collapsed
+Hash Algorithm: FNV-1a variant (16-char hex output)
+```
+
+**TS Implementation:** `src/shared/engine/core.ts:745-777`
+**Python Implementation:** `ai-service/app/db/game_replay.py:240-278`
+
+Parity tests: `ai-service/tests/parity/test_hash_parity.py`
+
+### 9.3 Early Victory Detection
+
+**Requirement:** Both engines must detect victory at the same point during replay.
+
+**TS Implementation (Dec 2025 fix):**
+
+- `evaluateVictory()` called after each move in replay
+- Early termination with `ts-replay-game-ended` event
+- State hash emitted for parity comparison
+
+**Python Implementation:**
+
+- `GameEngine._check_victory()` called after each move
+- Game terminates immediately when victory detected
+
+**Parity handling:** When TS terminates early due to victory detection, the parity checker accepts the move count difference if:
+
+1. Both engines show `gameStatus: completed`
+2. State hashes match at termination point
+
+### 9.4 Replay Events
+
+The TS replay script emits structured events for parity tracking:
+
+| Event                        | Purpose                                     |
+| ---------------------------- | ------------------------------------------- |
+| `ts-replay-initial`          | Initial state before any moves              |
+| `ts-replay-step`             | State after each move (indexed by k)        |
+| `ts-replay-db-move-complete` | State after canonical DB move + bookkeeping |
+| `ts-replay-early-victory`    | Victory detected mid-replay                 |
+| `ts-replay-game-ended`       | Early termination with final summary        |
+
+### 9.5 Current Parity Status
+
+**Contract Vectors:** 48 passed, 36 skipped (multi-phase orchestrator tests)
+**Selfplay Replays:** 9+ games validated with 0 semantic divergences
+
+See [AI_PIPELINE_PARITY_FIXES.md](../ai/AI_PIPELINE_PARITY_FIXES.md) for recent fixes.

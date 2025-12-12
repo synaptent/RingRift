@@ -242,6 +242,7 @@ export const MoveSchema = z.object({
     'line_formation',
     'territory_claim',
     'recovery_slide', // RR-CANON-R110–R115: marker recovery action
+    'skip_recovery', // RR-CANON-R115: explicit recovery skip
   ]),
   position: z.union([
     z.string(),

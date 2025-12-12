@@ -68,6 +68,8 @@ function getMoveTypeSymbol(move: Move): string {
       return '−'; // Skip
     case 'recovery_slide':
       return '↻'; // Recovery action
+    case 'skip_recovery':
+      return '↻'; // Recovery skip
     case 'process_line':
     case 'choose_line_reward':
       return '━'; // Line
@@ -112,6 +114,8 @@ function formatMoveCompact(move: Move, options: MoveNotationOptions): string {
       return `${typeSymbol} Swap`;
     case 'skip_placement':
       return `${typeSymbol} Pass`;
+    case 'skip_recovery':
+      return `${typeSymbol} Skip`;
     case 'recovery_slide': {
       // Recovery: ↻ a3→b3 or ↻ a3→b3 (min) for Option 2
       if (move.from) {

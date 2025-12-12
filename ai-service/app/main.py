@@ -7,6 +7,8 @@ import logging
 import time
 import os
 from datetime import datetime, timezone
+from dataclasses import dataclass
+import threading
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -85,7 +87,104 @@ app.add_middleware(
 app.include_router(replay_router)
 
 # AI instances cache
-ai_instances: Dict[str, Any] = {}
+@dataclass
+class CachedAIInstance:
+    ai: Any
+    created_at: float
+    last_access: float
+
+
+AI_INSTANCE_CACHE_ENABLED = os.getenv("RINGRIFT_AI_INSTANCE_CACHE", "1").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+AI_INSTANCE_CACHE_TTL_SEC = int(os.getenv("RINGRIFT_AI_INSTANCE_CACHE_TTL_SEC", "1800"))
+AI_INSTANCE_CACHE_MAX = int(os.getenv("RINGRIFT_AI_INSTANCE_CACHE_MAX", "512"))
+
+_ai_cache_lock = threading.Lock()
+ai_instances: Dict[str, CachedAIInstance] = {}
+
+
+def _should_cache_ai(ai_type: AIType, game_state: GameState) -> bool:
+    """Return True if this request should reuse a persistent AI instance."""
+    if not AI_INSTANCE_CACHE_ENABLED:
+        return False
+    if ai_type not in (AIType.MINIMAX, AIType.MCTS, AIType.DESCENT):
+        return False
+    if getattr(game_state, "game_status", None) != GameStatus.ACTIVE:
+        return False
+    # Requires stable game id so we do not accidentally share state across games.
+    return bool(getattr(game_state, "id", None))
+
+
+def _ai_cache_key(
+    game_state: GameState,
+    player_number: int,
+    ai_type: AIType,
+    config: AIConfig,
+) -> str:
+    # Key includes config so callers can safely A/B compare profiles
+    # without cross-contaminating tree state.
+    return "|".join(
+        [
+            str(game_state.id),
+            str(getattr(game_state.board_type, "value", game_state.board_type)),
+            str(len(game_state.players) if getattr(game_state, "players", None) else 0),
+            str(player_number),
+            str(ai_type.value),
+            str(config.difficulty),
+            str(config.think_time or 0),
+            str(config.randomness or 0.0),
+            str(config.rng_seed if config.rng_seed is not None else ""),
+            str(config.heuristic_profile_id or ""),
+            str(config.nn_model_id or ""),
+            str(bool(config.use_neural_net) if config.use_neural_net is not None else ""),
+            str(bool(config.use_incremental_search)),
+        ]
+    )
+
+
+def _prune_ai_cache(now: float) -> None:
+    """Best-effort pruning to bound memory from cached search trees."""
+    if not ai_instances:
+        return
+
+    expired = [
+        key
+        for key, entry in ai_instances.items()
+        if now - entry.last_access > AI_INSTANCE_CACHE_TTL_SEC
+    ]
+    for key in expired:
+        ai_instances.pop(key, None)
+
+    if len(ai_instances) <= AI_INSTANCE_CACHE_MAX:
+        return
+
+    # Evict least-recently-used entries.
+    entries_by_age = sorted(ai_instances.items(), key=lambda kv: kv[1].last_access)
+    overflow = len(ai_instances) - AI_INSTANCE_CACHE_MAX
+    for key, _entry in entries_by_age[:overflow]:
+        ai_instances.pop(key, None)
+
+
+def _get_cached_ai(key: str) -> Any | None:
+    now = time.time()
+    with _ai_cache_lock:
+        _prune_ai_cache(now)
+        entry = ai_instances.get(key)
+        if entry is None:
+            return None
+        entry.last_access = now
+        return entry.ai
+
+
+def _put_cached_ai(key: str, ai: Any) -> None:
+    now = time.time()
+    with _ai_cache_lock:
+        _prune_ai_cache(now)
+        ai_instances[key] = CachedAIInstance(ai=ai, created_at=now, last_access=now)
 
 
 class MoveRequest(BaseModel):
@@ -338,11 +437,25 @@ async def get_ai_move(request: MoveRequest):
             heuristic_profile_id=heuristic_profile_id,
             nn_model_id=nn_model_id,
         )
-        ai = _create_ai_instance(
-            ai_type,
-            request.player_number,
-            config,
-        )
+        ai = None
+        cache_key: Optional[str] = None
+        if _should_cache_ai(ai_type, request.game_state):
+            cache_key = _ai_cache_key(
+                request.game_state,
+                request.player_number,
+                ai_type,
+                config,
+            )
+            ai = _get_cached_ai(cache_key)
+
+        if ai is None:
+            ai = _create_ai_instance(
+                ai_type,
+                request.player_number,
+                config,
+            )
+            if cache_key is not None:
+                _put_cached_ai(cache_key, ai)
 
         # Get move from AI
         move = ai.select_move(request.game_state)
@@ -948,9 +1061,26 @@ async def choose_capture_direction_option(
 async def clear_ai_cache():
     """Clear cached AI instances"""
     global ai_instances
-    ai_instances.clear()
+    with _ai_cache_lock:
+        removed = len(ai_instances)
+        ai_instances.clear()
     logger.info("AI cache cleared")
-    return {"status": "cache cleared", "instances_removed": len(ai_instances)}
+    return {"status": "cache cleared", "instances_removed": removed}
+
+
+@app.get("/ai/cache/stats")
+async def ai_cache_stats():
+    """Return basic stats about the in-process AI instance cache."""
+    now = time.time()
+    with _ai_cache_lock:
+        _prune_ai_cache(now)
+        count = len(ai_instances)
+    return {
+        "enabled": AI_INSTANCE_CACHE_ENABLED,
+        "count": count,
+        "max": AI_INSTANCE_CACHE_MAX,
+        "ttl_sec": AI_INSTANCE_CACHE_TTL_SEC,
+    }
 
 
 class DifficultyProfile(TypedDict):

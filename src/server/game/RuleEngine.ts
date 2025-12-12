@@ -125,6 +125,12 @@ export class RuleEngine {
         // Recovery slide (RR-CANON-R110–R115): marker slide that completes a
         // line, allowing temporarily eliminated players to remain active.
         return this.validateRecoverySlide(move, gameState);
+      case 'skip_recovery':
+        // RR-CANON-R115: Recovery-eligible player may explicitly skip recovery.
+        // Detailed eligibility is enforced by the shared helper.
+        return (
+          gameState.currentPhase === 'movement' && isEligibleForRecovery(gameState, move.player)
+        );
       default:
         return false;
     }

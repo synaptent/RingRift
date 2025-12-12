@@ -297,7 +297,7 @@ When you process a disconnected region:
 
 4. **Repeat**:
    - New disconnected regions may appear after each collapse.
-   - You keep processing them, one at a time, until none remain.
+   - You may process **any subset** of eligible regions, one at a time, in any order you choose. You can stop early; any remaining eligible regions stay on the board.
 
 Territory processing is often where massive swings in eliminated‑ring totals
 and territory counts come from.
@@ -365,10 +365,11 @@ you have at least one of:
 - A legal ring **placement**.
 - A legal non‑capture **movement**.
 - A legal **overtaking capture**.
-- A legal **recovery action** (see §3.5).
 
 Having **only forced elimination** available **does not** count as having a
 real action for LPS purposes.
+
+Recovery actions also **do not** count as real actions for LPS purposes.
 
 #### 5.3.2 Formal LPS condition
 

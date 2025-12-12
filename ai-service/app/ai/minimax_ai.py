@@ -23,6 +23,7 @@ import time
 
 from .bounded_transposition_table import BoundedTranspositionTable
 from .heuristic_ai import HeuristicAI
+from .game_state_utils import infer_num_players
 from .nnue import NNUEEvaluator
 from .zobrist import ZobristHash
 from ..models import GameState, Move, AIConfig, GamePhase
@@ -146,6 +147,21 @@ class MinimaxAI(HeuristicAI):
         if not valid_moves:
             return None
 
+        # Current minimax implementation is a 2-player alpha-beta search.
+        # Multi-player minimax requires different semantics (MaxN / paranoid).
+        # Until we implement that, fall back to the single-ply HeuristicAI.
+        num_players = infer_num_players(game_state)
+        if num_players != 2:
+            logger.warning(
+                "MinimaxAI multi-player mode is not supported yet; "
+                "falling back to heuristic move selection",
+                extra={
+                    "num_players": num_players,
+                    "player_number": self.player_number,
+                },
+            )
+            return super().select_move(game_state)
+
         # Lazy NNUE initialization on first move (needs board type from game state)
         if getattr(self, '_pending_nnue_init', False):
             self._pending_nnue_init = False
@@ -155,7 +171,9 @@ class MinimaxAI(HeuristicAI):
                     board_type=board_type,
                     player_number=self.player_number,
                     model_id=getattr(self.config, 'nn_model_id', None),
-                    allow_fresh=True,  # Use fresh weights if no checkpoint
+                    allow_fresh=bool(
+                        getattr(self.config, "allow_fresh_weights", False)
+                    ),
                 )
                 self.use_nnue = self.nnue_evaluator.available
                 if self.use_nnue:

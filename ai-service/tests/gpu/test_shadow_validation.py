@@ -186,11 +186,11 @@ class TestPlacementValidation:
         gpu_positions = [(0, 0), (1, 1), (2, 2), (3, 3)]  # Extra (3, 3)
 
         mock_moves = []
-        for r, c in [(0, 0), (1, 1), (2, 2)]:
+        for x, y in [(0, 0), (1, 1), (2, 2)]:
             m = MagicMock()
-            m.type = "placement"
+            m.type = MoveType.PLACE_RING
             m.player = 1
-            m.to = MagicMock(row=r, col=c)
+            m.to = MagicMock(x=x, y=y)
             mock_moves.append(m)
 
         with patch("app.game_engine.GameEngine") as mock_engine:
@@ -217,12 +217,12 @@ class TestMovementValidation:
         gpu_moves = [((0, 0), (2, 0)), ((1, 1), (3, 1))]
 
         mock_moves = []
-        for (fr, fc), (tr, tc) in gpu_moves:
+        for (fx, fy), (tx, ty) in gpu_moves:
             m = MagicMock()
-            m.type = "movement"
+            m.type = MoveType.MOVE_STACK
             m.player = 1
-            m.from_pos = MagicMock(row=fr, col=fc)
-            m.to = MagicMock(row=tr, col=tc)
+            m.from_pos = MagicMock(x=fx, y=fy)
+            m.to = MagicMock(x=tx, y=ty)
             mock_moves.append(m)
 
         with patch("app.game_engine.GameEngine") as mock_engine:
@@ -245,12 +245,12 @@ class TestCaptureValidation:
         gpu_moves = [((0, 0), (2, 0))]
 
         mock_moves = []
-        for (fr, fc), (tr, tc) in gpu_moves:
+        for (fx, fy), (tx, ty) in gpu_moves:
             m = MagicMock()
-            m.type = "capture"
+            m.type = MoveType.OVERTAKING_CAPTURE
             m.player = 1
-            m.from_pos = MagicMock(row=fr, col=fc)
-            m.to = MagicMock(row=tr, col=tc)
+            m.from_pos = MagicMock(x=fx, y=fy)
+            m.to = MagicMock(x=tx, y=ty)
             mock_moves.append(m)
 
         with patch("app.game_engine.GameEngine") as mock_engine:
@@ -272,12 +272,12 @@ class TestRecoveryValidation:
         gpu_moves = [((3, 3), (3, 4))]
 
         mock_moves = []
-        for (fr, fc), (tr, tc) in gpu_moves:
+        for (fx, fy), (tx, ty) in gpu_moves:
             m = MagicMock()
-            m.type = "recovery_slide"
+            m.type = MoveType.RECOVERY_SLIDE
             m.player = 1
-            m.from_pos = MagicMock(row=fr, col=fc)
-            m.to = MagicMock(row=tr, col=tc)
+            m.from_pos = MagicMock(x=fx, y=fy)
+            m.to = MagicMock(x=tx, y=ty)
             mock_moves.append(m)
 
         with patch("app.game_engine.GameEngine") as mock_engine:
@@ -352,9 +352,9 @@ class TestStatisticsReporting:
         # First: passing validation
         with patch("app.game_engine.GameEngine") as mock_engine:
             m = MagicMock()
-            m.type = "placement"
+            m.type = MoveType.PLACE_RING
             m.player = 1
-            m.to = MagicMock(row=0, col=0)
+            m.to = MagicMock(x=0, y=0)
             mock_engine.get_valid_moves.return_value = [m]
 
             validator.validate_placement_moves([(0, 0)], mock_game_state, player=1)
@@ -430,3 +430,203 @@ class TestFactoryFunction:
         assert validator is not None
         assert validator.sample_rate == 0.1
         assert validator.threshold == 0.05
+
+
+# =============================================================================
+# State Validator Tests (CPU Oracle Mode)
+# =============================================================================
+
+
+from app.ai.shadow_validation import (
+    StateValidator,
+    StateValidationStats,
+    StateDivergenceRecord,
+    create_state_validator,
+)
+
+
+class TestStateValidatorBasics:
+    """Test basic StateValidator functionality."""
+
+    def test_creation_with_defaults(self):
+        """StateValidator creates with default settings."""
+        validator = StateValidator()
+        assert validator.sample_rate == 0.01  # 1% default
+        assert validator.threshold == DEFAULT_DIVERGENCE_THRESHOLD
+        assert validator.halt_on_threshold is True
+
+    def test_creation_with_custom_settings(self):
+        """StateValidator creates with custom settings."""
+        validator = StateValidator(
+            sample_rate=0.05,
+            threshold=0.01,
+            halt_on_threshold=False,
+        )
+        assert validator.sample_rate == 0.05
+        assert validator.threshold == 0.01
+        assert validator.halt_on_threshold is False
+
+    def test_initial_stats_are_zero(self):
+        """Initial stats are all zero."""
+        validator = StateValidator()
+        assert validator.stats.total_validations == 0
+        assert validator.stats.total_divergences == 0
+        assert validator.stats.divergence_rate == 0.0
+
+
+class TestStateSampling:
+    """Test StateValidator sampling behavior."""
+
+    def test_zero_sample_rate_never_validates(self):
+        """Zero sample rate means no validation."""
+        validator = StateValidator(sample_rate=0.0)
+        # Should never pass should_validate check
+        results = [validator.should_validate() for _ in range(100)]
+        assert all(r is False for r in results)
+
+    def test_full_sample_rate_always_validates(self):
+        """Full sample rate means all validations run."""
+        validator = StateValidator(sample_rate=1.0)
+        results = [validator.should_validate() for _ in range(100)]
+        assert all(r is True for r in results)
+
+
+class TestStateValidation:
+    """Test state validation logic."""
+
+    @pytest.fixture
+    def state_validator(self):
+        """Create state validator with 100% sample rate for testing."""
+        return StateValidator(sample_rate=1.0, threshold=0.1, halt_on_threshold=False)
+
+    @pytest.fixture
+    def mock_matching_states(self):
+        """Create matching GPU and CPU states."""
+        gpu_state = MagicMock()
+        cpu_state = MagicMock()
+
+        # Set up matching values
+        gpu_state.rings_in_hand = {1: 5, 2: 5}
+        cpu_state.rings_in_hand = {1: 5, 2: 5}
+
+        gpu_state.buried_rings = {1: 0, 2: 0}
+        cpu_state.buried_rings = {1: 0, 2: 0}
+
+        gpu_state.territory_count = {1: 0, 2: 0}
+        cpu_state.territory_count = {1: 0, 2: 0}
+
+        gpu_state.current_phase = "ring_placement"
+        cpu_state.current_phase = "ring_placement"
+
+        gpu_state.current_player = 1
+        cpu_state.current_player = 1
+
+        gpu_state.move_history = []
+        cpu_state.move_history = []
+
+        # Set up matching boards
+        for state in [gpu_state, cpu_state]:
+            board = MagicMock()
+            board.cells = {}  # Empty board
+            state.board = board
+
+        return gpu_state, cpu_state
+
+    def test_matching_states_pass(self, state_validator, mock_matching_states):
+        """Matching states pass validation."""
+        gpu_state, cpu_state = mock_matching_states
+
+        result = state_validator.validate_state(gpu_state, cpu_state, game_index=0)
+
+        assert result is True
+        assert state_validator.stats.total_validations == 1
+        assert state_validator.stats.total_divergences == 0
+
+    def test_rings_in_hand_mismatch_detected(self, state_validator, mock_matching_states):
+        """Detects rings_in_hand mismatch."""
+        gpu_state, cpu_state = mock_matching_states
+        gpu_state.rings_in_hand = {1: 4, 2: 5}  # Different
+
+        result = state_validator.validate_state(gpu_state, cpu_state, game_index=0)
+
+        assert result is False
+        assert state_validator.stats.rings_in_hand_divergences == 1
+
+    def test_phase_mismatch_detected(self, state_validator, mock_matching_states):
+        """Detects phase mismatch."""
+        gpu_state, cpu_state = mock_matching_states
+        gpu_state.current_phase = "movement"  # Different
+
+        result = state_validator.validate_state(gpu_state, cpu_state, game_index=0)
+
+        assert result is False
+        assert state_validator.stats.phase_divergences == 1
+
+    def test_player_mismatch_detected(self, state_validator, mock_matching_states):
+        """Detects current_player mismatch."""
+        gpu_state, cpu_state = mock_matching_states
+        gpu_state.current_player = 2  # Different
+
+        result = state_validator.validate_state(gpu_state, cpu_state, game_index=0)
+
+        assert result is False
+        assert state_validator.stats.player_divergences == 1
+
+
+class TestStateValidatorReporting:
+    """Test StateValidator reporting."""
+
+    def test_report_structure(self):
+        """Report contains expected fields."""
+        validator = StateValidator()
+        report = validator.get_report()
+
+        assert "total_validations" in report
+        assert "total_divergences" in report
+        assert "divergence_rate" in report
+        assert "threshold" in report
+        assert "status" in report
+        assert "by_field" in report
+        assert "recent_divergences" in report
+
+        # Check by_field has expected keys
+        assert "stack_owner" in report["by_field"]
+        assert "rings_in_hand" in report["by_field"]
+        assert "current_phase" in report["by_field"]
+
+    def test_reset_stats(self):
+        """Reset clears all statistics."""
+        validator = StateValidator(sample_rate=1.0)
+        validator.stats.total_validations = 10
+        validator.stats.total_divergences = 2
+
+        validator.reset_stats()
+
+        assert validator.stats.total_validations == 0
+        assert validator.stats.total_divergences == 0
+
+
+class TestStateValidatorFactory:
+    """Test create_state_validator factory function."""
+
+    def test_create_enabled_validator(self):
+        """Factory creates enabled validator."""
+        validator = create_state_validator(enabled=True)
+        assert validator is not None
+        assert isinstance(validator, StateValidator)
+
+    def test_create_disabled_returns_none(self):
+        """Factory returns None when disabled."""
+        validator = create_state_validator(enabled=False)
+        assert validator is None
+
+    def test_create_with_custom_settings(self):
+        """Factory respects custom settings."""
+        validator = create_state_validator(
+            sample_rate=0.05,
+            threshold=0.02,
+            enabled=True,
+        )
+        assert validator is not None
+        assert validator.sample_rate == 0.05
+        assert validator.threshold == 0.02

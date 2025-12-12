@@ -28,6 +28,7 @@ export interface WeirdStateReasonInfo {
 export function isSurfaceableWeirdStateType(type: RulesUxWeirdStateType): boolean {
   return (
     type === 'active-no-moves-movement' ||
+    type === 'last-player-standing' ||
     type === 'forced-elimination' ||
     type === 'structural-stalemate'
   );
@@ -72,6 +73,12 @@ export function getWeirdStateReasonForType(
         rulesContext: 'territory_mini_region',
         weirdStateType,
       };
+    case 'last-player-standing':
+      return {
+        reasonCode: 'LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS',
+        rulesContext: 'last_player_standing',
+        weirdStateType,
+      };
     case 'forced-elimination':
       return {
         reasonCode: 'FE_SEQUENCE_CURRENT_PLAYER',
@@ -106,7 +113,7 @@ export function getWeirdStateReasonForGameResult(
     return {
       reasonCode: 'LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS',
       rulesContext: 'last_player_standing',
-      weirdStateType: 'active-no-moves-movement',
+      weirdStateType: 'last-player-standing',
     };
   }
 
@@ -133,6 +140,34 @@ export function getRulesContextForReason(reasonCode: RulesWeirdStateReasonCode):
     default:
       // Type system should make this unreachable, but keep a safe fallback.
       return 'structural_stalemate';
+  }
+}
+
+/**
+ * Derive the coarse weird-state type from a stable reason code.
+ *
+ * This is useful for telemetry payloads that carry reason codes but need a
+ * consistent `weirdStateType` label for aggregation.
+ */
+export function getWeirdStateTypeForReason(
+  reasonCode: RulesWeirdStateReasonCode
+): RulesUxWeirdStateType {
+  switch (reasonCode) {
+    case 'ANM_MOVEMENT_FE_BLOCKED':
+      return 'active-no-moves-movement';
+    case 'ANM_LINE_NO_ACTIONS':
+      return 'active-no-moves-line';
+    case 'ANM_TERRITORY_NO_ACTIONS':
+      return 'active-no-moves-territory';
+    case 'FE_SEQUENCE_CURRENT_PLAYER':
+      return 'forced-elimination';
+    case 'STRUCTURAL_STALEMATE_TIEBREAK':
+      return 'structural-stalemate';
+    case 'LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS':
+      return 'last-player-standing';
+    default:
+      // Type system should make this unreachable, but keep a safe fallback.
+      return 'structural-stalemate';
   }
 }
 

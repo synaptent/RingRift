@@ -32,7 +32,10 @@ import torch
 import torch.nn.functional as F
 
 from .gpu_batch import get_device, clear_gpu_memory
-from .shadow_validation import ShadowValidator, create_shadow_validator
+from .shadow_validation import (
+    ShadowValidator, create_shadow_validator,
+    StateValidator, create_state_validator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -148,13 +151,15 @@ def select_moves_vectorized(
     large_val = moves.total_moves + 1
     indices_or_large = torch.where(
         exceeds_rand,
-        torch.arange(moves.total_moves, device=device),
-        torch.full((moves.total_moves,), large_val, device=device)
+        torch.arange(moves.total_moves, device=device, dtype=torch.float32),
+        torch.full((moves.total_moves,), float(large_val), device=device)
     )
 
     # Get min index per game (first exceeding)
-    first_exceed = torch.full((batch_size,), large_val, dtype=torch.long, device=device)
-    first_exceed.scatter_reduce_(0, sorted_game_idx, indices_or_large, reduce='amin')
+    # Use float32 for scatter_reduce_ compatibility on MPS backend
+    first_exceed_f = torch.full((batch_size,), float(large_val), dtype=torch.float32, device=device)
+    first_exceed_f.scatter_reduce_(0, sorted_game_idx, indices_or_large, reduce='amin')
+    first_exceed = first_exceed_f.long()
 
     # Convert global sorted index to local index within game
     # local_idx = global_sorted_idx - game_start
@@ -667,6 +672,147 @@ class BatchGameState:
 
         return batch
 
+    def to_game_state(self, game_idx: int) -> "GameState":
+        """Convert a single game from this batch back to a CPU GameState.
+
+        This is used for shadow validation - comparing GPU-generated moves
+        against the canonical CPU rules engine.
+
+        Args:
+            game_idx: Index of game in batch to extract
+
+        Returns:
+            CPU GameState that can be passed to GameEngine for validation
+        """
+        from datetime import datetime
+        from app.models import (
+            GameState, BoardState, BoardType, Player, TimeControl,
+            RingStack, Position, MarkerInfo, GamePhase as CPUGamePhase,
+            GameStatus as CPUGameStatus
+        )
+
+        # Map GPU board_size back to BoardType
+        board_type_map = {
+            8: BoardType.SQUARE8,
+            19: BoardType.SQUARE19,
+            13: BoardType.HEXAGONAL,
+        }
+        board_type = board_type_map.get(self.board_size, BoardType.SQUARE8)
+
+        # Build stacks dict from GPU tensors
+        stacks = {}
+        for y in range(self.board_size):
+            for x in range(self.board_size):
+                owner = self.stack_owner[game_idx, y, x].item()
+                height = self.stack_height[game_idx, y, x].item()
+                if owner > 0 and height > 0:
+                    key = f"{x},{y}"
+                    # Reconstruct rings list (simplified - all same owner)
+                    rings = [owner] * height
+                    stacks[key] = RingStack(
+                        position=Position(x=x, y=y),
+                        rings=rings,
+                        stackHeight=height,
+                        capHeight=height,  # Simplified
+                        controllingPlayer=owner,
+                    )
+
+        # Build markers dict
+        markers = {}
+        for y in range(self.board_size):
+            for x in range(self.board_size):
+                marker_player = self.marker_owner[game_idx, y, x].item()
+                if marker_player > 0:
+                    key = f"{x},{y}"
+                    markers[key] = MarkerInfo(
+                        player=marker_player,
+                        position=Position(x=x, y=y),
+                        type="regular",
+                    )
+
+        # Build collapsed_spaces dict
+        collapsed_spaces = {}
+        for y in range(self.board_size):
+            for x in range(self.board_size):
+                if self.is_collapsed[game_idx, y, x].item():
+                    territory_player = self.territory_owner[game_idx, y, x].item()
+                    key = f"{x},{y}"
+                    collapsed_spaces[key] = territory_player
+
+        # Build board state
+        board = BoardState(
+            type=board_type,
+            size=self.board_size,
+            stacks=stacks,
+            markers=markers,
+            collapsedSpaces=collapsed_spaces,
+        )
+
+        # Build players list
+        players = []
+        for p in range(1, self.num_players + 1):
+            players.append(Player(
+                id=f"gpu_player_{p}",
+                username=f"GPU Player {p}",
+                type="ai",
+                playerNumber=p,
+                isReady=True,
+                timeRemaining=600000,
+                ringsInHand=self.rings_in_hand[game_idx, p].item(),
+                eliminatedRings=self.eliminated_rings[game_idx, p].item(),
+                territorySpaces=self.territory_count[game_idx, p].item(),
+            ))
+
+        # Map GPU phase to CPU phase
+        gpu_phase = self.current_phase[game_idx].item()
+        phase_map = {
+            0: CPUGamePhase.RING_PLACEMENT,
+            1: CPUGamePhase.MOVEMENT,
+            2: CPUGamePhase.LINE_PROCESSING,
+            3: CPUGamePhase.TERRITORY_PROCESSING,
+            4: CPUGamePhase.GAME_OVER,
+        }
+        current_phase = phase_map.get(gpu_phase, CPUGamePhase.MOVEMENT)
+
+        # Determine game status
+        gpu_status = self.game_status[game_idx].item()
+        if gpu_status == GameStatus.ACTIVE:
+            game_status = CPUGameStatus.ACTIVE
+        elif gpu_status == GameStatus.VICTORY:
+            game_status = CPUGameStatus.COMPLETED
+        else:
+            game_status = CPUGameStatus.ACTIVE
+
+        now = datetime.now()
+
+        # Compute victory thresholds for the game state
+        # These depend on board size and number of players
+        rings_per_player = self.board_size * self.board_size // 4  # Approximate
+        victory_threshold = rings_per_player  # Approximate
+        territory_threshold = (self.board_size * self.board_size) // 2  # Approximate
+
+        return GameState(
+            id=f"gpu_game_{game_idx}",
+            boardType=board_type,
+            board=board,
+            players=players,
+            currentPhase=current_phase,
+            currentPlayer=self.current_player[game_idx].item(),
+            moveHistory=[],  # Not reconstructed for validation
+            timeControl=TimeControl(initialTime=600000, increment=0, type="standard"),
+            spectators=[],
+            gameStatus=game_status,
+            winner=self.winner[game_idx].item() if self.winner[game_idx].item() > 0 else None,
+            createdAt=now,
+            lastMoveAt=now,
+            isRated=False,
+            maxPlayers=self.num_players,
+            totalRingsInPlay=0,  # Not tracked in GPU state
+            totalRingsEliminated=0,  # Not tracked in GPU state
+            victoryThreshold=victory_threshold,
+            territoryVictoryThreshold=territory_threshold,
+        )
+
     def get_active_mask(self) -> torch.Tensor:
         """Get mask of games that are still active.
 
@@ -939,6 +1085,63 @@ def generate_placement_moves_batch(
 # =============================================================================
 
 
+def _validate_paths_vectorized(
+    state: BatchGameState,
+    game_indices: torch.Tensor,
+    from_positions: torch.Tensor,
+    to_positions: torch.Tensor,
+    players: torch.Tensor,
+) -> torch.Tensor:
+    """Validate movement paths in a semi-vectorized manner.
+
+    Checks that no opponent stacks block the path from origin to destination.
+    This is a hybrid approach: we iterate over moves but use tensor indexing
+    for path cell lookups to reduce Python overhead.
+
+    Args:
+        state: BatchGameState
+        game_indices: (N,) game index for each candidate move
+        from_positions: (N, 2) [y, x] origin positions
+        to_positions: (N, 2) [y, x] destination positions
+        players: (N,) player number for each move
+
+    Returns:
+        Boolean tensor (N,) - True if path is valid (no opponent blocking)
+    """
+    device = state.device
+    N = game_indices.shape[0]
+
+    if N == 0:
+        return torch.tensor([], dtype=torch.bool, device=device)
+
+    valid = torch.ones(N, dtype=torch.bool, device=device)
+
+    # Process in chunks for better memory efficiency
+    # For each move, we need to check all cells along the path
+    for i in range(N):
+        g = game_indices[i].item()
+        from_y, from_x = from_positions[i, 0].item(), from_positions[i, 1].item()
+        to_y, to_x = to_positions[i, 0].item(), to_positions[i, 1].item()
+        player = players[i].item()
+
+        dy = 0 if to_y == from_y else (1 if to_y > from_y else -1)
+        dx = 0 if to_x == from_x else (1 if to_x > from_x else -1)
+        dist = max(abs(to_y - from_y), abs(to_x - from_x))
+
+        # Check each path cell (including destination)
+        for step in range(1, dist + 1):
+            check_y = from_y + dy * step
+            check_x = from_x + dx * step
+            cell_owner = state.stack_owner[g, check_y, check_x].item()
+
+            # Opponent stack blocks the path
+            if cell_owner != 0 and cell_owner != player:
+                valid[i] = False
+                break
+
+    return valid
+
+
 def generate_movement_moves_batch(
     state: BatchGameState,
     active_mask: Optional[torch.Tensor] = None,
@@ -950,6 +1153,10 @@ def generate_movement_moves_batch(
     - Distance must be >= stack height at origin
     - Cannot pass through or land on opponent stacks (those are captures)
     - Can pass through/land on empty spaces or own stacks
+
+    Implementation uses a two-phase approach:
+    1. Generate all candidate moves based on position/height constraints
+    2. Validate paths to filter out moves blocked by opponent stacks
 
     Args:
         state: Current batch game state
@@ -971,12 +1178,12 @@ def generate_movement_moves_batch(
         (1, 0), (1, -1), (0, -1), (-1, -1)
     ]
 
-    # Collect all valid moves
-    all_game_idx = []
-    all_from_y = []
-    all_from_x = []
-    all_to_y = []
-    all_to_x = []
+    # Phase 1: Generate all candidate moves (without path validation)
+    # This reduces Python loop overhead by deferring path checks
+    candidate_game_idx = []
+    candidate_from = []
+    candidate_to = []
+    candidate_player = []
 
     for g in range(batch_size):
         if not active_mask[g]:
@@ -1007,34 +1214,21 @@ def generate_movement_moves_batch(
                     if not (0 <= to_y < board_size and 0 <= to_x < board_size):
                         break
 
-                    # Check path is clear of opponent stacks
-                    path_blocked = False
-                    for step in range(1, dist + 1):
-                        check_y = from_y + dy * step
-                        check_x = from_x + dx * step
-                        cell_owner = state.stack_owner[g, check_y, check_x].item()
-
-                        # If opponent stack, this is capture territory (not movement)
-                        if cell_owner != 0 and cell_owner != player:
-                            path_blocked = True
-                            break
-
-                    if path_blocked:
-                        break
-
-                    # Valid landing spot - empty or own stack
+                    # Destination must be empty or own stack (not opponent)
+                    # Opponent destination is a capture, not movement
                     dest_owner = state.stack_owner[g, to_y, to_x].item()
-                    if dest_owner == 0 or dest_owner == player:
-                        all_game_idx.append(g)
-                        all_from_y.append(from_y)
-                        all_from_x.append(from_x)
-                        all_to_y.append(to_y)
-                        all_to_x.append(to_x)
+                    if dest_owner != 0 and dest_owner != player:
+                        # This direction leads to capture territory
+                        # But we still need to check shorter distances
+                        continue
 
-    total_moves = len(all_game_idx)
+                    # Add as candidate (path validation deferred)
+                    candidate_game_idx.append(g)
+                    candidate_from.append([from_y, from_x])
+                    candidate_to.append([to_y, to_x])
+                    candidate_player.append(player)
 
-    if total_moves == 0:
-        # Return empty moves
+    if not candidate_game_idx:
         return BatchMoves(
             game_idx=torch.tensor([], dtype=torch.int32, device=device),
             move_type=torch.tensor([], dtype=torch.int8, device=device),
@@ -1048,30 +1242,58 @@ def generate_movement_moves_batch(
             device=device,
         )
 
-    # Convert to tensors
-    game_idx_t = torch.tensor(all_game_idx, dtype=torch.int32, device=device)
-    from_y_t = torch.tensor(all_from_y, dtype=torch.int32, device=device)
-    from_x_t = torch.tensor(all_from_x, dtype=torch.int32, device=device)
-    to_y_t = torch.tensor(all_to_y, dtype=torch.int32, device=device)
-    to_x_t = torch.tensor(all_to_x, dtype=torch.int32, device=device)
+    # Convert candidates to tensors
+    game_idx_t = torch.tensor(candidate_game_idx, dtype=torch.int64, device=device)
+    from_t = torch.tensor(candidate_from, dtype=torch.int64, device=device)
+    to_t = torch.tensor(candidate_to, dtype=torch.int64, device=device)
+    player_t = torch.tensor(candidate_player, dtype=torch.int64, device=device)
 
-    # Count moves per game
+    # Phase 2: Validate paths
+    valid_mask = _validate_paths_vectorized(state, game_idx_t, from_t, to_t, player_t)
+
+    # Filter to valid moves only
+    valid_indices = torch.where(valid_mask)[0]
+
+    if valid_indices.numel() == 0:
+        return BatchMoves(
+            game_idx=torch.tensor([], dtype=torch.int32, device=device),
+            move_type=torch.tensor([], dtype=torch.int8, device=device),
+            from_y=torch.tensor([], dtype=torch.int32, device=device),
+            from_x=torch.tensor([], dtype=torch.int32, device=device),
+            to_y=torch.tensor([], dtype=torch.int32, device=device),
+            to_x=torch.tensor([], dtype=torch.int32, device=device),
+            moves_per_game=torch.zeros(batch_size, dtype=torch.int32, device=device),
+            move_offsets=torch.zeros(batch_size, dtype=torch.int32, device=device),
+            total_moves=0,
+            device=device,
+        )
+
+    # Extract valid moves
+    valid_game_idx = game_idx_t[valid_indices].int()
+    valid_from_y = from_t[valid_indices, 0].int()
+    valid_from_x = from_t[valid_indices, 1].int()
+    valid_to_y = to_t[valid_indices, 0].int()
+    valid_to_x = to_t[valid_indices, 1].int()
+
+    total_moves = valid_indices.numel()
+
+    # Count moves per game using scatter_add
     moves_per_game = torch.zeros(batch_size, dtype=torch.int32, device=device)
-    for g in all_game_idx:
-        moves_per_game[g] += 1
+    ones = torch.ones(total_moves, dtype=torch.int32, device=device)
+    moves_per_game.scatter_add_(0, valid_game_idx.long(), ones)
 
     move_offsets = torch.cumsum(
-        torch.cat([torch.tensor([0], device=device), moves_per_game[:-1]]),
+        torch.cat([torch.tensor([0], device=device, dtype=torch.int32), moves_per_game[:-1]]),
         dim=0
     ).int()
 
     return BatchMoves(
-        game_idx=game_idx_t,
+        game_idx=valid_game_idx,
         move_type=torch.full((total_moves,), MoveType.MOVEMENT, dtype=torch.int8, device=device),
-        from_y=from_y_t,
-        from_x=from_x_t,
-        to_y=to_y_t,
-        to_x=to_x_t,
+        from_y=valid_from_y,
+        from_x=valid_from_x,
+        to_y=valid_to_y,
+        to_x=valid_to_x,
         moves_per_game=moves_per_game,
         move_offsets=move_offsets,
         total_moves=total_moves,
@@ -1221,6 +1443,164 @@ def generate_capture_moves_batch(
         total_moves=total_moves,
         device=device,
     )
+
+
+def generate_chain_capture_moves_from_position(
+    state: BatchGameState,
+    game_idx: int,
+    from_y: int,
+    from_x: int,
+) -> List[Tuple[int, int]]:
+    """Generate all valid chain capture moves from a specific position.
+
+    Used for chain capture continuation per RR-CANON-R103:
+    - After executing an 'overtaking_capture' segment, if additional legal capture
+      segments exist from the new landing position, the chain must continue.
+
+    This function checks captures only from the specified position, not all stacks.
+
+    Args:
+        state: Current batch game state
+        game_idx: Game index in batch
+        from_y: Row position of the stack to check captures from
+        from_x: Column position of the stack to check captures from
+
+    Returns:
+        List of (to_y, to_x) destination positions for valid captures
+    """
+    board_size = state.board_size
+    player = state.current_player[game_idx].item()
+
+    # Verify we control this stack
+    stack_owner = state.stack_owner[game_idx, from_y, from_x].item()
+    if stack_owner != player:
+        return []
+
+    my_height = state.stack_height[game_idx, from_y, from_x].item()
+    if my_height <= 0:
+        return []
+
+    directions = [
+        (-1, 0), (-1, 1), (0, 1), (1, 1),
+        (1, 0), (1, -1), (0, -1), (-1, -1)
+    ]
+
+    captures = []
+
+    for dy, dx in directions:
+        # Move distance must be >= stack height
+        for dist in range(my_height, board_size):
+            to_y = from_y + dy * dist
+            to_x = from_x + dx * dist
+
+            if not (0 <= to_y < board_size and 0 <= to_x < board_size):
+                break
+
+            # Check path is clear (can pass through empty or own stacks)
+            path_clear = True
+            for step in range(1, dist):  # Don't check destination
+                check_y = from_y + dy * step
+                check_x = from_x + dx * step
+                cell_owner = state.stack_owner[game_idx, check_y, check_x].item()
+
+                # Path blocked by opponent stack
+                if cell_owner != 0 and cell_owner != player:
+                    path_clear = False
+                    break
+
+            if not path_clear:
+                break
+
+            # Check destination for capture
+            dest_owner = state.stack_owner[game_idx, to_y, to_x].item()
+            if dest_owner != 0 and dest_owner != player:
+                # Opponent stack - check if we can capture
+                dest_height = state.stack_height[game_idx, to_y, to_x].item()
+                if my_height >= dest_height:
+                    # Valid capture!
+                    captures.append((to_y, to_x))
+                # Cannot continue past opponent stack
+                break
+
+    return captures
+
+
+def apply_single_chain_capture(
+    state: BatchGameState,
+    game_idx: int,
+    from_y: int,
+    from_x: int,
+    to_y: int,
+    to_x: int,
+) -> Tuple[int, int]:
+    """Apply a single capture move for chain capture continuation.
+
+    Per RR-CANON-R100-R103:
+    - Attacker moves onto defender stack
+    - Defender's top ring is eliminated
+    - Stacks merge (attacker on top)
+    - Path markers are flipped to attacker's color
+
+    Args:
+        state: BatchGameState to modify
+        game_idx: Game index in batch
+        from_y, from_x: Origin position
+        to_y, to_x: Destination position
+
+    Returns:
+        (new_y, new_x) landing position for potential chain continuation
+    """
+    player = state.current_player[game_idx].item()
+    mc = state.move_count[game_idx].item()
+
+    # Record in history
+    if mc < state.max_history_moves:
+        state.move_history[game_idx, mc, 0] = MoveType.CAPTURE
+        state.move_history[game_idx, mc, 1] = player
+        state.move_history[game_idx, mc, 2] = from_y
+        state.move_history[game_idx, mc, 3] = from_x
+        state.move_history[game_idx, mc, 4] = to_y
+        state.move_history[game_idx, mc, 5] = to_x
+
+    # Get stack info
+    attacker_height = state.stack_height[game_idx, from_y, from_x].item()
+    defender_height = state.stack_height[game_idx, to_y, to_x].item()
+    defender_owner = state.stack_owner[game_idx, to_y, to_x].item()
+
+    # Process markers along path
+    dy = 0 if to_y == from_y else (1 if to_y > from_y else -1)
+    dx = 0 if to_x == from_x else (1 if to_x > from_x else -1)
+    dist = max(abs(to_y - from_y), abs(to_x - from_x))
+
+    for step in range(1, dist):
+        check_y = from_y + dy * step
+        check_x = from_x + dx * step
+        marker_owner = state.marker_owner[game_idx, check_y, check_x].item()
+        if marker_owner != 0 and marker_owner != player:
+            state.marker_owner[game_idx, check_y, check_x] = player
+
+    # Eliminate defender's top ring
+    defender_new_height = max(0, defender_height - 1)
+
+    # Track elimination
+    if defender_owner > 0:
+        current_elim = state.eliminated_rings[game_idx, defender_owner].item()
+        state.eliminated_rings[game_idx, defender_owner] = current_elim + 1
+
+    # Merge stacks
+    if defender_new_height > 0:
+        new_height = attacker_height + defender_new_height
+        state.stack_height[game_idx, to_y, to_x] = new_height
+    else:
+        state.stack_height[game_idx, to_y, to_x] = attacker_height
+
+    state.stack_owner[game_idx, to_y, to_x] = player
+
+    # Clear origin
+    state.stack_height[game_idx, from_y, from_x] = 0
+    state.stack_owner[game_idx, from_y, from_x] = 0
+
+    return to_y, to_x
 
 
 # =============================================================================
@@ -1631,18 +2011,129 @@ def apply_capture_moves_batch(
 # =============================================================================
 
 
+@dataclass
+class DetectedLine:
+    """A detected marker line with metadata for processing."""
+    positions: List[Tuple[int, int]]  # All marker positions in the line
+    length: int                        # Total length of line
+    is_overlength: bool               # True if len > required_length
+    direction: Tuple[int, int]        # Direction vector (dy, dx)
+
+
+def get_required_line_length(board_size: int, num_players: int) -> int:
+    """Get required line length per RR-CANON-R120.
+
+    Args:
+        board_size: Board dimension
+        num_players: Number of players
+
+    Returns:
+        Required line length (3 or 4)
+    """
+    # square8 (8x8) with 3-4 players uses line length 3, all others use 4
+    if board_size == 8 and num_players >= 3:
+        return 3
+    return 4
+
+
+def detect_lines_with_metadata(
+    state: BatchGameState,
+    player: int,
+    game_mask: Optional[torch.Tensor] = None,
+) -> List[List[DetectedLine]]:
+    """Detect lines with full metadata including overlength status.
+
+    Per RR-CANON-R120: A line for player P is a maximal sequence of positions
+    where each position contains a MARKER of P (no stacks, no collapsed spaces).
+
+    Returns structured line data including whether each line is overlength,
+    enabling proper Option 1/2 handling per RR-CANON-R122.
+
+    Args:
+        state: Current batch game state
+        player: Player number to detect lines for
+        game_mask: Mask of games to check (optional)
+
+    Returns:
+        List of lists of DetectedLine objects, one list per game
+    """
+    batch_size = state.batch_size
+    board_size = state.board_size
+    num_players = state.num_players
+
+    required_length = get_required_line_length(board_size, num_players)
+
+    if game_mask is None:
+        game_mask = torch.ones(batch_size, dtype=torch.bool, device=state.device)
+
+    lines_per_game: List[List[DetectedLine]] = [[] for _ in range(batch_size)]
+
+    # 4 directions to check for lines: horizontal, vertical, diagonal, anti-diagonal
+    directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+
+    for g in range(batch_size):
+        if not game_mask[g]:
+            continue
+
+        # Per RR-CANON-R120: Lines are formed by MARKERS, not stacks
+        player_markers = (state.marker_owner[g] == player) & (state.stack_owner[g] == 0)
+
+        # Track which positions have been assigned to a line
+        assigned = set()
+
+        # Check each direction for lines
+        for dy, dx in directions:
+            for start_y in range(board_size):
+                for start_x in range(board_size):
+                    if (start_y, start_x) in assigned:
+                        continue
+                    if not player_markers[start_y, start_x]:
+                        continue
+
+                    # Trace line in this direction
+                    line_positions = [(start_y, start_x)]
+                    y, x = start_y + dy, start_x + dx
+
+                    while 0 <= y < board_size and 0 <= x < board_size:
+                        if player_markers[y, x] and (y, x) not in assigned:
+                            line_positions.append((y, x))
+                            y, x = y + dy, x + dx
+                        else:
+                            break
+
+                    # If line meets required length, record it
+                    if len(line_positions) >= required_length:
+                        for pos in line_positions:
+                            assigned.add(pos)
+
+                        lines_per_game[g].append(DetectedLine(
+                            positions=line_positions,
+                            length=len(line_positions),
+                            is_overlength=(len(line_positions) > required_length),
+                            direction=(dy, dx),
+                        ))
+
+    return lines_per_game
+
+
 def detect_lines_batch(
     state: BatchGameState,
     player: int,
     game_mask: Optional[torch.Tensor] = None,
 ) -> List[List[Tuple[int, int]]]:
-    """Detect lines of consecutive same-owner stacks for a player.
+    """Detect lines of consecutive same-owner MARKERS for a player.
 
-    Per RR-CANON-R120: Line length requirement is player-count-aware:
-    - square8 (board_size=8) with 2 players: 4 consecutive stacks
-    - square8 (board_size=8) with 3-4 players: 3 consecutive stacks
-    - square19 (board_size=19): 4 consecutive stacks (all player counts)
-    - hexagonal (board_size=13): 4 consecutive stacks (all player counts)
+    Per RR-CANON-R120: A line for player P is a maximal sequence of positions
+    where each position contains a MARKER of P (no stacks, no collapsed spaces).
+
+    Line length requirement is player-count-aware:
+    - square8 (board_size=8) with 2 players: 4 consecutive markers
+    - square8 (board_size=8) with 3-4 players: 3 consecutive markers
+    - square19 (board_size=19): 4 consecutive markers (all player counts)
+    - hexagonal (board_size=13): 4 consecutive markers (all player counts)
+
+    IMPORTANT: Per RR-CANON-R120, lines are formed by MARKERS, not stacks.
+    A position with a stack cannot be part of a marker line.
 
     Args:
         state: Current batch game state
@@ -1652,106 +2143,428 @@ def detect_lines_batch(
     Returns:
         List of lists of (y, x) tuples, one per game, containing all line positions
     """
-    batch_size = state.batch_size
-    board_size = state.board_size
-    num_players = state.num_players
+    # Use the metadata version and flatten to just positions
+    lines_with_meta = detect_lines_with_metadata(state, player, game_mask)
 
-    # Per RR-CANON-R120: Determine required line length based on board and player count
-    # square8 (8x8) with 3-4 players uses line length 3, all others use 4
-    if board_size == 8 and num_players >= 3:
-        required_line_length = 3
-    else:
-        required_line_length = 4
-
-    if game_mask is None:
-        game_mask = torch.ones(batch_size, dtype=torch.bool, device=state.device)
-
-    lines_per_game = [[] for _ in range(batch_size)]
-
-    # 4 directions to check for lines: horizontal, vertical, diagonal, anti-diagonal
-    directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-
-    for g in range(batch_size):
-        if not game_mask[g]:
-            continue
-
-        player_stacks = (state.stack_owner[g] == player)
-
-        # Check each direction for lines
-        for dy, dx in directions:
-            visited = set()
-
-            for start_y in range(board_size):
-                for start_x in range(board_size):
-                    if (start_y, start_x) in visited:
-                        continue
-                    if not player_stacks[start_y, start_x]:
-                        continue
-
-                    # Trace line in this direction
-                    line = [(start_y, start_x)]
-                    y, x = start_y + dy, start_x + dx
-
-                    while 0 <= y < board_size and 0 <= x < board_size:
-                        if player_stacks[y, x]:
-                            line.append((y, x))
-                            y, x = y + dy, x + dx
-                        else:
-                            break
-
-                    # If line meets required length, record it
-                    if len(line) >= required_line_length:
-                        for pos in line:
-                            visited.add(pos)
-                            if pos not in lines_per_game[g]:
-                                lines_per_game[g].append(pos)
+    lines_per_game = []
+    for game_lines in lines_with_meta:
+        all_positions = []
+        for line in game_lines:
+            all_positions.extend(line.positions)
+        lines_per_game.append(all_positions)
 
     return lines_per_game
+
+
+def _eliminate_one_ring_from_any_stack(
+    state: BatchGameState,
+    game_idx: int,
+    player: int,
+) -> bool:
+    """Eliminate one ring from any controlled stack.
+
+    Per RR-CANON-R122: Any controlled stack is eligible for line elimination,
+    including height-1 standalone rings.
+
+    Args:
+        state: BatchGameState to modify
+        game_idx: Game index
+        player: Player performing elimination
+
+    Returns:
+        True if elimination was performed, False if no eligible stack found
+    """
+    board_size = state.board_size
+
+    for y in range(board_size):
+        for x in range(board_size):
+            if state.stack_owner[game_idx, y, x].item() == player:
+                stack_height = state.stack_height[game_idx, y, x].item()
+                if stack_height > 0:
+                    # Eliminate one ring from top
+                    state.stack_height[game_idx, y, x] = stack_height - 1
+                    state.eliminated_rings[game_idx, player] += 1
+
+                    # If stack is now empty, clear ownership
+                    if stack_height - 1 == 0:
+                        state.stack_owner[game_idx, y, x] = 0
+
+                    return True
+    return False
 
 
 def process_lines_batch(
     state: BatchGameState,
     game_mask: Optional[torch.Tensor] = None,
+    option2_probability: float = 0.3,
 ) -> None:
-    """Process formed lines for all players (in-place).
+    """Process formed marker lines for all players (in-place).
 
     Per RR-CANON-R121-R122:
-    - When a line of 4+ is formed, line owner claims those spaces
-    - Stacks in line are converted to territory markers
-    - Rings are removed from play
+    - Lines are formed by MARKERS (not stacks)
+    - Exact-length lines: Collapse all markers, pay one ring elimination
+    - Overlength lines (len > required): Player chooses Option 1 or Option 2
+      - Option 1: Collapse ALL markers, pay one ring elimination
+      - Option 2: Collapse exactly required_length markers, NO elimination cost
+
+    For GPU training, we implement probabilistic Option 1/2 selection for overlength
+    lines to expose the AI to both strategies.
 
     Args:
         state: BatchGameState to modify
         game_mask: Mask of games to process
+        option2_probability: Probability of choosing Option 2 for overlength lines
+                            (default 0.3 - prefer Option 1 for more territory)
     """
     batch_size = state.batch_size
+    board_size = state.board_size
 
     if game_mask is None:
         game_mask = state.get_active_mask()
 
+    required_length = get_required_line_length(board_size, state.num_players)
+
     for p in range(1, state.num_players + 1):
-        lines = detect_lines_batch(state, p, game_mask)
+        lines_with_meta = detect_lines_with_metadata(state, p, game_mask)
 
         for g in range(batch_size):
             if not game_mask[g]:
                 continue
 
-            if lines[g]:
-                for (y, x) in lines[g]:
-                    # Convert stack to territory
-                    stack_height = state.stack_height[g, y, x].item()
-                    state.stack_owner[g, y, x] = 0
-                    state.stack_height[g, y, x] = 0
-                    state.territory_owner[g, y, x] = p
-                    state.territory_count[g, p] += 1
+            game_lines = lines_with_meta[g]
+            if not game_lines:
+                continue
 
-                    # Remove rings from play
-                    state.eliminated_rings[g, p] += stack_height
+            # Process each line individually per RR-CANON-R121
+            for line in game_lines:
+                positions_to_collapse = line.positions
+
+                if line.is_overlength:
+                    # Per RR-CANON-R122 Case 2: Overlength line - Option 1 or Option 2
+                    # Use probabilistic selection for training variety
+                    use_option2 = (torch.rand(1, device=state.device).item() < option2_probability)
+
+                    if use_option2:
+                        # Option 2: Collapse exactly required_length markers, NO elimination
+                        # Per RR-CANON-R122: Player can choose which markers to collapse
+                        # For training variety, randomly select which subset to collapse
+                        all_positions = line.positions
+                        if len(all_positions) > required_length:
+                            # Randomly select which required_length positions to collapse
+                            indices = torch.randperm(len(all_positions), device=state.device)[:required_length]
+                            indices = indices.sort().values  # Keep line order for determinism
+                            positions_to_collapse = [all_positions[i] for i in indices.tolist()]
+                        else:
+                            positions_to_collapse = all_positions[:required_length]
+                        # No elimination cost for Option 2
+                    else:
+                        # Option 1: Collapse ALL markers, pay one ring elimination
+                        positions_to_collapse = line.positions
+                        # Check if player can pay elimination cost
+                        player_stacks = (state.stack_owner[g] == p)
+                        if player_stacks.any().item():
+                            _eliminate_one_ring_from_any_stack(state, g, p)
+                        # If no stack available, still collapse (per RR-CANON-R122 interpretation B)
+                else:
+                    # Exact-length line: Must pay elimination cost
+                    # Per RR-CANON-R122 Case 1: len == requiredLen
+                    player_stacks = (state.stack_owner[g] == p)
+                    if player_stacks.any().item():
+                        _eliminate_one_ring_from_any_stack(state, g, p)
+
+                # Collapse the selected markers to territory
+                for (y, x) in positions_to_collapse:
+                    # Remove marker and convert to territory (collapsed space)
+                    state.marker_owner[g, y, x] = 0
+                    state.territory_owner[g, y, x] = p
+                    state.is_collapsed[g, y, x] = True
+                    state.territory_count[g, p] += 1
 
 
 # =============================================================================
 # Territory Processing (RR-CANON-R140-R146)
 # =============================================================================
+
+
+def _find_eligible_territory_cap(
+    state: BatchGameState,
+    game_idx: int,
+    player: int,
+    excluded_positions: Optional[set] = None,
+) -> Optional[Tuple[int, int, int]]:
+    """Find an eligible stack for territory self-elimination.
+
+    Per RR-CANON-R145: Eligible targets for territory processing are:
+    - Multicolor stacks (player controls but other colors buried)
+    - Single-color stacks of height > 1
+
+    Height-1 standalone rings are NOT eligible for territory elimination.
+
+    Args:
+        state: BatchGameState
+        game_idx: Game index
+        player: Player performing territory processing
+        excluded_positions: Set of (y, x) positions to exclude (e.g., in region)
+
+    Returns:
+        Tuple of (y, x, cap_height) or None if no eligible stack
+    """
+    board_size = state.board_size
+    if excluded_positions is None:
+        excluded_positions = set()
+
+    for y in range(board_size):
+        for x in range(board_size):
+            if (y, x) in excluded_positions:
+                continue
+
+            owner = state.stack_owner[game_idx, y, x].item()
+            height = state.stack_height[game_idx, y, x].item()
+
+            if owner != player or height <= 0:
+                continue
+
+            # Per RR-CANON-R145: Height-1 standalone rings are NOT eligible
+            # Eligible targets are:
+            # (i) Mixed-colour stack - player controls but other colors buried
+            # (ii) Single-colour stack of height > 1
+            #
+            # In simplified GPU representation, we don't track ring colors per position,
+            # only controlling player. So we use height > 1 as the eligibility criterion.
+            # This is a simplification that may need refinement for full parity.
+            if height > 1:
+                return (y, x, height)  # Return full height as "cap" (simplified)
+
+    return None
+
+
+def _find_all_regions(
+    state: BatchGameState,
+    game_idx: int,
+) -> List[Set[Tuple[int, int]]]:
+    """Find all maximal connected regions of non-collapsed cells (R140).
+
+    Uses union-find/BFS to discover all connected regions of non-collapsed cells.
+    A region is a maximal set of non-collapsed cells where each cell is connected
+    to at least one other cell in the region via 4-connectivity.
+
+    Args:
+        state: BatchGameState
+        game_idx: Game index
+
+    Returns:
+        List of regions, where each region is a set of (y, x) positions
+    """
+    board_size = state.board_size
+    g = game_idx
+
+    # Non-collapsed cells are those that are not territory (collapsed spaces)
+    non_collapsed = ~state.is_collapsed[g].cpu().numpy()
+
+    visited = [[False] * board_size for _ in range(board_size)]
+    regions = []
+
+    for start_y in range(board_size):
+        for start_x in range(board_size):
+            if visited[start_y][start_x] or not non_collapsed[start_y, start_x]:
+                continue
+
+            # BFS to find connected region
+            region = set()
+            queue = [(start_y, start_x)]
+            visited[start_y][start_x] = True
+
+            while queue:
+                y, x = queue.pop(0)
+                region.add((y, x))
+
+                for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < board_size and 0 <= nx < board_size:
+                        if not visited[ny][nx] and non_collapsed[ny, nx]:
+                            visited[ny][nx] = True
+                            queue.append((ny, nx))
+
+            if region:
+                regions.append(region)
+
+    return regions
+
+
+def _is_physically_disconnected(
+    state: BatchGameState,
+    game_idx: int,
+    region: Set[Tuple[int, int]],
+) -> Tuple[bool, Optional[int]]:
+    """Check if a region is physically disconnected per R141.
+
+    A region R is physically disconnected if every path from any cell in R to
+    any non-collapsed cell outside R must cross:
+    - Collapsed spaces (any color), and/or
+    - Board edge (off-board), and/or
+    - Markers belonging to exactly ONE player B (the border color)
+
+    Args:
+        state: BatchGameState
+        game_idx: Game index
+        region: Set of (y, x) positions in the region
+
+    Returns:
+        Tuple of (is_disconnected, border_player) where border_player is the
+        single player B whose markers form the barrier (or None if not disconnected)
+    """
+    board_size = state.board_size
+    g = game_idx
+
+    # Find all non-collapsed cells outside the region
+    non_collapsed = ~state.is_collapsed[g].cpu().numpy()
+
+    outside_non_collapsed = set()
+    for y in range(board_size):
+        for x in range(board_size):
+            if (y, x) not in region and non_collapsed[y, x]:
+                outside_non_collapsed.add((y, x))
+
+    # If no cells outside region, region spans entire non-collapsed board
+    # This is a degenerate case - not physically disconnected in meaningful sense
+    if not outside_non_collapsed:
+        return (False, None)
+
+    # Try to reach from region to outside using only:
+    # - Non-collapsed cells (stacks, markers, empty)
+    # Track which player's markers we cross
+
+    # Get marker ownership for all cells
+    marker_owner = state.marker_owner[g].cpu().numpy() if hasattr(state, 'marker_owner') else None
+    stack_owner = state.stack_owner[g].cpu().numpy()
+
+    # For each cell in region, try BFS to reach outside
+    # Blocking cells are: collapsed spaces, board edge
+    # We need to track if all blocking markers belong to single player
+
+    blocking_marker_players = set()
+
+    # BFS from region boundary
+    region_boundary = set()
+    for y, x in region:
+        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < board_size and 0 <= nx < board_size:
+                if (ny, nx) not in region:
+                    region_boundary.add((y, x))
+                    break
+            else:
+                # Edge of board - this boundary touches edge
+                region_boundary.add((y, x))
+
+    # Check what separates region from outside
+    # Try to reach outside_non_collapsed from region
+    visited = set(region)
+    queue = list(region_boundary)
+    can_reach_outside = False
+
+    for y, x in queue:
+        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            ny, nx = y + dy, x + dx
+
+            # Off-board - counts as barrier
+            if not (0 <= ny < board_size and 0 <= nx < board_size):
+                continue
+
+            if (ny, nx) in visited:
+                continue
+
+            # Collapsed space - counts as barrier
+            if not non_collapsed[ny, nx]:
+                continue
+
+            # Non-collapsed cell outside region
+            if (ny, nx) in outside_non_collapsed:
+                # Can we reach it directly, or is there a marker barrier?
+                # Check if this cell is a marker
+                cell_marker_owner = 0
+                if marker_owner is not None:
+                    cell_marker_owner = marker_owner[ny, nx]
+
+                if cell_marker_owner > 0:
+                    blocking_marker_players.add(cell_marker_owner)
+                else:
+                    # Empty cell or stack - we can reach outside without marker barrier
+                    can_reach_outside = True
+
+    # If we can reach outside directly (without crossing markers), not disconnected
+    if can_reach_outside and not blocking_marker_players:
+        return (False, None)
+
+    # If blocking markers belong to multiple players, not physically disconnected
+    if len(blocking_marker_players) > 1:
+        return (False, None)
+
+    # If exactly one player's markers form the barrier
+    if len(blocking_marker_players) == 1:
+        border_player = blocking_marker_players.pop()
+        return (True, border_player)
+
+    # Edge case: region is isolated by collapsed spaces and/or board edges only
+    # This is physically disconnected with no border player
+    # For territory purposes, any player who can claim it may do so
+    return (True, None)
+
+
+def _is_color_disconnected(
+    state: BatchGameState,
+    game_idx: int,
+    region: Set[Tuple[int, int]],
+) -> bool:
+    """Check if a region is color-disconnected per R142.
+
+    R is color-disconnected if RegionColors is a strict subset of ActiveColors.
+    - ActiveColors: players with at least one ring anywhere on the board (any stack)
+    - RegionColors: players controlling at least one stack (by top ring) in R
+
+    Empty regions (no stacks) have RegionColors = ∅, which is always a strict
+    subset of any non-empty ActiveColors, so they satisfy color-disconnection.
+
+    Args:
+        state: BatchGameState
+        game_idx: Game index
+        region: Set of (y, x) positions in the region
+
+    Returns:
+        True if region is color-disconnected (eligible for processing)
+    """
+    g = game_idx
+    board_size = state.board_size
+
+    # Compute ActiveColors: players with at least one ring on the board
+    # A player has rings if they control any stack (stack_owner == player and height > 0)
+    # or have rings buried in mixed stacks (simplified: check stack_owner > 0)
+    active_colors = set()
+    for y in range(board_size):
+        for x in range(board_size):
+            owner = state.stack_owner[g, y, x].item()
+            height = state.stack_height[g, y, x].item()
+            if owner > 0 and height > 0:
+                active_colors.add(owner)
+
+    # If no active colors (empty board), no territory processing possible
+    if not active_colors:
+        return False
+
+    # Compute RegionColors: players controlling stacks in the region
+    region_colors = set()
+    for y, x in region:
+        owner = state.stack_owner[g, y, x].item()
+        height = state.stack_height[g, y, x].item()
+        if owner > 0 and height > 0:
+            region_colors.add(owner)
+
+    # R is color-disconnected if RegionColors ⊂ ActiveColors (strict subset)
+    # This means RegionColors != ActiveColors AND RegionColors ⊆ ActiveColors
+    # Empty set is always a strict subset of non-empty set
+
+    is_strict_subset = region_colors < active_colors  # Python set comparison
+    return is_strict_subset
 
 
 def compute_territory_batch(
@@ -1761,10 +2574,19 @@ def compute_territory_batch(
     """Compute and update territory claims (in-place).
 
     Per RR-CANON-R140-R146:
-    - Empty spaces fully enclosed by one player's stacks become territory
-    - Territory is counted for victory condition
+    - R140: Find all maximal regions of non-collapsed cells
+    - R141: Check physical disconnection (all blocking markers belong to ONE player)
+    - R142: Check color-disconnection (RegionColors ⊂ ActiveColors)
+    - R143: Self-elimination prerequisite (player must have eligible cap outside)
+    - R145: Region collapse and elimination (collapse interior + border markers)
 
-    Uses flood-fill from edges to find unenclosed spaces.
+    This implementation correctly handles:
+    1. Regions divided by collapsed spaces or single-color marker lines
+    2. The single-color boundary requirement (R141)
+    3. The color-disconnection criterion (R142)
+
+    Cap eligibility is checked per RR-CANON-R145: height-1 standalone rings
+    are NOT eligible for territory elimination cost.
 
     Args:
         state: BatchGameState to modify
@@ -1780,65 +2602,115 @@ def compute_territory_batch(
         if not game_mask[g]:
             continue
 
-        # For each player, find spaces they enclose
-        for player in range(1, state.num_players + 1):
-            # Create mask of spaces owned or controlled by player
-            player_controlled = (
-                (state.stack_owner[g] == player) |
-                (state.territory_owner[g] == player)
-            )
+        # R140: Find all maximal regions of non-collapsed cells
+        all_regions = _find_all_regions(state, g)
 
-            # Find empty spaces (not controlled by anyone, not territory)
-            empty = (state.stack_owner[g] == 0) & (state.territory_owner[g] == 0)
+        # If only one region, no territory processing possible
+        # (entire non-collapsed board is connected)
+        if len(all_regions) <= 1:
+            continue
 
-            # Flood-fill from edges to find unenclosed empty spaces
-            reachable = torch.zeros(board_size, board_size, dtype=torch.bool, device=state.device)
+        # Process each region
+        # Track which regions have been processed to avoid double-processing
+        processed_regions = set()
 
-            # BFS from all edge cells
-            queue = []
-            for i in range(board_size):
-                # Top and bottom edges
-                if empty[0, i] and not player_controlled[0, i]:
-                    queue.append((0, i))
-                    reachable[0, i] = True
-                if empty[board_size-1, i] and not player_controlled[board_size-1, i]:
-                    queue.append((board_size-1, i))
-                    reachable[board_size-1, i] = True
-                # Left and right edges
-                if empty[i, 0] and not player_controlled[i, 0]:
-                    queue.append((i, 0))
-                    reachable[i, 0] = True
-                if empty[i, board_size-1] and not player_controlled[i, board_size-1]:
-                    queue.append((i, board_size-1))
-                    reachable[i, board_size-1] = True
+        # Iterate until no more regions can be processed
+        # (processing a region may create new disconnected regions)
+        max_iterations = 10  # Safety limit
+        for iteration in range(max_iterations):
+            found_processable = False
 
-            # BFS to find all reachable empty spaces
-            idx = 0
-            while idx < len(queue):
-                y, x = queue[idx]
-                idx += 1
+            for region_idx, region in enumerate(all_regions):
+                if region_idx in processed_regions:
+                    continue
 
-                for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    ny, nx = y + dy, x + dx
-                    if 0 <= ny < board_size and 0 <= nx < board_size:
-                        if empty[ny, nx] and not reachable[ny, nx] and not player_controlled[ny, nx]:
-                            reachable[ny, nx] = True
-                            queue.append((ny, nx))
+                # R141: Check physical disconnection
+                is_disconnected, border_player = _is_physically_disconnected(state, g, region)
+                if not is_disconnected:
+                    continue
 
-            # Empty spaces NOT reachable from edge are enclosed
-            enclosed = empty & ~reachable
+                # R142: Check color-disconnection
+                if not _is_color_disconnected(state, g, region):
+                    continue
 
-            # Claim enclosed territory
-            new_territory = enclosed & (state.territory_owner[g] == 0)
-            territory_count = new_territory.sum().item()
+                # Region is both physically and color-disconnected
+                # Determine which player can process it
 
-            if territory_count > 0:
-                state.territory_owner[g] = torch.where(
-                    new_territory,
-                    torch.full_like(state.territory_owner[g], player),
-                    state.territory_owner[g]
-                )
-                state.territory_count[g, player] += territory_count
+                # For each player who could claim this territory
+                for player in range(1, state.num_players + 1):
+                    # Get positions in the region
+                    region_positions = region
+
+                    # R143: Find eligible cap for elimination (outside region)
+                    eligible_cap = _find_eligible_territory_cap(
+                        state, g, player, excluded_positions=region_positions
+                    )
+
+                    if eligible_cap is None:
+                        continue
+
+                    # Player can process this region
+                    cap_y, cap_x, cap_height = eligible_cap
+
+                    # R145: Process the region
+                    # 1. Collapse interior (all cells in region become territory)
+                    territory_count = 0
+                    for y, x in region:
+                        # Remove any stacks
+                        stack_height = state.stack_height[g, y, x].item()
+                        if stack_height > 0:
+                            state.eliminated_rings[g, player] += stack_height
+                            state.stack_height[g, y, x] = 0
+                            state.stack_owner[g, y, x] = 0
+
+                        # Collapse the cell
+                        if not state.is_collapsed[g, y, x]:
+                            state.is_collapsed[g, y, x] = True
+                            state.territory_owner[g, y, x] = player
+                            territory_count += 1
+
+                    # 2. Collapse border markers of single border color B (if applicable)
+                    if border_player is not None and hasattr(state, 'marker_owner'):
+                        # Find and collapse border markers
+                        for y in range(board_size):
+                            for x in range(board_size):
+                                if state.marker_owner[g, y, x].item() == border_player:
+                                    # Check if this marker is on the boundary of region
+                                    is_boundary = False
+                                    for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                                        ny, nx = y + dy, x + dx
+                                        if 0 <= ny < board_size and 0 <= nx < board_size:
+                                            if (ny, nx) in region:
+                                                is_boundary = True
+                                                break
+
+                                    if is_boundary and not state.is_collapsed[g, y, x]:
+                                        state.is_collapsed[g, y, x] = True
+                                        state.territory_owner[g, y, x] = player
+                                        state.marker_owner[g, y, x] = 0
+                                        territory_count += 1
+
+                    # 4. Mandatory self-elimination (eliminate cap)
+                    state.stack_height[g, cap_y, cap_x] = 0
+                    state.stack_owner[g, cap_y, cap_x] = 0
+                    state.eliminated_rings[g, player] += cap_height
+
+                    # Update territory count
+                    state.territory_count[g, player] += territory_count
+
+                    processed_regions.add(region_idx)
+                    found_processable = True
+                    break  # Move to next region
+
+                if found_processable:
+                    break
+
+            if not found_processable:
+                break
+
+            # Recompute regions after processing (new disconnections may appear)
+            all_regions = _find_all_regions(state, g)
+            processed_regions = set()  # Reset since region indices changed
 
 
 # =============================================================================
@@ -2320,6 +3192,9 @@ class ParallelGameRunner:
         shadow_validation: bool = False,
         shadow_sample_rate: float = 0.05,
         shadow_threshold: float = 0.001,
+        state_validation: bool = False,
+        state_sample_rate: float = 0.01,
+        state_threshold: float = 0.001,
     ):
         """Initialize parallel game runner.
 
@@ -2328,9 +3203,12 @@ class ParallelGameRunner:
             board_size: Board dimension
             num_players: Number of players per game
             device: GPU device (auto-detected if None)
-            shadow_validation: Enable shadow validation against CPU rules
+            shadow_validation: Enable shadow validation against CPU rules (move generation)
             shadow_sample_rate: Fraction of moves to validate (0.0-1.0)
             shadow_threshold: Maximum divergence rate before halt
+            state_validation: Enable CPU oracle mode (state validation)
+            state_sample_rate: Fraction of states to validate (0.0-1.0)
+            state_threshold: Maximum state divergence rate before halt
         """
         self.batch_size = batch_size
         self.board_size = board_size
@@ -2351,7 +3229,7 @@ class ParallelGameRunner:
             device=self.device,
         )
 
-        # Shadow validation for GPU/CPU parity checking (Phase 2)
+        # Shadow validation for GPU/CPU parity checking (Phase 2 - move generation)
         self.shadow_validator: Optional[ShadowValidator] = None
         if shadow_validation:
             self.shadow_validator = create_shadow_validator(
@@ -2362,6 +3240,19 @@ class ParallelGameRunner:
             logger.info(
                 f"Shadow validation enabled: sample_rate={shadow_sample_rate}, "
                 f"threshold={shadow_threshold}"
+            )
+
+        # State validation for CPU oracle mode (A1 - state parity)
+        self.state_validator: Optional[StateValidator] = None
+        if state_validation:
+            self.state_validator = create_state_validator(
+                sample_rate=state_sample_rate,
+                threshold=state_threshold,
+                enabled=True,
+            )
+            logger.info(
+                f"State validation (CPU oracle) enabled: sample_rate={state_sample_rate}, "
+                f"threshold={state_threshold}"
             )
 
         # Statistics
@@ -2445,7 +3336,8 @@ class ParallelGameRunner:
             victory_types.append(vtype)
             stalemate_tiebreakers.append(tiebreaker)
 
-        return {
+        # Build results
+        results = {
             "winners": self.state.winner.cpu().tolist(),
             "move_counts": self.state.move_count.cpu().tolist(),
             "status": self.state.game_status.cpu().tolist(),
@@ -2455,6 +3347,45 @@ class ParallelGameRunner:
             "elapsed_seconds": elapsed,
             "games_per_second": self.batch_size / elapsed,
         }
+
+        # Add validation reports if enabled
+        if self.shadow_validator:
+            results["shadow_validation"] = self.shadow_validator.get_report()
+        if self.state_validator:
+            results["state_validation"] = self.state_validator.get_report()
+
+        return results
+
+    def get_validation_reports(self) -> Dict[str, Any]:
+        """Get validation reports from both shadow and state validators.
+
+        Returns:
+            Dictionary with validation reports and combined status.
+        """
+        reports = {}
+
+        if self.shadow_validator:
+            reports["shadow_validation"] = self.shadow_validator.get_report()
+
+        if self.state_validator:
+            reports["state_validation"] = self.state_validator.get_report()
+
+        # Compute combined status
+        all_passed = True
+        if self.shadow_validator and self.shadow_validator.stats.divergence_rate > self.shadow_validator.threshold:
+            all_passed = False
+        if self.state_validator and self.state_validator.stats.divergence_rate > self.state_validator.threshold:
+            all_passed = False
+
+        reports["combined_status"] = "PASS" if all_passed else "FAIL"
+        return reports
+
+    def reset_validation_stats(self) -> None:
+        """Reset all validation statistics."""
+        if self.shadow_validator:
+            self.shadow_validator.reset_stats()
+        if self.state_validator:
+            self.state_validator.reset_stats()
 
     def _step_games(self, weights_list: List[Dict[str, float]]) -> None:
         """Execute one phase step for all active games using full rules FSM.
@@ -2501,6 +3432,108 @@ class ParallelGameRunner:
         if end_turn_mask.any():
             self._step_end_turn_phase(end_turn_mask)
 
+    def _validate_placement_moves_sample(
+        self,
+        moves: "BatchMoves",
+        mask: torch.Tensor,
+    ) -> None:
+        """Shadow validate a sample of placement moves against CPU rules.
+
+        Called when shadow_validator is enabled. Samples games probabilistically
+        and validates GPU-generated moves against canonical CPU implementation.
+        """
+        if self.shadow_validator is None:
+            return
+
+        game_indices = torch.where(mask)[0].tolist()
+
+        for g in game_indices:
+            if not self.shadow_validator.should_validate():
+                continue
+
+            # Extract GPU moves for this game
+            move_start = moves.move_offsets[g].item()
+            move_count = moves.moves_per_game[g].item()
+
+            if move_count == 0:
+                continue
+
+            gpu_positions = []
+            for i in range(move_count):
+                idx = move_start + i
+                # Placement moves store position in from_y, from_x (target position)
+                y = moves.from_y[idx].item()
+                x = moves.from_x[idx].item()
+                gpu_positions.append((y, x))
+
+            # Convert to CPU state and validate
+            cpu_state = self.state.to_game_state(g)
+            player = self.state.current_player[g].item()
+
+            self.shadow_validator.validate_placement_moves(
+                gpu_positions, cpu_state, player
+            )
+
+    def _validate_movement_moves_sample(
+        self,
+        movement_moves: "BatchMoves",
+        capture_moves: "BatchMoves",
+        mask: torch.Tensor,
+    ) -> None:
+        """Shadow validate a sample of movement/capture moves against CPU rules.
+
+        Called when shadow_validator is enabled. Validates both movement and
+        capture move generation against canonical CPU implementation.
+        """
+        if self.shadow_validator is None:
+            return
+
+        game_indices = torch.where(mask)[0].tolist()
+
+        for g in game_indices:
+            if not self.shadow_validator.should_validate():
+                continue
+
+            # Extract GPU movement moves
+            move_start = movement_moves.move_offsets[g].item()
+            move_count = movement_moves.moves_per_game[g].item()
+
+            gpu_movement = []
+            for i in range(move_count):
+                idx = move_start + i
+                from_y = movement_moves.from_y[idx].item()
+                from_x = movement_moves.from_x[idx].item()
+                to_y = movement_moves.to_y[idx].item()
+                to_x = movement_moves.to_x[idx].item()
+                gpu_movement.append(((from_y, from_x), (to_y, to_x)))
+
+            # Extract GPU capture moves
+            cap_start = capture_moves.move_offsets[g].item()
+            cap_count = capture_moves.moves_per_game[g].item()
+
+            gpu_captures = []
+            for i in range(cap_count):
+                idx = cap_start + i
+                from_y = capture_moves.from_y[idx].item()
+                from_x = capture_moves.from_x[idx].item()
+                to_y = capture_moves.to_y[idx].item()
+                to_x = capture_moves.to_x[idx].item()
+                gpu_captures.append(((from_y, from_x), (to_y, to_x)))
+
+            # Convert to CPU state and validate
+            cpu_state = self.state.to_game_state(g)
+            player = self.state.current_player[g].item()
+
+            if gpu_movement:
+                self.shadow_validator.validate_movement_moves(
+                    gpu_movement, cpu_state, player
+                )
+
+            if gpu_captures:
+                self.shadow_validator.validate_capture_moves(
+                    gpu_captures, cpu_state, player
+                )
+
     def _step_placement_phase(
         self,
         mask: torch.Tensor,
@@ -2527,6 +3560,10 @@ class ParallelGameRunner:
         # Games WITH rings: generate and apply placement moves
         if games_with_rings.any():
             moves = generate_placement_moves_batch(self.state, games_with_rings)
+
+            # Shadow validation: validate move generation against CPU
+            self._validate_placement_moves_sample(moves, games_with_rings)
+
             if moves.total_moves > 0:
                 selected = self._select_best_moves(moves, weights_list, games_with_rings)
                 apply_placement_moves_batch(self.state, selected, moves)
@@ -2592,20 +3629,16 @@ class ParallelGameRunner:
             # Generate capture moves
             capture_moves = generate_capture_moves_batch(self.state, games_with_stacks)
 
+            # Shadow validation: validate move generation against CPU
+            self._validate_movement_moves_sample(movement_moves, capture_moves, games_with_stacks)
+
             # Identify which games have captures (prefer captures per RR-CANON)
-            # SIMPLIFICATION NOTE (documented in GPU_PIPELINE_ROADMAP.md Section 2.2):
-            # - GPU implementation only handles SINGLE captures, not chain captures
-            # - Per RR-CANON-R103, chain captures are mandatory when available
-            # - Full chain capture requires inherently sequential continuation logic
-            # - For selfplay/training, this simplification is acceptable because:
-            #   1. Most games don't have extensive chain captures
-            #   2. The heuristic play doesn't benefit much from optimal chains
-            #   3. Shadow validation will catch any significant parity issues
-            # - Future: Could add CPU fallback for games that have chain captures
+            # Per RR-CANON-R103: After executing a capture, if additional legal captures
+            # exist from the new landing position, the chain MUST continue.
             games_with_captures = games_with_stacks & (capture_moves.moves_per_game > 0)
             games_movement_only = games_with_stacks & (capture_moves.moves_per_game == 0) & (movement_moves.moves_per_game > 0)
 
-            # Apply capture moves for games with captures (single capture only)
+            # Apply capture moves with chain capture support (RR-CANON-R103)
             if games_with_captures.any():
                 selected_captures = select_moves_vectorized(
                     capture_moves, games_with_captures, self.board_size
@@ -2613,6 +3646,53 @@ class ParallelGameRunner:
                 apply_capture_moves_vectorized(
                     self.state, selected_captures, capture_moves, games_with_captures
                 )
+
+                # Track landing positions for chain capture continuation
+                # For each game that had a capture, check if more captures are available
+                game_indices = torch.where(games_with_captures)[0]
+
+                for g in game_indices.tolist():
+                    local_idx = selected_captures[g].item()
+                    if local_idx < 0:
+                        continue
+
+                    global_idx = (capture_moves.move_offsets[g] + local_idx).item()
+                    if global_idx >= capture_moves.total_moves:
+                        continue
+
+                    # Get landing position from the capture we just applied
+                    landing_y = capture_moves.to_y[global_idx].item()
+                    landing_x = capture_moves.to_x[global_idx].item()
+
+                    # Chain capture loop: continue capturing from landing position
+                    # per RR-CANON-R103 (mandatory chain captures)
+                    max_chain_depth = 10  # Safety limit to prevent infinite loops
+                    chain_depth = 0
+
+                    while chain_depth < max_chain_depth:
+                        chain_depth += 1
+
+                        # Generate captures from current landing position only
+                        chain_captures = generate_chain_capture_moves_from_position(
+                            self.state, g, landing_y, landing_x
+                        )
+
+                        if not chain_captures:
+                            # No more captures available from this position
+                            break
+
+                        # Select a chain capture (use first available for simplicity)
+                        # In training, randomizing might be better but for correctness
+                        # any valid chain is acceptable
+                        to_y, to_x = chain_captures[0]
+
+                        # Apply the chain capture
+                        new_y, new_x = apply_single_chain_capture(
+                            self.state, g, landing_y, landing_x, to_y, to_x
+                        )
+
+                        # Update landing position for next iteration
+                        landing_y, landing_x = new_y, new_x
 
             # Apply movement moves for games without captures
             if games_movement_only.any():
@@ -2630,6 +3710,10 @@ class ParallelGameRunner:
         """Handle LINE_PROCESSING phase for games in mask.
 
         Detect lines and convert them to territory markers.
+
+        Per RR-CANON-R121-R122: Process all eligible lines for the current player.
+        After line processing, check for new lines formed by territory collapse
+        (cascade processing per RR-CANON-R144).
         """
         process_lines_batch(self.state, mask)
 
@@ -2640,11 +3724,62 @@ class ParallelGameRunner:
         """Handle TERRITORY_PROCESSING phase for games in mask.
 
         Calculate enclosed territory using flood-fill.
+
+        Per RR-CANON-R144-R145: Territory processing may create conditions for
+        new lines (e.g., markers that were separated now form a line due to
+        territory collapse removing blocking pieces). In this case, we need to
+        return to LINE_PROCESSING phase for cascade handling.
+
+        SIMPLIFICATION (GPU training): We implement a limited cascade check.
+        Full cascade would iteratively process line->territory->line until stable.
+        For training efficiency, we do one round of cascade check.
         """
+        # Process territory claims
         compute_territory_batch(self.state, mask)
 
-        # After territory processing, advance to END_TURN phase
-        self.state.current_phase[mask] = GamePhase.END_TURN
+        # Cascade check: Did territory processing create new marker lines?
+        # This can happen if territory collapse removes stacks that were blocking
+        # marker alignment, or if markers from captured stacks now form lines.
+        cascade_games = self._check_for_new_lines(mask)
+
+        if cascade_games.any():
+            # Games with new lines go back to LINE_PROCESSING
+            self.state.current_phase[cascade_games] = GamePhase.LINE_PROCESSING
+            # Games without new lines advance to END_TURN
+            no_cascade = mask & ~cascade_games
+            self.state.current_phase[no_cascade] = GamePhase.END_TURN
+        else:
+            # No cascade needed, all games advance to END_TURN
+            self.state.current_phase[mask] = GamePhase.END_TURN
+
+    def _check_for_new_lines(self, mask: torch.Tensor) -> torch.Tensor:
+        """Check which games have new marker lines after territory processing.
+
+        Used for cascade detection per RR-CANON-R144.
+
+        Refactored 2025-12-11 for batch efficiency:
+        - Call detect_lines_batch once per player (not per game)
+        - Accumulate results across all players
+
+        Args:
+            mask: Games to check
+
+        Returns:
+            Boolean tensor indicating which games have new lines
+        """
+        has_new_lines = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
+
+        # Check each player's lines across all masked games at once
+        for p in range(1, self.num_players + 1):
+            # detect_lines_batch returns List[List[positions]] for all games
+            lines_by_game = detect_lines_batch(self.state, p, mask)
+
+            # Check which games have lines for this player
+            for g in range(self.batch_size):
+                if mask[g] and lines_by_game[g]:
+                    has_new_lines[g] = True
+
+        return has_new_lines
 
     def _step_end_turn_phase(self, mask: torch.Tensor) -> None:
         """Handle END_TURN phase for games in mask.
@@ -2658,37 +3793,86 @@ class ParallelGameRunner:
         Per RR-CANON-R073: ALL players start in RING_PLACEMENT without exception.
         NO PHASE SKIPPING - players with ringsInHand == 0 will emit no_placement_action
         and proceed to movement, but they MUST enter ring_placement first.
+
+        Refactored 2025-12-11 for vectorized player rotation:
+        - Precompute player elimination status for all players in all games
+        - Use vectorized rotation with fallback for eliminated player skipping
         """
-        for g in range(self.batch_size):
-            if not mask[g]:
-                continue
+        # Increment move count for all masked games (vectorized)
+        self.state.move_count[mask] += 1
 
-            # Increment move count
-            self.state.move_count[g] += 1
+        # Precompute player elimination status for all games and players
+        # Shape: (batch_size, num_players+1) - player_has_rings[g, p] = True if player p has rings in game g
+        player_has_rings = self._compute_player_ring_status_batch()
 
-            # Rotate to next player, skipping permanently eliminated players
-            current = self.state.current_player[g].item()
-            next_player = (current % self.num_players) + 1
+        # Vectorized player rotation with eliminated player skipping
+        # For most games (2-player with no eliminations), this is a simple increment
+        current_players = self.state.current_player.clone()  # (batch_size,)
 
-            # Check up to num_players times to find a player with any rings
-            skips = 0
-            while skips < self.num_players:
-                # Check if this player has ANY rings (controlled, buried, or in hand)
-                has_any_rings = self._player_has_any_rings_gpu(g, next_player)
+        # Start with simple rotation: (current % num_players) + 1
+        next_players = (current_players % self.num_players) + 1
 
-                if has_any_rings:
-                    # This player is not permanently eliminated
-                    break
+        # For games where the next player is eliminated, find the next non-eliminated player
+        # This handles the uncommon case where we need to skip eliminated players
+        for skip_round in range(self.num_players):
+            # Check which games have an eliminated next player
+            # Use gather to check player_has_rings[g, next_players[g]]
+            next_player_has_rings = torch.gather(
+                player_has_rings,
+                dim=1,
+                index=next_players.unsqueeze(1).long()
+            ).squeeze(1)
 
-                # Skip to next player
-                next_player = (next_player % self.num_players) + 1
-                skips += 1
+            # Games where next player is eliminated AND we're in the mask
+            needs_skip = mask & ~next_player_has_rings
 
-            self.state.current_player[g] = next_player
+            if not needs_skip.any():
+                break
 
-            # Per RR-CANON-R073: ALL players start in RING_PLACEMENT without exception.
-            # NO PHASE SKIPPING - this is a core invariant for parity with TS/Python engines.
-            self.state.current_phase[g] = GamePhase.RING_PLACEMENT
+            # Rotate eliminated players to next candidate
+            next_players[needs_skip] = (next_players[needs_skip] % self.num_players) + 1
+
+        # Apply the computed next players
+        self.state.current_player[mask] = next_players[mask]
+
+        # Per RR-CANON-R073: ALL players start in RING_PLACEMENT without exception.
+        # NO PHASE SKIPPING - this is a core invariant for parity with TS/Python engines.
+        self.state.current_phase[mask] = GamePhase.RING_PLACEMENT
+
+    def _compute_player_ring_status_batch(self) -> torch.Tensor:
+        """Compute which players have any rings in each game (vectorized).
+
+        Returns:
+            Boolean tensor of shape (batch_size, num_players+1) where
+            result[g, p] = True if player p has any rings in game g.
+            Index 0 is unused (players are 1-indexed).
+
+        A player has rings if ANY of:
+        - rings_in_hand[g, p] > 0
+        - Any cell where stack_owner[g, y, x] == p (controlled stacks)
+        - buried_rings[g, p] > 0
+        """
+        device = self.device
+        batch_size = self.batch_size
+        num_players = self.num_players
+
+        # Initialize result tensor
+        has_rings = torch.zeros(batch_size, num_players + 1, dtype=torch.bool, device=device)
+
+        for p in range(1, num_players + 1):
+            # Check rings in hand
+            has_in_hand = self.state.rings_in_hand[:, p] > 0
+
+            # Check controlled stacks (any cell where stack_owner == p)
+            has_controlled = (self.state.stack_owner == p).any(dim=(1, 2))
+
+            # Check buried rings
+            has_buried = self.state.buried_rings[:, p] > 0
+
+            # Player has rings if any of the above is true
+            has_rings[:, p] = has_in_hand | has_controlled | has_buried
+
+        return has_rings
 
     def _player_has_any_rings_gpu(self, g: int, player: int) -> bool:
         """Check if a player has any rings anywhere (controlled, buried, or in hand).
@@ -2860,6 +4044,12 @@ class ParallelGameRunner:
         - Costs 1 buried ring (deducted from buried_rings)
         - Origin marker is cleared, destination gets marker
         - Player gains recovery attempt toward un-burying rings
+
+        Per RR-CANON-R114 (Recovery Cascade):
+        - After recovery move completes, check for line formation
+        - If line formed, process it (collapse markers, eliminate ring)
+        - After line processing, check for territory claims
+        - Cascade continues until no new lines are formed
         """
         state = self.state
         from_y = moves.from_y[move_idx].item()
@@ -2889,6 +4079,44 @@ class ParallelGameRunner:
         current_buried = state.buried_rings[g, player].item()
         if current_buried > 0:
             state.buried_rings[g, player] = current_buried - 1
+
+        # Recovery Cascade per RR-CANON-R114:
+        # After recovery move, the marker slide could form a line, which triggers
+        # line processing, which could trigger territory claims, and so on.
+        self._process_recovery_cascade(g, player)
+
+    def _process_recovery_cascade(self, g: int, player: int, max_iterations: int = 5) -> None:
+        """Process line formation and territory claims after a recovery move.
+
+        Per RR-CANON-R114: After a recovery move, check if a line was formed.
+        If so, process the line (collapse markers, eliminate ring from any stack).
+        Then check for territory claims. This cascade continues until stable.
+
+        Args:
+            g: Game index
+            player: Player who made the recovery move
+            max_iterations: Safety limit to prevent infinite loops (default 5)
+        """
+        # Create a single-game mask for this game
+        single_game_mask = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
+        single_game_mask[g] = True
+
+        for iteration in range(max_iterations):
+            # Check for lines for the current player
+            lines = detect_lines_batch(self.state, player, single_game_mask)
+
+            if not lines[g]:
+                # No lines formed, we're done with cascade
+                break
+
+            # Process lines (collapse markers, eliminate rings)
+            process_lines_batch(self.state, single_game_mask)
+
+            # After line processing, check for territory claims
+            compute_territory_batch(self.state, single_game_mask)
+
+            # Continue loop to check if territory processing created new lines
+            # (e.g., by removing markers that were blocking a line)
 
     def _select_best_moves(
         self,

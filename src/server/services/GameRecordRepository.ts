@@ -9,7 +9,8 @@
  * - Replay system data access
  */
 
-import { PrismaClient, Game, Move, BoardType } from '@prisma/client';
+import { PrismaClient, Game, BoardType, Prisma } from '@prisma/client';
+import type { JsonValue } from '@prisma/client/runtime/library';
 import { getDatabaseClient } from '../database/connection';
 import {
   GameRecord,
@@ -55,37 +56,27 @@ export interface GameRecordSummary {
   source: RecordSource;
 }
 
-// Extended Game type for queries that access the new record fields
-// (recordMetadata, finalScore, outcome) which may not be in the
-// generated Prisma types until the client is fully regenerated.
-type GameWithRecordFields = {
-  recordMetadata?: unknown;
-  finalScore?: unknown;
-  outcome?: string | null;
-};
+// Type for Prisma query result with includes - uses Prisma's actual types
+type GameWithRelations = Prisma.GameGetPayload<{
+  include: {
+    moves: {
+      include: { player: { select: { username: true } } };
+    };
+    player1: { select: { username: true; rating: true } };
+    player2: { select: { username: true; rating: true } };
+    player3: { select: { username: true; rating: true } };
+    player4: { select: { username: true; rating: true } };
+    winner: { select: { username: true } };
+  };
+}>;
 
-// Type for Prisma query result with includes
-interface GameWithRelations {
-  id: string;
-  boardType: BoardType;
-  maxPlayers: number;
-  isRated: boolean;
-  rngSeed: number | null;
-  status: string;
-  createdAt: Date;
-  startedAt: Date | null;
-  endedAt: Date | null;
-  gameState: unknown;
-  finalState: unknown;
-  finalScore: unknown;
-  outcome: string | null;
-  recordMetadata: unknown;
-  moves: Array<Move & { player: { username: string } }>;
-  player1: { username: string; rating: number } | null;
-  player2: { username: string; rating: number } | null;
-  player3: { username: string; rating: number } | null;
-  player4: { username: string; rating: number } | null;
-  winner: { username: string } | null;
+/**
+ * Type guard to check if a game has complete record data
+ */
+function isCompletedGameRecord(
+  game: Prisma.GameGetPayload<object> | null
+): game is Prisma.GameGetPayload<object> & { finalState: JsonValue; outcome: string } {
+  return game !== null && game.finalState !== null && game.outcome !== null;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -169,13 +160,13 @@ export class GameRecordRepository {
       },
     });
 
-    // Cast to access outcome field (Prisma types may not be regenerated yet)
-    const gameWithFields = game as unknown as GameWithRelations;
-    if (!game || !game.finalState || !gameWithFields.outcome) {
+    // Use type guard to verify the game has complete record data
+    if (!isCompletedGameRecord(game)) {
       return null;
     }
 
-    return this.gameToGameRecord(game as unknown as GameWithRelations);
+    // At this point, TypeScript knows game has the required fields
+    return this.gameToGameRecord(game as GameWithRelations);
   }
 
   /**
@@ -240,10 +231,9 @@ export class GameRecordRepository {
       if (games.length === 0) break;
 
       for (const game of games) {
-        // Cast to access outcome field (Prisma types may not be regenerated yet)
-        const gameWithFields = game as unknown as GameWithRecordFields;
-        if (game.finalState && gameWithFields.outcome) {
-          const record = this.gameToGameRecord(game as unknown as GameWithRelations);
+        // Use type guard to verify complete record data
+        if (isCompletedGameRecord(game)) {
+          const record = this.gameToGameRecord(game as GameWithRelations);
           yield gameRecordToJsonlLine(record);
 
           if (hasLimit) {
@@ -276,14 +266,13 @@ export class GameRecordRepository {
   async deleteOldRecords(beforeDate: Date, source?: RecordSource): Promise<number> {
     const db = this.getDb();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {
+    const where: Prisma.GameWhereInput = {
       endedAt: { lt: beforeDate },
-      finalState: { not: undefined },
+      finalState: { not: Prisma.DbNull },
     };
 
     // Note: Filtering by source in JSON requires raw query or jsonPath
-    // For now, delete all records before the date
+    // For now, delete all records before the date (source param logged for future use)
 
     const result = await db.game.deleteMany({ where });
     logger.info('Deleted old game records', {
@@ -298,10 +287,9 @@ export class GameRecordRepository {
   // Private helpers
   // ────────────────────────────────────────────────────────────────────────
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private buildCompletedGamesWhereClause(filter: GameRecordFilter = {}): any {
-    const where: any = {
-      finalState: { not: undefined },
+  private buildCompletedGamesWhereClause(filter: GameRecordFilter = {}): Prisma.GameWhereInput {
+    const where: Prisma.GameWhereInput = {
+      finalState: { not: Prisma.DbNull },
       outcome: { not: null },
     };
 
@@ -311,7 +299,7 @@ export class GameRecordRepository {
     if (filter.isRated !== undefined) where.isRated = filter.isRated;
 
     if (filter.fromDate || filter.toDate) {
-      const dateFilter: any = {};
+      const dateFilter: Prisma.DateTimeFilter<'Game'> = {};
       if (filter.fromDate) dateFilter.gte = filter.fromDate;
       if (filter.toDate) dateFilter.lte = filter.toDate;
       where.endedAt = dateFilter;

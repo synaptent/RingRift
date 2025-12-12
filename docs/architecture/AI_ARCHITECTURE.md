@@ -888,10 +888,10 @@ Endpoint: `/health/ai-service` (when implemented)
 3. **Graceful Degradation:** Warn users when AI quality is degraded
 4. **Service Pool:** Load balance across multiple AI Service instances
 5. **Caching:** Cache positions for common opening/endgame patterns
-6. **Recovery Action Support:** Once `recovery_slide` MoveType is implemented in engines, AI must:
-   - Enumerate recovery moves for temporarily eliminated players (no stacks, no rings, has markers + buried rings)
+6. **Recovery Action Support:** Recovery action is implemented (`recovery_slide`). AI must:
+   - Enumerate recovery moves for recovery-eligible players (controls no stacks, has markers + buried rings; eligibility is independent of rings in hand)
    - Evaluate recovery moves alongside other actions in move selection
-   - Recognize recovery as a "real action" for LPS tracking
+   - Treat recovery as **NOT** a "real action" for LPS tracking (RR-CANON-R172)
    - See `TODO.md` §3.1.1 and `RECOVERY_ACTION_IMPLEMENTATION_PLAN.md`
 
 ---
@@ -927,9 +927,8 @@ Endpoint: `/health/ai-service` (when implemented)
 ## 4. Rules Completeness in AI Service
 
 - **Status:** **Mostly Complete**
-- **Implemented:** Ring placement, movement, capturing (including chains), line formation, Territory claiming, forced elimination, and victory conditions.
-- **Not Yet Implemented:**
-  - **Recovery Action (RR-CANON-R110–R115):** Temporarily eliminated players (no stacks, no rings in hand, but has markers + buried rings) can slide a marker to complete a line and extract a buried ring. This is a "real action" for LPS. See `RECOVERY_ACTION_IMPLEMENTATION_PLAN.md` for implementation tasks.
+- **Implemented:** Ring placement, movement, capturing (including chains), line formation, Territory claiming, forced elimination, recovery action (`recovery_slide`), and victory conditions.
+- **Not Yet Implemented:** See `KNOWN_ISSUES.md` and `TODO.md` for current gaps.
 - **Simplifications:**
   - **Line Formation:** Automatically chooses to collapse all markers and eliminate from the largest stack (biasing against "Option 2").
   - **Territory Claim:** Automatically claims Territory without user choice nuances.

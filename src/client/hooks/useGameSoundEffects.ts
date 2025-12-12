@@ -74,6 +74,7 @@ function getMoveTypeForSound(
     case 'no_territory_action':
     case 'skip_capture':
     case 'skip_placement':
+    case 'skip_recovery':
     case 'swap_sides':
     case 'resign':
     case 'timeout':

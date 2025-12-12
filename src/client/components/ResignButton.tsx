@@ -8,6 +8,13 @@ export interface ResignButtonProps {
   disabled?: boolean;
   /** Whether a resignation is currently in progress */
   isResigning?: boolean;
+  /**
+   * Optional controlled flag for opening the confirmation dialog.
+   * When omitted, the component manages its own open state.
+   */
+  isConfirmOpen?: boolean;
+  /** Optional controlled state setter for the confirmation dialog. */
+  onConfirmOpenChange?: (isOpen: boolean) => void;
 }
 
 const FOCUSABLE_SELECTORS =
@@ -22,8 +29,22 @@ const FOCUSABLE_SELECTORS =
  * - Escape key cancels resignation
  * - Focus is restored to the trigger button on close
  */
-export function ResignButton({ onResign, disabled, isResigning }: ResignButtonProps) {
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+export function ResignButton({
+  onResign,
+  disabled,
+  isResigning,
+  isConfirmOpen: controlledIsConfirmOpen,
+  onConfirmOpenChange,
+}: ResignButtonProps) {
+  const [uncontrolledIsConfirmOpen, setUncontrolledIsConfirmOpen] = useState(false);
+  const isConfirmOpen = controlledIsConfirmOpen ?? uncontrolledIsConfirmOpen;
+  const setIsConfirmOpen = (next: boolean) => {
+    if (onConfirmOpenChange) {
+      onConfirmOpenChange(next);
+      return;
+    }
+    setUncontrolledIsConfirmOpen(next);
+  };
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 

@@ -375,8 +375,9 @@ describe('GameHUD', () => {
     render(
       <GameHUD gameState={territoryGameState} currentPlayer={territoryGameState.players[0]} />
     );
+    // Per RR-CANON-R145: territory elimination costs the entire cap
     expect(
-      screen.getByText(/Processing disconnected regions; you must eliminate one outside ring/i)
+      screen.getByText(/Processing disconnected regions; you must eliminate the entire cap/i)
     ).toBeInTheDocument();
   });
 

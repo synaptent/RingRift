@@ -902,9 +902,10 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - For the purposes of this rule, a **real action** for a player P on their own turn means any legal:
     - ring placement (RR-CANON-R080–R082),
     - non-capture movement (RR-CANON-R090–R092),
-    - overtaking capture segment or chain (RR-CANON-R100–R103), or
-    - recovery action (RR-CANON-R110–R115),
-      and **does not** include pure forced-elimination actions from RR-CANON-R100.
+    - overtaking capture segment or chain (RR-CANON-R100–R103),
+      and **does not** include:
+      - pure forced-elimination actions from RR-CANON-R100, or
+      - recovery actions from RR-CANON-R110–R115.
   - A **full round of turns** is one contiguous cycle of turns in player order in which each player receives exactly one turn.
   - A player P wins by last-player-standing if all of the following hold:
     - **First round:** There exists at least one full round of turns such that:
@@ -1051,7 +1052,7 @@ The canonical ruleset is **parameterized** by board type. No separate optional r
 Key version-dependent parameters:
 
 - Line length (`lineLength`):
-  - `square8`: 3.
+  - `square8`: 4 (2-player), 3 (3–4 player).
   - `square19`, `hexagonal`: 4.
 - Adjacency:
   - Movement and lines use Moore for square boards, hex adjacency for hex.
@@ -1088,13 +1089,13 @@ Below are the most important differences, categorized by type, with canonical in
 
 2. **Line-length wording ("4 or 5" vs required length).**
    - Complete Rules: §4.5 and some examples sometimes speak of "lines of exactly the required length (4 or 5)" in a way that conflates 8×8 and 19×19 requirements.
-   - Compact Spec: §5 uses `lineLength` per board type (3 for square8, 4 for square19/hexagonal), and treats any len > lineLength as "overlength".
+   - Compact Spec: §5 uses parameterized `lineLength` (square8: 4 for 2-player, 3 for 3–4 player; square19/hexagonal: 4), and treats any len > lineLength as "overlength".
    - Category: **Simplification / correction**.
    - Canonical: Use parameterized `lineLength` only; RR-CANON-R120–R122 control.
 
 3. **Graduated line rewards threshold on 8×8.**
    - Complete Rules: Some prose suggests the "graduated rewards" choice on 8×8 begins at 4+ markers; elsewhere it mentions 5+ as the start of the more interesting tradeoff.
-   - Compact Spec: Treats any len > lineLength (i.e., >3 on 8×8) as overlength with Options 1 and 2.
+   - Compact Spec: Treats any len > lineLength as overlength with Options 1 and 2 (i.e., >4 on 8×8 in 2-player, >3 on 8×8 in 3–4 player).
    - Category: **Simplification** (compact version generalizes rule).
    - Canonical: Follow the general rule: any len > lineLength is overlength with Options 1 and 2 (RR-CANON-R122).
 

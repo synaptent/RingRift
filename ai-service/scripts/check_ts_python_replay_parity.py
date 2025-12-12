@@ -1555,7 +1555,12 @@ def main() -> None:
                 )
                 continue
 
-            if result.diverged_at is not None or result.total_moves_python != result.total_moves_ts:
+            # A game is considered divergent if there's a specific divergence point
+            # OR if there's a move count mismatch (indicated by "move_count" in mismatch_kinds).
+            # When TS terminates early due to acceptable early victory detection,
+            # total_moves may differ but mismatch_kinds will be empty.
+            has_move_count_mismatch = "move_count" in (result.mismatch_kinds or [])
+            if result.diverged_at is not None or has_move_count_mismatch:
                 payload = asdict(result)
                 if result.python_summary is not None:
                     payload["python_summary"] = asdict(result.python_summary)

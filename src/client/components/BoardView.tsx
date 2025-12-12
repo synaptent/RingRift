@@ -7,6 +7,7 @@ import {
   positionToString,
   positionsEqual,
 } from '../../shared/types/game';
+import { formatPosition, type MoveNotationOptions } from '../../shared/engine/notation';
 import { debugLog, isSandboxAnimationDebugEnabled } from '../../shared/utils/envFlags';
 import { computeBoardMovementGrid } from '../utils/boardMovementGrid';
 import type { MovementGrid } from '../utils/boardMovementGrid';
@@ -699,6 +700,13 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
   const effectiveBoardType: BoardType = viewModel?.boardType ?? boardType;
   const effectiveSize = viewModel?.size ?? board.size;
+  const notationOptions = useMemo<MoveNotationOptions>(
+    () => ({
+      boardType: effectiveBoardType,
+      squareRankFromBottom: squareRankFromBottom ?? false,
+    }),
+    [effectiveBoardType, squareRankFromBottom]
+  );
 
   // Build list of all valid positions for navigation
   const allPositions = useMemo((): FocusableCell[] => {
@@ -862,9 +870,33 @@ export const BoardView: React.FC<BoardViewProps> = ({
           e.preventDefault();
           clearSelection();
           break;
-        case '?':
+        case 'Home': {
           e.preventDefault();
-          onShowKeyboardHelp?.();
+          if (allPositions.length > 0) {
+            const firstPos = allPositions[0].position;
+            setFocusedPosition(firstPos);
+            const key = positionToString(firstPos);
+            const cellRef = cellRefs.current.get(key);
+            cellRef?.focus();
+          }
+          break;
+        }
+        case 'End': {
+          e.preventDefault();
+          if (allPositions.length > 0) {
+            const lastPos = allPositions[allPositions.length - 1].position;
+            setFocusedPosition(lastPos);
+            const key = positionToString(lastPos);
+            const cellRef = cellRefs.current.get(key);
+            cellRef?.focus();
+          }
+          break;
+        }
+        case '?':
+          if (onShowKeyboardHelp) {
+            e.preventDefault();
+            onShowKeyboardHelp();
+          }
           break;
         default:
           break;
@@ -877,6 +909,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
       board.stacks,
       moveFocus,
       clearSelection,
+      allPositions,
       onShowKeyboardHelp,
     ]
   );
@@ -1739,7 +1772,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
         const accessibilitySuffix =
           accessibilityAnnotations.length > 0 ? `. ${accessibilityAnnotations.join('. ')}` : '';
 
-        const cellLabel = `Row ${y + 1}, Column ${x + 1}. ${stackInfo}${accessibilitySuffix}`;
+        const coordLabel = formatPosition(pos, notationOptions);
+        const cellLabel = `Cell ${coordLabel}. ${stackInfo}${accessibilitySuffix}`;
 
         cells.push(
           <button
@@ -1817,7 +1851,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
             }}
             className={`${cellClasses} ${focusClasses} ${isSpectator ? 'cursor-default' : 'cursor-pointer'}`}
             disabled={isSpectator}
-            tabIndex={0}
+            tabIndex={isFocused ? 0 : -1}
             role="gridcell"
             aria-label={cellLabel}
             aria-selected={effectiveIsSelected || undefined}
@@ -2129,7 +2163,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
         const accessibilitySuffix =
           accessibilityAnnotations.length > 0 ? `. ${accessibilityAnnotations.join('. ')}` : '';
 
-        const cellLabel = `Hex position q${q} r${r}. ${stackInfo}${accessibilitySuffix}`;
+        const coordLabel = formatPosition(pos, notationOptions);
+        const cellLabel = `Cell ${coordLabel}. ${stackInfo}${accessibilitySuffix}`;
 
         cells.push(
           <button
@@ -2208,7 +2243,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
             }}
             className={`${cellClasses} ${focusClasses} ${isSpectator ? 'cursor-default' : 'cursor-pointer'}`}
             disabled={isSpectator}
-            tabIndex={0}
+            tabIndex={isFocused ? 0 : -1}
             role="gridcell"
             aria-label={cellLabel}
             aria-selected={effectiveIsSelected || undefined}
@@ -2319,6 +2354,12 @@ export const BoardView: React.FC<BoardViewProps> = ({
   // - board-scroll-container provides touch-friendly scrolling for oversized boards
   // - board-container prevents text selection during drag
   const needsScroll = effectiveBoardType === 'square19' || effectiveBoardType === 'hexagonal';
+  const boardAriaName =
+    effectiveBoardType === 'square8'
+      ? '8x8'
+      : effectiveBoardType === 'square19'
+        ? '19x19'
+        : 'Hexagonal';
 
   return (
     <div
@@ -2327,8 +2368,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
       data-testid="board-view"
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      role="grid"
-      aria-label={`${effectiveBoardType} game board. Use arrow keys to navigate, Enter or Space to select, Escape to clear selection, question mark for keyboard shortcuts`}
+      role="region"
+      aria-label={`${boardAriaName} game board. Use arrow keys to navigate, Enter or Space to select, Escape to clear selection, Home or End to jump, question mark for board controls and shortcuts`}
     >
       {renderBoard()}
       {/* Screen reader announcements */}

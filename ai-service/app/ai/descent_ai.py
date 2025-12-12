@@ -24,6 +24,7 @@ import torch
 
 from .base import BaseAI
 from .bounded_transposition_table import BoundedTranspositionTable
+from .game_state_utils import infer_num_players
 from .neural_net import (
     NeuralNetAI,
     INVALID_MOVE_INDEX,
@@ -196,6 +197,27 @@ class DescentAI(BaseAI):
         valid_moves = self.get_valid_moves(game_state)
         if not valid_moves:
             return None
+
+        # Descent/UBFM currently assumes a 2-player adversarial search and
+        # stores scalar values in its transposition table. Multi-player support
+        # requires different semantics (e.g., MaxN / vector values). Until that
+        # is implemented, fall back to a single-ply heuristic move to avoid
+        # misleading play from incorrect search backups.
+        num_players = infer_num_players(game_state)
+        if num_players != 2:
+            from .heuristic_ai import HeuristicAI
+
+            logger.warning(
+                "DescentAI multi-player mode is not supported yet; "
+                "falling back to heuristic move selection",
+                extra={
+                    "num_players": num_players,
+                    "player_number": self.player_number,
+                },
+            )
+            return HeuristicAI(self.player_number, self.config).select_move(
+                game_state
+            )
 
         if self.should_pick_random_move():
             selected = self.get_random_element(valid_moves)
@@ -1161,7 +1183,36 @@ class DescentAI(BaseAI):
         """Evaluate position using neural net or heuristic"""
         val = 0.0
         if self.neural_net:
-            val = self.neural_net.evaluate_position(game_state)
+            try:
+                val = self.neural_net.evaluate_position(game_state)
+                # NeuralNetAI encodes features relative to the state's
+                # current_player. For two-player games, convert the resulting
+                # value into this agent's fixed perspective when evaluating
+                # opponent-to-move states.
+                if (
+                    len(game_state.players) == 2
+                    and game_state.current_player != self.player_number
+                ):
+                    val = -val
+            except Exception:
+                logger.warning(
+                    "DescentAI neural evaluation failed; falling back to heuristic evaluation",
+                    exc_info=True,
+                )
+                self.neural_net = None
+                self.hex_encoder = None
+                # Fall through to the heuristic evaluation below.
+                my_elim = game_state.board.eliminated_rings.get(
+                    str(self.player_number),
+                    0,
+                )
+
+                opp_elim = 0
+                for pid, count in game_state.board.eliminated_rings.items():
+                    if int(pid) != self.player_number:
+                        opp_elim += count
+
+                val = (my_elim - opp_elim) * 0.05
         else:
             # Heuristic fallback: simple material difference.
             my_elim = game_state.board.eliminated_rings.get(

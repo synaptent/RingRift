@@ -19,7 +19,10 @@ import {
 } from '../../src/shared/types/game';
 import { createInitialGameState } from '../../src/shared/engine/initialState';
 import { computeProgressSnapshot } from '../../src/shared/engine/core';
-import { applyProcessLineDecision } from '../../src/shared/engine/aggregates/LineAggregate';
+import {
+  applyProcessLineDecision,
+  applyChooseLineRewardDecision,
+} from '../../src/shared/engine/aggregates/LineAggregate';
 
 const boardType: BoardType = 'square8';
 const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
@@ -177,7 +180,7 @@ function build707fK45PreProcessLineState(): GameState {
   return state;
 }
 
-describe('TerritoryParity.square8.R1Fixtures – mini-line collapse parity', () => {
+describe('TerritoryParity.square8.R1Fixtures – mini-line and reward collapse parity', () => {
   it('Game 707fd580… k=46: process_line collapses 6,3–6,5 into P2 territory like Python', () => {
     const state = build707fK45PreProcessLineState();
 
@@ -236,6 +239,129 @@ describe('TerritoryParity.square8.R1Fixtures – mini-line collapse parity', () 
     expect(nextState.board.eliminatedRings[2]).toBe(3);
     expect(p1.eliminatedRings).toBe(1);
     expect(p2.eliminatedRings).toBe(3);
+
+    const after = computeProgressSnapshot(nextState as any);
+    const afterS = after.S;
+
+    // S-invariant (markers + collapsed + eliminated) is preserved.
+    expect(afterS).toBe(beforeS);
+  });
+
+  it('Game 85ecc4fa… k=32: choose_line_reward with collapsedMarkers collapses only 6,1–6,3 like Python', () => {
+    const state = makeEmptyState('85ecc4fa-k31');
+    const board = state.board;
+
+    // Pre-existing collapsed spaces at k=31 (3,3 and 5,6 are already territory for P1).
+    board.collapsedSpaces.set('3,3', 1);
+    board.collapsedSpaces.set('5,6', 1);
+
+    // Markers forming a length-4 vertical line at x=6, y=0–3 for P1.
+    const lineMarkers: Array<{ x: number; y: number }> = [
+      { x: 6, y: 0 },
+      { x: 6, y: 1 },
+      { x: 6, y: 2 },
+      { x: 6, y: 3 },
+    ];
+    for (const m of lineMarkers) {
+      const p = pos(m.x, m.y);
+      board.markers.set(positionToString(p), {
+        player: 1,
+        position: p,
+        type: 'regular',
+      } as any);
+    }
+
+    // Players at k=31: P1 has no territory yet, P2 none.
+    state.players = state.players.map((p) => {
+      if (p.playerNumber === 1) {
+        return {
+          ...p,
+          ringsInHand: 0,
+          eliminatedRings: 1,
+          territorySpaces: 0,
+        };
+      }
+      if (p.playerNumber === 2) {
+        return {
+          ...p,
+          ringsInHand: 0,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+        };
+      }
+      return p;
+    });
+
+    state.currentPhase = 'line_processing';
+    state.currentPlayer = 1;
+    state.boardType = 'square8';
+    state.totalRingsEliminated = 1;
+    state.territoryVictoryThreshold = 33;
+    state.victoryThreshold = 19;
+
+    const before = computeProgressSnapshot(state as any);
+    const beforeS = before.S;
+
+    // Exact-length line (length 4) for 2p square8; Python fixture at k=32
+    // uses CHOOSE_LINE_REWARD with collapsed_markers = [6,1], [6,2], [6,3].
+    const fullLine: Position[] = [pos(6, 0), pos(6, 1), pos(6, 2), pos(6, 3)];
+    const collapsedSubset: Position[] = [pos(6, 1), pos(6, 2), pos(6, 3)];
+
+    const move: Move = {
+      id: 'choose-line-reward-0-6,0-min-1',
+      type: 'choose_line_reward',
+      player: 1,
+      to: pos(6, 0),
+      formedLines: [
+        {
+          positions: fullLine,
+          player: 1,
+          length: 4,
+          direction: { x: 0, y: 1 },
+        },
+      ],
+      collapsedMarkers: collapsedSubset,
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 32,
+    };
+
+    const { nextState, pendingLineRewardElimination } = applyChooseLineRewardDecision(state, move);
+
+    // Minimum-collapse variant must NOT force a self-elimination reward even
+    // though the underlying line length equals the required threshold.
+    expect(pendingLineRewardElimination).toBe(false);
+
+    const collapsed = nextState.board.collapsedSpaces;
+    // Pre-existing collapsed spaces remain.
+    expect(collapsed.get('3,3')).toBe(1);
+    expect(collapsed.get('5,6')).toBe(1);
+
+    // Only the subset 6,1–6,3 is collapsed to territory for P1, matching Python.
+    expect(collapsed.get('6,1')).toBe(1);
+    expect(collapsed.get('6,2')).toBe(1);
+    expect(collapsed.get('6,3')).toBe(1);
+    // 6,0 remains a marker (not collapsed).
+    expect(collapsed.has('6,0')).toBe(false);
+
+    const markersAfter = nextState.board.markers;
+    expect(markersAfter.has('6,0')).toBe(true);
+    expect(markersAfter.has('6,1')).toBe(false);
+    expect(markersAfter.has('6,2')).toBe(false);
+    expect(markersAfter.has('6,3')).toBe(false);
+
+    const p1 = nextState.players.find((p) => p.playerNumber === 1)!;
+    const p2 = nextState.players.find((p) => p.playerNumber === 2)!;
+
+    // P1 gains exactly 3 territory spaces from the subset, P2 unaffected.
+    expect(p1.territorySpaces).toBe(3);
+    expect(p2.territorySpaces).toBe(0);
+
+    // Eliminated rings are unchanged by this line reward choice.
+    expect(nextState.board.eliminatedRings[1]).toBeUndefined();
+    expect(nextState.board.eliminatedRings[2]).toBeUndefined();
+    expect(p1.eliminatedRings).toBe(1);
+    expect(p2.eliminatedRings).toBe(0);
 
     const after = computeProgressSnapshot(nextState as any);
     const afterS = after.S;

@@ -47,6 +47,7 @@ import { findLinesForPlayer } from '../lineDetection';
 import { findDisconnectedRegions } from '../territoryDetection';
 import { enumerateChainCaptureSegments } from '../aggregates/CaptureAggregate';
 import { hasAnyGlobalMovementOrCapture, playerHasAnyRings } from '../globalActions';
+import { isEligibleForRecovery } from '../playerStateHelpers';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TURN ROTATION HELPERS
@@ -135,6 +136,9 @@ export function moveToEvent(move: Move): TurnEvent | null {
       }
       return recoveryEvent;
     }
+
+    case 'skip_recovery':
+      return { type: 'SKIP_RECOVERY' };
 
     // Capture
     case 'overtaking_capture':
@@ -261,6 +265,9 @@ export function eventToMove(event: TurnEvent, player: number, moveNumber: number
       }
       return recoveryMove;
     }
+
+    case 'SKIP_RECOVERY':
+      return { ...baseMove, type: 'skip_recovery', to: { x: 0, y: 0 } };
 
     case 'CAPTURE':
       return {
@@ -509,9 +516,14 @@ function deriveMovementState(state: GameState, player: number, moveHint?: Move):
       moveHint.type === 'move_ring' ||
       moveHint.type === 'overtaking_capture' ||
       moveHint.type === 'continue_capture_segment' ||
-      moveHint.type === 'recovery_slide');
+      moveHint.type === 'recovery_slide' ||
+      moveHint.type === 'skip_recovery');
 
   let canMove: boolean;
+  const recoveryEligible = isEligibleForRecovery(state, player);
+  const isRecordedRecoverySlideForPlayer =
+    moveHint?.type === 'recovery_slide' && moveHint.player === player;
+  let recoveryMovesAvailable: boolean = false;
 
   if (state.currentPhase === 'movement' && state.currentPlayer === player) {
     if (isRecordedNoMovementForPlayer) {
@@ -519,10 +531,13 @@ function deriveMovementState(state: GameState, player: number, moveHint?: Move):
       // canonical NO_MOVEMENT_ACTION implies there were no legal movement,
       // capture, or recovery moves for this player in MOVEMENT.
       canMove = false;
+      recoveryMovesAvailable = false;
     } else if (isRecordedMovementMoveForPlayer) {
       // RR-CANON-R075: Trust recorded movement moves during replay.
       // If Python recorded a movement move, there must have been valid moves.
       canMove = true;
+      // Trust recorded recovery_slide even if local enumeration doesn't find it.
+      recoveryMovesAvailable = isRecordedRecoverySlideForPlayer;
     } else {
       const validMoves = getValidMoves(state);
       const movementLike = validMoves.filter(
@@ -532,9 +547,13 @@ function deriveMovementState(state: GameState, player: number, moveHint?: Move):
             m.type === 'move_ring' ||
             m.type === 'overtaking_capture' ||
             m.type === 'continue_capture_segment' ||
-            m.type === 'recovery_slide')
+            m.type === 'recovery_slide' ||
+            m.type === 'skip_recovery')
       );
       canMove = movementLike.length > 0;
+      recoveryMovesAvailable = validMoves.some(
+        (m) => m.player === player && m.type === 'recovery_slide'
+      );
     }
   } else {
     // Off-phase / off-player derivations (replay/shadow tooling) continue to
@@ -554,6 +573,8 @@ function deriveMovementState(state: GameState, player: number, moveHint?: Move):
     phase: 'movement',
     player,
     canMove,
+    recoveryEligible,
+    recoveryMovesAvailable,
     placedRingAt,
   };
 }
@@ -1288,7 +1309,15 @@ export function validateMoveWithFSMAndCompare(
  */
 const PHASE_EVENT_TYPES: Record<TurnState['phase'], ReadonlyArray<TurnEvent['type']>> = {
   ring_placement: ['PLACE_RING', 'SKIP_PLACEMENT', 'NO_PLACEMENT_ACTION', 'RESIGN', 'TIMEOUT'],
-  movement: ['MOVE_STACK', 'CAPTURE', 'RECOVERY_SLIDE', 'NO_MOVEMENT_ACTION', 'RESIGN', 'TIMEOUT'],
+  movement: [
+    'MOVE_STACK',
+    'CAPTURE',
+    'RECOVERY_SLIDE',
+    'SKIP_RECOVERY',
+    'NO_MOVEMENT_ACTION',
+    'RESIGN',
+    'TIMEOUT',
+  ],
   capture: ['CAPTURE', 'END_CHAIN', 'RESIGN', 'TIMEOUT'],
   chain_capture: ['CONTINUE_CHAIN', 'END_CHAIN', 'RESIGN', 'TIMEOUT'],
   line_processing: ['PROCESS_LINE', 'CHOOSE_LINE_REWARD', 'NO_LINE_ACTION', 'RESIGN', 'TIMEOUT'],
@@ -1331,6 +1360,7 @@ const PHASE_ALLOWED_MOVE_TYPES: Record<GamePhase, ReadonlyArray<MoveType>> = {
     'continue_capture_segment',
     'no_movement_action',
     'recovery_slide',
+    'skip_recovery',
   ],
   capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture'],
   chain_capture: ['overtaking_capture', 'continue_capture_segment'],

@@ -12,6 +12,7 @@ export type WeirdStateBanner =
   | { type: 'active-no-moves-line'; playerNumber: number }
   | { type: 'active-no-moves-territory'; playerNumber: number }
   | { type: 'forced-elimination'; playerNumber: number }
+  | { type: 'last-player-standing'; winner?: number; reason: GameResult['reason'] | null }
   | { type: 'structural-stalemate'; winner?: number; reason: GameResult['reason'] | null };
 
 /**
@@ -36,6 +37,13 @@ export function getWeirdStateBanner(
     if (victoryState && victoryState.reason === 'game_completed') {
       return {
         type: 'structural-stalemate',
+        winner: victoryState.winner,
+        reason: victoryState.reason,
+      };
+    }
+    if (victoryState && victoryState.reason === 'last_player_standing') {
+      return {
+        type: 'last-player-standing',
         winner: victoryState.winner,
         reason: victoryState.reason,
       };

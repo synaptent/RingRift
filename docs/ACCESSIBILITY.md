@@ -15,7 +15,7 @@ This guide documents the accessibility features in RingRift, including keyboard 
 
 ## Keyboard Navigation
 
-RingRift is fully navigable using only a keyboard. Press **?** at any time during a game to see the keyboard shortcuts help dialog.
+RingRift is fully navigable using only a keyboard. Press **?** at any time during a game to open the **Board controls & shortcuts** overlay.
 
 ### Board Navigation
 
@@ -29,14 +29,12 @@ RingRift is fully navigable using only a keyboard. Press **?** at any time durin
 
 ### Game Actions
 
-| Key              | Action                        |
-| ---------------- | ----------------------------- |
-| **?**            | Show keyboard shortcuts help  |
-| **R**            | Resign from game              |
-| **M**            | Toggle sound/mute             |
-| **F**            | Toggle fullscreen             |
-| **Ctrl+Z**       | Undo last move (sandbox only) |
-| **Ctrl+Shift+Z** | Redo move (sandbox only)      |
+| Key   | Action                                |
+| ----- | ------------------------------------- |
+| **?** | Show board controls & shortcuts       |
+| **R** | Resign from game (backend games only) |
+| **M** | Toggle sound/mute                     |
+| **F** | Toggle fullscreen                     |
 
 ### Dialog Navigation
 
@@ -58,12 +56,7 @@ When a dialog (like choice selection or confirmation) is open:
 
 ### Focus Indicators
 
-All interactive elements have visible focus indicators. When you navigate to a board cell, it will show a colored ring matching your player color:
-
-- **Player 1**: Emerald ring
-- **Player 2**: Sky blue ring
-- **Player 3**: Amber ring
-- **Player 4**: Fuchsia ring
+All interactive elements have visible focus indicators. When you navigate between board cells with the keyboard, the focused cell is outlined in amber.
 
 ---
 
@@ -76,7 +69,7 @@ RingRift includes comprehensive screen reader support with ARIA labels and live 
 The game board is marked as a `grid` with comprehensive labels:
 
 - **Board container**: Announces board type, dimensions, and navigation instructions
-- **Each cell**: Announces position (e.g., "A1"), stack contents, and whether it's a valid move target
+- **Each cell**: Announces position (e.g., "a1"), stack contents, and whether it's a valid move target
 - **Selection**: Live announcements when selecting cells and showing valid moves
 
 ### Game HUD
@@ -197,8 +190,7 @@ All interactive elements have minimum touch targets of 44×44 pixels, meeting WC
 
 ```
 Board:      ↑↓←→ = Navigate | Enter/Space = Select | Esc = Cancel | Home/End = Jump
-Game:       ? = Help | R = Resign | M = Mute | F = Fullscreen
-Sandbox:    Ctrl+Z = Undo | Ctrl+Shift+Z = Redo
+Game:       ? = Help | R = Resign (backend) | M = Mute | F = Fullscreen
 Dialogs:    ↑↓ = Options | Enter = Confirm | Tab = Focus | Esc = Close
 ```
 

@@ -376,7 +376,7 @@ semantics, not independent sources of truth.
   - [`placement.shared.test.ts`](tests/unit/placement.shared.test.ts:1) – shared placement validation rules.
   - [`RuleEngine.placementMultiRing.test.ts`](tests/unit/RuleEngine.placementMultiRing.test.ts:1) – backend multi‑ring placement behaviour over the shared helpers.
 - **Victory & invariants**
-  - [`victory.shared.test.ts`](tests/unit/victory.shared.test.ts:1) – shared victory/stalemate ladder over `victoryLogic.ts`.
+  - [`victory.shared.test.ts`](tests/unit/victory.shared.test.ts:1) – shared victory/stalemate ladder over `VictoryAggregate.ts`.
   - [`SInvariant.seed17FinalBoard.test.ts`](tests/unit/SInvariant.seed17FinalBoard.test.ts:1),
     [`SharedMutators.invariants.test.ts`](tests/unit/SharedMutators.invariants.test.ts:1),
     [`ProgressSnapshot.core.test.ts`](tests/unit/ProgressSnapshot.core.test.ts:1) – S‑invariant and progress‑snapshot guarantees.

@@ -89,11 +89,19 @@ def _normalise_status(raw: str) -> str:
     " ⚠️ **DEPRECATED** "  -> "deprecated"
     """
     text = raw.strip()
-    # Strip Markdown emphasis/backticks and emoji, then normalise whitespace.
-    for ch in ("*", "_", "`"):
+    # Strip basic Markdown formatting. Keep underscores because they are part
+    # of canonical identifiers like "pending_gate" and "legacy_noncanonical".
+    for ch in ("*", "`"):
         text = text.replace(ch, "")
-    # Keep only the first token to avoid accidentally parsing long sentences.
-    return text.strip().split()[0].lower() if text.strip() else ""
+
+    # Prefer the first token that looks like an identifier, skipping emoji.
+    tokens = text.strip().split()
+    for token in tokens:
+        cleaned = re.sub(r"[^\w]+", "", token, flags=re.UNICODE)
+        if re.search(r"[A-Za-z]", cleaned):
+            return cleaned.lower()
+
+    return ""
 
 
 def _parse_registry_game_dbs(registry_path: Path) -> Dict[str, Dict[str, Any]]:
@@ -253,6 +261,8 @@ def _is_canonical_from_summary(meta: Dict[str, Any]) -> bool:
 def validate_canonical_sources(
     registry_path: Path,
     db_paths: List[Path],
+    *,
+    allowed_statuses: List[str] | None = None,
 ) -> Dict[str, Any]:
     """Validate that *db_paths* are canonical training sources.
 
@@ -272,6 +282,10 @@ def validate_canonical_sources(
         Path to TRAINING_DATA_REGISTRY.md.
     db_paths:
         List of absolute or relative filesystem paths to candidate DB files.
+    allowed_statuses:
+        Registry Status values that are permitted for *db_paths*. Defaults to
+        ``["canonical"]``. This is intentionally strict; callers should only
+        relax this (e.g. to include ``pending_gate``) behind an explicit flag.
 
     Returns
     -------
@@ -287,6 +301,9 @@ def validate_canonical_sources(
 
     registry_path = registry_path.resolve()
     registry_entries = _parse_registry_game_dbs(registry_path)
+    allowed = [s.strip().lower() for s in (allowed_statuses or ["canonical"]) if s.strip()]
+    if not allowed:
+        allowed = ["canonical"]
 
     for raw_path in db_paths:
         db_path = raw_path.resolve()
@@ -306,11 +323,11 @@ def validate_canonical_sources(
             continue
 
         status = str(entry.get("status") or "").lower()
-        if status != "canonical":
+        if status not in allowed:
             problems.append(
                 f"{prefix}: registry Status={status!r} "
-                "(expected 'canonical'); this DB is not approved for "
-                "training use."
+                f"(expected one of: {', '.join(allowed)}); this DB is not approved "
+                "for training use."
             )
 
         gate_ref = str(entry.get("gate_summary") or "").strip()

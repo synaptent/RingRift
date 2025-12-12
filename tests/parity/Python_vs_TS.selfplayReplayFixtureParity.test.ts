@@ -1,15 +1,12 @@
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import * as path from 'path';
-import type { BoardType, GameState, Move, Position } from '../../src/shared/types/game';
-import {
-  ClientSandboxEngine,
-  type SandboxConfig,
-  type SandboxInteractionHandler,
-} from '../../src/client/sandbox/ClientSandboxEngine';
+import type { BoardType, GameState, Move } from '../../src/shared/types/game';
+import { CanonicalReplayEngine } from '../../src/shared/replay';
 import {
   getSelfPlayGameService,
   type SelfPlayGameDetail,
 } from '../../src/server/services/SelfPlayGameService';
+import { buildCanonicalMoveFromSelfPlayRecord } from '../../scripts/selfplay-db-ts-replay';
 
 interface StateSummaryFixture {
   move_index: number;
@@ -93,45 +90,6 @@ function loadStateBundles(fixturesDir: string): Array<{ path: string; bundle: St
   return result;
 }
 
-function normalizeRecordedMove(rawMove: Move, fallbackMoveNumber: number): Move {
-  const anyMove = rawMove as any;
-
-  const type: Move['type'] =
-    anyMove.type === 'forced_elimination' ? 'eliminate_rings_from_stack' : anyMove.type;
-
-  const timestampRaw = anyMove.timestamp;
-  const timestamp: Date =
-    timestampRaw instanceof Date
-      ? timestampRaw
-      : typeof timestampRaw === 'string'
-        ? new Date(timestampRaw)
-        : new Date();
-
-  const from: Position | undefined =
-    anyMove.from && typeof anyMove.from === 'object' ? anyMove.from : undefined;
-
-  const moveNumber =
-    typeof anyMove.moveNumber === 'number' && Number.isFinite(anyMove.moveNumber)
-      ? anyMove.moveNumber
-      : fallbackMoveNumber;
-
-  const thinkTime =
-    typeof anyMove.thinkTime === 'number'
-      ? anyMove.thinkTime
-      : typeof anyMove.thinkTimeMs === 'number'
-        ? anyMove.thinkTimeMs
-        : 0;
-
-  return {
-    ...anyMove,
-    type,
-    from,
-    timestamp,
-    thinkTime,
-    moveNumber,
-  } as Move;
-}
-
 describe.skip('Python vs TS self-play replay parity (DB fixtures)', () => {
   const fixturesDir = path.join(__dirname, '../../ai-service/parity_fixtures');
 
@@ -167,52 +125,20 @@ describe.skip('Python vs TS self-play replay parity (DB fixtures)', () => {
       expect(detail).not.toBeNull();
       if (!detail) return;
 
-      const rawState = detail.initialState as any;
-      const sanitizedState = rawState && typeof rawState === 'object' ? { ...rawState } : rawState;
-      if (sanitizedState && Array.isArray(sanitizedState.moveHistory)) {
-        sanitizedState.moveHistory = [];
-      }
-      if (sanitizedState && Array.isArray(sanitizedState.history)) {
-        sanitizedState.history = [];
-      }
-
-      const config: SandboxConfig = {
+      // Canonical replay should follow the same coercion-free TurnEngineAdapter
+      // path as scripts/selfplay-db-ts-replay.ts (used by the Python parity
+      // harness) rather than ClientSandboxEngine.
+      const engine = new CanonicalReplayEngine({
+        gameId,
         boardType: detail.boardType as BoardType,
         numPlayers: detail.numPlayers,
-        playerKinds: Array.from({ length: detail.numPlayers }, () => 'human'),
-      };
-
-      const interactionHandler: SandboxInteractionHandler = {
-        async requestChoice(choice: any) {
-          const options = (choice?.options as any[]) ?? [];
-          const selectedOption = options.length > 0 ? options[0] : undefined;
-          return {
-            choiceId: choice.id,
-            playerNumber: choice.playerNumber,
-            choiceType: choice.type,
-            selectedOption,
-          } as any;
-        },
-      };
-
-      const engine = new ClientSandboxEngine({
-        config,
-        interactionHandler,
-        // Use traceMode so replay semantics (auto-resolution of decision
-        // phases, line/territory handling, etc.) match the CLI
-        // selfplay-db-ts-replay.ts harness used by the Python parity
-        // checker.
-        traceMode: true,
+        initialState: detail.initialState,
       });
 
-      engine.initFromSerializedState(
-        sanitizedState as GameState,
-        config.playerKinds,
-        interactionHandler
-      );
-
+      // Use the DB's canonical move_type column (not the raw move_json.type)
+      // when reconstructing moves, matching scripts/selfplay-db-ts-replay.ts.
       const recordedMoves: Move[] = detail.moves.map((m) =>
-        normalizeRecordedMove(m.move as Move, m.moveNumber)
+        buildCanonicalMoveFromSelfPlayRecord(m, m.moveNumber)
       );
 
       const targetIndex =
@@ -224,12 +150,13 @@ describe.skip('Python vs TS self-play replay parity (DB fixtures)', () => {
 
       for (let i = 0; i <= targetIndex && i < recordedMoves.length; i += 1) {
         const move = recordedMoves[i];
-        const nextMove =
-          i + 1 <= targetIndex && i + 1 < recordedMoves.length ? recordedMoves[i + 1] : null;
-        await engine.applyCanonicalMoveForReplay(move, nextMove ?? undefined);
+        const result = await engine.applyMove(move);
+        if (!result.success) {
+          throw new Error(result.error || 'CanonicalReplayEngine.applyMove failed');
+        }
       }
 
-      const tsState = engine.getGameState();
+      const tsState = engine.getState() as GameState;
       const tsSummary = {
         current_player: tsState.currentPlayer,
         current_phase: tsState.currentPhase,

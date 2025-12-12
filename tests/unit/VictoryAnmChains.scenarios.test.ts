@@ -1,13 +1,16 @@
 import type { GameState } from '../../src/shared/types/game';
-import { computeGlobalLegalActionsSummary, isANMState } from '../../src/shared/engine/globalActions';
-import { evaluateVictory } from '../../src/shared/engine/victoryLogic';
+import {
+  computeGlobalLegalActionsSummary,
+  isANMState,
+} from '../../src/shared/engine/globalActions';
+import { evaluateVictory } from '../../src/shared/engine';
 import { makeAnmScen06_GlobalStalemateBareBoard } from '../fixtures/anmFixtures';
 
 /**
  * Victory / ANM chain scenarios (TS-side)
  *
  * These tests exercise how ANM-style global no-action states interact with
- * the canonical victory ladder in victoryLogic, focusing on:
+ * the canonical victory ladder in VictoryAggregate, focusing on:
  *
  * - ANM-SCEN-06 – Global stalemate on a bare board (no legal actions for any player).
  *
@@ -26,7 +29,7 @@ describe('Victory / ANM chains – global stalemate and LPS', () => {
    *   - hasGlobalPlacementAction(state, player) === false for every player.
    *   - hasForcedEliminationAction(state, player) === false for every player.
    *
-   * Victory expectations (per victoryLogic.evaluateVictory):
+   * Victory expectations (per VictoryAggregate.evaluateVictory):
    * - Game is terminal via the stalemate ladder.
    * - Winner is the player with the highest effective elimination score
    *   (including rings in hand treated as eliminated).

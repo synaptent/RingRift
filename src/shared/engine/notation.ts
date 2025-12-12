@@ -113,6 +113,8 @@ function formatMoveType(move: Move): string {
       return 'S';
     case 'recovery_slide':
       return 'Rv'; // Recovery slide (RR-CANON-R110–R115)
+    case 'skip_recovery':
+      return 'RvS'; // Skip recovery (RR-CANON-R115)
     default:
       return move.type;
   }

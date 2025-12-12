@@ -41,10 +41,19 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Allow imports from app/
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _resolve_ai_service_path(raw: str) -> Path:
+    path = Path(raw)
+    if path.is_absolute():
+        return path
+    return (AI_SERVICE_ROOT / path).resolve()
 
 
 @dataclass
@@ -145,6 +154,8 @@ def run_command(
     dry_run: bool = False,
     capture: bool = False,
     timeout: Optional[int] = None,
+    cwd: Optional[Path] = None,
+    env_overrides: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, str, str]:
     """Run a command with optional dry-run mode.
 
@@ -155,11 +166,17 @@ def run_command(
         return 0, "", ""
 
     try:
+        env = None
+        if env_overrides:
+            env = os.environ.copy()
+            env.update(env_overrides)
         result = subprocess.run(
             cmd,
             capture_output=capture,
             text=True,
             timeout=timeout,
+            cwd=str(cwd) if cwd else None,
+            env=env,
         )
         stdout = result.stdout if capture else ""
         stderr = result.stderr if capture else ""
@@ -168,6 +185,28 @@ def run_command(
         return 1, "", "Command timed out"
     except Exception as e:
         return 1, "", str(e)
+
+
+def _validate_canonical_training_source(
+    db_path: Path,
+    registry_path: Path,
+    *,
+    allow_pending_gate: bool,
+) -> Tuple[bool, List[str]]:
+    """Validate that db_path is a canonical training source per registry + gate summary."""
+    from scripts.validate_canonical_training_sources import (  # type: ignore[import]
+        validate_canonical_sources,
+    )
+
+    allowed_statuses = ["canonical", "pending_gate"] if allow_pending_gate else ["canonical"]
+    result = validate_canonical_sources(
+        registry_path=registry_path,
+        db_paths=[db_path],
+        allowed_statuses=allowed_statuses,
+    )
+    ok = bool(result.get("ok"))
+    problems = [str(p) for p in (result.get("problems") or [])]
+    return ok, problems
 
 
 def run_selfplay(
@@ -185,9 +224,52 @@ def run_selfplay(
     max_moves = config["max_moves"]
     seed = iteration * 1000
 
-    log_dir = Path("logs/improvement")
+    log_dir = AI_SERVICE_ROOT / "logs" / "improvement"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"selfplay_iter{iteration}_{board}_{players}p.jsonl"
+
+    replay_db_path = Path(config["replay_db"])
+    canonical_mode = bool(config.get("canonical_mode", False))
+
+    if canonical_mode:
+        gate_summary_path = Path(config["gate_summary"])
+        cmd = [
+            "python",
+            "scripts/generate_canonical_selfplay.py",
+            "--board-type",
+            board,
+            "--num-games",
+            str(games),
+            "--num-players",
+            str(players),
+            "--db",
+            str(replay_db_path),
+            "--summary",
+            str(gate_summary_path),
+        ]
+        print(f"Running canonical selfplay+gate: {games} games on {board} {players}p...")
+        code, _, stderr = run_command(cmd, dry_run=dry_run, timeout=7200, cwd=AI_SERVICE_ROOT)
+        if code != 0:
+            print(f"Canonical selfplay gate failed: {stderr[:200]}")
+            return False, 0
+
+        if not dry_run:
+            ok, problems = _validate_canonical_training_source(
+                db_path=replay_db_path,
+                registry_path=Path(config["registry_path"]),
+                allow_pending_gate=bool(config.get("allow_pending_gate", False)),
+            )
+            if not ok:
+                for issue in problems:
+                    print(f"[canonical-source-error] {issue}", file=sys.stderr)
+                print(
+                    "[canonical-source-error] Refusing to proceed with training on a non-canonical source DB.\n"
+                    "Fix TRAINING_DATA_REGISTRY.md status and/or rerun scripts/generate_canonical_selfplay.py.",
+                    file=sys.stderr,
+                )
+                return False, 0
+
+        return True, games
 
     cmd = [
         "python",
@@ -204,12 +286,14 @@ def run_selfplay(
         str(max_moves),
         "--seed",
         str(seed),
+        "--record-db",
+        str(replay_db_path),
         "--log-jsonl",
         str(log_file),
     ]
 
     print(f"Running selfplay: {games} games on {board} {players}p...")
-    code, _, stderr = run_command(cmd, dry_run=dry_run, timeout=3600)
+    code, _, stderr = run_command(cmd, dry_run=dry_run, timeout=3600, cwd=AI_SERVICE_ROOT)
 
     if code != 0:
         print(f"Selfplay failed: {stderr[:200]}")
@@ -241,15 +325,28 @@ def export_training_data(
     board = config["board"]
     players = config["players"]
 
-    data_dir = Path("data/training")
+    data_dir = AI_SERVICE_ROOT / "data" / "training"
     data_dir.mkdir(parents=True, exist_ok=True)
     output_path = data_dir / f"iter_{iteration}_{board}_{players}p.npz"
+
+    replay_db_path = Path(config["replay_db"])
+    canonical_mode = bool(config.get("canonical_mode", False))
+    if canonical_mode and not dry_run:
+        ok, problems = _validate_canonical_training_source(
+            db_path=replay_db_path,
+            registry_path=Path(config["registry_path"]),
+            allow_pending_gate=bool(config.get("allow_pending_gate", False)),
+        )
+        if not ok:
+            for issue in problems:
+                print(f"[canonical-source-error] {issue}", file=sys.stderr)
+            return False, output_path
 
     cmd = [
         "python",
         "scripts/export_replay_dataset.py",
         "--db",
-        "data/games/selfplay.db",
+        str(replay_db_path),
         "--board-type",
         board,
         "--num-players",
@@ -262,7 +359,7 @@ def export_training_data(
     ]
 
     print(f"Exporting training data to {output_path}...")
-    code, _, stderr = run_command(cmd, dry_run=dry_run, timeout=600)
+    code, _, stderr = run_command(cmd, dry_run=dry_run, timeout=600, cwd=AI_SERVICE_ROOT)
 
     if code != 0:
         print(f"Export failed: {stderr[:200]}")
@@ -284,7 +381,7 @@ def train_model(
     board = config["board"]
     players = config["players"]
 
-    models_dir = Path("models")
+    models_dir = AI_SERVICE_ROOT / "models"
     models_dir.mkdir(parents=True, exist_ok=True)
 
     iter_model = models_dir / f"{board}_{players}p_iter{iteration}.pth"
@@ -314,7 +411,7 @@ def train_model(
     else:
         print("Training new model from scratch...")
 
-    code, _, stderr = run_command(cmd, dry_run=dry_run, timeout=3600)
+    code, _, stderr = run_command(cmd, dry_run=dry_run, timeout=3600, cwd=AI_SERVICE_ROOT)
 
     if code != 0:
         print(f"Training failed: {stderr[:200]}")
@@ -339,7 +436,7 @@ def evaluate_model(
     """
     board = config["board"]
     players = config["players"]
-    best_model = Path(f"models/{board}_{players}p_best.pth")
+    best_model = AI_SERVICE_ROOT / "models" / f"{board}_{players}p_best.pth"
 
     # Determine opponent
     if best_model.exists():
@@ -366,7 +463,7 @@ def evaluate_model(
     ]
 
     print(f"Evaluating {iter_model.name} vs {opponent}...")
-    code, stdout, stderr = run_command(cmd, dry_run=dry_run, capture=True, timeout=1800)
+    code, stdout, stderr = run_command(cmd, dry_run=dry_run, capture=True, timeout=1800, cwd=AI_SERVICE_ROOT)
 
     if code != 0:
         print(f"Evaluation failed: {stderr[:200]}")
@@ -391,7 +488,7 @@ def promote_model(
     """
     board = config["board"]
     players = config["players"]
-    models_dir = Path("models")
+    models_dir = AI_SERVICE_ROOT / "models"
 
     best_model = models_dir / f"{board}_{players}p_best.pth"
     backup_model = models_dir / f"{board}_{players}p_prev_best.pth"
@@ -419,7 +516,7 @@ def rollback_model(config: dict, dry_run: bool = False) -> bool:
     """Rollback to previous best model if available."""
     board = config["board"]
     players = config["players"]
-    models_dir = Path("models")
+    models_dir = AI_SERVICE_ROOT / "models"
 
     best_model = models_dir / f"{board}_{players}p_best.pth"
     backup_model = models_dir / f"{board}_{players}p_prev_best.pth"
@@ -520,6 +617,37 @@ def main():
         help="Selfplay games per iteration",
     )
     parser.add_argument(
+        "--replay-db",
+        type=str,
+        default=None,
+        help=(
+            "Path to the GameReplayDB used to record selfplay and export training data. "
+            "Default: data/games/canonical_<board>.db (canonical mode) or data/games/selfplay.db (--allow-legacy)."
+        ),
+    )
+    parser.add_argument(
+        "--registry",
+        type=str,
+        default="TRAINING_DATA_REGISTRY.md",
+        help="Path to TRAINING_DATA_REGISTRY.md for canonical-source validation (default: TRAINING_DATA_REGISTRY.md).",
+    )
+    parser.add_argument(
+        "--allow-pending-gate",
+        action="store_true",
+        help=(
+            "Allow registry Status=pending_gate as long as the referenced gate summary JSON "
+            "reports canonical_ok=true and a passing parity gate."
+        ),
+    )
+    parser.add_argument(
+        "--allow-legacy",
+        action="store_true",
+        help=(
+            "Allow training from non-canonical replay DBs. This bypasses canonical gating and uses "
+            "the legacy selfplay soak; use only for ablations/debugging."
+        ),
+    )
+    parser.add_argument(
         "--promotion-threshold",
         type=float,
         default=0.55,
@@ -549,6 +677,16 @@ def main():
     )
     args = parser.parse_args()
 
+    canonical_mode = not bool(args.allow_legacy)
+    if args.replay_db:
+        replay_db_path = _resolve_ai_service_path(args.replay_db)
+    else:
+        default_name = f"canonical_{args.board}.db" if canonical_mode else "selfplay.db"
+        replay_db_path = (AI_SERVICE_ROOT / "data" / "games" / default_name).resolve()
+
+    registry_path = _resolve_ai_service_path(args.registry)
+    gate_summary_path = (AI_SERVICE_ROOT / f"db_health.{replay_db_path.stem}.json").resolve()
+
     # Configure
     config = {
         "board": args.board,
@@ -556,13 +694,18 @@ def main():
         "games_per_iter": args.games_per_iter,
         "max_moves": 500 if args.board == "square8" else 1000,
         "promotion_threshold": args.promotion_threshold,
+        "replay_db": str(replay_db_path),
+        "canonical_mode": canonical_mode,
+        "allow_pending_gate": bool(args.allow_pending_gate),
+        "registry_path": str(registry_path),
+        "gate_summary": str(gate_summary_path),
     }
 
     # State file path
     if args.state_file:
         state_path = args.state_file
     else:
-        state_path = Path(f"logs/improvement/{args.board}_{args.players}p_state.json")
+        state_path = AI_SERVICE_ROOT / "logs" / "improvement" / f"{args.board}_{args.players}p_state.json"
 
     # Load or initialize state
     state = load_state(state_path) if args.resume else LoopState()
@@ -572,6 +715,10 @@ def main():
     print("RingRift AI Improvement Loop")
     print("=" * 60)
     print(f"Board: {args.board}, Players: {args.players}")
+    print(f"Replay DB: {replay_db_path}")
+    print(f"Data policy: {'canonical' if canonical_mode else 'legacy (UNSAFE)'}")
+    if canonical_mode:
+        print(f"Gate summary: {gate_summary_path}")
     print(f"Iterations: {start_iter + 1} to {args.iterations}")
     print(f"Games per iteration: {args.games_per_iter}")
     print(f"Promotion threshold: {args.promotion_threshold:.0%}")

@@ -51,6 +51,7 @@ export const MoveTypeSchema = {
     'overtaking_capture',
     'continue_capture_segment',
     'recovery_slide', // RR-CANON-R110–R115: marker recovery action
+    'skip_recovery', // RR-CANON-R115: explicit recovery skip
     'process_line',
     'choose_line_reward',
     'process_territory_region',

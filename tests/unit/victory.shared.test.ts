@@ -1,5 +1,5 @@
-import { evaluateVictory } from '../../src/shared/engine/victoryLogic';
-import type { VictoryReason } from '../../src/shared/engine/victoryLogic';
+import { evaluateVictory } from '../../src/shared/engine';
+import type { VictoryReason } from '../../src/shared/engine';
 import {
   createTestGameState,
   createTestBoard,

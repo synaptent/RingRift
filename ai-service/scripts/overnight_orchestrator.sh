@@ -485,7 +485,7 @@ while true; do
     # Mac Studio - MPS training capable (selfplay for now)
     # ============================================
     if [ "${MAC_STUDIO_ROLE:-disabled}" != "disabled" ]; then
-        local mac_studio_ssh_ok=false
+        mac_studio_ssh_ok=false
         if [ -n "$MAC_STUDIO_KEY" ]; then
             check_ssh_key "$MAC_STUDIO" "$MAC_STUDIO_KEY" && mac_studio_ssh_ok=true
         else

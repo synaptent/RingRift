@@ -383,7 +383,16 @@ def get_nnue_model_path(
 
     # Default model naming: nnue_{board_type}_{num_players}p.pt
     board_name = board_type.value.lower()
-    return models_dir / f"nnue_{board_name}_{num_players}p.pt"
+    primary = models_dir / f"nnue_{board_name}_{num_players}p.pt"
+
+    # Backwards-compatible fallback: older training runs published
+    # ``nnue_{board}.pt`` for the default 2-player case.
+    if num_players == 2 and not primary.exists():
+        legacy = models_dir / f"nnue_{board_name}.pt"
+        if legacy.exists():
+            return legacy
+
+    return primary
 
 
 def load_nnue_model(

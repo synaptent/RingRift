@@ -197,6 +197,8 @@ def _play_matchup(
     opponent: TierOpponentConfig,
     base_seed: Optional[int],
     num_games_override: Optional[int] = None,
+    time_budget_ms_override: Optional[int] = None,
+    max_moves_override: Optional[int] = None,
 ) -> MatchupStats:
     """Run games between the candidate tier and a single opponent.
 
@@ -221,7 +223,7 @@ def _play_matchup(
     env_config = TrainingEnvConfig(
         board_type=tier_config.board_type,
         num_players=tier_config.num_players,
-        max_moves=None,
+        max_moves=max_moves_override,
         reward_mode="terminal",
     )
     env = make_env(env_config)
@@ -240,7 +242,11 @@ def _play_matchup(
             tier_config=tier_config,
             difficulty=tier_config.candidate_difficulty,
             player_number=candidate_seat,
-            time_budget_ms=tier_config.time_budget_ms,
+            time_budget_ms=(
+                time_budget_ms_override
+                if time_budget_ms_override is not None
+                else tier_config.time_budget_ms
+            ),
             ai_type_override=None,
             rng_seed=game_seed,
         )
@@ -248,7 +254,11 @@ def _play_matchup(
             tier_config=tier_config,
             difficulty=opponent.difficulty,
             player_number=opponent_seat,
-            time_budget_ms=tier_config.time_budget_ms,
+            time_budget_ms=(
+                time_budget_ms_override
+                if time_budget_ms_override is not None
+                else tier_config.time_budget_ms
+            ),
             ai_type_override=resolved_ai_type,
             rng_seed=game_seed,
         )
@@ -322,6 +332,8 @@ def run_tier_evaluation(
     *,
     seed: Optional[int] = None,
     num_games_override: Optional[int] = None,
+    time_budget_ms_override: Optional[int] = None,
+    max_moves_override: Optional[int] = None,
 ) -> TierEvaluationResult:
     """Evaluate a candidate configuration for a given difficulty tier.
 
@@ -349,6 +361,8 @@ def run_tier_evaluation(
             opponent=opponent,
             base_seed=seed,
             num_games_override=num_games_override,
+            time_budget_ms_override=time_budget_ms_override,
+            max_moves_override=max_moves_override,
         )
         matchups.append(stats)
         total_games += stats.games

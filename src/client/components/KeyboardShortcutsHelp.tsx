@@ -30,11 +30,9 @@ const DIALOG_SHORTCUTS: ShortcutItem[] = [
 
 const GAME_SHORTCUTS: ShortcutItem[] = [
   { keys: ['?'], description: 'Show this help dialog' },
-  { keys: ['R'], description: 'Resign from game' },
+  { keys: ['R'], description: 'Resign from game (backend only)' },
   { keys: ['M'], description: 'Toggle sound/mute' },
   { keys: ['F'], description: 'Toggle fullscreen' },
-  { keys: ['Ctrl', '+', 'Z'], description: 'Undo last move (sandbox only)' },
-  { keys: ['Ctrl', '+', 'Shift', '+', 'Z'], description: 'Redo move (sandbox only)' },
 ];
 
 const GENERAL_SHORTCUTS: ShortcutItem[] = [

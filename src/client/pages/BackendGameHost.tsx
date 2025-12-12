@@ -37,6 +37,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useGame } from '../contexts/GameContext';
 import { getGameOverBannerText } from '../utils/gameCopy';
+import { formatPosition } from '../../shared/engine/notation';
 import {
   buildGameEndExplanationFromEngineView,
   type GameEndEngineView,
@@ -74,6 +75,8 @@ import {
 } from '../hooks/useInvalidMoveFeedback';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useGameSoundEffects } from '../hooks/useGameSoundEffects';
+import { useGlobalGameShortcuts } from '../hooks/useKeyboardNavigation';
+import { useSoundOptional } from '../contexts/SoundContext';
 import type { PlayerChoice } from '../../shared/types/game';
 import type {
   DecisionAutoResolvedMeta,
@@ -550,8 +553,33 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   // Help / controls overlay
   const [showBoardControls, setShowBoardControls] = useState(false);
 
+  // Sidebar density: keep advanced diagnostics available without overwhelming
+  // new players. Persist preference locally per browser.
+  const backendAdvancedSidebarStorageKey = 'ringrift_backend_sidebar_show_advanced';
+  const [showAdvancedSidebarPanels, setShowAdvancedSidebarPanels] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return localStorage.getItem(backendAdvancedSidebarStorageKey) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(
+        backendAdvancedSidebarStorageKey,
+        showAdvancedSidebarPanels ? 'true' : 'false'
+      );
+    } catch {
+      // Storage might be disabled; ignore.
+    }
+  }, [backendAdvancedSidebarStorageKey, showAdvancedSidebarPanels]);
+
   // Resignation state
   const [isResigning, setIsResigning] = useState(false);
+  const [isResignConfirmOpen, setIsResignConfirmOpen] = useState(false);
 
   // Weird-state tracking for rules-UX telemetry.
   // We only care about coarse weird-state categories (ANM/FE/structural stalemate)
@@ -627,7 +655,38 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     currentUserId: user?.id,
     myPlayerNumber: myPlayer?.playerNumber,
   });
+  const sound = useSoundOptional();
   const isConnectionActive = connectionStatus === 'connected';
+
+  useGlobalGameShortcuts({
+    onShowHelp: () => {
+      setShowBoardControls((prev) => !prev);
+    },
+    onResign: () => {
+      if (!isPlayer || !gameState || gameState.gameStatus !== 'active') {
+        return;
+      }
+      setIsResignConfirmOpen(true);
+    },
+    onToggleMute: () => {
+      if (!sound) {
+        return;
+      }
+      const nextMuted = !sound.muted;
+      sound.toggleMute();
+      toast(nextMuted ? 'Muted' : 'Sound on', { id: 'mute-toggle' });
+    },
+    onToggleFullscreen: () => {
+      if (typeof document === 'undefined') return;
+
+      if (document.fullscreenElement) {
+        void document.exitFullscreen?.();
+        return;
+      }
+
+      void document.documentElement.requestFullscreen?.();
+    },
+  });
   const boardInteractionMessage = (() => {
     if (!isPlayer) {
       return 'Moves disabled while spectating.';
@@ -828,9 +887,10 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
 
   // Diagnostics for phase / choice / connection are handled by useBackendDiagnosticsLog.
   // Choice countdown is owned by useBackendDecisionUI.
-  // Global keyboard shortcuts (desktop): "?" toggles the board controls
-  // overlay; Escape closes it when open. Kept at the host layer so that
-  // presentation components remain rules-agnostic.
+  //
+  // We handle most keyboard shortcuts via useGlobalGameShortcuts. Keep a
+  // narrow Escape handler here so the overlay closes even if it is mocked
+  // in tests or rendered outside the focus trap.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
@@ -843,12 +903,6 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
         if (isEditableTag || isContentEditable) {
           return;
         }
-      }
-
-      if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
-        event.preventDefault();
-        setShowBoardControls((prev) => !prev);
-        return;
       }
 
       if (event.key === 'Escape' && showBoardControls) {
@@ -1757,6 +1811,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
             onAnimationComplete={clearAnimation}
             chainCapturePath={chainCapturePath}
             shakingCellKey={shakingCellKey}
+            onShowKeyboardHelp={() => setShowBoardControls(true)}
           />
         </section>
 
@@ -1796,8 +1851,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
             {selected ? (
               <div className="space-y-2">
                 <div className="text-lg font-mono font-semibold text-white">
-                  ({selected.x}, {selected.y}
-                  {selected.z !== undefined ? `, ${selected.z}` : ''})
+                  {formatPosition(selected, { boardType })}
                 </div>
                 {backendSelectedStackDetails ? (
                   <ul className="text-xs text-slate-300 space-y-1">
@@ -1834,6 +1888,8 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
                 onResign={handleResign}
                 disabled={!isConnectionActive}
                 isResigning={isResigning}
+                isConfirmOpen={isResignConfirmOpen}
+                onConfirmOpenChange={setIsResignConfirmOpen}
               />
             </div>
           )}
@@ -1900,26 +1956,45 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
             )}
           />
 
-          {/* Full move history panel with expandable details */}
-          <GameHistoryPanel
-            gameId={gameId}
-            defaultCollapsed={true}
-            onError={(err) => {
-              // Log but don't block – history is supplementary
-              console.warn('Failed to load game history:', err.message);
+          <details
+            className="p-3 border border-slate-700 rounded bg-slate-900/50"
+            open={showAdvancedSidebarPanels}
+            onToggle={(event) => {
+              setShowAdvancedSidebarPanels(event.currentTarget.open);
             }}
-          />
+            data-testid="backend-advanced-sidebar-panels"
+          >
+            <summary className="cursor-pointer select-none text-sm font-semibold text-slate-200">
+              Advanced diagnostics
+              <span className="ml-2 text-[11px] font-normal text-slate-400">
+                (history, evaluation)
+              </span>
+            </summary>
+            {showAdvancedSidebarPanels && (
+              <div className="mt-3 space-y-3">
+                {/* Full move history panel with expandable details */}
+                <GameHistoryPanel
+                  gameId={gameId}
+                  defaultCollapsed={true}
+                  onError={(err) => {
+                    // Log but don't block – history is supplementary
+                    console.warn('Failed to load game history:', err.message);
+                  }}
+                />
 
-          {/* AI analysis/evaluation panel – enabled for spectators and finished games.
-              When no evaluation data has been streamed yet, the panel renders a
-              placeholder message instead of remaining hidden. */}
-          {(!isPlayer || !!victoryState) && gameState && (
-            <EvaluationPanel
-              evaluationHistory={evaluationHistory}
-              players={gameState.players}
-              className="mt-2"
-            />
-          )}
+                {/* AI analysis/evaluation panel – enabled for spectators and finished games.
+                    When no evaluation data has been streamed yet, the panel renders a
+                    placeholder message instead of remaining hidden. */}
+                {(!isPlayer || !!victoryState) && gameState && (
+                  <EvaluationPanel
+                    evaluationHistory={evaluationHistory}
+                    players={gameState.players}
+                    className="mt-2"
+                  />
+                )}
+              </div>
+            )}
+          </details>
 
           <div className="p-3 border border-slate-700 rounded bg-slate-900/50 flex flex-col h-64">
             <h2 className="font-semibold mb-2">Chat</h2>

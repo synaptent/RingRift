@@ -1,7 +1,7 @@
 # RingRift Documentation Index
 
 > **Last Updated:** 2025-12-11
-> **Organization:** Core docs in root (~16 files), detailed docs in `/docs/` subdirectories
+> **Organization:** 13 core docs in root, 6 in `/docs/` root, detailed docs in `/docs/` subdirectories
 
 This index catalogs all project documentation organized by topic and location. For a lightweight landing page, see `docs/INDEX.md`.
 
@@ -15,6 +15,8 @@ This index catalogs all project documentation organized by topic and location. F
 | [QUICKSTART.md](QUICKSTART.md)             | Local development setup            |
 | [CONTRIBUTING.md](CONTRIBUTING.md)         | Contribution guidelines            |
 | [SECURITY.md](SECURITY.md)                 | Security policy and implementation |
+| [TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md) | Terms of Service (placeholder)     |
+| [PRIVACY_POLICY.md](PRIVACY_POLICY.md)     | Privacy Policy (placeholder)       |
 | [TODO.md](TODO.md)                         | Active task tracker                |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md)         | Current bugs and gaps              |
 | [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) | Comprehensive improvement roadmap  |
@@ -65,6 +67,8 @@ Engine and system architecture documentation.
 | [SHARED_ENGINE_CONSOLIDATION_PLAN.md](docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md)               | Engine consolidation design              |
 | [CLIENT_SANDBOX_ENGINE_REFACTOR_PROPOSAL.md](docs/architecture/CLIENT_SANDBOX_ENGINE_REFACTOR_PROPOSAL.md) | Deferred refactor proposal (not started) |
 | [NEURAL_NET_INTEGRATION_DESIGN.md](docs/architecture/NEURAL_NET_INTEGRATION_DESIGN.md)                     | Neural network integration design        |
+| [VICTORY_REFACTORING_PLAN.md](docs/architecture/VICTORY_REFACTORING_PLAN.md)                               | Victory detection consolidation plan     |
+| [TEST_HYGIENE_NOTES.md](docs/architecture/TEST_HYGIENE_NOTES.md)                                           | Test suite hygiene and cleanup notes     |
 
 ### /docs/rules/
 
@@ -83,18 +87,21 @@ Rules engine implementation and parity documentation.
 | [PYTHON_PARITY_REQUIREMENTS.md](docs/rules/PYTHON_PARITY_REQUIREMENTS.md)           | Python AI parity requirements       |
 | [SSOT_BANNER_GUIDE.md](docs/rules/SSOT_BANNER_GUIDE.md)                             | SSOT banner conventions             |
 | [ACTIVE_NO_MOVES_BEHAVIOUR.md](docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md)             | Active-no-moves edge case           |
+| [HEX_PARITY_AUDIT.md](docs/rules/HEX_PARITY_AUDIT.md)                               | Hex board parity audit              |
 
 ### /docs/ai/
 
 AI service and training documentation.
 
-| Document                                                                                     | Purpose                         |
-| -------------------------------------------------------------------------------------------- | ------------------------------- |
-| [AI_DIFFICULTY_ANALYSIS.md](docs/ai/AI_DIFFICULTY_ANALYSIS.md)                               | Difficulty level analysis       |
-| [AI_LARGE_BOARD_PERFORMANCE_ASSESSMENT.md](docs/ai/AI_LARGE_BOARD_PERFORMANCE_ASSESSMENT.md) | Large board performance         |
-| [AI_TRAINING_AND_DATASETS.md](docs/ai/AI_TRAINING_AND_DATASETS.md)                           | Training pipelines and datasets |
-| [AI_TRAINING_ASSESSMENT_FINAL.md](docs/ai/AI_TRAINING_ASSESSMENT_FINAL.md)                   | Training assessment             |
-| [AI_TRAINING_PREPARATION_GUIDE.md](docs/ai/AI_TRAINING_PREPARATION_GUIDE.md)                 | Training preparation            |
+| Document                                                                                     | Purpose                            |
+| -------------------------------------------------------------------------------------------- | ---------------------------------- |
+| [AI_DIFFICULTY_ANALYSIS.md](docs/ai/AI_DIFFICULTY_ANALYSIS.md)                               | Difficulty level analysis          |
+| [AI_LARGE_BOARD_PERFORMANCE_ASSESSMENT.md](docs/ai/AI_LARGE_BOARD_PERFORMANCE_ASSESSMENT.md) | Large board performance            |
+| [AI_TRAINING_AND_DATASETS.md](docs/ai/AI_TRAINING_AND_DATASETS.md)                           | Training pipelines and datasets    |
+| [AI_TRAINING_ASSESSMENT_FINAL.md](docs/ai/AI_TRAINING_ASSESSMENT_FINAL.md)                   | Training assessment                |
+| [AI_TRAINING_PREPARATION_GUIDE.md](docs/ai/AI_TRAINING_PREPARATION_GUIDE.md)                 | Training preparation               |
+| [AI_TRAINING_PIPELINE_PLAN.md](docs/ai/AI_TRAINING_PIPELINE_PLAN.md)                         | Comprehensive AI training pipeline |
+| [AI_PIPELINE_PARITY_FIXES.md](docs/ai/AI_PIPELINE_PARITY_FIXES.md)                           | TS↔Python parity fixes (Dec 2025)  |
 
 ### /docs/testing/
 
@@ -109,7 +116,9 @@ Test infrastructure and QA documentation.
 | [GO_NO_GO_CHECKLIST.md](docs/testing/GO_NO_GO_CHECKLIST.md)                                                               | Production readiness checklist                                       |
 | [LOAD_TEST_BASELINE.md](docs/testing/LOAD_TEST_BASELINE.md)                                                               | Load test baseline targets                                           |
 | [LOAD_TEST_BASELINE_REPORT.md](docs/testing/LOAD_TEST_BASELINE_REPORT.md)                                                 | Load test results report                                             |
-| [BASELINE_CAPACITY.md](docs/BASELINE_CAPACITY.md)                                                                         | Current/target/AI-heavy capacity runs and how to execute/record them |
+| [BASELINE_CAPACITY.md](docs/testing/BASELINE_CAPACITY.md)                                                                 | Current/target/AI-heavy capacity runs and how to execute/record them |
+| [SKIPPED_TESTS_TRIAGE.md](docs/testing/SKIPPED_TESTS_TRIAGE.md)                                                           | Skipped tests triage and rationale                                   |
+| [WEAK_ASSERTION_AUDIT.md](docs/testing/WEAK_ASSERTION_AUDIT.md)                                                           | Weak assertion audit and tracking                                    |
 | [LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md](docs/testing/LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md)                                 | WebSocket load testing design                                        |
 | [HUD_QA_CHECKLIST.md](docs/testing/HUD_QA_CHECKLIST.md)                                                                   | UI/UX manual QA checklist                                            |
 | [GOLDEN_REPLAYS.md](docs/testing/GOLDEN_REPLAYS.md)                                                                       | Golden replay test system                                            |
@@ -118,14 +127,15 @@ Test infrastructure and QA documentation.
 
 Operational runbooks for production incidents.
 
-| Document                            | Purpose                   |
-| ----------------------------------- | ------------------------- |
-| [INDEX.md](docs/runbooks/INDEX.md)  | Runbook index             |
-| [DEPLOYMENT\_\*.md](docs/runbooks/) | Deployment procedures     |
-| [AI\_\*.md](docs/runbooks/)         | AI service operations     |
-| [DATABASE\_\*.md](docs/runbooks/)   | Database operations       |
-| [WEBSOCKET\_\*.md](docs/runbooks/)  | WebSocket troubleshooting |
-| [GAME\_\*.md](docs/runbooks/)       | Game health monitoring    |
+| Document                                                                       | Purpose                   |
+| ------------------------------------------------------------------------------ | ------------------------- |
+| [INDEX.md](docs/runbooks/INDEX.md)                                             | Runbook index             |
+| [PARITY_VERIFICATION_RUNBOOK.md](docs/runbooks/PARITY_VERIFICATION_RUNBOOK.md) | TS↔Python parity checks   |
+| [DEPLOYMENT\_\*.md](docs/runbooks/)                                            | Deployment procedures     |
+| [AI\_\*.md](docs/runbooks/)                                                    | AI service operations     |
+| [DATABASE\_\*.md](docs/runbooks/)                                              | Database operations       |
+| [WEBSOCKET\_\*.md](docs/runbooks/)                                             | WebSocket troubleshooting |
+| [GAME\_\*.md](docs/runbooks/)                                                  | Game health monitoring    |
 
 ### /docs/incidents/
 
@@ -148,6 +158,8 @@ Operational configuration and infrastructure documentation.
 | [ENVIRONMENT_VARIABLES.md](docs/operations/ENVIRONMENT_VARIABLES.md) | Environment configuration   |
 | [OPERATIONS_DB.md](docs/operations/OPERATIONS_DB.md)                 | Database operations         |
 | [SECRETS_MANAGEMENT.md](docs/operations/SECRETS_MANAGEMENT.md)       | Secrets and credentials     |
+| [STAGING_ENVIRONMENT.md](docs/operations/STAGING_ENVIRONMENT.md)     | Staging environment setup   |
+| [SLO_VERIFICATION.md](docs/operations/SLO_VERIFICATION.md)           | SLO verification framework  |
 
 ### /docs/security/
 
@@ -169,6 +181,21 @@ Active planning and roadmap documents.
 | [ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md](docs/planning/ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md) | Parity research roadmap |
 | [WAVE_PLAN_2025_12.md](docs/planning/WAVE_PLAN_2025_12.md)                                     | December 2025 wave plan |
 
+### /docs/ux/
+
+UX and rules teaching documentation.
+
+| Document                                                                         | Purpose                                              |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| [UX_RULES_CONCEPTS_INDEX.md](docs/ux/UX_RULES_CONCEPTS_INDEX.md)                 | High-risk rules concepts index                       |
+| [UX_RULES_COPY_SPEC.md](docs/ux/UX_RULES_COPY_SPEC.md)                           | UX copy for rules display                            |
+| [UX_RULES_EXPLANATION_MODEL_SPEC.md](docs/ux/UX_RULES_EXPLANATION_MODEL_SPEC.md) | Game-end explanation model                           |
+| [UX_RULES_IMPROVEMENT_LOOP.md](docs/ux/UX_RULES_IMPROVEMENT_LOOP.md)             | Telemetry-driven rules UX improvement process        |
+| [UX_RULES_TEACHING_GAP_ANALYSIS.md](docs/ux/UX_RULES_TEACHING_GAP_ANALYSIS.md)   | Teaching scenario coverage audit                     |
+| [UX_RULES_TEACHING_SCENARIOS.md](docs/ux/UX_RULES_TEACHING_SCENARIOS.md)         | Scenario-driven teaching flows for complex mechanics |
+| [UX_RULES_TELEMETRY_SPEC.md](docs/ux/UX_RULES_TELEMETRY_SPEC.md)                 | Rules UX telemetry schema and hotspot metrics        |
+| [UX_RULES_WEIRD_STATES_SPEC.md](docs/ux/UX_RULES_WEIRD_STATES_SPEC.md)           | Weird-state rules UX reason codes and copy mapping   |
+
 ### /docs/ (Reference Docs)
 
 Reference documentation kept at docs/ root.
@@ -176,12 +203,7 @@ Reference documentation kept at docs/ root.
 | Document                                                                                                                  | Purpose                                               |
 | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
 | [ACCESSIBILITY.md](docs/ACCESSIBILITY.md)                                                                                 | Accessibility guide (keyboard, screen reader, visual) |
-| [GAME_COMPARISON_ANALYSIS.md](docs/GAME_COMPARISON_ANALYSIS.md)                                                           | Game comparison studies                               |
-| [UX_RULES_COPY_SPEC.md](docs/UX_RULES_COPY_SPEC.md)                                                                       | UX copy for rules display                             |
-| [UX_RULES_TELEMETRY_SPEC.md](docs/UX_RULES_TELEMETRY_SPEC.md)                                                             | Rules UX telemetry schema and hotspot metrics         |
-| [UX_RULES_WEIRD_STATES_SPEC.md](docs/UX_RULES_WEIRD_STATES_SPEC.md)                                                       | Weird-state rules UX reason codes and copy mapping    |
-| [UX_RULES_TEACHING_SCENARIOS.md](docs/UX_RULES_TEACHING_SCENARIOS.md)                                                     | Scenario-driven teaching flows for complex mechanics  |
-| [UX_RULES_IMPROVEMENT_LOOP.md](docs/UX_RULES_IMPROVEMENT_LOOP.md)                                                         | Telemetry-driven rules UX improvement process         |
+| [INDEX.md](docs/INDEX.md)                                                                                                 | Quick navigation index                                |
 | [archive/plans/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md](docs/archive/plans/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md) | GameReplayDB ↔ /sandbox replay integration            |
 
 ### /docs/supplementary/
@@ -195,6 +217,7 @@ Extended analysis and edge case documentation.
 | [RULES_TERMINATION_ANALYSIS.md](docs/supplementary/RULES_TERMINATION_ANALYSIS.md)     | Game termination analysis      |
 | [RULES_DOCS_UX_AUDIT.md](docs/supplementary/RULES_DOCS_UX_AUDIT.md)                   | Documentation UX review        |
 | [AI_IMPROVEMENT_BACKLOG.md](docs/supplementary/AI_IMPROVEMENT_BACKLOG.md)             | AI improvement ideas           |
+| [GAME_COMPARISON_ANALYSIS.md](docs/supplementary/GAME_COMPARISON_ANALYSIS.md)         | Game comparison studies        |
 
 **Rules analysis (`docs/supplementary/rules_analysis/`)**
 
@@ -205,6 +228,20 @@ Extended analysis and edge case documentation.
 | [rules_analysis_ring_count_inconsistencies.md](docs/supplementary/rules_analysis/rules_analysis_ring_count_inconsistencies.md)   | Ring count mismatches across specs, docs, and engines           |
 | [rules_analysis_ring_count_increase.md](docs/supplementary/rules_analysis/rules_analysis_ring_count_increase.md)                 | Historical proposal to raise 19×19/hex ring supplies            |
 | [rules_analysis_ring_count_remediation_plan.md](docs/supplementary/rules_analysis/rules_analysis_ring_count_remediation_plan.md) | Remediation steps for ring count inconsistencies                |
+
+---
+
+## /docs/ Active Assessments
+
+Current codebase assessments and improvement plans.
+
+| Document                                                                    | Purpose                                        |
+| --------------------------------------------------------------------------- | ---------------------------------------------- |
+| [CODEBASE_REVIEW_2025_12_11.md](docs/CODEBASE_REVIEW_2025_12_11.md)         | Comprehensive first-principles codebase review |
+| [CODE_QUALITY_AUDIT_2025_12_11.md](docs/CODE_QUALITY_AUDIT_2025_12_11.md)   | Code quality audit with implemented fixes      |
+| [ARCHITECTURAL_IMPROVEMENT_PLAN.md](docs/ARCHITECTURAL_IMPROVEMENT_PLAN.md) | Refactoring opportunities and progress         |
+| [PRODUCTION_READINESS_CHECKLIST.md](docs/PRODUCTION_READINESS_CHECKLIST.md) | Launch readiness criteria                      |
+| [NEXT_STEPS_2025_12_11.md](docs/NEXT_STEPS_2025_12_11.md)                   | Current session progress and next steps        |
 
 ---
 
@@ -275,9 +312,9 @@ These cloud environments are deployment-specific:
 
 Key reference documents:
 
-- [docs/STAGING_ENVIRONMENT.md](docs/STAGING_ENVIRONMENT.md) – Staging environment topology, Docker-based setup, and how load tests attach to staging.
-- [docs/BASELINE_CAPACITY.md](docs/BASELINE_CAPACITY.md) – Baseline capacity scenarios and how to execute and record them.
-- [docs/SLO_VERIFICATION.md](docs/SLO_VERIFICATION.md) – SLO verification pipeline that consumes k6 JSON outputs from any environment.
+- [docs/operations/STAGING_ENVIRONMENT.md](docs/operations/STAGING_ENVIRONMENT.md) – Staging environment topology, Docker-based setup, and how load tests attach to staging.
+- [docs/testing/BASELINE_CAPACITY.md](docs/testing/BASELINE_CAPACITY.md) – Baseline capacity scenarios and how to execute and record them.
+- [docs/operations/SLO_VERIFICATION.md](docs/operations/SLO_VERIFICATION.md) – SLO verification pipeline that consumes k6 JSON outputs from any environment.
 - [ai-service/docs/CLOUD_TRAINING_INFRASTRUCTURE_PLAN.md](ai-service/docs/CLOUD_TRAINING_INFRASTRUCTURE_PLAN.md) – Cloud training and distributed self-play infrastructure plan (illustrative, not required for all deployments).
 
 ---

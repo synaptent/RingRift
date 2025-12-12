@@ -16,25 +16,25 @@ The **Recovery Action** allows temporarily eliminated players to remain active b
 
 ### Implementation Status Overview
 
-| Component                       | Status      | Notes                                           |
-| ------------------------------- | ----------- | ----------------------------------------------- |
-| Rules Specification             | ✅ Complete | RR-CANON-R110–R115 in `RULES_CANONICAL_SPEC.md` |
-| TS RecoveryAggregate            | ✅ Complete | Option 1/2 cost model implemented               |
-| Python recovery.py              | ✅ Complete | Option 1/2 cost model implemented               |
-| Turn Orchestrator Integration   | ✅ Complete | Wired into movement phase                       |
-| GameEngine Integration (Python) | ✅ Complete | `get_valid_moves()` includes recovery           |
-| LPS Integration                 | ✅ Complete | Recovery counted as real action                 |
-| Contract Vectors                | ✅ Complete | `recovery_action.vectors.json` created          |
-| Parity Tests                    | ✅ Complete | `test_recovery_parity.py` (15 tests)            |
-| FSM Event Mapping               | ✅ Complete | `TurnStateMachine.ts`, `FSMAdapter.ts`          |
-| RuleEngine Validation           | ✅ Complete | `RuleEngine.ts` validation case                 |
-| Move Notation                   | ✅ Complete | `notation.ts` with `Rv` prefix                  |
-| Unit Tests (Option 1/2)         | ✅ Complete | `RecoveryAggregate.shared.test.ts` (35 tests)   |
-| UI Components                   | ✅ Complete | Highlighting, selection, overlength dialog      |
-| Teaching Materials              | ✅ Complete | 7 tips in teachingTopics.ts                     |
-| AI Heuristic Evaluation         | ✅ Complete | `heuristic_ai.py` recovery potential weights    |
-| Extended Parity Tests           | ✅ Complete | `test_recovery_parity.py` (20 tests)            |
-| Backend LPS Wiring              | ✅ Complete | `TurnEngine.ts` calls `evaluateLpsVictory`      |
+| Component                       | Status      | Notes                                             |
+| ------------------------------- | ----------- | ------------------------------------------------- |
+| Rules Specification             | ✅ Complete | RR-CANON-R110–R115 in `RULES_CANONICAL_SPEC.md`   |
+| TS RecoveryAggregate            | ✅ Complete | Option 1/2 cost model implemented                 |
+| Python recovery.py              | ✅ Complete | Option 1/2 cost model implemented                 |
+| Turn Orchestrator Integration   | ✅ Complete | Wired into movement phase                         |
+| GameEngine Integration (Python) | ✅ Complete | `get_valid_moves()` includes recovery             |
+| LPS Integration                 | ✅ Complete | Recovery does **NOT** count as real action (R172) |
+| Contract Vectors                | ✅ Complete | `recovery_action.vectors.json` created            |
+| Parity Tests                    | ✅ Complete | `test_recovery_parity.py` (15 tests)              |
+| FSM Event Mapping               | ✅ Complete | `TurnStateMachine.ts`, `FSMAdapter.ts`            |
+| RuleEngine Validation           | ✅ Complete | `RuleEngine.ts` validation case                   |
+| Move Notation                   | ✅ Complete | `notation.ts` with `Rv` prefix                    |
+| Unit Tests (Option 1/2)         | ✅ Complete | `RecoveryAggregate.shared.test.ts` (35 tests)     |
+| UI Components                   | ✅ Complete | Highlighting, selection, overlength dialog        |
+| Teaching Materials              | ✅ Complete | 7 tips in teachingTopics.ts                       |
+| AI Heuristic Evaluation         | ✅ Complete | `heuristic_ai.py` recovery potential weights      |
+| Extended Parity Tests           | ✅ Complete | `test_recovery_parity.py` (20 tests)              |
+| Backend LPS Wiring              | ✅ Complete | `TurnEngine.ts` calls `evaluateLpsVictory`        |
 
 ---
 
@@ -45,9 +45,9 @@ The **Recovery Action** allows temporarily eliminated players to remain active b
 A player P is eligible for recovery if **ALL** conditions hold:
 
 1. P controls **no stacks** on the board
-2. P has **zero rings in hand** (`ringsInHand[P] == 0`)
-3. P has **at least one marker** on the board
-4. P has **at least one buried ring** (their ring at a non-top position in some stack)
+2. P has **at least one marker** on the board
+3. P has **at least one buried ring** (their ring at a non-top position in some stack)
+4. **Note:** Eligibility is independent of rings in hand (rings in hand do not prevent recovery).
 
 ### 1.2 Marker Slide (RR-CANON-R111)
 
@@ -92,7 +92,7 @@ Extraction process:
 
 ### 1.5 LPS Classification
 
-Recovery is a **"real action"** for Last Player Standing purposes (RR-CANON-R172).
+Recovery is **NOT** a "real action" for Last Player Standing purposes (RR-CANON-R172).
 
 ---
 

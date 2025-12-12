@@ -6,14 +6,35 @@
  * with material are blocked. After the second round completes, the exclusive
  * player wins by LPS.
  *
- * Real actions are: placement, non-capture movement, overtaking capture,
- * recovery slide (RR-CANON-R110–R115).
- * Non-real actions (that don't count for LPS): skip_placement, forced elimination,
- * line/territory processing decisions.
+ * Real actions are: ring placement, non-capture movement, and overtaking capture.
+ * Non-real actions (do not count for LPS): recovery_slide, forced_elimination,
+ * and bookkeeping/post-processing decisions (skip_*, no_*, line/territory processing).
  *
  * @module lpsTracking
  *
  * Rule Reference: RR-CANON R172 (Last Player Standing Victory)
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ARCHITECTURAL NOTE: Separation from VictoryAggregate
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * LPS tracking is intentionally separate from VictoryAggregate.evaluateVictory()
+ * because it requires **stateful round tracking** that persists across turns:
+ *
+ * - evaluateVictory() is stateless: takes GameState, returns verdict
+ * - LPS tracking is stateful: maintains round counters, exclusive player history
+ *
+ * The LpsTrackingState must be stored and managed by the host engine (GameEngine,
+ * ClientSandboxEngine) since it's not part of the wire-serializable GameState.
+ *
+ * Usage pattern:
+ * 1. Host engine maintains LpsTrackingState instance
+ * 2. At each interactive turn start, call updateLpsTracking()
+ * 3. After updating, call evaluateLpsVictory() to check for LPS win
+ * 4. Combine with evaluateVictory() for complete victory detection
+ *
+ * See: VictoryAggregate.ts for immediate (stateless) victory detection
+ * See: scripts/selfplay-db-ts-replay.ts for evaluateVictoryWithLps() helper
  */
 
 import type { GameState, GamePhase, GameResult } from '../types/game';

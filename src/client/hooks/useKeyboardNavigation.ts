@@ -334,6 +334,9 @@ export interface GlobalGameShortcuts {
 export function useGlobalGameShortcuts(shortcuts: GlobalGameShortcuts) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) {
+        return;
+      }
       // Don't trigger shortcuts when typing in an input
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
@@ -380,8 +383,8 @@ export function useGlobalGameShortcuts(shortcuts: GlobalGameShortcuts) {
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [shortcuts]);
 }
 

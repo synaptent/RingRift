@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
@@ -23,6 +23,8 @@ export interface BoardControlsOverlayProps {
 const sectionTitleClass = 'text-sm font-semibold text-slate-100 mb-1 flex items-center gap-2';
 const bodyTextClass = 'text-xs text-slate-300';
 const listClass = 'list-disc list-inside space-y-1 text-xs text-slate-300';
+const FOCUSABLE_SELECTORS =
+  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
 function ModeBadge({ mode }: { mode: BoardControlsOverlayMode }) {
   if (mode === 'sandbox') {
@@ -87,6 +89,8 @@ function BasicControlsSection({ mode }: { mode: BoardControlsOverlayMode }) {
 }
 
 function KeyboardShortcutsSection({ mode }: { mode: BoardControlsOverlayMode }) {
+  const showResign = mode === 'backend';
+
   return (
     <section
       aria-label="Keyboard shortcuts"
@@ -112,6 +116,17 @@ function KeyboardShortcutsSection({ mode }: { mode: BoardControlsOverlayMode }) 
           <span className="font-mono text-slate-100">?</span>{' '}
           <span className="text-slate-400">(Shift&nbsp;+&nbsp;/)</span> – toggle this Board Controls
           & Shortcuts overlay.
+        </li>
+        {showResign && (
+          <li>
+            <span className="font-mono text-slate-100">R</span> – resign (backend games only).
+          </li>
+        )}
+        <li>
+          <span className="font-mono text-slate-100">M</span> – toggle sound/mute.
+        </li>
+        <li>
+          <span className="font-mono text-slate-100">F</span> – toggle fullscreen.
         </li>
         <li>
           <span className="font-mono text-slate-100">Tab</span> – in decision dialogs, move between
@@ -203,6 +218,48 @@ export const BoardControlsOverlay: React.FC<BoardControlsOverlayProps> = ({
   hasAIDebug: _hasAIDebug, // currently unused but kept for forward-compatibility
   onClose,
 }) => {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
+  // Focus management and keyboard handling
+  useEffect(() => {
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      // Trap focus within the overlay
+      if (event.key === 'Tab' && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS);
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (!first || !last) return;
+
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [onClose]);
+
   const title =
     mode === 'sandbox' ? 'Sandbox board controls & shortcuts' : 'Board controls & shortcuts';
 
@@ -217,10 +274,12 @@ export const BoardControlsOverlay: React.FC<BoardControlsOverlayProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="board-controls-title"
+      aria-describedby="board-controls-description"
       data-testid="board-controls-overlay"
       onClick={onClose}
     >
       <Card
+        ref={dialogRef}
         padded
         className="max-w-3xl w-full mx-4 space-y-5 pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
@@ -233,7 +292,9 @@ export const BoardControlsOverlay: React.FC<BoardControlsOverlayProps> = ({
             >
               {title}
             </h2>
-            <p className="text-xs text-slate-300">{description}</p>
+            <p id="board-controls-description" className="text-xs text-slate-300">
+              {description}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <ModeBadge mode={mode} />
@@ -243,6 +304,7 @@ export const BoardControlsOverlay: React.FC<BoardControlsOverlayProps> = ({
               aria-label="Close board controls"
               onClick={onClose}
               data-testid="board-controls-close-button"
+              ref={closeButtonRef}
               className="h-7 w-7 rounded-full border border-slate-600 text-sm leading-none text-slate-200 hover:bg-slate-800/80"
             >
               ✕

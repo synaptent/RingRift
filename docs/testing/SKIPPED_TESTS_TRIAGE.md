@@ -159,7 +159,7 @@ The turn orchestrator now **correctly implements multi-phase turns** per the gam
 
 1. Movement creates a marker → triggers `line_processing` phase
 2. Player must process lines (or NO_LINE_ACTION) → triggers `territory_processing` phase
-3. Player must process territories (or NO_TERRITORY_ACTION) → turn completes
+3. Player may process any subset of territories (PROCESS_REGION + any ELIMINATE_FROM_STACK), or explicitly skip (SKIP_TERRITORY_PROCESSING); if no regions exist, they record NO_TERRITORY_ACTION → turn completes
 
 ### Skipped Test Categories
 
@@ -177,7 +177,7 @@ The turn orchestrator now **correctly implements multi-phase turns** per the gam
 **Option 1: Regenerate vectors with decision paths** (Recommended)
 
 - Update vector generator scripts to include explicit decision moves
-- Each movement/capture vector needs: move → NO_LINE_ACTION → NO_TERRITORY_ACTION
+- Each movement/capture vector needs: move → NO_LINE_ACTION → (NO_TERRITORY_ACTION if no regions exist; otherwise SKIP_TERRITORY_PROCESSING or explicit PROCESS_REGION decision chain)
 - Effort: 8-16 hours
 
 **Option 2: Create simple vectors that don't trigger line/territory**

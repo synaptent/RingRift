@@ -2184,35 +2184,111 @@ class NeuralNetAI(BaseAI):
 
         self.model.to(self.device)
 
-        # Load weights if available
-        if os.path.exists(model_path):
-            self._load_model_checkpoint(model_path)
-        else:
-            # Try fallback to base model path without board suffix
-            fallback_filename = f"{model_id}_mps.pth" if self.architecture_type == "mps" else f"{model_id}.pth"
-            fallback_path = os.path.join(self._base_dir, "models", fallback_filename)
+        # Load weights if available.
+        #
+        # Checkpoints are named with an optional board suffix (e.g. _hex) and
+        # an optional architecture suffix (_mps). In practice, most training
+        # runs publish a single CPU/CUDA checkpoint without the _mps suffix,
+        # so when running with the MPS-friendly architecture we also try the
+        # non-MPS filename as a compatibility fallback.
+        models_dir = os.path.join(self._base_dir, "models")
+        allow_fresh = bool(getattr(self.config, "allow_fresh_weights", False))
 
-            if os.path.exists(fallback_path) and board_suffix:
-                logger.info(f"Board-specific model not found at {model_path}, " f"trying fallback at {fallback_path}")
-                # Note: This may fail if architecture differs significantly
-                try:
-                    self._load_model_checkpoint(fallback_path)
-                except RuntimeError as e:
-                    logger.warning(f"Fallback model incompatible: {e}. Using fresh weights.")
-                    self.model.eval()
-            else:
-                # No model found - this is often a configuration error in production
-                # but may be intentional for training.
-                allow_fresh = getattr(self.config, "allow_fresh_weights", False)
+        arch_suffix = "_mps" if self.architecture_type == "mps" else ""
+        other_arch_suffix = "" if arch_suffix == "_mps" else "_mps"
+
+        candidate_filenames = [
+            f"{model_id}{board_suffix}{arch_suffix}.pth",
+            f"{model_id}{board_suffix}{other_arch_suffix}.pth",
+        ]
+
+        # If we had a board suffix, also try the base model id without the
+        # suffix (both arch variants) as a fallback.
+        if board_suffix:
+            candidate_filenames.extend(
+                [
+                    f"{model_id}{arch_suffix}.pth",
+                    f"{model_id}{other_arch_suffix}.pth",
+                ]
+            )
+
+        # Deduplicate while preserving order.
+        seen: set[str] = set()
+        candidate_paths: list[str] = []
+        for filename in candidate_filenames:
+            if filename in seen:
+                continue
+            seen.add(filename)
+            candidate_paths.append(os.path.join(models_dir, filename))
+
+        def _is_usable_checkpoint(path: str) -> bool:
+            try:
+                return os.path.isfile(path) and os.path.getsize(path) > 0
+            except OSError:
+                return False
+
+        chosen_path = next((p for p in candidate_paths if _is_usable_checkpoint(p)), None)
+        if chosen_path is None:
+            # Convenience: allow a stable nn_model_id prefix (e.g.
+            # "sq8_2p_nn_baseline") to resolve to the latest timestamped
+            # checkpoint "sq8_2p_nn_baseline_<ts>.pth" in the models dir.
+            #
+            # This keeps ladder configs and training tooling from having to
+            # rewrite a new model id every time a checkpoint is produced.
+            import glob
+
+            prefix = f"{model_id}{board_suffix}"
+            patterns = []
+            if self.architecture_type == "mps":
+                patterns.append(os.path.join(models_dir, f"{prefix}_*_mps.pth"))
+            patterns.append(os.path.join(models_dir, f"{prefix}_*.pth"))
+
+            latest_matches: list[str] = []
+            for pattern in patterns:
+                latest_matches.extend(glob.glob(pattern))
+            latest_matches = sorted(
+                p for p in set(latest_matches) if _is_usable_checkpoint(p)
+            )
+            if latest_matches:
+                chosen_path = latest_matches[-1]
+
+        if chosen_path is not None:
+            if chosen_path != model_path:
+                logger.info(
+                    "NeuralNetAI checkpoint fallback: requested=%s, using=%s",
+                    model_path,
+                    chosen_path,
+                )
+            try:
+                self._load_model_checkpoint(chosen_path)
+            except RuntimeError as e:
                 if allow_fresh:
-                    logger.info(f"No model found at {model_path}, using fresh weights " "(allow_fresh_weights=True)")
-                else:
                     logger.warning(
-                        f"No model found at {model_path}, using fresh (random) weights. "
-                        "This may indicate a misconfigured model path. Set "
-                        "config.allow_fresh_weights=True to suppress this warning."
+                        "Checkpoint incompatible (%s); using fresh weights "
+                        "(allow_fresh_weights=True).",
+                        e,
                     )
+                    self.model.eval()
+                else:
+                    raise
+        else:
+            # No model found - this is often a configuration error in production
+            # but may be intentional for training.
+            if allow_fresh:
+                logger.info(
+                    "No model found at %s; using fresh weights "
+                    "(allow_fresh_weights=True).",
+                    model_path,
+                )
                 self.model.eval()
+            else:
+                raise FileNotFoundError(
+                    f"No neural-net checkpoint found for nn_model_id={model_id!r} "
+                    f"(looked for {model_path}).\n"
+                    "Provide a matching checkpoint under ai-service/models/, "
+                    "or set AIConfig.allow_fresh_weights=True for offline "
+                    "experiments that intentionally start from random weights."
+                )
 
         # Apply torch.compile() optimization for faster inference on CUDA
         # This provides 2-3x speedup for batch inference
@@ -2246,6 +2322,8 @@ class NeuralNetAI(BaseAI):
         error handling.
         """
         import os
+
+        allow_fresh = bool(getattr(self.config, "allow_fresh_weights", False))
 
         try:
             # Try to use versioned loading first
@@ -2281,17 +2359,14 @@ class NeuralNetAI(BaseAI):
                     else:
                         meta_globals = metadata.config.get("global_features")
                     if meta_globals is not None and meta_globals != expected_globals:
-                        logger.warning(
+                        msg = (
                             "Model checkpoint incompatible with current global_features "
-                            f"(checkpoint={meta_globals}, expected={expected_globals}); "
-                            "discarding checkpoint and keeping fresh weights."
+                            f"(checkpoint={meta_globals}, expected={expected_globals})"
                         )
-                        try:
-                            os.remove(model_path)
-                            logger.info(f"Deleted incompatible model file: {model_path}")
-                        except OSError:
-                            logger.debug(f"Could not delete incompatible model file: {model_path}")
-                        return
+                        if allow_fresh:
+                            logger.warning("%s; using fresh weights (allow_fresh_weights=True).", msg)
+                            return
+                        raise RuntimeError(msg)
 
                 # Guard: reject checkpoints whose value_fc1 weight shape does not
                 # match the current architecture (e.g., stale feature count).
@@ -2300,17 +2375,14 @@ class NeuralNetAI(BaseAI):
                     expected_in = self.model.value_fc1.in_features
                     actual_in = vf1_weight.shape[1]
                     if actual_in != expected_in:
-                        logger.warning(
+                        msg = (
                             "Model checkpoint incompatible with current feature shape "
-                            f"(value_fc1 in_features: checkpoint={actual_in}, "
-                            f"expected={expected_in}); discarding checkpoint."
+                            f"(value_fc1 in_features: checkpoint={actual_in}, expected={expected_in})"
                         )
-                        try:
-                            os.remove(model_path)
-                            logger.info(f"Deleted incompatible model file: {model_path}")
-                        except OSError:
-                            logger.debug(f"Could not delete incompatible model file: {model_path}")
-                        return
+                        if allow_fresh:
+                            logger.warning("%s; using fresh weights (allow_fresh_weights=True).", msg)
+                            return
+                        raise RuntimeError(msg)
 
                 self.model.load_state_dict(state_dict)
                 self.model.eval()
@@ -2602,15 +2674,29 @@ class NeuralNetAI(BaseAI):
         assert globals_input is not None
 
         with torch.no_grad():
-            values, policy_logits = self.model(tensor_input, globals_input)
+            assert self.model is not None
+            out = self.model(tensor_input, globals_input)
+            # V3 models return (values, policy_logits, rank_dist). Keep the
+            # rank distribution for training-only use and ignore it here.
+            if isinstance(out, tuple) and len(out) == 3:
+                values, policy_logits, _rank_dist = out
+            else:
+                values, policy_logits = out
 
             # Apply softmax to logits to get probabilities for MCTS / Descent.
             policy_probs = torch.softmax(policy_logits, dim=1)
 
-        return (
-            values.cpu().numpy().flatten().tolist(),
-            policy_probs.cpu().numpy(),
-        )
+        # NOTE: RingRiftCNN v2/v3 models output a multi-value head by default.
+        # The NeuralNetAI wrapper (and all search AIs) currently consume a
+        # *single scalar* value per state. We treat the first value head as
+        # the canonical scalar value and ignore any additional heads.
+        values_np = values.detach().cpu().numpy()
+        if values_np.ndim == 2:
+            scalar_values = values_np[:, 0]
+        else:
+            scalar_values = values_np.reshape(values_np.shape[0])
+
+        return (scalar_values.astype(np.float32).tolist(), policy_probs.cpu().numpy())
 
     def encode_state_for_model(
         self,

@@ -359,6 +359,8 @@ def run_heuristic_tier_eval(
     tier_spec: HeuristicTierSpec,
     rng_seed: int,
     max_games: Optional[int] = None,
+    max_moves_override: Optional[int] = None,
+    skip_shadow_contracts: bool = True,
 ) -> Dict[str, Any]:
     """Evaluate a heuristic profile against a baseline on an eval pool.
 
@@ -385,6 +387,18 @@ def run_heuristic_tier_eval(
     seed_all(rng_seed)
     rng = random.Random(rng_seed)
 
+    # Heuristic tier evaluation is a training/diagnostics harness and can
+    # involve millions of apply_move calls. Mutator shadow contracts are a
+    # valuable development-time tool but add substantial overhead; default to
+    # skipping them here to keep eval runs tractable. Callers can opt back in
+    # by passing skip_shadow_contracts=False.
+    from app.rules.factory import get_rules_engine  # local import for tooling
+
+    get_rules_engine(
+        force_new=True,
+        skip_shadow_contracts=bool(skip_shadow_contracts),
+    )
+
     # Load the eval pool for this tier.
     states = load_state_pool(
         board_type=tier_spec.board_type,
@@ -407,6 +421,8 @@ def run_heuristic_tier_eval(
         tier_spec.board_type,
         tier_spec.num_players,
     )
+    if max_moves_override is not None and max_moves_override > 0:
+        max_moves = min(max_moves, int(max_moves_override))
 
     wins = 0
     losses = 0
@@ -587,6 +603,7 @@ def run_all_heuristic_tiers(
     tiers: List[HeuristicTierSpec],
     rng_seed: int,
     max_games: Optional[int] = None,
+    max_moves_override: Optional[int] = None,
     tier_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Run heuristic tier evaluation across a set of tiers.
@@ -621,6 +638,7 @@ def run_all_heuristic_tiers(
             tier_spec=spec,
             rng_seed=tier_seed,
             max_games=max_games,
+            max_moves_override=max_moves_override,
         )
         tier_results.append(tier_res)
 
@@ -661,6 +679,15 @@ def _parse_heuristic_cli_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--max-moves",
+        type=int,
+        default=None,
+        help=(
+            "Optional cap on moves per game. "
+            "When unset, the theoretical per-board maximum is used."
+        ),
+    )
+    parser.add_argument(
         "--tiers",
         type=str,
         default=None,
@@ -682,6 +709,7 @@ if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
         tiers=HEURISTIC_TIER_SPECS,
         rng_seed=args.seed,
         max_games=args.max_games,
+        max_moves_override=args.max_moves,
         tier_ids=tier_filter,
     )
 

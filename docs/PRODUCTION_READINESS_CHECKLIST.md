@@ -50,7 +50,7 @@ This checklist documents all requirements for launching RingRift v1.0 to product
 | Item                                                     | Status | Evidence                                                |
 | -------------------------------------------------------- | ------ | ------------------------------------------------------- |
 | All game rules implemented per canonical spec            | ✅     | `ringrift_complete_rules.md`, `RULES_CANONICAL_SPEC.md` |
-| TS/Python parity verified (0 divergences)                | ✅     | 54 contract vectors, 274 parity fixtures, 0 mismatches  |
+| TS/Python parity verified (0 divergences)                | ✅     | 81 contract vectors, 274 parity fixtures, 0 mismatches  |
 | All board types supported (square8, square19, hexagonal) | ✅     | Geometry contracts in `TOPOLOGY_MODES.md`               |
 | Victory conditions implemented and tested                | ✅     | Ring elimination, territory control, LPS                |
 | Game end explanation working                             | ✅     | `gameEndExplanation.ts`, builder tests                  |
@@ -419,12 +419,12 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 
 ### 3.2 Data Protection
 
-| Item                             | Status | Evidence                             |
-| -------------------------------- | ------ | ------------------------------------ |
-| Passwords properly hashed        | ✅     | bcrypt with salt                     |
-| Sensitive data encrypted at rest | ⬜     | Pending infrastructure setup         |
-| TLS/HTTPS enforced               | ⬜     | Pending DNS/cert setup               |
-| Input validation comprehensive   | ✅     | `websocketSchemas.ts`, rate limiting |
+| Item                             | Status | Evidence                                                            |
+| -------------------------------- | ------ | ------------------------------------------------------------------- |
+| Passwords properly hashed        | ✅     | bcrypt with salt                                                    |
+| Sensitive data encrypted at rest | ⬜     | Pending infrastructure setup                                        |
+| TLS/HTTPS enforced               | ✅     | Let's Encrypt cert for ringrift.ai, www, staging (expires Mar 2026) |
+| Input validation comprehensive   | ✅     | `websocketSchemas.ts`, rate limiting                                |
 
 ### 3.3 Security Testing
 
@@ -550,7 +550,7 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 | Square8 parity verified  | ✅     | `canonical_square8.db` passed gate |
 | Square19 parity verified | ✅     | Parity gate passed                 |
 | Hex parity verified      | ✅     | Radius-12 regenerated and gated    |
-| Parity CI gate passing   | ✅     | Contract vectors 54/54             |
+| Parity CI gate passing   | ✅     | Contract vectors 81/81             |
 
 ---
 
@@ -588,12 +588,12 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 
 ## 7. Compliance & Legal
 
-| Item                            | Status | Notes                           |
-| ------------------------------- | ------ | ------------------------------- |
-| Terms of service prepared       | ⬜     | Legal review pending            |
-| Privacy policy prepared         | ⬜     | Legal review pending            |
-| Data lifecycle documented       | ✅     | `DATA_LIFECYCLE_AND_PRIVACY.md` |
-| GDPR compliance (if applicable) | ⬜     | Depends on target market        |
+| Item                            | Status | Notes                                                           |
+| ------------------------------- | ------ | --------------------------------------------------------------- |
+| Terms of service prepared       | ⏳     | Placeholder ready: `TERMS_OF_SERVICE.md` (legal review pending) |
+| Privacy policy prepared         | ⏳     | Placeholder ready: `PRIVACY_POLICY.md` (legal review pending)   |
+| Data lifecycle documented       | ✅     | `DATA_LIFECYCLE_AND_PRIVACY.md`                                 |
+| GDPR compliance (if applicable) | ⬜     | Depends on target market                                        |
 
 ---
 
@@ -601,13 +601,13 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 
 ### 8.1 Pre-Launch
 
-| Item                           | Status | Notes                       |
-| ------------------------------ | ------ | --------------------------- |
-| All P0 blockers resolved       | ⏳     | See Launch Blocking Issues  |
-| Staging environment validated  | ⏳     | Deployed, pending load test |
-| Production secrets configured  | ⬜     | Via secrets manager         |
-| DNS and certificates ready     | ⬜     | Infrastructure setup        |
-| CDN configured (if applicable) | ⬜     | Optional for v1.0           |
+| Item                           | Status | Notes                                     |
+| ------------------------------ | ------ | ----------------------------------------- |
+| All P0 blockers resolved       | ⏳     | See Launch Blocking Issues                |
+| Staging environment validated  | ⏳     | Deployed, pending load test               |
+| Production secrets configured  | ✅     | AWS Secrets Manager (ringrift/production) |
+| DNS and certificates ready     | ✅     | ringrift.ai, www, staging - Let's Encrypt |
+| CDN configured (if applicable) | ⬜     | Optional for v1.0                         |
 
 ### 8.2 Launch Day
 
@@ -633,25 +633,25 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 
 Issues that **must be resolved** before production launch:
 
-| Issue                                     | Severity | Status  | Owner | Notes                                    |
-| ----------------------------------------- | -------- | ------- | ----- | ---------------------------------------- |
-| Target scale load test not completed      | P0       | ✅ Done | -     | 2025-12-10: 300 VUs, p95=53ms (see §5.4) |
-| SLO verification at scale not done        | P0       | ✅ Done | -     | All SLOs passing with 89-97% margin      |
-| Baseline capacity not documented          | P1       | ✅ Done | -     | `BASELINE_CAPACITY.md` updated           |
-| TLS/HTTPS not configured                  | P1       | ⬜ Open | -     | Infrastructure setup needed              |
-| Production secrets not in secrets manager | P1       | ⬜ Open | -     | Infrastructure setup needed              |
+| Issue                                     | Severity | Status  | Owner | Notes                                                   |
+| ----------------------------------------- | -------- | ------- | ----- | ------------------------------------------------------- |
+| Target scale load test not completed      | P0       | ✅ Done | -     | 2025-12-10: 300 VUs, p95=53ms (see §5.4)                |
+| SLO verification at scale not done        | P0       | ✅ Done | -     | All SLOs passing with 89-97% margin                     |
+| Baseline capacity not documented          | P1       | ✅ Done | -     | `BASELINE_CAPACITY.md` updated                          |
+| TLS/HTTPS not configured                  | P1       | ✅ Done | -     | Let's Encrypt cert active for ringrift.ai, www, staging |
+| Production secrets not in secrets manager | P1       | ✅ Done | -     | AWS Secrets Manager configured (ringrift/production)    |
 
-**Updated 2025-12-11:** Load testing and SLO verification are complete. Remaining blockers are infrastructure/legal items.
+**Updated 2025-12-11:** All P0/P1 infrastructure items complete. Remaining items are legal (ToS/Privacy placeholders ready for review).
 
 ### Non-Blocking but Important
 
-| Issue                           | Severity | Status | Notes                               |
-| ------------------------------- | -------- | ------ | ----------------------------------- |
-| Mobile responsiveness pending   | P2       | ⬜     | W3-12 in Wave 3                     |
-| Touch controls pending          | P2       | ⬜     | W3-13 in Wave 3                     |
-| Automated matchmaking queue     | P2       | ⏳     | Basic lobby works                   |
-| Terms of service/privacy policy | P1       | ⬜     | Legal dependency                    |
-| Cross-browser validation        | P2       | ⏳     | Playwright configured, needs CI run |
+| Issue                           | Severity | Status | Notes                                    |
+| ------------------------------- | -------- | ------ | ---------------------------------------- |
+| Mobile responsiveness pending   | P2       | ⬜     | W3-12 in Wave 3                          |
+| Touch controls pending          | P2       | ⬜     | W3-13 in Wave 3                          |
+| Automated matchmaking queue     | P2       | ⏳     | Basic lobby works                        |
+| Terms of service/privacy policy | P1       | ⏳     | Placeholders ready, legal review pending |
+| Cross-browser validation        | P2       | ⏳     | Playwright configured, needs CI run      |
 
 ---
 
@@ -782,13 +782,14 @@ Based on the current checklist status, the recommended action sequence:
 1. ~~**W3-3: Baseline load test**~~ ✅ Complete (2025-12-08)
 2. ~~**W3-4: Target scale test**~~ ✅ Complete (2025-12-10, 300 VUs, p95=53ms)
 3. ~~**W3-5: SLO verification**~~ ✅ Complete (all SLOs passing)
-4. **Infrastructure: TLS/Secrets** - Production infrastructure setup ⬜
+4. ~~**Infrastructure: TLS/HTTPS**~~ ✅ Complete (Let's Encrypt cert for ringrift.ai)
+5. ~~**Infrastructure: Secrets**~~ ✅ Complete (AWS Secrets Manager)
 
 ### High Priority (Before Launch)
 
 5. ~~**W3-6: Bottleneck resolution**~~ ✅ No bottlenecks found (7.5% CPU at target load)
 6. **W3-8: Alerting validation** - Verify alerts fire correctly ⏳
-7. **Legal: Terms/Privacy** - Complete legal documentation ⬜
+7. **Legal: Terms/Privacy** - Placeholders created, legal review needed ⏳
 
 ### Medium Priority (Launch Week)
 
@@ -800,24 +801,24 @@ Based on the current checklist status, the recommended action sequence:
 
 11. ~~**Architectural improvements**~~ ✅ Complete (see `ARCHITECTURAL_IMPROVEMENT_PLAN.md`)
 12. ~~**Test coverage**~~ ✅ All aggregates exceed 80% target
-13. ~~**Parity verification**~~ ✅ 54/54 contract vectors, 387 parity tests
+13. ~~**Parity verification**~~ ✅ 81/81 contract vectors, 387 parity tests
 
 ---
 
 ## Related Documents
 
-| Document                                                   | Purpose                                 |
-| ---------------------------------------------------------- | --------------------------------------- |
-| [`PROJECT_GOALS.md`](../PROJECT_GOALS.md)                  | Canonical goals and success criteria    |
-| [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md)          | Phased roadmap with SLOs                |
-| [`WAVE3_ASSESSMENT_REPORT.md`](WAVE3_ASSESSMENT_REPORT.md) | Current assessment and remediation plan |
-| [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md)                    | Active bugs and gaps                    |
-| [`TODO.md`](../TODO.md)                                    | Task tracking                           |
-| [`docs/SLO_VERIFICATION.md`](SLO_VERIFICATION.md)          | SLO framework                           |
-| [`docs/STAGING_ENVIRONMENT.md`](STAGING_ENVIRONMENT.md)    | Staging deployment                      |
-| [`docs/BASELINE_CAPACITY.md`](BASELINE_CAPACITY.md)        | Capacity testing                        |
-| [`docs/runbooks/INDEX.md`](runbooks/INDEX.md)              | Operational runbooks                    |
-| [`docs/incidents/INDEX.md`](incidents/INDEX.md)            | Incident response                       |
+| Document                                                                       | Purpose                                 |
+| ------------------------------------------------------------------------------ | --------------------------------------- |
+| [`PROJECT_GOALS.md`](../PROJECT_GOALS.md)                                      | Canonical goals and success criteria    |
+| [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md)                              | Phased roadmap with SLOs                |
+| [`WAVE3_ASSESSMENT_REPORT.md`](archive/assessments/WAVE3_ASSESSMENT_REPORT.md) | Current assessment and remediation plan |
+| [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md)                                        | Active bugs and gaps                    |
+| [`TODO.md`](../TODO.md)                                                        | Task tracking                           |
+| [`docs/SLO_VERIFICATION.md`](SLO_VERIFICATION.md)                              | SLO framework                           |
+| [`docs/STAGING_ENVIRONMENT.md`](STAGING_ENVIRONMENT.md)                        | Staging deployment                      |
+| [`docs/BASELINE_CAPACITY.md`](BASELINE_CAPACITY.md)                            | Capacity testing                        |
+| [`docs/runbooks/INDEX.md`](runbooks/INDEX.md)                                  | Operational runbooks                    |
+| [`docs/incidents/INDEX.md`](incidents/INDEX.md)                                | Incident response                       |
 
 ---
 
@@ -828,6 +829,9 @@ Based on the current checklist status, the recommended action sequence:
 | 1.0     | 2025-12-07 | Initial creation consolidating Wave 1-3 requirements                   |
 | 1.1     | 2025-12-11 | Updated load test status (P0 items complete), architectural plan done  |
 | 1.2     | 2025-12-11 | Fixed Launch Blocking Issues inconsistency, updated Next Steps section |
+| 1.3     | 2025-12-11 | Added TLS setup guide, ToS/Privacy placeholders; updated status        |
+| 1.4     | 2025-12-11 | TLS/HTTPS fully configured - Let's Encrypt certs for all domains       |
+| 1.5     | 2025-12-11 | AWS Secrets Manager configured - production secrets secured            |
 
 ---
 

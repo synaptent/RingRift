@@ -51,6 +51,7 @@ export type RulesUxWeirdStateType =
   | 'active-no-moves-movement'
   | 'active-no-moves-line'
   | 'active-no-moves-territory'
+  | 'last-player-standing'
   | 'forced-elimination'
   | 'structural-stalemate';
 

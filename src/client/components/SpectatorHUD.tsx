@@ -93,6 +93,8 @@ function getMoveAnnotation(move: Move, playerNumber: number): string {
       return `${prefix} claimed territory`;
     case 'recovery_slide':
       return `${prefix} performed recovery`;
+    case 'skip_recovery':
+      return `${prefix} skipped recovery`;
     default:
       return `${prefix} made a move`;
   }

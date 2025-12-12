@@ -29,6 +29,7 @@ function formatMoveType(moveType: string): string {
     forced_elimination: 'Forced Elim.',
     swap_sides: 'Swap Sides',
     recovery_slide: 'Recovery',
+    skip_recovery: 'Skip Recovery',
   };
   return map[moveType] ?? moveType.replace(/_/g, ' ');
 }

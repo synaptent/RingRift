@@ -380,13 +380,15 @@ function WeirdStateBanner({
         : 'border-sky-400/80 bg-sky-950/70 text-sky-50';
 
   const badgeLabel =
-    weirdState.type === 'forced-elimination'
-      ? 'Forced Elimination'
-      : weirdState.type === 'structural-stalemate'
-        ? 'Structural stalemate'
-        : weirdState.type.startsWith('active-no-moves')
-          ? 'No Legal Moves'
-          : 'Rules notice';
+    weirdState.type === 'last-player-standing'
+      ? 'Last Player Standing'
+      : weirdState.type === 'forced-elimination'
+        ? 'Forced Elimination'
+        : weirdState.type === 'structural-stalemate'
+          ? 'Structural stalemate'
+          : weirdState.type.startsWith('active-no-moves')
+            ? 'No Legal Moves'
+            : 'Rules notice';
 
   const icon = weirdState.tone === 'critical' ? '⚠️' : weirdState.tone === 'warning' ? '⚠️' : 'ℹ️';
 

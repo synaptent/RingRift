@@ -300,13 +300,17 @@ describe('playerStateHelpers', () => {
       expect(hasAnyRealAction(state, 1, delegates)).toBe(true);
     });
 
-    it('should return true when player has recovery available', () => {
+    it('should return false when player only has recovery available', () => {
+      // NOTE: Recovery is intentionally NOT counted as a "real action" for LPS purposes.
+      // Per the implementation comment in playerStateHelpers.ts:150-154, recovery moves
+      // don't count toward preventing LPS loss - players must place/move/capture.
       const state = createMinimalState({
         players: [{ playerNumber: 1, ringsInHand: 0, eliminated: false }],
       });
       const delegates = createDelegates({ hasRecovery: true });
 
-      expect(hasAnyRealAction(state, 1, delegates)).toBe(true);
+      // Recovery alone doesn't count as a real action
+      expect(hasAnyRealAction(state, 1, delegates)).toBe(false);
     });
 
     it('should return false when player has no actions available', () => {

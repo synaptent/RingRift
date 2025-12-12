@@ -157,7 +157,7 @@ To align this prose with the canonical spec and engine SSoT, apply these clarifi
   - [11. Line Formation \& Collapse (All Versions)](#11-line-formation--collapse-all-versions)
     - [11.1 Line Formation Rules](#111-line-formation-rules)
     - [11.2 Collapse Process](#112-collapse-process)
-      - [Exact-length lines (3 markers on 8×8, 4 on 19×19/Hex)](#exact-length-lines-3-markers-on-88-4-on-1919hex)
+      - [Exact-length lines (exactly lineLength markers)](#exact-length-lines-exactly-linelength-markers)
       - [Longer lines give you a choice](#longer-lines-give-you-a-choice)
       - [About collapsed spaces](#about-collapsed-spaces)
       - [Important processing notes](#important-processing-notes)
@@ -441,7 +441,7 @@ Before diving into the detailed rules, it's helpful to understand some core conc
 #### 3.2.1 Rings (19×19 Full Version)
 
 • Quantity: Each player has a fixed personal supply of rings of their own colour: 48 in the 19×19 version, 72 in the Hexagonal version, 18 in the 8×8 version.
-• Supply limit: At any time, the total number of rings of a player's colour that are in play (on the board in any stack, regardless of who controls those stacks, plus in that player's hand) can never exceed this limit. Captured rings of other colours in stacks you control do not count against your own supply—they still belong, by colour, to their original owner for conservation and victory accounting. A quick check: `ringsInHand + ringsOnBoardOfColor` must always equal the starting supply for that board size.
+• Supply limit: At any time, the total number of rings of a player's colour that are in play (on the board in any stack, regardless of who controls those stacks, plus in that player's hand) can never exceed this limit. Captured rings of other colours in stacks you control do not count against your own supply—they still belong, by colour, to their original owner for conservation and victory accounting. A quick check (including eliminations): `ringsInHand + ringsOnBoardOfColor + eliminatedRingsOfColor = ringsPerPlayer` for that board size, so `ringsInHand + ringsOnBoardOfColor` can be less than `ringsPerPlayer` once eliminations occur.
 • Characteristics:
 • Begin "in hand" (off the board)
 • May be placed on the board and later form part of a stack
@@ -583,7 +583,7 @@ A **recovery action** allows a player who controls no stacks but has markers and
 
 • **Success Criteria:** A recovery marker slide is legal if **either** of these conditions is satisfied:
 
-- **(a) Line formation:** The slide completes a line of **at least** `lineLength` consecutive markers of the player's colour. The slide must create the line; it cannot merely extend or modify an existing line. (For `lineLength`, use the same threshold as for normal line processing: 4 for 8×8 2-player, 3 for 8×8 3–4 player, 4 for 19×19 and Hex.)
+- **(a) Line formation:** The slide completes a line of **at least** `lineLength` consecutive markers of the player's colour. (For `lineLength`, use the same threshold as for normal line processing: 4 for 8×8 2-player, 3 for 8×8 3–4 player, 4 for 19×19 and Hex.)
 - **(b) Fallback repositioning:** If no slide satisfies condition (a), any adjacent slide is permitted, including slides that cause territory disconnection.
 
 • **Skip Option:** The player may elect to skip recovery entirely, preserving buried rings for a future turn.
@@ -999,7 +999,7 @@ There are two fundamentally different ways to capture rings in RingRift - Overta
 • **When Occurs:** Rings are permanently removed from the board in these situations:
 
 1.  **Line Formation:** When a player forms an **eligible line of markers** (as defined in Section 11.1) they must Eliminate **one ring** from any controlled stack for each distinct line formed, unless they choose Option 2 for longer lines. Any controlled stack (including height-1 standalone rings) is an eligible target. Concretely:
-    - On **8×8**, lines of **3+ markers** trigger line processing.
+    - On **8×8**, lines of **4+ markers** trigger line processing in 2-player games, **3+ markers** in 3–4 player games.
     - On **19×19** and **Hexagonal** boards, lines of **4+ markers** trigger line processing.
 2.  **Surrounded Territory:** When a player collapses (claims) an area by disconnecting it, they must Eliminate the **entire cap** (all consecutive top rings of their colour) from an **eligible** controlled ring stack per each collapsed area. Eligible targets are multicolor stacks or single-color stacks of height > 1 (height-1 standalone rings are NOT eligible). **Exception:** Recovery actions pay with one buried ring extraction instead of an entire cap.
 3.  **Disconnected Regions:** When a region becomes disconnected (see Section 12 and Section 15.4, Q15 for detailed criteria), all spaces within the region are collapsed and claimed in the color of the player moving, all rings within that region are Eliminated from play. The player who caused the disconnection must also Eliminate the **entire cap** from an **eligible** ring stack outside the region (subject to prerequisite check). Eligible targets are multicolor stacks or single-color stacks of height > 1 (height-1 standalone rings are NOT eligible). All Eliminated rings count toward their victory condition. **Exception:** Recovery actions pay with one buried ring extraction instead of an entire cap.
@@ -1057,7 +1057,7 @@ There are two fundamentally different ways to capture rings in RingRift - Overta
 
 • A line is formed when the required number of consecutive markers of the same color are aligned in a straight line:
 
-- **8×8 Version:** 3+ markers
+- **8×8 Version:** 4+ markers (2-player) or 3+ markers (3–4 player)
 - **19×19 & Hexagonal Versions:** 4+ markers
   • Can be orthogonal or diagonal on square grids (Moore neighborhood), or along one of the 3 main axes on the hexagonal grid.
   • Must consist only of consecutive, contiguous, non-collapsed markers of your color (cannot be interrupted by empty spaces, opponent markers, collapsed spaces of any color, or rings/stacks).
@@ -1068,7 +1068,7 @@ There are two fundamentally different ways to capture rings in RingRift - Overta
 
 When you form an eligible line, you convert it to permanent territory—but there's a cost.
 
-#### Exact-length lines (3 markers on 8×8, 4 on 19×19/Hex)
+#### Exact-length lines (exactly lineLength markers)
 
 - All markers in the line become collapsed spaces (your territory)
 - You must sacrifice **one ring** from the top of any stack you control (including height-1 standalone rings). Any controlled stack is an eligible target.
@@ -1480,7 +1480,7 @@ Note: With more than 50% of territory required for victory, simultaneous victory
 
 • **Last-player-standing Victory:** Last Player Standing is a third victory condition, alongside Ring Elimination and Territory victories.
 
-• **Real actions vs forced elimination:** For Last Player Standing purposes, a player P has a **real action** on their own turn if they have at least one legal ring placement, non-capture movement, or overtaking capture available at the start of their action. **Recovery actions (Section 4.5) are NOT counted as real actions** for LPS purposes - this creates strategic tension where players with rings in hand have a "survival budget" and must place at least once every 2 rounds to avoid LPS loss. Having only forced elimination or recovery available does **not** count as having a real action.
+• **Real actions vs forced elimination:** For Last Player Standing purposes, a player P has a **real action** on their own turn if they have at least one legal ring placement, non-capture movement, or overtaking capture available at the start of their action. **Recovery actions (Section 4.5) are NOT counted as real actions** for LPS purposes—this creates strategic tension where rings in hand act as a “survival budget” because ring placement is often the last remaining real action when stacks are blocked. Having only forced elimination or recovery available does **not** count as having a real action.
 
 • **Full-round condition:** A player P wins by Last Player Standing if all of the following are true:
 
@@ -1657,7 +1657,7 @@ For all players except the winner, compute a **ranking score** using the followi
 
 1. Marker Placement
    • Set up future flips strategically
-   • Create potential lines (runs of **3+ markers on 8×8** and **4+ markers on 19×19/Hex**).
+   • Create potential lines (runs of **lineLength+** markers: **4+ on 8×8 in 2-player games**, **3+ on 8×8 in 3–4 player games**, **4+ on 19×19/Hex**).
    • Position markers to enable future disconnected regions
    • Create markers of your own color to collapse later by jumping over them
    • Plan marker placement to maximize territory control opportunities
@@ -1665,9 +1665,9 @@ For all players except the winner, compute a **ranking score** using the followi
    • Consider both immediate and long-term marker positioning benefits
 
 2. Graduated Line Rewards Strategy
-   • With lines longer than the required length (more than 3 markers on 8×8, more than 4 on 19×19/Hex), evaluate whether to:
+   • With lines longer than the required length (more than `lineLength`: >4 on 8×8 in 2-player games, >3 on 8×8 in 3–4 player games, >4 on 19×19/Hex), evaluate whether to:
    - Maximize territory control (Option 1: collapse all markers and eliminate a ring/cap)
-   - Preserve rings for future plays (Option 2: collapse only the required number of consecutive markers equal to the board’s required line length — 3 on 8×8, 4 on 19×19/Hex — without eliminating any rings or caps)
+   - Preserve rings for future plays (Option 2: collapse only the required number of consecutive markers equal to the board’s required `lineLength` — 4 on 8×8 in 2-player games, 3 on 8×8 in 3–4 player games, 4 on 19×19/Hex — without eliminating any rings or caps)
      • Use Option 1 when:
    - The territory gained is strategically valuable
    - You're far from victory threshold and want to maximize territory
@@ -1677,7 +1677,7 @@ For all players except the winner, compute a **ranking score** using the followi
    - You need rings for upcoming territory disconnections
    - The remaining uncollapsed markers might help form additional lines.
    - You want to preserve positionally important stacks.
-     • Try to form lines longer than the minimum required (**3 for 8×8**, **4 for 19×19/Hex**) to gain this strategic flexibility.
+     • Try to form lines longer than the minimum required (`lineLength`) to gain this strategic flexibility.
      • Consider how each option affects the board state for future turns.
 
 3. Collapse Strategy
@@ -1748,7 +1748,7 @@ A complete turn in RingRift consists of the following phases, which must be exec
 
 4.  **Post-Movement Processing**
     - Check for **eligible lines** of markers:
-      - On 8×8, geometric lines are 3+ markers; in 3–4 player games, line processing starts from 3‑in‑a‑row, while in 2‑player games it starts from 4‑in‑a‑row.
+      - On 8×8, line processing starts from `lineLength`‑in‑a‑row: 4‑in‑a‑row in 2‑player games, 3‑in‑a‑row in 3–4 player games.
       - On 19×19/Hex, line processing starts from 4‑in‑a‑row.
       - For each eligible line, collapse markers and (for exact‑length and Option‑1 overlength lines) eliminate one ring from any controlled stack as described in Section 11.2. Option 2 (partial collapse with no elimination) is always available for overlength lines.
     - Check for disconnected regions → collapse any regions you choose to process → eliminate **entire cap** from an eligible stack per processed region (recovery: one buried ring instead), subject to the prerequisites in Section 12.2. Eligible targets for territory are multicolor stacks or single-color stacks of height > 1.
@@ -1949,7 +1949,7 @@ A6: Overtaking captures occur during movement when you jump over a ring or stack
 
 #### Q7: What happens if I form multiple lines of markers? (Version Specific Length)
 
-A7: You must process each line one at a time. Determine the required length (3 for 8×8, 4 for 19×19/Hex). For each line:
+A7: You must process each line one at a time. Determine the required length (`lineLength`: 4 for 8×8 in 2-player games, 3 for 8×8 in 3–4 player games, 4 for 19×19/Hex). For each line:
 
 1. **For lines of exactly the required length:**
    - Eliminate **one ring** from the top of any stack you control (including height-1 standalone rings). Any controlled stack is an eligible target.
@@ -1957,7 +1957,7 @@ A7: You must process each line one at a time. Determine the required length (3 f
 
 2. **For lines longer than the required length:** You have a choice:
    - **Option 1:** Eliminate one ring from a controlled stack as above **and** collapse the entire line, OR
-   - **Option 2:** Collapse only the required number of consecutive markers (3 on 8×8, 4 on 19×19/Hex) of your choice within the line **without eliminating any of your rings**. Option 2 is always legal for overlength lines, even if you do not wish to eliminate a ring.
+   - **Option 2:** Collapse only the required number of consecutive markers (`lineLength`: 4 on 8×8 in 2-player games, 3 on 8×8 in 3–4 player games, 4 on 19×19/Hex) of your choice within the line **without eliminating any of your rings**. Option 2 is always legal for overlength lines, even if you do not wish to eliminate a ring.
 
 3. Check for any remaining valid lines (some may no longer meet the length requirement due to intersections with collapsed spaces).
 
@@ -2189,7 +2189,7 @@ Turn Flow Summary:
 2.  Move that ring (or any ring/stack you control if you skipped placing).
 3.  (Optional) Begin Overtaking from the landing position if a capture is possible from there.
 4.  Chain Overtaking until no more captures.
-5.  Check Lines of **3** (orthogonal or diagonal). Collapse them, Eliminate one ring from any controlled stack for each (with graduated reward for 4+).
+5.  Check Lines of required length (`lineLength`: 4‑in‑a‑row in 2‑player 8×8, 3‑in‑a‑row in 3–4 player 8×8). Collapse them, Eliminate one ring from any controlled stack for each (with graduated reward for longer lines).
 6.  Check Territory (using Von Neumann neighborhood). Collapse disconnected regions, Eliminate entire cap from an eligible stack for each. Eligible targets for territory are multicolor stacks or single-color stacks of height > 1.
 7.  Check for Win or pass to next player.
 

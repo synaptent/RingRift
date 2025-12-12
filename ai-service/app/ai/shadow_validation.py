@@ -224,7 +224,7 @@ class ShadowValidator:
         if missing or extra:
             self._record_divergence(
                 game_index=0,
-                move_number=game_state.move_count,
+                move_number=len(game_state.move_history),
                 divergence_type=DivergenceType.MOVE_DETAILS_MISMATCH,
                 cpu_count=len(cpu_positions),
                 gpu_count=len(gpu_positions_set),
@@ -283,7 +283,7 @@ class ShadowValidator:
         if missing or extra:
             self._record_divergence(
                 game_index=0,
-                move_number=game_state.move_count,
+                move_number=len(game_state.move_history),
                 divergence_type=DivergenceType.MOVE_DETAILS_MISMATCH,
                 cpu_count=len(cpu_move_set),
                 gpu_count=len(gpu_move_set),
@@ -342,7 +342,7 @@ class ShadowValidator:
         if missing or extra:
             self._record_divergence(
                 game_index=0,
-                move_number=game_state.move_count,
+                move_number=len(game_state.move_history),
                 divergence_type=DivergenceType.MOVE_DETAILS_MISMATCH,
                 cpu_count=len(cpu_move_set),
                 gpu_count=len(gpu_move_set),
@@ -401,7 +401,7 @@ class ShadowValidator:
         if missing or extra:
             self._record_divergence(
                 game_index=0,
-                move_number=game_state.move_count,
+                move_number=len(game_state.move_history),
                 divergence_type=DivergenceType.MOVE_DETAILS_MISMATCH,
                 cpu_count=len(cpu_move_set),
                 gpu_count=len(gpu_move_set),
@@ -466,7 +466,7 @@ class ShadowValidator:
         if missing or extra:
             self._record_divergence(
                 game_index=0,
-                move_number=game_state.move_count,
+                move_number=len(game_state.move_history),
                 divergence_type=DivergenceType.MOVE_DETAILS_MISMATCH,
                 cpu_count=len(cpu_move_set),
                 gpu_count=len(gpu_move_set),
@@ -642,3 +642,349 @@ def validate_batch_moves(
             all_passed = False
 
     return all_passed
+
+
+# =============================================================================
+# State Validation (CPU Oracle Mode)
+# =============================================================================
+
+
+@dataclass
+class StateValidationStats:
+    """Statistics for state validation (CPU oracle mode)."""
+    total_validations: int = 0
+    total_divergences: int = 0
+    stack_owner_divergences: int = 0
+    stack_height_divergences: int = 0
+    marker_owner_divergences: int = 0
+    rings_in_hand_divergences: int = 0
+    territory_divergences: int = 0
+    buried_rings_divergences: int = 0
+    phase_divergences: int = 0
+    player_divergences: int = 0
+
+    @property
+    def divergence_rate(self) -> float:
+        """Current divergence rate."""
+        if self.total_validations == 0:
+            return 0.0
+        return self.total_divergences / self.total_validations
+
+
+@dataclass
+class StateDivergenceRecord:
+    """Record of a single state divergence event."""
+    timestamp: float
+    game_index: int
+    move_number: int
+    divergence_fields: List[str]  # Which fields diverged
+    details: Dict[str, Any]  # Specific mismatch details
+
+
+class StateValidator:
+    """Validates GPU game state against CPU oracle.
+
+    This provides state-level parity checking to ensure GPU move application
+    produces correct game states. It's complementary to ShadowValidator which
+    validates move generation.
+
+    CPU Oracle Mode validates:
+    - Board state (stack_owner, stack_height, marker_owner)
+    - Player state (rings_in_hand, buried_rings, territory_counts)
+    - Game phase and current player
+
+    Usage:
+        validator = StateValidator(sample_rate=0.01)  # 1% of states
+
+        # After each GPU step
+        for g in sampled_games:
+            gpu_state = batch_state.to_game_state(g)
+            cpu_state = run_cpu_replay(move_history[g])
+            validator.validate_state(gpu_state, cpu_state, g)
+
+        print(validator.get_report())
+    """
+
+    def __init__(
+        self,
+        sample_rate: float = 0.01,
+        threshold: float = 0.001,
+        max_divergence_log: int = 50,
+        halt_on_threshold: bool = True,
+    ):
+        """Initialize state validator.
+
+        Args:
+            sample_rate: Fraction of states to validate (0.0-1.0)
+            threshold: Maximum divergence rate before halting
+            max_divergence_log: Maximum divergence records to keep
+            halt_on_threshold: If True, raise error when threshold exceeded
+        """
+        self.sample_rate = sample_rate
+        self.threshold = threshold
+        self.max_divergence_log = max_divergence_log
+        self.halt_on_threshold = halt_on_threshold
+
+        self.stats = StateValidationStats()
+        self.divergence_log: List[StateDivergenceRecord] = []
+
+        self._rng = random.Random()
+
+        logger.info(
+            f"StateValidator initialized: sample_rate={sample_rate:.1%}, "
+            f"threshold={threshold:.4%}"
+        )
+
+    def set_seed(self, seed: int) -> None:
+        """Set random seed for reproducible sampling."""
+        self._rng.seed(seed)
+
+    def should_validate(self) -> bool:
+        """Determine if this state should be validated."""
+        return self._rng.random() < self.sample_rate
+
+    def validate_state(
+        self,
+        gpu_state: "GameState",
+        cpu_state: "GameState",
+        game_index: int,
+    ) -> bool:
+        """Validate GPU state against CPU oracle state.
+
+        Args:
+            gpu_state: State from GPU batch (via to_game_state())
+            cpu_state: State from CPU replay
+            game_index: Index in batch for logging
+
+        Returns:
+            True if validation passed, False if divergence detected
+        """
+        if not self.should_validate():
+            return True
+
+        self.stats.total_validations += 1
+
+        divergence_fields = []
+        details = {}
+
+        # Compare board state
+        if not self._compare_board(gpu_state.board, cpu_state.board, details):
+            if 'stack_owner' in details:
+                divergence_fields.append('stack_owner')
+                self.stats.stack_owner_divergences += 1
+            if 'stack_height' in details:
+                divergence_fields.append('stack_height')
+                self.stats.stack_height_divergences += 1
+            if 'marker_owner' in details:
+                divergence_fields.append('marker_owner')
+                self.stats.marker_owner_divergences += 1
+
+        # Compare player state
+        if gpu_state.rings_in_hand != cpu_state.rings_in_hand:
+            divergence_fields.append('rings_in_hand')
+            self.stats.rings_in_hand_divergences += 1
+            details['rings_in_hand'] = {
+                'gpu': gpu_state.rings_in_hand,
+                'cpu': cpu_state.rings_in_hand,
+            }
+
+        if gpu_state.buried_rings != cpu_state.buried_rings:
+            divergence_fields.append('buried_rings')
+            self.stats.buried_rings_divergences += 1
+            details['buried_rings'] = {
+                'gpu': gpu_state.buried_rings,
+                'cpu': cpu_state.buried_rings,
+            }
+
+        if gpu_state.territory_count != cpu_state.territory_count:
+            divergence_fields.append('territory_count')
+            self.stats.territory_divergences += 1
+            details['territory_count'] = {
+                'gpu': gpu_state.territory_count,
+                'cpu': cpu_state.territory_count,
+            }
+
+        # Compare game state
+        if gpu_state.current_phase != cpu_state.current_phase:
+            divergence_fields.append('current_phase')
+            self.stats.phase_divergences += 1
+            details['current_phase'] = {
+                'gpu': str(gpu_state.current_phase),
+                'cpu': str(cpu_state.current_phase),
+            }
+
+        if gpu_state.current_player != cpu_state.current_player:
+            divergence_fields.append('current_player')
+            self.stats.player_divergences += 1
+            details['current_player'] = {
+                'gpu': gpu_state.current_player,
+                'cpu': cpu_state.current_player,
+            }
+
+        if divergence_fields:
+            self._record_divergence(game_index, len(gpu_state.move_history), divergence_fields, details)
+            return False
+
+        return True
+
+    def _compare_board(
+        self,
+        gpu_board: Any,
+        cpu_board: Any,
+        details: Dict[str, Any],
+    ) -> bool:
+        """Compare board states, returning True if identical."""
+        is_valid = True
+
+        # Compare stack owners
+        gpu_owners = {}
+        cpu_owners = {}
+
+        for pos, cell in gpu_board.cells.items():
+            if cell.stack:
+                gpu_owners[pos] = cell.stack.owner
+
+        for pos, cell in cpu_board.cells.items():
+            if cell.stack:
+                cpu_owners[pos] = cell.stack.owner
+
+        if gpu_owners != cpu_owners:
+            is_valid = False
+            details['stack_owner'] = {
+                'gpu_only': {k: v for k, v in gpu_owners.items() if k not in cpu_owners or cpu_owners[k] != v},
+                'cpu_only': {k: v for k, v in cpu_owners.items() if k not in gpu_owners or gpu_owners[k] != v},
+            }
+
+        # Compare stack heights
+        gpu_heights = {}
+        cpu_heights = {}
+
+        for pos, cell in gpu_board.cells.items():
+            if cell.stack:
+                gpu_heights[pos] = cell.stack.height
+
+        for pos, cell in cpu_board.cells.items():
+            if cell.stack:
+                cpu_heights[pos] = cell.stack.height
+
+        if gpu_heights != cpu_heights:
+            is_valid = False
+            details['stack_height'] = {
+                'gpu': gpu_heights,
+                'cpu': cpu_heights,
+            }
+
+        # Compare marker owners
+        gpu_markers = {}
+        cpu_markers = {}
+
+        for pos, cell in gpu_board.cells.items():
+            if cell.marker:
+                gpu_markers[pos] = cell.marker.owner
+
+        for pos, cell in cpu_board.cells.items():
+            if cell.marker:
+                cpu_markers[pos] = cell.marker.owner
+
+        if gpu_markers != cpu_markers:
+            is_valid = False
+            details['marker_owner'] = {
+                'gpu_only': {k: v for k, v in gpu_markers.items() if k not in cpu_markers or cpu_markers[k] != v},
+                'cpu_only': {k: v for k, v in cpu_markers.items() if k not in gpu_markers or gpu_markers[k] != v},
+            }
+
+        return is_valid
+
+    def _record_divergence(
+        self,
+        game_index: int,
+        move_number: int,
+        divergence_fields: List[str],
+        details: Dict[str, Any],
+    ) -> None:
+        """Record a state divergence event."""
+        self.stats.total_divergences += 1
+
+        record = StateDivergenceRecord(
+            timestamp=time.time(),
+            game_index=game_index,
+            move_number=move_number,
+            divergence_fields=divergence_fields,
+            details=details,
+        )
+
+        self.divergence_log.append(record)
+        if len(self.divergence_log) > self.max_divergence_log:
+            self.divergence_log.pop(0)
+
+        logger.warning(
+            f"GPU/CPU state divergence at game {game_index}, move {move_number}: "
+            f"fields={divergence_fields}"
+        )
+
+        # Check threshold
+        if self.halt_on_threshold and self.stats.divergence_rate > self.threshold:
+            error_msg = (
+                f"GPU state divergence rate {self.stats.divergence_rate:.4%} exceeds "
+                f"threshold {self.threshold:.4%}. Halting."
+            )
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+    def get_report(self) -> Dict[str, Any]:
+        """Get a detailed state validation report."""
+        return {
+            "total_validations": self.stats.total_validations,
+            "total_divergences": self.stats.total_divergences,
+            "divergence_rate": self.stats.divergence_rate,
+            "threshold": self.threshold,
+            "status": "PASS" if self.stats.divergence_rate <= self.threshold else "FAIL",
+            "by_field": {
+                "stack_owner": self.stats.stack_owner_divergences,
+                "stack_height": self.stats.stack_height_divergences,
+                "marker_owner": self.stats.marker_owner_divergences,
+                "rings_in_hand": self.stats.rings_in_hand_divergences,
+                "territory_count": self.stats.territory_divergences,
+                "buried_rings": self.stats.buried_rings_divergences,
+                "current_phase": self.stats.phase_divergences,
+                "current_player": self.stats.player_divergences,
+            },
+            "recent_divergences": [
+                {
+                    "game": r.game_index,
+                    "move": r.move_number,
+                    "fields": r.divergence_fields,
+                }
+                for r in self.divergence_log[-5:]
+            ],
+        }
+
+    def reset_stats(self) -> None:
+        """Reset all validation statistics."""
+        self.stats = StateValidationStats()
+        self.divergence_log.clear()
+        logger.info("State validator stats reset")
+
+
+def create_state_validator(
+    sample_rate: Optional[float] = None,
+    threshold: Optional[float] = None,
+    enabled: bool = True,
+) -> Optional[StateValidator]:
+    """Create a state validator for CPU oracle mode.
+
+    Args:
+        sample_rate: Override default sample rate (default: 1%)
+        threshold: Override default threshold
+        enabled: If False, returns None (disabled validation)
+
+    Returns:
+        StateValidator if enabled, None otherwise
+    """
+    if not enabled:
+        return None
+
+    return StateValidator(
+        sample_rate=sample_rate or 0.01,  # Default 1% for state validation
+        threshold=threshold or DEFAULT_DIVERGENCE_THRESHOLD,
+    )

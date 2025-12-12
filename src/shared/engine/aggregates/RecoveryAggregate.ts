@@ -9,7 +9,7 @@
  * Rule Reference: RR-CANON-R110–R115 (Recovery Action)
  *
  * Key Rules:
- * - RR-CANON-R110: Recovery eligibility (no stacks, no rings in hand, has markers, has buried rings)
+ * - RR-CANON-R110: Recovery eligibility (no stacks, has markers, has buried rings; independent of rings in hand)
  * - RR-CANON-R111: Marker slide adjacency (Moore for square, hex-adjacency for hex)
  * - RR-CANON-R112: Line requirement (at least lineLength markers), overlength allowed with Option 1/2
  * - RR-CANON-R113: Buried ring extraction cost:
@@ -123,6 +123,15 @@ export interface RecoverySlideTarget {
 }
 
 /**
+ * Expanded recovery targets per RR-CANON-R112:
+ * - If any line-forming recovery slide exists, only line targets are legal.
+ * - Otherwise, any adjacent slide to an empty cell is a legal fallback.
+ */
+export interface ExpandedRecoverySlideTarget extends RecoverySlideTarget {
+  recoveryMode: RecoveryMode;
+}
+
+/**
  * Result of applying a recovery slide.
  */
 export interface RecoveryApplicationOutcome {
@@ -229,6 +238,67 @@ export function enumerateRecoverySlideTargets(
           });
         }
       }
+    }
+  }
+
+  return targets;
+}
+
+/**
+ * Enumerate recovery slide targets using the expanded fallback rule (RR-CANON-R112).
+ *
+ * - If at least one line-forming recovery slide exists, return those line-mode
+ *   targets only (recoveryMode = 'line').
+ * - Otherwise, return all adjacent-empty slides from any owned marker as fallback
+ *   repositioning targets (recoveryMode = 'fallback').
+ */
+export function enumerateExpandedRecoverySlideTargets(
+  state: GameState,
+  playerNumber: number
+): ExpandedRecoverySlideTarget[] {
+  const lineTargets = enumerateRecoverySlideTargets(state, playerNumber);
+  if (lineTargets.length > 0) {
+    return lineTargets.map((t) => ({ ...t, recoveryMode: 'line' }));
+  }
+
+  // Eligibility check first (RR-CANON-R110).
+  if (!isEligibleForRecovery(state, playerNumber)) {
+    return [];
+  }
+
+  // Fallback repositioning still requires a buried ring extraction cost.
+  const buriedRingCount = countBuriedRings(state.board, playerNumber);
+  if (buriedRingCount < 1) {
+    return [];
+  }
+
+  const directions = getAdjacencyDirections(state.board.type);
+  const targets: ExpandedRecoverySlideTarget[] = [];
+
+  for (const [posKey, marker] of state.board.markers) {
+    if (marker.player !== playerNumber) continue;
+
+    const fromPos = stringToPosition(posKey);
+
+    for (const dir of directions) {
+      const toPos = addPositions(fromPos, dir);
+
+      if (!isValidPosition(toPos, state.board)) continue;
+      if (getStack(toPos, state.board)) continue;
+      if (getMarker(toPos, state.board) !== undefined) continue;
+      if (isCollapsedSpace(toPos, state.board)) continue;
+
+      targets.push({
+        from: fromPos,
+        to: toPos,
+        formedLineLength: 1,
+        isOverlength: false,
+        option1Cost: 1,
+        option2Available: false,
+        option2Cost: 0,
+        linePositions: [],
+        recoveryMode: 'fallback',
+      });
     }
   }
 
@@ -450,6 +520,17 @@ export function validateRecoverySlide(
   // Fallback slides bypass line formation check but still cost 1 buried ring
   const { recoveryMode } = move;
   if (recoveryMode === 'fallback') {
+    // RR-CANON-R112(b): fallback repositioning is only legal when no line-forming
+    // recovery slide exists anywhere for this player.
+    const lineTargets = enumerateRecoverySlideTargets(state, player);
+    if (lineTargets.length > 0) {
+      return {
+        valid: false,
+        reason: 'Fallback recovery is only allowed when no line-forming recovery slide exists',
+        code: 'RECOVERY_FALLBACK_NOT_ALLOWED',
+      };
+    }
+
     // Fallback mode: no line required, but need buried rings for cost
     // Per RR-CANON-R112(b): any adjacent slide is permitted, including territory disconnection
     // Validate extraction stacks for fallback cost (1 buried ring)

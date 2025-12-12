@@ -35,10 +35,53 @@ const createPlayer = (playerNumber: number, options: Partial<Player> = {}): Play
   ...options,
 });
 
+type Pos = { x: number; y: number; z?: number };
+
+function posFromKey(key: string): Pos {
+  const parts = key.split(',').map((v) => Number(v));
+  const [x, y, z] = parts;
+  return typeof z === 'number' && !Number.isNaN(z) ? { x, y, z } : { x, y };
+}
+
+function capHeightForRings(
+  rings: number[] | undefined,
+  controllingPlayer: number | undefined
+): number {
+  if (!rings || rings.length === 0 || typeof controllingPlayer !== 'number') {
+    return 0;
+  }
+  let cap = 0;
+  for (const ring of rings) {
+    if (ring !== controllingPlayer) break;
+    cap += 1;
+  }
+  return cap;
+}
+
+class NormalizedStackMap extends Map<string, any> {
+  override set(key: string, value: any): this {
+    const stack = { ...(value ?? {}) };
+    stack.position = stack.position ?? posFromKey(key);
+    stack.stackHeight =
+      typeof stack.stackHeight === 'number' ? stack.stackHeight : (stack.rings?.length ?? 0);
+    stack.controllingPlayer =
+      typeof stack.controllingPlayer === 'number'
+        ? stack.controllingPlayer
+        : typeof stack.controller === 'number'
+          ? stack.controller
+          : stack.rings?.[0];
+    stack.capHeight =
+      typeof stack.capHeight === 'number'
+        ? stack.capHeight
+        : capHeightForRings(stack.rings, stack.controllingPlayer);
+    return super.set(key, stack);
+  }
+}
+
 const createEmptyBoard = (size: number = 8): Board => ({
   type: 'square8',
   size,
-  stacks: new Map(),
+  stacks: new NormalizedStackMap(),
   markers: new Map(),
   territories: new Map(),
   formedLines: [],

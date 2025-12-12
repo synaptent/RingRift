@@ -96,6 +96,25 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--max-moves",
+        type=int,
+        default=None,
+        help=(
+            "Optional cap on moves per game for both difficulty-tier and "
+            "heuristic-tier modes. When unset, the environment/theoretical "
+            "defaults are used."
+        ),
+    )
+    parser.add_argument(
+        "--time-budget-ms",
+        type=int,
+        default=None,
+        help=(
+            "Optional wall-clock think-time budget override (ms) for "
+            "difficulty-tier mode. When unset, uses the tier config."
+        ),
+    )
+    parser.add_argument(
         "--output-json",
         type=str,
         default=None,
@@ -139,6 +158,7 @@ def _run_heuristic_mode(args: argparse.Namespace) -> int:
         tier_spec=tier_spec,
         rng_seed=args.seed,
         max_games=max_games,
+        max_moves_override=args.max_moves,
     )
 
     payload: dict[str, Any] = {
@@ -262,6 +282,8 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
         candidate_id=args.candidate_model_id,
         seed=args.seed,
         num_games_override=args.num_games,
+        time_budget_ms_override=args.time_budget_ms,
+        max_moves_override=args.max_moves,
     )
 
     _print_difficulty_summary(

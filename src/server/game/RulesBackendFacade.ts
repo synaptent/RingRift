@@ -8,6 +8,7 @@ import {
   logRulesMismatch,
   recordRulesParityMismatch,
 } from '../utils/rulesParityMetrics';
+import { logger } from '../utils/logger';
 
 export interface RulesResult {
   success: boolean;
@@ -109,7 +110,21 @@ export class RulesBackendFacade {
             tsResult = await this.engine.makeMove(move);
             this.compareTsAndPython(tsResult, py);
           } catch (e) {
-            logRulesMismatch('shadow_error', { error: String(e) });
+            // Log the full error context for debugging shadow mode issues
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            const errorStack = e instanceof Error ? e.stack : undefined;
+            logger.warn('Shadow mode TS engine error during Python-authoritative validation', {
+              component: 'RulesBackendFacade.applyMove',
+              moveType: move.type,
+              player: move.player,
+              error: errorMessage,
+              stack: errorStack,
+            });
+            logRulesMismatch('shadow_error', {
+              error: errorMessage,
+              stack: errorStack,
+              moveType: move.type,
+            });
           }
 
           // Force the TS engine to sync to the Python state so subsequent

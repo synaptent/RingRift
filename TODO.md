@@ -41,7 +41,7 @@ This is the canonical high-level task/backlog tracker. For rules semantics, defe
 
 - **TypeScript:** 6 domain aggregates, canonical orchestrator at 100%
 - **Python:** 3-layer design, 836 tests passing
-- **Cross-language:** 54 contract vectors with 0 mismatches
+- **Cross-language:** 81 contract vectors with 0 mismatches
 - **Phases:** 8 canonical phases including `game_over` terminal phase
 
 ## Immediate Handoffs (Jan 2026)
@@ -555,7 +555,7 @@ SandboxGameHost integration requires mapping existing state to hooks:
 
 **Specification:** See [`docs/archive/plans/RECOVERY_ACTION_IMPLEMENTATION_PLAN.md`](docs/archive/plans/RECOVERY_ACTION_IMPLEMENTATION_PLAN.md) (comprehensive plan) and `RULES_CANONICAL_SPEC.md` §5.4 (RR-CANON-R110–R115).
 
-**Summary:** Recovery action allows temporarily eliminated players (no stacks, no rings in hand, but has markers and buried rings) to slide a marker to complete a line of **at least** `lineLength`. Overlength lines follow standard Option 1 / Option 2 semantics (collapse all and pay one buried ring, or collapse minimum and pay nothing). Exact-length lines require extracting a buried ring as self-elimination cost.
+**Summary:** Recovery action allows recovery-eligible players (controls no stacks, has markers and buried rings; eligibility is independent of rings in hand) to slide a marker to complete a line of **at least** `lineLength`. Overlength lines follow standard Option 1 / Option 2 semantics (collapse all and pay one buried ring, or collapse minimum and pay nothing). Exact-length lines require extracting a buried ring as self-elimination cost.
 
 **Implementation Status: ✅ COMPLETE (Dec 2025)**
 
@@ -563,7 +563,7 @@ SandboxGameHost integration requires mapping existing state to hooks:
 - ✅ RecoveryAggregate.ts with Option 1/2 cost model
 - ✅ Python recovery.py with Option 1/2 cost model
 - ✅ Integrated into turn orchestrator and game_engine.py
-- ✅ LPS integration complete (recovery counts as real action)
+- ✅ LPS integration complete (recovery does NOT count as a real action)
 - ✅ Contract vectors created (recovery_action.vectors.json)
 
 | Task                                       | Priority | Status      | Notes                                           |
@@ -572,7 +572,7 @@ SandboxGameHost integration requires mapping existing state to hooks:
 | Update cost model to Option 1/2 (Python)   | P0       | ✅ Complete | recovery.py with Option 1/2                     |
 | Integrate into turn orchestrator (TS)      | P0       | ✅ Complete | Wired into movement phase enumeration           |
 | Integrate into game_engine.py (Python)     | P0       | ✅ Complete | `get_recovery_moves()` integrated               |
-| Update LPS `hasAnyRealAction` for recovery | P0       | ✅ Complete | Recovery counts as real action                  |
+| Update LPS `hasAnyRealAction` for recovery | P0       | ✅ Complete | Recovery does NOT count as real action (R172)   |
 | Add FSM event mapping                      | P1       | ✅ Complete | FSMAdapter.ts: RECOVERY_SLIDE event             |
 | Add RuleEngine validation case             | P1       | ✅ Complete | validateRecoverySlide() implemented             |
 | Add recovery move notation                 | P1       | ✅ Complete | notation.ts: "Rv" format + RRN "R{from}-{to}"   |
@@ -591,7 +591,7 @@ SandboxGameHost integration requires mapping existing state to hooks:
 
 **Key Interactions:**
 
-- **LPS:** Recovery action is a "real action" for Last-Player-Standing (RR-CANON-R110)
+- **LPS:** Recovery action is **NOT** a "real action" for Last-Player-Standing (RR-CANON-R172)
 - **FE:** Recovery uses buried ring extraction, not cap elimination
 - **ANM:** Temporarily eliminated player with recovery option is NOT in ANM state
 - **Line Length:** Recovery requires at least `lineLength` markers; overlength uses Option 1/2

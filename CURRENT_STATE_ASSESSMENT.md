@@ -1,6 +1,6 @@
 # RingRift Current State Assessment
 
-**Assessment Date:** 2025-12-08
+**Assessment Date:** 2025-12-11
 **Project Health Status:** GREEN
 **Purpose:** Authoritative snapshot of implementation status, architecture, and quality metrics
 
@@ -29,7 +29,7 @@ RingRift is a **stable beta** turn-based board game implementation with a consol
 | ------------------------------------ | ------------------------------------------------------ |
 | TypeScript tests (CI-gated)          | 2,987 passing                                          |
 | Python tests                         | 836 passing                                            |
-| Contract vectors                     | 54 (legacy vectors still passing)                      |
+| Contract vectors                     | 81 across 18 files (v2 format)                         |
 | DB replay parity (TS↔Python replays) | In progress; CanonicalReplayEngine powering TS harness |
 | Line coverage                        | ~69%                                                   |
 | Canonical phases                     | 8                                                      |
@@ -39,7 +39,7 @@ RingRift is a **stable beta** turn-based board game implementation with a consol
 - **Orchestrator rollout:** 100% complete (Phase 4 hard-ON)
 - **Legacy code removal:** ~1,176 lines removed in consolidation
 - **Engine architecture:** Canonical turn orchestrator with 6 domain aggregates
-- **Cross-language parity:** Contract testing framework with 54 vectors, 0 mismatches
+- **Cross-language parity:** Contract testing framework with 81 vectors across 18 files, 0 mismatches
 - **FSM validation:** Production-ready with shadow/active modes (validated: 10 games, 774 moves, 0 divergences)
 - **Sandbox replay:** Phase 1 complete – `CanonicalReplayEngine` powers TS DB replays (`scripts/selfplay-db-ts-replay.ts`). Client sandbox coercions remain for interactive play only and are slated for removal per `docs/archive/plans/SANDBOX_REPLAY_REFACTOR_PLAN.md`.
 

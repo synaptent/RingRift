@@ -118,6 +118,28 @@ describe('getWeirdStateBanner', () => {
     });
   });
 
+  it('classifies last-player-standing when game has completed with reason last_player_standing', () => {
+    const state = createBaseGameState({ gameStatus: 'completed' });
+
+    const victory: GameResult = {
+      winner: 2,
+      reason: 'last_player_standing',
+      finalScore: {
+        ringsEliminated: {},
+        territorySpaces: {},
+        ringsRemaining: {},
+      },
+    };
+
+    const result = getWeirdStateBanner(state, { victoryState: victory });
+
+    expect(result).toEqual({
+      type: 'last-player-standing',
+      winner: 2,
+      reason: 'last_player_standing',
+    });
+  });
+
   it('classifies Active–No–Moves in movement-like phases via isANMState', () => {
     const state = createBaseGameState({
       currentPhase: 'movement',

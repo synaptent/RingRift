@@ -757,6 +757,57 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
     };
   };
 
+  /**
+   * Unified victory evaluation combining base victory conditions with LPS tracking.
+   *
+   * This helper consolidates the two-step victory check pattern:
+   * 1. evaluateVictory() - Ring elimination, territory control, bare-board stalemate
+   * 2. evaluateLpsVictory() - Round-based Last-Player-Standing (R172)
+   *
+   * Returns a combined result indicating whether the game has ended and the winner.
+   *
+   * @param state - Current game state
+   * @param lps - LPS tracking state (round-based counters)
+   * @returns Victory evaluation result with isGameOver, winner, and reason
+   */
+  const evaluateVictoryWithLps = (
+    state: GameState,
+    lps: LpsTrackingState
+  ): { isGameOver: boolean; winner?: number; reason?: string; isLpsVictory?: boolean } => {
+    // First check base victory conditions (ring elimination, territory, stalemate)
+    const baseVerdict = evaluateVictory(state);
+    if (baseVerdict.isGameOver && baseVerdict.winner !== undefined) {
+      return {
+        isGameOver: true,
+        winner: baseVerdict.winner,
+        reason: baseVerdict.reason,
+        isLpsVictory: false,
+      };
+    }
+
+    // If game is still active, check LPS victory (R172)
+    if (state.gameStatus === 'active') {
+      const delegates = buildActionDelegates(state);
+      const lpsVerdict = evaluateLpsVictory({
+        gameState: state,
+        lps,
+        hasAnyRealAction: (pn) => hasAnyRealAction(state, pn, delegates),
+        hasMaterial: (pn) => playerHasMaterial(state, pn),
+      });
+
+      if (lpsVerdict.isVictory && lpsVerdict.winner !== undefined) {
+        return {
+          isGameOver: true,
+          winner: lpsVerdict.winner,
+          reason: 'last_player_standing',
+          isLpsVictory: true,
+        };
+      }
+    }
+
+    return { isGameOver: false };
+  };
+
   for (let i = 0; i < recordedMoves.length; i++) {
     const move = recordedMoves[i];
 
@@ -1193,40 +1244,27 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
   // last actor) are applied even when legacy logs omit a winner, and keeps
   // parity with the shared VictoryAggregate semantics.
   //
-  // IMPORTANT: Also check LPS (Last-Player-Standing) victory (R172) since
-  // evaluateVictory() does not include round-based LPS detection. Python
-  // implements full LPS tracking and may declare victory when one player has
-  // been the exclusive real-action holder for 2 consecutive rounds.
-  const verdict = evaluateVictory(engine.getState() as any);
+  // Uses evaluateVictoryWithLps() to combine:
+  // 1. evaluateVictory() - Ring elimination, territory control, bare-board stalemate
+  // 2. evaluateLpsVictory() - Round-based Last-Player-Standing (R172)
   let finalState = engine.getState() as GameState;
-  let finalWinner: number | undefined = verdict.winner;
-  let finalIsGameOver = verdict.isGameOver;
+  const terminalVerdict = evaluateVictoryWithLps(finalState, lpsState);
+  const finalWinner: number | undefined = terminalVerdict.winner;
+  const finalIsGameOver = terminalVerdict.isGameOver;
 
-  // Check LPS victory if the base verdict didn't already end the game
-  if (!finalIsGameOver && finalState.gameStatus === 'active') {
-    const delegates = buildActionDelegates(finalState);
-    const lpsVerdict = evaluateLpsVictory({
-      gameState: finalState,
-      lps: lpsState,
-      hasAnyRealAction: (pn) => hasAnyRealAction(finalState, pn, delegates),
-      hasMaterial: (pn) => playerHasMaterial(finalState, pn),
-    });
-
-    if (lpsVerdict.isVictory && lpsVerdict.winner !== undefined) {
-      finalIsGameOver = true;
-      finalWinner = lpsVerdict.winner;
-      console.log(
-        JSON.stringify({
-          kind: 'ts-replay-lps-victory-final',
-          winner: lpsVerdict.winner,
-          lpsState: {
-            consecutiveExclusiveRounds: lpsState.consecutiveExclusiveRounds,
-            consecutiveExclusivePlayer: lpsState.consecutiveExclusivePlayer,
-            roundIndex: lpsState.roundIndex,
-          },
-        })
-      );
-    }
+  // Log LPS victory if that's how the game ended
+  if (terminalVerdict.isLpsVictory && terminalVerdict.winner !== undefined) {
+    console.log(
+      JSON.stringify({
+        kind: 'ts-replay-lps-victory-final',
+        winner: terminalVerdict.winner,
+        lpsState: {
+          consecutiveExclusiveRounds: lpsState.consecutiveExclusiveRounds,
+          consecutiveExclusivePlayer: lpsState.consecutiveExclusivePlayer,
+          roundIndex: lpsState.roundIndex,
+        },
+      })
+    );
   }
 
   if (finalIsGameOver) {

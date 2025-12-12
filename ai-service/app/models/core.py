@@ -513,6 +513,16 @@ class AIConfig(BaseModel):
         "training. Set to None (default) to evaluate all moves. Only "
         "affects HeuristicAI in training contexts; other AIs ignore this."
     )
+    allow_fresh_weights: bool = Field(
+        default=False,
+        description=(
+            "When True, NeuralNetAI may proceed with randomly initialized "
+            "weights when a checkpoint cannot be found or loaded. This is "
+            "intended for offline training/experimentation only; production "
+            "paths should keep this False so missing models fail loudly and "
+            "callers can fall back to heuristic evaluation."
+        ),
+    )
 
 
 class LineRewardChoiceOption(str, Enum):

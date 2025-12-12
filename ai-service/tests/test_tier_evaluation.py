@@ -227,6 +227,7 @@ def test_heuristic_tier_eval_smoke(monkeypatch) -> None:
         tier_spec=tier,
         rng_seed=123,
         max_games=1,
+        max_moves_override=40,
     )
 
     assert result["tier_id"] == tier.id
@@ -243,6 +244,7 @@ def test_heuristic_tier_eval_smoke(monkeypatch) -> None:
         tiers=HEURISTIC_TIER_SPECS,
         rng_seed=321,
         max_games=1,
+        max_moves_override=40,
         tier_ids=[tier.id],
     )
     assert "run_id" in report
@@ -289,10 +291,17 @@ def test_run_tier_gate_cli_smoke(monkeypatch, capsys) -> None:
 
     # Stub run_heuristic_tier_eval so the test does not depend on
     # on-disk eval pools.
-    def _fake_run_heuristic_tier_eval(tier_spec, rng_seed, max_games=None):
+    def _fake_run_heuristic_tier_eval(
+        tier_spec,
+        rng_seed,
+        max_games=None,
+        max_moves_override=None,
+        **_kwargs,
+    ):
         assert tier_spec.id == tier.id
         assert isinstance(rng_seed, int)
         assert max_games in (None, 1)
+        assert max_moves_override in (None, 40)
         return {
             "tier_id": tier_spec.id,
             "tier_name": tier_spec.name,
@@ -356,9 +365,13 @@ def test_run_tier_gate_cli_multiboard_sq19_smoke(tmp_path) -> None:
         "--candidate-model-id",
         "test_candidate_sq19_d2",
         "--num-games",
-        "4",
+        "1",
         "--seed",
         "1",
+        "--time-budget-ms",
+        "0",
+        "--max-moves",
+        "40",
         "--output-json",
         str(output_path),
         "--promotion-plan-out",

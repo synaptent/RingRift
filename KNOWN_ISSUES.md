@@ -5,7 +5,7 @@
 > - Canonical list of current, code-verified issues and gaps.
 > - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
 
-**Last Updated:** December 10, 2025
+**Last Updated:** December 11, 2025
 **Status:** Code-verified assessment based on actual implementation
 **Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) · [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) · [docs/PARITY_SEED_TRIAGE.md](./docs/PARITY_SEED_TRIAGE.md)
 
@@ -251,6 +251,10 @@ The following divergences are tracked in [PARITY_SEED_TRIAGE.md](./docs/PARITY_S
 - Backend-driven games (`BackendGameHost.tsx`) include an in‑UI move and event
   history surface via `MoveHistory`, `GameEventLog`, `GameHistoryPanel`, and
   `EvaluationPanel`, plus chat and board-controls overlays.
+- Keyboard & accessibility polish:
+  - `?` reliably opens the Board Controls overlay even when the board has focus.
+  - Board keyboard navigation supports Home/End, and uses roving tabindex so Tab does not step through every cell.
+  - Global shortcuts: `M` toggles mute, `F` toggles fullscreen, and `R` opens the resign confirmation (backend games).
 - The `/sandbox` UI (`SandboxGameHost.tsx`) now includes:
   - Seat/board configuration with quick-start presets.
   - A scenario picker and reset flow (`ScenarioPickerModal`) plus saved‑state
@@ -851,6 +855,40 @@ These issues have been addressed but are kept here for context:
   - 4P: 3 games, 30min timeout
   - References RR-CANON-R073/R075/R076 in workflow documentation
   - Commit: `399d03f0`
+- **Early Victory Detection Parity Fixes (Dec 11, 2025)** –
+  Fixed multiple parity failures related to victory detection during TS replay
+  of selfplay games. See [AI_PIPELINE_PARITY_FIXES.md](docs/ai/AI_PIPELINE_PARITY_FIXES.md)
+  for detailed analysis.
+  1. ✅ **Early LPS Victory** (`VictoryAggregate.ts`): Added `countTotalRingsForPlayer()`
+     helper to count ALL rings including buried rings in opponent stacks. The Early LPS
+     check (RR-CANON-R172) now correctly detects when all other players have 0 total
+     rings (board + hand), not just 0 rings in hand.
+
+  2. ✅ **Territory Victory Threshold** (`VictoryAggregate.ts`): Changed territory
+     victory detection to count directly from `collapsedSpaces` map instead of using
+     `player.territorySpaces` field which could be stale during territory processing.
+     This matches Python's `_check_victory` implementation.
+
+  > **Note (Dec 2025):** `victoryLogic.ts` was removed. All victory logic is now in
+  > `src/shared/engine/aggregates/VictoryAggregate.ts`.
+  3. ✅ **TS Replay Early Termination** (`scripts/selfplay-db-ts-replay.ts:1020-1167`):
+     Added `evaluateVictory()` call after each move to detect victory mid-replay.
+     When victory is detected, emits `ts-replay-early-victory` and `ts-replay-game-ended`
+     events, then terminates replay. This matches Python's behavior of stopping
+     game progression when victory conditions are met.
+
+  4. ✅ **Parity Checker Move Count Handling** (`ai-service/scripts/check_ts_python_replay_parity.py:734-752, 1088-1118, 1558-1563`):
+     - Captures final summary from `ts-replay-game-ended` event
+     - Accepts move count difference when TS terminated early due to valid victory
+       detection (both engines show "completed" with matching state hash)
+     - Updated divergence classification to only flag move count differences when
+       explicitly marked as mismatch (not when early victory was acceptably detected)
+
+  **Validation:** All canonical parity tests pass:
+  - 48 contract vectors passed (36 skipped for multi-phase orchestrator tests)
+  - 9+ selfplay games replayed with 0 semantic divergences
+  - Early victory game (ed1d7d1e) correctly terminates at k=117 with matching state hash
+
 - **Training max_moves Increase (Dec 9, 2025)** –
   Increased `THEORETICAL_MAX_MOVES` in `ai-service/app/training/env.py` to account
   for canonical recording where each turn generates ~4-5 moves (RING_PLACEMENT,

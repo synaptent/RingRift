@@ -98,6 +98,10 @@ export interface MovementState {
   readonly phase: 'movement';
   readonly player: number;
   readonly canMove: boolean;
+  /** True when the player meets recovery eligibility (RR-CANON-R110). */
+  readonly recoveryEligible: boolean;
+  /** True when at least one recovery_slide move exists (line or fallback). */
+  readonly recoveryMovesAvailable: boolean;
   readonly placedRingAt: Position | null;
 }
 
@@ -187,6 +191,7 @@ export type TurnEvent =
       readonly to: Position;
       readonly option?: 1 | 2;
     }
+  | { readonly type: 'SKIP_RECOVERY' }
 
   // Capture
   | { readonly type: 'CAPTURE'; readonly target: Position; readonly direction?: Direction }
@@ -325,6 +330,8 @@ function handleRingPlacement(
           phase: 'movement',
           player: state.player,
           canMove: true, // Will be computed by board analysis
+          recoveryEligible: false,
+          recoveryMovesAvailable: false,
           placedRingAt: event.to,
         },
         [
@@ -350,6 +357,8 @@ function handleRingPlacement(
           phase: 'movement',
           player: state.player,
           canMove: true,
+          recoveryEligible: false,
+          recoveryMovesAvailable: false,
           placedRingAt: null,
         },
         []
@@ -368,6 +377,8 @@ function handleRingPlacement(
           phase: 'movement',
           player: state.player,
           canMove: true, // Will be determined at movement phase
+          recoveryEligible: false,
+          recoveryMovesAvailable: false,
           placedRingAt: null,
         },
         []
@@ -447,6 +458,16 @@ function handleMovement(
     // Per RR-CANON-R110–R115: Recovery slide for temporarily eliminated players
     // Recovery slides complete lines and transition to line_processing
     case 'RECOVERY_SLIDE': {
+      if (!state.recoveryEligible) {
+        return guardFailed(
+          state,
+          event,
+          'Recovery is only available for recovery-eligible players'
+        );
+      }
+      if (!state.recoveryMovesAvailable) {
+        return guardFailed(state, event, 'No recovery slides available');
+      }
       // Recovery slides always lead to line_processing since they complete lines
       return ok<LineProcessingState>(
         {
@@ -457,6 +478,22 @@ function handleMovement(
           awaitingReward: false,
         },
         [{ type: 'MOVE_STACK', from: event.from, to: event.to }]
+      );
+    }
+
+    case 'SKIP_RECOVERY': {
+      if (!state.recoveryEligible) {
+        return guardFailed(state, event, 'Cannot skip recovery when not recovery-eligible');
+      }
+      return ok<LineProcessingState>(
+        {
+          phase: 'line_processing',
+          player: state.player,
+          detectedLines: [],
+          currentLineIndex: 0,
+          awaitingReward: false,
+        },
+        []
       );
     }
 

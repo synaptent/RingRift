@@ -37,9 +37,19 @@ from pathlib import Path
 from typing import List
 
 from export_replay_dataset import main as export_main  # type: ignore[import]
+from validate_canonical_training_sources import (  # type: ignore[import]
+    validate_canonical_sources,
+)
 
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _resolve_ai_service_path(raw: str) -> Path:
+    path = Path(raw)
+    if path.is_absolute():
+        return path
+    return (AI_SERVICE_ROOT / path).resolve()
 
 
 def _default_db_for_board(board_type: str) -> Path:
@@ -50,7 +60,45 @@ def _default_output_for_board(board_type: str, num_players: int) -> Path:
     return (AI_SERVICE_ROOT / "data" / "training" / f"canonical_{board_type}_{num_players}p.npz").resolve()
 
 
-def run_export(board_type: str, num_players: int, db_path: Path, output_path: Path) -> int:
+def _validate_canonical_source_db(
+    db_path: Path,
+    registry_path: Path,
+    *,
+    allow_pending_gate: bool,
+) -> None:
+    allowed_statuses = ["canonical", "pending_gate"] if allow_pending_gate else ["canonical"]
+    result = validate_canonical_sources(
+        registry_path=registry_path,
+        db_paths=[db_path],
+        allowed_statuses=allowed_statuses,
+    )
+    if result.get("ok"):
+        return
+
+    for issue in result.get("problems", []):
+        print(f"[canonical-source-error] {issue}", file=sys.stderr)
+
+    hint = (
+        "Fix TRAINING_DATA_REGISTRY.md status and/or regenerate the DB via "
+        "scripts/generate_canonical_selfplay.py before exporting."
+    )
+    if allow_pending_gate:
+        hint = (
+            hint
+            + " (You used --allow-pending-gate, so status may be pending_gate, but gate summary must still be canonical_ok.)"
+        )
+    raise SystemExit(f"[build-canonical-dataset] Refusing to export from non-canonical source DB.\n{hint}")
+
+
+def run_export(
+    board_type: str,
+    num_players: int,
+    db_path: Path,
+    output_path: Path,
+    *,
+    registry_path: Path,
+    allow_pending_gate: bool,
+) -> int:
     """Invoke export_replay_dataset.main(...) with canonical-safe arguments."""
     # Basic guard: insist on canonical_*.db basenames by default.
     if not db_path.name.startswith("canonical_"):
@@ -59,6 +107,12 @@ def run_export(board_type: str, num_players: int, db_path: Path, output_path: Pa
             "Expected a basename starting with 'canonical_'. Update TRAINING_DATA_REGISTRY.md "
             "and this script together if you intend to promote a new canonical DB."
         )
+
+    _validate_canonical_source_db(
+        db_path=db_path,
+        registry_path=registry_path,
+        allow_pending_gate=allow_pending_gate,
+    )
 
     os.makedirs(str(output_path.parent), exist_ok=True)
 
@@ -107,14 +161,36 @@ def main(argv: List[str] | None = None) -> int:
         default=None,
         help=("Output NPZ path. Defaults to " "data/training/canonical_<board>_<num_players>p.npz."),
     )
+    parser.add_argument(
+        "--registry",
+        type=str,
+        default="TRAINING_DATA_REGISTRY.md",
+        help="Path to TRAINING_DATA_REGISTRY.md (default: TRAINING_DATA_REGISTRY.md).",
+    )
+    parser.add_argument(
+        "--allow-pending-gate",
+        action="store_true",
+        help=(
+            "Allow registry Status=pending_gate as long as the referenced gate summary JSON "
+            "reports canonical_ok=true and a passing parity gate."
+        ),
+    )
     args = parser.parse_args(argv)
 
     board_type: str = args.board_type
     num_players: int = args.num_players
-    db_path = Path(args.db).resolve() if args.db else _default_db_for_board(board_type)
-    output_path = Path(args.output).resolve() if args.output else _default_output_for_board(board_type, num_players)
+    db_path = _resolve_ai_service_path(args.db) if args.db else _default_db_for_board(board_type)
+    output_path = _resolve_ai_service_path(args.output) if args.output else _default_output_for_board(board_type, num_players)
+    registry_path = _resolve_ai_service_path(args.registry)
 
-    return run_export(board_type, num_players, db_path, output_path)
+    return run_export(
+        board_type,
+        num_players,
+        db_path,
+        output_path,
+        registry_path=registry_path,
+        allow_pending_gate=bool(args.allow_pending_gate),
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entrypoint

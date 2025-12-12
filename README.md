@@ -12,7 +12,7 @@
 
 ⚠️ **PROJECT STATUS: STABLE BETA – ENGINE COMPLETE, PRODUCTION VALIDATION IN PROGRESS** ⚠️
 
-> **Important:** The canonical turn orchestrator is 100% rolled out with 54 contract vectors at 100% TS↔Python parity. All 14 development waves are complete. Current focus is on **production validation**, **scaling tests**, and **client component test coverage** (the main remaining gap per [COMPREHENSIVE_PROJECT_ASSESSMENT.md](./COMPREHENSIVE_PROJECT_ASSESSMENT.md)). See [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) for code‑verified status.
+> **Important:** The canonical turn orchestrator is 100% rolled out with 54 contract vectors at 100% TS↔Python parity. All 14 development waves are complete. Current focus is on **production validation**, **scaling tests**, and **documentation cleanup**. See [CODEBASE_REVIEW_2025_12_11.md](./docs/CODEBASE_REVIEW_2025_12_11.md) and [NEXT_STEPS_2025_12_11.md](./docs/NEXT_STEPS_2025_12_11.md) for code‑verified status.
 
 A web-based multiplayer implementation of the RingRift strategy game supporting 2-4 players with flexible human/AI combinations across multiple board configurations.
 
@@ -74,7 +74,7 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 
 ### ⚠️ Remaining Gaps
 
-- ⚠️ **Client/component test coverage remains the main gap** – React components, hooks, and contexts are still largely untested (~0% baseline per `COMPREHENSIVE_PROJECT_ASSESSMENT.md`), though a DecisionUI harness now exists to start anchoring coverage.
+- ⚠️ **Client/component test coverage** – React components, hooks, and contexts have growing test coverage (100+ component test files exist for BoardView, GameHUD, ChoiceDialog, hooks, and contexts per [CODEBASE_REVIEW_2025_12_11.md](./docs/CODEBASE_REVIEW_2025_12_11.md)), though additional scenario coverage is ongoing.
 - ⚠️ **Rules/FAQ scenario backfill is ongoing** – The scenario matrix (`docs/rules/RULES_SCENARIO_MATRIX.md`) now includes a hex line → territory FAQ path; square/19x variants and additional multi-choice turn sequences still need coverage to harden late-game interactions.
 - ⚠️ **UX polish and resilience** – Timers, reconnection/spectator flows, post-game navigation, chat ergonomics, and Victory modal copy/telemetry still need refinement; mobile/touch responsiveness remains desktop-first.
 - ⚠️ **AI boundary observability** – Service-backed PlayerChoices work, but timeout/fallback tests and lightweight latency/error metrics for `AIServiceClient`/`AIEngine` should be strengthened.
@@ -95,14 +95,13 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 
 **Cannot Reliably Do (yet):**
 
-- Rely on tests for full **UI** coverage (client/component coverage is ~0%).
 - Guarantee mobile/touch UX is polished (desktop-first design).
 - Use ML-backed AI agents (neural network scaffolding exists but not integrated).
 - Claim production-hardened security (threat model exists, review pending).
 
-**For complete assessment, see [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md)**  
-**For detailed issues, see [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)**  
-**For roadmap, see [TODO.md](./TODO.md) and [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md)**
+**For complete assessment, see [CODEBASE_REVIEW_2025_12_11.md](./docs/CODEBASE_REVIEW_2025_12_11.md) and [NEXT_STEPS_2025_12_11.md](./docs/NEXT_STEPS_2025_12_11.md)**
+**For detailed issues, see [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)**
+**For roadmap, see [TODO.md](./TODO.md) and [docs/planning/STRATEGIC_ROADMAP.md](./docs/planning/STRATEGIC_ROADMAP.md)**
 
 ---
 
@@ -120,9 +119,11 @@ To understand the project and know which documents are authoritative for each ar
 ### For Developers (Architecture, Status, Setup)
 
 - **Status & Roadmap (Canonical, Living)**
-  - `CURRENT_STATE_ASSESSMENT.md` – Factual, code-verified current state (includes implementation status).
+  - `docs/CODEBASE_REVIEW_2025_12_11.md` – First-principles codebase audit (code-verified).
+  - `docs/NEXT_STEPS_2025_12_11.md` – Current architectural assessment and next steps.
+  - `docs/PRODUCTION_READINESS_CHECKLIST.md` – Launch criteria (58/67 complete).
   - `TODO.md` – Phase-structured task tracker.
-  - `STRATEGIC_ROADMAP.md` – Phased roadmap to production.
+  - `docs/planning/STRATEGIC_ROADMAP.md` – Phased roadmap to production.
   - `KNOWN_ISSUES.md` – Current P0/P1 bugs and gaps.
 
 - **Architecture & Design**

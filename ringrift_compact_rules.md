@@ -50,7 +50,7 @@ You must also support **straight-line rays** along these directions for movement
 ### 1.3 Quick mini-scenarios (implementation sanity checks)
 
 - **Chain capture continuation:** After an initial capture spawns multiple follow-ups, enter `chain_capture` and require continuation until no capture remains. Legal options must be enumerated explicitly; there is no free skip.
-- **Territory disconnection:** After line resolution, recompute regions using board-type adjacency; any region with zero controlled stacks collapses. Collapsed rings are credited to their owners (supply/victory) even if controlled by another player.
+- **Territory disconnection:** After line resolution, recompute regions using board-type adjacency; any physically+color-disconnected region that the moving player chooses to process collapses (subject to the self-elimination prerequisite). All rings eliminated inside the processed region are credited to the moving player, regardless of original ownership or control.
 - **Forced elimination entry:** Only enter `forced_elimination` when the current player controls ≥1 stack and has zero placements/movements/captures. Record the FE move explicitly; never apply FE silently during territory exit.
 
 ### 1.4 Core state
@@ -137,9 +137,9 @@ Placement options (if allowed):
 
 > **Note:** Multi-ring placement is only ever allowed on **empty** spaces. When placing onto an existing stack, you may place at most **one** ring per placement action.
 
-If no legal placement exists when placement is mandatory, the player **skips placement** and proceeds to forced-elimination / movement logic as below.
+If no legal placement exists when placement is mandatory, the player records `no_placement_action` (forced no-op) and proceeds to movement / forced-elimination logic as below.
 
-> **Important (ringsInHand == 0 scenario):** When placement is **forbidden** because `P.ringsInHand == 0` but `P` controls stacks on the board, the engine must immediately proceed to the **movement phase** and enumerate movement/capture moves for P's controlled stacks. The `skip_placement` move type is only valid when `ringsInHand > 0`; when `ringsInHand == 0`, the placement phase is implicitly bypassed and movement moves are the only valid actions (unless P is blocked and must perform forced elimination).
+> **Important (ringsInHand == 0 scenario):** When placement is **forbidden** because `P.ringsInHand == 0`, the player still **enters `ring_placement`** at the start of their turn and records an explicit `no_placement_action` (forced no-op), then transitions to the **movement** phase to enumerate movement/capture (or later forced elimination if blocked). The `skip_placement` move type is only valid when `ringsInHand > 0` and a player voluntarily forgoes a legal placement.
 
 ### 2.2 Movement phase (required when possible)
 
@@ -413,7 +413,7 @@ After all line processing is complete:
    - physically disconnected, and
    - color-disconnected.
 
-2. For each such region, in any order chosen by `P`:
+2. In any order chosen by `P`, `P` may process **any subset** of such regions:
    - Check the self-elimination prerequisite.
    - If it fails, skip this region (it remains unchanged).
    - If it passes, process the region:
@@ -440,6 +440,8 @@ After all line processing is complete:
 6. After each region is processed, recompute regions again; new regions may have become disconnected.
 
 All eliminated rings (from inside regions and self-eliminations) count toward `P`’s ring-elimination victory total.
+
+**Optionality and recording (RR-CANON replay):** If one or more regions are processable but `P` chooses not to process any further regions this turn, record an explicit `skip_territory_processing` move (distinct from `no_territory_action`, which is used only when no region decisions are available).
 
 ---
 
@@ -477,10 +479,9 @@ For this rule, define a **real action** for a player `P` on their own turn as an
 
 - ring placement (Section 2.1),
 - non-capture movement (Section 3),
-- overtaking capture segment or chain (Section 4), or
-- recovery action (Section 2.4),
+- overtaking capture segment or chain (Section 4),
 
-available at the start of their action. Having only forced elimination available (Section 2.3) does **not** count as having a real action for last-player-standing purposes.
+available at the start of their action. Having only forced elimination available (Section 2.3) does **not** count as having a real action for last-player-standing purposes. Recovery actions (Section 2.4) also do **not** count as real actions for LPS purposes.
 
 A **full round of turns** is one contiguous cycle of turns in player order in which each non-eliminated player takes exactly one turn.
 

@@ -13,16 +13,14 @@
 **Eligibility:** A player is eligible for recovery if ALL conditions hold:
 
 1. They control **no stacks** on the board
-2. They have **zero rings in hand**
-3. They have at least one **marker** on the board
-4. They have **buried rings** in opponent-controlled stacks
+2. They have at least one **marker** on the board
+3. They have **buried rings** in opponent-controlled stacks
+4. **Note:** Eligibility is independent of rings in hand (rings in hand do not prevent recovery).
 
 **Action:** Slide one marker to an adjacent empty cell. Legal if **either**:
 
 - **(a) Line formation:** Completes a line of **at least** `lineLength` consecutive markers
-- **(b) Fallback:** If no line-forming slide exists, any slide that **does not** cause territory disconnection
-
-**Note:** Territory disconnection is **not** a valid criterion for recovery.
+- **(b) Fallback:** If no line-forming slide exists, **any** adjacent slide is permitted (including slides that cause territory disconnection).
 
 **Overlength Lines:** Overlength lines (longer than `lineLength`) **are permitted**. When an overlength line is formed, the player chooses:
 
@@ -36,7 +34,7 @@ This mirrors normal line reward semantics (RR-CANON-R130–R134).
 1. Line of markers collapses → markers become collapsed spaces (territory)
 2. For exact-length lines or Option 1: buried ring extracted → eliminated (credited to recovering player)
 3. If collapse creates disconnected regions → territory cascade processing
-4. Recovering player now has ring(s) in hand from any exhumed buried rings during cascade
+4. Recovery does **not** restore rings to hand: extracted buried rings are eliminated as cost; cascade processing may eliminate rings/award territory, but rings do not return to hand.
 
 **Critical Rule:** **Collapsed spaces never form part of a valid line.** Only markers can form lines.
 
@@ -53,21 +51,21 @@ Real Actions = {placement, non-capture_movement, overtaking_capture}
 NOT Real Actions = {recovery_slide, forced_elimination, skip_placement, no_* bookkeeping moves}
 ```
 
-This creates strategic tension: rings in hand become a "survival budget" - players can use recovery moves but must place at least one ring every 2 rounds to avoid LPS loss.
+This creates strategic tension: recovery can keep a player "alive" in turn rotation without preventing LPS; only placements, non-capture movements, and overtaking captures count as real actions.
 
 **Impact on LPS Victory:**
 
-| Scenario                                            | Without Recovery   | With Recovery                                       |
-| --------------------------------------------------- | ------------------ | --------------------------------------------------- |
-| Player A dominates, Player B has only FE            | B cannot block LPS | B cannot block LPS (FE ≠ real action)               |
-| Player A dominates, Player B has recovery available | N/A                | B **cannot** block LPS with recovery (not real)     |
-| Player B has recovery + rings in hand               | N/A                | B can block LPS by **placing a ring** every 2 turns |
-| Only A has real actions for 2 rounds                | A wins LPS         | A wins LPS (recovery doesn't count)                 |
+| Scenario                                            | Without Recovery   | With Recovery                                                                                                                                             |
+| --------------------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Player A dominates, Player B has only FE            | B cannot block LPS | B cannot block LPS (FE ≠ real action)                                                                                                                     |
+| Player A dominates, Player B has recovery available | N/A                | B **cannot** block LPS with recovery (not real)                                                                                                           |
+| Player B has recovery + rings in hand               | N/A                | B can block LPS if they have a legal placement/movement/capture available at the start of their turn (rings in hand often implies placement is available) |
+| Only A has real actions for 2 rounds                | A wins LPS         | A wins LPS (recovery doesn't count)                                                                                                                       |
 
 **Strategic Implications:**
 
 - LPS victory is achievable against players with only markers + buried rings (no rings in hand)
-- Players with rings in hand have a "survival budget" - must place periodically to reset LPS
+- Players with rings in hand often retain ring-placement availability (a real action) and can therefore block LPS; once rings in hand run out and stacks are immobilised, recovery alone does not stop LPS.
 - Recovery provides survival but not LPS defense; creates interesting resource management
 
 **Example:**
@@ -75,14 +73,14 @@ This creates strategic tension: rings in hand become a "survival budget" - playe
 ```
 Turn 100: A has 5 stacks, B has 0 stacks, 0 rings in hand
           B has 3 markers and 2 buried rings in A's stacks
-          A: Takes real action → LPS round 1 begins (B has no real actions... OR DOES B?)
+          A: Takes real action → LPS round 1 begins (B has no real actions; may still have recovery)
 
 Question: Does B have a valid recovery slide?
-- If YES: B is NOT "without real actions" - B has recovery available
+- If YES: B still has **no real actions** (recovery ≠ real), but B is not ANM and is not skipped (recovery provides a global legal action); LPS can still proceed.
 - If NO valid slide exists: B truly has no real actions, LPS proceeds
 ```
 
-**Key Insight:** LPS evaluation must check if temporarily eliminated players have valid recovery moves, not just whether they have markers + buried rings.
+**Key Insight:** Turn-rotation / ANM evaluation must check if temporarily eliminated players have valid recovery moves; LPS real-action evaluation must **not** count recovery as a real action.
 
 ---
 
@@ -135,7 +133,7 @@ Global Legal Actions = {
 
 **Critical Distinction:** Having markers + buried rings is NECESSARY but NOT SUFFICIENT for recovery:
 
-- Must also have either (a) a valid marker slide that completes at least `lineLength` with sufficient buried rings for cost, OR (b) any slide that does not cause territory disconnection
+- Must also have either (a) a valid marker slide that completes at least `lineLength` with sufficient buried rings for cost, OR (b) when no line-forming slide exists, any adjacent slide (including territory-disconnecting slides)
 - If no such slide exists, player has no global legal actions → effectively fully eliminated
 
 **ANM Invariant:**

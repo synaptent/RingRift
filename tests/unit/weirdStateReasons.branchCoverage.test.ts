@@ -16,6 +16,7 @@ import {
   getWeirdStateReasonForType,
   getWeirdStateReasonForGameResult,
   getRulesContextForReason,
+  getWeirdStateTypeForReason,
   getTeachingTopicForReason,
   type RulesWeirdStateReasonCode,
   type WeirdStateReasonInfo,
@@ -84,6 +85,16 @@ describe('weirdStateReasons', () => {
       });
     });
 
+    it('maps last-player-standing to LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS', () => {
+      const result = getWeirdStateReasonForType('last-player-standing');
+
+      expect(result).toEqual({
+        reasonCode: 'LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS',
+        rulesContext: 'last_player_standing',
+        weirdStateType: 'last-player-standing',
+      });
+    });
+
     it('handles unknown type via default case (returns structural-stalemate)', () => {
       // Force an unknown type through the function to test default branch
       const unknownType = 'unknown-type' as RulesUxWeirdStateType;
@@ -101,6 +112,7 @@ describe('weirdStateReasons', () => {
         'active-no-moves-movement',
         'active-no-moves-line',
         'active-no-moves-territory',
+        'last-player-standing',
         'forced-elimination',
         'structural-stalemate',
       ];
@@ -156,7 +168,7 @@ describe('weirdStateReasons', () => {
       expect(result).toEqual({
         reasonCode: 'LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS',
         rulesContext: 'last_player_standing',
-        weirdStateType: 'active-no-moves-movement',
+        weirdStateType: 'last-player-standing',
       });
     });
 
@@ -282,6 +294,48 @@ describe('weirdStateReasons', () => {
         const result = getRulesContextForReason(code);
         expect(validContexts).toContain(result);
       }
+    });
+  });
+
+  // =========================================================================
+  // getWeirdStateTypeForReason
+  // =========================================================================
+
+  describe('getWeirdStateTypeForReason', () => {
+    it('maps ANM_MOVEMENT_FE_BLOCKED to active-no-moves-movement', () => {
+      const result = getWeirdStateTypeForReason('ANM_MOVEMENT_FE_BLOCKED');
+      expect(result).toBe('active-no-moves-movement');
+    });
+
+    it('maps ANM_LINE_NO_ACTIONS to active-no-moves-line', () => {
+      const result = getWeirdStateTypeForReason('ANM_LINE_NO_ACTIONS');
+      expect(result).toBe('active-no-moves-line');
+    });
+
+    it('maps ANM_TERRITORY_NO_ACTIONS to active-no-moves-territory', () => {
+      const result = getWeirdStateTypeForReason('ANM_TERRITORY_NO_ACTIONS');
+      expect(result).toBe('active-no-moves-territory');
+    });
+
+    it('maps FE_SEQUENCE_CURRENT_PLAYER to forced-elimination', () => {
+      const result = getWeirdStateTypeForReason('FE_SEQUENCE_CURRENT_PLAYER');
+      expect(result).toBe('forced-elimination');
+    });
+
+    it('maps STRUCTURAL_STALEMATE_TIEBREAK to structural-stalemate', () => {
+      const result = getWeirdStateTypeForReason('STRUCTURAL_STALEMATE_TIEBREAK');
+      expect(result).toBe('structural-stalemate');
+    });
+
+    it('maps LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS to last-player-standing', () => {
+      const result = getWeirdStateTypeForReason('LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS');
+      expect(result).toBe('last-player-standing');
+    });
+
+    it('handles unknown reason code via default case', () => {
+      const unknownCode = 'UNKNOWN_CODE' as RulesWeirdStateReasonCode;
+      const result = getWeirdStateTypeForReason(unknownCode);
+      expect(result).toBe('structural-stalemate');
     });
   });
 

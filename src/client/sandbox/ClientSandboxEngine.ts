@@ -55,9 +55,6 @@ import {
   shouldOfferSwapSides,
   // Player state helpers
   hasAnyRealAction,
-  isEligibleForRecovery,
-  // Recovery aggregate
-  hasAnyRecoveryMove,
   // Forced elimination helpers
   enumerateForcedEliminationOptions,
   applyForcedEliminationForPlayer,
@@ -1244,8 +1241,7 @@ export class ClientSandboxEngine {
   /**
    * R172 helper: true if the given player has any real action available
    * at the start of their turn (placement, non-capture movement, overtaking
-   * capture, or recovery slide). Forced elimination and decision moves do
-   * not count as real actions.
+   * capture). Recovery and forced elimination do not count as real actions.
    *
    * Delegates to the shared hasAnyRealAction helper with sandbox-specific
    * move enumerators.
@@ -1263,14 +1259,6 @@ export class ClientSandboxEngine {
           }
         }
         return false;
-      },
-      // Recovery action (RR-CANON-R110–R115): temporarily eliminated players
-      // can perform marker slides that complete lines
-      hasRecovery: (pn) => {
-        if (!isEligibleForRecovery(this.gameState, pn)) {
-          return false;
-        }
-        return hasAnyRecoveryMove(this.gameState, pn);
       },
     });
 

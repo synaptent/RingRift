@@ -45,6 +45,15 @@ export interface SandboxTouchControlsPanelProps {
   canSkipCapture?: boolean;
   /** Optional handler invoked when the user taps the skip capture button. */
   onSkipCapture?: () => void;
+  /**
+   * Optional flag indicating that a skip_recovery action is currently
+   * available during the movement phase for recovery-eligible players.
+   * When true and onSkipRecovery is provided, the panel surfaces a dedicated
+   * "Skip recovery" control.
+   */
+  canSkipRecovery?: boolean;
+  /** Optional handler invoked when the user taps the skip recovery button. */
+  onSkipRecovery?: () => void;
   autoSaveGames?: boolean;
   onToggleAutoSave?: (next: boolean) => void;
   gameSaveStatus?: 'idle' | 'saving' | 'saved' | 'saved-local' | 'error';
@@ -90,6 +99,8 @@ export const SandboxTouchControlsPanel: React.FC<SandboxTouchControlsPanelProps>
   onSkipTerritoryProcessing,
   canSkipCapture,
   onSkipCapture,
+  canSkipRecovery,
+  onSkipRecovery,
   autoSaveGames,
   onToggleAutoSave,
   gameSaveStatus,
@@ -191,6 +202,22 @@ export const SandboxTouchControlsPanel: React.FC<SandboxTouchControlsPanelProps>
             <p className="text-[10px] text-amber-200/80">
               Decline optional overtaking capture from this position and continue to line and
               territory processing.
+            </p>
+          </div>
+        )}
+
+        {canSkipRecovery && onSkipRecovery && (
+          <div className="mt-2 space-y-1">
+            <button
+              type="button"
+              onClick={onSkipRecovery}
+              className="px-3 py-1.5 rounded-lg border border-amber-400 text-[11px] font-semibold text-amber-100 bg-amber-900/40 hover:border-amber-200 hover:bg-amber-800/70 transition"
+              data-testid="sandbox-skip-recovery-button"
+            >
+              Skip recovery
+            </button>
+            <p className="text-[10px] text-amber-200/80">
+              Decline recovery this turn and continue to line and territory bookkeeping.
             </p>
           </div>
         )}

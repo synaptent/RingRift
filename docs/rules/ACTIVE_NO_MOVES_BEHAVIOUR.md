@@ -202,26 +202,27 @@ The scenarios below capture concrete shapes that have historically exercised the
   - `gameStatus == ACTIVE`.
   - `currentPhase == movement`.
   - Current player P controls **zero stacks** (no top rings of P's colour).
-  - P has **zero rings in hand** (`ringsInHand[P] == 0`).
+  - P has **zero rings in hand** in this scenario (`ringsInHand[P] == 0`; eligibility itself is independent of rings in hand).
   - P has **at least one marker** of their colour on the board.
   - P has **at least one buried ring** (a ring of P's colour beneath another ring in some stack).
-  - At least one of P's markers can be slid (Moore adjacency for square, hex-adjacency for hex) to an empty cell such that it completes a line of **exactly `lineLength`** markers.
+  - At least one of P's markers can be slid (Moore adjacency for square, hex-adjacency for hex) to an empty cell such that it completes a line of **at least `lineLength`** consecutive markers.
 - **Expected canonical behaviour:**
   - This state is **not** ANM: P has a legal **recovery action** per [`RR-CANON-R110`–`R115`](../../RULES_CANONICAL_SPEC.md:579).
-  - Recovery action is a **real action** for Last-Player-Standing purposes (unlike forced elimination).
+  - Recovery action is **NOT** a real action for Last-Player-Standing purposes (unlike placements, movements, and captures). Like forced elimination, recovery does not reset the LPS countdown.
   - P may slide one marker to complete a line, triggering:
     1. Line collapse (markers → territory).
     2. Buried ring extraction as self-elimination cost.
     3. Potential territory cascade processing.
-  - After recovery, P regains turn-material (rings in hand from exhumed buried rings) and can place on subsequent turns.
+  - After recovery, P may still control zero stacks and have `ringsInHand[P] == 0`. Recovery is a survival / scoring mechanism; it does not “restore” rings to hand. P remains in turn rotation as long as they still have rings somewhere (typically buried rings) or can take recovery actions; they are skipped only once permanently eliminated.
   - Turn rotation must not skip P while P has recovery options; P is "temporarily eliminated" but still has global legal actions.
 - **Key constraints:**
-  - Recovery requires exactly `lineLength` markers (overlength lines do NOT qualify).
+  - Line-forming recovery requires completing a line of **at least** `lineLength` markers; overlength lines qualify and introduce the Option 1 / Option 2 choice.
   - Marker slide uses Moore adjacency (8 directions) for square boards, hex-adjacency for hexagonal.
   - Each self-elimination cost (line + any territory claims) requires extracting a buried ring from a stack **outside** the claimed region.
 - **Implementations / tests:**
-  - **Not yet implemented.** See `RECOVERY_ACTION_IMPLEMENTATION_PLAN.md` for implementation tasks.
-  - Future tests will be added in `tests/unit/RecoveryAggregate.test.ts` (TS) and `ai-service/tests/test_recovery_action.py` (Python).
+  - TS unit tests: `tests/unit/RecoveryAggregate.shared.test.ts`.
+  - Python unit tests: `ai-service/tests/rules/test_recovery.py`.
+  - TS↔Python parity: `ai-service/tests/parity/test_recovery_parity.py`.
 - **RR-CANON mapping:**
   - Recovery eligibility: `RR-CANON-R110`.
   - Recovery marker slide: `RR-CANON-R111`.
@@ -231,7 +232,7 @@ The scenarios below capture concrete shapes that have historically exercised the
   - Recovery recording semantics: `RR-CANON-R115`.
 - **Interaction with other ANM scenarios:**
   - ANM-SCEN-03 (fully eliminated player): Recovery differs from full elimination; a player with markers + buried rings but no stacks/rings-in-hand is "temporarily eliminated" with recovery options, not "fully eliminated for turn rotation."
-  - ANM-SCEN-07 (LPS with one player having real actions): Recovery action counts as a real action, so a player with only recovery options can still block LPS victory for others.
+  - ANM-SCEN-07 (LPS with one player having real actions): Recovery action does **NOT** count as a real action, so a player with only recovery options does **not** block LPS victory for others; the LPS countdown can still complete.
 
 ## 3. Relationship to Invariants and Future Formalisation
 

@@ -46,9 +46,10 @@ describe('TeachingOverlay UX regression – rules-aware copy', () => {
     // Forced Elimination happens when you control stacks but have no real moves.
     expect(dialog).toHaveTextContent(/no legal placements, movements, or captures/i);
 
-    // Caps are removed automatically until a real move becomes available or stacks are gone.
+    // Caps are removed until a real move becomes available or stacks are gone.
+    // (Copy updated: "automatically" removed for conciseness)
     expect(text).toMatch(
-      /caps are removed from your stacks automatically until either a real move becomes available or your stacks are gone/i
+      /caps are removed from your stacks.*until either a real move becomes available or your stacks are gone/i
     );
 
     // FE eliminations are permanent and count toward Ring Elimination.

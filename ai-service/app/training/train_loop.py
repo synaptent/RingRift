@@ -91,7 +91,9 @@ def run_training_loop(config: Optional[TrainConfig] = None):
                 difficulty=5,
                 think_time=500,
                 randomness=0.1,
-                rngSeed=config.seed,
+                # Use a different per-instance seed from player 1 to avoid
+                # correlated exploration in self-play.
+                rngSeed=(config.seed + 1),
             ),
         )
 

@@ -47,10 +47,12 @@ export const RulesUxPhrases = {
       'forced elimination will now resolve automatically',
     ],
     forcedElimination: [
-      // Forced Elimination (FE) – caps removed automatically until a real move is available.
+      // Forced Elimination (FE) – caps removed until a real move is available.
       'Forced Elimination',
-      'caps are removed from your stacks automatically until either a real move becomes available or your stacks are gone',
-      'does not count as a “real move” for Last Player Standing',
+      // Note: "automatically" may be omitted in some copy variants
+      'caps are removed from your stacks.*until either a real move becomes available or your stacks are gone',
+      // Curly quotes may be used in rendered text, so match both
+      'does not count as a .real move. for Last Player Standing',
     ],
   },
   lines: {

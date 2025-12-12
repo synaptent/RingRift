@@ -33,8 +33,6 @@ import {
   // Movement/placement aggregation helpers
   enumerateSimpleMovesForPlayer,
   enumeratePlacementPositions,
-  // Recovery helper
-  hasAnyRecoveryMove,
   // LPS helpers
   hasAnyRealAction,
   createLpsTrackingState,
@@ -78,6 +76,7 @@ import {
   AdapterMoveResult,
 } from './turn/TurnEngineAdapter';
 import { flagEnabled, debugLog } from '../../shared/utils/envFlags';
+import { logger } from '../utils/logger';
 
 /**
  * Backend `GameEngine` host over the shared rules engine.
@@ -727,7 +726,8 @@ export class GameEngine {
 
       if (!result.success) {
         // DEBUG: Log orchestrator error for debugging Category C failures
-        console.error('[GameEngine.processMoveViaAdapter] Orchestrator rejected move:', {
+        logger.warn('Orchestrator rejected move', {
+          component: 'GameEngine.processMoveViaAdapter',
           moveType: fullMove.type,
           player: fullMove.player,
           from: fullMove.from,
@@ -1043,8 +1043,9 @@ export class GameEngine {
         after.gameStatus === 'active' &&
         progressAfter.S < progressBefore.S
       ) {
-        // eslint-disable-next-line no-console
-        console.log('[GameEngine.appendHistoryEntry] STRICT_S_INVARIANT_DECREASE', {
+        logger.warn('S-invariant decreased during active game', {
+          component: 'GameEngine.appendHistoryEntry',
+          invariantType: 'STRICT_S_INVARIANT_DECREASE',
           moveNumber: action.moveNumber,
           actor: action.player,
           phaseBefore: before.currentPhase,
@@ -1063,8 +1064,6 @@ export class GameEngine {
           stateHashAfter: hashGameState(after),
         });
         // Record an orchestrator-related invariant violation for S decreasing.
-        // This is emitted only when TRACE_DEBUG is enabled and is intended as a
-        // rare production/staging signal for invariant SLOs.
         getMetricsService().recordOrchestratorInvariantViolation('S_INVARIANT_DECREASED');
       }
 
@@ -1077,8 +1076,9 @@ export class GameEngine {
         after.gameStatus === 'active' &&
         eliminatedFromBoardAfter < eliminatedFromBoardBefore
       ) {
-        // eslint-disable-next-line no-console
-        console.log('[GameEngine.appendHistoryEntry] TOTAL_RINGS_ELIMINATED_DECREASED', {
+        logger.warn('Total rings eliminated decreased', {
+          component: 'GameEngine.appendHistoryEntry',
+          invariantType: 'TOTAL_RINGS_ELIMINATED_DECREASED',
           moveNumber: action.moveNumber,
           actor: action.player,
           phaseBefore: before.currentPhase,
@@ -1099,8 +1099,8 @@ export class GameEngine {
       // even if S itself does not decrease. This helps diagnose cases where
       // one view of S is monotone while the other is not.
       if (eliminatedFromBoardAfter !== eliminatedFromPlayersAfter) {
-        // eslint-disable-next-line no-console
-        console.log('[GameEngine.appendHistoryEntry] S-elimination bookkeeping mismatch', {
+        logger.debug('S-elimination bookkeeping mismatch', {
+          component: 'GameEngine.appendHistoryEntry',
           moveNumber: action.moveNumber,
           actor: action.player,
           phaseBefore: before.currentPhase,
@@ -1124,8 +1124,8 @@ export class GameEngine {
         collapsedFromBoard !== rawProgressAfter.collapsed ||
         markersFromBoard !== rawProgressAfter.markers
       ) {
-        // eslint-disable-next-line no-console
-        console.log('[GameEngine.appendHistoryEntry] S-invariant debug mismatch', {
+        logger.debug('S-invariant debug mismatch', {
+          component: 'GameEngine.appendHistoryEntry',
           moveNumber: action.moveNumber,
           actor: action.player,
           phaseAfter: after.currentPhase,
@@ -2152,9 +2152,9 @@ export class GameEngine {
       // integrations, but do not rely on it for correctness.
       state.availableMoves = followUpMoves;
 
-      if (typeof process !== 'undefined' && process.env?.RINGRIFT_TRACE_DEBUG === 'true') {
-        // eslint-disable-next-line no-console
-        console.log('[GameEngine.getValidMoves] chain_capture debug', {
+      if (flagEnabled('RINGRIFT_TRACE_DEBUG')) {
+        logger.debug('Chain capture debug', {
+          component: 'GameEngine.getValidMoves',
           requestedPlayer: playerNumber,
           capturingPlayer,
           currentPhase: this.gameState.currentPhase,
@@ -2525,8 +2525,6 @@ export class GameEngine {
       hasPlacement: (pn) => enumeratePlacementPositions(this.gameState, pn).length > 0,
       hasMovement: (pn) => enumerateSimpleMovesForPlayer(this.gameState, pn).length > 0,
       hasCapture: (pn) => enumerateAllCaptureMovesAggregate(this.gameState, pn).length > 0,
-      // Recovery (RR-CANON-R110–R115) counts as a real action for LPS
-      hasRecovery: (pn) => hasAnyRecoveryMove(this.gameState, pn),
     });
   }
 

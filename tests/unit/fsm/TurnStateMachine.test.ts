@@ -154,6 +154,8 @@ describe('TurnStateMachine', () => {
         phase: 'movement',
         player: 1,
         canMove: true,
+        recoveryEligible: false,
+        recoveryMovesAvailable: false,
         placedRingAt: { x: 3, y: 3 },
       };
 
@@ -176,6 +178,8 @@ describe('TurnStateMachine', () => {
         phase: 'movement',
         player: 1,
         canMove: true,
+        recoveryEligible: false,
+        recoveryMovesAvailable: false,
         placedRingAt: { x: 3, y: 3 },
       };
 
@@ -193,6 +197,8 @@ describe('TurnStateMachine', () => {
         phase: 'movement',
         player: 1,
         canMove: false,
+        recoveryEligible: false,
+        recoveryMovesAvailable: false,
         placedRingAt: { x: 3, y: 3 },
       };
 
@@ -897,6 +903,8 @@ describe('TurnStateMachine', () => {
         phase: 'movement',
         player: 1,
         canMove: true,
+        recoveryEligible: false,
+        recoveryMovesAvailable: false,
         placedRingAt: { x: 3, y: 3 },
       };
 
@@ -919,6 +927,8 @@ describe('TurnStateMachine', () => {
         phase: 'movement',
         player: 1,
         canMove: true,
+        recoveryEligible: true,
+        recoveryMovesAvailable: true,
         placedRingAt: null,
       };
 
@@ -941,11 +951,32 @@ describe('TurnStateMachine', () => {
       }
     });
 
+    it('should allow SKIP_RECOVERY for recovery-eligible player', () => {
+      const state: MovementState = {
+        phase: 'movement',
+        player: 1,
+        canMove: true,
+        recoveryEligible: true,
+        recoveryMovesAvailable: false,
+        placedRingAt: null,
+      };
+
+      const event: TurnEvent = { type: 'SKIP_RECOVERY' };
+      const result = transition(state, event, context);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.state.phase).toBe('line_processing');
+      }
+    });
+
     it('should transition to game_over on TIMEOUT from movement phase', () => {
       const state: MovementState = {
         phase: 'movement',
         player: 1,
         canMove: true,
+        recoveryEligible: false,
+        recoveryMovesAvailable: false,
         placedRingAt: { x: 3, y: 3 },
       };
 

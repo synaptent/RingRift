@@ -1,5 +1,9 @@
 /**
- * Tests for degradation headers middleware
+ * Degradation Headers Integration Tests
+ *
+ * Integration-level tests for degradation headers middleware.
+ *
+ * Note: Unit tests for middleware internals are in tests/unit/middleware/degradationHeaders.test.ts
  */
 
 import { Request, Response, NextFunction } from 'express';
@@ -74,7 +78,9 @@ describe('degradationHeadersMiddleware', () => {
 
   describe('when system is degraded', () => {
     beforeEach(() => {
-      (mockStatusManager.getDegradationLevel as jest.Mock).mockReturnValue(DegradationLevel.DEGRADED);
+      (mockStatusManager.getDegradationLevel as jest.Mock).mockReturnValue(
+        DegradationLevel.DEGRADED
+      );
       (mockStatusManager.getDegradationHeaders as jest.Mock).mockReturnValue({
         'X-Service-Status': 'degraded',
         'X-Degraded-Services': 'aiService',
@@ -93,7 +99,9 @@ describe('degradationHeadersMiddleware', () => {
 
   describe('when system is in MINIMAL mode', () => {
     beforeEach(() => {
-      (mockStatusManager.getDegradationLevel as jest.Mock).mockReturnValue(DegradationLevel.MINIMAL);
+      (mockStatusManager.getDegradationLevel as jest.Mock).mockReturnValue(
+        DegradationLevel.MINIMAL
+      );
       (mockStatusManager.getDegradationHeaders as jest.Mock).mockReturnValue({
         'X-Service-Status': 'minimal',
         'X-Degraded-Services': 'aiService,redis',
@@ -161,7 +169,9 @@ describe('offlineModeMiddleware', () => {
 
   describe('when system is degraded but not offline', () => {
     beforeEach(() => {
-      (mockStatusManager.getDegradationLevel as jest.Mock).mockReturnValue(DegradationLevel.DEGRADED);
+      (mockStatusManager.getDegradationLevel as jest.Mock).mockReturnValue(
+        DegradationLevel.DEGRADED
+      );
     });
 
     it('should call next without blocking', () => {
@@ -175,7 +185,9 @@ describe('offlineModeMiddleware', () => {
 
   describe('when system is offline', () => {
     beforeEach(() => {
-      (mockStatusManager.getDegradationLevel as jest.Mock).mockReturnValue(DegradationLevel.OFFLINE);
+      (mockStatusManager.getDegradationLevel as jest.Mock).mockReturnValue(
+        DegradationLevel.OFFLINE
+      );
     });
 
     it('should return 503 Service Unavailable', () => {
@@ -360,7 +372,10 @@ describe('Integration: Degradation Headers with Real ServiceStatusManager', () =
     degradationHeadersMiddleware(mockReq, mockRes, mockNext);
 
     expect(mockRes.setHeader).toHaveBeenCalledWith('X-Service-Status', 'degraded');
-    expect(mockRes.setHeader).toHaveBeenCalledWith('X-Degraded-Services', expect.stringContaining('aiService'));
+    expect(mockRes.setHeader).toHaveBeenCalledWith(
+      'X-Degraded-Services',
+      expect.stringContaining('aiService')
+    );
   });
 
   it('should block requests when database is offline', () => {

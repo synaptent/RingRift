@@ -793,8 +793,7 @@ router.get(
 
     if (hasFilters) {
       // Build game filter conditions for Prisma query
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const gameWhere: any = {
+      const gameWhere: Prisma.GameWhereInput = {
         status: 'finished',
         isRated: true,
       };

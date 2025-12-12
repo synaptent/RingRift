@@ -19,6 +19,8 @@ export type BoardType = 'square8' | 'square19' | 'hexagonal';
  *     - 'move_stack' / 'move_ring' – non-capture movement of an entire stack.
  *     - 'build_stack'              – legacy intra-region stack reconfiguration (rare).
  *     - 'overtaking_capture'       – initial overtaking capture that may start a chain.
+ *     - 'recovery_slide' / 'skip_recovery' – recovery-eligible players may slide a
+ *       marker (with buried-ring cost) or explicitly skip recovery (RR-CANON-R110–R115).
  * - 'capture'
  *   - Legal MoveType values:
  *     - 'overtaking_capture' – initial overtaking capture chosen directly from
@@ -124,10 +126,13 @@ export type MoveType =
   // controls stacks. Eliminates entire cap of a controlled stack. Only valid
   // in 'forced_elimination' phase. See RR-CANON-R100, RR-CANON-R204.
   | 'forced_elimination'
-  // Recovery action: player has no stacks, no rings in hand, but can slide
-  // a marker to complete a line. Cost is paid with buried rings. Only valid
-  // in recovery_action phase. See RR-CANON-R110–R115.
+  // Recovery action: recovery-eligible player (controls no stacks, has markers,
+  // and has buried rings; eligibility is independent of rings in hand) may
+  // slide a marker in the movement phase. Cost is paid via buried ring
+  // extraction. See RR-CANON-R110–R115.
   | 'recovery_slide'
+  // Recovery skip: recovery-eligible player declines recovery this turn (RR-CANON-R115).
+  | 'skip_recovery'
   // Game termination: player forfeits the game. Valid from any phase.
   | 'resign'
   // Game termination: player ran out of time. Valid from any phase.

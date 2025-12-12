@@ -113,7 +113,7 @@ import {
 import { evaluateVictory } from '../aggregates/VictoryAggregate';
 
 import {
-  enumerateRecoverySlideTargets,
+  enumerateExpandedRecoverySlideTargets,
   validateRecoverySlide,
   applyRecoverySlide,
 } from '../aggregates/RecoveryAggregate';
@@ -1937,6 +1937,19 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       };
     }
 
+    case 'skip_recovery': {
+      // RR-CANON-R115: Recovery-eligible player explicitly declines recovery.
+      // This is a no-op on the board; post-move phase logic will advance to
+      // line_processing / territory_processing bookkeeping as appropriate.
+      // Update currentPlayer from move.player to handle turn boundary cases.
+      return {
+        nextState: {
+          ...state,
+          currentPlayer: move.player,
+        },
+      };
+    }
+
     case 'recovery_slide': {
       // RR-CANON-R110–R115: Recovery action for temporarily eliminated players
       // Validates that player is eligible and applies the slide + line collapse
@@ -2122,8 +2135,8 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
  * - ring_placement:
  *     place_ring, skip_placement, no_placement_action
  * - movement:
- *     move_stack, move_ring, overtaking_capture,
- *     continue_capture_segment, no_movement_action
+ *     move_stack, move_ring, build_stack, overtaking_capture,
+ *     continue_capture_segment, recovery_slide, no_movement_action
  * - capture:
  *     overtaking_capture, continue_capture_segment, skip_capture
  * - chain_capture:
@@ -2974,9 +2987,37 @@ export function getValidMoves(state: GameState): Move[] {
       // If player is eligible for recovery, add recovery slide moves
       const recoveryMoves: Move[] = [];
       if (isEligibleForRecovery(state, player)) {
-        const recoveryTargets = enumerateRecoverySlideTargets(state, player);
+        // RR-CANON-R115: recovery-eligible players may explicitly skip recovery.
+        recoveryMoves.push({
+          id: `skip-recovery-${moveNumber}`,
+          type: 'skip_recovery',
+          player,
+          to: { x: 0, y: 0 }, // Sentinel
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber,
+        });
+
+        const recoveryTargets = enumerateExpandedRecoverySlideTargets(state, player);
         const lineLength = getEffectiveLineLengthThreshold(state.board.type, state.players.length);
         for (const target of recoveryTargets) {
+          if (target.recoveryMode === 'fallback') {
+            // RR-CANON-R112(b): fallback repositioning when no line recovery exists.
+            recoveryMoves.push({
+              id: `recovery-fallback-${target.from.x},${target.from.y}-${target.to.x},${target.to.y}-${moveNumber}`,
+              type: 'recovery_slide',
+              player,
+              from: target.from,
+              to: target.to,
+              timestamp: new Date(),
+              thinkTime: 0,
+              moveNumber,
+              recoveryMode: 'fallback',
+              extractionStacks: [],
+            } as Move);
+            continue;
+          }
+
           // For each target, generate moves for available options
           // Option 1 (collapse all, cost 1) - requires buried rings (eligibility already ensured)
           // Option 2 (collapse lineLength, cost 0) - only for overlength lines
@@ -2994,6 +3035,7 @@ export function getValidMoves(state: GameState): Move[] {
               thinkTime: 0,
               moveNumber,
               option: 2,
+              recoveryMode: 'line',
               // Default collapse subset: first lineLength positions from the formed line
               collapsePositions: target.linePositions.slice(0, lineLength),
               extractionStacks: [],
@@ -3010,6 +3052,7 @@ export function getValidMoves(state: GameState): Move[] {
               thinkTime: 0,
               moveNumber,
               option: 1,
+              recoveryMode: 'line',
               extractionStacks: [],
             } as Move);
           } else {
@@ -3024,6 +3067,7 @@ export function getValidMoves(state: GameState): Move[] {
               thinkTime: 0,
               moveNumber,
               option: 1,
+              recoveryMode: 'line',
               extractionStacks: [],
             } as Move);
           }

@@ -1,12 +1,14 @@
 /**
- * Rate Limiter Tests
+ * Rate Limiter Integration Tests
  *
- * Tests for the enhanced rate limiting middleware:
+ * Integration-level tests for the rate limiting middleware covering:
  * - Rate limit headers on successful requests
  * - Rate limit headers on exceeded limits
  * - Authentication-based differentiation
  * - Fallback in-memory limiting
  * - Environment-driven configuration
+ *
+ * Note: Unit tests for middleware internals are in tests/unit/middleware/rateLimiter.test.ts
  */
 
 import { Request, Response, NextFunction } from 'express';

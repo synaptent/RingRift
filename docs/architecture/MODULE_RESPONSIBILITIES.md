@@ -44,7 +44,6 @@ The `src/shared/engine/` directory contains the following **active module groups
   - `captureLogic.ts` – capture enumeration helpers.
   - `lineDetection.ts`, `lineDecisionHelpers.ts` – line geometry and line decision moves.
   - `territoryDetection.ts`, `territoryBorders.ts`, `territoryProcessing.ts`, `territoryDecisionHelpers.ts` – territory detection, borders, processing, and decision moves.
-  - `victoryLogic.ts` – victory evaluation (ring elimination, territory, LPS, stalemate ladder).
   - `placementHelpers.ts` – placement helpers used by placement aggregate and hosts.
   - `notation.ts`, `moveActionAdapter.ts` – debugging/notation and Move↔GameAction adapters.
   - `types.ts` – engine-internal types and interfaces.
@@ -299,20 +298,22 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ### 2.6 Victory Domain
 
-#### [`victoryLogic.ts`](../src/shared/engine/victoryLogic.ts)
+#### [`aggregates/VictoryAggregate.ts`](../src/shared/engine/aggregates/VictoryAggregate.ts)
 
-- **Primary Responsibility:** Evaluate victory conditions and last-actor tiebreaking.
+- **Primary Responsibility:** Canonical victory evaluation and last-actor tiebreaking.
 - **Key Concerns:**
   - Ring elimination victory.
   - Territory-majority victory.
   - Last-player-standing (LPS) ladder.
   - Stalemate/non-progress detection.
-- **Concern Type:** `QUERY`.
-
-#### [`aggregates/VictoryAggregate.ts`](../src/shared/engine/aggregates/VictoryAggregate.ts)
-
-- **Primary Responsibility:** Aggregate wrapper for victory evaluation, providing orchestrator-friendly types/results.
+  - Early LPS detection (total ring counting).
+- **Key Exports:**
+  - `evaluateVictory()` - Main victory evaluation function.
+  - `getLastActor()` - Tie-break helper for last player to act.
+  - `VictoryResult`, `VictoryReason` - Victory types.
 - **Concern Type:** `AGGREGATE`.
+
+> **Note (Dec 2025):** `victoryLogic.ts` was removed. All victory logic is now consolidated in `VictoryAggregate.ts`.
 
 ---
 
@@ -466,7 +467,6 @@ graph TD
         moveLogic[movementLogic.ts]
         moveApp[movementApplication.ts]
         capLogic[captureLogic.ts]
-        vict[victoryLogic.ts]
     end
 
     subgraph Aggregates
@@ -550,7 +550,7 @@ Historically, the engine was described as:
   - **Capture:** `captureLogic.ts`, `captureChainHelpers.ts`, `validators/CaptureValidator.ts`, `mutators/CaptureMutator.ts`.
   - **Line:** `lineDetection.ts`, `lineDecisionHelpers.ts`, `validators/LineValidator.ts`, `mutators/LineMutator.ts`.
   - **Territory:** `territoryDetection.ts`, `territoryBorders.ts`, `territoryProcessing.ts`, `territoryDecisionHelpers.ts` (canonical helpers), plus legacy plumbing `validators/TerritoryValidator.ts` and `mutators/TerritoryMutator.ts` used as implementation details under `TerritoryAggregate`.
-  - **Victory:** `victoryLogic.ts`.
+  - **Victory:** `aggregates/VictoryAggregate.ts`.
   - **Shared core & utilities:** `core.ts`, `types.ts`, `notation.ts`, `moveActionAdapter.ts`, `validators/utils.ts`, `validators/index.ts`.
 
 Over time, this design was **refined** into the helpers + aggregates + orchestrator stack described in sections 1–4 above. The per-domain validators/mutators and the monolithic `GameEngine.ts` remain in the tree primarily as:

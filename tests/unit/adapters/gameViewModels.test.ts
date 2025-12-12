@@ -123,7 +123,7 @@ describe('gameViewModels', () => {
       expect(vm.weirdState?.tone).toBe('critical');
     });
 
-    it('derives forced-elimination weirdState from LPS with ANM/FE explanation', () => {
+    it('derives last-player-standing weirdState from LPS explanation', () => {
       const players = createPlayers();
       const gameState = createTestGameState(players);
       const explanation: GameEndExplanation = {
@@ -151,7 +151,7 @@ describe('gameViewModels', () => {
       });
 
       expect(vm.weirdState).toBeDefined();
-      expect(vm.weirdState?.type).toBe('forced-elimination');
+      expect(vm.weirdState?.type).toBe('last-player-standing');
       expect(vm.weirdState?.tone).toBe('warning');
       expect(vm.weirdState?.title).toContain('Last Player Standing');
     });
@@ -249,7 +249,8 @@ describe('gameViewModels', () => {
         gameEndExplanation: explanation,
       });
 
-      expect(vm.weirdState).toBeUndefined();
+      expect(vm.weirdState).toBeDefined();
+      expect(vm.weirdState?.type).toBe('structural-stalemate');
     });
   });
 

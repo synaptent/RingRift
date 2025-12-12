@@ -55,10 +55,20 @@ describe('phaseValidation', () => {
       expect(VALID_MOVES_BY_PHASE.territory_processing).toContain('process_territory_region');
     });
 
-    it('includes eliminate_rings_from_stack in multiple phases', () => {
-      expect(VALID_MOVES_BY_PHASE.line_processing).toContain('eliminate_rings_from_stack');
+    it('includes eliminate_rings_from_stack in territory_processing phase', () => {
       expect(VALID_MOVES_BY_PHASE.territory_processing).toContain('eliminate_rings_from_stack');
-      expect(VALID_MOVES_BY_PHASE.forced_elimination).toContain('eliminate_rings_from_stack');
+    });
+
+    it('includes recovery_slide in movement phase', () => {
+      expect(VALID_MOVES_BY_PHASE.movement).toContain('recovery_slide');
+    });
+
+    it('includes skip_recovery in movement phase', () => {
+      expect(VALID_MOVES_BY_PHASE.movement).toContain('skip_recovery');
+    });
+
+    it('includes swap_sides in ring_placement phase', () => {
+      expect(VALID_MOVES_BY_PHASE.ring_placement).toContain('swap_sides');
     });
   });
 
@@ -119,8 +129,8 @@ describe('phaseValidation', () => {
       expect(isMoveValidInPhase('resign', 'game_over')).toBe(true);
     });
 
-    it('returns true for eliminate_rings_from_stack in line_processing', () => {
-      expect(isMoveValidInPhase('eliminate_rings_from_stack', 'line_processing')).toBe(true);
+    it('returns false for eliminate_rings_from_stack in line_processing', () => {
+      expect(isMoveValidInPhase('eliminate_rings_from_stack', 'line_processing')).toBe(false);
     });
 
     it('returns true for eliminate_rings_from_stack in territory_processing', () => {
@@ -131,8 +141,24 @@ describe('phaseValidation', () => {
       expect(isMoveValidInPhase('forced_elimination', 'forced_elimination')).toBe(true);
     });
 
-    it('returns true for forced_elimination in ring_placement (ANM trigger)', () => {
-      expect(isMoveValidInPhase('forced_elimination', 'ring_placement')).toBe(true);
+    it('returns false for forced_elimination in ring_placement', () => {
+      expect(isMoveValidInPhase('forced_elimination', 'ring_placement')).toBe(false);
+    });
+
+    it('returns true for recovery_slide in movement', () => {
+      expect(isMoveValidInPhase('recovery_slide', 'movement')).toBe(true);
+    });
+
+    it('returns true for skip_recovery in movement', () => {
+      expect(isMoveValidInPhase('skip_recovery', 'movement')).toBe(true);
+    });
+
+    it('returns false for recovery_slide in ring_placement', () => {
+      expect(isMoveValidInPhase('recovery_slide', 'ring_placement')).toBe(false);
+    });
+
+    it('returns true for swap_sides in ring_placement', () => {
+      expect(isMoveValidInPhase('swap_sides', 'ring_placement')).toBe(true);
     });
   });
 
@@ -159,7 +185,6 @@ describe('phaseValidation', () => {
       expect(moves).toContain('process_line');
       expect(moves).toContain('choose_line_reward');
       expect(moves).toContain('no_line_action');
-      expect(moves).toContain('eliminate_rings_from_stack');
     });
 
     it('includes all territory processing moves', () => {
@@ -188,10 +213,8 @@ describe('phaseValidation', () => {
 
     it('returns multiple phases for eliminate_rings_from_stack', () => {
       const phases = getPhasesForMoveType('eliminate_rings_from_stack');
-      expect(phases).toContain('line_processing');
       expect(phases).toContain('territory_processing');
-      expect(phases).toContain('forced_elimination');
-      expect(phases.length).toBe(3);
+      expect(phases.length).toBe(1);
     });
 
     it('returns all non-game_over phases for resign (always valid)', () => {
@@ -200,8 +223,9 @@ describe('phaseValidation', () => {
       expect(phases).not.toContain('game_over');
     });
 
-    it('returns capture and chain_capture for continue_capture_segment', () => {
+    it('returns movement, capture, and chain_capture for continue_capture_segment', () => {
       const phases = getPhasesForMoveType('continue_capture_segment');
+      expect(phases).toContain('movement');
       expect(phases).toContain('capture');
       expect(phases).toContain('chain_capture');
     });
@@ -223,12 +247,12 @@ describe('phaseValidation', () => {
       expect(getEliminationContextForPhase('forced_elimination')).toBe('forced');
     });
 
-    it('returns recovery for ring_placement phase', () => {
-      expect(getEliminationContextForPhase('ring_placement')).toBe('recovery');
+    it('returns recovery for movement phase', () => {
+      expect(getEliminationContextForPhase('movement')).toBe('recovery');
     });
 
-    it('returns null for movement phase', () => {
-      expect(getEliminationContextForPhase('movement')).toBe(null);
+    it('returns null for ring_placement phase', () => {
+      expect(getEliminationContextForPhase('ring_placement')).toBe(null);
     });
 
     it('returns null for capture phase', () => {

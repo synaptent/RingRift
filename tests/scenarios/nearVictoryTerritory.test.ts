@@ -14,7 +14,7 @@ import {
   createNearVictoryTerritoryFixtureMultiRegion,
   type NearVictoryTerritoryFixture,
 } from '../fixtures/nearVictoryTerritoryFixture';
-import { evaluateVictory } from '../../src/shared/engine/victoryLogic';
+import { evaluateVictory } from '../../src/shared/engine';
 import type { BoardType, GameState, Territory, Position } from '../../src/shared/types/game';
 import { positionToString } from '../../src/shared/types/game';
 import { computeProgressSnapshot } from '../../src/shared/engine/core';

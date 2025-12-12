@@ -178,15 +178,15 @@ type RecoverySlideMove = {
 
 ### 5.1 Last Player Standing (LPS)
 
-**Critical Change:** Recovery is a **real action** for LPS purposes.
+**Canonical:** Recovery is **NOT** a real action for LPS purposes (RR-CANON-R172).
 
-| Scenario                             | Without Recovery   | With Recovery                    |
-| ------------------------------------ | ------------------ | -------------------------------- |
-| B has only FE available              | B cannot block LPS | B cannot block LPS (FE ≠ real)   |
-| B has valid recovery slide           | N/A                | B **CAN** block LPS              |
-| Only A has real actions for 3 rounds | A wins LPS         | If B takes recovery → LPS resets |
+| Scenario                             | Without Recovery   | With Recovery                        |
+| ------------------------------------ | ------------------ | ------------------------------------ |
+| B has only FE available              | B cannot block LPS | B cannot block LPS (FE ≠ real)       |
+| B has valid recovery slide           | N/A                | B cannot block LPS (recovery ≠ real) |
+| Only A has real actions for 2 rounds | A wins LPS         | A wins LPS (recovery doesn't count)  |
 
-**Implication:** LPS evaluation must enumerate recovery moves, not just check for markers + buried rings.
+**Implication:** LPS evaluation must ignore recovery (and forced elimination) when determining real actions; recovery still matters for global-legal-action / ANM classification and turn rotation.
 
 ### 5.2 Forced Elimination (FE)
 
@@ -252,7 +252,7 @@ To bring Recovery into main:
 5. Add `recovery_slide` to `MoveType` in `src/shared/types/game.ts`
 6. Integrate with turn orchestrator phase machine
 7. Add contract vectors for parity testing
-8. Update LPS evaluation to consider recovery moves
+8. Ensure LPS evaluation does **not** count recovery as a real action (RR-CANON-R172)
 
 ---
 
@@ -261,10 +261,10 @@ To bring Recovery into main:
 ### 7.1 Resolved
 
 1. **Q: Is recovery a "real action" for LPS?**
-   A: Yes - recovery slides count as real actions.
+   A: No - recovery slides do **not** count as real actions for LPS (RR-CANON-R172).
 
 2. **Q: Can overlength lines be formed?**
-   A: Yes - cost scales with line length (1 + overlength).
+   A: Yes - overlength lines are permitted; the canonical cost model is Option 1/Option 2 (Option 1 costs 1 buried ring extraction, Option 2 is free and only available for overlength).
 
 3. **Q: What happens if collapse creates disconnected regions?**
    A: Standard territory processing applies; buried rings can pay for self-elimination.

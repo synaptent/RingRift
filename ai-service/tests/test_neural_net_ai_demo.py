@@ -58,6 +58,7 @@ def test_neural_demo_select_move_smoke(
         randomness=0.0,
         rngSeed=123,
         nn_model_id="sq8_nn_demo",
+        allow_fresh_weights=True,
     )
 
     ai = _create_ai_instance(AIType.NEURAL_DEMO, 1, cfg)

@@ -250,7 +250,7 @@ export function makeAnmScen05_LineProcessingNoRemainingDecisions(): GameState {
  *   - hasGlobalPlacementAction(...) == false for every player
  *   - hasForcedEliminationAction(...) == false for every player
  *
- * This is the bare-board structural stalemate used by victoryLogic.evaluateVictory
+ * This is the bare-board structural stalemate used by VictoryAggregate.evaluateVictory
  * to apply the §13.4 stalemate ladder (territory → eliminated+hand → markers → last actor).
  *
  * NOTE: From the ANM invariant perspective, hosts / RuleEngine should invoke
@@ -283,7 +283,7 @@ export function makeAnmScen06_GlobalStalemateBareBoard(): GameState {
     players,
     // Use a non-participating currentPlayer so that isANMState(state) is false
     // (hasTurnMaterial(state, currentPlayer) === false) while the stalemate
-    // ladder in victoryLogic still evaluates over players[1..N].
+    // ladder in VictoryAggregate still evaluates over players[1..N].
     currentPlayer: 3,
     currentPhase: 'ring_placement',
   });

@@ -89,8 +89,6 @@ export interface ActionAvailabilityDelegates {
   hasMovement: (playerNumber: number) => boolean;
   /** Check if player can make an overtaking capture */
   hasCapture: (playerNumber: number) => boolean;
-  /** Check if player can perform a recovery action (optional, defaults to false) */
-  hasRecovery?: (playerNumber: number) => boolean;
 }
 
 /**
@@ -103,9 +101,7 @@ export interface ActionAvailabilityDelegates {
  *
  * NOT real actions (for LPS purposes):
  * - Recovery slide (recovery_slide) - player can still use recovery but it
- *   doesn't reset LPS counter. This creates strategic tension: rings in hand
- *   become a "survival budget" - players must place at least once every 2
- *   rounds to avoid LPS loss.
+ *   does not count as a real action for LPS (only placement/movement/capture do).
  * - Forced elimination (eliminate_rings_from_stack when stack > 5)
  * - Line processing decisions
  * - Territory processing decisions
@@ -149,9 +145,8 @@ export function hasAnyRealAction(
 
   // NOTE: Recovery is intentionally NOT checked here.
   // Recovery moves are still valid actions a player can take, but they don't
-  // count as "real actions" for LPS purposes. This creates strategic depth:
-  // players with rings in hand have a "survival budget" - they can do recovery
-  // actions but must place at least one ring every 3 rounds to avoid LPS loss.
+  // count as "real actions" for LPS purposes. This means recovery alone does
+  // not prevent Last-Player-Standing outcomes.
 
   return false;
 }

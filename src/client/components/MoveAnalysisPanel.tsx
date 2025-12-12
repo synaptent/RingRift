@@ -52,6 +52,8 @@ function getMoveTypeLabel(move: Move): string {
       return 'Swap Sides';
     case 'recovery_slide':
       return 'Recovery';
+    case 'skip_recovery':
+      return 'Skip Recovery';
     default:
       return move.type.replace(/_/g, ' ');
   }

@@ -281,7 +281,7 @@ Coverage was assessed by reviewing:
 - Recovery action allows a "temporarily eliminated" player (no stacks, no rings in hand, but has markers and buried rings) to slide a marker to complete a line of at least `lineLength`, extracting buried ring(s) as self-elimination cost.
 - For exact-length lines: cost is 1 buried ring (Option 1).
 - For overlength lines: Option 1 collapses all markers (cost: 1 buried ring), Option 2 collapses minimum length (cost: 0).
-- Recovery is a **real action** for LPS purposes (unlike forced elimination).
+- Recovery is **NOT** a real action for LPS purposes (like forced elimination).
 - See `RULES_CANONICAL_SPEC.md` R110–R115 and `ringrift_complete_rules.md` §4.5.
 
 **Gaps:**
@@ -313,8 +313,8 @@ Coverage was assessed by reviewing:
 #### GAP-RECOV-04: Recovery action not integrated into LPS teaching
 
 - **Status:** Ready for implementation (engine complete as of 2025-12-08)
-- **Description**: LPS teaching currently covers placements, movements, captures as "real actions". Recovery action also counts as a real action and should be included in LPS explanations once implemented.
-- **Recommended Remedy**: Update `VICTORY_STALEMATE_TIPS` and LPS teaching scenarios to include recovery action.
+- **Description**: LPS teaching currently covers placements, movements, captures as "real actions". Recovery action is **not** a real action for LPS purposes and should be explicitly called out to avoid confusion (players often assume “any move” blocks LPS).
+- **Recommended Remedy**: Update `VICTORY_STALEMATE_TIPS` and LPS teaching scenarios to explicitly state: "Real actions = placements, movements, captures. Recovery and forced elimination do not count for LPS."
 - **Effort**: Small
 - **Dependencies**: GAP-RECOV-01
 
@@ -389,7 +389,7 @@ Gaps are scored by: `Score = Priority × (1 / Effort)` where Priority={High:3, M
 | ---- | ------------ | --------------- | -------- | ------ | ----- | --------------------------------------------- |
 | 22   | GAP-RECOV-01 | recovery_action | Medium   | Small  | 6.0   | Add TeachingOverlay topic for recovery action |
 | 23   | GAP-RECOV-03 | recovery_action | Medium   | Small  | 6.0   | Add temp vs full elimination distinction      |
-| 24   | GAP-RECOV-04 | recovery_action | Medium   | Small  | 6.0   | Integrate into LPS teaching                   |
+| 24   | GAP-RECOV-04 | recovery_action | Medium   | Small  | 6.0   | Teach: recovery ≠ real action for LPS         |
 | 25   | GAP-RECOV-02 | recovery_action | Medium   | Medium | 3.0   | Add teaching scenarios (use contract vectors) |
 
 ---
@@ -427,7 +427,7 @@ Gaps are scored by: `Score = Priority × (1 / Effort)` where Priority={High:3, M
 - GAP-RECOV-01 through GAP-RECOV-04 – Recovery action teaching content
   - Engine implementation complete as of 2025-12-08 (`recovery_slide` MoveType in TS and Python)
   - Contract vectors: `recovery_action.vectors.json` (4 vectors: exact-length, overlength options)
-  - Next steps: Add `recovery_action` TeachingOverlay topic, teaching scenarios, and integrate into LPS teaching
+  - Next steps: Add `recovery_action` TeachingOverlay topic, teaching scenarios, and clarify recovery vs LPS “real action” semantics in teaching/copy
 
 **Note:** Some LPS scenarios (step 3) are deferred until CCE-006 implementation compromise is resolved and engines explicitly support early LPS detection.
 

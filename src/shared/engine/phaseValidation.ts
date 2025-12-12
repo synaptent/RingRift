@@ -31,15 +31,17 @@ export type MoveType =
   | 'place_ring'
   | 'skip_placement'
   | 'no_placement_action'
+  | 'swap_sides'
   // Movement Phase
   | 'move_stack'
   | 'move_ring'
+  | 'build_stack'
   | 'no_movement_action'
   // Capture (initiated from movement)
   | 'overtaking_capture'
   | 'continue_capture_segment'
-  | 'end_capture_chain'
-  // Recovery (RR-CANON-R110–R115)
+  | 'skip_capture'
+  // Recovery (RR-CANON-R110–R115) - movement-phase action
   | 'recovery_slide'
   | 'skip_recovery'
   // Line Processing Phase
@@ -65,51 +67,41 @@ export type MoveType =
  * Declarative matrix mapping phases to valid move types.
  *
  * Rules derivation:
- * - ring_placement: place_ring, skip_placement, no_placement_action, recovery_slide, skip_recovery
- *   (recovery can happen during placement phase when player has buried rings)
- * - movement: move_stack, move_ring, no_movement_action, overtaking_capture
- *   (capture is initiated from movement)
- * - capture: continue_capture_segment, end_capture_chain
- * - chain_capture: continue_capture_segment, end_capture_chain
- * - line_processing: process_line, choose_line_reward, no_line_action, eliminate_rings_from_stack
- *   (elimination is part of line reward)
+ * - ring_placement: place_ring, skip_placement, no_placement_action, swap_sides
+ * - movement: move_stack, move_ring, build_stack, no_movement_action,
+ *   overtaking_capture, continue_capture_segment, recovery_slide
+ * - capture: overtaking_capture, continue_capture_segment, skip_capture
+ * - chain_capture: overtaking_capture, continue_capture_segment
+ * - line_processing: process_line, choose_line_reward, no_line_action
  * - territory_processing: process_territory_region, eliminate_rings_from_stack, no_territory_action, skip_territory_processing
- * - forced_elimination: forced_elimination, eliminate_rings_from_stack
+ * - forced_elimination: forced_elimination
  * - game_over: none (game ended)
  *
  * Note: Some moves can span multiple phases due to phase coercion in turnOrchestrator.
  * This matrix represents the PRIMARY valid phase for each move type.
  */
 export const VALID_MOVES_BY_PHASE: Readonly<Record<GamePhase, readonly MoveType[]>> = {
-  ring_placement: [
-    'place_ring',
-    'skip_placement',
-    'no_placement_action',
-    'recovery_slide',
-    'skip_recovery',
-    'forced_elimination', // Can trigger from ring_placement when ANM detected
-  ],
+  ring_placement: ['place_ring', 'skip_placement', 'no_placement_action', 'swap_sides'],
   movement: [
     'move_stack',
     'move_ring',
+    'build_stack',
     'no_movement_action',
-    'overtaking_capture', // Capture is initiated from movement phase
+    'overtaking_capture',
+    'continue_capture_segment',
+    'recovery_slide',
+    'skip_recovery',
   ],
-  capture: ['overtaking_capture', 'continue_capture_segment', 'end_capture_chain'],
-  chain_capture: ['continue_capture_segment', 'end_capture_chain'],
-  line_processing: [
-    'process_line',
-    'choose_line_reward',
-    'no_line_action',
-    'eliminate_rings_from_stack', // Line reward option 1
-  ],
+  capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture'],
+  chain_capture: ['overtaking_capture', 'continue_capture_segment'],
+  line_processing: ['process_line', 'choose_line_reward', 'no_line_action'],
   territory_processing: [
     'process_territory_region',
     'eliminate_rings_from_stack', // Self-elimination for territory
     'no_territory_action',
     'skip_territory_processing',
   ],
-  forced_elimination: ['forced_elimination', 'eliminate_rings_from_stack'],
+  forced_elimination: ['forced_elimination'],
   game_over: [],
 } as const;
 
@@ -209,8 +201,8 @@ export function getEliminationContextForPhase(
       return 'territory';
     case 'forced_elimination':
       return 'forced';
-    case 'ring_placement':
-      // Recovery can happen during placement phase
+    case 'movement':
+      // Recovery (recovery_slide) is a movement-phase action.
       return 'recovery';
     default:
       return null;
