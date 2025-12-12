@@ -3560,7 +3560,8 @@ class ParallelGameRunner:
         self.board_size = board_size
         self.num_players = num_players
         self.swap_enabled = swap_enabled
-        self.lps_victory_rounds = lps_victory_rounds
+        # Default LPS victory rounds to 2 if not specified
+        self.lps_victory_rounds = lps_victory_rounds if lps_victory_rounds is not None else 2
         self.rings_per_player = rings_per_player
 
         if device is None:
