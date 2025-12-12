@@ -489,6 +489,11 @@ def build_soak_command(job: JobConfig, is_remote: bool = False) -> str:
     cmd_parts = [
         "PYTHONPATH=.",
         "RINGRIFT_SKIP_SHADOW_CONTRACTS=true",
+    ]
+    # Propagate experimental recovery flag if set
+    if os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "").lower() in ("1", "true"):
+        cmd_parts.append("RINGRIFT_RECOVERY_STACK_STRIKE_V1=1")
+    cmd_parts.extend([
         "python",
         "scripts/run_self_play_soak.py",
         f"--num-games {job.num_games}",

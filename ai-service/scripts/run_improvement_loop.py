@@ -59,6 +59,31 @@ def _resolve_ai_service_path(raw: str) -> Path:
     return (AI_SERVICE_ROOT / path).resolve()
 
 
+def _resolve_default_reanalysis_nn_model_id(
+    board: str,
+    num_players: int,
+) -> Optional[str]:
+    """Best-effort nn_model_id prefix for reanalysis search.
+
+    When the improvement loop has not produced a `*_best.pth` yet, we still
+    want reanalysis to work on square8 2-player runs by falling back to
+    known-good baseline prefixes shipped in ai-service/models.
+    """
+    if board != "square8" or num_players != 2:
+        return None
+
+    models_dir = AI_SERVICE_ROOT / "models"
+    candidates = [
+        "ringrift_v3_sq8_2p",
+        "sq8_2p_nn_baseline",
+    ]
+    for prefix in candidates:
+        matches = list(models_dir.glob(f"{prefix}*.pth"))
+        if any(p.is_file() and p.stat().st_size > 0 for p in matches):
+            return prefix
+    return None
+
+
 @dataclass
 class LoopState:
     """Checkpoint state for resumable improvement loop."""
