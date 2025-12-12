@@ -390,24 +390,78 @@ def export_training_data(
                 print(f"[canonical-source-error] {issue}", file=sys.stderr)
             return False, output_path
 
-    cmd = [
-        "python",
-        "scripts/export_replay_dataset.py",
-        "--db",
-        str(replay_db_path),
-        "--board-type",
-        board,
-        "--num-players",
-        str(players),
-        "--output",
-        str(output_path),
-        "--require-completed",
-        "--min-moves",
-        "20",
-    ]
+    dataset_policy_target = str(config.get("dataset_policy_target", "played")).strip()
+    dataset_max_games = config.get("dataset_max_games", None)
 
-    print(f"Exporting training data to {output_path}...")
-    code, _, stderr = run_command(cmd, dry_run=dry_run, timeout=600, cwd=AI_SERVICE_ROOT)
+    cmd: List[str]
+    timeout_sec = 600
+    if dataset_policy_target == "played":
+        cmd = [
+            "python",
+            "scripts/export_replay_dataset.py",
+            "--db",
+            str(replay_db_path),
+            "--board-type",
+            board,
+            "--num-players",
+            str(players),
+            "--output",
+            str(output_path),
+            "--require-completed",
+            "--min-moves",
+            "20",
+        ]
+    else:
+        policy_search_think_time_ms = int(config.get("policy_search_think_time_ms", 50))
+        policy_temperature = float(config.get("policy_temperature", 1.0))
+
+        nn_model_id = config.get("policy_nn_model_id", None)
+        if nn_model_id is None:
+            best_model = AI_SERVICE_ROOT / "models" / f"{board}_{players}p_best.pth"
+            if best_model.exists():
+                nn_model_id = best_model.stem
+
+        cmd = [
+            "python",
+            "scripts/reanalyze_replay_dataset.py",
+            "--db",
+            str(replay_db_path),
+            "--board-type",
+            board,
+            "--num-players",
+            str(players),
+            "--output",
+            str(output_path),
+            "--require-completed",
+            "--min-moves",
+            "20",
+            "--policy-target",
+            dataset_policy_target,
+            "--policy-search-think-time-ms",
+            str(policy_search_think_time_ms),
+            "--policy-temperature",
+            str(policy_temperature),
+        ]
+        if nn_model_id:
+            cmd += ["--nn-model-id", str(nn_model_id)]
+
+        timeout_sec = 7200
+
+    if dataset_max_games is not None:
+        cmd += ["--max-games", str(int(dataset_max_games))]
+
+    if dataset_policy_target == "played":
+        print(f"Exporting training data to {output_path}...")
+    else:
+        print(
+            f"Reanalyzing training data ({dataset_policy_target}) to {output_path}..."
+        )
+    code, _, stderr = run_command(
+        cmd,
+        dry_run=dry_run,
+        timeout=timeout_sec,
+        cwd=AI_SERVICE_ROOT,
+    )
 
     if code != 0:
         print(f"Export failed: {stderr[:200]}")
@@ -788,6 +842,49 @@ def main():
         help="Number of evaluation games per iteration (default: 100).",
     )
     parser.add_argument(
+        "--dataset-policy-target",
+        type=str,
+        choices=["played", "mcts_visits", "descent_softmax"],
+        default="mcts_visits",
+        help=(
+            "Policy target source for exported datasets. "
+            "'played' exports 1-hot played moves (fast). "
+            "'mcts_visits' or 'descent_softmax' runs search-based reanalysis "
+            "to produce soft policy targets (stronger). "
+            "(default: mcts_visits)"
+        ),
+    )
+    parser.add_argument(
+        "--dataset-max-games",
+        type=int,
+        default=None,
+        help=(
+            "Optional cap on number of most-recent games to include when exporting/reanalyzing datasets. "
+            "When unset, uses up to 10k games from the DB."
+        ),
+    )
+    parser.add_argument(
+        "--policy-search-think-time-ms",
+        type=int,
+        default=50,
+        help="Search think time (ms) for reanalysis policy targets (default: 50).",
+    )
+    parser.add_argument(
+        "--policy-temperature",
+        type=float,
+        default=1.0,
+        help="Softmax temperature for descent_softmax reanalysis (default: 1.0).",
+    )
+    parser.add_argument(
+        "--policy-nn-model-id",
+        type=str,
+        default=None,
+        help=(
+            "Optional NeuralNetAI nn_model_id prefix for reanalysis search. "
+            "When unset, uses the current best model file stem if available."
+        ),
+    )
+    parser.add_argument(
         "--max-consecutive-failures",
         type=int,
         default=5,
@@ -830,6 +927,11 @@ def main():
         "promotion_threshold": args.promotion_threshold,
         "promotion_confidence": args.promotion_confidence,
         "eval_games": args.eval_games,
+        "dataset_policy_target": args.dataset_policy_target,
+        "dataset_max_games": args.dataset_max_games,
+        "policy_search_think_time_ms": args.policy_search_think_time_ms,
+        "policy_temperature": args.policy_temperature,
+        "policy_nn_model_id": args.policy_nn_model_id,
         "replay_db": str(replay_db_path),
         "canonical_mode": canonical_mode,
         "allow_pending_gate": bool(args.allow_pending_gate),
@@ -860,6 +962,14 @@ def main():
     print(f"Eval games per iteration: {args.eval_games}")
     print(f"Promotion threshold: {args.promotion_threshold:.0%}")
     print(f"Promotion confidence: {args.promotion_confidence:.0%}")
+    print(f"Dataset policy target: {args.dataset_policy_target}")
+    if args.dataset_max_games is not None:
+        print(f"Dataset max games: {args.dataset_max_games}")
+    if args.dataset_policy_target != "played":
+        print(f"Reanalysis think time: {args.policy_search_think_time_ms}ms")
+        print(f"Reanalysis temperature: {args.policy_temperature}")
+        if args.policy_nn_model_id:
+            print(f"Reanalysis nn_model_id: {args.policy_nn_model_id}")
     print(f"State file: {state_path}")
     if args.dry_run:
         print("*** DRY RUN MODE - No commands will be executed ***")

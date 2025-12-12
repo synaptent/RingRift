@@ -509,6 +509,9 @@ class MCTSAI(HeuristicAI):
         # Try to load neural net for evaluation when enabled
         self.neural_net: Optional[NeuralNetAI] = None
         if should_use_neural:
+            require_nn_env = os.environ.get("RINGRIFT_REQUIRE_NEURAL_NET", "").lower() in {
+                "1", "true", "yes", "on",
+            }
             try:
                 self.neural_net = NeuralNetAI(player_number, config)
                 logger.info(
@@ -516,6 +519,8 @@ class MCTSAI(HeuristicAI):
                     "neural evaluation enabled"
                 )
             except Exception as e:
+                if require_nn_env:
+                    raise
                 logger.warning(f"Failed to load neural net for MCTS: {e}")
                 self.neural_net = None
         else:

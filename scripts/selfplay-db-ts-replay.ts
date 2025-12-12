@@ -1249,8 +1249,15 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
     }
   }
 
-  // Emit db-move-complete for the final recorded move (no bridges needed since there's no next move)
-  if (recordedMoves.length > 0 && lastEmittedDbMoveComplete < recordedMoves.length - 1) {
+  // Emit db-move-complete for the final recorded move (no bridges needed since there's no next move).
+  // Only do this when we successfully applied the entire DB history; if the game ended early
+  // (legacy recordings with trailing moves), emitting a "complete" state for an un-applied
+  // recorded move is misleading and breaks parity tooling expectations.
+  if (
+    recordedMoves.length > 0 &&
+    applied === recordedMoves.length &&
+    lastEmittedDbMoveComplete < recordedMoves.length - 1
+  ) {
     const finalDbMoveIndex = recordedMoves.length - 1;
     const stateForFinalMove = engine.getState() as GameState;
     // eslint-disable-next-line no-console
@@ -1325,19 +1332,18 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
 
   // Emit a final step summary with the recomputed terminal state. The parity
   // parser keeps the last summary for a given k, so this overrides the
-  // pre-recompute summary for the last move.
-  const finalStepDbMoveIndex = recordedMoves.length > 0 ? recordedMoves.length - 1 : null;
+  // pre-recompute summary for the last applied move.
+  const finalStepDbMoveIndex = applied > 0 ? applied - 1 : null;
+  const finalStepMove = finalStepDbMoveIndex !== null ? recordedMoves[finalStepDbMoveIndex] : null;
   // eslint-disable-next-line no-console
   console.log(
     JSON.stringify({
       kind: 'ts-replay-step',
       k: applied,
       db_move_index: finalStepDbMoveIndex,
-      moveType: recordedMoves.length > 0 ? recordedMoves[recordedMoves.length - 1].type : undefined,
-      movePlayer:
-        recordedMoves.length > 0 ? recordedMoves[recordedMoves.length - 1].player : undefined,
-      moveNumber:
-        recordedMoves.length > 0 ? recordedMoves[recordedMoves.length - 1].moveNumber : undefined,
+      moveType: finalStepMove?.type,
+      movePlayer: finalStepMove?.player,
+      moveNumber: finalStepMove?.moveNumber,
       summary: {
         ...summarizeState(`after_move_${applied}_final`, finalState),
         // view: 'post_move' – terminal state after the final DB move's

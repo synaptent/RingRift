@@ -28,7 +28,7 @@
 
 ---
 
-## 2. Purpose & Vision
+## 2. Vision / Outcome (Purpose & Vision)
 
 RingRift exists to deliver a polished, production-ready online implementation of the RingRift tabletop strategy game as a high-quality environment for human and AI players to explore deep, perfect-information multiplayer gameplay.
 
@@ -140,7 +140,17 @@ High-level risk framing and historical assessment for this area are summarised i
 
 ---
 
-## 4. Success criteria / metrics (v1.0 readiness)
+## 4. Success metrics & release gate criteria (v1.0 readiness)
+
+### 4.0 Release gate criteria (summary)
+
+v1.0 is considered ready to ship when all of the following are true (this is the goals-level definition; current measured status lives in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) and `docs/PRODUCTION_READINESS_CHECKLIST.md`):
+
+- **Rules and victory correctness** is rules-complete and parity/contract validated for the supported boards and player counts (see §3 and §6; rules authority remains [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:1)).
+- **Performance SLOs** in §4.1 are met under production-scale load (details in `docs/testing/BASELINE_CAPACITY.md` and `docs/operations/SLO_VERIFICATION.md`).
+- **Quality gates** in §4.2 are green (tests + coverage target).
+- **Feature scope** in §6.1–§6.2 is playable end-to-end in both backend multiplayer and sandbox.
+- **Operational readiness** gates in §4.4 are met (monitoring, runbooks, drills, and rollback posture).
 
 ### 4.1 Performance SLOs
 
@@ -156,16 +166,16 @@ From [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:144-149):
 
 These SLOs are the canonical targets for v1.0. Load-testing docs, alert thresholds, and dashboards must be kept consistent with this table and updated only when this file is updated.
 
-### 4.2 Test coverage requirements
+### 4.2 Test and quality gates (v1.0)
 
-| Category                  | Requirement              | Current Status (snapshot; see `CURRENT_STATE_ASSESSMENT.md` for live data)                                                |
-| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| **TypeScript tests**      | All passing              | ✅ ~2,987 tests passing, ~130 skipped (triaged)                                                                           |
-| **Python tests**          | All passing              | ✅ ~836 tests passing                                                                                                     |
-| **Contract vectors**      | 100% parity              | ✅ 81/81 passing, 0 mismatches                                                                                            |
-| **Coverage target**       | ≥80% lines overall       | 🔴 **Gap:** Overall ~69%; key engine/host contexts high, but client components/hooks historically lagged (now improving). |
-| **Rules scenario matrix** | All FAQ examples covered | ✅ All Q1–Q24 FAQ scenarios mapped to concrete Jest suites (see `docs/rules/RULES_SCENARIO_MATRIX.md`)                    |
-| **Integration tests**     | Core workflows passing   | ✅ AI resilience, reconnection (including reconnect → fresh `game_state`), sessions, contexts                             |
+| Gate / metric             | Requirement              | Where to check current status                                |
+| ------------------------- | ------------------------ | ------------------------------------------------------------ |
+| **TypeScript tests**      | All passing in CI lanes  | [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) |
+| **Python tests**          | All passing in CI lanes  | [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) |
+| **Contract vectors**      | 100% TS↔Python parity    | [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) |
+| **Coverage target**       | ≥80% lines overall       | [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) |
+| **Rules scenario matrix** | All FAQ examples covered | `docs/rules/RULES_SCENARIO_MATRIX.md`                        |
+| **Integration tests**     | Core workflows passing   | [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) |
 
 > **Note:** Live test counts and coverage breakdowns are maintained in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:236). This document is **not** the single source of truth for those numbers; it records only the high-level requirements and a recent snapshot.
 
@@ -187,45 +197,24 @@ To avoid duplicating live metrics, this section describes the **shape** of the t
 - [ ] Sandbox mode provides rules-complete local play
 - [ ] Spectator mode allows read-only game viewing
 
-### 4.4 Environment & rollout success criteria
+### 4.4 Release gate criteria: rollout & operations readiness
 
 Environment posture and rollout discipline are first-class parts of v1.0 readiness, not an afterthought. At a high level, v1.0 is considered **environment‑ready** when:
 
-- **Canonical orchestrator is authoritative in production** ✅ **ACHIEVED (PASS20)**
-  - Production gameplay traffic flows through the shared turn orchestrator via the backend adapter
-  - Legacy turn paths removed (~1,176 lines in PASS20)
-  - Effective production profile matches **Phase 3 orchestrator‑ON** preset
-  - `ORCHESTRATOR_ADAPTER_ENABLED` hardcoded to `true`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`
+- **SLOs are measured and validated** under target load (see §4.1 and `docs/testing/BASELINE_CAPACITY.md`).
+- **Monitoring and alerting are in place** for critical gameplay, parity, and system-health signals (see `docs/operations/ALERTING_THRESHOLDS.md`).
+- **Runbooks exist and have been exercised** for key operational failure modes (backup/restore, secrets rotation, AI service degradation, rollback).
+- **Rollout posture is documented** (environment presets, rollback strategy, and orchestrator-on invariants) in `docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md` and `STRATEGIC_ROADMAP.md`.
 
-- **Rollout phases executed with SLO gates** ✅ **ACHIEVED (PASS20)**
-  - Staging runs in Phase 3 (orchestrator‑only) posture
-  - SLOs documented and monitoring infrastructure in place (PASS21)
-  - Rollback paths and circuit‑breaker behavior documented
-  - Phase 3 complete as of PASS20
+Detailed rollout tables, environment presets, and alert thresholds live in `STRATEGIC_ROADMAP.md`, `CURRENT_STATE_ASSESSMENT.md`, `docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md`, and `docs/operations/ALERTING_THRESHOLDS.md`.
 
-- **Invariants, parity, and AI healthchecks part of promotion** ✅ **ACHIEVED (PASS20–21)**
-  - Orchestrator invariant metrics and dashboards implemented
-  - Python strict‑invariant metrics tracked
-  - Cross‑language parity suites stable (81/81 contract vectors passing)
-  - AI healthcheck profile documented and passing
-  - Three Grafana dashboards with ~22 panels monitoring all critical metrics
-
-- **Observability infrastructure in place** ✅ **ACHIEVED (PASS21)**
-  - Game performance dashboard (moves, AI latency, abnormal terminations)
-  - Rules correctness dashboard (parity, invariants)
-  - System health dashboard (HTTP, WebSocket, infrastructure)
-  - k6 load testing framework with production-scale scenarios
-
-- **Production validation at scale** ✅ **ACHIEVED (PASS22 / 2025-12-10 staging)**
-  - Baseline and target-scale k6 runs completed and summarized in `docs/testing/BASELINE_CAPACITY.md`
-  - SLOs validated under 300-VU target load with strong headroom
-  - Alert rules validated (W3-8); rerun load+alert drills after major infra changes
-
-These criteria are intentionally high‑level and goal‑oriented; detailed rollout tables, environment presets, and alert thresholds live in `STRATEGIC_ROADMAP.md`, `CURRENT_STATE_ASSESSMENT.md`, `docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md`, and `docs/operations/ALERTING_THRESHOLDS.md`. When changing rollout strategy or SLOs, update those documents for implementation detail, and this section for the overarching success definition.
+For the current completion status of these gates, see [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) and `docs/PRODUCTION_READINESS_CHECKLIST.md`.
 
 ---
 
-## 5. Key dependencies & assumptions
+## 5. Key risks, dependencies & assumptions
+
+This section captures goal-level risks and assumptions that shape scope and success criteria. Live issue tracking remains in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) and current measured status remains in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md).
 
 These goals assume the following technical and operational dependencies, which are defined in more detail in the referenced architecture and operations documents:
 
@@ -241,9 +230,11 @@ If any of these assumptions change materially (for example, a different deployme
 
 ---
 
-## 6. Scope & non-goals (v1.0 and beyond)
+## 6. In-scope (v1.0) and scope boundaries
 
 Sections 6–8 collectively define what is in scope for the current v1.0 phase (required features and user flows), what is intentionally deferred to later phases, and what is explicitly out of scope or constrained for this project.
+
+**Scope note:** The codebase may contain early or partial implementations of some post‑v1.0 features. Unless a feature is listed under §6.1–§6.2 as required for v1.0, it is not treated as a v1.0 release gate.
 
 ### 6.1 Required features (v1.0)
 
@@ -319,7 +310,7 @@ Sections 6–8 collectively define what is in scope for the current v1.0 phase (
 
 ---
 
-## 8. Non-goals (explicitly out of scope)
+## 8. Out-of-scope / Non-goals (explicitly out of scope)
 
 ### 8.1 What RingRift will **not** do
 

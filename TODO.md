@@ -315,7 +315,7 @@ Operational drills completed:
 - [ ] Regenerate and gate canonical replay DBs via `ai-service/scripts/generate_canonical_selfplay.py` (attach gate summaries + update `ai-service/TRAINING_DATA_REGISTRY.md`):
   - [x] `canonical_square8.db` (2P) — `canonical_ok=true` (`ai-service/data/games/db_health.canonical_square8.json`)
   - [x] `canonical_square8_3p.db` (3P) — `canonical_ok=true` (`ai-service/data/games/db_health.canonical_square8_3p.json`)
-  - [ ] `canonical_square8_4p.db` (4P) — parity gate failing (`ai-service/data/games/db_health.canonical_square8_4p.json`)
+  - [x] `canonical_square8_4p.db` (4P) — `canonical_ok=true` (`ai-service/data/games/db_health.canonical_square8_4p.json`)
   - [x] `canonical_square19.db` (2P) — `canonical_ok=true` (`ai-service/data/games/db_health.canonical_square19.json`, low volume; scale up)
   - [ ] `canonical_hex.db` (radius‑12) — pending
 - [x] Add and keep a small golden replay pack in CI that replays in TS + Python and fails on any semantic drift

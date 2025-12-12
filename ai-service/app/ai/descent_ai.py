@@ -116,9 +116,17 @@ class DescentAI(BaseAI):
         self.hex_encoder: Optional[ActionEncoderHex]
 
         if self.use_neural_net:
+            require_nn_env = os.environ.get("RINGRIFT_REQUIRE_NEURAL_NET", "").lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
             try:
                 self.neural_net = NeuralNetAI(player_number, config)
             except Exception:
+                if require_nn_env:
+                    raise
                 # On any failure, degrade gracefully to heuristic-only search.
                 logger.warning(
                     "DescentAI failed to initialize NeuralNetAI; "

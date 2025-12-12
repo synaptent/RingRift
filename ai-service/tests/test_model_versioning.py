@@ -29,6 +29,7 @@ from app.training.model_versioning import (
     RINGRIFT_CNN_V2_VERSION,
 )
 from app.ai.neural_net import RingRiftCNN_v2
+from app.ai import neural_net as neural_net_mod
 
 
 class SimpleModel(nn.Module):
@@ -617,10 +618,79 @@ class TestRingRiftCNN_v2Versioning:
         assert config['board_size'] == 8
         # V2 model stores total_in_channels which is in_channels * (history_length + 1)
         assert 'total_in_channels' in config
+        assert config["global_features"] == 10
+        assert config["history_length"] == 3
         assert config['num_filters'] == 32
         assert config['num_res_blocks'] == 2
         # Policy size depends on board_size - just verify it's present
         assert 'policy_size' in config
+
+    def test_neural_netai_uses_checkpoint_metadata_to_build_matching_model(
+        self,
+        manager: ModelVersionManager,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: "os.PathLike[str]",
+    ) -> None:
+        """NeuralNetAI should construct an architecture that matches the checkpoint.
+
+        This guards against the class of failures where a checkpoint has
+        ``num_filters=192`` (value_fc1 in_features=212) but the runtime
+        accidentally constructs the historical 128-filter model
+        (value_fc1 in_features=148), causing neural tiers to fall back to
+        heuristics.
+        """
+        # Force CPU to make the test deterministic across environments.
+        monkeypatch.setenv("RINGRIFT_FORCE_CPU", "1")
+
+        # Create an isolated ai-service root with a models/ directory.
+        base_dir = tmp_path / "ai-service"
+        models_dir = base_dir / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create a tiny RingRiftCNN_v2 checkpoint with canonical channel counts.
+        # Keep it small so the test is fast, but non-default so we assert that
+        # metadata is actually being used.
+        num_filters = 24
+        global_features = 20
+        model = RingRiftCNN_v2(
+            board_size=8,
+            in_channels=14,
+            global_features=global_features,
+            num_res_blocks=2,
+            num_filters=num_filters,
+            history_length=3,
+            policy_size=123,
+        )
+        metadata = manager.create_metadata(model)
+
+        # Verify metadata captures the constants we rely on for compatibility checks.
+        assert metadata.config["global_features"] == global_features
+        assert metadata.config["history_length"] == 3
+
+        ckpt_path = models_dir / "test_model.pth"
+        manager.save_checkpoint(model, metadata, str(ckpt_path))
+
+        # Clear global model cache so we don't pick up a cached real model.
+        neural_net_mod._MODEL_CACHE.clear()
+
+        from app.models import AIConfig, BoardType
+        from app.ai.neural_net import NeuralNetAI
+
+        cfg = AIConfig(
+            difficulty=6,
+            randomness=0.0,
+            think_time=0,
+            rng_seed=1,
+            use_neural_net=True,
+            nn_model_id="test_model",
+            allow_fresh_weights=False,
+        )
+        nn = NeuralNetAI(player_number=1, config=cfg)
+        nn._base_dir = str(base_dir)
+        nn._ensure_model_initialized(BoardType.SQUARE8)
+
+        assert nn.model is not None
+        assert nn.model.value_fc1.in_features == num_filters + global_features
 
     def test_ringrift_save_and_load(
         self, manager, ringrift_model, temp_path
