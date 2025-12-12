@@ -29,6 +29,7 @@ from app.ai.neural_net import (
 )
 from app.rules.geometry import BoardGeometry
 from app.rules.core import get_rings_per_player
+from app.ai.game_state_utils import infer_num_players, select_threat_opponent
 
 
 def encode_legal_moves(
@@ -414,10 +415,37 @@ class HexStateEncoder:
             (p for p in state.players if p.player_number == current_player),
             None,
         )
-        opp_player = next(
-            (p for p in state.players if p.player_number != current_player),
-            None,
-        )
+        opp_player = None
+        num_players = infer_num_players(state)
+        if num_players <= 2:
+            opp_player = next(
+                (
+                    p
+                    for p in state.players
+                    if p.player_number != current_player
+                ),
+                None,
+            )
+        else:
+            threat_pid = select_threat_opponent(state, current_player)
+            if threat_pid is not None:
+                opp_player = next(
+                    (
+                        p
+                        for p in state.players
+                        if p.player_number == threat_pid
+                    ),
+                    None,
+                )
+            if opp_player is None:
+                opp_player = next(
+                    (
+                        p
+                        for p in state.players
+                        if p.player_number != current_player
+                    ),
+                    None,
+                )
 
         if my_player:
             rings_per_player = float(get_rings_per_player(state.board.type))

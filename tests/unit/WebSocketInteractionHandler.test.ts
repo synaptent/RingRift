@@ -130,6 +130,24 @@ describe('WebSocketInteractionHandler', () => {
     });
   });
 
+  describe('cancelAllChoices', () => {
+    it('cancels all pending choices for the game', async () => {
+      const choiceP1 = createLineOrderChoice('choice-1', 1);
+      const choiceP2 = createLineOrderChoice('choice-2', 2);
+
+      const p1 = handler.requestChoice(choiceP1);
+      const p2 = handler.requestChoice(choiceP2);
+
+      expect(handler.getPendingCount()).toBe(2);
+
+      handler.cancelAllChoices();
+
+      expect(handler.getPendingCount()).toBe(0);
+      await expect(p1).rejects.toThrow('was cancelled by server');
+      await expect(p2).rejects.toThrow('was cancelled by server');
+    });
+  });
+
   describe('getPendingCount', () => {
     it('should return 0 when no choices are pending', () => {
       expect(handler.getPendingCount()).toBe(0);

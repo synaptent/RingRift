@@ -424,6 +424,18 @@ class HeuristicAI(BaseAI):
 
         Uses configurable weight constants for full training exploration.
         """
+        # LPS proximity: if a player has already completed an exclusive-action
+        # round, they are effectively one step from LPS victory (R172). Treat
+        # this as a full victory threat so Paranoid search respects it.
+        lps_player = getattr(game_state, "lps_consecutive_exclusive_player", None)
+        lps_rounds = getattr(game_state, "lps_consecutive_exclusive_rounds", 0)
+        if (
+            lps_player == getattr(player, "player_number", None)
+            and isinstance(lps_rounds, int)
+            and lps_rounds >= 1
+        ):
+            return self.WEIGHT_VICTORY_THRESHOLD_BONUS
+
         rings_needed = game_state.victory_threshold - player.eliminated_rings
         territory_needed = (
             game_state.territory_victory_threshold - player.territory_spaces

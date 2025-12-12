@@ -18,6 +18,17 @@ import { Trend, Rate, Counter, Gauge } from 'k6/metrics';
 import { getValidToken, loginAndGetToken } from '../auth/helpers.js';
 import { makeHandleSummary } from '../summary.js';
 
+const thresholdsConfig = JSON.parse(open('../config/thresholds.json'));
+const THRESHOLD_ENV = __ENV.THRESHOLD_ENV || 'staging';
+const perfEnv =
+  thresholdsConfig.environments[THRESHOLD_ENV] || thresholdsConfig.environments.staging;
+const moveSubmissionSlo =
+  (perfEnv.websocket_gameplay && perfEnv.websocket_gameplay.move_submission) ||
+  thresholdsConfig.environments.staging.websocket_gameplay.move_submission;
+const connectionStabilitySlo =
+  (perfEnv.websocket_gameplay && perfEnv.websocket_gameplay.connection_stability) ||
+  thresholdsConfig.environments.staging.websocket_gameplay.connection_stability;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Metrics
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,7 +105,9 @@ const WS_GAMEPLAY_DEBUG = (() => {
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
 })();
 
-const MOVE_STALL_THRESHOLD_MS = Number(__ENV.WS_MOVE_STALL_THRESHOLD_MS || 2000);
+const MOVE_STALL_THRESHOLD_MS = Number(
+  __ENV.WS_MOVE_STALL_THRESHOLD_MS || moveSubmissionSlo.stall_threshold_ms || 2000
+);
 const MOVE_RTT_TIMEOUT_MS = Number(__ENV.WS_MOVE_RTT_TIMEOUT_MS || 10000);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -175,18 +188,23 @@ export const options = {
   scenarios,
   thresholds: {
     ws_move_rtt_ms: [
-      'p(95)<300',
-      'p(99)<600',
+      `p(95)<${moveSubmissionSlo.end_to_end_latency_p95_ms}`,
+      `p(99)<${moveSubmissionSlo.end_to_end_latency_p99_ms}`,
     ],
     ws_move_success_rate: ['rate>0.95'],
     ws_move_stalled_total: ['count<10'],
     ws_moves_attempted_total: ['count>0'],
-    ws_connection_success_rate: ['rate>0.99'],
-    ws_handshake_success_rate: ['rate>0.99'],
+    ws_connection_success_rate: [
+      `rate>${connectionStabilitySlo.connection_success_rate_percent / 100}`,
+    ],
+    ws_handshake_success_rate: [
+      `rate>${connectionStabilitySlo.connection_success_rate_percent / 100}`,
+    ],
   },
   tags: {
     scenario: 'websocket-gameplay',
     test_type: 'load',
+    environment: THRESHOLD_ENV,
   },
 };
 

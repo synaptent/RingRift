@@ -221,6 +221,7 @@ describe('GameSession Core Operations', () => {
         const mockHandler = {
           handleChoice: jest.fn(),
           cancelAllChoicesForPlayer: jest.fn(),
+          cancelAllChoices: jest.fn(),
         };
         (session as any).wsHandler = mockHandler;
 
@@ -625,6 +626,37 @@ describe('GameSession Core Operations', () => {
   // NOTE: Engine selection is now globally controlled via
   // config.featureFlags.orchestrator.adapterEnabled (Phase A rollout).
   // The per-session engineSelection property was removed.
+
+  describe('Game Over Choice Cancellation', () => {
+    it('cancels any pending choices when broadcasting game_over', async () => {
+      const io = createMockIo();
+      const session = new GameSession('test-game-id', io, {} as any, new Map());
+
+      const mockHandler = {
+        cancelAllChoices: jest.fn(),
+      };
+      (session as any).wsHandler = mockHandler;
+
+      const state = createBaseGameState({ gameStatus: 'completed' });
+      (session as any).gameEngine = {
+        getGameState: jest.fn(() => state),
+      };
+
+      const gameResult: GameResult = {
+        winner: 1,
+        reason: 'ring_elimination',
+        finalScore: {
+          ringsEliminated: { 1: 18, 2: 0 },
+          territorySpaces: { 1: 0, 2: 0 },
+          ringsRemaining: { 1: 0, 2: 18 },
+        },
+      };
+
+      await (session as any).broadcastUpdate({ gameResult });
+
+      expect(mockHandler.cancelAllChoices).toHaveBeenCalled();
+    });
+  });
 
   describe('AI Request Timeout', () => {
     it('uses default AI request timeout from config', () => {

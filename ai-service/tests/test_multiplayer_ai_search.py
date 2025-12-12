@@ -86,12 +86,12 @@ class TestMultiplayerAIRouting(unittest.TestCase):
         self.assertIs(selected, mock_move)
         mocked.assert_called_once()
 
-    def test_descent_3p_uses_search_path_and_disables_neural(self) -> None:
+    def test_descent_3p_uses_search_path_and_keeps_neural(self) -> None:
         config = AIConfig(difficulty=5, think_time=10, use_neural_net=False)
         ai = DescentAI(player_number=1, config=config)
         game_state = _make_square8_state(num_players=3)
 
-        # Simulate a preloaded NN so the multi-player gating can disable it.
+        # Simulate a preloaded NN so the multi-player path keeps it.
         ai.neural_net = MagicMock()
         ai.hex_encoder = MagicMock()
 
@@ -104,15 +104,14 @@ class TestMultiplayerAIRouting(unittest.TestCase):
 
         self.assertIs(selected, mock_move)
         mocked.assert_called_once()
-        self.assertIsNone(ai.neural_net)
-        self.assertIsNone(ai.hex_encoder)
+        self.assertIsNotNone(ai.neural_net)
 
-    def test_mcts_3p_uses_search_path_and_disables_neural(self) -> None:
+    def test_mcts_3p_uses_search_path_and_keeps_neural(self) -> None:
         config = AIConfig(difficulty=5, think_time=10, use_neural_net=False)
         ai = MCTSAI(player_number=1, config=config)
         game_state = _make_square8_state(num_players=3)
 
-        # Simulate a preloaded NN so the multi-player gating can disable it.
+        # Simulate a preloaded NN so the multi-player path keeps it.
         ai.neural_net = MagicMock()
         ai.hex_encoder = MagicMock()
         ai.hex_model = MagicMock()
@@ -128,9 +127,7 @@ class TestMultiplayerAIRouting(unittest.TestCase):
         self.assertIs(selected, mock_move)
         self.assertIs(policy, mock_policy)
         mocked.assert_called_once()
-        self.assertIsNone(ai.neural_net)
-        self.assertIsNone(ai.hex_encoder)
-        self.assertIsNone(ai.hex_model)
+        self.assertIsNotNone(ai.neural_net)
 
 
 class TestMCTSParanoidBackprop(unittest.TestCase):

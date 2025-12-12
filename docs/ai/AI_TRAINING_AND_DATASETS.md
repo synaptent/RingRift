@@ -524,19 +524,22 @@ A 30-game `mixed` engine-mode soak on `square8` (2-player, seed 42, light diffic
 | swap_sides_total_moves        | 0     |
 | avg_swap_sides_moves_per_game | 0.0   |
 
-**Key Observation:** Current AI implementations (Random, Heuristic, Minimax, MCTS, Descent) do not utilise the swap (pie) rule at all in self-play, despite it being enabled by default for 2-player games via `RingRiftEnv.create_initial_state()`. This 0% baseline usage rate reflects that:
+**Key Observation (legacy baseline):** Earlier self-play runs showed 0% swap (pie-rule) usage even with swap enabled by default for 2-player games. This reflected that:
 
 1. The swap rule is **legally available** (P2 can invoke after P1's first non-swap move, at most once per game, only during `ACTIVE` status).
-2. No AI policy currently assigns meaningful value to the swap action, which is expected given:
-   - Heuristic/material evaluators don't explicitly model first-move advantage.
-   - Tree search AIs (Minimax, MCTS, Descent) don't observe enough strategic value to prefer swapping over other legal moves.
+2. Search AIs did not model the identity swap inside their generic trees, so
+   swap was systematically undervalued.
 
 ### 8.2 Future Exploration
 
 To increase pie-rule adoption in training data, potential directions include:
 
-1. **Explicit swap-rule bonus:** Add a heuristic term that rewards swapping when P1's opening position is strong.
+1. **Explicit swap-rule bonus (implemented):** Search AIs now handle `swap_sides`
+   explicitly using the Opening Position Classifier (see
+   `ai-service/app/ai/base.py`), so new 2P soaks should show non‑zero swap usage.
 2. **Opening book injection:** Pre-seed P2's early-game policy with swap probability.
 3. **Self-play curriculum:** Train an auxiliary classifier on human-labelled "strong openings" and use it to guide swap decisions.
 
-For now, the 0% baseline is documented for comparison against future experiments. Swap metrics are captured in `summary.json` for all soak runs and can be monitored over time.
+Re-run the 2P canonical self-play soak to refresh the swap baseline now that
+swap support is in place. Metrics remain captured in `summary.json` for
+monitoring over time.

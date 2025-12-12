@@ -46,8 +46,9 @@ Key invariant:
 - Multi-player: enabled via Paranoid semantics (root maximizes; any opponent
   minimizes).
 - Neural evaluation:
-  - **Disabled for 3P/4P** (auto-cleared) because the current NeuralNetAI
-    encoding/value wiring is 2-player oriented.
+  - Enabled for 3P/4P using the same Paranoid reduction as 2P, with
+    NeuralNetAI framed against the **most threatening opponent**.
+    (Still scalar‑head / 2P‑trained checkpoints; see limitations.)
 - Heuristic scalarization:
   - Uses a “most threatening opponent” selector based on **victory progress**
     (max of territory-control, ring-elimination, and LPS proximity) so Paranoid
@@ -58,7 +59,8 @@ Key invariant:
 - File: `ai-service/app/ai/mcts_ai.py`
 - Multi-player: enabled via Paranoid semantics.
 - Neural evaluation:
-  - **Disabled for 3P/4P** (auto-cleared) for the same reason as DescentAI.
+  - Enabled for 3P/4P with Paranoid sign/backprop semantics and threat‑opponent
+    framing in NeuralNetAI.
 - Backpropagation semantics (important):
   - Values are treated as **side-to-move** (root vs coalition) values.
   - **Sign flips only when the turn switches between root and coalition**, not
@@ -72,13 +74,16 @@ Key invariant:
   - Ensures Minimax/Descent/MCTS route to search (not 1‑ply fallback) for 3P.
   - Ensures MCTS backprop does **not** flip sign between two different opponent
     turns (coalition stays the same).
+- `ai-service/tests/test_swap_search_ai.py`
+  - Ensures search AIs can take the swap (pie rule) meta‑move in 2P.
 
 ## Known Limitations / Next Steps
 
 1. **True multi-player neural evaluation**
-   - Wire NeuralNetAI to a stable multi-player encoder + value interpretation
-     (rank distribution / per-player values) and add canonical checkpoints for
-     3P/4P.
+   - Current 3P/4P search uses scalar head‑0 values with threat‑opponent
+     globals. The long‑term target is a stable multi-player encoder +
+     per‑player value interpretation (rank dist / MaxN‑style utilities) with
+     canonical 3P/4P checkpoints.
 2. **Threat modeling**
    - Victory-progress threat selection is now used for scalarization.
      Next step is to thread the same selector into neural-backed 3P/4P search

@@ -369,6 +369,15 @@ class HeuristicEvaluator:
 
     def _victory_proximity_base(self, game_state: GameState, player) -> float:
         """Compute base victory proximity for a player."""
+        lps_player = getattr(game_state, "lps_consecutive_exclusive_player", None)
+        lps_rounds = getattr(game_state, "lps_consecutive_exclusive_rounds", 0)
+        if (
+            lps_player == getattr(player, "player_number", None)
+            and isinstance(lps_rounds, int)
+            and lps_rounds >= 1
+        ):
+            return self.WEIGHT_VICTORY_THRESHOLD_BONUS
+
         rings_needed = game_state.victory_threshold - player.eliminated_rings
         territory_needed = (
             game_state.territory_victory_threshold - player.territory_spaces

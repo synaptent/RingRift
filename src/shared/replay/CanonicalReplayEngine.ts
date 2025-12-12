@@ -122,13 +122,16 @@ export interface ReplayStateSummary {
 export class CanonicalReplayEngine {
   private currentState: GameState;
   private readonly adapter: TurnEngineAdapter;
-  private readonly debugHook: ((label: string, state: GameState) => void) | undefined;
+  private debugHook: ((label: string, state: GameState) => void) | undefined;
   private appliedMoveCount = 0;
 
   constructor(options: CanonicalReplayEngineOptions) {
     const { gameId, boardType, numPlayers, initialState, debugHook } = options;
 
     this.debugHook = debugHook ?? undefined;
+    const debugProxy = (label: string, state: GameState) => {
+      this.debugHook?.(label, state);
+    };
 
     // Initialize state
     if (initialState && typeof initialState === 'object') {
@@ -163,13 +166,31 @@ export class CanonicalReplayEngine {
       },
     };
 
-    // Create adapter in replay mode - only pass debugHook if defined
+    // Create adapter in replay mode. Always pass a proxy debugHook so tests can
+    // attach or replace hooks after construction without needing to rebuild the adapter.
     this.adapter = new TurnEngineAdapter({
       stateAccessor,
       decisionHandler,
-      ...(debugHook !== undefined && { debugHook }),
+      debugHook: debugProxy,
       replayMode: true,
     });
+  }
+
+  /**
+   * Attach or replace a debug checkpoint hook.
+   *
+   * This mirrors GameEngine/ClientSandboxEngine testing utilities and is used
+   * by parity suites that want labeled snapshots during replay.
+   */
+  public setDebugCheckpointHook(hook: (label: string, state: GameState) => void): void {
+    this.debugHook = hook;
+  }
+
+  /**
+   * Emit a synthetic debug checkpoint with the current state.
+   */
+  public debugCheckpoint(label: string): void {
+    this.debugHook?.(label, this.currentState);
   }
 
   /**

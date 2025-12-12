@@ -289,6 +289,20 @@ export class WebSocketInteractionHandler implements PlayerInteractionHandler {
   }
 
   /**
+   * Cancel all pending choices for this game.
+   *
+   * Intended for terminal flows (e.g., game_over, resign, abandonment) so that
+   * no in-flight decision promises or client UI remain after completion.
+   */
+  cancelAllChoices(): void {
+    const pendings = Array.from(this.pending.values());
+    for (const pending of pendings) {
+      const { choice } = pending;
+      this.cancelChoice(choice.gameId, choice.id, choice.playerNumber);
+    }
+  }
+
+  /**
    * Get count of pending choices (useful for testing and diagnostics)
    */
   getPendingCount(): number {

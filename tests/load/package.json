@@ -19,11 +19,11 @@
     "test:stress:websocket": "k6 run --config k6.config.js --env BASE_URL=${BASE_URL:-http://localhost:3001} --env WS_URL=${WS_URL:-ws://localhost:3001} --env LOAD_PROFILE=stress scenarios/websocket-stress.js",
     "validate:syntax": "k6 inspect scenarios/game-creation.js && k6 inspect scenarios/concurrent-games.js && k6 inspect scenarios/player-moves.js && k6 inspect scenarios/websocket-stress.js && k6 inspect scenarios/websocket-gameplay.js",
     "validate:dry-run": "npm run validate:dry-run:game-creation && npm run validate:dry-run:concurrent-games && npm run validate:dry-run:player-moves && npm run validate:dry-run:websocket-stress && npm run validate:dry-run:websocket-gameplay",
-    "validate:dry-run:game-creation": "k6 run --dry-run scenarios/game-creation.js",
-    "validate:dry-run:concurrent-games": "k6 run --dry-run scenarios/concurrent-games.js",
-    "validate:dry-run:player-moves": "k6 run --dry-run scenarios/player-moves.js",
-    "validate:dry-run:websocket-stress": "k6 run --dry-run scenarios/websocket-stress.js",
-    "validate:dry-run:websocket-gameplay": "k6 run --dry-run scenarios/websocket-gameplay.js"
+    "validate:dry-run:game-creation": "k6 inspect scenarios/game-creation.js",
+    "validate:dry-run:concurrent-games": "k6 inspect scenarios/concurrent-games.js",
+    "validate:dry-run:player-moves": "k6 inspect scenarios/player-moves.js",
+    "validate:dry-run:websocket-stress": "k6 inspect scenarios/websocket-stress.js",
+    "validate:dry-run:websocket-gameplay": "k6 inspect scenarios/websocket-gameplay.js"
   },
   "keywords": [
     "k6",

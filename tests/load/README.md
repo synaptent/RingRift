@@ -1,7 +1,7 @@
 # RingRift Load Testing Framework (k6)
 
 > **Created:** 2025-12-01  
-> **Status:** Ready for execution (scripts not yet run - Docker required)  
+> **Status:** Ready for execution (prior runs may exist under `results/`)  
 > **Purpose:** Production-scale validation and performance SLO verification
 
 ## Overview
@@ -27,7 +27,8 @@ tests/load/
 │   ├── game-creation.js      # Tests game creation rate and latency
 │   ├── concurrent-games.js   # Tests 100+ simultaneous games
 │   ├── player-moves.js       # Tests move polling + (optional) HTTP moves
-│   └── websocket-stress.js   # Tests WebSocket/Socket.IO connection limits (500+)
+│   ├── websocket-stress.js   # Tests WebSocket/Socket.IO connection limits (500+)
+│   └── websocket-gameplay.js # Tests end-to-end Socket.IO gameplay RTT/stalls
 └── config/
     ├── thresholds.json       # Performance SLO thresholds by environment
     └── scenarios.json        # Test scenario configurations (smoke/load/stress)
@@ -91,7 +92,9 @@ npm run validate:syntax
 
 ### 2. Dry Run (Show What Would Execute)
 
-Preview test execution plan without actually running:
+Preview test execution plan without actually running. Note that k6 does not
+support a `--dry-run` flag in v1.x; this step uses `k6 inspect` under the hood
+to validate options, thresholds, and module resolution without sending traffic:
 
 ```bash
 npm run validate:dry-run

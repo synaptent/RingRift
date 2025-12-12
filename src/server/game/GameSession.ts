@@ -940,6 +940,10 @@ export class GameSession {
 
       // Game is over – clear any pending decision-phase timeout.
       this.resetDecisionPhaseTimeout();
+
+      // Game is over – cancel any in-flight player choices so UI and
+      // decision Promises don't linger past the terminal state.
+      this.wsHandler.cancelAllChoices();
     } else {
       // Broadcast state to all connected clients in the room
       // For active players, we include their valid moves

@@ -26,7 +26,7 @@ from .heuristic_ai import HeuristicAI
 from .game_state_utils import infer_num_players
 from .nnue import NNUEEvaluator
 from .zobrist import ZobristHash
-from ..models import GameState, Move, AIConfig, GamePhase
+from ..models import GameState, Move, MoveType, AIConfig, GamePhase
 from ..rules.mutable_state import MutableGameState
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,17 @@ class MinimaxAI(HeuristicAI):
 
         if not valid_moves:
             return None
+
+        swap_move = self.maybe_select_swap_move(game_state, valid_moves)
+        if swap_move is not None:
+            self.move_count += 1
+            return swap_move
+
+        # If we decide not to swap, remove the meta-move so search does not
+        # mis-evaluate it under the old seat identity.
+        valid_moves = [
+            m for m in valid_moves if m.type != MoveType.SWAP_SIDES
+        ]
 
         # Multi-player semantics:
         # For 3p/4p, MinimaxAI uses a "Paranoid" reduction:

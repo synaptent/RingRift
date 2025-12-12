@@ -22,7 +22,6 @@ import torch
 
 from .bounded_transposition_table import BoundedTranspositionTable
 from .heuristic_ai import HeuristicAI
-from .game_state_utils import infer_num_players
 from .neural_net import (
     NeuralNetAI,
     INVALID_MOVE_INDEX,
@@ -30,7 +29,7 @@ from .neural_net import (
     HexNeuralNet_v2,
     get_memory_tier,
 )
-from ..models import GameState, Move, AIConfig, BoardType
+from ..models import GameState, Move, MoveType, AIConfig, BoardType
 from ..rules.mutable_state import MutableGameState, MoveUndo
 from ..utils.memory_config import MemoryConfig
 
@@ -693,28 +692,20 @@ class MCTSAI(HeuristicAI):
         Routes to incremental (make/unmake) or legacy (immutable) search
         based on the use_incremental_search configuration.
         """
-        num_players = infer_num_players(game_state)
-        if num_players > 2 and self.neural_net is not None:
-            # NeuralNetAI encodes features relative to GameState.current_player
-            # and is currently wired for 2-player adversarial sign flipping.
-            # For 3p/4p we run a Paranoid-style search (root vs opponent
-            # coalition) with heuristic rollouts/evaluation.
-            logger.info(
-                "Disabling neural evaluation for multi-player MCTS search",
-                extra={
-                    "num_players": num_players,
-                    "player_number": self.player_number,
-                },
-            )
-            self.neural_net = None
-            self.hex_encoder = None
-            self.hex_model = None
-
         # Get all valid moves for this AI player via the rules engine
         valid_moves = self.get_valid_moves(game_state)
 
         if not valid_moves:
             return None, None
+
+        swap_move = self.maybe_select_swap_move(game_state, valid_moves)
+        if swap_move is not None:
+            policy = {str(swap_move): 1.0}
+            return swap_move, policy
+
+        valid_moves = [
+            m for m in valid_moves if m.type != MoveType.SWAP_SIDES
+        ]
 
         # Check if should pick random move based on randomness setting
         if self.should_pick_random_move():
@@ -800,6 +791,7 @@ class MCTSAI(HeuristicAI):
                 in valid_moves_set
             ]
 
+        board_type = game_state.board.type
         end_time = time.time() + time_limit
         default_batch_size = 8
         node_count = 1
@@ -826,15 +818,18 @@ class MCTSAI(HeuristicAI):
                 played_moves: List[Move] = []
 
                 # Selection
-                while not node.untried_moves and node.children:
+                while node.children and (
+                    (not node.untried_moves)
+                    or (not self._can_expand_node(node, board_type))
+                ):
                     node = node.uct_select_child()
                     if node.move is not None:
                         state = self.rules_engine.apply_move(state, node.move)
                         played_moves.append(node.move)
 
                 # Expansion
-                if node.untried_moves:
-                    m = cast(Move, self.get_random_element(node.untried_moves))
+                if node.untried_moves and self._can_expand_node(node, board_type):
+                    m = self._select_untried_move(node, board_type)
                     state = self.rules_engine.apply_move(state, m)
 
                     prior = None
@@ -1091,6 +1086,14 @@ class MCTSAI(HeuristicAI):
         # Apply Dirichlet noise only at root during self-play.
         self._maybe_apply_root_dirichlet_noise(node, state.board.type)
 
+        # For large boards, order untried moves by priors so progressive
+        # widening expands high-probability moves first.
+        if self._use_progressive_widening(state.board.type) and node.policy_map:
+            node.untried_moves.sort(
+                key=lambda m: node.policy_map.get(str(m), 0.0),
+                reverse=True,
+            )
+
     def _heuristic_rollout_legacy(self, state: GameState) -> float:
         """Perform heuristic-guided rollout simulation."""
         rollout_depth = 3
@@ -1248,6 +1251,7 @@ class MCTSAI(HeuristicAI):
 
         # Create mutable state once for the entire search
         mutable_state = MutableGameState.from_immutable(game_state)
+        board_type = mutable_state.board_type
 
         # Tree Reuse: Check if we have a subtree for the current state
         root: Optional[MCTSNodeLite] = None
@@ -1320,8 +1324,8 @@ class MCTSAI(HeuristicAI):
                 )
 
                 # Expansion phase
-                if node.untried_moves:
-                    m = cast(Move, self.get_random_element(node.untried_moves))
+                if node.untried_moves and self._can_expand_node(node, board_type):
+                    m = self._select_untried_move(node, board_type)
                     undo = mutable_state.make_move(m)
                     path_undos.append(undo)
 
@@ -1373,9 +1377,13 @@ class MCTSAI(HeuristicAI):
         """
         path_undos: List[MoveUndo] = []
         played_moves: List[Move] = []
+        board_type = mutable_state.board_type
 
         # Selection - traverse to leaf
-        while node.is_fully_expanded() and not node.is_leaf():
+        while node.children and (
+            not node.untried_moves
+            or not self._can_expand_node(node, board_type)
+        ):
             node = node.uct_select_child()
             if node.move is not None:
                 undo = mutable_state.make_move(node.move)
@@ -1670,6 +1678,14 @@ class MCTSAI(HeuristicAI):
         # Apply Dirichlet noise only at root during self-play.
         self._maybe_apply_root_dirichlet_noise(node, state.board.type)
 
+        # For large boards, order untried moves by priors so progressive
+        # widening expands high-probability moves first.
+        if self._use_progressive_widening(state.board.type) and node.policy_map:
+            node.untried_moves.sort(
+                key=lambda m: node.policy_map.get(str(m), 0.0),
+                reverse=True,
+            )
+
     def _select_best_move_incremental(
         self,
         root: MCTSNodeLite,
@@ -1850,6 +1866,43 @@ class MCTSAI(HeuristicAI):
             k=1,
         )[0]
         return children[idx]
+
+    # ------------------------------------------------------------------
+    # Progressive widening (large boards only).
+    # ------------------------------------------------------------------
+
+    def _use_progressive_widening(self, board_type: BoardType) -> bool:
+        return board_type in (BoardType.SQUARE19, BoardType.HEXAGONAL)
+
+    def _max_children_allowed(self, visits: int, board_type: BoardType) -> int:
+        if not self._use_progressive_widening(board_type):
+            return 1_000_000_000
+
+        # Conservative defaults; tune per-board in future slices.
+        min_children = 8 if board_type == BoardType.SQUARE19 else 10
+        c = 2.0
+        alpha = 0.5
+        v = max(1, int(visits))
+        return max(min_children, int(c * (v**alpha)))
+
+    def _can_expand_node(self, node: Any, board_type: BoardType) -> bool:
+        if not self._use_progressive_widening(board_type):
+            return True
+        visits = int(getattr(node, "visits", 0))
+        children = getattr(node, "children", [])
+        return len(children) < self._max_children_allowed(visits, board_type)
+
+    def _select_untried_move(self, node: Any, board_type: BoardType) -> Move:
+        """Pick the next untried move for expansion."""
+        moves: List[Move] = list(getattr(node, "untried_moves", []))
+        if not moves:
+            raise ValueError("No untried moves to select")
+        if self._use_progressive_widening(board_type) and getattr(
+            node, "policy_map", None
+        ):
+            policy_map: Dict[str, float] = cast(Dict[str, float], node.policy_map)
+            return max(moves, key=lambda m: policy_map.get(str(m), 0.0))
+        return cast(Move, self.get_random_element(moves))
 
     def _log_stats(self) -> None:
         """Log transposition table and dynamic sizer stats."""

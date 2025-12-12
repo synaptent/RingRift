@@ -24,13 +24,13 @@ import torch
 
 from .base import BaseAI
 from .bounded_transposition_table import BoundedTranspositionTable
-from .game_state_utils import infer_num_players, victory_progress_for_player
+from .game_state_utils import victory_progress_for_player
 from .neural_net import (
     NeuralNetAI,
     INVALID_MOVE_INDEX,
     ActionEncoderHex,
 )
-from ..models import GameState, Move, AIConfig, BoardType
+from ..models import GameState, Move, MoveType, AIConfig, BoardType
 from ..rules.mutable_state import MutableGameState
 from ..utils.memory_config import MemoryConfig
 
@@ -146,6 +146,10 @@ class DescentAI(BaseAI):
             entry_size_estimate=10000,
         )
 
+        # Progressive widening parameters for large boards. We store only a
+        # bounded tail of unexpanded moves to keep TT entries small.
+        self._pw_max_remaining_store: int = 512
+
         # Search log for Tree Learning
         # List of (features, value)
         # Only populated when collect_training_data is True to prevent
@@ -157,6 +161,35 @@ class DescentAI(BaseAI):
         self.use_incremental_search: bool = getattr(
             config, 'use_incremental_search', True
         )
+
+    # ------------------------------------------------------------------
+    # Progressive widening helpers (large boards only).
+    # ------------------------------------------------------------------
+
+    def _use_progressive_widening(self, board_type: BoardType) -> bool:
+        return board_type in (BoardType.SQUARE19, BoardType.HEXAGONAL)
+
+    def _max_children_allowed(self, visits: int, board_type: BoardType) -> int:
+        if not self._use_progressive_widening(board_type):
+            return 1_000_000_000
+        min_children = 8 if board_type == BoardType.SQUARE19 else 10
+        c = 2.0
+        alpha = 0.5
+        v = max(1, int(visits))
+        return max(min_children, int(c * (v**alpha)))
+
+    def _unpack_tt_entry(
+        self, entry: Any
+    ) -> tuple[float, Dict[str, Any], NodeStatus, list[tuple[Move, float]], int]:
+        """Normalize TT entries across legacy/progressive formats."""
+        current_val = float(entry[0])
+        children_values: Dict[str, Any] = entry[1]
+        status = entry[2] if len(entry) >= 3 else NodeStatus.HEURISTIC
+        remaining_moves: list[tuple[Move, float]] = (
+            entry[3] if len(entry) >= 4 else []
+        )
+        visits = int(entry[4]) if len(entry) >= 5 else 0
+        return current_val, children_values, status, remaining_moves, visits
 
     def get_search_data(self) -> List[Tuple[Any, float]]:
         """Retrieve and clear the accumulated search log.
@@ -198,21 +231,14 @@ class DescentAI(BaseAI):
         if not valid_moves:
             return None
 
-        num_players = infer_num_players(game_state)
-        if num_players > 2 and self.neural_net is not None:
-            # NeuralNetAI's current value wiring is calibrated for 2-player
-            # sign flipping (current_player vs this agent). Until we have a
-            # true multi-player encoder/training pipeline, disable NN-backed
-            # evaluation for multi-player Descent.
-            logger.info(
-                "Disabling neural evaluation for multi-player Descent search",
-                extra={
-                    "num_players": num_players,
-                    "player_number": self.player_number,
-                },
-            )
-            self.neural_net = None
-            self.hex_encoder = None
+        swap_move = self.maybe_select_swap_move(game_state, valid_moves)
+        if swap_move is not None:
+            self.move_count += 1
+            return swap_move
+
+        valid_moves = [
+            m for m in valid_moves if m.type != MoveType.SWAP_SIDES
+        ]
 
         if self.should_pick_random_move():
             selected = self.get_random_element(valid_moves)
@@ -261,22 +287,18 @@ class DescentAI(BaseAI):
             state_key = self._get_state_key(game_state)
             entry = self.transposition_table.get(state_key)
             if entry is not None:
-                if len(entry) == 3:
-                    _, _, status = entry
-                    if status in (
-                        NodeStatus.PROVEN_WIN,
-                        NodeStatus.PROVEN_LOSS,
-                    ):
-                        break
+                _, _, status, _, _ = self._unpack_tt_entry(entry)
+                if status in (
+                    NodeStatus.PROVEN_WIN,
+                    NodeStatus.PROVEN_LOSS,
+                ):
+                    break
 
         # Select best move from root
         state_key = self._get_state_key(game_state)
         entry = self.transposition_table.get(state_key)
         if entry is not None:
-            if len(entry) == 3:
-                _, children_values, _ = entry
-            else:
-                _, children_values = entry
+            _, children_values, _, _, _ = self._unpack_tt_entry(entry)
 
             if children_values:
                 if game_state.current_player == self.player_number:
@@ -355,22 +377,18 @@ class DescentAI(BaseAI):
             state_key = mutable_state.zobrist_hash
             entry = self.transposition_table.get(state_key)
             if entry is not None:
-                if len(entry) == 3:
-                    _, _, status = entry
-                    if status in (
-                        NodeStatus.PROVEN_WIN,
-                        NodeStatus.PROVEN_LOSS,
-                    ):
-                        break
+                _, _, status, _, _ = self._unpack_tt_entry(entry)
+                if status in (
+                    NodeStatus.PROVEN_WIN,
+                    NodeStatus.PROVEN_LOSS,
+                ):
+                    break
 
         # Select best move from root
         state_key = mutable_state.zobrist_hash
         entry = self.transposition_table.get(state_key)
         if entry is not None:
-            if len(entry) == 3:
-                _, children_values, _ = entry
-            else:
-                _, children_values = entry
+            _, children_values, _, _, _ = self._unpack_tt_entry(entry)
 
             if children_values:
                 if mutable_state.current_player == self.player_number:
@@ -446,15 +464,45 @@ class DescentAI(BaseAI):
         # Check if state is in transposition table
         entry = self.transposition_table.get(state_key)
         if entry is not None:
-            if len(entry) == 3:
-                current_val, children_values, status = entry
-            else:
-                current_val, children_values = entry
-                status = NodeStatus.HEURISTIC
+            current_val, children_values, status, remaining_moves, visits = (
+                self._unpack_tt_entry(entry)
+            )
+            visits += 1
 
             # If proven, stop searching this branch
             if status != NodeStatus.HEURISTIC:
                 return current_val
+
+            # Progressive widening: expand one additional child on large boards.
+            if (
+                self._use_progressive_widening(state.board.type)
+                and remaining_moves
+                and len(children_values)
+                < self._max_children_allowed(visits, state.board.type)
+            ):
+                if deadline is None or time.time() < deadline:
+                    next_move, next_prob = remaining_moves.pop(0)
+                    next_state = self.rules_engine.apply_move(state, next_move)
+                    if next_state.game_status == "completed":
+                        if next_state.winner == self.player_number:
+                            next_val = 1.0
+                        elif next_state.winner is not None:
+                            next_val = -1.0
+                        else:
+                            next_val = 0.0
+                    else:
+                        next_val = self.evaluate_position(next_state)
+
+                    children_values[str(next_move)] = (
+                        next_move,
+                        next_val,
+                        float(next_prob),
+                    )
+                    # Refresh current value after widening.
+                    if state.current_player == self.player_number:
+                        current_val = max(v[1] for v in children_values.values())
+                    else:
+                        current_val = min(v[1] for v in children_values.values())
 
             # Select best child to descend
             if not children_values:
@@ -529,7 +577,15 @@ class DescentAI(BaseAI):
 
             self.transposition_table.put(
                 state_key,
-                (new_best_val, children_values, new_status),
+                (
+                    new_best_val,
+                    children_values,
+                    new_status,
+                    remaining_moves,
+                    visits,
+                )
+                if self._use_progressive_widening(state.board.type)
+                else (new_best_val, children_values, new_status),
             )
 
             # Log update (only if collecting training data)
@@ -648,14 +704,39 @@ class DescentAI(BaseAI):
                     # Fallback if NN fails entirely (e.g. missing weights)
                     pass
 
-            # Evaluate children
+            # Progressive widening: on large boards, only expand top-K moves
+            # by prior initially and store the rest for later widening.
+            use_pw = self._use_progressive_widening(state.board.type)
+            ordered_moves = list(valid_moves)
+            remaining_moves: list[tuple[Move, float]] = []
+            if use_pw and move_probs:
+                ordered_moves.sort(
+                    key=lambda m: move_probs.get(str(m), 0.0),
+                    reverse=True,
+                )
+
+            initial_k = (
+                min(
+                    self._max_children_allowed(1, state.board.type),
+                    len(ordered_moves),
+                )
+                if use_pw
+                else len(ordered_moves)
+            )
+            expand_moves = ordered_moves[:initial_k]
+            if use_pw:
+                tail = ordered_moves[initial_k:initial_k + self._pw_max_remaining_store]
+                remaining_moves = [
+                    (m, float(move_probs.get(str(m), 0.0))) for m in tail
+                ]
+
             children_values = {}
             if state.current_player == self.player_number:
                 best_val = float("-inf")
             else:
                 best_val = float("inf")
 
-            for move in valid_moves:
+            for move in expand_moves:
                 next_state = self.rules_engine.apply_move(state, move)
 
                 # If we are out of time, stop expanding and return the
@@ -695,7 +776,15 @@ class DescentAI(BaseAI):
 
             self.transposition_table.put(
                 state_key,
-                (best_val, children_values, status),
+                (
+                    best_val,
+                    children_values,
+                    status,
+                    remaining_moves,
+                    1,
+                )
+                if use_pw
+                else (best_val, children_values, status),
             )
 
             # Log initial visit (only if collecting training data)
@@ -742,15 +831,46 @@ class DescentAI(BaseAI):
         # Check if state is in transposition table
         entry = self.transposition_table.get(state_key)
         if entry is not None:
-            if len(entry) == 3:
-                current_val, children_values, status = entry
-            else:
-                current_val, children_values = entry
-                status = NodeStatus.HEURISTIC
+            current_val, children_values, status, remaining_moves, visits = (
+                self._unpack_tt_entry(entry)
+            )
+            visits += 1
 
             # If proven, stop searching this branch
             if status != NodeStatus.HEURISTIC:
                 return current_val
+
+            # Progressive widening: expand one additional child on large boards.
+            if (
+                self._use_progressive_widening(state.board_type)
+                and remaining_moves
+                and len(children_values)
+                < self._max_children_allowed(visits, state.board_type)
+            ):
+                if deadline is None or time.time() < deadline:
+                    next_move, next_prob = remaining_moves.pop(0)
+                    undo_pw = state.make_move(next_move)
+                    if state.is_game_over():
+                        winner = state.get_winner()
+                        if winner == self.player_number:
+                            next_val = 1.0
+                        elif winner is not None:
+                            next_val = -1.0
+                        else:
+                            next_val = 0.0
+                    else:
+                        next_val = self._evaluate_mutable(state)
+                    state.unmake_move(undo_pw)
+
+                    children_values[str(next_move)] = (
+                        next_move,
+                        next_val,
+                        float(next_prob),
+                    )
+                    if state.current_player == self.player_number:
+                        current_val = max(v[1] for v in children_values.values())
+                    else:
+                        current_val = min(v[1] for v in children_values.values())
 
             # Select best child to descend
             if not children_values:
@@ -826,7 +946,15 @@ class DescentAI(BaseAI):
 
             self.transposition_table.put(
                 state_key,
-                (new_best_val, children_values, new_status),
+                (
+                    new_best_val,
+                    children_values,
+                    new_status,
+                    remaining_moves,
+                    visits,
+                )
+                if self._use_progressive_widening(state.board_type)
+                else (new_best_val, children_values, new_status),
             )
 
             # Log update (only if collecting training data)
@@ -952,14 +1080,38 @@ class DescentAI(BaseAI):
                     # Fallback if NN fails entirely (e.g. missing weights)
                     pass
 
-            # Evaluate children using make/unmake
+            # Progressive widening on large boards.
+            use_pw = self._use_progressive_widening(state.board_type)
+            ordered_moves = list(valid_moves)
+            remaining_moves: list[tuple[Move, float]] = []
+            if use_pw and move_probs:
+                ordered_moves.sort(
+                    key=lambda m: move_probs.get(str(m), 0.0),
+                    reverse=True,
+                )
+
+            initial_k = (
+                min(
+                    self._max_children_allowed(1, state.board_type),
+                    len(ordered_moves),
+                )
+                if use_pw
+                else len(ordered_moves)
+            )
+            expand_moves = ordered_moves[:initial_k]
+            if use_pw:
+                tail = ordered_moves[initial_k:initial_k + self._pw_max_remaining_store]
+                remaining_moves = [
+                    (m, float(move_probs.get(str(m), 0.0))) for m in tail
+                ]
+
             children_values = {}
             if state.current_player == self.player_number:
                 best_val = float("-inf")
             else:
                 best_val = float("inf")
 
-            for move in valid_moves:
+            for move in expand_moves:
                 undo = state.make_move(move)
 
                 # If we are out of time, stop expanding and return the
@@ -1003,7 +1155,15 @@ class DescentAI(BaseAI):
 
             self.transposition_table.put(
                 state_key,
-                (best_val, children_values, status),
+                (
+                    best_val,
+                    children_values,
+                    status,
+                    remaining_moves,
+                    1,
+                )
+                if use_pw
+                else (best_val, children_values, status),
             )
 
             # Log initial visit (only if collecting training data)
@@ -1084,7 +1244,7 @@ class DescentAI(BaseAI):
         """
         val = 0.0
         num_players = len(state.players)
-        if self.neural_net and num_players <= 2:
+        if self.neural_net:
             immutable = state.to_immutable()
             val = self.neural_net.evaluate_position(immutable)
         else:

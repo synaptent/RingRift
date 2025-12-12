@@ -21,9 +21,10 @@ from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, TypeVar, Sequence, Any
 import random
 
-from ..models import GameState, Move, AIConfig
+from ..models import GameState, Move, MoveType, AIConfig
 from ..rules.factory import get_rules_engine
 from ..rules.interfaces import RulesEngine
+from .swap_evaluation import SwapEvaluator
 
 T = TypeVar("T")
 
@@ -98,6 +99,8 @@ class BaseAI(ABC):
         else:
             self.rng_seed = derive_training_seed(self.config, self.player_number)
         self.rng: random.Random = random.Random(self.rng_seed)
+        # Lazy swap evaluator for pie-rule decisions (used by search AIs).
+        self._swap_evaluator_cache: Optional[SwapEvaluator] = None
 
     @abstractmethod
     def select_move(self, game_state: GameState) -> Optional[Move]:
@@ -212,6 +215,44 @@ class BaseAI(ABC):
             for p in game_state.players
             if p.player_number != self.player_number
         ]
+
+    def maybe_select_swap_move(
+        self,
+        game_state: GameState,
+        valid_moves: List[Move],
+    ) -> Optional[Move]:
+        """Return a SWAP_SIDES move when it is clearly advantageous.
+
+        Generic tree search does not model the identity swap semantics of the
+        pie rule. When Player 2 is offered a `swap_sides` meta‑move, we handle
+        the decision explicitly using the Opening Position Classifier.
+        """
+        if self.player_number != 2:
+            return None
+        if len(game_state.players) != 2:
+            return None
+
+        swap_moves = [m for m in valid_moves if m.type == MoveType.SWAP_SIDES]
+        if not swap_moves:
+            return None
+
+        evaluator: Optional[SwapEvaluator] = None
+        try:
+            evaluator = getattr(self, "swap_evaluator")
+        except Exception:
+            evaluator = None
+
+        if not isinstance(evaluator, SwapEvaluator):
+            if self._swap_evaluator_cache is None:
+                self._swap_evaluator_cache = SwapEvaluator()
+            evaluator = self._swap_evaluator_cache
+
+        score = evaluator.evaluate_swap_with_classifier(game_state)
+        threshold = float(getattr(self.config, "swap_threshold", 0.0))
+        if score > threshold:
+            return swap_moves[0]
+
+        return None
 
     def get_player_info(
         self,
