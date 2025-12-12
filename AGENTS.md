@@ -352,4 +352,169 @@ These are **in addition to** any broader system prompts or per‑directory AGENT
    - Data provenance → `TRAINING_DATA_REGISTRY.md` and script docstrings.
    - UX behavior → `docs/UX_*` and tests around `GameHUD` / `TeachingOverlay` / `gameEndExplanation`.
 
-If a future AGENTS file appears deeper in the tree (e.g. under `ai-service/` or `src/`), follow that file’s more specific instructions for changes within its subtree, using this root document as background context.
+If a future AGENTS file appears deeper in the tree (e.g. under `ai-service/` or `src/`), follow that file's more specific instructions for changes within its subtree, using this root document as background context.
+
+---
+
+## 9. Quick Reference: Project Structure
+
+```
+RingRift/
+├── src/
+│   ├── shared/                    # Shared TypeScript rules engine (canonical SSoT)
+│   │   ├── engine/                # Core rules logic
+│   │   │   ├── orchestration/     # Turn orchestrator & phase state machine
+│   │   │   ├── aggregates/        # Domain aggregates (Placement, Movement, Capture, Line, Territory, Victory)
+│   │   │   ├── fsm/               # FSM validation (TurnStateMachine, FSMAdapter)
+│   │   │   └── contracts/         # Cross-language parity contracts & serialization
+│   │   ├── types/                 # Canonical game types (Move, GameState, BoardState, etc.)
+│   │   └── decisions/             # Decision trees (PlayerChoice, LineDecision, etc.)
+│   │
+│   ├── server/                    # Express backend (Node.js)
+│   │   ├── game/
+│   │   │   ├── turn/TurnEngineAdapter.ts  # Backend adapter wrapping orchestrator
+│   │   │   ├── ai/AIEngine.ts              # AI move selection & service integration
+│   │   │   └── GameEngine.ts               # Session & turn management
+│   │   ├── websocket/             # Socket.IO real-time communication
+│   │   ├── routes/                # HTTP REST API
+│   │   └── database/              # Prisma schema, migrations
+│   │
+│   └── client/                    # React frontend (TypeScript/TSX)
+│       ├── sandbox/               # ClientSandboxEngine & local game logic
+│       ├── components/            # React UI (BoardView, GameHUD, ChoiceDialog, etc.)
+│       ├── pages/                 # Main pages (LobbyPage, GamePage, SandboxPage)
+│       └── contexts/              # React contexts (GameContext, SandboxContext)
+│
+├── ai-service/                    # Python FastAPI microservice
+│   ├── app/
+│   │   ├── main.py                # FastAPI app & difficulty ladder config
+│   │   ├── game_engine.py         # Python rules engine (mirrors TS)
+│   │   ├── ai/                    # AI implementations (Random, Heuristic, Minimax, MCTS, Descent)
+│   │   └── rules/                 # Rules mutators & validators
+│   ├── scripts/                   # Training scripts, parity harnesses, self-play
+│   └── tests/                     # pytest suites
+│
+├── tests/                         # Jest + Playwright test suites
+│   ├── unit/                      # Unit tests
+│   ├── integration/               # Integration tests
+│   ├── scenarios/                 # Rules/FAQ scenario tests
+│   ├── contracts/                 # Contract vector runner (TS side)
+│   └── fixtures/contract-vectors/ # v2 contract vector JSONs
+│
+├── docs/                          # Comprehensive documentation
+├── RULES_CANONICAL_SPEC.md        # Canonical rules SSoT (RR-CANON-RXXX rules)
+├── ringrift_complete_rules.md     # Authoritative rulebook (narrative)
+├── ringrift_compact_rules.md      # Compact implementation-oriented spec
+├── PROJECT_GOALS.md               # Product/technical goals, scope
+└── TODO.md                        # Task tracking
+```
+
+---
+
+## 10. Quick Reference: Build & Run Commands
+
+### Development
+
+```bash
+npm install                    # Install dependencies
+npm run dev                    # Start backend + frontend (hot reload)
+npm run dev:server             # Backend on :3000
+npm run dev:client             # Frontend on :5173
+
+# AI service (Python)
+cd ai-service && ./setup.sh    # One-time: create venv
+cd ai-service && ./run.sh      # Start uvicorn on :8001
+```
+
+### Testing
+
+```bash
+npm test                          # All Jest tests
+npm run test:core                 # Fast core profile (PR gate)
+npm run test:coverage             # Coverage report
+npm run test:p0-robustness        # Pre-PR comprehensive gate
+npm run test:orchestrator-parity  # Canonical orchestrator + contract tests
+npm run test:e2e                  # Playwright E2E tests
+cd ai-service && pytest           # Python tests
+```
+
+### Build
+
+```bash
+npm run build                  # Build server + client
+npm start                      # Run production build
+docker-compose up -d           # Full stack in Docker
+```
+
+---
+
+## 11. Quick Reference: Board Configurations
+
+| Board Type | Size | Total Spaces | Rings/Player | Line Length (2p) | Line Length (3-4p) |
+| ---------- | ---- | ------------ | ------------ | ---------------- | ------------------ |
+| square8    | 8    | 64           | 18           | 4                | 3                  |
+| square19   | 19   | 361          | 60           | 4                | 4                  |
+| hexagonal  | 13   | 469          | 72           | 4                | 4                  |
+
+### Victory Thresholds (Ring Elimination per RR-CANON-R061)
+
+Formula: `round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))`
+
+| Board Type | 2-player | 3-player | 4-player |
+| ---------- | -------- | -------- | -------- |
+| square8    | 18       | 24       | 30       |
+| square19   | 60       | 80       | 100      |
+| hexagonal  | 72       | 96       | 120      |
+
+---
+
+## 12. Quick Reference: Key File Locations
+
+| Need to...                  | File(s)                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| Understand game rules       | `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md`                       |
+| Implement a rule            | `src/shared/engine/aggregates/*.ts` + test                                    |
+| Add AI difficulty           | `src/server/game/ai/AIEngine.ts`, `ai-service/app/main.py`                    |
+| Fix a WebSocket issue       | `src/server/websocket/server.ts`, `src/client/hooks/useGameConnection.ts`     |
+| Render the board            | `src/client/components/BoardView.tsx`                                         |
+| Handle player choices       | `src/client/components/ChoiceDialog.tsx`                                      |
+| Access game state (backend) | `src/server/game/GameEngine.ts`                                               |
+| Access game state (client)  | `src/client/contexts/GameContext.tsx` or `SandboxContext.tsx`                 |
+| Test rules/parity           | `tests/unit/`, `tests/scenarios/`, `tests/contracts/`                         |
+| Run Python tests            | `ai-service/tests/`                                                           |
+| Configure boards            | `src/shared/types/game.ts` (BOARD_CONFIGS)                                    |
+| Debug orchestrator          | `src/shared/engine/orchestration/turnOrchestrator.ts`                         |
+| Debug parity issues         | `ai-service/scripts/check_ts_python_replay_parity.py`, `diff_state_bundle.py` |
+
+---
+
+## 13. Quick Reference: AI Service & Difficulty Ladder
+
+### Difficulty Levels (1-10)
+
+- **1**: RandomAI (random legal moves)
+- **2**: HeuristicAI (strategic heuristics)
+- **3-6**: MinimaxAI (depth-limited minimax with alpha-beta)
+- **7-8**: MCTSAI (Monte Carlo tree search)
+- **9-10**: DescentAI (UBFM/Descent-style tree search)
+
+### AI Service Endpoints
+
+- `GET /health` - Health check
+- `POST /ai/move` - Get AI move for a game state
+- `POST /ai/evaluate` - Position evaluation
+- `POST /ai/choice` - AI decision for PlayerChoice
+
+---
+
+## 14. Quick Reference: Environment Variables
+
+Key environment variables:
+
+- `NODE_ENV` - `development`, `test`, `production`
+- `DATABASE_URL` - PostgreSQL connection string
+- `REDIS_URL` - Redis connection string
+- `AI_SERVICE_URL` - Python AI service URL (default: `http://localhost:8001`)
+- `RINGRIFT_TRACE_DEBUG` - Enable debug tracing
+- `RINGRIFT_SKIP_SHADOW_CONTRACTS` - Skip contract validation (Python)
+- `PYTHONPATH` - Set to `ai-service` for Python scripts
