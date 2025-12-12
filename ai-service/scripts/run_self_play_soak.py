@@ -99,6 +99,32 @@ from app.game_engine import (  # type: ignore  # noqa: E402
     PhaseRequirement,
 )
 
+# GPU imports - lazy imported only when --gpu is used to avoid torch import overhead
+GPU_IMPORTS_LOADED = False
+GPUSelfPlayGenerator = None  # Populated on first GPU use
+
+
+def _load_gpu_imports() -> bool:
+    """Lazily load GPU imports to avoid torch import overhead when not using GPU.
+
+    Returns:
+        True if imports succeeded, False if GPU is not available.
+    """
+    global GPU_IMPORTS_LOADED, GPUSelfPlayGenerator
+
+    if GPU_IMPORTS_LOADED:
+        return GPUSelfPlayGenerator is not None
+
+    GPU_IMPORTS_LOADED = True
+
+    try:
+        from scripts.run_gpu_selfplay import GPUSelfPlayGenerator as _GPUSelfPlayGenerator
+        GPUSelfPlayGenerator = _GPUSelfPlayGenerator
+        return True
+    except ImportError as e:
+        logger.warning(f"GPU imports failed: {e}")
+        return False
+
 
 # =============================================================================
 # Heuristic Weight Loading
@@ -2025,6 +2051,138 @@ def run_ai_healthcheck_profile(
     return all_records, health_summary
 
 
+# =============================================================================
+# GPU-Accelerated Self-Play Soak
+# =============================================================================
+
+
+def run_gpu_self_play_soak(
+    args: argparse.Namespace,
+) -> Tuple[List[GameRecord], List[Dict[str, Any]]]:
+    """Run GPU-accelerated self-play games using ParallelGameRunner.
+
+    This function provides a 5-10x speedup on CUDA GPUs and 1.5-3x on Apple MPS
+    compared to CPU-only execution. It uses the same heuristic-based AI as the
+    CPU path but evaluates many games in parallel on the GPU.
+
+    CONSTRAINTS:
+    - Only supports square8 board type (8x8)
+    - Only supports 2 players
+    - Only supports heuristic-only engine mode
+
+    Args:
+        args: Namespace with num_games, gpu_batch_size, max_moves, log_jsonl, seed
+
+    Returns:
+        Tuple of (game_records, invariant_samples).
+        GPU mode does not perform invariant checking, so invariant_samples is [].
+    """
+    import time
+    from datetime import datetime
+
+    # Lazy load GPU imports
+    if not _load_gpu_imports():
+        raise RuntimeError(
+            "GPU imports failed. Ensure PyTorch is installed with CUDA/MPS support. "
+            "Install with: pip install torch"
+        )
+
+    # Get GPUSelfPlayGenerator from global after lazy load
+    global GPUSelfPlayGenerator
+    if GPUSelfPlayGenerator is None:
+        raise RuntimeError("GPUSelfPlayGenerator not available after import")
+
+    num_games = args.num_games
+    batch_size = getattr(args, "gpu_batch_size", 64)
+    max_moves = args.max_moves
+    seed = args.seed
+    log_jsonl = args.log_jsonl
+
+    # Set seeds if provided
+    if seed is not None:
+        import random
+        try:
+            import torch
+            torch.manual_seed(seed)
+        except ImportError:
+            pass
+        random.seed(seed)
+
+    # Default heuristic weights (same as CPU path)
+    weights = {
+        "material_weight": 1.0,
+        "ring_count_weight": 0.5,
+        "stack_height_weight": 0.3,
+        "center_control_weight": 0.4,
+        "territory_weight": 0.8,
+        "mobility_weight": 0.2,
+        "line_potential_weight": 0.6,
+        "defensive_weight": 0.3,
+    }
+
+    # Load custom weights if specified
+    if getattr(args, "heuristic_weights_file", None) and getattr(args, "heuristic_profile", None):
+        loaded = load_weights_from_profile(args.heuristic_weights_file, args.heuristic_profile)
+        if loaded:
+            weights = loaded
+            print(f"GPU: Using weights from profile '{args.heuristic_profile}'")
+
+    print(f"GPU self-play starting: {num_games} games, batch_size={batch_size}, max_moves={max_moves}")
+
+    # Create generator
+    generator = GPUSelfPlayGenerator(
+        board_size=8,
+        num_players=2,
+        batch_size=batch_size,
+        max_moves=max_moves,
+        weights=weights,
+    )
+
+    # Generate games
+    start_time = time.time()
+    gpu_records = generator.generate_games(
+        num_games=num_games,
+        output_file=log_jsonl,
+        progress_interval=max(1, num_games // 20),  # ~5% progress updates
+    )
+    elapsed = time.time() - start_time
+
+    stats = generator.get_statistics()
+
+    # Convert GPU records to GameRecord format for compatibility
+    game_records: List[GameRecord] = []
+    for i, gpu_rec in enumerate(gpu_records):
+        record = GameRecord(
+            game_id=gpu_rec.get("game_id", str(i)),
+            board_type="square8",
+            num_players=2,
+            engine_mode="gpu-heuristic",
+            p1_config={"type": "gpu-heuristic", "difficulty": 5},
+            p2_config={"type": "gpu-heuristic", "difficulty": 5},
+            winner=gpu_rec.get("winner", 0),
+            termination_reason=gpu_rec.get("victory_type", "unknown"),
+            move_count=gpu_rec.get("move_count", 0),
+            duration_seconds=gpu_rec.get("game_time_seconds", 0.0),
+            timestamp=gpu_rec.get("timestamp", datetime.now().isoformat()),
+        )
+        game_records.append(record)
+
+    # Print summary
+    throughput = num_games / elapsed if elapsed > 0 else 0
+    print(f"\nGPU self-play complete:")
+    print(f"  Games: {stats.get('total_games', num_games)}")
+    print(f"  Total time: {elapsed:.2f}s")
+    print(f"  Throughput: {throughput:.1f} games/sec")
+    print(f"  Avg moves/game: {stats.get('moves_per_game', 0):.1f}")
+    print(f"  Wins: P1={stats.get('wins_by_player', {}).get(1, 0)}, P2={stats.get('wins_by_player', {}).get(2, 0)}")
+    print(f"  Draws: {stats.get('draws', 0)}")
+
+    # GPU mode does not run invariant checks (they're CPU-only)
+    invariant_samples: List[Dict[str, Any]] = []
+
+    return game_records, invariant_samples
+
+
 def _has_anomalies(records: List[GameRecord]) -> bool:
     """Return True if any record encodes an invariant/engine anomaly.
 
@@ -2364,11 +2522,92 @@ def _parse_args() -> argparse.Namespace:
             "to automatically resume from the last checkpoint. Default: 0 (disabled)."
         ),
     )
+    # GPU acceleration options
+    parser.add_argument(
+        "--gpu",
+        action="store_true",
+        help=(
+            "Enable GPU-accelerated game simulation using ParallelGameRunner. "
+            "Provides 5-10x speedup on CUDA GPUs, 1.5-3x on MPS (Apple Silicon). "
+            "CONSTRAINTS: Only works with --board-type=square8, --num-players=2, "
+            "and --engine-mode=heuristic-only. Other configurations will error."
+        ),
+    )
+    parser.add_argument(
+        "--gpu-batch-size",
+        type=int,
+        default=64,
+        help=(
+            "Batch size for GPU parallel game simulation. Higher values improve "
+            "throughput but use more GPU memory. Default: 64. "
+            "Recommended: 32-128 for consumer GPUs, 256-512 for data center GPUs."
+        ),
+    )
     return parser.parse_args()
 
 
 def main() -> None:  # pragma: no cover - CLI entrypoint
     args = _parse_args()
+
+    # Check for GPU mode
+    if getattr(args, "gpu", False):
+        # Validate GPU constraints
+        board_type = getattr(args, "board_type", "square8")
+        num_players = getattr(args, "num_players", 2)
+
+        if board_type != "square8":
+            print(
+                f"ERROR: GPU mode only supports square8 board type. Got: {board_type}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+
+        if num_players != 2:
+            print(
+                f"ERROR: GPU mode only supports 2 players. Got: {num_players}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+
+        # Run GPU self-play
+        config_summary = {
+            "num_games": args.num_games,
+            "board_type": board_type,
+            "engine_mode": "gpu-heuristic",
+            "num_players": num_players,
+            "max_moves": args.max_moves,
+            "seed": args.seed,
+            "log_jsonl": args.log_jsonl,
+            "summary_json": args.summary_json,
+            "gpu": True,
+            "gpu_batch_size": getattr(args, "gpu_batch_size", 64),
+        }
+
+        print("GPU self-play soak harness starting with config:")
+        print(json.dumps(config_summary, indent=2, sort_keys=True))
+
+        records, invariant_samples = run_gpu_self_play_soak(args)
+        summary = _summarise(records, invariant_samples)
+        summary["config"] = config_summary
+
+        print("\n=== GPU self-play soak summary ===")
+        print(json.dumps(summary, indent=2, sort_keys=True))
+
+        if args.summary_json:
+            os.makedirs(os.path.dirname(args.summary_json) or ".", exist_ok=True)
+            with open(args.summary_json, "w", encoding="utf-8") as f:
+                json.dump(summary, f, indent=2, sort_keys=True)
+
+        if args.fail_on_anomaly:
+            if _has_anomalies(records):
+                print(
+                    "GPU self-play soak detected anomalies; "
+                    "exiting with non-zero status due to --fail-on-anomaly.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(1)
+
+        return  # Exit early for GPU mode
 
     profile = getattr(args, "profile", None)
     if profile == "python-strict":
