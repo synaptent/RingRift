@@ -51,6 +51,20 @@ export function flagEnabled(name: string): boolean {
   return raw === '1' || raw === 'true' || raw === 'TRUE';
 }
 
+/**
+ * Recovery stack-strike v1 mode (enabled by default).
+ * When recovering, if no line-forming recovery exists, the player may
+ * slide onto an opponent's stack, sacrificing the marker to eliminate
+ * the top ring. This reduces stalemate rates on larger boards.
+ * Set RINGRIFT_RECOVERY_STACK_STRIKE_V1=0 to disable.
+ */
+export function isRecoveryStackStrikeV1Enabled(): boolean {
+  const raw = readEnv('RINGRIFT_RECOVERY_STACK_STRIKE_V1');
+  // Default to enabled (v1 rules)
+  if (!raw) return true;
+  return raw === '1' || raw === 'true' || raw === 'TRUE';
+}
+
 export function isSandboxAiStallDiagnosticsEnabled(): boolean {
   return flagEnabled('RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS');
 }

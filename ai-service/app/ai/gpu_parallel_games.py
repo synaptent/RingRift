@@ -548,8 +548,8 @@ class BatchGameState:
         shape_players = (batch_size, num_players + 1)  # +1 for 1-indexed players
 
         # Starting rings per player based on board size (per RR-CANON-R020)
-        # square8: 18, square19: 60, hexagonal: 72
-        starting_rings = {8: 18, 19: 60}.get(board_size, 18)
+        # square8: 18, square19: 72, hexagonal: 96
+        starting_rings = {8: 18, 19: 72, 13: 96}.get(board_size, 18)
 
         rings = torch.zeros(shape_players, dtype=torch.int16, device=device)
         rings[:, 1:num_players+1] = starting_rings

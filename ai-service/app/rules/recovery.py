@@ -574,10 +574,11 @@ def enumerate_expanded_recovery_targets(
     line_length = get_effective_line_length(board.type, len(state.players))
     buried_ring_count = count_buried_rings(board, player)
 
-    stack_strike_enabled = os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "").lower() in {
+    # Stack-strike recovery is enabled by default (v1 rules)
+    # Set RINGRIFT_RECOVERY_STACK_STRIKE_V1=0 to disable
+    stack_strike_enabled = os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "1").lower() in {
         "1",
         "true",
-        "TRUE",
     }
 
     # Track all valid slide destinations for fallback
@@ -713,10 +714,11 @@ def has_any_recovery_move(state: GameState, player: int) -> bool:
 
     board = state.board
     line_length = get_effective_line_length(board.type, len(state.players))
-    stack_strike_enabled = os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "").lower() in {
+    # Stack-strike recovery is enabled by default (v1 rules)
+    # Set RINGRIFT_RECOVERY_STACK_STRIKE_V1=0 to disable
+    stack_strike_enabled = os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "1").lower() in {
         "1",
         "true",
-        "TRUE",
     }
     valid_fallback_exists = False
 
@@ -834,10 +836,11 @@ def validate_recovery_slide(
             reason="Recovery slide requires to position",
         )
     recovery_mode = getattr(move, "recovery_mode", None)
-    stack_strike_enabled = os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "").lower() in {
+    # Stack-strike recovery is enabled by default (v1 rules)
+    # Set RINGRIFT_RECOVERY_STACK_STRIKE_V1=0 to disable
+    stack_strike_enabled = os.getenv("RINGRIFT_RECOVERY_STACK_STRIKE_V1", "1").lower() in {
         "1",
         "true",
-        "TRUE",
     }
 
     # Fallback-class recovery (fallback or stack_strike) bypasses line checks.

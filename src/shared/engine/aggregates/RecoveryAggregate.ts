@@ -43,7 +43,7 @@ import { BOARD_CONFIGS, positionToString, stringToPosition } from '../../types/g
 import { getEffectiveLineLengthThreshold } from '../rulesConfig';
 import { isEligibleForRecovery, countBuriedRings } from '../playerStateHelpers';
 import { calculateCapHeight } from '../core';
-import { flagEnabled } from '../../utils/envFlags';
+import { isRecoveryStackStrikeV1Enabled } from '../../utils/envFlags';
 
 // ===============================================================================
 // Types
@@ -278,7 +278,7 @@ export function enumerateExpandedRecoverySlideTargets(
   }
 
   const directions = getAdjacencyDirections(state.board.type);
-  const stackStrikeEnabled = flagEnabled('RINGRIFT_RECOVERY_STACK_STRIKE_V1');
+  const stackStrikeEnabled = isRecoveryStackStrikeV1Enabled();
   const targets: ExpandedRecoverySlideTarget[] = [];
 
   for (const [posKey, marker] of state.board.markers) {
@@ -357,7 +357,7 @@ export function hasAnyRecoveryMove(state: GameState, playerNumber: number): bool
   // Use early-exit enumeration
   const lineLength = getEffectiveLineLengthThreshold(state.board.type, state.players.length);
   const directions = getAdjacencyDirections(state.board.type);
-  const stackStrikeEnabled = flagEnabled('RINGRIFT_RECOVERY_STACK_STRIKE_V1');
+  const stackStrikeEnabled = isRecoveryStackStrikeV1Enabled();
   let validFallbackExists = false;
 
   for (const [posKey, marker] of state.board.markers) {
@@ -493,7 +493,7 @@ export function validateRecoverySlide(
 ): RecoveryValidationResult {
   const { player, from, to, option, collapsePositions, extractionStacks } = move;
   const buriedRingCount = countBuriedRings(state.board, player);
-  const stackStrikeEnabled = flagEnabled('RINGRIFT_RECOVERY_STACK_STRIKE_V1');
+  const stackStrikeEnabled = isRecoveryStackStrikeV1Enabled();
 
   // Check eligibility
   if (!isEligibleForRecovery(state, player)) {
@@ -833,9 +833,9 @@ export function applyRecoverySlide(
   const fromKey = positionToString(from);
   const toKey = positionToString(to);
 
-  // Experimental stack-strike recovery (v1).
+  // Stack-strike recovery (v1, enabled by default).
   if (recoveryMode === 'stack_strike') {
-    if (!flagEnabled('RINGRIFT_RECOVERY_STACK_STRIKE_V1')) {
+    if (!isRecoveryStackStrikeV1Enabled()) {
       throw new Error('Stack-strike recovery is not enabled');
     }
 

@@ -978,7 +978,7 @@ export const BOARD_CONFIGS = {
   square19: {
     size: 19,
     totalSpaces: 361,
-    ringsPerPlayer: 60,
+    ringsPerPlayer: 72,
     lineLength: 4, // Minimum line length for collapse (19x19 full)
     movementAdjacency: 'moore' as AdjacencyType, // 8-direction movement
     lineAdjacency: 'moore' as AdjacencyType, // 8-direction line formation
@@ -988,7 +988,7 @@ export const BOARD_CONFIGS = {
   hexagonal: {
     size: 13, // Radius of hexagonal board (size - 1 = 12)
     totalSpaces: 469,
-    ringsPerPlayer: 72,
+    ringsPerPlayer: 96,
     lineLength: 4, // Minimum line length for collapse (hex)
     movementAdjacency: 'hexagonal' as AdjacencyType, // 6-direction movement
     lineAdjacency: 'hexagonal' as AdjacencyType, // 6-direction line formation

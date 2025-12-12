@@ -26,13 +26,13 @@ BOARD_CONFIGS: Dict[BoardType, BoardConfig] = {
     BoardType.SQUARE19: BoardConfig(
         size=19,
         total_spaces=361,
-        rings_per_player=60,
+        rings_per_player=72,
         line_length=4,
     ),
     BoardType.HEXAGONAL: BoardConfig(
         size=13,
         total_spaces=469,
-        rings_per_player=72,
+        rings_per_player=96,
         line_length=4,
     ),
 }
@@ -104,8 +104,8 @@ def get_rings_per_player(board_type: BoardType) -> int:
 
     Per BOARD_CONFIGS:
     - square8: 18
-    - square19: 60
-    - hexagonal: 72
+    - square19: 72
+    - hexagonal: 96
     """
     return BOARD_CONFIGS[board_type].rings_per_player
 
