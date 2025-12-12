@@ -1136,6 +1136,7 @@ ai_19x19 = NeuralNetAI(
 ### 8.9 Compatibility Notes
 
 - **Checkpoint incompatibility:** Models with different `policy_size` cannot share checkpoints. The policy head linear layer has different dimensions.
+- **Runtime policy layout selection:** Inference/search AIs now choose the move→policy-index encoder based on the loaded checkpoint’s `model.policy_size` (Square8 `7000` vs legacy MAX_N layouts). See `app/ai/neural_net.py:NeuralNetAI.encode_move` and `tests/test_nn_policy_layout_selection.py`.
 - **Architecture version:** Each model class has an `ARCHITECTURE_VERSION` attribute for checkpoint validation:
   - `RingRiftCNN`: v1.1.0
   - `RingRiftCNN_MPS`: v1.1.0-mps

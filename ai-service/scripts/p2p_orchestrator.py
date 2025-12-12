@@ -2406,7 +2406,7 @@ print(wins / total)
                                     "fitness": fitness,
                                     "weights": weights,
                                     "worker_id": self.node_id,
-                                })
+                                }, headers=self._auth_headers())
                         except Exception as e:
                             print(f"[P2P] Failed to report CMA-ES result to leader: {e}")
 
@@ -2818,8 +2818,8 @@ print(wins / total)
 
             timeout = ClientTimeout(total=10)
             async with ClientSession(timeout=timeout) as session:
-                url = f"http://{worker.host}:{worker.port}/tournament/match"
-                await session.post(url, json={"job_id": job_id, "match": match})
+                url = self._url_for_peer(worker, "/tournament/match")
+                await session.post(url, json={"job_id": job_id, "match": match}, headers=self._auth_headers())
         except Exception as e:
             print(f"[P2P] Failed to send match to worker {worker_id}: {e}")
 
@@ -2955,12 +2955,12 @@ print(json.dumps(result))
                     try:
                         timeout = ClientTimeout(total=10)
                         async with ClientSession(timeout=timeout) as session:
-                            url = f"http://{leader.host}:{leader.port}/tournament/result"
+                            url = self._url_for_peer(leader, "/tournament/result")
                             await session.post(url, json={
                                 "job_id": job_id,
                                 "result": result,
                                 "worker_id": self.node_id,
-                            })
+                            }, headers=self._auth_headers())
                     except Exception as e:
                         print(f"[P2P] Failed to report tournament result to leader: {e}")
             else:
@@ -3420,7 +3420,7 @@ print(json.dumps(result))
             try:
                 timeout = ClientTimeout(total=10)
                 async with ClientSession(timeout=timeout) as session:
-                    url = f"http://{worker.host}:{worker.port}/improvement/selfplay"
+                    url = self._url_for_peer(worker, "/improvement/selfplay")
                     await session.post(url, json={
                         "job_id": job_id,
                         "iteration": state.current_iteration,
@@ -3429,7 +3429,7 @@ print(json.dumps(result))
                         "num_players": state.num_players,
                         "model_path": state.best_model_path,
                         "output_dir": iteration_dir,
-                    })
+                    }, headers=self._auth_headers())
                     tasks_sent += 1
             except Exception as e:
                 print(f"[P2P] Failed to send selfplay task to {worker_id}: {e}")
@@ -3645,8 +3645,8 @@ else:
             try:
                 timeout = ClientTimeout(total=3600)  # 1 hour for training
                 async with ClientSession(timeout=timeout) as session:
-                    url = f"http://{gpu_worker.host}:{gpu_worker.port}/improvement/train"
-                    async with session.post(url, json=training_config) as resp:
+                    url = self._url_for_peer(gpu_worker, "/improvement/train")
+                    async with session.post(url, json=training_config, headers=self._auth_headers()) as resp:
                         if resp.status == 200:
                             result = await resp.json()
                             if result.get("success"):
@@ -3869,7 +3869,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             endpoint = f"/training/{job_type}/start"
             timeout = ClientTimeout(total=30)
             async with ClientSession(timeout=timeout) as session:
-                url = f"http://{worker_node.host}:{worker_node.port}{endpoint}"
+                url = self._url_for_peer(worker_node, endpoint)
                 payload = {
                     "job_id": job_id,
                     "board_type": board_type,
@@ -3878,7 +3878,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "batch_size": job.batch_size,
                     "learning_rate": job.learning_rate,
                 }
-                async with session.post(url, json=payload) as resp:
+                async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
                     if resp.status == 200:
                         result = await resp.json()
                         if result.get("success"):
@@ -4118,14 +4118,14 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     try:
                         timeout = ClientTimeout(total=30)
                         async with ClientSession(timeout=timeout) as session:
-                            url = f"http://{leader.host}:{leader.port}/training/update"
+                            url = self._url_for_peer(leader, "/training/update")
                             payload = {
                                 "job_id": job_id,
                                 "completed": success,
                                 "output_model_path": output_path if success else "",
                                 "error": stderr.decode()[:500] if not success else "",
                             }
-                            await session.post(url, json=payload)
+                            await session.post(url, json=payload, headers=self._auth_headers())
                     except Exception as e:
                         print(f"[P2P] Failed to report training completion to leader: {e}")
             else:
@@ -5584,6 +5584,8 @@ def main():
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port to listen on")
     parser.add_argument("--peers", help="Comma-separated list of known peers (host[:port] or http(s)://host[:port])")
     parser.add_argument("--ringrift-path", help="Path to RingRift installation")
+    parser.add_argument("--auth-token", help=f"Shared auth token (or set {AUTH_TOKEN_ENV})")
+    parser.add_argument("--require-auth", action="store_true", help="Require auth token to be set")
 
     args = parser.parse_args()
 
@@ -5597,6 +5599,8 @@ def main():
         port=args.port,
         known_peers=known_peers,
         ringrift_path=args.ringrift_path,
+        auth_token=args.auth_token,
+        require_auth=args.require_auth,
     )
 
     # Handle shutdown

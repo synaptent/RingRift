@@ -1607,4 +1607,67 @@ runner = ParallelGameRunner(
 
 ---
 
+## Shadow Validation System
+
+### Overview
+
+Shadow validation continuously compares GPU-generated moves against the canonical CPU rules engine during selfplay. This catches divergences early before they corrupt training data.
+
+### Configuration
+
+```bash
+# Enable shadow validation
+PYTHONPATH=ai-service python scripts/run_gpu_selfplay.py \
+  --shadow-validation \
+  --shadow-sample-rate 0.10 \    # Validate 10% of moves
+  --shadow-threshold 0.01        # Halt if divergence > 1%
+```
+
+### Parameters
+
+| Parameter              | Description                               | Recommended              |
+| ---------------------- | ----------------------------------------- | ------------------------ |
+| `--shadow-validation`  | Enable shadow validation                  | Always for new code      |
+| `--shadow-sample-rate` | Fraction of moves to validate (0.0-1.0)   | 0.05-0.10 for production |
+| `--shadow-threshold`   | Max divergence rate before halt (0.0-1.0) | 0.01 (1%)                |
+
+### What Gets Validated
+
+1. **Placement moves** - All valid positions for ring placement
+2. **Movement moves** - All valid stack movement destinations
+3. **Capture moves** - All valid capture landings (target implicit)
+
+### Divergence Types
+
+- **Count mismatch** - GPU generates different number of moves than CPU
+- **Move detail mismatch** - Same count but different actual moves
+
+### Current Status (2025-12-12)
+
+| Board    | Validation       | Notes                    |
+| -------- | ---------------- | ------------------------ |
+| square8  | ✅ PASS          | 5% sample, 1% threshold  |
+| square19 | ⚠️ Untested      | Likely works             |
+| hex      | ❌ NOT SUPPORTED | Requires valid cell mask |
+
+### Known Issues
+
+1. **Minor placement divergence (~0.18%)** - With 100% sampling, rare edge case where GPU generates 1 extra placement position. Does not affect training quality.
+
+2. **Hex board not supported** - GPU uses full NxN grid without hex cell mask. Would require:
+   - Add `is_valid_cell` tensor to BatchGameState
+   - Filter all move generation by valid cells
+   - Handle hex coordinate system (cube coordinates)
+
+### Implementation Details
+
+Shadow validation is implemented in:
+
+- `app/ai/shadow_validation.py` - ShadowValidator class
+- `gpu_parallel_games.py:_validate_*_moves_sample()` - Integration points
+
+Coordinate conversion (GPU `[y,x]` → CPU `(x,y)`) is handled in the validation methods.
+
+---
+
 _This document should be reviewed and updated as implementation progresses. Each phase completion should include updates to reflect actual results vs. estimates._

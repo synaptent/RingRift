@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.ringrift.p2p-orchestrator</string>
+
+    <key>WorkingDirectory</key>
+    <string>__RINGRIFT_AI_SERVICE_DIR__</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>__RINGRIFT_P2P_PYTHON__</string>
+      <string>-u</string>
+      <string>scripts/p2p_orchestrator.py</string>
+      <string>--node-id</string>
+      <string>__RINGRIFT_NODE_ID__</string>
+      <string>--host</string>
+      <string>0.0.0.0</string>
+      <string>--port</string>
+      <string>8770</string>
+      <string>--ringrift-path</string>
+      <string>__RINGRIFT_REPO_ROOT__</string>
+      <string>--peers</string>
+      <string>https://cluster.ringrift.ai</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PYTHONUNBUFFERED</key>
+      <string>1</string>
+      <key>RINGRIFT_CLUSTER_AUTH_TOKEN</key>
+      <string>__SET_ME__</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__RINGRIFT_AI_SERVICE_DIR__/logs/p2p_orchestrator/p2p_orchestrator.launchd.out</string>
+    <key>StandardErrorPath</key>
+    <string>__RINGRIFT_AI_SERVICE_DIR__/logs/p2p_orchestrator/p2p_orchestrator.launchd.err</string>
+  </dict>
+</plist>

@@ -969,7 +969,42 @@ def _preflight_neural_checkpoints(
             nn_model_id=model_id,
             allow_fresh_weights=False,
         )
-        NeuralNetAI(player_number=1, config=cfg, board_type=board_type)
+        nn = NeuralNetAI(player_number=1, config=cfg, board_type=board_type)
+
+        # Extra sanity check: verify that the runtime move encoder produces
+        # indices that are in-range for the loaded policy head. This catches
+        # subtle incompatibilities where a checkpoint loads but uses a
+        # different policy layout (e.g. square8 policy_size=7000 vs legacy
+        # MAX_N layouts).
+        if board_type in {BoardType.SQUARE8, BoardType.SQUARE19} and nn.model is not None:
+            from app.models.core import BoardState, Move, Position
+
+            board_size = 8 if board_type == BoardType.SQUARE8 else 19
+            board_state = BoardState(
+                type=board_type,
+                size=board_size,
+                stacks={},
+                markers={},
+                collapsedSpaces={},
+            )
+            probe_move = Move(
+                id="probe",
+                type="move_stack",
+                player=1,
+                from_pos=Position(x=0, y=0),
+                to=Position(x=1, y=0),
+                timestamp=datetime.now(timezone.utc),
+                thinkTime=0,
+                moveNumber=0,
+            )
+            idx = nn.encode_move(probe_move, board_state)
+            policy_size = int(getattr(nn.model, "policy_size", 0) or 0)
+            if idx < 0 or idx >= policy_size:
+                raise RuntimeError(
+                    "Neural checkpoint policy layout mismatch: "
+                    f"nn_model_id={model_id!r} board={board_type.value} "
+                    f"probe_idx={idx} policy_size={policy_size}"
+                )
 
 
 def main() -> None:

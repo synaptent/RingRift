@@ -62,6 +62,35 @@ PYTHONPATH=ai-service python ai-service/scripts/inspect_nn_checkpoint.py --nn-mo
 or pass `--require-neural-net` to the tournament scripts so MCTS/Descent tiers
 error instead of silently falling back to heuristic rollouts.
 
+### Troubleshooting: `policy_size` / policy-layout mismatch (7000 vs legacy MAX_N)
+
+RingRift currently supports **two** policy layouts for square boards:
+
+- **Board-specific policy heads** (preferred for training + compact models):
+  - Square8: `policy_size=7000`
+  - Square19: `policy_size=67000`
+- **Legacy MAX_N policy head** (single fixed layout for square boards):
+  - Historically used by some `ringrift_v4_*` checkpoints (e.g. `policy_size=54875`)
+
+If you load a Square8 checkpoint with `policy_size=7000` but your runtime
+encoder still emits indices from the legacy MAX_N layout, the neural policy
+will be effectively ignored (most move indices will be out-of-range), and MCTS
+will degrade toward heuristic rollouts/uniform priors.
+
+**Canonical fix:** `NeuralNetAI.encode_move` now auto-selects the encoder based
+on the loaded checkpoint’s `model.policy_size`:
+
+- If `model.policy_size == get_policy_size_for_board(board.type)`, it uses
+  `encode_move_for_board` (board-specific).
+- Otherwise it falls back to the legacy MAX_N encoding for compatibility with
+  older checkpoints.
+
+**Debug:** inspect the checkpoint’s declared policy size:
+
+```bash
+PYTHONPATH=ai-service python ai-service/scripts/inspect_nn_checkpoint.py --nn-model-id sq8_2p_nn_baseline --board-type square8
+```
+
 ## Usage
 
 ### Environment Variable Configuration

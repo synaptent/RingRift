@@ -135,6 +135,76 @@ def run_rsync(host: HostConfig, local_path: str, remote_path: str) -> Tuple[int,
         return -1, "", str(e)
 
 
+def deploy_via_tarball(host: HostConfig) -> Tuple[str, bool, str]:
+    """Deploy code via tarball (more reliable for restricted SSH connections)."""
+    import tempfile
+    print(f"  Deploying to {host.host}:{host.port} (via tarball)...")
+
+    # Create tarball locally
+    tarball_path = Path(tempfile.gettempdir()) / "ringrift_ai_deploy.tar.gz"
+
+    # Create tarball excluding unnecessary files
+    tar_cmd = [
+        "tar", "-czf", str(tarball_path),
+        "--exclude", "__pycache__",
+        "--exclude", "*.pyc",
+        "--exclude", ".git",
+        "--exclude", "venv",
+        "--exclude", "*.egg-info",
+        "--exclude", "data/games",
+        "--exclude", "logs",
+        "-C", str(LOCAL_AI_SERVICE.parent),
+        LOCAL_AI_SERVICE.name
+    ]
+    try:
+        result = subprocess.run(tar_cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            return host.ssh_target, False, f"tar failed: {result.stderr}"
+    except Exception as e:
+        return host.ssh_target, False, f"tar error: {e}"
+
+    # Create remote directory
+    rc, _, stderr = run_ssh(host, f"mkdir -p {REMOTE_BASE}")
+    if rc != 0:
+        return host.ssh_target, False, f"mkdir failed: {stderr}"
+
+    # SCP the tarball
+    scp_cmd = [
+        "scp",
+        "-P", str(host.port),
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "ConnectTimeout=30",
+        str(tarball_path),
+        f"{host.ssh_target}:/tmp/ringrift_ai_deploy.tar.gz"
+    ]
+    try:
+        result = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            return host.ssh_target, False, f"scp failed: {result.stderr}"
+    except subprocess.TimeoutExpired:
+        return host.ssh_target, False, "scp timeout"
+    except Exception as e:
+        return host.ssh_target, False, f"scp error: {e}"
+
+    # Extract on remote
+    rc, _, stderr = run_ssh(
+        host,
+        f"cd {REMOTE_BASE} && rm -rf ai-service && tar -xzf /tmp/ringrift_ai_deploy.tar.gz && rm /tmp/ringrift_ai_deploy.tar.gz",
+        timeout=120
+    )
+    if rc != 0:
+        return host.ssh_target, False, f"extract failed: {stderr}"
+
+    # Install dependencies
+    rc, _, _ = run_ssh(
+        host,
+        f"cd {REMOTE_AI_SERVICE} && pip install -q -e . 2>/dev/null || true",
+        timeout=120
+    )
+
+    return host.ssh_target, True, "Deployed (tarball)"
+
+
 def check_host(host: HostConfig) -> Tuple[str, bool, str]:
     """Check if host is reachable."""
     print(f"  Checking {host.host}:{host.port}...")
@@ -339,17 +409,18 @@ def main():
     if args.deploy:
         print("\nDeploying code to cluster (sequentially to avoid rate limits)...")
         for host in hosts:
-            target, ok, msg = deploy_to_host(host)
+            # Try tarball method first (more reliable for vast.ai)
+            target, ok, msg = deploy_via_tarball(host)
             status = "✓" if ok else "✗"
             print(f"  {status} {target}: {msg}")
             if not ok:
                 # Retry once after delay
-                print(f"    Retrying in 5s...")
-                time.sleep(5)
-                target, ok, msg = deploy_to_host(host)
+                print(f"    Retrying in 10s...")
+                time.sleep(10)
+                target, ok, msg = deploy_via_tarball(host)
                 status = "✓" if ok else "✗"
                 print(f"  {status} {target} (retry): {msg}")
-            time.sleep(2)  # Delay between hosts to avoid rate limits
+            time.sleep(3)  # Delay between hosts to avoid rate limits
 
     if args.run:
         print("\nRunning experiments...")

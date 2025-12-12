@@ -1,0 +1,31 @@
+[Unit]
+Description=RingRift P2P Orchestrator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Edit these paths for the host:
+# - Repo root: `/home/ubuntu/ringrift` or `/root/ringrift`
+# - Venv: `ai-service/venv`
+WorkingDirectory=__RINGRIFT_AI_SERVICE_DIR__
+
+# Copy `ai-service/config/p2p_orchestrator.env.example` to this path and edit.
+EnvironmentFile=/etc/ringrift/p2p_orchestrator.env
+
+ExecStart=__RINGRIFT_P2P_PYTHON__ -u scripts/p2p_orchestrator.py \
+  --node-id ${RINGRIFT_NODE_ID} \
+  --host ${RINGRIFT_P2P_HOST} \
+  --port ${RINGRIFT_P2P_PORT} \
+  --ringrift-path ${RINGRIFT_PATH} \
+  --peers ${RINGRIFT_P2P_PEERS}
+
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
