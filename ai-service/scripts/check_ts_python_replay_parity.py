@@ -75,6 +75,11 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+# Ensure `app.*` imports resolve when invoked from repo root.
+if str(AI_SERVICE_ROOT) not in sys.path:
+    sys.path.insert(0, str(AI_SERVICE_ROOT))
+
 from app.db.game_replay import GameReplayDB, _compute_state_hash
 from app.training.generate_data import create_initial_state
 from app.game_engine import BoardType, GameEngine
@@ -1521,8 +1526,21 @@ def main() -> None:
             "--fail-on-divergence is set."
         ),
     )
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=None,
+        help=(
+            "Emit replay progress to stderr every N TS steps / Python moves "
+            "per game (0 disables). Overrides the environment variable "
+            "RINGRIFT_PARITY_PROGRESS_EVERY."
+        ),
+    )
     args = parser.parse_args()
     mode = args.mode
+
+    if args.progress_every is not None:
+        os.environ["RINGRIFT_PARITY_PROGRESS_EVERY"] = str(int(args.progress_every))
 
     # Enforce mode/view compatibility: canonical parity gate is defined only
     # for post_move semantics.

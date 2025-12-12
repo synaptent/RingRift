@@ -2314,9 +2314,10 @@ class NeuralNetAI(BaseAI):
     Configuration overview (:class:`AIConfig` / related fields):
 
     - ``nn_model_id``: Logical identifier for the model checkpoint
-      (e.g. ``"ringrift_v1"``). Resolved to ``<base_dir>/models/<id>.pth``
-      (or ``<id>_mps.pth`` for MPS builds). When omitted, falls back to
-      ``"ringrift_v1"``.
+      (e.g. ``"ringrift_v4_sq8_2p"``). Resolved to
+      ``<base_dir>/models/<id>.pth`` (or ``<id>_mps.pth`` for MPS builds).
+      When omitted, defaults to a board-aware v4 model id (see
+      :meth:`_ensure_model_initialized`).
     - ``allow_fresh_weights``: When ``True``, missing checkpoints are
       treated as intentional and the network starts from random weights
       without raising; when ``False`` (default), a WARNING is logged.
@@ -2466,14 +2467,45 @@ class NeuralNetAI(BaseAI):
 
         model_id = getattr(self.config, "nn_model_id", None)
         if not model_id:
-            model_id = "ringrift_v1"
+            # Default model selection.
+            #
+            # We intentionally do NOT fall back to deprecated v1/v1_mps ids.
+            # Instead, prefer the latest canonical v4/v3 square8 2p models and
+            # require callers to explicitly set nn_model_id for other boards.
+            if board_type == BoardType.SQUARE8:
+                model_id = "ringrift_v4_sq8_2p"
+            elif board_type == BoardType.SQUARE19:
+                model_id = "ringrift_v4_sq19_2p"
+            else:  # HEXAGONAL
+                model_id = "ringrift_v4_hex_2p"
+            logger.info(
+                "AIConfig.nn_model_id not set; defaulting to %s for board=%s",
+                model_id,
+                board_type,
+            )
+
+        def _model_id_includes_board_hint(value: str) -> bool:
+            lower = value.lower()
+            return any(
+                token in lower
+                for token in (
+                    "sq8",
+                    "square8",
+                    "sq19",
+                    "square19",
+                    "19x19",
+                    "hex",
+                    "hexagonal",
+                )
+            )
 
         # Board-type-specific model path (e.g., ringrift_v1_hex_mps.pth)
         board_suffix = ""
-        if board_type == BoardType.HEXAGONAL:
-            board_suffix = "_hex"
-        elif board_type == BoardType.SQUARE19:
-            board_suffix = "_19x19"
+        if not _model_id_includes_board_hint(model_id):
+            if board_type == BoardType.HEXAGONAL:
+                board_suffix = "_hex"
+            elif board_type == BoardType.SQUARE19:
+                board_suffix = "_19x19"
         # SQUARE8 uses the base model name (legacy compatibility)
 
         # Architecture-specific checkpoint naming

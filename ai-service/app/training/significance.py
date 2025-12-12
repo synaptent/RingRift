@@ -7,7 +7,31 @@ promoting candidates on noisy, small-sample win rates.
 from __future__ import annotations
 
 import math
+from statistics import NormalDist
 from typing import Tuple
+
+
+def _z_for_confidence(confidence: float) -> float:
+    """Return two-sided normal z-score for a confidence level.
+
+    Uses the standard library so callers can request arbitrary confidence
+    levels without adding SciPy as a dependency.
+    """
+    try:
+        c = float(confidence)
+    except (TypeError, ValueError):
+        c = 0.95
+
+    if c <= 0.0:
+        return 0.0
+
+    # Clamp extreme values to avoid infinities from inv_cdf.
+    if c >= 1.0:
+        c = 0.999999
+
+    # Two-sided interval: tail area is (1 - c) / 2.
+    p = 0.5 + c / 2.0
+    return float(NormalDist().inv_cdf(p))
 
 
 def wilson_score_interval(
@@ -28,15 +52,7 @@ def wilson_score_interval(
     if total <= 0:
         return (0.0, 0.0)
 
-    if confidence == 0.95:
-        z = 1.96
-    elif confidence == 0.90:
-        z = 1.645
-    elif confidence == 0.99:
-        z = 2.576
-    else:
-        # Fall back to a conservative z-score for uncommon confidences.
-        z = 2.576
+    z = _z_for_confidence(confidence)
 
     p_hat = wins / float(total)
     n = float(total)
@@ -60,4 +76,3 @@ def wilson_lower_bound(
     """Convenience wrapper returning only the Wilson lower bound."""
     lower, _ = wilson_score_interval(wins, total, confidence=confidence)
     return lower
-

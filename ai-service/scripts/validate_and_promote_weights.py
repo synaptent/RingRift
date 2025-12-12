@@ -49,6 +49,7 @@ from app.ai.heuristic_weights import (
     HeuristicWeights,
 )
 from app.models import BoardType
+from app.training.significance import wilson_score_interval
 
 
 @dataclass
@@ -97,37 +98,6 @@ def load_candidate_weights(path: str) -> Tuple[HeuristicWeights, dict]:
     else:
         # Assume entire file is weights
         return data, {"weights": data}
-
-
-def wilson_confidence_interval(
-    wins: int,
-    total: int,
-    confidence: float = 0.95,
-) -> Tuple[float, float]:
-    """Calculate Wilson score confidence interval for win rate.
-
-    Returns (lower_bound, upper_bound) for the true win rate.
-    """
-    import math
-
-    if total == 0:
-        return 0.0, 1.0
-
-    # Z-score for confidence level
-    z_scores = {0.90: 1.645, 0.95: 1.96, 0.99: 2.576}
-    z = z_scores.get(confidence, 1.96)
-
-    p = wins / total
-    n = total
-
-    denominator = 1 + z * z / n
-    center = p + z * z / (2 * n)
-    spread = z * math.sqrt((p * (1 - p) + z * z / (4 * n)) / n)
-
-    lower = (center - spread) / denominator
-    upper = (center + spread) / denominator
-
-    return max(0.0, lower), min(1.0, upper)
 
 
 def play_validation_games(
@@ -257,7 +227,14 @@ def validate_weights(
     win_rate = candidate_wins / total_decisive if total_decisive > 0 else 0.5
 
     # Calculate confidence interval
-    lower, upper = wilson_confidence_interval(candidate_wins, total_decisive, confidence)
+    if total_decisive <= 0:
+        lower, upper = 0.0, 1.0
+    else:
+        lower, upper = wilson_score_interval(
+            candidate_wins,
+            total_decisive,
+            confidence=confidence,
+        )
 
     # Determine if statistically significant improvement
     is_significant = lower > 0.5 and win_rate >= min_win_rate
