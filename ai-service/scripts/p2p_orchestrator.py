@@ -119,6 +119,10 @@ GRACEFUL_SHUTDOWN_BEFORE_UPDATE = True  # Stop jobs before updating
 AUTH_TOKEN_ENV = "RINGRIFT_CLUSTER_AUTH_TOKEN"
 AUTH_TOKEN_FILE_ENV = "RINGRIFT_CLUSTER_AUTH_TOKEN_FILE"
 
+# Optional advertised endpoint override (useful behind NAT/port-mapping).
+ADVERTISE_HOST_ENV = "RINGRIFT_ADVERTISE_HOST"
+ADVERTISE_PORT_ENV = "RINGRIFT_ADVERTISE_PORT"
+
 # Data manifest collection settings
 MANIFEST_JSONL_LINECOUNT_MAX_BYTES = 64 * 1024 * 1024  # Skip line-counting for huge JSONL files
 MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES = 1024 * 1024
@@ -714,6 +718,11 @@ class P2POrchestrator:
         self.cluster_data_manifest: Optional[ClusterDataManifest] = None  # Leader-only
         self.manifest_collection_interval = 300.0  # Collect manifests every 5 minutes
         self.last_manifest_collection = 0.0
+
+        # Dashboard/selfplay stats history (leader-only). Stored in-memory to
+        # enable lightweight throughput charts without adding DB migrations.
+        self.selfplay_stats_history: List[Dict[str, Any]] = []
+        self.selfplay_stats_history_max_samples: int = 288  # ~24h @ 5-min cadence
 
         # Phase 2: P2P rsync coordination state
         self.active_sync_jobs: Dict[str, DataSyncJob] = {}
@@ -4876,6 +4885,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         1. Check if any cycles need training based on data thresholds
         2. Trigger export/training jobs for ready cycles
         3. Run evaluations and update Elo ratings
+        4. Schedule CMA-ES optimization when needed
+        5. Schedule diverse tournaments for AI calibration
         """
         if self.role != NodeRole.LEADER:
             return
@@ -4890,9 +4901,28 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         self.last_improvement_cycle_check = current_time
 
         # Check which cycles are ready for training
-        jobs_to_start = self.improvement_cycle_manager.check_training_readiness(
-            self.cluster_data_manifest
-        )
+        training_ready = self.improvement_cycle_manager.check_training_needed()
+
+        # Convert to job configs
+        jobs_to_start = []
+        for board_type, num_players in training_ready:
+            cycle_key = f"{board_type}_{num_players}p"
+            cycle_state = self.improvement_cycle_manager.state.cycles.get(cycle_key)
+            if cycle_state and self.improvement_cycle_manager.trigger_training(board_type, num_players):
+                jobs_to_start.append({
+                    "cycle_id": cycle_key,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "total_games": cycle_state.games_since_last_training,
+                    "iteration": cycle_state.current_iteration + 1,
+                })
+
+        # Also check for CMA-ES optimization opportunities
+        cmaes_ready = self.improvement_cycle_manager.check_cmaes_needed()
+        for board_type, num_players in cmaes_ready:
+            # Trigger distributed CMA-ES
+            print(f"[P2P] CMA-ES optimization ready for {board_type}_{num_players}p")
+            asyncio.create_task(self._trigger_auto_cmaes(board_type, num_players))
 
         for job_config in jobs_to_start:
             cycle_id = job_config["cycle_id"]
@@ -5135,6 +5165,79 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         except Exception as e:
             return web.json_response({"success": False, "error": str(e)})
+
+    async def _trigger_auto_cmaes(self, board_type: str, num_players: int):
+        """Automatically trigger CMA-ES optimization for a configuration.
+
+        Called by improvement cycle manager when optimization is due.
+        """
+        try:
+            job_id = f"auto_cmaes_{board_type}_{num_players}p_{int(time.time())}"
+            print(f"[P2P] Auto-triggering CMA-ES: {job_id}")
+
+            # Check for GPU workers
+            gpu_workers = []
+            with self.peers_lock:
+                for peer in self.peers.values():
+                    if peer.is_healthy() and peer.has_gpu and peer.node_id != self.node_id:
+                        gpu_workers.append(peer)
+
+            if self.self_info.has_gpu:
+                gpu_workers.append(self.self_info)
+
+            if len(gpu_workers) >= 2:
+                # DISTRIBUTED MODE
+                cmaes_job_id = f"cmaes_auto_{job_id}"
+                state = DistributedCMAESState(
+                    job_id=cmaes_job_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    generations=100,
+                    population_size=max(32, len(gpu_workers) * 8),
+                    games_per_eval=100,
+                    status="running",
+                    started_at=time.time(),
+                    last_update=time.time(),
+                    worker_nodes=[w.node_id for w in gpu_workers],
+                )
+                self.distributed_cmaes_state[cmaes_job_id] = state
+                asyncio.create_task(self._run_distributed_cmaes(cmaes_job_id))
+                print(f"[P2P] Started distributed CMA-ES with {len(gpu_workers)} workers")
+            else:
+                # LOCAL MODE - use GPU CMA-ES script
+                output_dir = os.path.join(
+                    self.ringrift_path, "ai-service", "data", "cmaes",
+                    f"{board_type}_{num_players}p_auto_{int(time.time())}"
+                )
+                os.makedirs(output_dir, exist_ok=True)
+
+                cmd = [
+                    sys.executable,
+                    os.path.join(self.ringrift_path, "ai-service", "scripts", "run_gpu_cmaes.py"),
+                    "--board", board_type,
+                    "--num-players", str(num_players),
+                    "--generations", "100",
+                    "--population-size", "32",
+                    "--games-per-eval", "100",
+                    "--max-moves", "10000",
+                    "--output-dir", output_dir,
+                    "--multi-gpu",
+                ]
+
+                env = os.environ.copy()
+                env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
+                env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                )
+                print(f"[P2P] Started local CMA-ES optimization (PID {proc.pid})")
+
+        except Exception as e:
+            print(f"[P2P] Auto CMA-ES trigger failed: {e}")
 
     async def handle_cmaes_start_auto(self, request: web.Request) -> web.Response:
         """Handle CMA-ES optimization start request.
@@ -5899,6 +6002,52 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 "data_manifests": manifest_info,
                 "timestamp": time.time(),
             })
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    async def handle_api_selfplay_stats(self, request: web.Request) -> web.Response:
+        """Get aggregated selfplay game statistics for dashboard charts."""
+        try:
+            with self.manifest_lock:
+                cluster_manifest = self.cluster_data_manifest
+                local_manifest = self.local_data_manifest
+                history = list(self.selfplay_stats_history)
+
+            by_board_type: Dict[str, Dict[str, Any]] = {}
+            total_selfplay_games = 0
+            manifest_collected_at = 0.0
+
+            if cluster_manifest:
+                by_board_type = cluster_manifest.by_board_type
+                total_selfplay_games = int(cluster_manifest.total_selfplay_games or 0)
+                manifest_collected_at = float(cluster_manifest.collected_at or 0.0)
+            elif local_manifest:
+                manifest_collected_at = float(local_manifest.collected_at or 0.0)
+                totals: Dict[str, int] = {}
+                for f in getattr(local_manifest, "files", []) or []:
+                    if getattr(f, "file_type", "") != "selfplay":
+                        continue
+                    board_type = getattr(f, "board_type", "") or ""
+                    num_players = int(getattr(f, "num_players", 0) or 0)
+                    if not board_type or not num_players:
+                        continue
+                    key = f"{board_type}_{num_players}p"
+                    totals[key] = totals.get(key, 0) + int(getattr(f, "game_count", 0) or 0)
+                by_board_type = {k: {"total_games": v, "nodes": [local_manifest.node_id]} for k, v in totals.items()}
+                total_selfplay_games = sum(totals.values())
+
+            return web.json_response(
+                {
+                    "success": True,
+                    "node_id": self.node_id,
+                    "is_leader": self._is_leader(),
+                    "manifest_collected_at": manifest_collected_at,
+                    "total_selfplay_games": total_selfplay_games,
+                    "by_board_type": by_board_type,
+                    "history": history,
+                    "timestamp": time.time(),
+                }
+            )
         except Exception as e:
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
@@ -6669,6 +6818,7 @@ print(json.dumps({{
                     cluster_manifest = await self._collect_cluster_manifest()
                     with self.manifest_lock:
                         self.cluster_data_manifest = cluster_manifest
+                        self._record_selfplay_stats_sample(cluster_manifest)
                 else:
                     local_manifest = await asyncio.to_thread(self._collect_local_data_manifest)
                     with self.manifest_lock:
@@ -6680,6 +6830,24 @@ print(json.dumps({{
                 print(f"[P2P] Manifest collection error: {e}")
 
             await asyncio.sleep(self.manifest_collection_interval)
+
+    def _record_selfplay_stats_sample(self, manifest: ClusterDataManifest) -> None:
+        """Record a lightweight selfplay totals sample for dashboard charts."""
+        try:
+            sample = {
+                "timestamp": time.time(),
+                "manifest_collected_at": float(getattr(manifest, "collected_at", 0.0) or 0.0),
+                "total_selfplay_games": int(getattr(manifest, "total_selfplay_games", 0) or 0),
+                "by_board_type": manifest.by_board_type,
+                "total_nodes": int(getattr(manifest, "total_nodes", 0) or 0),
+            }
+            self.selfplay_stats_history.append(sample)
+            max_samples = int(getattr(self, "selfplay_stats_history_max_samples", 288) or 288)
+            if max_samples > 0 and len(self.selfplay_stats_history) > max_samples:
+                self.selfplay_stats_history = self.selfplay_stats_history[-max_samples:]
+        except Exception:
+            # Never let dashboard bookkeeping break manifest collection.
+            return
 
     def _maybe_adopt_leader_from_peers(self) -> bool:
         """If we can already see a healthy leader, adopt it and avoid elections."""
@@ -7072,13 +7240,17 @@ print(json.dumps({{
                         job_type = JobType.GPU_SELFPLAY if is_cuda_gpu else JobType.SELFPLAY
 
                     # Weighted config selection based on priority
-                    # Use ImprovementCycleManager for dynamic data-aware selection when available
+                    # Use ImprovementCycleManager for dynamic data-aware diverse selection
                     import random as rand_module
-                    if self.improvement_cycle_manager and self.cluster_data_manifest:
-                        # Dynamic selection based on actual data distribution
-                        config = self.improvement_cycle_manager.select_selfplay_config(
-                            self.cluster_data_manifest, node.node_id
+                    if self.improvement_cycle_manager:
+                        # Dynamic selection with AI diversity (asymmetric games, varied opponents)
+                        config = self.improvement_cycle_manager.get_next_selfplay_config(
+                            self.cluster_data_manifest
                         )
+                        # Handle asymmetric configs - use mixed mode with difficulty hints
+                        if config.get("asymmetric"):
+                            # For asymmetric games, log the configuration for training analysis
+                            print(f"[P2P] Scheduling asymmetric game: {config.get('strong_config')} vs {config.get('weak_config')}")
                     else:
                         # Fallback to static weighted selection
                         config_idx = (hash(node.node_id) + i + int(time.time() // 1800)) % len(weighted_configs)
@@ -7597,6 +7769,7 @@ print(json.dumps({{
         # Phase 4: REST API and Dashboard routes
         app.router.add_get('/', self.handle_root)
         app.router.add_get('/api/cluster/status', self.handle_api_cluster_status)
+        app.router.add_get('/api/selfplay/stats', self.handle_api_selfplay_stats)
         app.router.add_get('/api/jobs', self.handle_api_jobs_list)
         app.router.add_post('/api/jobs/submit', self.handle_api_jobs_submit)
         app.router.add_get('/api/jobs/{job_id}', self.handle_api_job_get)
