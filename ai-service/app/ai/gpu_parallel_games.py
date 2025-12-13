@@ -672,6 +672,7 @@ class BatchGameState:
         device: Optional[torch.device] = None,
         max_history_moves: int = 500,
         rings_per_player: Optional[int] = None,
+        board_type: Optional[str] = None,
     ) -> "BatchGameState":
         """Create a batch of initialized game states.
 
@@ -682,6 +683,8 @@ class BatchGameState:
             device: GPU device (auto-detected if None)
             max_history_moves: Maximum moves to track in history
             rings_per_player: Starting rings per player (None = board default)
+            board_type: Board type string ("square8", "square19", "hexagonal")
+                        If "hexagonal", marks out-of-bounds cells as collapsed.
 
         Returns:
             Initialized BatchGameState with all games ready to start

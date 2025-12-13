@@ -18,7 +18,7 @@ import numpy as np
 
 from app.db import GameReplayDB
 from app.models import AIConfig, BoardType, GameState, Move
-from app.ai.neural_net import NeuralNetAI, INVALID_MOVE_INDEX
+from app.ai.neural_net import NeuralNetAI, INVALID_MOVE_INDEX, encode_move_for_board
 
 from scripts.export_replay_dataset import (
     BOARD_TYPE_MAP,
@@ -52,11 +52,17 @@ def _encode_sparse_policy_from_moves(
     state: GameState,
     moves: Sequence[Move],
     probs: Sequence[float],
+    *,
+    use_board_aware_encoding: bool,
 ) -> Tuple[np.ndarray, np.ndarray]:
     p_indices: List[int] = []
     p_values: List[float] = []
     for move, prob in zip(moves, probs):
-        idx = encoder.encode_move(move, state.board)
+        idx = (
+            encode_move_for_board(move, state.board)
+            if use_board_aware_encoding
+            else encoder.encode_move(move, state.board)
+        )
         if idx == INVALID_MOVE_INDEX:
             continue
         p_indices.append(int(idx))
@@ -72,12 +78,20 @@ def _reanalyze_mcts_policy(
     ai: Any,
     state: GameState,
     encoder: NeuralNetAI,
+    *,
+    use_board_aware_encoding: bool,
 ) -> Tuple[np.ndarray, np.ndarray]:
     ai.select_move(state)
     moves, probs = ai.get_visit_distribution()
     if not moves:
         return np.array([], dtype=np.int32), np.array([], dtype=np.float32)
-    return _encode_sparse_policy_from_moves(encoder, state, moves, probs)
+    return _encode_sparse_policy_from_moves(
+        encoder,
+        state,
+        moves,
+        probs,
+        use_board_aware_encoding=use_board_aware_encoding,
+    )
 
 
 def _reanalyze_descent_policy(
@@ -86,6 +100,7 @@ def _reanalyze_descent_policy(
     encoder: NeuralNetAI,
     *,
     temperature: float,
+    use_board_aware_encoding: bool,
 ) -> Tuple[np.ndarray, np.ndarray]:
     ai.select_move(state)
     state_key = ai._get_state_key(state)
@@ -107,7 +122,13 @@ def _reanalyze_descent_policy(
     logits = logits - float(np.max(logits))
     exps = np.exp(logits)
     probs = exps / float(np.sum(exps))
-    return _encode_sparse_policy_from_moves(encoder, state, child_moves, probs.tolist())
+    return _encode_sparse_policy_from_moves(
+        encoder,
+        state,
+        child_moves,
+        probs.tolist(),
+        use_board_aware_encoding=use_board_aware_encoding,
+    )
 
 
 def reanalyze_replay_dataset(
@@ -129,6 +150,7 @@ def reanalyze_replay_dataset(
     policy_search_think_time_ms: int = 50,
     policy_temperature: float = 1.0,
     nn_model_id: Optional[str] = None,
+    use_board_aware_encoding: bool = False,
 ) -> None:
     if policy_target not in {"mcts_visits", "descent_softmax"}:
         raise ValueError("policy_target must be mcts_visits or descent_softmax")
@@ -268,7 +290,11 @@ def reanalyze_replay_dataset(
             if len(history_frames) > history_length + 1:
                 history_frames.pop(0)
 
-            played_idx = encoder.encode_move(move, state_before.board)
+            played_idx = (
+                encode_move_for_board(move, state_before.board)
+                if use_board_aware_encoding
+                else encoder.encode_move(move, state_before.board)
+            )
             if played_idx == INVALID_MOVE_INDEX:
                 continue
 
@@ -285,11 +311,20 @@ def reanalyze_replay_dataset(
 
             if policy_target == "mcts_visits":
                 ai = _get_mcts_ai(state_before.current_player)
-                p_indices, p_values = _reanalyze_mcts_policy(ai, state_before, encoder)
+                p_indices, p_values = _reanalyze_mcts_policy(
+                    ai,
+                    state_before,
+                    encoder,
+                    use_board_aware_encoding=use_board_aware_encoding,
+                )
             else:
                 ai = _get_descent_ai(state_before.current_player)
                 p_indices, p_values = _reanalyze_descent_policy(
-                    ai, state_before, encoder, temperature=policy_temperature
+                    ai,
+                    state_before,
+                    encoder,
+                    temperature=policy_temperature,
+                    use_board_aware_encoding=use_board_aware_encoding,
                 )
 
             if p_indices.size == 0:
@@ -359,6 +394,14 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--policy-search-think-time-ms", type=int, default=50)
     p.add_argument("--policy-temperature", type=float, default=1.0)
     p.add_argument("--nn-model-id", type=str, default=None)
+    p.add_argument(
+        "--board-aware-encoding",
+        action="store_true",
+        help=(
+            "Use board-specific policy encoding (compact action space). "
+            "Recommended for v3 training on square boards."
+        ),
+    )
     return p.parse_args()
 
 
@@ -383,9 +426,9 @@ def main() -> None:
         policy_search_think_time_ms=args.policy_search_think_time_ms,
         policy_temperature=args.policy_temperature,
         nn_model_id=args.nn_model_id,
+        use_board_aware_encoding=bool(args.board_aware_encoding),
     )
 
 
 if __name__ == "__main__":  # pragma: no cover
     main()
-

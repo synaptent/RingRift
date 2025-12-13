@@ -20,7 +20,7 @@ import {
 } from '../../../shared/engine';
 import { BoardManager } from '../BoardManager';
 import { RuleEngine } from '../RuleEngine';
-import { isTestEnvironment, debugLog } from '../../../shared/utils/envFlags';
+import { flagEnabled, debugLog } from '../../../shared/utils/envFlags';
 
 /**
  * Dependencies required for turn/phase orchestration. This keeps the
@@ -157,7 +157,7 @@ export function advanceGameForCurrentPlayer(
     gameStatus: nextState.gameStatus,
   };
 
-  debugLog(isTestEnvironment(), '[TurnTrace.backend.advanceGameForCurrentPlayer]', {
+  debugLog(flagEnabled('RINGRIFT_TRACE_DEBUG'), '[TurnTrace.backend.advanceGameForCurrentPlayer]', {
     decision: 'advanceGameForCurrentPlayer',
     reason: 'advanceTurnAndPhase',
     before: beforeSnapshot,

@@ -488,9 +488,10 @@ function isMoveValidInPhase(moveType: Move['type'], phase: GamePhase): boolean {
     ],
     capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture'],
     chain_capture: ['overtaking_capture', 'continue_capture_segment'],
-    line_processing: ['process_line', 'choose_line_reward', 'no_line_action'],
+    line_processing: ['process_line', 'choose_line_option', 'choose_line_reward', 'no_line_action'],
     territory_processing: [
       'process_territory_region',
+      'choose_territory_option',
       'eliminate_rings_from_stack',
       'skip_territory_processing',
       'no_territory_action',
@@ -609,10 +610,12 @@ function getMovePhase(moveType: Move['type']): GamePhase | null {
     case 'skip_capture':
       return 'capture';
     case 'process_line':
+    case 'choose_line_option':
     case 'choose_line_reward':
     case 'no_line_action':
       return 'line_processing';
     case 'process_territory_region':
+    case 'choose_territory_option':
     case 'skip_territory_processing':
     case 'no_territory_action':
     case 'eliminate_rings_from_stack':
@@ -776,7 +779,12 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
   const evaluateVictoryWithLps = (
     state: GameState,
     lps: LpsTrackingState
-  ): { isGameOver: boolean; winner?: number; reason?: string; isLpsVictory?: boolean } => {
+  ): {
+    isGameOver: boolean;
+    winner?: number;
+    reason?: string | undefined;
+    isLpsVictory?: boolean;
+  } => {
     // First check base victory conditions (ring elimination, territory, stalemate)
     const baseVerdict = evaluateVictory(state);
     if (baseVerdict.isGameOver && baseVerdict.winner !== undefined) {
@@ -1240,12 +1248,7 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
         })
       );
 
-      return {
-        state: engine.getState() as GameState,
-        appliedMoves: applied,
-        synthesizedMoves: 0,
-        fsmValidationFailures: fsmValidationFailures,
-      };
+      return;
     }
   }
 

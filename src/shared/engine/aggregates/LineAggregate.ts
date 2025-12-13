@@ -403,7 +403,7 @@ function collapseLinePositions(
   const board = state.board;
 
   // DEBUG: Trace input stacks
-  if (process.env.NODE_ENV === 'test') {
+  if (process.env.RINGRIFT_TRACE_DEBUG === '1') {
     // eslint-disable-next-line no-console
     console.log('[collapseLinePositions] INPUT stacks:', {
       stackCount: board.stacks.size,
@@ -484,7 +484,7 @@ function collapseLinePositions(
   };
 
   // DEBUG: Trace output stacks
-  if (process.env.NODE_ENV === 'test') {
+  if (process.env.RINGRIFT_TRACE_DEBUG === '1') {
     // eslint-disable-next-line no-console
     console.log('[collapseLinePositions] OUTPUT stacks:', {
       stackCount: nextBoard.stacks.size,

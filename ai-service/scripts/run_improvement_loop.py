@@ -103,6 +103,7 @@ class LoopState:
     total_improvements: int = 0
     total_games_generated: int = 0
     history: List[dict] = field(default_factory=list)
+    ingested_db_fingerprints: Dict[str, str] = field(default_factory=dict)
 
 
 def load_state(state_path: Path) -> LoopState:
@@ -113,6 +114,8 @@ def load_state(state_path: Path) -> LoopState:
             # Handle history field migration
             if "history" not in data:
                 data["history"] = []
+            if not isinstance(data.get("ingested_db_fingerprints"), dict):
+                data["ingested_db_fingerprints"] = {}
             return LoopState(**data)
         except (json.JSONDecodeError, TypeError) as e:
             print(f"WARNING: Could not load state from {state_path}: {e}")
@@ -123,6 +126,12 @@ def save_state(state: LoopState, state_path: Path) -> None:
     """Persist checkpoint state."""
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(asdict(state), indent=2))
+
+
+def _fingerprint_path(path: Path) -> str:
+    """Return a stable fingerprint for change detection (mtime+size)."""
+    stat = path.stat()
+    return f"{int(stat.st_size)}:{int(getattr(stat, 'st_mtime_ns', int(stat.st_mtime * 1e9)))}"
 
 
 def parse_winrate(output: str) -> float:
@@ -294,10 +303,10 @@ def run_selfplay(
     config: dict,
     iteration: int,
     dry_run: bool = False,
-) -> Tuple[bool, int]:
+) -> Tuple[bool, int, Optional[Path]]:
     """Run selfplay to generate training data.
 
-    Returns: (success, games_generated)
+    Returns: (success, games_generated, staging_db_path)
     """
     board = config["board"]
     players = config["players"]
@@ -312,47 +321,17 @@ def run_selfplay(
     replay_db_path = Path(config["replay_db"])
     canonical_mode = bool(config.get("canonical_mode", False))
 
+    staging_db_path: Optional[Path] = None
+    record_db_path = replay_db_path
     if canonical_mode:
-        gate_summary_path = Path(config["gate_summary"])
-        cmd = [
-            sys.executable,
-            "scripts/generate_canonical_selfplay.py",
-            "--board-type",
-            board,
-            "--num-games",
-            str(games),
-            "--num-players",
-            str(players),
-            "--difficulty-band",
-            str(config.get("selfplay_difficulty_band", "canonical")),
-            "--db",
-            str(replay_db_path),
-            "--summary",
-            str(gate_summary_path),
-        ]
-        print(f"Running canonical selfplay+gate: {games} games on {board} {players}p...")
-        code, _, stderr = run_command(cmd, dry_run=dry_run, timeout=7200, cwd=AI_SERVICE_ROOT)
-        if code != 0:
-            print(f"Canonical selfplay gate failed: {stderr[:200]}")
-            return False, 0
-
-        if not dry_run:
-            ok, problems = _validate_canonical_training_source(
-                db_path=replay_db_path,
-                registry_path=Path(config["registry_path"]),
-                allow_pending_gate=bool(config.get("allow_pending_gate", False)),
-            )
-            if not ok:
-                for issue in problems:
-                    print(f"[canonical-source-error] {issue}", file=sys.stderr)
-                print(
-                    "[canonical-source-error] Refusing to proceed with training on a non-canonical source DB.\n"
-                    "Fix TRAINING_DATA_REGISTRY.md status and/or rerun scripts/generate_canonical_selfplay.py.",
-                    file=sys.stderr,
-                )
-                return False, 0
-
-        return True, games
+        staging_dir = _resolve_ai_service_path(str(config.get("staging_db_dir") or "data/games/staging/improvement_loop"))
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        staging_db_path = (staging_dir / f"selfplay_iter{iteration}_{board}_{players}p.db").resolve()
+        record_db_path = staging_db_path
+        if record_db_path.exists() and not dry_run:
+            archived = Path(f"{record_db_path.as_posix()}.archived_{time.strftime('%Y%m%d_%H%M%S')}")
+            record_db_path.rename(archived)
+            print(f"[selfplay] archived existing staging DB -> {archived}", file=sys.stderr)
 
     cmd = [
         sys.executable,
@@ -363,6 +342,8 @@ def run_selfplay(
         board,
         "--engine-mode",
         "mixed",
+        "--difficulty-band",
+        str(config.get("selfplay_difficulty_band", "canonical")),
         "--num-players",
         str(players),
         "--max-moves",
@@ -370,7 +351,7 @@ def run_selfplay(
         "--seed",
         str(seed),
         "--record-db",
-        str(replay_db_path),
+        str(record_db_path),
         "--log-jsonl",
         str(log_file),
     ]
@@ -380,7 +361,7 @@ def run_selfplay(
 
     if code != 0:
         print(f"Selfplay failed: {stderr[:200]}")
-        return False, 0
+        return False, 0, staging_db_path
 
     # Count completed games from log file
     games_completed = 0
@@ -393,7 +374,133 @@ def run_selfplay(
         except Exception:
             games_completed = games  # Assume success if can't count
 
-    return True, games_completed if not dry_run else games
+    return True, games_completed if not dry_run else games, staging_db_path
+
+
+def ingest_training_pool(
+    config: dict,
+    iteration: int,
+    state: LoopState,
+    *,
+    staging_db_path: Optional[Path],
+    dry_run: bool = False,
+) -> bool:
+    """Ingest newly discovered staging DBs into the canonical training pool DB."""
+    if not bool(config.get("canonical_mode", False)):
+        return True
+
+    output_db = Path(config["replay_db"]).resolve()
+    board = str(config["board"])
+    players = int(config["players"])
+
+    holdout_db_raw = config.get("holdout_db")
+    holdout_db = _resolve_ai_service_path(str(holdout_db_raw)).resolve() if holdout_db_raw else None
+    quarantine_db_raw = config.get("quarantine_db")
+    quarantine_db = _resolve_ai_service_path(str(quarantine_db_raw)).resolve() if quarantine_db_raw else None
+
+    excluded = {output_db}
+    if holdout_db is not None:
+        excluded.add(holdout_db)
+    if quarantine_db is not None:
+        excluded.add(quarantine_db)
+
+    scan_dirs: List[Path] = []
+    for raw in (config.get("ingest_scan_dirs") or []):
+        try:
+            scan_dirs.append(_resolve_ai_service_path(str(raw)).resolve())
+        except Exception:
+            continue
+
+    candidates: List[Path] = []
+    if staging_db_path is not None:
+        candidates.append(staging_db_path.resolve())
+    for scan_dir in scan_dirs:
+        if not scan_dir.exists():
+            continue
+        for path in scan_dir.rglob("*.db"):
+            if path.is_file():
+                candidates.append(path.resolve())
+
+    # De-dupe while preserving stable ordering.
+    seen: set[Path] = set()
+    unique_candidates: List[Path] = []
+    for path in candidates:
+        if path in seen:
+            continue
+        seen.add(path)
+        unique_candidates.append(path)
+
+    inputs: List[Path] = []
+    for path in unique_candidates:
+        if path in excluded:
+            continue
+        try:
+            fingerprint = _fingerprint_path(path)
+        except OSError:
+            continue
+        key = str(path)
+        if state.ingested_db_fingerprints.get(key) == fingerprint:
+            continue
+        inputs.append(path)
+
+    if not inputs:
+        return True
+
+    log_dir = AI_SERVICE_ROOT / "logs" / "improvement"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    report_json = log_dir / f"training_pool_ingest_iter{iteration}_{board}_{players}p.json"
+
+    cmd: List[str] = [
+        sys.executable,
+        "scripts/build_canonical_training_pool_db.py",
+        "--output-db",
+        str(output_db),
+        "--board-type",
+        board,
+        "--num-players",
+        str(players),
+        "--require-completed",
+        "--report-json",
+        str(report_json),
+    ]
+    if holdout_db is not None:
+        cmd += ["--holdout-db", str(holdout_db)]
+    if quarantine_db is not None:
+        cmd += ["--quarantine-db", str(quarantine_db)]
+    for path in inputs:
+        cmd += ["--input-db", str(path)]
+
+    print(f"\n--- Training Pool Ingest ({len(inputs)} DBs) ---")
+    code, stdout, stderr = run_command(
+        cmd,
+        dry_run=dry_run,
+        capture=True,
+        timeout=7200,
+        cwd=AI_SERVICE_ROOT,
+    )
+    if code != 0:
+        print(f"[ingest] failed: {stderr[:400]}")
+        return False
+
+    if not dry_run:
+        try:
+            report = json.loads(report_json.read_text())
+        except Exception:
+            report = {}
+        totals = report.get("totals") or {}
+        print(f"[ingest] totals: {json.dumps(totals, sort_keys=True)}")
+
+        for path in inputs:
+            try:
+                state.ingested_db_fingerprints[str(path)] = _fingerprint_path(path)
+            except OSError:
+                continue
+
+        if staging_db_path is not None and int(totals.get("training_passed") or 0) <= 0:
+            print("[ingest] No training games passed gates from staging DB; aborting iteration.", file=sys.stderr)
+            return False
+
+    return True
 
 
 def export_training_data(
@@ -427,6 +534,8 @@ def export_training_data(
 
     dataset_policy_target = str(config.get("dataset_policy_target", "played")).strip()
     dataset_max_games = config.get("dataset_max_games", None)
+    legacy_maxn_encoding = bool(config.get("legacy_maxn_encoding", False))
+    use_board_aware_encoding = board in {"square8", "square19"} and not legacy_maxn_encoding
 
     cmd: List[str]
     timeout_sec = 600
@@ -509,6 +618,8 @@ def export_training_data(
 
     if dataset_max_games is not None:
         cmd += ["--max-games", str(int(dataset_max_games))]
+    if use_board_aware_encoding:
+        cmd.append("--board-aware-encoding")
 
     if dataset_policy_target == "played":
         print(f"Exporting training data to {output_path}...")
@@ -768,24 +879,36 @@ def run_improvement_iteration(
     """
     # Step 1: Selfplay
     print(f"\n--- Step 1: Selfplay ---")
-    success, games = run_selfplay(config, iteration, dry_run)
+    success, games, staging_db_path = run_selfplay(config, iteration, dry_run)
     if not success:
         return False, 0.0, 0
 
-    # Step 2: Export training data
-    print(f"\n--- Step 2: Export Data ---")
+    # Step 2: Ingest staging sources (canonical mode only)
+    if bool(config.get("canonical_mode", False)):
+        print(f"\n--- Step 2: Ingest Training Pool ---")
+        if not ingest_training_pool(
+            config,
+            iteration,
+            state,
+            staging_db_path=staging_db_path,
+            dry_run=dry_run,
+        ):
+            return False, 0.0, games
+
+    # Step 3: Export training data
+    print(f"\n--- Step 3: Export Data ---")
     success, data_path = export_training_data(config, iteration, dry_run)
     if not success:
         return False, 0.0, games
 
-    # Step 3: Train model
-    print(f"\n--- Step 3: Train Model ---")
+    # Step 4: Train model
+    print(f"\n--- Step 4: Train Model ---")
     success, iter_model = train_model(config, iteration, data_path, dry_run)
     if not success:
         return False, 0.0, games
 
-    # Step 4: Evaluate
-    print(f"\n--- Step 4: Evaluate ---")
+    # Step 5: Evaluate
+    print(f"\n--- Step 5: Evaluate ---")
     success, eval_summary = evaluate_model(
         config,
         iteration,
@@ -795,8 +918,8 @@ def run_improvement_iteration(
     if not success:
         return False, 0.0, games
 
-    # Step 5: Promote if improved
-    print(f"\n--- Step 5: Promotion Decision ---")
+    # Step 6: Promote if improved
+    print(f"\n--- Step 6: Promotion Decision ---")
     threshold = config.get("promotion_threshold", 0.55)
     if eval_summary.get("promote", False):
         if promote_model(config, iter_model, dry_run):
@@ -857,8 +980,47 @@ def main():
         type=str,
         default=None,
         help=(
-            "Path to the GameReplayDB used to record selfplay and export training data. "
-            "Default: data/games/canonical_<board>.db (canonical mode) or data/games/selfplay.db (--allow-legacy)."
+            "Path to the canonical training-pool GameReplayDB used for dataset export/training. "
+            "In canonical mode, self-play games are recorded into per-iteration staging DBs and then "
+            "ingested into this DB (per-game parity + canonical-history gates). "
+            "Default: data/games/canonical_<board>[_<players>p].db (canonical mode) or data/games/selfplay.db (--allow-legacy)."
+        ),
+    )
+    parser.add_argument(
+        "--staging-db-dir",
+        type=str,
+        default="data/games/staging/improvement_loop",
+        help=(
+            "Directory for per-iteration staging GameReplayDBs (canonical mode only). "
+            "These DBs are gated and ingested into --replay-db."
+        ),
+    )
+    parser.add_argument(
+        "--ingest-scan-dir",
+        action="append",
+        default=[],
+        help=(
+            "Additional directories to scan for staging GameReplayDBs to ingest each iteration "
+            "(repeatable). Use this to include CMA-ES, hybrid, soak, and other sources as long as "
+            "they pass per-game parity + canonical-history gates."
+        ),
+    )
+    parser.add_argument(
+        "--holdout-db",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to write holdout (tournament/eval) games into a separate DB. "
+            "Default: data/games/holdouts/holdout_<board>_<players>p.db"
+        ),
+    )
+    parser.add_argument(
+        "--quarantine-db",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to write games that fail gates into a quarantine DB. "
+            "Default: data/games/quarantine/quarantine_<board>_<players>p.db"
         ),
     )
     parser.add_argument(
@@ -942,6 +1104,15 @@ def main():
         ),
     )
     parser.add_argument(
+        "--legacy-maxn-encoding",
+        action="store_true",
+        help=(
+            "Export/reanalyze datasets using the legacy MAX_N policy encoding "
+            "(larger action space). Default is board-aware encoding for square boards "
+            "to support v3 training."
+        ),
+    )
+    parser.add_argument(
         "--policy-search-think-time-ms",
         type=int,
         default=50,
@@ -1008,6 +1179,7 @@ def main():
         "selfplay_difficulty_band": args.selfplay_difficulty_band,
         "dataset_policy_target": args.dataset_policy_target,
         "dataset_max_games": args.dataset_max_games,
+        "legacy_maxn_encoding": bool(args.legacy_maxn_encoding),
         "policy_search_think_time_ms": args.policy_search_think_time_ms,
         "policy_temperature": args.policy_temperature,
         "policy_nn_model_id": args.policy_nn_model_id,

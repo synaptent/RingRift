@@ -191,7 +191,8 @@ class NodeRole(str, Enum):
 class JobType(str, Enum):
     """Types of jobs nodes can run."""
     SELFPLAY = "selfplay"
-    GPU_SELFPLAY = "gpu_selfplay"  # GPU-accelerated parallel selfplay
+    GPU_SELFPLAY = "gpu_selfplay"  # GPU-accelerated parallel selfplay (pure GPU, experimental)
+    HYBRID_SELFPLAY = "hybrid_selfplay"  # Hybrid CPU/GPU selfplay (100% rule fidelity, GPU-accelerated eval)
     TRAINING = "training"
     CMAES = "cmaes"
     # Distributed job types
@@ -686,12 +687,17 @@ class P2POrchestrator:
         advertise_port: Optional[int] = None,
         auth_token: Optional[str] = None,
         require_auth: bool = False,
+        storage_type: str = "disk",  # "disk" or "ramdrive"
     ):
         self.node_id = node_id
         self.host = host
         self.port = port
         self.known_peers = known_peers or []
         self.ringrift_path = ringrift_path or self._detect_ringrift_path()
+
+        # Storage configuration: "disk" uses ai-service/data, "ramdrive" uses /dev/shm
+        self.storage_type = storage_type
+        self.ramdrive_path = "/dev/shm/ringrift/data"  # Standard ramdrive location
         # Git 2.35+ enforces safe.directory for repos with different ownership.
         # Many nodes run the orchestrator as root against a checkout owned by
         # another user (e.g. ubuntu), so always provide a safe.directory override
@@ -925,6 +931,24 @@ class P2POrchestrator:
             if (path / "ai-service").exists():
                 return str(path)
         return str(Path(__file__).parent.parent.parent)
+
+    def get_data_directory(self) -> Path:
+        """Get the data directory path based on storage configuration.
+
+        Returns:
+            Path to data directory:
+            - ramdrive: /dev/shm/ringrift/data (for disk-constrained Vast instances)
+            - disk: {ringrift_path}/ai-service/data (default)
+
+        The ramdrive option uses tmpfs for high-speed I/O and to work around
+        limited disk space on some cloud instances. Data stored in ramdrive
+        is volatile and should be synced to permanent storage periodically.
+        """
+        if self.storage_type == "ramdrive":
+            ramdrive = Path(self.ramdrive_path)
+            ramdrive.mkdir(parents=True, exist_ok=True)
+            return ramdrive
+        return Path(self.ringrift_path) / "ai-service" / "data"
 
     def _infer_advertise_port(self) -> int:
         """Infer the externally reachable port for this node.
@@ -1417,10 +1441,10 @@ class P2POrchestrator:
         training = 0
 
         try:
-            # Count python processes running selfplay (CPU + GPU runners).
+            # Count python processes running selfplay (CPU, hybrid, and GPU runners).
             # Use PID union to avoid double-counting.
             selfplay_pids: Set[str] = set()
-            for pattern in ("run_self_play_soak.py", "run_gpu_selfplay.py"):
+            for pattern in ("run_self_play_soak.py", "run_gpu_selfplay.py", "run_hybrid_selfplay.py"):
                 out = subprocess.run(
                     ["pgrep", "-f", pattern],
                     capture_output=True, text=True, timeout=5
@@ -1451,13 +1475,15 @@ class P2POrchestrator:
     def _collect_local_data_manifest(self) -> NodeDataManifest:
         """Collect manifest of all data files on this node.
 
-        Scans the ai-service/data directory for:
+        Scans the data directory for:
         - selfplay/ - Game replay files (.jsonl, .db)
         - models/ - Trained model files (.pt, .onnx)
         - training/ - Training data files (.npz)
         - games/ - Synced game databases (.db)
+
+        Uses get_data_directory() to support both disk and ramdrive storage.
         """
-        data_dir = Path(self.ringrift_path) / "ai-service" / "data"
+        data_dir = self.get_data_directory()
         manifest = NodeDataManifest(
             node_id=self.node_id,
             collected_at=time.time(),
@@ -1846,8 +1872,9 @@ class P2POrchestrator:
         """
         Handle incoming request to pull files from a source node.
         Pulls files over the P2P HTTP channel to avoid SSH/rsync dependencies.
+        Uses get_data_directory() to support both disk and ramdrive storage.
         """
-        data_dir = Path(self.ringrift_path) / "ai-service" / "data"
+        data_dir = self.get_data_directory()
         data_dir.mkdir(parents=True, exist_ok=True)
 
         bytes_transferred = 0
@@ -2715,7 +2742,7 @@ class P2POrchestrator:
 
             print(f"[P2P] Cleanup files request: {len(files)} files, reason={reason}")
 
-            data_dir = Path(self.ringrift_path) / "ai-service" / "data"
+            data_dir = self.get_data_directory()
             freed_bytes = 0
             deleted_count = 0
 
@@ -4487,7 +4514,7 @@ print(json.dumps(result))
             if not rel_path:
                 return web.json_response({"error": "Missing required query param: path"}, status=400)
 
-            data_dir = Path(self.ringrift_path) / "ai-service" / "data"
+            data_dir = self.get_data_directory()
             data_dir.mkdir(parents=True, exist_ok=True)
             data_root = data_dir.resolve()
             full_path = (data_dir / rel_path)
@@ -7077,12 +7104,19 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     }
                 )
 
-            if job_type in ["selfplay", "gpu_selfplay"]:
+            if job_type in ["selfplay", "gpu_selfplay", "hybrid_selfplay"]:
                 board_type = data.get("board_type", "square8")
                 num_players = int(data.get("num_players", 2))
-                engine_mode = data.get("engine_mode", "descent-only")
+                engine_mode = data.get("engine_mode", "heuristic-only")
 
-                jt = JobType.GPU_SELFPLAY if job_type == "gpu_selfplay" else JobType.SELFPLAY
+                # Map job type string to enum
+                if job_type == "gpu_selfplay":
+                    jt = JobType.GPU_SELFPLAY
+                elif job_type == "hybrid_selfplay":
+                    jt = JobType.HYBRID_SELFPLAY
+                else:
+                    jt = JobType.SELFPLAY
+
                 job = await self._start_local_job(jt, board_type, num_players, engine_mode)
                 if not job:
                     return web.json_response(
@@ -7102,7 +7136,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             return web.json_response(
                 {
                     "success": False,
-                    "error": f"Unknown job type: {job_type}. Supported: nnue, cmaes, selfplay, gpu_selfplay",
+                    "error": f"Unknown job type: {job_type}. Supported: nnue, cmaes, selfplay, gpu_selfplay, hybrid_selfplay",
                 },
                 status=400,
             )
@@ -8108,11 +8142,15 @@ print(json.dumps({{
                     is_cuda_gpu = node.has_gpu and "MPS" not in gpu_name and "APPLE" not in gpu_name
 
                     # LEARNED LESSONS - Ensure GPU nodes get GPU-utilizing tasks
-                    if is_cuda_gpu and node.gpu_percent < 30:
-                        # GPU underutilized - force GPU selfplay with neural network
-                        job_type = JobType.GPU_SELFPLAY
+                    # Use HYBRID_SELFPLAY (CPU rules + GPU eval) as default for GPU nodes
+                    # HYBRID is preferred over GPU_SELFPLAY because:
+                    # - 100% rule fidelity (CPU handles all game rules canonically)
+                    # - GPU accelerates heuristic evaluation (5-20x speedup)
+                    # - GPU_SELFPLAY (pure GPU) is experimental and not sound yet
+                    if is_cuda_gpu:
+                        job_type = JobType.HYBRID_SELFPLAY
                     else:
-                        job_type = JobType.GPU_SELFPLAY if is_cuda_gpu else JobType.SELFPLAY
+                        job_type = JobType.SELFPLAY
 
                     # Weighted config selection based on priority
                     # Use ImprovementCycleManager for dynamic data-aware diverse selection
@@ -8219,7 +8257,7 @@ print(json.dumps({{
             pids_to_kill: List[int] = []
             with self.jobs_lock:
                 for job_id, job in self.local_jobs.items():
-                    if job.job_type not in (JobType.SELFPLAY, JobType.GPU_SELFPLAY):
+                    if job.job_type not in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY):
                         continue
                     jobs_to_clear.append(job_id)
                     if job.pid:
@@ -8471,6 +8509,84 @@ print(json.dumps({{
                     self.local_jobs[job_id] = job
 
                 print(f"[P2P] Started GPU selfplay job {job_id} (PID {proc.pid}, batch={batch_size})")
+                self._save_state()
+                return job
+
+            elif job_type == JobType.HYBRID_SELFPLAY:
+                # Hybrid CPU/GPU selfplay using run_hybrid_selfplay.py
+                # Uses CPU for game rules (100% canonical) but GPU for heuristic evaluation
+                # This is the recommended default for GPU nodes
+
+                # Normalize engine_mode
+                hybrid_engine_modes = {"random-only", "heuristic-only", "mixed"}
+                engine_mode_norm = engine_mode if engine_mode in hybrid_engine_modes else "heuristic-only"
+
+                # Game counts based on board type
+                num_games = 1000
+                if board_type == "square19":
+                    num_games = 500
+                elif board_type in ("hex", "hexagonal"):
+                    num_games = 300
+
+                output_dir = Path(
+                    self.ringrift_path,
+                    "ai-service",
+                    "data",
+                    "selfplay",
+                    "p2p_hybrid",
+                    f"{board_type}_{num_players}p",
+                    job_id,
+                )
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                # Normalize board type for hybrid script (uses 'hex' not 'hexagonal')
+                board_arg = "hex" if board_type == "hexagonal" else board_type
+
+                cmd = [
+                    "python3",
+                    f"{self.ringrift_path}/ai-service/scripts/run_hybrid_selfplay.py",
+                    "--board-type", board_arg,
+                    "--num-players", str(num_players),
+                    "--num-games", str(num_games),
+                    "--output-dir", str(output_dir),
+                    "--engine-mode", engine_mode_norm,
+                    "--seed", str(int(time.time() * 1000) % 2**31),
+                ]
+
+                # Start process with GPU environment
+                env = os.environ.copy()
+                env["PYTHONPATH"] = f"{self.ringrift_path}/ai-service"
+                env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+                env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
+
+                log_handle = open(output_dir / "hybrid_run.log", "a")
+                try:
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdout=log_handle,
+                        stderr=subprocess.STDOUT,
+                        env=env,
+                        cwd=self.ringrift_path,
+                    )
+                finally:
+                    log_handle.close()
+
+                job = ClusterJob(
+                    job_id=job_id,
+                    job_type=job_type,
+                    node_id=self.node_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    engine_mode=engine_mode_norm,
+                    pid=proc.pid,
+                    started_at=time.time(),
+                    status="running",
+                )
+
+                with self.jobs_lock:
+                    self.local_jobs[job_id] = job
+
+                print(f"[P2P] Started HYBRID selfplay job {job_id} (PID {proc.pid})")
                 self._save_state()
                 return job
 
@@ -8728,6 +8844,8 @@ def main():
     parser.add_argument("--ringrift-path", help="Path to RingRift installation")
     parser.add_argument("--auth-token", help=f"Shared auth token (or set {AUTH_TOKEN_ENV})")
     parser.add_argument("--require-auth", action="store_true", help="Require auth token to be set")
+    parser.add_argument("--storage-type", choices=["disk", "ramdrive"], default="disk",
+                        help="Storage type: 'disk' (default) or 'ramdrive' (/dev/shm for disk-constrained instances)")
 
     args = parser.parse_args()
 
@@ -8745,6 +8863,7 @@ def main():
         advertise_port=args.advertise_port,
         auth_token=args.auth_token,
         require_auth=args.require_auth,
+        storage_type=args.storage_type,
     )
 
     # Handle shutdown

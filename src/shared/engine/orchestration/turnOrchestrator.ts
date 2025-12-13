@@ -1434,7 +1434,7 @@ export function processTurn(
 
   // DEBUG: Trace stacks after applyMoveWithChainInfo for choose_line_option
   if (
-    process.env.NODE_ENV === 'test' &&
+    process.env.RINGRIFT_TRACE_DEBUG === '1' &&
     (move.type === 'choose_line_option' || move.type === 'choose_line_reward')
   ) {
     // eslint-disable-next-line no-console
@@ -1501,7 +1501,7 @@ export function processTurn(
 
     // DEBUG: Trace stacks after processPostMovePhases for choose_line_option
     if (
-      process.env.NODE_ENV === 'test' &&
+      process.env.RINGRIFT_TRACE_DEBUG === '1' &&
       (move.type === 'choose_line_option' || move.type === 'choose_line_reward')
     ) {
       // eslint-disable-next-line no-console
