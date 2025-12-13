@@ -238,7 +238,24 @@ def run_single_game(
 
         if use_hybrid:
             # Use hybrid GPU evaluator for move selection
-            move = hybrid_evaluator.select_move(state, current_player)
+            # Get valid moves from rules engine
+            valid_moves = GameEngine.get_valid_moves(state, current_player)
+            if not valid_moves:
+                # Check for bookkeeping requirements
+                req = GameEngine.get_phase_requirement(state, current_player)
+                if req is not None:
+                    move = GameEngine.synthesize_bookkeeping_move(req, state)
+                else:
+                    move = None
+            else:
+                # Evaluate moves with GPU-accelerated heuristic
+                move_scores = hybrid_evaluator.evaluate_moves(
+                    state, valid_moves, current_player, GameEngine
+                )
+                if move_scores:
+                    move = max(move_scores, key=lambda x: x[1])[0]
+                else:
+                    move = valid_moves[0]
         else:
             ai = ais[current_player]
             move = ai.select_move(state)
