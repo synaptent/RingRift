@@ -6,7 +6,7 @@
   "state": {
     "boardType": "square8",
     "id": "rules-parity-square8-2p-v2",
-    "rngSeed": 1758362501,
+    "rngSeed": 1979906799,
     "board": {
       "stacks": {
         "7,7": {
@@ -123,14 +123,15 @@
       "increment": 5,
       "type": "blitz"
     },
-    "createdAt": "2025-12-10T12:35:21.387Z",
-    "lastMoveAt": "2025-12-10T12:35:21.387Z",
+    "createdAt": "2025-12-13T23:10:34.611Z",
+    "lastMoveAt": "2025-12-13T23:10:34.611Z",
     "isRated": false,
     "maxPlayers": 2,
     "totalRingsInPlay": 0,
     "totalRingsEliminated": 0,
     "victoryThreshold": 18,
-    "territoryVictoryThreshold": 33
+    "territoryVictoryThreshold": 33,
+    "lpsRoundsRequired": 3
   },
   "move": {
     "id": "fixture-square8-2p-process-territory-multi-region",

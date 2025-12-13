@@ -6,7 +6,7 @@
   "state": {
     "boardType": "square19",
     "id": "rules-parity-square19-2p-v2",
-    "rngSeed": 1263553095,
+    "rngSeed": 152927954,
     "board": {
       "stacks": {},
       "markers": {},
@@ -107,7 +107,7 @@
         "playerNumber": 1,
         "isReady": false,
         "timeRemaining": 600000,
-        "ringsInHand": 48,
+        "ringsInHand": 72,
         "eliminatedRings": 0,
         "territorySpaces": 0
       },
@@ -118,7 +118,7 @@
         "playerNumber": 2,
         "isReady": false,
         "timeRemaining": 600000,
-        "ringsInHand": 48,
+        "ringsInHand": 72,
         "eliminatedRings": 0,
         "territorySpaces": 0
       }
@@ -134,14 +134,15 @@
       "increment": 5,
       "type": "blitz"
     },
-    "createdAt": "2025-12-10T12:35:21.388Z",
-    "lastMoveAt": "2025-12-10T12:35:21.388Z",
+    "createdAt": "2025-12-13T23:10:34.612Z",
+    "lastMoveAt": "2025-12-13T23:10:34.612Z",
     "isRated": false,
     "maxPlayers": 2,
     "totalRingsInPlay": 0,
     "totalRingsEliminated": 0,
-    "victoryThreshold": 49,
-    "territoryVictoryThreshold": 181
+    "victoryThreshold": 72,
+    "territoryVictoryThreshold": 181,
+    "lpsRoundsRequired": 3
   },
   "move": {
     "id": "fixture-square19-2p-process-line-multiple",
