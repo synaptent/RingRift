@@ -93,7 +93,7 @@ def victory_progress_for_player(state: Any, player_number: int) -> float:
     We treat "victory progress" as the maximum of:
       - ring-elimination progress (eliminated_rings / victory_threshold)
       - territory-control progress (territory_spaces / territory_victory_threshold)
-      - LPS proximity (exclusive-action streak nearing 2 consecutive rounds)
+      - LPS proximity (exclusive-action streak nearing 3 consecutive rounds)
 
     This is used for Paranoid-style multi-player reductions to pick the
     "most dangerous opponent" without privileging any single victory type.
@@ -165,10 +165,10 @@ def victory_progress_for_player(state: Any, player_number: int) -> float:
         required_rounds = getattr(
             state,
             "lps_rounds_required",
-            getattr(state, "_lps_rounds_required", getattr(state, "lpsRoundsRequired", 2)),
+            getattr(state, "_lps_rounds_required", getattr(state, "lpsRoundsRequired", 3)),
         )
         if not isinstance(required_rounds, int) or required_rounds <= 0:
-            required_rounds = 2
+            required_rounds = 3
 
         # LPS can convert quickly once a player has any exclusive-round momentum.
         # Use a high-threat scale rather than a simple linear fraction.

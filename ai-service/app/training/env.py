@@ -243,7 +243,7 @@ class TrainingEnvConfig:
     use_default_rules_engine: bool = True
     # Experimental overrides for ablation studies
     rings_per_player: Optional[int] = None  # Override default rings per player
-    lps_rounds_required: int = 2  # LPS victory threshold (default: 2 consecutive rounds)
+    lps_rounds_required: int = 3  # LPS victory threshold (default: 3 consecutive rounds)
 
 
 def make_env(config: Optional[TrainingEnvConfig] = None) -> "RingRiftEnv":
@@ -374,7 +374,7 @@ class RingRiftEnv:
         default_seed: Optional[int] = None,
         use_default_rules_engine: bool = True,
         rings_per_player: Optional[int] = None,
-        lps_rounds_required: int = 2,
+        lps_rounds_required: int = 3,
     ):
         self.board_type = board_type
         self.max_moves = max_moves

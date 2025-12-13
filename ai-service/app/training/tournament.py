@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # - "elimination": Player reached victory_threshold for eliminated rings.
 # - "territory": Player reached territory_victory_threshold.
 # - "last_player_standing": R172 LPS victory - sole player with real
-#   actions for two consecutive rounds.
+#   actions for three consecutive rounds.
 # - "structural": Global stalemate resolved by tie-breakers.
 # - "unknown": Catch-all for edge cases.
 VICTORY_REASONS = [

@@ -302,8 +302,8 @@ describe('initialState', () => {
       it('should use default LPS rounds when not specified in rulesOptions', () => {
         const state = createInitialGameState('game-1', 'square8', createPlayers(), timeControl);
 
-        // Default is 2 rounds per LPS_DEFAULT_REQUIRED_ROUNDS
-        expect(state.lpsRoundsRequired).toBe(2);
+        // Default is 3 rounds per LPS_DEFAULT_REQUIRED_ROUNDS
+        expect(state.lpsRoundsRequired).toBe(3);
       });
 
       it('should support lpsRoundsRequired of 1 for faster games', () => {

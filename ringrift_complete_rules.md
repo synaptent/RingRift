@@ -304,7 +304,7 @@ RingRift is a territory control and ring elimination game where you'll build sta
 
 - Eliminate a number of rings equal to two thirds of your starting rings plus one third of your opponents' combined starting rings (threshold varies by player count)
 - Control more than 50% of the board as territory
-- Win by last-player-standing: be the only player with legal actions for **two consecutive full rounds**, taking at least one real action on each of your turns while all other players have no real actions (see Section 13.3 for details)
+- Win by last-player-standing: be the only player with legal actions for **three consecutive full rounds**, taking at least one real action on each of your turns while all other players have no real actions (see Section 13.3 for details)
 
 #### Start With The Simpler Version
 
@@ -1492,7 +1492,8 @@ Note: With more than 50% of territory required for victory, simultaneous victory
 
 - **Round 1:** For a complete round of turns (each non-eliminated player taking exactly one turn in order), P has at least one legal real action available and takes at least one such action during their own turn in that round, while on every other player's turns in that same round, those players have **no** legal real action available at the start of their turn (they may have only forced eliminations or no legal actions at all).
 - **Round 2:** After that first round completes (including all post-movement processing), on the following round P remains the only player who has taken any legal real action.
-- **Victory declared:** After the second round completes (including all post-movement processing), and after every other seat (including empty seats with no stacks and no rings) has recorded its required no-action or forced-elimination moves for that round, P is thus declared the winner, by Last Player Standing. This is the case without regard to their relative position in terms of territory claimed, or rings eliminated. This declaration happens before the first seat begins any action in a subsequent round.
+- **Round 3:** After that second round completes (including all post-movement processing), on the following round P remains the only player who has taken any legal real action.
+- **Victory declared:** After the third round completes (including all post-movement processing), and after every other seat (including empty seats with no stacks and no rings) has recorded its required no-action or forced-elimination moves for that round, P is thus declared the winner, by Last Player Standing. This is the case without regard to their relative position in terms of territory claimed, or rings eliminated. This declaration happens before the first seat begins any action in a subsequent round.
 
 - **Temporarily inactive players:** A player is **temporarily inactive** on their own turns when:
 
@@ -1504,7 +1505,7 @@ Note: With more than 50% of territory required for victory, simultaneous victory
 
 • **Empty/temporarily inactive seats still act:** Seats with no stacks and no rings in hand still take their turns (unless permanently eliminated) and must record the canonical no-action/FE moves each round per the phase requirements.
 
-• **Recovery:** A temporarily inactive player can return to full activity if they regain a real action, most commonly by gaining control of a multicolored stack through its top ring becoming their color, thereby regaining a controlled stack, or by reduction of the height of a stack they control so that it can move again. If any temporarily inactive player regains a real action **before** the two-round condition above has been satisfied, the Last Player Standing condition is not met.
+• **Recovery:** A temporarily inactive player can return to full activity if they regain a real action, most commonly by gaining control of a multicolored stack through its top ring becoming their color, thereby regaining a controlled stack, or by reduction of the height of a stack they control so that it can move again. If any temporarily inactive player regains a real action **before** the three-round condition above has been satisfied, the Last Player Standing condition is not met.
 
 ### 13.4 End of Game "Stalemate" Resolution
 
@@ -1597,7 +1598,7 @@ The winner (rank 1) is determined by whichever victory condition triggered:
 
 1. **Ring-elimination victory (Section 13.1):** The player who reached the elimination threshold is 1st.
 2. **Territory-control victory (Section 13.2):** The player who reached the territory threshold is 1st.
-3. **Last-player-standing victory (Section 13.3):** The sole player with real actions for 2 consecutive rounds is 1st.
+3. **Last-player-standing victory (Section 13.3):** The sole player with real actions for 3 consecutive rounds is 1st.
 4. **Stalemate (Section 13.4):** The player ranked highest by the tiebreaker cascade is 1st.
 
 #### 13.6.3 Ranking Remaining Players (2nd through Nth)
@@ -2233,7 +2234,7 @@ Turn Flow Summary:
 ### 16.6 Winning Conditions (8×8)
 
 1.  Ring Elimination Victory: Once a player's eliminated rings reach the victory threshold (per RR-CANON-R061, this scales with player count: 18/24/30 for 2/3/4 players on 8×8), they instantly win.
-2.  Last Player Standing: If you satisfy the Last Player Standing condition from Section 13.3 (two consecutive full rounds in which only you ever have any legal real action and you take at least one in each round), then you win by Last Player Standing.
+2.  Last Player Standing: If you satisfy the Last Player Standing condition from Section 13.3 (three consecutive full rounds in which only you ever have any legal real action and you take at least one in each round), then you win by Last Player Standing.
 3.  Stalemate: If no moves are possible, compare collapsed spaces (then ring Elimination totals, then markers if needed) to pick a winner.
 
 ### 16.7 Quick Start Example (8×8)

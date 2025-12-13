@@ -120,7 +120,7 @@ def create_initial_state(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     rings_per_player_override: Optional[int] = None,
-    lps_rounds_required: int = 2,
+    lps_rounds_required: int = 3,
 ) -> GameState:
     """Create an initial GameState for self-play.
 

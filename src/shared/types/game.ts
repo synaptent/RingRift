@@ -233,7 +233,7 @@ export interface RulesOptions {
   swapRuleEnabled?: boolean;
   /** Override rings per player (affects initial hand + victory threshold). */
   ringsPerPlayer?: number;
-  /** Override LPS victory rounds (default 2). */
+  /** Override LPS victory rounds (default 3). */
   lpsRoundsRequired?: number;
 }
 
@@ -855,7 +855,7 @@ export interface GameState {
 
   /**
    * Last-Player-Standing (LPS) tracking state for UI display.
-   * Per RR-CANON-R172, LPS victory requires 2 consecutive rounds where
+   * Per RR-CANON-R172, LPS victory requires 3 consecutive rounds where
    * only one player has real actions available.
    *
    * This lightweight summary is populated by server GameEngine and included
@@ -869,7 +869,7 @@ export interface GameState {
         consecutiveExclusivePlayer: number | null;
       }
     | undefined;
-  /** LPS victory round threshold (default 2, set from rulesOptions). */
+  /** LPS victory round threshold (default 3, set from rulesOptions). */
   lpsRoundsRequired?: number;
 }
 

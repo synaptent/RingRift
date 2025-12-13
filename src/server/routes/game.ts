@@ -236,6 +236,70 @@ router.post(
 );
 
 /**
+ * Sandbox helper for requesting an AI move via the Python AI service.
+ *
+ * This endpoint accepts a serialized sandbox GameState (see
+ * src/shared/engine/contracts/serialization.ts) plus a numeric difficulty,
+ * then returns the selected Move. It is primarily used by the client-side
+ * /sandbox host so that local sandbox games can use the same canonical
+ * difficulty ladder (minimax/mcts/descent + neural variants) as backend games.
+ */
+router.post(
+  '/sandbox/ai/move',
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const enabled = config.isTest || config.isDevelopment || config.featureFlags.sandboxAi.enabled;
+
+    if (!enabled) {
+      throw createError('Not found', 404, 'NOT_FOUND');
+    }
+
+    const body = (req.body || {}) as {
+      state?: SerializedGameState;
+      difficulty?: number;
+      playerNumber?: number;
+    };
+
+    if (!body.state) {
+      throw createError('Missing serialized sandbox state', 400, 'INVALID_REQUEST');
+    }
+
+    const gameState = deserializeGameState(body.state);
+    const playerNumber = body.playerNumber ?? gameState.currentPlayer;
+
+    const difficultyRaw = body.difficulty;
+    const difficulty =
+      typeof difficultyRaw === 'number' ? Math.max(1, Math.min(10, Math.round(difficultyRaw))) : 5;
+
+    const aiClient = getAIServiceClient();
+    try {
+      const response = await aiClient.getAIMove(gameState, playerNumber, difficulty);
+
+      res.status(200).json({
+        move: response.move,
+        evaluation: response.evaluation,
+        thinkingTimeMs: response.thinking_time_ms,
+        aiType: response.ai_type,
+        difficulty: response.difficulty,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'AI Service failed to generate sandbox move';
+      logger.warn('Sandbox AI move request failed', {
+        gameId: gameState.id,
+        playerNumber,
+        difficulty,
+        error: message,
+      });
+      res.status(503).json({
+        error:
+          'Sandbox AI move is unavailable. Ensure the AI service is running and sandbox AI endpoints are enabled.',
+        details: message,
+      });
+    }
+  })
+);
+
+/**
  * @openapi
  * /games:
  *   get:

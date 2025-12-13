@@ -176,7 +176,7 @@ export class GameEngine {
 
   /**
    * Returns a lightweight summary of LPS tracking state for client display.
-   * Per RR-CANON-R172, LPS victory requires 2 consecutive rounds where only
+   * Per RR-CANON-R172, LPS victory requires 3 consecutive rounds where only
    * one player has real actions available.
    */
   public getLpsTrackingSummary(): GameState['lpsTracking'] {

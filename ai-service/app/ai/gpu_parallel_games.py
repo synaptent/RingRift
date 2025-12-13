@@ -1056,7 +1056,7 @@ class BatchGameState:
             lpsConsecutiveExclusiveRounds=int(
                 self.lps_consecutive_exclusive_rounds[game_idx].item()
             ),
-            lpsRoundsRequired=2,  # Default LPS rounds required
+            lpsRoundsRequired=3,  # Default LPS rounds required
             lpsConsecutiveExclusivePlayer=lps_consecutive_player,
         )
 
@@ -1234,7 +1234,7 @@ class BatchGameState:
                 return ("ring_elimination", None)
 
             # Last-player-standing (RR-CANON-R172) via round tracker.
-            lps_required = 2
+            lps_required = 3
             if (
                 self.lps_consecutive_exclusive_player[game_idx].item() == winner
                 and self.lps_consecutive_exclusive_rounds[game_idx].item()
@@ -3822,8 +3822,8 @@ class ParallelGameRunner:
         self.board_size = board_size
         self.num_players = num_players
         self.swap_enabled = swap_enabled
-        # Default LPS victory rounds to 2 if not specified
-        self.lps_victory_rounds = lps_victory_rounds if lps_victory_rounds is not None else 2
+        # Default LPS victory rounds to 3 if not specified
+        self.lps_victory_rounds = lps_victory_rounds if lps_victory_rounds is not None else 3
         self.rings_per_player = rings_per_player
 
         if device is None:

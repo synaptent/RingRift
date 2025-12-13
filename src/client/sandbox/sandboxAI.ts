@@ -16,6 +16,7 @@ import {
   computeGlobalLegalActionsSummary,
   evaluateVictory,
 } from '../../shared/engine';
+import { serializeGameState } from '../../shared/engine/contracts/serialization';
 import {
   isSandboxAiCaptureDebugEnabled,
   isSandboxAiStallDiagnosticsEnabled,
@@ -118,6 +119,81 @@ function applyStalemateLadder(state: GameState): number | undefined {
 // to move. Used as a structural stall detector in dev/test builds.
 let sandboxConsecutiveNoopAITurns = 0;
 let sandboxStallLoggingSuppressed = false;
+
+function clampDifficulty(raw: number | undefined, fallback: number): number {
+  const value = typeof raw === 'number' && Number.isFinite(raw) ? raw : fallback;
+  return Math.max(1, Math.min(10, Math.round(value)));
+}
+
+function positionKey(pos: Position | undefined): string {
+  if (!pos) return '';
+  const z = pos.z !== undefined ? String(pos.z) : '';
+  return `${pos.x},${pos.y},${z}`;
+}
+
+function positionsKey(positions: Position[] | undefined): string {
+  if (!positions || positions.length === 0) return '';
+  return positions.map((p) => positionKey(p)).join('|');
+}
+
+function territoriesKey(territories: Move['disconnectedRegions'] | undefined): string {
+  if (!territories || territories.length === 0) return '';
+  return territories
+    .map((t) => `${t.controllingPlayer}:${t.isDisconnected ? 'd' : 'c'}:${positionsKey(t.spaces)}`)
+    .join('||');
+}
+
+function formedLinesKey(lines: Move['formedLines'] | undefined): string {
+  if (!lines || lines.length === 0) return '';
+  return lines.map((l) => `${l.player}:${positionsKey(l.positions)}`).join('||');
+}
+
+function moveMatchKey(move: Move): string {
+  return [
+    move.type,
+    String(move.player),
+    positionKey(move.from),
+    positionKey(move.to),
+    positionKey(move.captureTarget),
+    String(move.buildAmount ?? ''),
+    String(move.placementCount ?? ''),
+    String(move.recoveryOption ?? ''),
+    positionsKey(move.collapsedMarkers),
+    formedLinesKey(move.formedLines),
+    territoriesKey(move.disconnectedRegions),
+    move.eliminationContext ?? '',
+    move.eliminationFromStack ? positionKey(move.eliminationFromStack.position) : '',
+  ].join('|');
+}
+
+async function tryRequestSandboxAIMove(payload: {
+  state: ReturnType<typeof serializeGameState>;
+  difficulty: number;
+  playerNumber: number;
+}): Promise<Move | null> {
+  if (typeof fetch !== 'function') {
+    return null;
+  }
+
+  try {
+    const response = await fetch('/api/games/sandbox/ai/move', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as { move?: Move | null } | null;
+    return data?.move ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Reset module-level sandbox AI stall counters. Used by tests to ensure
@@ -602,6 +678,47 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
 
     // Get AI difficulty for current player (if available)
     const aiDifficulty = hooks.getAIDifficulty?.(current.playerNumber);
+    const effectiveDifficulty = clampDifficulty(aiDifficulty, 4);
+
+    // Service-backed sandbox AI: when available, request a canonical move from
+    // the backend which proxies to the Python AI service. This enables the
+    // full difficulty ladder (minimax/mcts/descent + neural variants) for the
+    // /sandbox host without embedding search engines in the client bundle.
+    //
+    // Parity mode intentionally bypasses the service so deterministic local
+    // heuristics can be compared against backend fallback policies.
+    if (!parityMode) {
+      const stateForService = hooks.getGameState();
+      const serviceMove = await tryRequestSandboxAIMove({
+        state: serializeGameState(stateForService),
+        difficulty: effectiveDifficulty,
+        playerNumber: current.playerNumber,
+      });
+
+      if (serviceMove) {
+        const candidates = hooks.getValidMovesForCurrentPlayer();
+        const desiredKey = moveMatchKey(serviceMove);
+        const matched = candidates.find((cand) => moveMatchKey(cand) === desiredKey);
+
+        if (matched) {
+          const stateForMove = hooks.getGameState();
+          const moveNumber = stateForMove.history.length + 1;
+          const applied: Move = {
+            ...matched,
+            id: '',
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber,
+          } as Move;
+
+          await hooks.applyCanonicalMove(applied);
+
+          lastAIMove = applied;
+          hooks.setLastAIMove(lastAIMove);
+          return;
+        }
+      }
+    }
 
     // === Pie rule (swap_sides) meta-move for 2-player sandbox AI ===
     // When the gate conditions match the backend pie rule and the opening

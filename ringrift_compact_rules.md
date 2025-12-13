@@ -491,11 +491,12 @@ A **full round of turns** is one contiguous cycle of turns in player order in wh
 
 A player `P` wins by last-player-standing if all of the following hold:
 
-- There exists a sequence of **two consecutive full rounds** of turns such that:
+- There exists a sequence of **three consecutive full rounds** of turns such that:
   - On each of `P`'s turns across those rounds, `P` has at least one legal real action available at the start of their action **and takes at least one such action**; and
   - On every other player's turns in those same rounds, those players have **no** legal real action available at the start of their action (they may have only forced-elimination actions or no legal actions at all); and
 - After that first round completes, on the following round `P` remains the only player who has taken any legal real action.
-- After the second round completes, `P` is declared the winner by last-player-standing.
+- After the second round completes, on the following round `P` remains the only player who has taken any legal real action.
+- After the third round completes, `P` is declared the winner by last-player-standing.
 
 A player is **temporarily inactive** (has no real actions on their own turn, but remains in the game) when:
 
@@ -505,7 +506,7 @@ A player is **temporarily inactive** (has no real actions on their own turn, but
 
 Such a player can potentially become active again if capture or elimination expose one of their buried rings as the new top ring of a stack, thereby giving them a controlled stack on a later turn and restoring at least one real action.
 
-If any temporarily inactive player regains a real action **before** the two-round condition above has been satisfied, the last-player-standing condition effectively resets and must be re-satisfied from that point.
+If any temporarily inactive player regains a real action **before** the three-round condition above has been satisfied, the last-player-standing condition effectively resets and must be re-satisfied from that point.
 
 A player is **eliminated** (has no legal actions on their own turn, and cannot in future turns) when:
 
@@ -607,7 +608,7 @@ The winner (rank 1) is determined by whichever victory condition triggered:
 
 1. **Ring-elimination victory (Section 7.1):** The player who reached `eliminatedRingsTotal ≥ victoryThreshold` is 1st.
 2. **Territory-control victory (Section 7.2):** The player who reached `territorySpaces ≥ territoryVictoryThreshold` is 1st.
-3. **Last-player-standing victory (Section 7.3):** The sole player with real actions for 2 consecutive rounds is 1st.
+3. **Last-player-standing victory (Section 7.3):** The sole player with real actions for 3 consecutive rounds is 1st.
 4. **Stalemate (Section 7.4):** The player ranked highest by the tiebreaker cascade (§8.3) is 1st.
 
 ### 8.3 Ranking remaining players (2nd through Nth)

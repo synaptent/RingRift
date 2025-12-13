@@ -19,7 +19,7 @@ This document provides a comprehensive audit of the GPU implementation against c
 
 **Remaining Gaps:**
 
-- LPS Victory: Uses material-based check instead of 2-consecutive-rounds canonical rule
+- LPS Victory: Uses material-based check instead of 3-consecutive-rounds canonical rule
 - Marker Removal on Landing: Simplified implementation
 
 **Target:** 100% rules parity while maintaining 5-10x speedup over CPU-only path
@@ -51,7 +51,7 @@ This document provides a comprehensive audit of the GPU implementation against c
 | RR-CANON-R150 | Cap Eligibility (Territory) | Multicolor OR single-color height>1; NOT height-1              |
 | RR-CANON-R110 | Recovery Mechanics          | Marker slide + territory processing                            |
 | RR-CANON-R061 | Victory Threshold           | round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))         |
-| RR-CANON-R200 | Victory Conditions          | Ring Elimination, Territory (>50%), LPS (2 consecutive rounds) |
+| RR-CANON-R200 | Victory Conditions          | Ring Elimination, Territory (>50%), LPS (3 consecutive rounds) |
 
 ### 1.2 FSM Phase Order
 
@@ -73,7 +73,7 @@ RING_PLACEMENT → MOVEMENT → LINE_PROCESSING → TERRITORY_PROCESSING → (ne
 
 | Gap                           | Canonical Behavior                    | GPU Implementation                       | Impact                   | Location                                       |
 | ----------------------------- | ------------------------------------- | ---------------------------------------- | ------------------------ | ---------------------------------------------- |
-| **LPS Victory (2-round)**     | 2 consecutive rounds without progress | Material-based (only player with stacks) | Slightly different logic | `gpu_parallel_games.py:check_victory_batch()`  |
+| **LPS Victory (3-round)**     | 3 consecutive rounds without progress | Material-based (only player with stacks) | Slightly different logic | `gpu_parallel_games.py:check_victory_batch()`  |
 | **Marker Removal on Landing** | Remove marker, eliminate top ring     | Simplified                               | May miss eliminations    | `gpu_parallel_games.py:apply_movement_batch()` |
 
 ### 2.3 Ring Count Update (2025-12-12)
@@ -106,7 +106,7 @@ Updated locations:
 | **Overlength Line Choice** | 2025-12-12 | Probabilistic Option 1/2 selection (30% Option 2) per RR-CANON-R122                             |
 | **Cap Eligibility**        | 2025-12-12 | Context-aware: line vs territory vs forced elimination (`_find_eligible_territory_cap`)         |
 | **Recovery Cascade**       | 2025-12-12 | Territory processing after line formation in recovery phase                                     |
-| **LPS Victory (basic)**    | 2025-12-12 | Material-based last-player-standing check (not 2-round canonical)                               |
+| **LPS Victory (basic)**    | 2025-12-12 | Material-based last-player-standing check (not 3-round canonical)                               |
 
 ---
 
@@ -162,7 +162,7 @@ my_height = state.stack_height[g, y, x].item()  # Forces sync
 | **P1**   | Vectorize evaluation loops     | 🔄 PENDING  | Per-game Python loops still present             |
 | ~~P1~~   | ~~Overlength line choice~~     | ✅ COMPLETE | Probabilistic Option 1/2 (30% Option 2)         |
 | ~~P2~~   | ~~Recovery cascade~~           | ✅ COMPLETE | Territory processing after recovery lines       |
-| **P2**   | LPS 2-round victory            | 🔄 PENDING  | Current: material-based; Canonical: 2-round     |
+| **P2**   | LPS 3-round victory            | 🔄 PENDING  | Current: material-based; Canonical: 3-round     |
 | ~~P3~~   | ~~Cap eligibility contexts~~   | ✅ COMPLETE | Context-aware for line/territory/FE             |
 
 ### 4.2 Remaining Work
@@ -174,10 +174,10 @@ my_height = state.stack_height[g, y, x].item()  # Forces sync
 3. Batch FSM transitions by phase
 4. Target: 10-20x speedup (currently 6.56x)
 
-**LPS 2-Round Victory (P2):**
+**LPS 3-Round Victory (P2):**
 
 1. Track rounds without material changes
-2. Detect 2 consecutive rounds without progress
+2. Detect 3 consecutive rounds without progress
 3. Low priority - current material-based check covers most cases
 
 ---
@@ -353,7 +353,7 @@ two_in_row = (h_pairs.sum(dim=(1,2)) + v_pairs.sum(dim=(1,2)) +
 | Issue                 | Severity | Status | Notes                           |
 | --------------------- | -------- | ------ | ------------------------------- |
 | Per-game Python loops | MEDIUM   | OPEN   | Performance bottleneck          |
-| LPS 2-round check     | LOW      | OPEN   | Material-based check works well |
+| LPS 3-round check     | LOW      | OPEN   | Material-based check works well |
 | Marker landing elim   | LOW      | OPEN   | Simplified, may miss edge cases |
 
 ---

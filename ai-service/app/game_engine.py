@@ -2784,7 +2784,7 @@ class GameEngine:
         interactive turn.
 
         Mirrors TS lpsTracking.evaluateLpsVictory semantics:
-        - Requires two consecutive exclusive rounds for the same candidate.
+        - Requires three consecutive exclusive rounds for the same candidate.
         - Evaluated when the candidate's next interactive turn begins.
         - Candidate must still have a real action available.
         - All other players with material must have no real actions.
@@ -2818,7 +2818,7 @@ class GameEngine:
         # game immediately on the turn boundary but Python waits for the
         # next bookkeeping move.
 
-        lps_threshold = getattr(game_state, 'lps_rounds_required', 2)
+        lps_threshold = getattr(game_state, 'lps_rounds_required', 3)
         if game_state.lps_consecutive_exclusive_rounds < lps_threshold:
             return
 

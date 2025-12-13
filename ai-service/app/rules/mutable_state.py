@@ -337,7 +337,7 @@ class MutableGameState:
         self._lps_exclusive_player_for_completed_round: Optional[int] = None
         self._lps_consecutive_exclusive_rounds: int = 0
         self._lps_consecutive_exclusive_player: Optional[int] = None
-        self._lps_rounds_required: int = 2  # Configurable LPS threshold
+        self._lps_rounds_required: int = 3  # Configurable LPS threshold
 
         # Immutable reference fields (for context and conversion back)
         self._id: str = ""
@@ -413,7 +413,7 @@ class MutableGameState:
         mutable._lps_consecutive_exclusive_player = (
             state.lps_consecutive_exclusive_player
         )
-        mutable._lps_rounds_required = getattr(state, 'lps_rounds_required', 2)
+        mutable._lps_rounds_required = getattr(state, 'lps_rounds_required', 3)
 
         # Copy immutable reference fields
         mutable._id = state.id

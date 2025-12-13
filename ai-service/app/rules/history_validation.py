@@ -94,7 +94,7 @@ def validate_canonical_config_for_game(
     expected_rings = config.rings_per_player
     expected_victory_threshold = get_victory_threshold(board_type, num_players)
     expected_territory_threshold = get_territory_victory_threshold(board_type)
-    expected_lps_rounds_required = 2
+    expected_lps_rounds_required = 3
 
     if state.victory_threshold != expected_victory_threshold:
         issues.append(

@@ -870,6 +870,7 @@ async def run_cross_model_tournament(state: DaemonState, top_n: int = 10, games_
 
     This ensures all models play against each other, not just new vs best.
     Runs every 10 cycles (configured in daemon_cycle).
+    Games are saved to JSONL for training data generation.
 
     Returns number of games played.
     """
@@ -881,7 +882,8 @@ async def run_cross_model_tournament(state: DaemonState, top_n: int = 10, games_
     conn = init_elo_database()
     total_games = 0
 
-    for config in BOARD_CONFIGS[:3]:  # Focus on main configs (square8 2p, 3p, 4p)
+    # Run for ALL board configs (not just first 3) to ensure Elo for all combinations
+    for config in BOARD_CONFIGS:
         key = get_config_key(config["board"], config["players"])
         leaderboard = get_persistent_leaderboard(
             conn, config["board"], config["players"], limit=top_n
@@ -904,50 +906,34 @@ async def run_cross_model_tournament(state: DaemonState, top_n: int = 10, games_
             random.shuffle(matchups)
             matchups = matchups[:max_matchups]
 
-        # Run games using external tournament runner
-        for model_a_id, model_b_id in matchups:
-            # Find model paths
-            model_a = state.models.get(model_a_id)
-            model_b = state.models.get(model_b_id)
+        # Run games using Elo tournament script (saves games to JSONL for training)
+        # Use run_model_elo_tournament.py which has canonical JSONL format
+        elo_tournament_cmd = [
+            sys.executable, "scripts/run_model_elo_tournament.py",
+            "--board", config["board"],
+            "--players", str(config["players"]),
+            "--games", str(games_per_matchup),
+            "--top-n", str(top_n),
+            "--run",  # Actually run the tournament
+        ]
 
-            if not model_a or not model_b:
-                continue
+        print(f"[Daemon] Running Elo tournament for {key}...")
+        success, output = run_command(elo_tournament_cmd, timeout=1800)  # 30 min timeout
 
-            tournament_cmd = [
-                sys.executable, "scripts/run_tournament.py",
-                "--player1", f"nn:{model_a.path}",
-                "--player2", f"nn:{model_b.path}",
-                "--board", config["board"],
-                "--num-players", str(config["players"]),
-                "--games", str(games_per_matchup),
-            ]
-
-            success, output = run_command(tournament_cmd, timeout=600)
-
-            if success:
-                # Parse results
-                import re
-                match = re.search(r"P1.*?(\d+)/(\d+)", output)
-                if match:
-                    wins = int(match.group(1))
-                    total = int(match.group(2))
-
-                    # Update persistent Elo for each game result
-                    for _ in range(wins):
-                        update_elo_after_match(
-                            conn, model_a_id, model_b_id, model_a_id,
-                            config["board"], config["players"],
-                            tournament_id=f"crossmodel_{state.total_cycles}"
-                        )
-                    for _ in range(total - wins):
-                        update_elo_after_match(
-                            conn, model_a_id, model_b_id, model_b_id,
-                            config["board"], config["players"],
-                            tournament_id=f"crossmodel_{state.total_cycles}"
-                        )
-
-                    total_games += total
-                    print(f"[Daemon]   {model_a_id[:25]} vs {model_b_id[:25]}: {wins}/{total}")
+        if success:
+            # Parse game count from output
+            import re
+            match = re.search(r"Total games.*?(\d+)", output)
+            if match:
+                games_this_config = int(match.group(1))
+                total_games += games_this_config
+                print(f"[Daemon]   Completed {games_this_config} games for {key}")
+            else:
+                # Estimate from matchup count
+                total_games += min(len(matchups), 15) * games_per_matchup
+                print(f"[Daemon]   Tournament completed for {key}")
+        else:
+            print(f"[Daemon]   Tournament failed for {key}: {output[:200]}")
 
     conn.close()
     state.total_tournaments += 1

@@ -117,7 +117,7 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       // Game should be active before LPS tracking
       expect(state.gameStatus).toBe('active');
 
-      // Now simulate TWO full rounds of LPS tracking (per RR-CANON-R172)
+      // Now simulate THREE full rounds of LPS tracking (per RR-CANON-R172)
       // Round 1: P1 -> P2 -> P3
       let result = startInteractiveTurn(engineAny, state, 1);
       expect(result).toBeNull();
@@ -136,10 +136,20 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       result = startInteractiveTurn(engineAny, state, 3);
       expect(result).toBeNull();
 
-      // Start of round 3: P1's turn completes round 2 - NOW LPS triggers
+      // Start of round 3: P1's turn completes round 2
+      result = startInteractiveTurn(engineAny, state, 1);
+      expect(result).toBeNull(); // Still no LPS - only 2 consecutive rounds
+
+      // Round 3: P2 -> P3
+      result = startInteractiveTurn(engineAny, state, 2);
+      expect(result).toBeNull();
+      result = startInteractiveTurn(engineAny, state, 3);
+      expect(result).toBeNull();
+
+      // Start of round 4: P1's turn completes round 3 - NOW LPS triggers
       result = startInteractiveTurn(engineAny, state, 1);
 
-      // LPS should trigger now (after 2 consecutive rounds per RR-CANON-R172)
+      // LPS should trigger now (after 3 consecutive rounds per RR-CANON-R172)
       expect(result).not.toBeNull();
       expect(result!.winner).toBe(1);
       expect(result!.reason).toBe('last_player_standing');
@@ -180,7 +190,7 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       // After line processing: only P1 has real actions
       engineAny.hasAnyRealActionForPlayer = jest.fn((playerNumber: number) => playerNumber === 1);
 
-      // TWO full rounds where only P1 has actions (per RR-CANON-R172)
+      // THREE full rounds where only P1 has actions (per RR-CANON-R172)
       // Round 1
       let result = startInteractiveTurn(engineAny, state, 1);
       expect(result).toBeNull();
@@ -199,7 +209,17 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       result = startInteractiveTurn(engineAny, state, 3);
       expect(result).toBeNull();
 
-      // P1's turn again (start of round 3, completes round 2) - LPS should trigger now
+      // Start of round 3 (completes round 2)
+      result = startInteractiveTurn(engineAny, state, 1);
+      expect(result).toBeNull(); // Only 2 consecutive rounds - not enough
+
+      // Round 3
+      result = startInteractiveTurn(engineAny, state, 2);
+      expect(result).toBeNull();
+      result = startInteractiveTurn(engineAny, state, 3);
+      expect(result).toBeNull();
+
+      // P1's turn again (start of round 4, completes round 3) - LPS should trigger now
       result = startInteractiveTurn(engineAny, state, 1);
 
       expect(result).not.toBeNull();
@@ -248,7 +268,7 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       // Verify P1 has material
       expect(engineAny.hasAnyRealActionForPlayer(1)).toBe(true);
 
-      // TWO full rounds of LPS tracking where only P1 has actions (per RR-CANON-R172)
+      // THREE full rounds of LPS tracking where only P1 has actions (per RR-CANON-R172)
       // Round 1
       let result = startInteractiveTurn(engineAny, state, 1);
       expect(result).toBeNull();
@@ -267,7 +287,17 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       result = startInteractiveTurn(engineAny, state, 3);
       expect(result).toBeNull();
 
-      // P1's turn again (start of round 3) - LPS should trigger now (completed 2 rounds)
+      // Start of round 3 (completes round 2)
+      result = startInteractiveTurn(engineAny, state, 1);
+      expect(result).toBeNull(); // Only 2 consecutive rounds
+
+      // Round 3
+      result = startInteractiveTurn(engineAny, state, 2);
+      expect(result).toBeNull();
+      result = startInteractiveTurn(engineAny, state, 3);
+      expect(result).toBeNull();
+
+      // P1's turn again (start of round 4) - LPS should trigger now (completed 3 rounds)
       result = startInteractiveTurn(engineAny, state, 1);
 
       expect(result).not.toBeNull();
@@ -325,7 +355,7 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       state.board.collapsedSpaces.set(positionToString(p2StackPos), 1);
       territoryProcessed = true;
 
-      // TWO full rounds of LPS tracking (per RR-CANON-R172)
+      // THREE full rounds of LPS tracking (per RR-CANON-R172)
       // Round 1
       let result = startInteractiveTurn(engineAny, state, 1);
       expect(result).toBeNull();
@@ -344,7 +374,17 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       result = startInteractiveTurn(engineAny, state, 3);
       expect(result).toBeNull();
 
-      // LPS triggers (start of round 3, completing 2 consecutive rounds)
+      // Start of round 3 (completes round 2)
+      result = startInteractiveTurn(engineAny, state, 1);
+      expect(result).toBeNull(); // Only 2 consecutive rounds
+
+      // Round 3
+      result = startInteractiveTurn(engineAny, state, 2);
+      expect(result).toBeNull();
+      result = startInteractiveTurn(engineAny, state, 3);
+      expect(result).toBeNull();
+
+      // LPS triggers (start of round 4, completing 3 consecutive rounds)
       result = startInteractiveTurn(engineAny, state, 1);
       expect(result).not.toBeNull();
       expect(result!.winner).toBe(1);
@@ -412,7 +452,7 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       // Game should still be active until LPS is properly tracked
       expect(state.gameStatus).toBe('active');
 
-      // Step 3: TWO full rounds of LPS tracking (per RR-CANON-R172)
+      // Step 3: THREE full rounds of LPS tracking (per RR-CANON-R172)
       // Round 1
       let result = startInteractiveTurn(engineAny, state, 1);
       expect(result).toBeNull();
@@ -431,7 +471,17 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       result = startInteractiveTurn(engineAny, state, 3);
       expect(result).toBeNull();
 
-      // Step 4: LPS triggers on P1's next turn (start of round 3, completes 2 consecutive rounds)
+      // Start of round 3 (completes round 2)
+      result = startInteractiveTurn(engineAny, state, 1);
+      expect(result).toBeNull(); // Only 2 consecutive rounds
+
+      // Round 3
+      result = startInteractiveTurn(engineAny, state, 2);
+      expect(result).toBeNull();
+      result = startInteractiveTurn(engineAny, state, 3);
+      expect(result).toBeNull();
+
+      // Step 4: LPS triggers on P1's next turn (start of round 4, completes 3 consecutive rounds)
       result = startInteractiveTurn(engineAny, state, 1);
 
       expect(result).not.toBeNull();

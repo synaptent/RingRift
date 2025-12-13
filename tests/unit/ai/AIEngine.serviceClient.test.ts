@@ -368,11 +368,11 @@ describe('AIEngine service integration (profile-driven)', () => {
     > = {
       1: { aiType: InternalAIType.RANDOM, randomness: 0.5, thinkTime: 150 },
       2: { aiType: InternalAIType.HEURISTIC, randomness: 0.3, thinkTime: 200 },
-      3: { aiType: InternalAIType.MINIMAX, randomness: 0.2, thinkTime: 1250 },
-      4: { aiType: InternalAIType.MINIMAX, randomness: 0.1, thinkTime: 2100 },
-      5: { aiType: InternalAIType.MINIMAX, randomness: 0.05, thinkTime: 3500 },
-      6: { aiType: InternalAIType.MINIMAX, randomness: 0.02, thinkTime: 4800 },
-      7: { aiType: InternalAIType.MCTS, randomness: 0.0, thinkTime: 7000 },
+      3: { aiType: InternalAIType.MINIMAX, randomness: 0.15, thinkTime: 1800 },
+      4: { aiType: InternalAIType.MINIMAX, randomness: 0.08, thinkTime: 2800 },
+      5: { aiType: InternalAIType.MCTS, randomness: 0.05, thinkTime: 4000 },
+      6: { aiType: InternalAIType.MCTS, randomness: 0.02, thinkTime: 5500 },
+      7: { aiType: InternalAIType.MCTS, randomness: 0.0, thinkTime: 7500 },
       8: { aiType: InternalAIType.MCTS, randomness: 0.0, thinkTime: 9600 },
       9: { aiType: InternalAIType.DESCENT, randomness: 0.0, thinkTime: 12600 },
       10: { aiType: InternalAIType.DESCENT, randomness: 0.0, thinkTime: 16000 },
@@ -403,7 +403,7 @@ describe('AIEngine service integration (profile-driven)', () => {
     // Difficulty 7 should map to MCTS per the canonical ladder.
     expect(config!.aiType).toBe(InternalAIType.MCTS);
     expect(config!.randomness).toBeCloseTo(0.0);
-    expect(config!.thinkTime).toBe(7000);
+    expect(config!.thinkTime).toBe(7500);
   });
 
   it('getAIMove uses canonical ladder aiType and service mapping for difficulty 8 (MCTS)', async () => {

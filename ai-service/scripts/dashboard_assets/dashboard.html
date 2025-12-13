@@ -1,0 +1,1075 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RingRift Cluster Dashboard</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: #111a33;
+        --panel-2: #0f1730;
+        --border: rgba(255, 255, 255, 0.08);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.62);
+        --accent: #00d4ff;
+        --good: #16c784;
+        --warn: #ffb020;
+        --bad: #ff4d4f;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 18px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        background: radial-gradient(1200px 500px at 10% -10%, rgba(0, 212, 255, 0.18), transparent),
+          radial-gradient(900px 400px at 90% -5%, rgba(255, 176, 32, 0.12), transparent),
+          var(--bg);
+        color: var(--text);
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .topbar {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+
+      .title h1 {
+        margin: 0 0 6px 0;
+        font-size: 20px;
+        letter-spacing: 0.2px;
+      }
+      .title .sub {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.35;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 8px;
+        align-items: end;
+        min-width: 420px;
+      }
+      .controls label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .controls input,
+      .controls select {
+        width: 100%;
+        padding: 10px 12px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        color: var(--text);
+        outline: none;
+      }
+      .controls input:focus,
+      .controls select:focus {
+        border-color: rgba(0, 212, 255, 0.45);
+        box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.12);
+      }
+
+      button {
+        padding: 10px 12px;
+        background: var(--accent);
+        border: 0;
+        border-radius: 10px;
+        color: #001018;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--border);
+        font-weight: 600;
+      }
+      button.danger {
+        background: var(--bad);
+        color: #180000;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .error {
+        background: rgba(255, 77, 79, 0.14);
+        border: 1px solid rgba(255, 77, 79, 0.35);
+        color: rgba(255, 255, 255, 0.9);
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-bottom: 14px;
+        font-size: 13px;
+        display: none;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .card {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01)), var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px;
+        overflow: hidden;
+      }
+      .card h2 {
+        margin: 0 0 10px 0;
+        font-size: 14px;
+        color: rgba(255, 255, 255, 0.92);
+        letter-spacing: 0.2px;
+      }
+      .span-12 {
+        grid-column: span 12;
+      }
+      .span-8 {
+        grid-column: span 8;
+      }
+      .span-6 {
+        grid-column: span 6;
+      }
+      .span-4 {
+        grid-column: span 4;
+      }
+
+      .kv {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        font-size: 13px;
+      }
+      .kv:last-child {
+        border-bottom: 0;
+      }
+      .kv .k {
+        color: var(--muted);
+      }
+      .kv .v {
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.92);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        vertical-align: top;
+      }
+      th {
+        color: rgba(255, 255, 255, 0.72);
+        font-weight: 700;
+        letter-spacing: 0.2px;
+        background: rgba(0, 0, 0, 0.16);
+      }
+      tr:hover td {
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.18);
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.82);
+        font-weight: 700;
+      }
+      .pill.good {
+        border-color: rgba(22, 199, 132, 0.45);
+        color: rgba(22, 199, 132, 1);
+      }
+      .pill.bad {
+        border-color: rgba(255, 77, 79, 0.45);
+        color: rgba(255, 77, 79, 1);
+      }
+      .pill.warn {
+        border-color: rgba(255, 176, 32, 0.5);
+        color: rgba(255, 176, 32, 1);
+      }
+
+      .mono {
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .row > * {
+        flex: 1 1 auto;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 10px;
+        align-items: end;
+      }
+      .form-grid .field {
+        grid-column: span 3;
+      }
+      .form-grid .field.span-4 {
+        grid-column: span 4;
+      }
+      .form-grid .field.span-6 {
+        grid-column: span 6;
+      }
+      .form-grid .field.span-12 {
+        grid-column: span 12;
+      }
+      .field label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .field input,
+      .field select {
+        width: 100%;
+        padding: 10px 12px;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        color: var(--text);
+        outline: none;
+      }
+
+      .log {
+        width: 100%;
+        min-height: 180px;
+        max-height: 360px;
+        overflow: auto;
+        padding: 12px;
+        background: rgba(0, 0, 0, 0.24);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        white-space: pre;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.85);
+      }
+
+      @media (max-width: 980px) {
+        .controls {
+          min-width: 0;
+          grid-template-columns: 1fr;
+        }
+        .span-8,
+        .span-6,
+        .span-4 {
+          grid-column: span 12;
+        }
+        .form-grid .field {
+          grid-column: span 6;
+        }
+        .form-grid .field.span-12 {
+          grid-column: span 12;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="title">
+        <h1>RingRift Cluster Dashboard</h1>
+        <div class="sub" id="subtitle">Loading…</div>
+      </div>
+      <div class="controls">
+        <div>
+          <label for="authToken">Auth token (Bearer)</label>
+          <input id="authToken" type="password" placeholder="Optional (required for POST actions)" />
+        </div>
+        <button class="secondary" id="saveTokenBtn">Save</button>
+        <button id="refreshBtn">Refresh</button>
+      </div>
+    </div>
+
+    <div class="error" id="error"></div>
+
+    <div class="grid">
+      <div class="card span-4">
+        <h2>Overview</h2>
+        <div id="overview" class="mono">Loading…</div>
+      </div>
+      <div class="card span-4">
+        <h2>Selfplay Totals</h2>
+        <div id="selfplayTotals" class="mono">Loading…</div>
+      </div>
+      <div class="card span-4">
+        <h2>Sync / Pipeline</h2>
+        <div id="syncPipeline" class="mono">Loading…</div>
+      </div>
+
+      <div class="card span-12">
+        <h2>Nodes</h2>
+        <div style="overflow: auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Node</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>CPU</th>
+                <th>Mem</th>
+                <th>Disk</th>
+                <th>GPU</th>
+                <th>Jobs</th>
+                <th>Last Seen</th>
+              </tr>
+            </thead>
+            <tbody id="nodesBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card span-12">
+        <h2>Selfplay Breakdown (from data manifests)</h2>
+        <div style="overflow: auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Config</th>
+                <th>Total Games</th>
+                <th>Nodes</th>
+                <th>Rate</th>
+              </tr>
+            </thead>
+            <tbody id="selfplayBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card span-12">
+        <h2>Model Elo Leaderboard</h2>
+        <div class="row" style="margin-bottom: 12px; gap: 8px;">
+          <select id="eloConfigSelect" style="padding: 8px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text);">
+            <option value="all">All Configs</option>
+          </select>
+          <span id="eloSummary" class="mono" style="color: var(--muted); font-size: 12px;"></span>
+        </div>
+        <div style="overflow: auto; max-height: 400px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Model</th>
+                <th>Elo</th>
+                <th>Games</th>
+                <th>Win Rate</th>
+                <th>W/L/D</th>
+                <th>Version</th>
+              </tr>
+            </thead>
+            <tbody id="eloBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card span-12">
+        <h2>Canonical Gate (generate_canonical_selfplay.py)</h2>
+        <div class="form-grid" style="margin-bottom: 12px">
+          <div class="field">
+            <label for="canonBoard">Board</label>
+            <select id="canonBoard">
+              <option value="square19" selected>square19</option>
+              <option value="hexagonal">hexagonal</option>
+              <option value="square8">square8</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="canonPlayers">Players</label>
+            <select id="canonPlayers">
+              <option value="2" selected>2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="canonGames">Num games (per host if set)</label>
+            <input id="canonGames" type="number" min="0" step="1" value="256" />
+          </div>
+          <div class="field span-4">
+            <label for="canonHosts">Hosts (optional, comma-separated)</label>
+            <input id="canonHosts" type="text" placeholder="host1,host2 (no spaces)" />
+          </div>
+          <div class="field">
+            <label for="canonDifficulty">Difficulty</label>
+            <select id="canonDifficulty">
+              <option value="light" selected>light</option>
+              <option value="canonical">canonical</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="canonReset">Reset DB</label>
+            <select id="canonReset">
+              <option value="false" selected>false (merge)</option>
+              <option value="true">true (archive + reset)</option>
+            </select>
+          </div>
+          <div class="field span-12">
+            <button id="canonStartBtn">Start canonical gate</button>
+          </div>
+        </div>
+
+        <div class="grid" style="margin: 0">
+          <div class="card span-6" style="padding: 12px">
+            <h2 style="margin-bottom: 8px">Latest Gate Summaries</h2>
+            <div style="overflow: auto; max-height: 360px">
+              <table>
+                <thead>
+                  <tr>
+                    <th>DB</th>
+                    <th>canonical_ok</th>
+                    <th>games</th>
+                    <th>parity</th>
+                    <th>history</th>
+                    <th>updated</th>
+                  </tr>
+                </thead>
+                <tbody id="canonHealthBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card span-6" style="padding: 12px">
+            <h2 style="margin-bottom: 8px">Gate Jobs</h2>
+            <div style="overflow: auto; max-height: 360px">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Job</th>
+                    <th>Status</th>
+                    <th>Board</th>
+                    <th>Games</th>
+                    <th>started</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="canonJobsBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card span-12" style="padding: 12px">
+            <h2 style="margin-bottom: 8px">Selected Job Log</h2>
+            <div class="log" id="canonLog">(select a job)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card span-12">
+        <h2>Jobs</h2>
+        <div class="form-grid" style="margin-bottom: 12px">
+          <div class="field">
+            <label for="jobType">Job type</label>
+            <select id="jobType">
+              <option value="selfplay" selected>selfplay</option>
+              <option value="gpu_selfplay">gpu_selfplay</option>
+              <option value="nnue">nnue</option>
+              <option value="cmaes">cmaes</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="jobBoard">Board</label>
+            <select id="jobBoard">
+              <option value="square8" selected>square8</option>
+              <option value="square19">square19</option>
+              <option value="hexagonal">hexagonal</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="jobPlayers">Players</label>
+            <select id="jobPlayers">
+              <option value="2" selected>2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </div>
+          <div class="field span-4">
+            <label for="jobEngineMode">Engine mode (selfplay only)</label>
+            <select id="jobEngineMode">
+              <option value="mixed" selected>mixed</option>
+              <option value="heuristic-only">heuristic-only</option>
+              <option value="random-only">random-only</option>
+              <option value="descent-only">descent-only</option>
+              <option value="minimax-only">minimax-only</option>
+              <option value="mcts-only">mcts-only</option>
+              <option value="nn-only">nn-only</option>
+            </select>
+          </div>
+          <div class="field span-12">
+            <button id="jobSubmitBtn">Submit job (leader-only)</button>
+            <button class="secondary" id="syncStartBtn" style="margin-left: 8px">Start cluster sync</button>
+          </div>
+        </div>
+
+        <div style="overflow: auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Board</th>
+                <th>Players</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="jobsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card span-12">
+        <h2>Git</h2>
+        <div id="gitBox" class="mono">Loading…</div>
+      </div>
+    </div>
+
+    <script>
+      const TOKEN_KEY = "ringrift_dashboard_token";
+      const state = {
+        token: localStorage.getItem(TOKEN_KEY) || "",
+        selectedCanonJobId: "",
+        lastData: {},
+      };
+
+      function $(id) {
+        return document.getElementById(id);
+      }
+
+      function setError(msg) {
+        const el = $("error");
+        el.textContent = msg;
+        el.style.display = msg ? "block" : "none";
+      }
+
+      function fmtPct(v) {
+        if (v === null || v === undefined) return "-";
+        const n = Number(v);
+        if (Number.isNaN(n)) return "-";
+        return `${n.toFixed(0)}%`;
+      }
+
+      function fmtBytes(bytes) {
+        const n = Number(bytes);
+        if (!Number.isFinite(n)) return "-";
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let x = n;
+        let i = 0;
+        while (x >= 1024 && i < units.length - 1) {
+          x /= 1024;
+          i += 1;
+        }
+        return `${x.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+      }
+
+      function fmtAge(tsSec) {
+        const ts = Number(tsSec);
+        if (!Number.isFinite(ts) || ts <= 0) return "-";
+        const delta = Math.max(0, Date.now() / 1000 - ts);
+        if (delta < 60) return `${Math.floor(delta)}s`;
+        if (delta < 3600) return `${Math.floor(delta / 60)}m`;
+        if (delta < 86400) return `${Math.floor(delta / 3600)}h`;
+        return `${Math.floor(delta / 86400)}d`;
+      }
+
+      function pill(text, kind) {
+        return `<span class="pill ${kind || ""}">${text}</span>`;
+      }
+
+      async function apiGet(path) {
+        const resp = await fetch(path, { method: "GET" });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const msg = data.error || data.message || `${resp.status} ${resp.statusText}`;
+          throw new Error(msg);
+        }
+        return data;
+      }
+
+      async function apiPost(path, body) {
+        const headers = { "Content-Type": "application/json" };
+        if (state.token) headers["Authorization"] = `Bearer ${state.token}`;
+        const resp = await fetch(path, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body || {}),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const msg = data.error || data.message || `${resp.status} ${resp.statusText}`;
+          throw new Error(msg);
+        }
+        return data;
+      }
+
+      function computeSelfplayRates(history) {
+        if (!Array.isArray(history) || history.length < 2) return {};
+        const a = history[history.length - 2];
+        const b = history[history.length - 1];
+        const dt = Number(b.timestamp || 0) - Number(a.timestamp || 0);
+        if (!Number.isFinite(dt) || dt <= 0) return {};
+
+        const rates = {};
+        const aMap = (a.by_board_type || {}) || {};
+        const bMap = (b.by_board_type || {}) || {};
+
+        for (const [key, bv] of Object.entries(bMap)) {
+          const av = aMap[key] || {};
+          const da = Number(av.total_games || 0);
+          const db = Number(bv.total_games || 0);
+          const dg = db - da;
+          if (!Number.isFinite(dg)) continue;
+          rates[key] = dg / dt; // games per second
+        }
+        return rates;
+      }
+
+      function renderOverview(cluster, selfplayStats, syncStatus, pipelineStatus) {
+        const peers = Array.isArray(cluster.peers) ? cluster.peers : [];
+        const online = peers.filter((p) => p.status === "online").length;
+        const offline = peers.length - online;
+        const uptime = Number(cluster.uptime_seconds || 0);
+
+        const manifestAge = fmtAge(Number(selfplayStats.manifest_collected_at || 0));
+        const totalGames = Number(selfplayStats.total_selfplay_games || 0);
+
+        $("subtitle").innerHTML = `Node <span class="mono">${cluster.node_id || "?"}</span> · role <span class="mono">${cluster.role || "?"}</span> · leader <span class="mono">${cluster.leader_id || "?"}</span> · refreshed <span class="mono">${new Date().toLocaleTimeString()}</span>`;
+
+        $("overview").innerHTML = `
+          <div class="kv"><div class="k">Peers</div><div class="v">${peers.length} (${online} online, ${offline} offline)</div></div>
+          <div class="kv"><div class="k">Jobs</div><div class="v">${cluster.job_count || 0} local · ${cluster.training_job_count || 0} training</div></div>
+          <div class="kv"><div class="k">Uptime</div><div class="v">${Math.floor(uptime / 60)}m</div></div>
+          <div class="kv"><div class="k">Manifest age</div><div class="v">${manifestAge}</div></div>
+        `;
+
+        $("selfplayTotals").innerHTML = `
+          <div class="kv"><div class="k">Total selfplay games</div><div class="v">${totalGames}</div></div>
+          <div class="kv"><div class="k">Configs</div><div class="v">${Object.keys(selfplayStats.by_board_type || {}).length}</div></div>
+          <div class="kv"><div class="k">History samples</div><div class="v">${(selfplayStats.history || []).length}</div></div>
+          <div class="kv"><div class="k">Last sample</div><div class="v">${fmtAge((selfplayStats.history || []).slice(-1)[0]?.timestamp)}</div></div>
+        `;
+
+        const syncInProgress = syncStatus.sync_in_progress ? pill("sync running", "warn") : pill("sync idle", "good");
+        const pipelineJob = (pipelineStatus.current_job || {}).job_id ? pill("pipeline active", "warn") : pill("pipeline idle", "good");
+        $("syncPipeline").innerHTML = `
+          <div class="kv"><div class="k">Sync</div><div class="v">${syncInProgress}</div></div>
+          <div class="kv"><div class="k">Pending sync requests</div><div class="v">${syncStatus.pending_sync_requests || 0}</div></div>
+          <div class="kv"><div class="k">Pipeline</div><div class="v">${pipelineJob}</div></div>
+          <div class="kv"><div class="k">Last sync</div><div class="v">${fmtAge(syncStatus.last_sync_time)}</div></div>
+        `;
+      }
+
+      function renderNodes(cluster) {
+        const rows = [];
+        const peers = Array.isArray(cluster.peers) ? cluster.peers : [];
+
+        function addNode(n, isSelf) {
+          if (!n) return;
+          const status = isSelf ? "online" : n.status || "unknown";
+          const statusPill =
+            status === "online" ? pill("online", "good") : status === "offline" ? pill("offline", "bad") : pill(status, "warn");
+          const role = n.role || (isSelf ? cluster.role : "-");
+          const jobs = `${Number(n.selfplay_jobs || 0)} sp / ${Number(n.training_jobs || 0)} tr`;
+          const gpuText = n.has_gpu ? `${fmtPct(n.gpu_percent)} / ${fmtPct(n.gpu_memory_percent)}` : "-";
+          rows.push(`
+            <tr>
+              <td>${isSelf ? pill("self", "good") + " " : ""}<span class="mono">${n.node_id || "?"}</span><div class="mono" style="color:rgba(255,255,255,0.55)">${n.host || ""}${n.port ? ":" + n.port : ""}</div></td>
+              <td><span class="mono">${role || "-"}</span></td>
+              <td>${statusPill}</td>
+              <td>${fmtPct(n.cpu_percent)}</td>
+              <td>${fmtPct(n.memory_percent)}</td>
+              <td>${fmtPct(n.disk_percent)}</td>
+              <td>${gpuText}</td>
+              <td><span class="mono">${jobs}</span></td>
+              <td><span class="mono">${fmtAge(n.last_seen || n.last_heartbeat)}</span></td>
+            </tr>
+          `);
+        }
+
+        addNode(cluster.self, true);
+        peers.forEach((p) => addNode(p, false));
+
+        $("nodesBody").innerHTML = rows.join("") || `<tr><td colspan="9" class="mono">No nodes</td></tr>`;
+      }
+
+      function renderSelfplay(selfplayStats) {
+        const by = selfplayStats.by_board_type || {};
+        const rates = computeSelfplayRates(selfplayStats.history || []);
+
+        const keys = Object.keys(by).sort((a, b) => (by[b]?.total_games || 0) - (by[a]?.total_games || 0));
+        const rows = keys.map((k) => {
+          const entry = by[k] || {};
+          const nodes = Array.isArray(entry.nodes) ? entry.nodes : [];
+          const rate = rates[k];
+          const rateText = Number.isFinite(rate) ? `${(rate * 60).toFixed(1)}/min` : "-";
+          return `
+            <tr>
+              <td><span class="mono">${k}</span></td>
+              <td><span class="mono">${entry.total_games || 0}</span></td>
+              <td><span class="mono">${nodes.join(", ")}</span></td>
+              <td><span class="mono">${rateText}</span></td>
+            </tr>
+          `;
+        });
+        $("selfplayBody").innerHTML = rows.join("") || `<tr><td colspan="4" class="mono">No selfplay data</td></tr>`;
+      }
+
+      // Elo Leaderboard state
+      state.eloData = null;
+      state.selectedEloConfig = "all";
+
+      function renderEloLeaderboard(eloData) {
+        if (!eloData || !eloData.success) {
+          $("eloBody").innerHTML = `<tr><td colspan="7" class="mono">${eloData?.message || eloData?.error || "No Elo data available"}</td></tr>`;
+          $("eloSummary").textContent = "";
+          return;
+        }
+
+        state.eloData = eloData;
+        const leaderboards = eloData.leaderboards || {};
+        const configs = eloData.configs || Object.keys(leaderboards);
+
+        // Update config selector
+        const select = $("eloConfigSelect");
+        const currentVal = select.value;
+        select.innerHTML = '<option value="all">All Configs</option>' +
+          configs.map(c => `<option value="${c}">${c}</option>`).join("");
+        select.value = configs.includes(currentVal) ? currentVal : "all";
+        state.selectedEloConfig = select.value;
+
+        // Update summary
+        $("eloSummary").textContent = `${eloData.total_models || 0} models · ${eloData.total_matches || 0} matches · ${configs.length} configs`;
+
+        // Render selected leaderboard(s)
+        updateEloTable();
+      }
+
+      function updateEloTable() {
+        const eloData = state.eloData;
+        if (!eloData) return;
+
+        const leaderboards = eloData.leaderboards || {};
+        const selectedConfig = state.selectedEloConfig;
+        const rows = [];
+
+        const configsToShow = selectedConfig === "all" ? Object.keys(leaderboards) : [selectedConfig];
+
+        for (const config of configsToShow) {
+          const lb = leaderboards[config] || [];
+          if (configsToShow.length > 1 && lb.length > 0) {
+            rows.push(`<tr><td colspan="7" style="background: rgba(0,212,255,0.1); font-weight: 700; padding: 8px;">${config}</td></tr>`);
+          }
+          for (const entry of lb.slice(0, selectedConfig === "all" ? 5 : 50)) {
+            const modelShort = entry.model_id.length > 40 ? entry.model_id.slice(0, 37) + "..." : entry.model_id;
+            const eloClass = entry.rating >= 1550 ? "good" : entry.rating <= 1450 ? "bad" : "";
+            const winRate = entry.win_rate !== undefined ? `${entry.win_rate.toFixed(1)}%` : "-";
+            const wld = `${entry.wins || 0}/${entry.losses || 0}/${entry.draws || 0}`;
+            rows.push(`
+              <tr>
+                <td><span class="mono">${entry.rank || "-"}</span></td>
+                <td><span class="mono" title="${entry.model_id}">${modelShort}</span></td>
+                <td><span class="pill ${eloClass}">${entry.rating?.toFixed(0) || 1500}</span></td>
+                <td><span class="mono">${entry.games_played || 0}</span></td>
+                <td><span class="mono">${winRate}</span></td>
+                <td><span class="mono">${wld}</span></td>
+                <td><span class="mono">${entry.version || "-"}</span></td>
+              </tr>
+            `);
+          }
+        }
+
+        $("eloBody").innerHTML = rows.join("") || `<tr><td colspan="7" class="mono">No models in leaderboard</td></tr>`;
+      }
+
+      $("eloConfigSelect").addEventListener("change", (e) => {
+        state.selectedEloConfig = e.target.value;
+        updateEloTable();
+      });
+
+      function renderCanonicalHealth(health) {
+        const rows = [];
+        const items = Array.isArray(health.summaries) ? health.summaries : [];
+        for (const item of items.slice(0, 25)) {
+          const s = (item.summary || {}) || {};
+          const ok = !!s.canonical_ok;
+          const okPill = ok ? pill("true", "good") : pill("false", "bad");
+          const dbStats = s.db_stats || {};
+          const gamesTotal = dbStats.games_total !== undefined ? dbStats.games_total : "-";
+          const parity = (s.parity_gate || {}).passed_canonical_parity_gate;
+          const parityPill = parity === true ? pill("pass", "good") : parity === false ? pill("fail", "bad") : pill("-", "warn");
+          const history = s.canonical_history || {};
+          const historyText =
+            history.games_checked !== undefined ? `${history.games_checked || 0} / ${history.non_canonical_games || 0}` : "-";
+          const name = (s.db_path || item.path || "").split("/").slice(-1)[0] || "(unknown)";
+          rows.push(`
+            <tr>
+              <td><span class="mono">${name}</span><div class="mono" style="color:rgba(255,255,255,0.55)">${fmtBytes(item.db_size_bytes)}</div></td>
+              <td>${okPill}</td>
+              <td><span class="mono">${gamesTotal}</span></td>
+              <td>${parityPill}</td>
+              <td><span class="mono">${historyText}</span></td>
+              <td><span class="mono">${fmtAge(item.modified_time)}</span></td>
+            </tr>
+          `);
+        }
+        $("canonHealthBody").innerHTML = rows.join("") || `<tr><td colspan="6" class="mono">No gate summaries found</td></tr>`;
+      }
+
+      function renderCanonicalJobs(jobsResp) {
+        const jobs = Array.isArray(jobsResp.jobs) ? jobsResp.jobs : [];
+        const rows = [];
+        for (const j of jobs.slice(0, 50)) {
+          const status = String(j.status || "unknown");
+          const statusPill =
+            status === "completed"
+              ? pill(status, "good")
+              : status === "running"
+                ? pill(status, "warn")
+                : status === "failed"
+                  ? pill(status, "bad")
+                  : pill(status, "warn");
+          rows.push(`
+            <tr>
+              <td><span class="mono">${j.job_id || ""}</span></td>
+              <td>${statusPill}</td>
+              <td><span class="mono">${j.board_type || ""} ${j.num_players || ""}p</span></td>
+              <td><span class="mono">${j.num_games || 0}</span></td>
+              <td><span class="mono">${fmtAge(j.started_at)}</span></td>
+              <td>
+                <button class="secondary" onclick="selectCanonJob('${j.job_id}')">Log</button>
+                ${status === "running" ? `<button class="danger" onclick="cancelCanonJob('${j.job_id}')">Cancel</button>` : ""}
+              </td>
+            </tr>
+          `);
+        }
+        $("canonJobsBody").innerHTML = rows.join("") || `<tr><td colspan="6" class="mono">No jobs</td></tr>`;
+      }
+
+      async function selectCanonJob(jobId) {
+        state.selectedCanonJobId = jobId;
+        await refreshCanonLog();
+      }
+
+      async function refreshCanonLog() {
+        const jobId = state.selectedCanonJobId;
+        if (!jobId) {
+          $("canonLog").textContent = "(select a job)";
+          return;
+        }
+        try {
+          const resp = await apiGet(`/api/canonical/jobs/${encodeURIComponent(jobId)}/log?tail=250`);
+          $("canonLog").textContent = resp.log_tail || "";
+        } catch (e) {
+          $("canonLog").textContent = `log error: ${e.message}`;
+        }
+      }
+
+      async function cancelCanonJob(jobId) {
+        if (!confirm(`Cancel canonical gate job ${jobId}?`)) return;
+        try {
+          await apiPost(`/api/canonical/jobs/${encodeURIComponent(jobId)}/cancel`, {});
+          await refreshAll(true);
+        } catch (e) {
+          setError(e.message);
+        }
+      }
+
+      function renderJobs(jobsResp) {
+        const jobs = Array.isArray(jobsResp.jobs) ? jobsResp.jobs : [];
+        const rows = jobs.map((j) => {
+          const status = String(j.status || "unknown");
+          const statusPill =
+            status === "completed"
+              ? pill(status, "good")
+              : status === "running"
+                ? pill(status, "warn")
+                : status === "failed"
+                  ? pill(status, "bad")
+                  : pill(status, "warn");
+          const canCancel = ["running", "pending", "queued"].includes(status);
+          return `
+            <tr>
+              <td><span class="mono">${j.job_id}</span></td>
+              <td><span class="mono">${j.job_type}</span></td>
+              <td>${statusPill}</td>
+              <td><span class="mono">${j.board_type || "-"}</span></td>
+              <td><span class="mono">${j.num_players || "-"}</span></td>
+              <td><span class="mono">${fmtAge(j.created_at)}</span></td>
+              <td>${canCancel ? `<button class="secondary" onclick="cancelJob('${j.job_id}')">Cancel</button>` : ""}</td>
+            </tr>
+          `;
+        });
+        $("jobsBody").innerHTML = rows.join("") || `<tr><td colspan="7" class="mono">No jobs</td></tr>`;
+      }
+
+      async function cancelJob(jobId) {
+        if (!confirm(`Cancel job ${jobId}?`)) return;
+        try {
+          await apiPost(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {});
+          await refreshAll(true);
+        } catch (e) {
+          setError(e.message);
+        }
+      }
+
+      function renderGit(git) {
+        if (git.error) {
+          $("gitBox").textContent = `git error: ${git.error}`;
+          return;
+        }
+        const updates = git.has_updates ? pill("updates available", "warn") : pill("up to date", "good");
+        $("gitBox").innerHTML = `
+          <div class="kv"><div class="k">Branch</div><div class="v"><span class="mono">${git.local_branch || "-"}</span></div></div>
+          <div class="kv"><div class="k">Local</div><div class="v"><span class="mono">${git.local_commit || "-"}</span></div></div>
+          <div class="kv"><div class="k">Remote</div><div class="v"><span class="mono">${git.remote_commit || "-"}</span></div></div>
+          <div class="kv"><div class="k">Status</div><div class="v">${updates} · behind <span class="mono">${git.commits_behind || 0}</span> · local changes <span class="mono">${git.has_local_changes ? "yes" : "no"}</span></div></div>
+        `;
+      }
+
+      async function refreshAll(showBusy) {
+        setError("");
+        const refreshBtn = $("refreshBtn");
+        if (showBusy) refreshBtn.disabled = true;
+        try {
+          const [cluster, selfplay, sync, pipeline, canonHealth, canonJobs, jobs, git, elo] = await Promise.all([
+            apiGet("/api/cluster/status"),
+            apiGet("/api/selfplay/stats"),
+            apiGet("/sync/status"),
+            apiGet("/pipeline/status"),
+            apiGet("/api/canonical/health"),
+            apiGet("/api/canonical/jobs"),
+            apiGet("/api/jobs?limit=50"),
+            apiGet("/git/status"),
+            apiGet("/api/elo/leaderboard").catch(() => ({ success: false, message: "Elo API not available" })),
+          ]);
+
+          if (cluster.success === false) throw new Error(cluster.error || "cluster status failed");
+          if (selfplay.success === false) throw new Error(selfplay.error || "selfplay stats failed");
+
+          renderOverview(cluster, selfplay, sync, pipeline);
+          renderNodes(cluster);
+          renderSelfplay(selfplay);
+          renderEloLeaderboard(elo);
+          renderCanonicalHealth(canonHealth);
+          renderCanonicalJobs(canonJobs);
+          renderJobs(jobs);
+          renderGit(git);
+
+          await refreshCanonLog();
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          if (showBusy) refreshBtn.disabled = false;
+        }
+      }
+
+      function saveToken() {
+        state.token = $("authToken").value.trim();
+        localStorage.setItem(TOKEN_KEY, state.token);
+      }
+
+      async function startCanonicalGate() {
+        try {
+          const board_type = $("canonBoard").value;
+          const num_players = Number($("canonPlayers").value);
+          const num_games = Number($("canonGames").value);
+          const hosts = $("canonHosts").value.trim();
+          const difficulty_band = $("canonDifficulty").value;
+          const reset_db = $("canonReset").value === "true";
+
+          const body = {
+            board_type,
+            num_players,
+            num_games,
+            difficulty_band,
+            reset_db,
+            hosts: hosts || null,
+          };
+
+          const resp = await apiPost("/api/canonical/generate", body);
+          state.selectedCanonJobId = resp.job?.job_id || "";
+          await refreshAll(true);
+        } catch (e) {
+          setError(e.message);
+        }
+      }
+
+      async function submitJob() {
+        try {
+          const job_type = $("jobType").value;
+          const board_type = $("jobBoard").value;
+          const num_players = Number($("jobPlayers").value);
+          const engine_mode = $("jobEngineMode").value;
+
+          const body = { job_type, board_type, num_players, engine_mode };
+          await apiPost("/api/jobs/submit", body);
+          await refreshAll(true);
+        } catch (e) {
+          setError(e.message);
+        }
+      }
+
+      async function startSync() {
+        if (!confirm("Start cluster-wide sync on the leader?")) return;
+        try {
+          await apiPost("/sync/start", {});
+          await refreshAll(true);
+        } catch (e) {
+          setError(e.message);
+        }
+      }
+
+      // Wire up events
+      $("authToken").value = state.token;
+      $("saveTokenBtn").addEventListener("click", saveToken);
+      $("refreshBtn").addEventListener("click", () => refreshAll(true));
+      $("canonStartBtn").addEventListener("click", startCanonicalGate);
+      $("jobSubmitBtn").addEventListener("click", submitJob);
+      $("syncStartBtn").addEventListener("click", startSync);
+
+      refreshAll(true);
+      setInterval(() => refreshAll(false), 10000);
+      setInterval(() => refreshCanonLog(), 4000);
+    </script>
+  </body>
+</html>

@@ -425,7 +425,7 @@ class GPUSelfPlayGenerator:
         shadow_validation: bool = False,
         shadow_sample_rate: float = 0.05,
         shadow_threshold: float = 0.001,
-        lps_victory_rounds: int = 2,
+        lps_victory_rounds: int = 3,
         rings_per_player: Optional[int] = None,
     ):
         self.board_size = board_size
@@ -703,7 +703,7 @@ def run_gpu_selfplay(
     shadow_validation: bool = False,
     shadow_sample_rate: float = 0.05,
     shadow_threshold: float = 0.001,
-    lps_victory_rounds: int = 2,
+    lps_victory_rounds: int = 3,
     rings_per_player: Optional[int] = None,
     output_db: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -722,7 +722,7 @@ def run_gpu_selfplay(
         shadow_validation: Enable shadow validation (GPU/CPU parity checking)
         shadow_sample_rate: Fraction of moves to validate (default 5%)
         shadow_threshold: Max divergence rate before error (default 0.1%)
-        lps_victory_rounds: LPS victory threshold (default 2)
+        lps_victory_rounds: LPS victory threshold (default 3)
         rings_per_player: Starting rings per player (None = board default)
         output_db: Optional path to SQLite DB for canonical game storage
 
@@ -917,8 +917,8 @@ def main():
     parser.add_argument(
         "--lps-victory-rounds",
         type=int,
-        default=2,
-        help="LPS victory threshold in consecutive rounds (default: 2)",
+        default=3,
+        help="LPS victory threshold in consecutive rounds (default: 3)",
     )
     parser.add_argument(
         "--rings-per-player",

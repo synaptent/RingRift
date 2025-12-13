@@ -444,7 +444,7 @@ def test_lps_victory_can_be_awarded_at_turn_start_even_if_ring_placement_is_anm(
         lpsCurrentRoundActorMask={},
         lpsExclusivePlayerForCompletedRound=None,
         lpsCurrentRoundFirstPlayer=None,
-        lpsConsecutiveExclusiveRounds=2,
+        lpsConsecutiveExclusiveRounds=3,
         lpsConsecutiveExclusivePlayer=1,
     )
 

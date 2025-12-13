@@ -23,6 +23,7 @@ import { logger } from '../utils/logger';
 import { aiMoveLatencyHistogram } from '../utils/rulesParityMetrics';
 import { getServiceStatusManager } from './ServiceStatusManager';
 import type { PositionEvaluationByPlayer } from '../../shared/types/websocket';
+import { toPythonWireGameState } from './pythonWire';
 
 /**
  * High-level error codes surfaced by the AI service client. These are used
@@ -126,7 +127,7 @@ export enum AIType {
 }
 
 export interface MoveRequest {
-  game_state: GameState;
+  game_state: Record<string, unknown>;
   player_number: number;
   difficulty: number;
   ai_type?: AIType;
@@ -142,7 +143,7 @@ export interface MoveResponse {
 }
 
 export interface EvaluationRequest {
-  game_state: GameState;
+  game_state: Record<string, unknown>;
   player_number: number;
 }
 
@@ -162,7 +163,7 @@ export interface PositionEvaluationApiResponse {
 }
 
 export interface LineRewardChoiceRequestPayload {
-  game_state?: GameState;
+  game_state?: Record<string, unknown>;
   player_number: number;
   difficulty: number;
   ai_type?: AIType;
@@ -179,7 +180,7 @@ export interface RingEliminationChoiceRequestPayload {
   // Optional for now so callers can omit GameState while we
   // progressively adopt full-game-state-aware heuristics on the
   // Python side.
-  game_state?: GameState;
+  game_state?: Record<string, unknown>;
   player_number: number;
   difficulty: number;
   ai_type?: AIType;
@@ -196,7 +197,7 @@ export interface RegionOrderChoiceRequestPayload {
   // Optional for now so callers can omit GameState while we
   // progressively adopt full-game-state-aware heuristics on the
   // Python side.
-  game_state?: GameState;
+  game_state?: Record<string, unknown>;
   player_number: number;
   difficulty: number;
   ai_type?: AIType;
@@ -211,7 +212,7 @@ export interface RegionOrderChoiceResponsePayload {
 
 export interface LineOrderChoiceRequestPayload {
   // Optional GameState for future context-aware heuristics.
-  game_state?: GameState;
+  game_state?: Record<string, unknown>;
   player_number: number;
   difficulty: number;
   ai_type?: AIType;
@@ -226,7 +227,7 @@ export interface LineOrderChoiceResponsePayload {
 
 export interface CaptureDirectionChoiceRequestPayload {
   // Optional GameState for future context-aware heuristics.
-  game_state?: GameState;
+  game_state?: Record<string, unknown>;
   player_number: number;
   difficulty: number;
   ai_type?: AIType;
@@ -390,7 +391,7 @@ export class AIServiceClient {
           const effectiveSeed = seed ?? gameState.rngSeed;
 
           const request: MoveRequest = {
-            game_state: gameState,
+            game_state: toPythonWireGameState(gameState),
             player_number: playerNumber,
             difficulty,
             ...(aiType && { ai_type: aiType }),
@@ -527,7 +528,7 @@ export class AIServiceClient {
 
     try {
       const request: EvaluationRequest = {
-        game_state: gameState,
+        game_state: toPythonWireGameState(gameState),
         player_number: playerNumber,
       };
 
@@ -571,7 +572,7 @@ export class AIServiceClient {
 
     try {
       const request = {
-        game_state: gameState,
+        game_state: toPythonWireGameState(gameState),
       };
 
       const response = await this.client.post<PositionEvaluationApiResponse>(
@@ -630,7 +631,7 @@ export class AIServiceClient {
 
     try {
       const request: LineRewardChoiceRequestPayload = {
-        ...(gameState && { game_state: gameState }),
+        ...(gameState && { game_state: toPythonWireGameState(gameState) }),
         player_number: playerNumber,
         difficulty,
         ...(aiType && { ai_type: aiType }),
@@ -714,7 +715,7 @@ export class AIServiceClient {
 
     try {
       const request: RingEliminationChoiceRequestPayload = {
-        ...(gameState && { game_state: gameState }),
+        ...(gameState && { game_state: toPythonWireGameState(gameState) }),
         player_number: playerNumber,
         difficulty,
         ...(aiType && { ai_type: aiType }),
@@ -798,7 +799,7 @@ export class AIServiceClient {
 
     try {
       const request: RegionOrderChoiceRequestPayload = {
-        ...(gameState && { game_state: gameState }),
+        ...(gameState && { game_state: toPythonWireGameState(gameState) }),
         player_number: playerNumber,
         difficulty,
         ...(aiType && { ai_type: aiType }),
@@ -880,7 +881,7 @@ export class AIServiceClient {
 
     try {
       const request: LineOrderChoiceRequestPayload = {
-        ...(gameState && { game_state: gameState }),
+        ...(gameState && { game_state: toPythonWireGameState(gameState) }),
         player_number: playerNumber,
         difficulty,
         ...(aiType && { ai_type: aiType }),
@@ -964,7 +965,7 @@ export class AIServiceClient {
 
     try {
       const request: CaptureDirectionChoiceRequestPayload = {
-        ...(gameState && { game_state: gameState }),
+        ...(gameState && { game_state: toPythonWireGameState(gameState) }),
         player_number: playerNumber,
         difficulty,
         ...(aiType && { ai_type: aiType }),

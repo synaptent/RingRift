@@ -14,6 +14,7 @@ import type {
   Move,
   RingStack,
   MarkerInfo,
+  Territory,
 } from '../../types/game';
 import { computeProgressSnapshot } from '../core';
 
@@ -32,6 +33,7 @@ export interface SerializedBoardState {
   collapsedSpaces: { [key: string]: number };
   eliminatedRings: { [player: number]: number };
   formedLines?: unknown[];
+  territories?: { [key: string]: Territory };
 }
 
 /**
@@ -120,6 +122,14 @@ export function serializeBoardState(board: BoardState): SerializedBoardState {
     collapsedSpaces[key] = player;
   }
 
+  const territories: { [key: string]: Territory } = {};
+  for (const [key, territory] of board.territories) {
+    territories[key] = {
+      ...territory,
+      spaces: territory.spaces ? territory.spaces.map((pos) => ({ ...pos })) : [],
+    };
+  }
+
   return {
     type: board.type,
     size: board.size,
@@ -128,6 +138,7 @@ export function serializeBoardState(board: BoardState): SerializedBoardState {
     collapsedSpaces,
     eliminatedRings: { ...board.eliminatedRings },
     formedLines: board.formedLines ? [...board.formedLines] : [],
+    territories,
   };
 }
 
@@ -202,6 +213,15 @@ export function deserializeBoardState(data: SerializedBoardState): BoardState {
     collapsedSpaces.set(key, player);
   }
 
+  const territories = new Map<string, Territory>();
+  const territoryEntries = Object.entries(data.territories ?? {});
+  for (const [key, territory] of territoryEntries) {
+    territories.set(key, {
+      ...territory,
+      spaces: territory.spaces ? territory.spaces.map((pos) => ({ ...pos })) : [],
+    });
+  }
+
   return {
     type: data.type as BoardState['type'],
     size: data.size,
@@ -209,7 +229,7 @@ export function deserializeBoardState(data: SerializedBoardState): BoardState {
     markers,
     collapsedSpaces,
     eliminatedRings: { ...data.eliminatedRings },
-    territories: new Map(),
+    territories,
     formedLines: (data.formedLines as BoardState['formedLines']) || [],
   };
 }

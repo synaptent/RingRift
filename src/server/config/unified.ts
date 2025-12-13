@@ -247,6 +247,9 @@ const ConfigSchema = z.object({
         enabled: z.boolean(),
       })
       .optional(),
+    sandboxAi: z.object({
+      enabled: z.boolean(),
+    }),
     httpMoveHarness: z.object({
       /**
        * Master switch for the internal HTTP move harness endpoint
@@ -354,6 +357,9 @@ const preliminaryConfig = {
     },
     analysisMode: {
       enabled: env.ENABLE_ANALYSIS_MODE,
+    },
+    sandboxAi: {
+      enabled: env.ENABLE_SANDBOX_AI_ENDPOINTS,
     },
     httpMoveHarness: {
       enabled: env.ENABLE_HTTP_MOVE_HARNESS,

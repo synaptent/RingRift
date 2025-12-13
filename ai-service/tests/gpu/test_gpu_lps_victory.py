@@ -22,8 +22,12 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_gpu_lps_victory_requires_two_exclusive_rounds() -> None:
-    """RR-CANON-R172: LPS is round-based, not material-only."""
+def test_gpu_lps_victory_requires_exclusive_rounds() -> None:
+    """RR-CANON-R172: LPS is round-based, not material-only.
+
+    Note: This test explicitly sets lps_victory_rounds=2 to test the configurable
+    threshold feature with a shorter game. The canonical default is 3 rounds.
+    """
     device = torch.device("cpu")
     torch.manual_seed(0)
     runner = ParallelGameRunner(
@@ -34,7 +38,7 @@ def test_gpu_lps_victory_requires_two_exclusive_rounds() -> None:
         shadow_validation=False,
         state_validation=False,
         swap_enabled=False,
-        lps_victory_rounds=2,
+        lps_victory_rounds=2,  # Testing custom threshold (default is 3)
     )
     state: BatchGameState = runner.state
 

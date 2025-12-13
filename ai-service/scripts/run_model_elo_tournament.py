@@ -45,6 +45,8 @@ from app.models import (
     BoardState, GameState, Player, TimeControl,
 )
 from app.rules.default_engine import DefaultRulesEngine
+from app.utils.victory_type import derive_victory_type
+from app.training.generate_data import create_initial_state
 
 
 # ============================================
@@ -58,67 +60,30 @@ def play_nn_vs_nn_game(
     num_players: int = 2,
     max_moves: int = 300,
     mcts_simulations: int = 100,
+    save_game_history: bool = True,
 ) -> Dict[str, Any]:
     """Play a single game between two neural network models.
 
-    Returns dict with: winner (model_a, model_b, or draw), game_length, duration_sec
+    Returns dict with: winner (model_a, model_b, or draw), game_length, duration_sec, game_record
+    If save_game_history=True, also returns full game record for training data export.
+    The game_record follows canonical JSONL format suitable for NPZ conversion.
     """
     import time
     import uuid
     from datetime import datetime
     from app.ai.neural_net import NeuralNetAI, clear_model_cache
 
+    # Move history for training data export
+    move_history = []
+
     start_time = time.time()
 
-    # Create game state
-    size = 8 if board_type == BoardType.SQUARE8 else (19 if board_type == BoardType.SQUARE19 else 5)
-    board = BoardState(
-        type=board_type,
-        size=size,
-        stacks={},
-        markers={},
-        collapsedSpaces={},
-        eliminatedRings={},
-    )
+    # Use canonical create_initial_state for proper setup
+    game_state = create_initial_state(board_type=board_type, num_players=num_players)
+    game_state.id = str(uuid.uuid4())
 
-    players = []
-    rings_per_player = 20 if num_players == 2 else (15 if num_players == 3 else 12)
-    for i in range(num_players):
-        players.append(Player(
-            id=f"player{i+1}",
-            username=f"NN_P{i+1}",
-            type="ai",
-            playerNumber=i + 1,
-            isReady=True,
-            timeRemaining=600000,
-            aiDifficulty=10,
-            ringsInHand=rings_per_player,
-            eliminatedRings=0,
-            territorySpaces=0,
-        ))
-
-    game_state = GameState(
-        id=str(uuid.uuid4()),
-        boardType=board_type,
-        board=board,
-        players=players,
-        currentPhase=GamePhase.RING_PLACEMENT,
-        currentPlayer=1,
-        moveHistory=[],
-        timeControl=TimeControl(initialTime=600, increment=5, type="standard"),
-        gameStatus=GameStatus.ACTIVE,
-        createdAt=datetime.now(),
-        lastMoveAt=datetime.now(),
-        isRated=False,
-        maxPlayers=num_players,
-        totalRingsInPlay=0,
-        totalRingsEliminated=0,
-        victoryThreshold=3,
-        territoryVictoryThreshold=10 if num_players == 2 else 8,
-        chainCaptureState=None,
-        mustMoveFromStackKey=None,
-        zobristHash=None,
-    )
+    # Capture initial state snapshot for NPZ export (required for training data)
+    initial_state_snapshot = game_state.model_dump(mode="json") if save_game_history else None
 
     # Create AI instances - alternate between model A and model B
     # Player 1 -> model_a, Player 2 -> model_b
@@ -184,6 +149,25 @@ def play_nn_vs_nn_game(
                 "duration_sec": time.time() - start_time,
             }
 
+        # Record move for training data in canonical format (matching run_random_selfplay.py)
+        if save_game_history:
+            move_record = {
+                'type': move.move_type.value if hasattr(move.move_type, 'value') else str(move.move_type),
+                'player': current_player,
+            }
+            # Add position data (handle both key-based and coordinate-based moves)
+            if hasattr(move, 'to_key') and move.to_key:
+                move_record['to_key'] = move.to_key
+            if hasattr(move, 'to') and move.to:
+                move_record['to'] = {'x': move.to.x, 'y': move.to.y}
+            if hasattr(move, 'from_key') and move.from_key:
+                move_record['from_key'] = move.from_key
+            if hasattr(move, 'from_pos') and move.from_pos:
+                move_record['from'] = {'x': move.from_pos.x, 'y': move.from_pos.y}
+            if hasattr(move, 'ring_index') and move.ring_index is not None:
+                move_record['ring_index'] = move.ring_index
+            move_history.append(move_record)
+
         try:
             game_state = rules_engine.apply_move(game_state, move)
         except Exception as e:
@@ -202,6 +186,46 @@ def play_nn_vs_nn_game(
     duration = time.time() - start_time
     clear_model_cache()
 
+    # Derive victory type for canonical format
+    victory_type, stalemate_tb = derive_victory_type(game_state, max_moves)
+    status = "completed" if game_state.game_status == GameStatus.COMPLETED else str(game_state.game_status.value)
+
+    # Build game record for training data export in canonical format (matching run_random_selfplay.py)
+    game_record = None
+    if save_game_history:
+        game_record = {
+            # === Core game identifiers ===
+            'game_id': game_state.id,
+            'board_type': board_type.value if hasattr(board_type, 'value') else str(board_type),
+            'num_players': num_players,
+            # === Game outcome ===
+            'winner': game_state.winner if game_state.game_status == GameStatus.COMPLETED else None,
+            'move_count': move_count,
+            'total_moves': move_count,  # Alias for compatibility
+            'status': status,
+            'game_status': status,
+            'victory_type': victory_type,
+            'stalemate_tiebreaker': stalemate_tb,
+            'termination_reason': f"status:{status}:{victory_type}",
+            'completed': game_state.game_status == GameStatus.COMPLETED,
+            # === Engine/opponent metadata ===
+            'engine_mode': 'nn_vs_nn_tournament',
+            'opponent_type': 'nn_tournament',
+            'player_types': ['neural_net'] * num_players,
+            'model_a': model_a_path,
+            'model_b': model_b_path,
+            # === Training data (required for NPZ export) ===
+            'moves': move_history,
+            'initial_state': initial_state_snapshot,
+            # === Timing metadata ===
+            'game_time_seconds': duration,
+            'duration_sec': duration,
+            'timestamp': datetime.now().isoformat(),
+            'created_at': datetime.now().isoformat(),
+            # === Source tracking ===
+            'source': 'run_model_elo_tournament.py',
+        }
+
     if game_state.game_status == GameStatus.COMPLETED and game_state.winner is not None:
         # Winner is 1-indexed player number
         winner = "model_a" if game_state.winner == 1 else "model_b"
@@ -209,12 +233,14 @@ def play_nn_vs_nn_game(
             "winner": winner,
             "game_length": move_count,
             "duration_sec": duration,
+            "game_record": game_record,
         }
     else:
         return {
             "winner": "draw",
             "game_length": move_count,
             "duration_sec": duration,
+            "game_record": game_record,
         }
 
 
@@ -226,15 +252,25 @@ def run_model_matchup(
     num_players: int,
     games: int,
     tournament_id: str,
+    save_games_dir: Optional[Path] = None,
 ) -> Dict[str, int]:
-    """Run multiple games between two models and update Elo."""
+    """Run multiple games between two models and update Elo.
+
+    If save_games_dir is provided, games are saved to JSONL for training data.
+    """
     board_type_enum = BoardType.SQUARE8
     if board_type == "square19":
         board_type_enum = BoardType.SQUARE19
-    elif board_type == "hex":
+    elif board_type == "hex" or board_type == "hexagonal":
         board_type_enum = BoardType.HEXAGONAL
 
     results = {"model_a_wins": 0, "model_b_wins": 0, "draws": 0, "errors": 0}
+
+    # Setup game saving directory
+    if save_games_dir is None:
+        save_games_dir = AI_SERVICE_ROOT / "data" / "selfplay" / "elo_tournaments"
+    save_games_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = save_games_dir / f"tournament_{tournament_id}_{board_type}_{num_players}p.jsonl"
 
     for game_num in range(games):
         # Alternate who plays first
@@ -252,7 +288,19 @@ def run_model_matchup(
             num_players=num_players,
             max_moves=300,
             mcts_simulations=50,  # Faster games
+            save_game_history=True,  # Record for training
         )
+
+        # Save game record to JSONL for training data
+        game_record = result.get("game_record")
+        if game_record:
+            game_record["tournament_id"] = tournament_id
+            game_record["game_num"] = game_num
+            try:
+                with open(jsonl_path, "a") as f:
+                    f.write(json.dumps(game_record) + "\n")
+            except Exception as e:
+                print(f"Warning: Failed to save game record: {e}")
 
         # Map back to original model_a/model_b
         winner_id = None
@@ -327,10 +375,10 @@ def init_elo_database(db_path: Path = ELO_DB_PATH) -> sqlite3.Connection:
         )
     """)
 
-    # Elo ratings table - current ratings
+    # Elo ratings table - current ratings (unique per model+board_type+num_players combo)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS elo_ratings (
-            model_id TEXT PRIMARY KEY,
+            model_id TEXT,
             board_type TEXT,
             num_players INTEGER,
             rating REAL DEFAULT 1500.0,
@@ -339,6 +387,7 @@ def init_elo_database(db_path: Path = ELO_DB_PATH) -> sqlite3.Connection:
             losses INTEGER DEFAULT 0,
             draws INTEGER DEFAULT 0,
             last_update REAL,
+            PRIMARY KEY (model_id, board_type, num_players),
             FOREIGN KEY (model_id) REFERENCES models(model_id)
         )
     """)
@@ -431,10 +480,11 @@ def register_models(conn: sqlite3.Connection, models: List[Dict[str, Any]]):
             m["version"], m["created_at"], now, now
         ))
 
-        # Initialize Elo rating if not exists
+        # Initialize Elo rating if not exists (composite key: model_id + board_type + num_players)
         cursor.execute("""
-            INSERT OR IGNORE INTO elo_ratings (model_id, board_type, num_players, rating, games_played, last_update)
+            INSERT INTO elo_ratings (model_id, board_type, num_players, rating, games_played, last_update)
             VALUES (?, ?, ?, 1500.0, 0, ?)
+            ON CONFLICT(model_id, board_type, num_players) DO NOTHING
         """, (m["model_id"], m["board_type"], m["num_players"], now))
 
     conn.commit()
@@ -504,17 +554,23 @@ def update_elo_after_match(
     tournament_id: str = None,
     k_factor: float = 32.0,
 ):
-    """Update Elo ratings after a match."""
+    """Update Elo ratings after a match (using composite key: model_id + board_type + num_players)."""
     cursor = conn.cursor()
 
-    # Get current ratings
-    cursor.execute("SELECT rating, games_played, wins, losses, draws FROM elo_ratings WHERE model_id = ?", (model_a,))
+    # Get current ratings (using composite key for per-config Elo)
+    cursor.execute(
+        "SELECT rating, games_played, wins, losses, draws FROM elo_ratings WHERE model_id = ? AND board_type = ? AND num_players = ?",
+        (model_a, board_type, num_players)
+    )
     row_a = cursor.fetchone()
-    cursor.execute("SELECT rating, games_played, wins, losses, draws FROM elo_ratings WHERE model_id = ?", (model_b,))
+    cursor.execute(
+        "SELECT rating, games_played, wins, losses, draws FROM elo_ratings WHERE model_id = ? AND board_type = ? AND num_players = ?",
+        (model_b, board_type, num_players)
+    )
     row_b = cursor.fetchone()
 
     if not row_a or not row_b:
-        print(f"Warning: Model not found in database: {model_a if not row_a else model_b}")
+        print(f"Warning: Model not found in database for {board_type}/{num_players}p: {model_a if not row_a else model_b}")
         return
 
     rating_a, games_a, wins_a, losses_a, draws_a = row_a
@@ -544,29 +600,29 @@ def update_elo_after_match(
 
     now = time.time()
 
-    # Update database
+    # Update database (using composite key)
     cursor.execute("""
         UPDATE elo_ratings
         SET rating = ?, games_played = games_played + 1, wins = ?, losses = ?, draws = ?, last_update = ?
-        WHERE model_id = ?
-    """, (new_rating_a, wins_a, losses_a, draws_a, now, model_a))
+        WHERE model_id = ? AND board_type = ? AND num_players = ?
+    """, (new_rating_a, wins_a, losses_a, draws_a, now, model_a, board_type, num_players))
 
     cursor.execute("""
         UPDATE elo_ratings
         SET rating = ?, games_played = games_played + 1, wins = ?, losses = ?, draws = ?, last_update = ?
-        WHERE model_id = ?
-    """, (new_rating_b, wins_b, losses_b, draws_b, now, model_b))
+        WHERE model_id = ? AND board_type = ? AND num_players = ?
+    """, (new_rating_b, wins_b, losses_b, draws_b, now, model_b, board_type, num_players))
 
-    # Record rating history
+    # Record rating history (includes board_type/num_players context via tournament_id format)
     cursor.execute("""
         INSERT INTO rating_history (model_id, rating, games_played, timestamp, tournament_id)
         VALUES (?, ?, ?, ?, ?)
-    """, (model_a, new_rating_a, games_a + 1, now, tournament_id))
+    """, (model_a, new_rating_a, games_a + 1, now, f"{tournament_id}_{board_type}_{num_players}p"))
 
     cursor.execute("""
         INSERT INTO rating_history (model_id, rating, games_played, timestamp, tournament_id)
         VALUES (?, ?, ?, ?, ?)
-    """, (model_b, new_rating_b, games_b + 1, now, tournament_id))
+    """, (model_b, new_rating_b, games_b + 1, now, f"{tournament_id}_{board_type}_{num_players}p"))
 
     conn.commit()
 
@@ -591,6 +647,122 @@ def print_leaderboard(leaderboard: List[Dict[str, Any]], title: str = "Elo Leade
     print(f"\nTotal models: {len(leaderboard)}")
 
 
+# All supported board/player configurations for Elo tracking
+ALL_CONFIGS = [
+    ("square8", 2),
+    ("square8", 3),
+    ("square8", 4),
+    ("square19", 2),
+    ("square19", 3),
+    ("square19", 4),
+    ("hexagonal", 2),
+    ("hexagonal", 3),
+    ("hexagonal", 4),
+]
+
+
+def run_all_config_tournaments(args):
+    """Run tournaments for all board/player configurations.
+
+    This ensures there's an Elo ranking for each combination of board type and number of players.
+    """
+    import uuid
+
+    db_path = Path(args.db) if args.db else ELO_DB_PATH
+    conn = init_elo_database(db_path)
+    models_dir = AI_SERVICE_ROOT / "models"
+
+    print(f"\n{'='*80}")
+    print(f" Running Elo Tournaments for All Configurations")
+    print(f"{'='*80}")
+
+    overall_start = time.time()
+    total_games_all = 0
+
+    for board_type, num_players in ALL_CONFIGS:
+        config_label = f"{board_type} {num_players}p"
+        print(f"\n{'='*60}")
+        print(f" Configuration: {config_label}")
+        print(f"{'='*60}")
+
+        # Discover models for this config
+        models = discover_models(models_dir, board_type, num_players)
+        print(f"Discovered {len(models)} models for {config_label}")
+
+        if args.top_n:
+            models = models[:args.top_n]
+            print(f"Using top {args.top_n} most recent models")
+
+        if len(models) < 2:
+            print(f"  Skipping {config_label}: need at least 2 models")
+            continue
+
+        # Register models
+        register_models(conn, models)
+
+        if args.leaderboard_only:
+            leaderboard = get_leaderboard(conn, board_type, num_players)
+            print_leaderboard(leaderboard, f"Elo Leaderboard - {config_label}")
+            continue
+
+        if not args.run:
+            # Just show plan
+            matchups = []
+            for i, m1 in enumerate(models):
+                for m2 in models[i+1:]:
+                    matchups.append((m1, m2))
+            print(f"  Would run {len(matchups) * args.games} games ({len(matchups)} matchups × {args.games} games)")
+            continue
+
+        # Run tournament for this config
+        tournament_id = str(uuid.uuid4())[:8]
+        matchups = []
+        for i, m1 in enumerate(models):
+            for m2 in models[i+1:]:
+                matchups.append((m1, m2))
+
+        print(f"Running tournament {tournament_id}: {len(matchups)} matchups × {args.games} games")
+
+        config_start = time.time()
+        games_completed = 0
+
+        for matchup_idx, (m1, m2) in enumerate(matchups):
+            print(f"  [{matchup_idx + 1}/{len(matchups)}] {m1['model_id'][:30]} vs {m2['model_id'][:30]}", end=" ")
+
+            try:
+                results = run_model_matchup(
+                    conn=conn,
+                    model_a=m1,
+                    model_b=m2,
+                    board_type=board_type,
+                    num_players=num_players,
+                    games=args.games,
+                    tournament_id=tournament_id,
+                )
+                games_completed += args.games
+                print(f"A={results['model_a_wins']} B={results['model_b_wins']} D={results['draws']}")
+            except Exception as e:
+                print(f"ERROR: {e}")
+                continue
+
+        config_elapsed = time.time() - config_start
+        total_games_all += games_completed
+        print(f"  Completed {games_completed} games in {config_elapsed:.1f}s")
+
+        # Show updated leaderboard
+        leaderboard = get_leaderboard(conn, board_type, num_players, limit=10)
+        print_leaderboard(leaderboard, f"Top 10 - {config_label}")
+
+    overall_elapsed = time.time() - overall_start
+    print(f"\n{'='*80}")
+    print(f" All Tournaments Complete")
+    print(f"{'='*80}")
+    print(f"Total games: {total_games_all}")
+    print(f"Total time: {overall_elapsed:.1f}s")
+
+    conn.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run model Elo tournament")
     parser.add_argument("--board", default="square8", help="Board type")
@@ -601,8 +773,14 @@ def main():
     parser.add_argument("--run", action="store_true", help="Actually run games (otherwise just shows plan)")
     parser.add_argument("--mcts-sims", type=int, default=50, help="MCTS simulations per move")
     parser.add_argument("--db", type=str, help="Path to Elo database")
+    parser.add_argument("--all-configs", action="store_true", help="Run tournament for all board/player configurations")
 
     args = parser.parse_args()
+
+    # If --all-configs, loop through all configurations
+    if args.all_configs:
+        run_all_config_tournaments(args)
+        return
 
     db_path = Path(args.db) if args.db else ELO_DB_PATH
     conn = init_elo_database(db_path)

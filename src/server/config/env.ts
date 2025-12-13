@@ -354,6 +354,23 @@ export const EnvSchema = z.object({
     .transform((val) => (val === undefined ? false : val === 'true' || val === '1')),
 
   /**
+   * Enable sandbox AI helper endpoints (e.g. /api/games/sandbox/ai/move).
+   *
+   * These are development/test tools by default but can be enabled in
+   * production-like environments (staging) for QA and sandbox validation.
+   */
+  ENABLE_SANDBOX_AI_ENDPOINTS: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (val === undefined) {
+        return false;
+      }
+      const normalized = val.trim().toLowerCase();
+      return ['1', 'true', 'yes', 'on'].includes(normalized);
+    }),
+
+  /**
    * Enable the internal HTTP move harness endpoint
    * (POST /api/games/:gameId/moves).
    *

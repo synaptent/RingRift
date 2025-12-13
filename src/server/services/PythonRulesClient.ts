@@ -3,6 +3,7 @@ import { GameState, Move } from '../../shared/types/game';
 import { logger } from '../utils/logger';
 import { config } from '../config';
 import { getMetricsService } from './MetricsService';
+import { toPythonWireGameState } from './pythonWire';
 
 export interface RulesEvalResponse {
   valid: boolean;
@@ -49,7 +50,7 @@ export class PythonRulesClient {
   async evaluateMove(state: GameState, move: Move): Promise<RulesEvalResponse> {
     try {
       const response = await this.client.post<RulesEvalResponseWire>('/rules/evaluate_move', {
-        game_state: state,
+        game_state: toPythonWireGameState(state),
         move,
       });
 

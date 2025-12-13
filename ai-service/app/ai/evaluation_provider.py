@@ -377,10 +377,10 @@ class HeuristicEvaluator:
             required_rounds = getattr(
                 game_state,
                 "lps_rounds_required",
-                getattr(game_state, "lpsRoundsRequired", 2),
+                getattr(game_state, "lpsRoundsRequired", 3),
             )
             if not isinstance(required_rounds, int) or required_rounds <= 0:
-                required_rounds = 2
+                required_rounds = 3
 
             if lps_rounds >= required_rounds and required_rounds >= 1:
                 return self.WEIGHT_VICTORY_THRESHOLD_BONUS
