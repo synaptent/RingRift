@@ -2405,6 +2405,9 @@ class NeuralNetAI(BaseAI):
 
         # Track which board type we're initialized for
         self._initialized_board_type: Optional[BoardType] = None
+        # Best-effort metadata for observability.
+        self.loaded_checkpoint_path: Optional[str] = None
+        self.loaded_checkpoint_signature: Optional[tuple[int, int]] = None
 
         # Device detection
         import os
@@ -2467,7 +2470,7 @@ class NeuralNetAI(BaseAI):
         if board_type is not None:
             self._ensure_model_initialized(board_type)
 
-    def _ensure_model_initialized(self, board_type: BoardType) -> None:
+    def _ensure_model_initialized(self, board_type: BoardType, num_players: Optional[int] = None) -> None:
         """Ensure the model is initialized for the given board type.
 
         This method is called lazily when the first game state is processed,
@@ -2493,7 +2496,22 @@ class NeuralNetAI(BaseAI):
         # Update board_size based on board_type
         self.board_size = get_spatial_size_for_board(board_type)
 
+        models_dir = os.path.join(self._base_dir, "models")
+
         model_id = getattr(self.config, "nn_model_id", None)
+        if isinstance(model_id, str) and model_id.startswith("ringrift_best_") and not model_id.endswith(".pth"):
+            import glob
+
+            # Best-model aliases are intended to be stable identifiers that
+            # may not exist on a fresh checkout. If missing, fall back to the
+            # built-in default selection for this board.
+            if not glob.glob(os.path.join(models_dir, f"{model_id}*.pth")):
+                logger.warning(
+                    "nn_model_id alias %s not found under %s; falling back to built-in defaults",
+                    model_id,
+                    models_dir,
+                )
+                model_id = None
         if not model_id:
             # Default model selection.
             #
@@ -2504,7 +2522,6 @@ class NeuralNetAI(BaseAI):
             # "v4"/"v5" here are model-id lineage prefixes (checkpoint families),
             # not architecture class names. See ai-service/docs/MPS_ARCHITECTURE.md.
             def _pick_first_existing_model_id(candidates: list[str]) -> str:
-                models_dir = os.path.join(self._base_dir, "models")
                 for candidate in candidates:
                     # Prefer the exact filename, but allow timestamped variants.
                     for suffix in ("_mps.pth", ".pth"):
@@ -2705,11 +2722,25 @@ class NeuralNetAI(BaseAI):
 
         effective_model_path = chosen_path or model_path
 
+        # Include a lightweight file signature in the cache key so stable
+        # aliases (e.g. ringrift_best_*) can be atomically replaced and picked
+        # up by new games without restarting the service.
+        checkpoint_signature: tuple[int, int] | None = None
+        try:
+            st = os.stat(effective_model_path)
+            checkpoint_signature = (int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))), int(st.st_size))
+        except OSError:
+            checkpoint_signature = None
+
+        self.loaded_checkpoint_path = effective_model_path
+        self.loaded_checkpoint_signature = checkpoint_signature
+
         # Build cache key including the resolved checkpoint path and board_type.
         cache_key = (
             self.architecture_type,
             str(self.device),
             effective_model_path,
+            checkpoint_signature,
             board_type.value if board_type else "unknown",
         )
 

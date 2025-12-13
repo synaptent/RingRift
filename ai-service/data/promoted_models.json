@@ -1,0 +1,18 @@
+{
+  "updated_at": "2025-12-13T18:30:15.514954Z",
+  "models": {
+    "square8_2p": {
+      "path": "promoted/square8_2p_best.pth",
+      "alias_id": "ringrift_best_sq8_2p",
+      "alias_paths": [
+        "/Users/armand/Development/RingRift/ai-service/models/ringrift_best_sq8_2p.pth",
+        "/Users/armand/Development/RingRift/ai-service/models/ringrift_best_sq8_2p_mps.pth",
+        "/Users/armand/Development/RingRift/ai-service/models/ringrift_best_sq8_2p.meta.json"
+      ],
+      "model_id": "ringrift_v4_sq8_2p_20251212_094248",
+      "elo_rating": 1625.7988915487879,
+      "games_played": 45,
+      "promoted_at": "2025-12-13T18:30:15.510133Z"
+    }
+  }
+}

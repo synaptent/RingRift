@@ -159,8 +159,11 @@ BOARD_CONFIGS = [
     {"board": "square8", "players": 3, "priority": 0.3, "min_games": 3000},
     {"board": "square8", "players": 4, "priority": 0.2, "min_games": 2000},
     {"board": "square19", "players": 2, "priority": 0.5, "min_games": 5000},
+    {"board": "square19", "players": 3, "priority": 0.2, "min_games": 2000},
+    {"board": "square19", "players": 4, "priority": 0.1, "min_games": 1000},
     {"board": "hexagonal", "players": 2, "priority": 0.4, "min_games": 4000},
     {"board": "hexagonal", "players": 3, "priority": 0.2, "min_games": 2000},
+    {"board": "hexagonal", "players": 4, "priority": 0.1, "min_games": 1000},
 ]
 
 # Training thresholds
@@ -1332,11 +1335,13 @@ async def run_auto_promotion(state: DaemonState) -> int:
 
     print("[Daemon] Running auto-promotion from Elo leaderboard...")
 
-    # Run the auto-promote script
+    # Publish + sync stable best-model aliases from the Elo leaderboard.
     promote_cmd = [
-        sys.executable, "scripts/auto_promote_best_models.py",
-        "--run",
-        "--min-games", str(AUTO_PROMOTE_MIN_GAMES),
+        sys.executable,
+        "scripts/model_promotion_manager.py",
+        "--full-pipeline",
+        "--min-games",
+        str(AUTO_PROMOTE_MIN_GAMES),
     ]
 
     success, output = run_command(promote_cmd, timeout=300)
@@ -1344,7 +1349,7 @@ async def run_auto_promotion(state: DaemonState) -> int:
     if success:
         # Count promotions from output
         import re
-        promotions_match = re.search(r"Promotions:\s*(\d+)", output)
+        promotions_match = re.search(r"Promoted\\s+(\\d+)\\s+models", output)
         num_promotions = int(promotions_match.group(1)) if promotions_match else 0
 
         state.last_auto_promote_time = current_time
@@ -1401,10 +1406,10 @@ async def daemon_cycle(state: DaemonState) -> bool:
                 if result:
                     print(f"[Daemon] Tournament result: {result}")
 
-        # Phase 4: Periodic cross-model tournament (every 10 cycles)
-        if state.total_cycles % 10 == 0:
+        # Phase 4: Periodic cross-model tournament (every 5 cycles for faster validation)
+        if state.total_cycles % 5 == 0:
             print("[Daemon] Phase 4: Running scheduled cross-model tournament...")
-            games = await run_cross_model_tournament(state, top_n=10, games_per_matchup=4)
+            games = await run_cross_model_tournament(state, top_n=10, games_per_matchup=6)
             print(f"[Daemon] Cross-model tournament completed: {games} games played")
 
         # Phase 5: Auto-promote best Elo models to production (every cycle, but rate-limited)

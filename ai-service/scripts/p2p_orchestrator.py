@@ -104,6 +104,12 @@ HTTP_TOTAL_TIMEOUT = 30       # Total request timeout
 MAX_CONSECUTIVE_FAILURES = 3  # Mark node dead after 3 failures
 RETRY_DEAD_NODE_INTERVAL = 300  # Retry dead nodes every 5 minutes
 
+# Peer bootstrap settings
+# Seed peers are used to import a snapshot of cluster membership (via /relay/peers)
+# so new nodes can join existing clusters without needing every peer preconfigured.
+PEER_BOOTSTRAP_INTERVAL = 60  # seconds between bootstrap refresh attempts
+PEER_BOOTSTRAP_MIN_PEERS = 3  # refresh if we see fewer than this many peers
+
 # LEARNED LESSONS - Stuck job detection
 GPU_IDLE_RESTART_TIMEOUT = 300  # Restart jobs after 5 min of GPU at 0%
 GPU_IDLE_THRESHOLD = 2          # Consider GPU idle if utilization < 2%
@@ -693,6 +699,7 @@ class P2POrchestrator:
         self._git_safe_directory = os.path.abspath(self.ringrift_path)
         self.build_version = self._detect_build_version()
         self.start_time = time.time()
+        self.last_peer_bootstrap = 0.0
 
         # Public endpoint peers should use to reach us. Peers learn our host from
         # the heartbeat socket address, but the port must be self-reported. This
@@ -7481,6 +7488,76 @@ print(json.dumps({{
             pass
         return None
 
+    async def _bootstrap_from_known_peers(self) -> bool:
+        """Import cluster membership from seed peers via `/relay/peers`.
+
+        Heartbeats intentionally return only a single peer's NodeInfo, which
+        makes initial convergence slow when only one seed peer is configured
+        (common for cloud nodes). `/relay/peers` returns a snapshot of the
+        sender's full peer list, allowing new nodes to quickly learn about the
+        leader and other cluster members.
+        """
+        if not self.known_peers:
+            return False
+
+        now = time.time()
+        if now - self.last_peer_bootstrap < PEER_BOOTSTRAP_INTERVAL:
+            return False
+
+        timeout = ClientTimeout(total=15)
+        async with ClientSession(timeout=timeout) as session:
+            for peer_addr in self.known_peers:
+                try:
+                    scheme, host, port = self._parse_peer_address(peer_addr)
+                    scheme = (scheme or "http").lower()
+                    url = f"{scheme}://{host}:{port}/relay/peers"
+                    async with session.get(url, headers=self._auth_headers()) as resp:
+                        if resp.status != 200:
+                            continue
+                        data = await resp.json()
+
+                    if not isinstance(data, dict) or not data.get("success"):
+                        continue
+
+                    peers_data = data.get("peers") or {}
+                    if not isinstance(peers_data, dict):
+                        continue
+
+                    imported = 0
+                    with self.peers_lock:
+                        for node_id, peer_dict in peers_data.items():
+                            if not node_id or node_id == self.node_id:
+                                continue
+                            try:
+                                info = NodeInfo.from_dict(peer_dict)
+                            except Exception:
+                                continue
+                            self.peers[info.node_id] = info
+                            imported += 1
+
+                    leader_id = str(data.get("leader_id") or "").strip()
+                    if leader_id and leader_id != self.node_id:
+                        # If we're currently leader but the seed reports a higher-priority
+                        # leader, step down to converge quickly.
+                        if self.role == NodeRole.LEADER and leader_id > self.node_id:
+                            print(f"[P2P] Bootstrap: stepping down for leader {leader_id}")
+                            self.role = NodeRole.FOLLOWER
+                        self.leader_id = leader_id
+
+                    self.last_peer_bootstrap = now
+                    if imported:
+                        print(f"[P2P] Bootstrap: imported {imported} peers from {host}:{port}")
+
+                    # If we can see an existing leader in the imported snapshot, follow it.
+                    self._maybe_adopt_leader_from_peers()
+                    self._save_state()
+                    return imported > 0
+                except Exception:
+                    continue
+
+        self.last_peer_bootstrap = now
+        return False
+
     async def _send_relay_heartbeat(self, relay_url: str) -> Dict[str, Any]:
         """Send heartbeat via relay endpoint for NAT-blocked nodes.
 
@@ -7577,6 +7654,13 @@ print(json.dumps({{
                                     print(f"[P2P] Adopted leader from heartbeat: {info.node_id}")
                                 self.leader_id = info.node_id
                                 self.role = NodeRole.FOLLOWER
+
+                # If we're only connected to a seed peer (or lost cluster membership),
+                # pull a fresh peer snapshot so leader election converges quickly.
+                with self.peers_lock:
+                    peer_count = len(self.peers)
+                if self.known_peers and (not self.leader_id or peer_count < PEER_BOOTSTRAP_MIN_PEERS):
+                    await self._bootstrap_from_known_peers()
 
                 # Check for dead peers
                 self._check_dead_peers()
@@ -8599,6 +8683,13 @@ print(json.dumps({{
         # Add Vast.ai IP update loop (if VAST_API_KEY is set)
         if HAS_DYNAMIC_REGISTRY:
             tasks.append(asyncio.create_task(self._vast_ip_update_loop()))
+
+        # Best-effort bootstrap from seed peers before running elections. This
+        # helps newly started cloud nodes quickly learn about the full cluster.
+        try:
+            await self._bootstrap_from_known_peers()
+        except Exception:
+            pass
 
         # If no leader known, start election after short delay
         await asyncio.sleep(5)

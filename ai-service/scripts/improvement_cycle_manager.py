@@ -1220,6 +1220,133 @@ def restart_process_if_stuck(
     return False
 
 
+# GPU vs CPU expected rates
+GPU_CMAES_GAMES_PER_HOUR = 4000.0  # ~1.1 games/sec * 3600
+CPU_CMAES_GAMES_PER_HOUR = 15.0    # ~0.004 games/sec * 3600
+
+
+def run_health_check(
+    training_log: Optional[str] = None,
+    cmaes_log: Optional[str] = None,
+    use_gpu_rates: bool = True,
+    host: Optional[str] = None,
+) -> Dict[str, ProcessHealth]:
+    """Run health checks on all monitored processes.
+
+    Args:
+        training_log: Path to training log file
+        cmaes_log: Path to CMA-ES log file
+        use_gpu_rates: Use GPU-expected rates (much higher) for CMA-ES
+        host: SSH host for remote processes
+
+    Returns:
+        Dict of process name to health status
+    """
+    results = {}
+
+    if training_log:
+        results["training"] = check_training_process_health(training_log)
+
+    if cmaes_log:
+        expected_rate = GPU_CMAES_GAMES_PER_HOUR if use_gpu_rates else CPU_CMAES_GAMES_PER_HOUR
+        results["cmaes"] = check_cmaes_process_health(cmaes_log, expected_rate)
+
+    return results
+
+
+def format_health_report(health_results: Dict[str, ProcessHealth]) -> str:
+    """Format health check results as a human-readable report."""
+    lines = ["=" * 60, "HEALTH CHECK REPORT", f"Time: {datetime.now().isoformat()}", "=" * 60, ""]
+
+    for name, health in health_results.items():
+        status_emoji = {
+            "healthy": "✓",
+            "stale": "⚠",
+            "slow": "⚠",
+            "stuck": "✗"
+        }.get(health.status, "?")
+
+        lines.append(f"{status_emoji} {name.upper()}: {health.status}")
+        lines.append(f"   Log file: {health.log_file or 'N/A'}")
+        if health.log_mtime:
+            age_sec = time.time() - health.log_mtime
+            lines.append(f"   Log age: {age_sec:.0f}s ({age_sec/60:.1f} min)")
+        lines.append(f"   Progress rate: {health.progress_rate:.1f}/hr (expected: {health.expected_rate:.1f}/hr)")
+        lines.append(f"   Rate ratio: {health.progress_rate / health.expected_rate * 100:.1f}%")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def run_health_monitor_loop(
+    training_log: Optional[str] = None,
+    cmaes_log: Optional[str] = None,
+    check_interval: int = 120,
+    use_gpu_rates: bool = True,
+    host: Optional[str] = None,
+    auto_restart: bool = False,
+) -> None:
+    """Run continuous health monitoring loop.
+
+    Args:
+        training_log: Path to training log file
+        cmaes_log: Path to CMA-ES log file
+        check_interval: Seconds between health checks
+        use_gpu_rates: Expect GPU-level performance for CMA-ES
+        host: SSH host for remote processes
+        auto_restart: Whether to automatically restart stuck processes
+    """
+    print(f"\n{'#' * 60}")
+    print("HEALTH MONITOR STARTED")
+    print(f"{'#' * 60}")
+    print(f"Check interval: {check_interval}s")
+    print(f"Training log: {training_log or 'Not monitored'}")
+    print(f"CMA-ES log: {cmaes_log or 'Not monitored'}")
+    print(f"GPU rates: {use_gpu_rates}")
+    print(f"Auto-restart: {auto_restart}")
+    print(f"Host: {host or 'local'}")
+    print()
+
+    consecutive_failures = {"training": 0, "cmaes": 0}
+
+    while True:
+        try:
+            results = run_health_check(
+                training_log=training_log,
+                cmaes_log=cmaes_log,
+                use_gpu_rates=use_gpu_rates,
+                host=host,
+            )
+
+            report = format_health_report(results)
+            print(report)
+
+            # Track consecutive failures and auto-restart
+            for name, health in results.items():
+                if health.status in ("stuck", "stale"):
+                    consecutive_failures[name] += 1
+                    print(f"[HealthMonitor] {name} unhealthy ({consecutive_failures[name]} consecutive)")
+
+                    if auto_restart and consecutive_failures[name] >= 3:
+                        print(f"[HealthMonitor] Auto-restart triggered for {name}")
+                        if name == "cmaes":
+                            killed = cleanup_cmaes_processes(host)
+                            print(f"[HealthMonitor] Killed {killed} CMA-ES processes")
+                        consecutive_failures[name] = 0
+                else:
+                    consecutive_failures[name] = 0
+
+            print(f"[HealthMonitor] Next check in {check_interval}s...\n")
+            time.sleep(check_interval)
+
+        except KeyboardInterrupt:
+            print("\n[HealthMonitor] Interrupted, stopping...")
+            break
+        except Exception as e:
+            print(f"[HealthMonitor] Error: {e}")
+            time.sleep(check_interval)
+
+
 # =============================================================================
 # CLI Interface
 # =============================================================================
@@ -1238,11 +1365,52 @@ def main():
     parser.add_argument("--batch", type=int, default=0,
                         help="Get batch of diverse configs")
 
+    # Health monitoring arguments
+    parser.add_argument("--monitor", action="store_true",
+                        help="Run health monitoring loop")
+    parser.add_argument("--health-check", action="store_true",
+                        help="Run single health check")
+    parser.add_argument("--training-log", type=str, default=None,
+                        help="Path to training log file for health monitoring")
+    parser.add_argument("--cmaes-log", type=str, default=None,
+                        help="Path to CMA-ES log file for health monitoring")
+    parser.add_argument("--check-interval", type=int, default=120,
+                        help="Seconds between health checks (default: 120)")
+    parser.add_argument("--cpu-mode", action="store_true",
+                        help="Use CPU-expected rates for CMA-ES (slower)")
+    parser.add_argument("--host", type=str, default=None,
+                        help="SSH host for remote health checks")
+    parser.add_argument("--auto-restart", action="store_true",
+                        help="Automatically restart stuck processes")
+
     args = parser.parse_args()
 
     ai_service_path = Path(__file__).resolve().parents[1]
     ringrift_path = ai_service_path.parent
 
+    # Health monitoring commands (don't need manager)
+    if args.monitor:
+        run_health_monitor_loop(
+            training_log=args.training_log,
+            cmaes_log=args.cmaes_log,
+            check_interval=args.check_interval,
+            use_gpu_rates=not args.cpu_mode,
+            host=args.host,
+            auto_restart=args.auto_restart,
+        )
+        return
+
+    if args.health_check:
+        results = run_health_check(
+            training_log=args.training_log,
+            cmaes_log=args.cmaes_log,
+            use_gpu_rates=not args.cpu_mode,
+            host=args.host,
+        )
+        print(format_health_report(results))
+        return
+
+    # Manager-based commands
     manager = ImprovementCycleManager(
         db_path=ai_service_path / args.db,
         ringrift_path=ringrift_path,

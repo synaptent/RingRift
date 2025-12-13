@@ -303,6 +303,9 @@ def run_cmaes_iteration(
     no_record: bool = False,
     sigma: float = 0.5,
     inject_profiles: Optional[List[str]] = None,
+    # GPU acceleration options
+    gpu: bool = False,
+    gpu_batch_size: int = 128,
     # Distributed mode options
     distributed: bool = False,
     workers: Optional[str] = None,
@@ -356,6 +359,11 @@ def run_cmaes_iteration(
 
     if no_record:
         cmd.append("--no-record")
+
+    # GPU acceleration flags
+    if gpu:
+        cmd.append("--gpu")
+        cmd.extend(["--gpu-batch-size", str(gpu_batch_size)])
 
     # Only inject profiles on the first iteration to seed initial population
     if inject_profiles and iteration == 1:
@@ -497,6 +505,9 @@ def run_iterative_pipeline(
     no_record: bool = False,
     sigma: float = 0.5,
     inject_profiles: Optional[List[str]] = None,
+    # GPU acceleration options
+    gpu: bool = False,
+    gpu_batch_size: int = 128,
     # Distributed mode options
     distributed: bool = False,
     workers: Optional[str] = None,
@@ -549,6 +560,10 @@ def run_iterative_pipeline(
     print(f"Plateau detection: {plateau_generations} generations")
     print(f"State pool: {state_pool_id}")
     print(f"Output: {output_dir}")
+    if gpu:
+        print(f"GPU acceleration: ENABLED (batch_size={gpu_batch_size})")
+    else:
+        print(f"GPU acceleration: disabled (CPU mode)")
     if distributed:
         print(f"Distributed mode: ENABLED")
         if workers:
@@ -582,6 +597,9 @@ def run_iterative_pipeline(
             no_record=no_record,
             sigma=sigma,
             inject_profiles=inject_profiles,
+            # GPU acceleration
+            gpu=gpu,
+            gpu_batch_size=gpu_batch_size,
             # Distributed mode
             distributed=distributed,
             workers=workers,
@@ -804,6 +822,34 @@ def main() -> None:
         ),
     )
 
+    # GPU acceleration arguments
+    parser.add_argument(
+        "--gpu",
+        action="store_true",
+        help=(
+            "Enable GPU-accelerated game evaluation. Uses ParallelGameRunner for "
+            "batched CUDA evaluation with ~400x speedup over CPU. Requires CUDA. "
+            "Enabled by default when CUDA is available."
+        ),
+    )
+    parser.add_argument(
+        "--gpu-batch-size",
+        type=int,
+        default=128,
+        help="Batch size for GPU game evaluation (default: 128)",
+    )
+    parser.add_argument(
+        "--auto-gpu",
+        action="store_true",
+        default=True,
+        help="Automatically enable GPU if CUDA is available (default: True)",
+    )
+    parser.add_argument(
+        "--no-auto-gpu",
+        action="store_true",
+        help="Disable automatic GPU detection; only use GPU if --gpu is specified",
+    )
+
     # Distributed mode arguments
     parser.add_argument(
         "--distributed",
@@ -922,6 +968,17 @@ def main() -> None:
     if args.inject_profiles:
         inject_profiles_list = [p.strip() for p in args.inject_profiles.split(",")]
 
+    # Determine GPU mode: auto-detect CUDA unless --no-auto-gpu specified
+    use_gpu = args.gpu
+    if not use_gpu and args.auto_gpu and not args.no_auto_gpu:
+        try:
+            import torch
+            if torch.cuda.is_available():
+                use_gpu = True
+                print(f"[Auto-GPU] CUDA available ({torch.cuda.get_device_name(0)}), enabling GPU acceleration")
+        except ImportError:
+            print("[Auto-GPU] PyTorch not available, using CPU mode")
+
     run_iterative_pipeline(
         board=args.board,
         num_players=args.num_players,
@@ -940,6 +997,9 @@ def main() -> None:
         no_record=args.no_record,
         sigma=args.sigma,
         inject_profiles=inject_profiles_list,
+        # GPU acceleration
+        gpu=use_gpu,
+        gpu_batch_size=args.gpu_batch_size,
         # Distributed mode
         distributed=args.distributed,
         workers=args.workers,

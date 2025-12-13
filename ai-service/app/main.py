@@ -218,6 +218,9 @@ class MoveResponse(BaseModel):
     thinking_time_ms: int
     ai_type: str
     difficulty: int
+    # Optional model observability fields (backward compatible for TS clients).
+    nn_model_id: Optional[str] = None
+    nn_checkpoint: Optional[str] = None
 
 
 class EvaluationRequest(BaseModel):
@@ -499,12 +502,23 @@ async def get_ai_move(request: MoveRequest):
             evaluation,
         )
 
+        nn_checkpoint: Optional[str] = None
+        try:
+            neural_net = getattr(ai, "neural_net", None)
+            path = getattr(neural_net, "loaded_checkpoint_path", None) if neural_net is not None else None
+            if path:
+                nn_checkpoint = os.path.basename(str(path))
+        except Exception:
+            nn_checkpoint = None
+
         return MoveResponse(
             move=move,
             evaluation=evaluation,
             thinking_time_ms=thinking_time,
             ai_type=ai_type.value,
             difficulty=request.difficulty,
+            nn_model_id=nn_model_id,
+            nn_checkpoint=nn_checkpoint,
         )
 
     except Exception as e:

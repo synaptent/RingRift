@@ -290,8 +290,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--max-moves",
         type=int,
-        default=300,
-        help="Max moves per game before draw (default: 300).",
+        default=10000,
+        help="Max moves per game before timeout tie-break (default: 10000).",
     )
     parser.add_argument(
         "--wilson-confidence",

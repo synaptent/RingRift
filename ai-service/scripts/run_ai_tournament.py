@@ -89,12 +89,56 @@ def create_game_state(board_type_str: str, p1_config: Dict, p2_config: Dict) -> 
     )
 
 
-def run_game(p1_ai, p2_ai, board_type: str, max_moves: int = 300) -> Tuple[int, GameState, List[Dict[str, Any]], int, Dict[str, Any]]:
+def run_game(p1_ai, p2_ai, board_type: str, max_moves: int = 10000) -> Tuple[int, GameState, List[Dict[str, Any]], int, Dict[str, Any]]:
     """
     Run a single game between two AI instances.
     Returns tuple of (winner, final_game_state, move_history, move_count, initial_state_json).
-    Winner is 1 or 2, or 0 for draw/timeout.
+    Winner is 1 or 2; timeouts are resolved via deterministic tie-break.
     """
+    def _timeout_tiebreak_winner(final_state: GameState) -> int:
+        """Deterministically select a winner for evaluation-only max-move cutoffs."""
+        players = getattr(final_state, "players", None) or []
+        if not players:
+            return 1
+
+        marker_counts: Dict[int, int] = {int(p.player_number): 0 for p in players}
+        try:
+            for marker in final_state.board.markers.values():
+                owner = int(marker.player)
+                marker_counts[owner] = marker_counts.get(owner, 0) + 1
+        except Exception:
+            pass
+
+        last_actor = None
+        try:
+            last_actor = final_state.move_history[-1].player if final_state.move_history else None
+        except Exception:
+            last_actor = None
+
+        best_player: Optional[int] = None
+        best_key: Optional[tuple] = None
+        for idx, player in enumerate(players):
+            player_num = getattr(player, "player_number", None)
+            if player_num is None:
+                player_num = idx + 1
+            pid = int(player_num)
+            try:
+                eliminated = int(getattr(player, "eliminated_rings", 0) or 0)
+            except Exception:
+                eliminated = 0
+            try:
+                territory = int(getattr(player, "territory_spaces", 0) or 0)
+            except Exception:
+                territory = 0
+            markers = int(marker_counts.get(pid, 0))
+            last = 1 if last_actor == pid else 0
+
+            key = (territory, eliminated, markers, last, -pid)
+            if best_key is None or key > best_key:
+                best_key = key
+                best_player = pid
+
+        return int(best_player or 1)
     # Create fresh game state
     p1_config = {"type": p1_ai.__class__.__name__.replace("AI", ""), "difficulty": p1_ai.config.difficulty}
     p2_config = {"type": p2_ai.__class__.__name__.replace("AI", ""), "difficulty": p2_ai.config.difficulty}
@@ -161,10 +205,11 @@ def run_game(p1_ai, p2_ai, board_type: str, max_moves: int = 300) -> Tuple[int, 
         move_count += 1
 
     if game_state.game_status == GameStatus.ACTIVE:
-        print("Max moves reached. Draw.")
-        return (0, game_state, moves_played, move_count, initial_state_json)
+        winner = _timeout_tiebreak_winner(game_state)
+        print(f"Max moves reached (timeout). Tiebreak winner: Player {winner}")
+        return (winner, game_state, moves_played, move_count, initial_state_json)
 
-    winner = game_state.winner if game_state.winner is not None else 0
+    winner = game_state.winner if game_state.winner is not None else _timeout_tiebreak_winner(game_state)
     print(f"Game Over. Winner: Player {winner}")
     return (winner, game_state, moves_played, move_count, initial_state_json)
 
@@ -178,7 +223,7 @@ def main():
     parser.add_argument("--board", type=str, default="Square8", choices=BOARD_TYPES.keys(), help="Board Type")
     parser.add_argument("--games", type=int, default=10, help="Number of games to play")
     parser.add_argument("--output-dir", type=str, default=None, help="Output dir for games.jsonl (optional)")
-    parser.add_argument("--max-moves", type=int, default=300, help="Max moves per game before draw")
+    parser.add_argument("--max-moves", type=int, default=10000, help="Max moves per game before timeout tie-break")
 
     args = parser.parse_args()
 

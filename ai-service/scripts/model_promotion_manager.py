@@ -2,10 +2,10 @@
 """Model Promotion Manager - Manages promoted model symlinks and cluster-wide deployment.
 
 This script provides:
-1. Symlink management: Creates/updates symlinks like `square8_2p_best.pth`
-2. Config generation: Updates `promoted_models.json` for sandbox/backend consumption
-3. Cluster sync: Triggers model sync across all cluster nodes via P2P orchestrator
-4. Webhook notifications: Notifies external systems of promotions
+1. Stable alias publishing: Creates/updates aliases like `ringrift_best_sq8_2p.pth`
+2. Symlink management: Optionally maintains `models/promoted/*_best.pth` links
+3. Cluster sync: Rsyncs published aliases to all cluster nodes
+4. Optional sandbox config emission (opt-in)
 
 Usage:
     # Update symlinks and config for all promoted models
@@ -30,6 +30,8 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
+import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -51,9 +53,6 @@ PROMOTION_LOG_PATH = AI_SERVICE_ROOT / "data" / "model_promotion_history.json"
 # Sandbox config path (TypeScript side)
 SANDBOX_CONFIG_PATH = PROJECT_ROOT / "src" / "shared" / "config" / "ai_models.json"
 
-# P2P Orchestrator endpoint for cluster sync
-P2P_ORCHESTRATOR_URL = os.environ.get("P2P_ORCHESTRATOR_URL", "http://localhost:8770")
-
 # All board/player configurations
 ALL_CONFIGS = [
     ("square8", 2),
@@ -62,6 +61,12 @@ ALL_CONFIGS = [
     ("square19", 2),
     ("hexagonal", 2),
 ]
+
+BOARD_ALIAS_TOKENS = {
+    "square8": "sq8",
+    "square19": "sq19",
+    "hexagonal": "hex",
+}
 
 
 @dataclass
@@ -75,6 +80,29 @@ class PromotedModel:
     games_played: int
     promoted_at: str
     symlink_name: str  # e.g., "square8_2p_best.pth"
+    alias_id: str  # e.g., "ringrift_best_sq8_2p"
+    alias_paths: List[str]  # absolute file paths under ai-service/models
+
+
+def best_alias_id(board_type: str, num_players: int) -> str:
+    token = BOARD_ALIAS_TOKENS.get(board_type)
+    if not token:
+        raise ValueError(f"Unsupported board_type for alias: {board_type!r}")
+    return f"ringrift_best_{token}_{num_players}p"
+
+
+def _atomic_copy(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_suffix(dst.suffix + f".tmp_{uuid.uuid4().hex}")
+    shutil.copy2(src, tmp)
+    os.replace(tmp, dst)
+
+
+def _write_json_atomic(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + f".tmp_{uuid.uuid4().hex}")
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    os.replace(tmp, path)
 
 
 def get_best_model_from_elo(board_type: str, num_players: int) -> Optional[Dict[str, Any]]:
@@ -114,22 +142,69 @@ def get_best_model_from_elo(board_type: str, num_players: int) -> Optional[Dict[
 
 def find_model_file(model_id: str) -> Optional[Path]:
     """Find the actual model file for a given model ID."""
-    # Model ID might be a filename or a partial name
-    candidates = [
-        MODELS_DIR / model_id,
+    # Prefer exact filenames, then fall back to best-effort prefix matches.
+    candidates: List[Path] = [
+        MODELS_DIR / f"{model_id}_mps.pth",
         MODELS_DIR / f"{model_id}.pth",
+        MODELS_DIR / model_id,
     ]
 
-    # Also search for files containing the model_id
-    for path in MODELS_DIR.glob("*.pth"):
-        if model_id in path.name:
-            candidates.append(path)
+    matches = sorted(MODELS_DIR.glob(f"{model_id}_*.pth"), key=lambda p: p.stat().st_mtime)
+    candidates.extend(reversed(matches[-25:]))  # newest-first, cap for speed
 
     for candidate in candidates:
-        if candidate.exists() and candidate.is_file():
-            return candidate
+        try:
+            if candidate.exists() and candidate.is_file() and candidate.stat().st_size > 0:
+                return candidate
+        except OSError:
+            continue
 
     return None
+
+
+def publish_best_alias(
+    *,
+    board_type: str,
+    num_players: int,
+    best_model_path: Path,
+    best_model_id: str,
+    elo_rating: float,
+    games_played: int,
+    verbose: bool,
+) -> List[Path]:
+    alias = best_alias_id(board_type, num_players)
+    published_at = datetime.utcnow().isoformat() + "Z"
+
+    # Prefer an explicit _mps variant for the MPS alias if present.
+    mps_src = MODELS_DIR / f"{best_model_id}_mps.pth"
+    if not (mps_src.exists() and mps_src.is_file() and mps_src.stat().st_size > 0):
+        mps_src = best_model_path
+
+    cpu_dst = MODELS_DIR / f"{alias}.pth"
+    mps_dst = MODELS_DIR / f"{alias}_mps.pth"
+    meta_dst = MODELS_DIR / f"{alias}.meta.json"
+
+    _atomic_copy(best_model_path, cpu_dst)
+    _atomic_copy(mps_src, mps_dst)
+    _write_json_atomic(
+        meta_dst,
+        {
+            "alias_id": alias,
+            "board_type": board_type,
+            "num_players": int(num_players),
+            "source_model_id": best_model_id,
+            "source_checkpoint": str(best_model_path),
+            "source_checkpoint_mps": str(mps_src),
+            "elo_rating": float(elo_rating),
+            "games_played": int(games_played),
+            "published_at": published_at,
+        },
+    )
+
+    if verbose:
+        print(f"[model_promotion] Published alias {alias} -> {best_model_path.name}")
+
+    return [cpu_dst, mps_dst, meta_dst]
 
 
 def create_symlink(model_path: Path, symlink_name: str) -> bool:
@@ -159,6 +234,8 @@ def update_promoted_config(promoted_models: List[PromotedModel]) -> bool:
         "models": {
             f"{m.board_type}_{m.num_players}p": {
                 "path": f"promoted/{m.symlink_name}",
+                "alias_id": m.alias_id,
+                "alias_paths": m.alias_paths,
                 "model_id": m.model_id,
                 "elo_rating": m.elo_rating,
                 "games_played": m.games_played,
@@ -186,7 +263,7 @@ def update_sandbox_config(promoted_models: List[PromotedModel]) -> bool:
         "updated_at": datetime.utcnow().isoformat() + "Z",
         "models": {
             f"{m.board_type}_{m.num_players}p": {
-                "path": f"ai-service/models/promoted/{m.symlink_name}",
+                "path": f"ai-service/models/{m.alias_id}.pth",
                 "elo_rating": m.elo_rating,
             }
             for m in promoted_models
@@ -224,37 +301,14 @@ def log_promotion(promoted_model: PromotedModel) -> None:
         print(f"[model_promotion] Warning: Could not log promotion: {e}")
 
 
-def sync_to_cluster(verbose: bool = True) -> bool:
-    """Trigger cluster-wide model sync via P2P orchestrator."""
-    try:
-        import requests
-
-        url = f"{P2P_ORCHESTRATOR_URL}/api/sync_models"
-        response = requests.post(url, json={
-            "action": "sync_promoted_models",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        }, timeout=30)
-
-        if response.status_code == 200:
-            if verbose:
-                print(f"[model_promotion] Cluster sync triggered successfully")
-            return True
-        else:
-            if verbose:
-                print(f"[model_promotion] Cluster sync failed: {response.status_code}")
-            return False
-    except ImportError:
-        print("[model_promotion] requests not installed, using SSH-based sync")
-        return sync_to_cluster_ssh(verbose)
-    except Exception as e:
-        if verbose:
-            print(f"[model_promotion] P2P sync failed, falling back to SSH: {e}")
-        return sync_to_cluster_ssh(verbose)
-
-
-def sync_to_cluster_ssh(verbose: bool = True) -> bool:
-    """Sync models to cluster nodes via SSH (fallback method)."""
-    # Read cluster hosts from config
+def sync_to_cluster_ssh(
+    promoted_models: List[PromotedModel],
+    *,
+    verbose: bool = True,
+    restart_p2p: bool = False,
+) -> bool:
+    """Sync published best-model aliases to cluster nodes via SSH+rsync."""
+    # Read cluster hosts from config (gitignored, local).
     hosts_file = AI_SERVICE_ROOT / "config" / "distributed_hosts.yaml"
     if not hosts_file.exists():
         if verbose:
@@ -268,39 +322,119 @@ def sync_to_cluster_ssh(verbose: bool = True) -> bool:
 
         hosts = config.get("hosts", {})
         success_count = 0
+        files: List[Path] = []
+        for m in promoted_models:
+            for raw in m.alias_paths:
+                p = Path(raw)
+                if p.exists() and p.is_file() and p.stat().st_size > 0:
+                    files.append(p)
+
+        # De-duplicate by resolved path.
+        uniq: List[Path] = []
+        seen: set[Path] = set()
+        for p in files:
+            rp = p.resolve()
+            if rp in seen:
+                continue
+            seen.add(rp)
+            uniq.append(rp)
+        files = uniq
+
+        if not files:
+            if verbose:
+                print("[model_promotion] No published alias files found to sync")
+            return False
 
         for host_name, host_config in hosts.items():
             ssh_host = host_config.get("ssh_host")
             ssh_user = host_config.get("ssh_user", "root")
             ssh_port = host_config.get("ssh_port", 22)
+            ssh_key = host_config.get("ssh_key")
             ringrift_path = host_config.get("ringrift_path", "~/ringrift")
+            status = host_config.get("status", "ready")
 
             if not ssh_host:
                 continue
+            if status != "ready":
+                continue
+
+            # Normalize ringrift_path: allow configs that point at .../ai-service.
+            ringrift_path_str = str(ringrift_path).rstrip("/")
+            if ringrift_path_str.endswith("/ai-service"):
+                ringrift_path_str = ringrift_path_str[: -len("/ai-service")]
+            remote_models_dir = f"{ringrift_path_str}/ai-service/models"
 
             # Build SSH command
             ssh_cmd = ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
             if ssh_port != 22:
                 ssh_cmd.extend(["-p", str(ssh_port)])
+            if ssh_key:
+                ssh_cmd.extend(["-i", os.path.expanduser(str(ssh_key))])
             ssh_cmd.append(f"{ssh_user}@{ssh_host}")
 
-            # Git pull to update models
-            pull_cmd = f"cd {ringrift_path} && git pull origin main --quiet 2>/dev/null"
+            # Ensure remote dir exists.
+            mkdir_cmd = f"mkdir -p {remote_models_dir}"
 
             try:
-                result = subprocess.run(
-                    ssh_cmd + [pull_cmd],
+                mkdir_res = subprocess.run(
+                    ssh_cmd + [mkdir_cmd],
                     capture_output=True,
-                    timeout=60,
+                    timeout=30,
                     text=True,
                 )
-                if result.returncode == 0:
+                if mkdir_res.returncode != 0:
                     if verbose:
-                        print(f"[model_promotion] Synced: {host_name}")
-                    success_count += 1
-                else:
+                        print(f"[model_promotion] Failed to mkdir on {host_name}: {mkdir_res.stderr[:200]}")
+                    continue
+
+                ssh_opts = ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
+                if ssh_port != 22:
+                    ssh_opts.extend(["-p", str(ssh_port)])
+                if ssh_key:
+                    ssh_opts.extend(["-i", os.path.expanduser(str(ssh_key))])
+
+                rsync_cmd = [
+                    "rsync",
+                    "-az",
+                    "--timeout=120",
+                    "-e",
+                    "ssh " + " ".join(ssh_opts),
+                    *[str(p) for p in files],
+                    f"{ssh_user}@{ssh_host}:{remote_models_dir}/",
+                ]
+                rsync_res = subprocess.run(
+                    rsync_cmd,
+                    capture_output=True,
+                    timeout=3600,
+                    text=True,
+                )
+                if rsync_res.returncode != 0:
                     if verbose:
-                        print(f"[model_promotion] Failed to sync {host_name}: {result.stderr}")
+                        print(f"[model_promotion] rsync failed for {host_name}: {rsync_res.stderr[:200]}")
+                    continue
+
+                if restart_p2p:
+                    # Best-effort restart of the P2P orchestrator (if installed as systemd or launchd).
+                    restart_cmd = (
+                        "if command -v systemctl >/dev/null 2>&1; then "
+                        "sudo systemctl restart ringrift-p2p.service ringrift-resilience.service >/dev/null 2>&1 || true; "
+                        "sudo systemctl restart ringrift-p2p-orchestrator.service >/dev/null 2>&1 || true; "
+                        "fi; "
+                        "if command -v launchctl >/dev/null 2>&1; then "
+                        "launchctl kickstart -k gui/$(id -u)/com.ringrift.p2p-orchestrator >/dev/null 2>&1 || true; "
+                        "launchctl kickstart -k system/com.ringrift.p2p-orchestrator >/dev/null 2>&1 || true; "
+                        "fi"
+                    )
+                    subprocess.run(
+                        ssh_cmd + [restart_cmd],
+                        capture_output=True,
+                        timeout=60,
+                        text=True,
+                    )
+
+                if verbose:
+                    print(f"[model_promotion] Synced aliases to: {host_name}")
+                success_count += 1
             except subprocess.TimeoutExpired:
                 if verbose:
                     print(f"[model_promotion] Timeout syncing {host_name}")
@@ -317,8 +451,13 @@ def sync_to_cluster_ssh(verbose: bool = True) -> bool:
         return False
 
 
-def update_all_promotions(min_games: int = 20, verbose: bool = True) -> List[PromotedModel]:
-    """Update symlinks and config for all board/player configurations."""
+def update_all_promotions(
+    min_games: int = 20,
+    *,
+    verbose: bool = True,
+    update_sandbox: bool = False,
+) -> List[PromotedModel]:
+    """Publish best-model aliases (and optional symlinks/config) for all configs."""
     promoted_models = []
 
     for board_type, num_players in ALL_CONFIGS:
@@ -342,6 +481,17 @@ def update_all_promotions(min_games: int = 20, verbose: bool = True) -> List[Pro
                 print(f"  Model file not found: {best['model_id']}")
             continue
 
+        alias_id = best_alias_id(board_type, int(num_players))
+        alias_paths = publish_best_alias(
+            board_type=board_type,
+            num_players=int(num_players),
+            best_model_path=model_path,
+            best_model_id=best["model_id"],
+            elo_rating=best["elo_rating"],
+            games_played=best["games_played"],
+            verbose=verbose,
+        )
+
         symlink_name = f"{board_type}_{num_players}p_best.pth"
 
         if create_symlink(model_path, symlink_name):
@@ -354,6 +504,8 @@ def update_all_promotions(min_games: int = 20, verbose: bool = True) -> List[Pro
                 games_played=best["games_played"],
                 promoted_at=datetime.utcnow().isoformat() + "Z",
                 symlink_name=symlink_name,
+                alias_id=alias_id,
+                alias_paths=[str(p) for p in alias_paths],
             )
             promoted_models.append(promoted)
             log_promotion(promoted)
@@ -363,7 +515,8 @@ def update_all_promotions(min_games: int = 20, verbose: bool = True) -> List[Pro
 
     if promoted_models:
         update_promoted_config(promoted_models)
-        update_sandbox_config(promoted_models)
+        if update_sandbox:
+            update_sandbox_config(promoted_models)
 
     return promoted_models
 
@@ -371,6 +524,8 @@ def update_all_promotions(min_games: int = 20, verbose: bool = True) -> List[Pro
 def run_full_pipeline(
     min_games: int = 20,
     sync_cluster: bool = True,
+    update_sandbox: bool = False,
+    restart_p2p: bool = False,
     verbose: bool = True,
 ) -> bool:
     """Run the full promotion pipeline: update symlinks, config, and sync cluster."""
@@ -378,7 +533,7 @@ def run_full_pipeline(
         print("[model_promotion] Starting full promotion pipeline...")
 
     # Step 1: Update all promotions
-    promoted = update_all_promotions(min_games=min_games, verbose=verbose)
+    promoted = update_all_promotions(min_games=min_games, verbose=verbose, update_sandbox=update_sandbox)
 
     if not promoted:
         if verbose:
@@ -392,7 +547,7 @@ def run_full_pipeline(
     if sync_cluster:
         if verbose:
             print("\n[model_promotion] Syncing to cluster...")
-        sync_to_cluster(verbose=verbose)
+        sync_to_cluster_ssh(promoted, verbose=verbose, restart_p2p=restart_p2p)
 
     if verbose:
         print("\n[model_promotion] Pipeline complete!")
@@ -423,6 +578,11 @@ def main():
         help="Sync models to all cluster nodes",
     )
     parser.add_argument(
+        "--restart-p2p",
+        action="store_true",
+        help="After syncing, best-effort restart of the P2P orchestrator on each host.",
+    )
+    parser.add_argument(
         "--full-pipeline",
         action="store_true",
         help="Run full pipeline: update all, sync cluster",
@@ -432,6 +592,11 @@ def main():
         type=int,
         default=20,
         help="Minimum games required for promotion (default: 20)",
+    )
+    parser.add_argument(
+        "--update-sandbox-config",
+        action="store_true",
+        help="Also write src/shared/config/ai_models.json (opt-in).",
     )
     parser.add_argument(
         "--quiet", "-q",
@@ -446,16 +611,31 @@ def main():
         run_full_pipeline(
             min_games=args.min_games,
             sync_cluster=True,
+            update_sandbox=bool(args.update_sandbox_config),
+            restart_p2p=bool(args.restart_p2p),
             verbose=verbose,
         )
     elif args.update_all:
-        update_all_promotions(min_games=args.min_games, verbose=verbose)
+        update_all_promotions(
+            min_games=args.min_games,
+            verbose=verbose,
+            update_sandbox=bool(args.update_sandbox_config),
+        )
     elif args.sync_cluster:
-        sync_to_cluster(verbose=verbose)
+        promoted = update_all_promotions(
+            min_games=args.min_games,
+            verbose=False,
+            update_sandbox=False,
+        )
+        sync_to_cluster_ssh(promoted, verbose=verbose, restart_p2p=bool(args.restart_p2p))
     elif args.update:
         board_type, num_players = args.update
         # Single config update
-        promoted = update_all_promotions(min_games=args.min_games, verbose=verbose)
+        promoted = update_all_promotions(
+            min_games=args.min_games,
+            verbose=verbose,
+            update_sandbox=bool(args.update_sandbox_config),
+        )
         # Filter to just the requested config
         for p in promoted:
             if p.board_type == board_type and p.num_players == int(num_players):
