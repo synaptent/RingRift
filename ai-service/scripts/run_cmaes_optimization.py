@@ -111,6 +111,16 @@ from app.db.recording import (  # noqa: E402
 from app.db import ParityValidationError  # noqa: E402
 from app.db import GameReplayDB  # noqa: E402
 
+# GPU evaluation imports (optional - only needed for --gpu mode)
+try:
+    import torch
+    from app.ai.gpu_batch import get_device, clear_gpu_memory
+    from app.ai.gpu_parallel_games import ParallelGameRunner
+    GPU_AVAILABLE = True
+except ImportError:
+    GPU_AVAILABLE = False
+    torch = None  # type: ignore
+
 # Distributed evaluation imports (optional - only needed for --distributed mode)
 try:
     from app.distributed import (  # noqa: E402
@@ -1200,6 +1210,207 @@ def evaluate_fitness_multiplayer(
     return total_score / games_played if games_played > 0 else 0.0
 
 
+# =============================================================================
+# GPU-Accelerated Fitness Evaluation
+# =============================================================================
+
+# Board size mapping for GPU runner
+BOARD_SIZE_MAP = {
+    BoardType.SQUARE8: 8,
+    BoardType.SQUARE19: 19,
+    BoardType.HEXAGONAL: 25,  # Hex uses different encoding
+}
+
+
+def evaluate_fitness_gpu(
+    candidate_weights: HeuristicWeights,
+    baseline_weights: HeuristicWeights,
+    board_type: BoardType,
+    games_per_eval: int,
+    batch_size: int = 64,
+    max_moves: int = 500,
+    seed: Optional[int] = None,
+) -> Tuple[float, Dict[str, Any]]:
+    """GPU-accelerated fitness evaluation using ParallelGameRunner.
+
+    Runs multiple games in parallel on GPU. In each game, both players use
+    the same weights (alternating candidate/baseline across games for fairness).
+
+    NOTE: The current GPU runner doesn't support per-player weights within a
+    game, so we evaluate by running half the games with candidate weights and
+    half with baseline weights, then compare win rates.
+
+    Args:
+        candidate_weights: Candidate heuristic weights to evaluate
+        baseline_weights: Baseline weights for comparison
+        board_type: Board type for games
+        games_per_eval: Total number of games to play
+        batch_size: Number of games per GPU batch
+        max_moves: Maximum moves per game before draw
+        seed: Random seed for reproducibility
+
+    Returns:
+        Tuple of (fitness, stats_dict) where fitness is in [0, 1]
+    """
+    if not GPU_AVAILABLE:
+        raise RuntimeError(
+            "GPU evaluation requested but torch/GPU modules not available. "
+            "Install PyTorch with CUDA or MPS support."
+        )
+
+    import time as time_module
+    start_time = time_module.time()
+
+    device = get_device()
+    board_size = BOARD_SIZE_MAP.get(board_type, 8)
+
+    # Set random seed for reproducibility
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+
+    # Create runner
+    runner = ParallelGameRunner(
+        batch_size=batch_size,
+        board_size=board_size,
+        num_players=2,
+        device=device,
+        swap_enabled=True,
+    )
+
+    # Convert HeuristicWeights to GPU runner format
+    # The GPU runner uses a simplified weight dict
+    def to_gpu_weights(weights: HeuristicWeights) -> Dict[str, float]:
+        """Convert HeuristicWeights to GPU runner weight format."""
+        return {
+            "stack_count": weights.get("stackControlBonus", 1.0),
+            "ring_count": weights.get("ringsInHandBonus", 0.5),
+            "territory_count": weights.get("territoryBonus", 2.0),
+            "center_control": weights.get("centralPositionBonus", 0.3),
+            "mobility": weights.get("mobilityBonus", 0.1),
+            "no_stacks_penalty": weights.get("noStacksPenalty", -100.0),
+        }
+
+    candidate_gpu_weights = to_gpu_weights(candidate_weights)
+    baseline_gpu_weights = to_gpu_weights(baseline_weights)
+
+    # Run games in batches
+    # Strategy: Run games where both players use candidate weights,
+    # then games where both use baseline weights. The fitness is based
+    # on relative performance metrics.
+    candidate_wins = 0
+    candidate_losses = 0
+    candidate_draws = 0
+    baseline_wins = 0
+    baseline_losses = 0
+    baseline_draws = 0
+    total_moves = 0
+    games_completed = 0
+
+    # Half games with candidate weights, half with baseline
+    games_per_config = games_per_eval // 2
+
+    # Games with candidate weights
+    games_run = 0
+    while games_run < games_per_config:
+        batch_games = min(batch_size, games_per_config - games_run)
+
+        # Resize runner if needed
+        if batch_games != runner.batch_size:
+            runner = ParallelGameRunner(
+                batch_size=batch_games,
+                board_size=board_size,
+                num_players=2,
+                device=device,
+                swap_enabled=True,
+            )
+
+        weights_list = [candidate_gpu_weights] * batch_games
+        results = runner.run_games(weights_list=weights_list, max_moves=max_moves)
+
+        for i in range(batch_games):
+            winner = results["winners"][i]
+            move_count = results["move_counts"][i]
+            total_moves += move_count
+
+            if winner == 1:
+                candidate_wins += 1
+            elif winner == 2:
+                candidate_losses += 1
+            else:
+                candidate_draws += 1
+
+        games_run += batch_games
+        games_completed += batch_games
+
+    # Games with baseline weights
+    games_run = 0
+    while games_run < games_per_config:
+        batch_games = min(batch_size, games_per_config - games_run)
+
+        if batch_games != runner.batch_size:
+            runner = ParallelGameRunner(
+                batch_size=batch_games,
+                board_size=board_size,
+                num_players=2,
+                device=device,
+                swap_enabled=True,
+            )
+
+        weights_list = [baseline_gpu_weights] * batch_games
+        results = runner.run_games(weights_list=weights_list, max_moves=max_moves)
+
+        for i in range(batch_games):
+            winner = results["winners"][i]
+            move_count = results["move_counts"][i]
+            total_moves += move_count
+
+            if winner == 1:
+                baseline_wins += 1
+            elif winner == 2:
+                baseline_losses += 1
+            else:
+                baseline_draws += 1
+
+        games_run += batch_games
+        games_completed += batch_games
+
+    # Clear GPU memory
+    clear_gpu_memory()
+
+    # Calculate fitness
+    # Compare win rates: candidate is better if it wins more as P1
+    # Fitness = (candidate_win_rate - baseline_win_rate + 1) / 2
+    # This maps [-1, 1] difference to [0, 1] fitness
+    candidate_win_rate = candidate_wins / games_per_config if games_per_config > 0 else 0.5
+    baseline_win_rate = baseline_wins / games_per_config if games_per_config > 0 else 0.5
+
+    # Alternative: direct win rate for candidate games
+    # (simpler and more direct measure)
+    fitness = candidate_win_rate
+
+    elapsed = time_module.time() - start_time
+    avg_moves = total_moves / games_completed if games_completed > 0 else 0
+
+    stats = {
+        "candidate_wins": candidate_wins,
+        "candidate_losses": candidate_losses,
+        "candidate_draws": candidate_draws,
+        "baseline_wins": baseline_wins,
+        "baseline_losses": baseline_losses,
+        "baseline_draws": baseline_draws,
+        "candidate_win_rate": candidate_win_rate,
+        "baseline_win_rate": baseline_win_rate,
+        "games_completed": games_completed,
+        "avg_moves": avg_moves,
+        "elapsed_seconds": elapsed,
+        "games_per_second": games_completed / elapsed if elapsed > 0 else 0,
+        "device": str(device),
+    }
+
+    return fitness, stats
+
+
 def run_axis_aligned_multiplayer_eval(
     profiles_dir: str,
     baseline_weights: HeuristicWeights,
@@ -2032,8 +2243,38 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                         "candidate_idx": idx,
                     }
 
+                # GPU-accelerated evaluation (when enabled)
+                if config.gpu and config.num_players == 2:
+                    if not GPU_AVAILABLE:
+                        raise RuntimeError(
+                            "--gpu flag set but GPU modules not available. "
+                            "Install PyTorch with CUDA or MPS support."
+                        )
+                    # GPU evaluation for single board type
+                    board_type = boards_for_eval[0]
+                    gpu_fitness, gpu_stats = evaluate_fitness_gpu(
+                        candidate_weights=candidate_weights,
+                        baseline_weights=baseline_weights,
+                        board_type=board_type,
+                        games_per_eval=config.games_per_eval,
+                        batch_size=config.gpu_batch_size,
+                        max_moves=config.max_moves,
+                        seed=config.seed,
+                    )
+                    fitness = gpu_fitness
+                    per_board_fitness = {board_type: fitness}
+
+                    # Log GPU stats if verbose
+                    if verbose_eval and idx == 0:
+                        print(
+                            f"  GPU eval: {gpu_stats['games_completed']} games, "
+                            f"{gpu_stats['games_per_second']:.1f} g/s, "
+                            f"cand_win={gpu_stats['candidate_win_rate']:.2f}, "
+                            f"base_win={gpu_stats['baseline_win_rate']:.2f}"
+                        )
+
                 # Multi-player evaluation (3p/4p) uses a different fitness function.
-                if config.num_players > 2:
+                elif config.num_players > 2:
                     # evaluate_fitness_multiplayer returns a score in [-1, 1].
                     # Normalise this to [0, 1] so that CMA-ES sees a consistent
                     # fitness range with the 2-player win-rate metric.

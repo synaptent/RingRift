@@ -301,6 +301,106 @@ class GPUBoardState:
             board_size=board_size,
         )
 
+    @classmethod
+    def from_game_states(
+        cls,
+        game_states: List[Any],  # List[GameState] - use Any to avoid circular import
+        device: "torch.device",
+    ) -> "GPUBoardState":
+        """Create GPU board state from list of GameState objects.
+
+        Converts the high-level GameState representation to GPU tensors.
+
+        Args:
+            game_states: List of GameState objects
+            device: Target GPU device
+
+        Returns:
+            GPUBoardState with all tensors on GPU
+        """
+        if not game_states:
+            raise ValueError("game_states cannot be empty")
+
+        # Infer board size from first state
+        first_state = game_states[0]
+        board_size = first_state.board.size
+
+        batch_size = len(game_states)
+        num_positions = board_size * board_size
+        num_players = 5  # Max players + 1 for 0-indexing
+
+        # Pre-allocate numpy arrays
+        stack_owner = np.zeros((batch_size, num_positions), dtype=np.int8)
+        stack_height = np.zeros((batch_size, num_positions), dtype=np.int8)
+        marker_owner = np.zeros((batch_size, num_positions), dtype=np.int8)
+        territory_owner = np.zeros((batch_size, num_positions), dtype=np.int8)
+        is_collapsed = np.zeros((batch_size, num_positions), dtype=bool)
+        rings_in_hand = np.zeros((batch_size, num_players), dtype=np.int16)
+        player_eliminated = np.zeros((batch_size, num_players), dtype=np.int16)
+        territory_count = np.zeros((batch_size, num_players), dtype=np.int16)
+
+        for i, state in enumerate(game_states):
+            board = state.board
+
+            # Convert stacks
+            for key, stack in board.stacks.items():
+                try:
+                    # Parse key "x,y" format
+                    parts = key.split(",")
+                    x, y = int(parts[0]), int(parts[1])
+                    idx = y * board_size + x
+                    if 0 <= idx < num_positions:
+                        stack_owner[i, idx] = stack.controlling_player or 0
+                        stack_height[i, idx] = stack.stack_height or 0
+                except (ValueError, IndexError):
+                    pass
+
+            # Convert markers
+            for key, marker in board.markers.items():
+                try:
+                    parts = key.split(",")
+                    x, y = int(parts[0]), int(parts[1])
+                    idx = y * board_size + x
+                    if 0 <= idx < num_positions:
+                        marker_owner[i, idx] = marker.player or 0
+                except (ValueError, IndexError):
+                    pass
+
+            # Convert collapsed spaces
+            for key, owner in board.collapsed_spaces.items():
+                try:
+                    parts = key.split(",")
+                    x, y = int(parts[0]), int(parts[1])
+                    idx = y * board_size + x
+                    if 0 <= idx < num_positions:
+                        is_collapsed[i, idx] = True
+                        territory_owner[i, idx] = owner or 0
+                except (ValueError, IndexError):
+                    pass
+
+            # Convert player state
+            for player in state.players:
+                pn = player.player_number
+                if 0 <= pn < num_players:
+                    rings_in_hand[i, pn] = player.rings_in_hand
+                    player_eliminated[i, pn] = player.eliminated_rings
+                    territory_count[i, pn] = player.territory_spaces
+
+        # Convert to GPU tensors
+        return cls(
+            stack_owner=torch.from_numpy(stack_owner).to(device),
+            stack_height=torch.from_numpy(stack_height).to(device),
+            marker_owner=torch.from_numpy(marker_owner).to(device),
+            territory_owner=torch.from_numpy(territory_owner).to(device),
+            is_collapsed=torch.from_numpy(is_collapsed).to(device),
+            rings_in_hand=torch.from_numpy(rings_in_hand).to(device),
+            player_eliminated=torch.from_numpy(player_eliminated).to(device),
+            territory_count=torch.from_numpy(territory_count).to(device),
+            device=device,
+            batch_size=batch_size,
+            board_size=board_size,
+        )
+
 
 # =============================================================================
 # GPU Batch Evaluator

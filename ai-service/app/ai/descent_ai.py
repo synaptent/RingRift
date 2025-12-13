@@ -34,6 +34,15 @@ from ..models import GameState, Move, MoveType, AIConfig, BoardType
 from ..rules.mutable_state import MutableGameState
 from ..utils.memory_config import MemoryConfig
 
+# Optional GPU heuristic evaluation
+try:
+    from .gpu_batch import GPUHeuristicEvaluator, GPUBoardState, get_device
+    GPU_HEURISTIC_AVAILABLE = True
+except ImportError:
+    GPU_HEURISTIC_AVAILABLE = False
+    GPUHeuristicEvaluator = None  # type: ignore
+    GPUBoardState = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 # Maximum search depth to prevent stack overflow in degenerate cases (e.g.,
@@ -160,6 +169,19 @@ class DescentAI(BaseAI):
 
         # Memory configuration for bounded structures
         self.memory_config = memory_config or MemoryConfig.from_env()
+
+        # GPU heuristic evaluator for batch fallback (when NN unavailable)
+        self.gpu_heuristic: Optional["GPUHeuristicEvaluator"] = None
+        self.use_gpu_heuristic = os.environ.get("RINGRIFT_DESCENT_GPU_HEURISTIC", "").lower() in {
+            "1", "true", "yes", "on"
+        }
+        if self.use_gpu_heuristic and GPU_HEURISTIC_AVAILABLE and not self.neural_net:
+            try:
+                self.gpu_heuristic = GPUHeuristicEvaluator(device=get_device())
+                logger.info("DescentAI initialized with GPU heuristic evaluator")
+            except Exception:
+                logger.warning("Failed to initialize GPU heuristic evaluator", exc_info=True)
+                self.gpu_heuristic = None
 
         # Transposition table to store values with bounded memory
         # Key: state_hash, Value: (value, children_values, status)
@@ -1309,6 +1331,12 @@ class DescentAI(BaseAI):
             return []
 
         if not self.neural_net:
+            # Try GPU batch heuristic if available
+            if self.gpu_heuristic is not None and len(game_states) >= 4:
+                try:
+                    return self._gpu_batch_heuristic_eval(game_states)
+                except Exception:
+                    logger.warning("GPU heuristic batch eval failed, falling back to CPU", exc_info=True)
             return [self.evaluate_position(s) for s in game_states]
 
         try:
@@ -1370,6 +1398,38 @@ class DescentAI(BaseAI):
             self.hex_encoder = None
             self.nn_batcher = None
             return [self.evaluate_position(s) for s in game_states]
+
+    def _gpu_batch_heuristic_eval(self, game_states: List[GameState]) -> List[float]:
+        """Batch-evaluate positions using GPU heuristic.
+
+        Converts game states to GPU format and evaluates in parallel.
+        Returns values adjusted to this agent's perspective.
+        """
+        if self.gpu_heuristic is None:
+            raise RuntimeError("GPU heuristic evaluator not initialized")
+
+        # Import here to avoid circular deps at module load
+        from .gpu_batch import GPUBoardState
+
+        # Convert states to GPU format
+        gpu_states = GPUBoardState.from_game_states(
+            game_states, device=self.gpu_heuristic.device
+        )
+
+        # Evaluate for this player
+        scores = self.gpu_heuristic.evaluate_batch(gpu_states, self.player_number)
+
+        # Convert to list and adjust perspective
+        adjusted: List[float] = []
+        for i, st in enumerate(game_states):
+            val = float(scores[i].item())
+            # Negate if opponent to move (paranoid perspective)
+            if st.current_player != self.player_number:
+                val = -val
+            # Clamp to avoid extreme values
+            adjusted.append(max(-0.99, min(0.99, val / 100.0)))  # Normalize heuristic range
+
+        return adjusted
 
     # =========================================================================
     # Legacy Search Methods (Immutable State)

@@ -3840,21 +3840,37 @@ class ParallelGameRunner:
         if weights_list is None:
             weights_list = [self._default_weights()] * self.batch_size
 
-        move_num = 0
+        # In this runner, a single call to ``_step_games`` advances one phase
+        # (ring_placement, movement, line_processing, territory_processing, end_turn).
+        # ``max_moves`` is interpreted as a per-game *move record* limit (i.e.
+        # ``BatchGameState.move_count``), not a phase-step limit. To prevent
+        # pathological stalls where ``move_count`` does not advance, we also
+        # apply a conservative safety cap on phase steps.
+        phase_steps = 0
+        max_phase_steps = max_moves * 20
 
-        while self.state.count_active() > 0 and move_num < max_moves:
-            # Generate and apply moves for all active games
+        while self.state.count_active() > 0 and phase_steps < max_phase_steps:
+            active_mask = self.state.get_active_mask()
+
+            # Enforce per-game move limit based on the recorded move_count.
+            reached_limit = active_mask & (self.state.move_count >= max_moves)
+            if reached_limit.any():
+                self.state.game_status[reached_limit] = GameStatus.MAX_MOVES
+
+            if self.state.count_active() == 0:
+                break
+
+            # Generate and apply moves for all remaining active games.
             self._step_games(weights_list)
 
-            move_num += 1
-
+            phase_steps += 1
             if callback:
-                callback(move_num, self.state)
+                callback(phase_steps, self.state)
 
-            # Check for game completion
+            # Check for game completion.
             self._check_victory_conditions()
 
-        # Mark remaining active games as draws (max moves)
+        # Mark any remaining active games as max-moves timeouts.
         active_mask = self.state.get_active_mask()
         self.state.game_status[active_mask] = GameStatus.MAX_MOVES
 
