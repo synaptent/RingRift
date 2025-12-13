@@ -242,10 +242,15 @@ describe('Near-victory territory scenarios', () => {
       expect(state.players[0].territorySpaces).toBe(threshold - 1);
 
       // After adding 1 space: exactly at threshold
-      const finalCount = state.players[0].territorySpaces + 1;
+      const pendingSpace = fixture.winningMove.to;
+      if (!pendingSpace) {
+        throw new Error('nearVictoryTerritory fixture missing winningMove.to');
+      }
+      state.board.collapsedSpaces.set(positionToString(pendingSpace), 1);
+      const finalCount = state.board.collapsedSpaces.size;
       expect(finalCount).toBe(threshold);
 
-      // Victory should trigger at exactly threshold (>= threshold)
+      // Keep the per-player counter consistent with the authoritative board map.
       state.players[0].territorySpaces = finalCount;
 
       const result = evaluateVictory(state);

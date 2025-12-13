@@ -400,7 +400,7 @@ describe('TurnOrchestrator core branch coverage', () => {
         );
 
         // Should not throw - phase coercion handles this case
-        const result = processTurn(state, move);
+        const result = processTurn(state, move, { replayCompatibility: true });
         expect(['complete', 'awaiting_decision']).toContain(result.status);
       });
     });

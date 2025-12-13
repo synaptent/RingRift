@@ -119,6 +119,9 @@ GRACEFUL_SHUTDOWN_BEFORE_UPDATE = True  # Stop jobs before updating
 AUTH_TOKEN_ENV = "RINGRIFT_CLUSTER_AUTH_TOKEN"
 AUTH_TOKEN_FILE_ENV = "RINGRIFT_CLUSTER_AUTH_TOKEN_FILE"
 
+# Optional build/version label surfaced in the dashboard / heartbeats.
+BUILD_VERSION_ENV = "RINGRIFT_BUILD_VERSION"
+
 # Optional advertised endpoint override (useful behind NAT/port-mapping).
 ADVERTISE_HOST_ENV = "RINGRIFT_ADVERTISE_HOST"
 ADVERTISE_PORT_ENV = "RINGRIFT_ADVERTISE_PORT"
@@ -683,6 +686,7 @@ class P2POrchestrator:
         self.port = port
         self.known_peers = known_peers or []
         self.ringrift_path = ringrift_path or self._detect_ringrift_path()
+        self.build_version = self._detect_build_version()
         self.start_time = time.time()
 
         # Public endpoint peers should use to reach us. Peers learn our host from
@@ -836,6 +840,7 @@ class P2POrchestrator:
             f"(advertise {self.advertise_host}:{self.advertise_port})"
         )
         print(f"[P2P] RingRift path: {self.ringrift_path}")
+        print(f"[P2P] Version: {self.build_version}")
         print(f"[P2P] Known peers: {self.known_peers}")
         if self.auth_token:
             print(f"[P2P] Auth: enabled via {AUTH_TOKEN_ENV}")
@@ -853,6 +858,43 @@ class P2POrchestrator:
             self.role = NodeRole.FOLLOWER
             return False
         return True
+
+    def _detect_build_version(self) -> str:
+        env_version = (os.environ.get(BUILD_VERSION_ENV, "") or "").strip()
+        if env_version:
+            return env_version
+
+        commit = ""
+        branch = ""
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=self.ringrift_path,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if result.returncode == 0:
+                commit = result.stdout.strip()
+        except Exception:
+            commit = ""
+
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=self.ringrift_path,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if result.returncode == 0:
+                branch = result.stdout.strip()
+        except Exception:
+            branch = ""
+
+        if commit and branch:
+            return f"{branch}@{commit}"
+        return commit or "unknown"
 
     def _detect_ringrift_path(self) -> str:
         """Detect the RingRift installation path."""
@@ -1158,6 +1200,7 @@ class P2POrchestrator:
             gpu_name=gpu_name,
             memory_gb=memory_gb,
             capabilities=capabilities,
+            version=self.build_version,
         )
 
     def _detect_gpu(self) -> Tuple[bool, str]:
@@ -6166,6 +6209,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         "port": peer.port,
                         "scheme": getattr(peer, "scheme", "http"),
                         "role": peer.role.value if hasattr(peer.role, "value") else str(peer.role),
+                        "version": getattr(peer, "version", ""),
                         "status": status,
                         "last_seen": peer.last_heartbeat,
                         "capabilities": list(peer.capabilities) if peer.capabilities else [],
@@ -6722,6 +6766,11 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     async def handle_api_jobs_list(self, request: web.Request) -> web.Response:
         """List all jobs with optional filtering."""
         try:
+            if not self._is_leader() and request.query.get("local") != "1":
+                proxied = await self._proxy_to_leader(request)
+                if proxied.status not in (502, 503):
+                    return proxied
+
             job_type = request.query.get("type")
             status = request.query.get("status")
             limit = int(request.query.get("limit", 100))
@@ -7052,7 +7101,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 f"<pre>Expected: {dashboard_path}</pre>"
                 "</body></html>"
             )
-        return web.Response(text=html, content_type="text/html")
+        return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-store"})
 
     async def _run_evaluation(self, job_id: str):
         """Evaluate new model against current best.

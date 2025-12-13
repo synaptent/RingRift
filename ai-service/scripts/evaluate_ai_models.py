@@ -952,7 +952,12 @@ Supported AI Types:
 
     parser.add_argument("--minimax-depth", type=int, default=3, help="Search depth for minimax AI (default: 3)")
 
-    parser.add_argument("--max-moves", type=int, default=200, help="Maximum moves per game before draw (default: 200)")
+    parser.add_argument(
+        "--max-moves",
+        type=int,
+        default=10000,
+        help="Maximum moves per game before draw (default: 10000)",
+    )
 
     parser.add_argument("--verbose", action="store_true", help="Print verbose move-by-move output")
 

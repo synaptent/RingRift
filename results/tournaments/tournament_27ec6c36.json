@@ -1,6 +1,6 @@
 {
   "tournament_id": "27ec6c36",
-  "started_at": "2025-12-12T18:13:49.742859+00:00",
+  "started_at": "2025-12-13T17:04:27.496904+00:00",
   "board_type": "square8",
   "games_per_matchup": 1,
   "tiers": ["D1", "D2"],
@@ -11,13 +11,13 @@
     {
       "tier_a": "D1",
       "tier_b": "D2",
-      "winner": null,
-      "game_length": 50,
-      "duration_sec": 4.915637969970703,
+      "winner": 2,
+      "game_length": 99,
+      "duration_sec": 5.923745632171631,
       "worker": "worker_0",
-      "game_id": "6aad5e61",
-      "timestamp": "2025-12-12T18:13:54.658910+00:00",
-      "seed": 3237300316,
+      "game_id": "fcd200dc",
+      "timestamp": "2025-12-13T17:04:33.421032+00:00",
+      "seed": 3598696087,
       "game_index": 0
     }
   ],
@@ -25,19 +25,19 @@
     "D1": {
       "tier": "D1",
       "wins": 0,
-      "losses": 0,
-      "draws": 1,
+      "losses": 1,
+      "draws": 0,
       "games_played": 1,
-      "win_rate": 0.5,
+      "win_rate": 0.0,
       "elo": 1500.0
     },
     "D2": {
       "tier": "D2",
-      "wins": 0,
+      "wins": 1,
       "losses": 0,
-      "draws": 1,
+      "draws": 0,
       "games_played": 1,
-      "win_rate": 0.5,
+      "win_rate": 1.0,
       "elo": 1500.0
     }
   },

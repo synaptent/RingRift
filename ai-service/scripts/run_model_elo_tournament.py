@@ -58,7 +58,7 @@ def play_nn_vs_nn_game(
     model_b_path: str,
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
-    max_moves: int = 300,
+    max_moves: int = 10000,
     mcts_simulations: int = 100,
     save_game_history: bool = True,
 ) -> Dict[str, Any]:
@@ -288,7 +288,7 @@ def run_model_matchup(
             model_b_path=path_b,
             board_type=board_type_enum,
             num_players=num_players,
-            max_moves=300,
+            max_moves=10000,
             mcts_simulations=50,  # Faster games
             save_game_history=True,  # Record for training
         )

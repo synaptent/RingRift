@@ -52,6 +52,14 @@ header:
 proxy_set_header Authorization $http_authorization;
 ```
 
+## Dashboard
+
+- The orchestrator serves a dashboard at `GET /dashboard`.
+- The dashboard is read-only by default; when a token is configured, POST actions require it.
+- The dashboard UI includes an “Auth token (Bearer)” field; paste the shared token to enable POST actions.
+- If the public dashboard endpoint is backed by a follower, it proxies leader-only APIs to the current leader (so you don’t need DNS to track leader changes).
+- Node build/version strings are surfaced in `/api/cluster/status` (default: `git branch@sha`, override via `RINGRIFT_BUILD_VERSION`).
+
 ## Service templates
 
 - macOS (launchd): `ai-service/config/launchd/com.ringrift.p2p-orchestrator.plist`

@@ -346,6 +346,7 @@
             <thead>
               <tr>
                 <th>Node</th>
+                <th>Version</th>
                 <th>Role</th>
                 <th>Status</th>
                 <th>CPU</th>
@@ -642,6 +643,14 @@
         return data;
       }
 
+      async function safeGet(path) {
+        try {
+          return await apiGet(path);
+        } catch (e) {
+          return { success: false, error: e.message, path };
+        }
+      }
+
       function computeSelfplayRates(history) {
         if (!Array.isArray(history) || history.length < 2) return {};
         const a = history[history.length - 2];
@@ -709,11 +718,13 @@
           const statusPill =
             status === "online" ? pill("online", "good") : status === "offline" ? pill("offline", "bad") : pill(status, "warn");
           const role = n.role || (isSelf ? cluster.role : "-");
+          const version = n.version || "-";
           const jobs = `${Number(n.selfplay_jobs || 0)} sp / ${Number(n.training_jobs || 0)} tr`;
           const gpuText = n.has_gpu ? `${fmtPct(n.gpu_percent)} / ${fmtPct(n.gpu_memory_percent)}` : "-";
           rows.push(`
             <tr>
               <td>${isSelf ? pill("self", "good") + " " : ""}<span class="mono">${n.node_id || "?"}</span><div class="mono" style="color:rgba(255,255,255,0.55)">${n.host || ""}${n.port ? ":" + n.port : ""}</div></td>
+              <td><span class="mono">${version}</span></td>
               <td><span class="mono">${role || "-"}</span></td>
               <td>${statusPill}</td>
               <td>${fmtPct(n.cpu_percent)}</td>
@@ -729,7 +740,7 @@
         addNode(cluster.self, true);
         peers.forEach((p) => addNode(p, false));
 
-        $("nodesBody").innerHTML = rows.join("") || `<tr><td colspan="9" class="mono">No nodes</td></tr>`;
+        $("nodesBody").innerHTML = rows.join("") || `<tr><td colspan="10" class="mono">No nodes</td></tr>`;
       }
 
       function renderSelfplay(selfplayStats) {
@@ -827,6 +838,11 @@
       });
 
       function renderCanonicalHealth(health) {
+        if (!health || health.success === false) {
+          const msg = health?.error || health?.message || "canonical health unavailable";
+          $("canonHealthBody").innerHTML = `<tr><td colspan="6" class="mono">${msg}</td></tr>`;
+          return;
+        }
         const rows = [];
         const items = Array.isArray(health.summaries) ? health.summaries : [];
         for (const item of items.slice(0, 25)) {
@@ -856,6 +872,11 @@
       }
 
       function renderCanonicalJobs(jobsResp) {
+        if (!jobsResp || jobsResp.success === false) {
+          const msg = jobsResp?.error || jobsResp?.message || "canonical jobs unavailable";
+          $("canonJobsBody").innerHTML = `<tr><td colspan="6" class="mono">${msg}</td></tr>`;
+          return;
+        }
         const jobs = Array.isArray(jobsResp.jobs) ? jobsResp.jobs : [];
         const rows = [];
         for (const j of jobs.slice(0, 50)) {
@@ -915,6 +936,11 @@
       }
 
       function renderJobs(jobsResp) {
+        if (!jobsResp || jobsResp.success === false) {
+          const msg = jobsResp?.error || jobsResp?.message || "jobs unavailable";
+          $("jobsBody").innerHTML = `<tr><td colspan="7" class="mono">${msg}</td></tr>`;
+          return;
+        }
         const jobs = Array.isArray(jobsResp.jobs) ? jobsResp.jobs : [];
         const rows = jobs.map((j) => {
           const status = String(j.status || "unknown");
@@ -972,19 +998,34 @@
         if (showBusy) refreshBtn.disabled = true;
         try {
           const [cluster, selfplay, sync, pipeline, canonHealth, canonJobs, jobs, git, elo] = await Promise.all([
-            apiGet("/api/cluster/status"),
-            apiGet("/api/selfplay/stats"),
-            apiGet("/sync/status"),
-            apiGet("/pipeline/status"),
-            apiGet("/api/canonical/health"),
-            apiGet("/api/canonical/jobs"),
-            apiGet("/api/jobs?limit=50"),
-            apiGet("/git/status"),
-            apiGet("/api/elo/leaderboard").catch(() => ({ success: false, message: "Elo API not available" })),
+            safeGet("/api/cluster/status"),
+            safeGet("/api/selfplay/stats"),
+            safeGet("/sync/status"),
+            safeGet("/pipeline/status"),
+            safeGet("/api/canonical/health"),
+            safeGet("/api/canonical/jobs"),
+            safeGet("/api/jobs?limit=50"),
+            safeGet("/git/status"),
+            safeGet("/api/elo/leaderboard"),
           ]);
 
-          if (cluster.success === false) throw new Error(cluster.error || "cluster status failed");
-          if (selfplay.success === false) throw new Error(selfplay.error || "selfplay stats failed");
+          if (!cluster || cluster.success === false) throw new Error(cluster?.error || "cluster status failed");
+          if (!selfplay || selfplay.success === false) throw new Error(selfplay?.error || "selfplay stats failed");
+
+          const softErrors = [];
+          for (const [label, resp] of [
+            ["sync/status", sync],
+            ["pipeline/status", pipeline],
+            ["canonical/health", canonHealth],
+            ["canonical/jobs", canonJobs],
+            ["jobs", jobs],
+            ["git/status", git],
+            ["elo/leaderboard", elo],
+          ]) {
+            if (resp && resp.success === false && (resp.error || resp.message)) {
+              softErrors.push(`${label}: ${resp.error || resp.message}`);
+            }
+          }
 
           renderOverview(cluster, selfplay, sync, pipeline);
           renderNodes(cluster);
@@ -996,6 +1037,7 @@
           renderGit(git);
 
           await refreshCanonLog();
+          if (softErrors.length) setError(softErrors.join(" · "));
         } catch (e) {
           setError(e.message);
         } finally {

@@ -297,7 +297,7 @@ def run_single_game(
     tier_b: str,
     board_type: BoardType,
     seed: int,
-    max_moves: int = 300,
+    max_moves: int = 10000,
     worker_name: str = "local",
     game_index: Optional[int] = None,
     think_time_scale: float = 1.0,
@@ -305,6 +305,33 @@ def run_single_game(
     fail_fast: bool = False,
 ) -> MatchResult:
     """Run a single game between two AI tiers."""
+    def _tiebreak_winner(final_state: Any) -> Optional[int]:
+        players = getattr(final_state, "players", None) or []
+        if not players:
+            return None
+
+        territory_counts: Dict[int, int] = {}
+        for p_id in final_state.board.collapsed_spaces.values():
+            territory_counts[int(p_id)] = territory_counts.get(int(p_id), 0) + 1
+
+        marker_counts: Dict[int, int] = {int(p.player_number): 0 for p in players}
+        for marker in final_state.board.markers.values():
+            owner = int(marker.player)
+            marker_counts[owner] = marker_counts.get(owner, 0) + 1
+
+        last_actor = final_state.move_history[-1].player if final_state.move_history else None
+        sorted_players = sorted(
+            players,
+            key=lambda p: (
+                territory_counts.get(int(p.player_number), 0),
+                int(p.eliminated_rings),
+                marker_counts.get(int(p.player_number), 0),
+                1 if last_actor == p.player_number else 0,
+            ),
+            reverse=True,
+        )
+        return int(sorted_players[0].player_number) if sorted_players else None
+
     game_id = str(uuid.uuid4())[:8]
     start_time = time.time()
 
@@ -331,12 +358,19 @@ def run_single_game(
     )
 
     move_count = 0
+    winner_override: Optional[int] = None
     while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_ai = ai_a if state.current_player == 1 else ai_b
 
         try:
             move = current_ai.select_move(state)
             if move is None:
+                requirement = GameEngine.get_phase_requirement(state, state.current_player)
+                if requirement is not None:
+                    move = GameEngine.synthesize_bookkeeping_move(requirement, state)
+
+            if move is None:
+                winner_override = 2 if state.current_player == 1 else 1
                 break
             state = engine.apply_move(state, move)
             move_count += 1
@@ -344,15 +378,16 @@ def run_single_game(
             if fail_fast:
                 raise
             logger.warning(f"Error in game {game_id}: {e}")
+            winner_override = 2 if state.current_player == 1 else 1
             break
 
     duration = time.time() - start_time
 
-    winner = None
-    if state.winner == 1:
-        winner = 1
-    elif state.winner == 2:
-        winner = 2
+    winner = winner_override
+    if winner is None and state.winner in (1, 2):
+        winner = int(state.winner)
+    if winner is None:
+        winner = _tiebreak_winner(state)
 
     return MatchResult(
         tier_a=tier_a,
@@ -387,11 +422,12 @@ class DistributedTournament:
         nn_model_id: Optional[str] = None,
         base_seed: int = 1,
         think_time_scale: float = 1.0,
-        max_moves: int = 300,
+        max_moves: int = 10000,
         confidence: float = 0.95,
         report_path: Optional[str] = None,
         worker_label: Optional[str] = None,
         fail_fast: bool = False,
+        tournament_id: Optional[str] = None,
     ):
         self.tiers = sorted(tiers, key=lambda t: int(t[1:]))
         self.games_per_matchup = games_per_matchup
@@ -418,7 +454,7 @@ class DistributedTournament:
                 self.checkpoint_path = Path(resume_file)
         else:
             self.state = TournamentState(
-                tournament_id=str(uuid.uuid4())[:8],
+                tournament_id=tournament_id or str(uuid.uuid4())[:8],
                 started_at=datetime.now(timezone.utc).isoformat(),
                 board_type=board_type.value,
                 games_per_matchup=games_per_matchup,
@@ -873,6 +909,12 @@ def parse_args() -> argparse.Namespace:
         help="Base RNG seed for deterministic match seeding (default: 1)",
     )
     parser.add_argument(
+        "--tournament-id",
+        type=str,
+        default=None,
+        help="Optional explicit tournament id (default: random 8-char id).",
+    )
+    parser.add_argument(
         "--think-time-scale",
         type=float,
         default=1.0,
@@ -881,8 +923,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-moves",
         type=int,
-        default=300,
-        help="Max moves per game before declaring draw (default: 300)",
+        default=10000,
+        help="Max moves per game before declaring draw (default: 10000)",
     )
     parser.add_argument(
         "--wilson-confidence",
@@ -1053,6 +1095,7 @@ def main() -> None:
         report_path=args.output_report,
         worker_label=args.worker_label,
         fail_fast=fail_fast,
+        tournament_id=args.tournament_id,
     )
 
     report = tournament.run()

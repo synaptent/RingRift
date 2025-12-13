@@ -96,7 +96,7 @@ class Tournament:
         k_elo: int = 32,
         board_type: BoardType = BoardType.SQUARE8,
         num_players: int = 2,
-        max_moves: int = 200,
+        max_moves: int = 10000,
     ):
         self.model_path_a = model_path_a
         self.model_path_b = model_path_b
@@ -396,7 +396,7 @@ def run_tournament(
     num_games: int = 20,
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
-    max_moves: int = 200,
+    max_moves: int = 10000,
     seed: Optional[int] = None,
 ) -> Dict[str, any]:
     """

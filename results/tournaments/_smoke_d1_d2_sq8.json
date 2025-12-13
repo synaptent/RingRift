@@ -1,58 +1,58 @@
 {
   "tournament_id": "27ec6c36",
-  "started_at": "2025-12-12T18:13:49.742859+00:00",
-  "completed_at": "2025-12-12T18:13:54.659407+00:00",
-  "duration_sec": 4.9,
+  "started_at": "2025-12-13T17:04:27.496904+00:00",
+  "completed_at": "2025-12-13T17:04:33.421547+00:00",
+  "duration_sec": 5.9,
   "config": {
     "board_type": "square8",
     "games_per_matchup": 1,
     "tiers": ["D1", "D2"],
     "base_seed": 1,
     "think_time_scale": 0.05,
-    "max_moves": 50,
+    "max_moves": 10000,
     "nn_model_id": null,
     "wilson_confidence": 0.95
   },
   "summary": {
     "total_games": 1,
     "total_matchups": 1,
-    "avg_game_length": 50.0,
-    "avg_game_duration_sec": 4.916
+    "avg_game_length": 99.0,
+    "avg_game_duration_sec": 5.924
   },
   "rankings": [
     {
       "rank": 1,
-      "tier": "D1",
-      "elo": 1500.0,
-      "wins": 0,
+      "tier": "D2",
+      "elo": 1516.0,
+      "wins": 1,
       "losses": 0,
-      "draws": 1,
-      "win_rate": 50.0
+      "draws": 0,
+      "win_rate": 100.0
     },
     {
       "rank": 2,
-      "tier": "D2",
-      "elo": 1500.0,
+      "tier": "D1",
+      "elo": 1484.0,
       "wins": 0,
-      "losses": 0,
-      "draws": 1,
-      "win_rate": 50.0
+      "losses": 1,
+      "draws": 0,
+      "win_rate": 0.0
     }
   ],
   "elo_gaps": [
     {
-      "from": "D1",
-      "to": "D2",
-      "gap": 0.0
+      "from": "D2",
+      "to": "D1",
+      "gap": 32.0
     }
   ],
   "head_to_head": {
     "D1": {
       "D1": "-",
-      "D2": "0-0-1"
+      "D2": "0-1-0"
     },
     "D2": {
-      "D1": "0-0-1",
+      "D1": "1-0-0",
       "D2": "-"
     }
   },
@@ -61,13 +61,13 @@
       "tier_a": "D1",
       "tier_b": "D2",
       "wins_a": 0,
-      "wins_b": 0,
-      "draws": 1,
-      "decisive_games": 0,
-      "decisive_win_rate_b": 0.0,
-      "decisive_wilson_ci_b": [0.0, 0.0],
-      "avg_game_length": 50.0,
-      "avg_duration_sec": 4.916
+      "wins_b": 1,
+      "draws": 0,
+      "decisive_games": 1,
+      "decisive_win_rate_b": 1.0,
+      "decisive_wilson_ci_b": [0.2065, 1.0],
+      "avg_game_length": 99.0,
+      "avg_duration_sec": 5.924
     }
   ]
 }
