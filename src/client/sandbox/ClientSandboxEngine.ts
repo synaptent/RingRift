@@ -189,6 +189,8 @@ export class ClientSandboxEngine {
   // is currently reserved for future parity-specific behaviour and does
   // not alter normal sandbox rules or AI policy.
   private readonly traceMode: boolean;
+  // AI difficulty levels per player (1-10), indexed 0..3 for players 1..4
+  private readonly aiDifficulties: number[];
 
   // ═══════════════════════════════════════════════════════════════════════
   // Orchestrator Adapter Integration
@@ -428,9 +430,17 @@ export class ClientSandboxEngine {
     this.rng = new SeededRNG(generateGameSeed());
 
     const board = this.createEmptyBoard(config.boardType);
+    const clampDifficulty = (value: number) => Math.max(1, Math.min(10, Math.round(value)));
+
+    // Store AI difficulties for use by sandbox AI hooks (default to D4 if not provided)
+    this.aiDifficulties = Array.from({ length: 4 }, (_, idx) =>
+      clampDifficulty(config.aiDifficulties?.[idx] ?? 4)
+    );
+
     const players: Player[] = Array.from({ length: config.numPlayers }, (_, idx) => {
       const playerNumber = idx + 1;
       const kind = config.playerKinds[idx] ?? 'human';
+      const aiDifficulty = this.aiDifficulties[idx];
       return {
         id: `sandbox-${playerNumber}`,
         username: `Player ${playerNumber}`,
@@ -438,7 +448,7 @@ export class ClientSandboxEngine {
         playerNumber,
         isReady: true,
         timeRemaining: 0,
-        ...(kind === 'ai' ? { aiDifficulty: 5 } : {}),
+        ...(kind === 'ai' ? { aiDifficulty } : {}),
         ringsInHand: BOARD_CONFIGS[config.boardType].ringsPerPlayer,
         eliminatedRings: 0,
         territorySpaces: 0,
@@ -709,6 +719,19 @@ export class ClientSandboxEngine {
    * are mutated by subsequent moves. This mirrors the backend
    * GameEngine.getGameState semantics.
    */
+  /**
+   * Get the AI difficulty level for a specific player (1-10).
+   * Returns undefined for human players or if not set.
+   */
+  public getAIDifficulty(playerNumber: number): number | undefined {
+    const player = this.gameState.players.find((p) => p.playerNumber === playerNumber);
+    if (!player || player.type !== 'ai') {
+      return undefined;
+    }
+    // Use stored difficulties array (0-indexed)
+    return this.aiDifficulties[playerNumber - 1];
+  }
+
   public getGameState(): GameState {
     const state = this.gameState;
     const board = state.board;
@@ -880,7 +903,8 @@ export class ClientSandboxEngine {
   public initFromSerializedState(
     serializedState: SerializedGameState,
     playerKinds: SandboxPlayerKind[],
-    interactionHandler: SandboxInteractionHandler
+    interactionHandler: SandboxInteractionHandler,
+    aiDifficulties?: number[]
   ): void {
     // 1. Deserialize the game state using existing utility
     let gameState = deserializeGameState(serializedState);
@@ -916,11 +940,24 @@ export class ClientSandboxEngine {
     }
 
     // 2. Apply player types to the deserialized state
-    gameState.players = gameState.players.map((p, idx) => ({
-      ...p,
-      type: playerKinds[idx] ?? 'human',
-      ...(playerKinds[idx] === 'ai' ? { aiDifficulty: 5 } : {}),
-    }));
+    const clampDifficulty = (value: number) => Math.max(1, Math.min(10, Math.round(value)));
+    gameState.players = gameState.players.map((p, idx) => {
+      const kind = playerKinds[idx] ?? 'human';
+      if (kind === 'ai') {
+        const desired = aiDifficulties?.[idx] ?? p.aiDifficulty ?? 5;
+        return {
+          ...p,
+          type: kind,
+          aiDifficulty: clampDifficulty(desired),
+        };
+      }
+
+      return {
+        ...p,
+        type: kind,
+        aiDifficulty: undefined,
+      };
+    });
 
     // 3. Update the interaction handler
     this.interactionHandler = interactionHandler;
@@ -1176,6 +1213,7 @@ export class ClientSandboxEngine {
       hasPendingLineRewardElimination: () => this._pendingLineRewardElimination,
       canCurrentPlayerSwapSides: () => this.canCurrentPlayerSwapSides(),
       applySwapSidesForCurrentPlayer: () => this.applySwapSidesForCurrentPlayer(),
+      getAIDifficulty: (playerNumber: number) => this.getAIDifficulty(playerNumber),
     };
 
     await maybeRunAITurnSandbox(hooks, effectiveRng);

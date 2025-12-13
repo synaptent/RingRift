@@ -235,6 +235,11 @@ export interface SandboxAIHooks {
    */
   canCurrentPlayerSwapSides(): boolean;
   applySwapSidesForCurrentPlayer(): boolean;
+  /**
+   * Get the AI difficulty level (1-10) for a specific player.
+   * Returns undefined if no difficulty is set (uses default heuristic).
+   */
+  getAIDifficulty?(playerNumber: number): number | undefined;
 }
 
 /**
@@ -447,11 +452,71 @@ export function buildSandboxMovementCandidates(
   };
 }
 
+/**
+ * Select a move based on AI difficulty level.
+ *
+ * Difficulty affects move selection as follows:
+ * - D1 (Beginner): Pure random selection
+ * - D2-D3 (Learner/Casual): 70% random, 30% heuristic
+ * - D4-D5 (Intermediate): 40% random, 60% heuristic
+ * - D6-D7 (Advanced/Expert): 20% random, 80% heuristic
+ * - D8-D10 (Strong Expert+): Pure heuristic selection
+ *
+ * This provides a smooth difficulty curve where lower levels make more
+ * mistakes (random moves) while higher levels play more optimally.
+ */
+export function selectMoveWithDifficulty(
+  playerNumber: number,
+  gameState: GameState,
+  candidates: Move[],
+  rng: LocalAIRng,
+  difficulty: number | undefined
+): Move | null {
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  // Default to D4 (intermediate) if no difficulty specified
+  const effectiveDifficulty = difficulty ?? 4;
+
+  // Calculate random move probability based on difficulty
+  // D1: 100% random, D10: 0% random
+  let randomProbability: number;
+  if (effectiveDifficulty <= 1) {
+    randomProbability = 1.0; // D1: Pure random
+  } else if (effectiveDifficulty <= 3) {
+    randomProbability = 0.7; // D2-D3: Mostly random
+  } else if (effectiveDifficulty <= 5) {
+    randomProbability = 0.4; // D4-D5: Mixed
+  } else if (effectiveDifficulty <= 7) {
+    randomProbability = 0.2; // D6-D7: Mostly heuristic
+  } else {
+    randomProbability = 0.0; // D8+: Pure heuristic
+  }
+
+  // Decide whether to use random or heuristic selection
+  const useRandom = rng() < randomProbability;
+
+  if (useRandom) {
+    // Random selection: pick any candidate with equal probability
+    const randomIndex = Math.floor(rng() * candidates.length);
+    return candidates[randomIndex];
+  }
+
+  // Heuristic selection: use the standard move selector
+  return chooseLocalMoveFromCandidates(playerNumber, gameState, candidates, rng);
+}
+
 export function selectSandboxMovementMove(
   gameState: GameState,
   candidates: Move[],
   rng: LocalAIRng,
-  parityMode: boolean
+  parityMode: boolean,
+  difficulty?: number
 ): Move | null {
   const playerNumber = gameState.currentPlayer;
 
@@ -461,10 +526,8 @@ export function selectSandboxMovementMove(
     return chooseLocalMoveFromCandidates(playerNumber, gameState, candidates, rng);
   }
 
-  // Default sandbox behaviour: currently identical to parity mode, but
-  // structured so that a future heuristic policy can be introduced here
-  // without affecting the parity path.
-  return chooseLocalMoveFromCandidates(playerNumber, gameState, candidates, rng);
+  // Use difficulty-aware selection when available
+  return selectMoveWithDifficulty(playerNumber, gameState, candidates, rng, difficulty);
 }
 
 /**
@@ -536,6 +599,9 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
     }
 
     const parityMode = isSandboxAiParityModeEnabled();
+
+    // Get AI difficulty for current player (if available)
+    const aiDifficulty = hooks.getAIDifficulty?.(current.playerNumber);
 
     // === Pie rule (swap_sides) meta-move for 2-player sandbox AI ===
     // When the gate conditions match the backend pie rule and the opening
@@ -963,12 +1029,10 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
         return;
       }
 
-      const selected = chooseLocalMoveFromCandidates(
-        current.playerNumber,
-        gameState,
-        candidates,
-        rng
-      );
+      // Use difficulty-aware selection in non-parity mode
+      const selected = parityMode
+        ? chooseLocalMoveFromCandidates(current.playerNumber, gameState, candidates, rng)
+        : selectMoveWithDifficulty(current.playerNumber, gameState, candidates, rng, aiDifficulty);
 
       if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
         // eslint-disable-next-line no-console
@@ -988,13 +1052,14 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
             candidateTypes: candidates.map((c) => c.type),
             skipCount: candidates.filter((c) => c.type === 'skip_placement').length,
             placeCount: candidates.filter((c) => c.type === 'place_ring').length,
+            aiDifficulty,
           })
         );
       }
 
       if (!selected) {
         console.error(
-          '[Sandbox AI] chooseLocalMoveFromCandidates returned null with',
+          '[Sandbox AI] selectMoveWithDifficulty returned null with',
           candidates.length,
           'candidates'
         );
@@ -1098,12 +1163,16 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
         return;
       }
 
-      const selectedDecision = chooseLocalMoveFromCandidates(
-        gameState.currentPlayer,
-        gameState,
-        decisionCandidates,
-        rng
-      );
+      // Use difficulty-aware selection in non-parity mode
+      const selectedDecision = parityMode
+        ? chooseLocalMoveFromCandidates(gameState.currentPlayer, gameState, decisionCandidates, rng)
+        : selectMoveWithDifficulty(
+            gameState.currentPlayer,
+            gameState,
+            decisionCandidates,
+            rng,
+            aiDifficulty
+          );
 
       if (!selectedDecision) {
         return;
@@ -1186,12 +1255,21 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
         return;
       }
 
-      let selectedForcedElimination = chooseLocalMoveFromCandidates(
-        gameState.currentPlayer,
-        gameState,
-        forcedEliminationMoves,
-        rng
-      );
+      // Use difficulty-aware selection in non-parity mode
+      let selectedForcedElimination = parityMode
+        ? chooseLocalMoveFromCandidates(
+            gameState.currentPlayer,
+            gameState,
+            forcedEliminationMoves,
+            rng
+          )
+        : selectMoveWithDifficulty(
+            gameState.currentPlayer,
+            gameState,
+            forcedEliminationMoves,
+            rng,
+            aiDifficulty
+          );
 
       if (!selectedForcedElimination) {
         // Harden FE behaviour: when canonical candidates exist, never leave the
@@ -1201,11 +1279,12 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
         // states where hasForcedEliminationAction === true.
         if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
           console.warn(
-            '[Sandbox AI Debug] chooseLocalMoveFromCandidates returned null for forced_elimination; falling back to direct selection',
+            '[Sandbox AI Debug] selectMoveWithDifficulty returned null for forced_elimination; falling back to direct selection',
             {
               candidateCount: forcedEliminationMoves.length,
               boardType: gameState.boardType,
               currentPlayer: gameState.currentPlayer,
+              aiDifficulty,
             }
           );
         }
