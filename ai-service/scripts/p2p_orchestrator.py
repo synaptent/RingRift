@@ -686,6 +686,11 @@ class P2POrchestrator:
         self.port = port
         self.known_peers = known_peers or []
         self.ringrift_path = ringrift_path or self._detect_ringrift_path()
+        # Git 2.35+ enforces safe.directory for repos with different ownership.
+        # Many nodes run the orchestrator as root against a checkout owned by
+        # another user (e.g. ubuntu), so always provide a safe.directory override
+        # for all git operations.
+        self._git_safe_directory = os.path.abspath(self.ringrift_path)
         self.build_version = self._detect_build_version()
         self.start_time = time.time()
 
@@ -868,7 +873,7 @@ class P2POrchestrator:
         branch = ""
         try:
             result = subprocess.run(
-                ["git", "rev-parse", "--short", "HEAD"],
+                self._git_cmd("rev-parse", "--short", "HEAD"),
                 cwd=self.ringrift_path,
                 capture_output=True,
                 text=True,
@@ -881,7 +886,7 @@ class P2POrchestrator:
 
         try:
             result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                self._git_cmd("rev-parse", "--abbrev-ref", "HEAD"),
                 cwd=self.ringrift_path,
                 capture_output=True,
                 text=True,
@@ -895,6 +900,10 @@ class P2POrchestrator:
         if commit and branch:
             return f"{branch}@{commit}"
         return commit or "unknown"
+
+    def _git_cmd(self, *args: str) -> List[str]:
+        safe_dir = getattr(self, "_git_safe_directory", "") or os.path.abspath(self.ringrift_path)
+        return ["git", "-c", f"safe.directory={safe_dir}", *args]
 
     def _detect_ringrift_path(self) -> str:
         """Detect the RingRift installation path."""
@@ -2254,7 +2263,7 @@ class P2POrchestrator:
         """Get the current local git commit hash."""
         try:
             result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
+                self._git_cmd("rev-parse", "HEAD"),
                 cwd=self.ringrift_path,
                 capture_output=True, text=True, timeout=10
             )
@@ -2268,7 +2277,7 @@ class P2POrchestrator:
         """Get the current local git branch name."""
         try:
             result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                self._git_cmd("rev-parse", "--abbrev-ref", "HEAD"),
                 cwd=self.ringrift_path,
                 capture_output=True, text=True, timeout=10
             )
@@ -2283,7 +2292,7 @@ class P2POrchestrator:
         try:
             # First fetch to update remote refs
             fetch_result = subprocess.run(
-                ["git", "fetch", GIT_REMOTE_NAME, GIT_BRANCH_NAME],
+                self._git_cmd("fetch", GIT_REMOTE_NAME, GIT_BRANCH_NAME),
                 cwd=self.ringrift_path,
                 capture_output=True, text=True, timeout=60
             )
@@ -2293,7 +2302,7 @@ class P2POrchestrator:
 
             # Get remote branch commit
             result = subprocess.run(
-                ["git", "rev-parse", f"{GIT_REMOTE_NAME}/{GIT_BRANCH_NAME}"],
+                self._git_cmd("rev-parse", f"{GIT_REMOTE_NAME}/{GIT_BRANCH_NAME}"),
                 cwd=self.ringrift_path,
                 capture_output=True, text=True, timeout=10
             )
@@ -2321,7 +2330,7 @@ class P2POrchestrator:
         """Get the number of commits the local branch is behind remote."""
         try:
             result = subprocess.run(
-                ["git", "rev-list", "--count", f"{local_commit}..{remote_commit}"],
+                self._git_cmd("rev-list", "--count", f"{local_commit}..{remote_commit}"),
                 cwd=self.ringrift_path,
                 capture_output=True, text=True, timeout=10
             )
@@ -2335,7 +2344,7 @@ class P2POrchestrator:
         """Check if there are uncommitted local changes."""
         try:
             result = subprocess.run(
-                ["git", "status", "--porcelain"],
+                self._git_cmd("status", "--porcelain"),
                 cwd=self.ringrift_path,
                 capture_output=True, text=True, timeout=10
             )
@@ -2401,7 +2410,7 @@ class P2POrchestrator:
         try:
             # Perform git pull
             result = subprocess.run(
-                ["git", "pull", GIT_REMOTE_NAME, GIT_BRANCH_NAME],
+                self._git_cmd("pull", GIT_REMOTE_NAME, GIT_BRANCH_NAME),
                 cwd=self.ringrift_path,
                 capture_output=True, text=True, timeout=120
             )
