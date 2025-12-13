@@ -1098,19 +1098,23 @@ class P2POrchestrator:
         if self._is_leader():
             return self.self_info
 
-        leader_id = self.leader_id
         with self.peers_lock:
-            peers_snapshot = dict(self.peers)
+            peers_snapshot = list(self.peers.values())
 
-        if leader_id and leader_id in peers_snapshot:
-            return peers_snapshot[leader_id]
+        conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
 
-        for peer in peers_snapshot.values():
-            try:
-                if peer.role == NodeRole.LEADER:
+        leader_id = self.leader_id
+        if leader_id:
+            for peer in peers_snapshot:
+                if peer.node_id == leader_id and self._is_leader_eligible(peer, conflict_keys):
                     return peer
-            except Exception:
-                continue
+
+        eligible_leaders = [
+            peer for peer in peers_snapshot
+            if peer.role == NodeRole.LEADER and self._is_leader_eligible(peer, conflict_keys)
+        ]
+        if eligible_leaders:
+            return sorted(eligible_leaders, key=lambda p: p.node_id)[-1]
 
         return None
 
@@ -2390,6 +2394,32 @@ class P2POrchestrator:
                 break
             except Exception as e:
                 print(f"[P2P] AWS IP update loop error: {e}")
+                await asyncio.sleep(60)
+
+    async def _tailscale_ip_update_loop(self):
+        """Background loop to discover and update Tailscale IPs for cluster nodes.
+
+        Uses `tailscale status --json` to discover mesh network peers.
+        Tailscale provides reliable connectivity even when public IPs change.
+        """
+        if not HAS_DYNAMIC_REGISTRY:
+            return
+
+        print("[P2P] Tailscale IP update loop started")
+        registry = get_registry()
+
+        while self.running:
+            try:
+                await asyncio.sleep(120)  # Check every 2 minutes
+
+                updated = await registry.update_tailscale_ips()
+                if updated > 0:
+                    print(f"[P2P] Updated {updated} node Tailscale IPs")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[P2P] Tailscale IP update loop error: {e}")
                 await asyncio.sleep(60)
 
     async def _data_management_loop(self):
@@ -8424,6 +8454,12 @@ print(json.dumps({{
                 if not self._is_leader_eligible(leader, conflict_keys):
                     reason = "dead" if not leader.is_alive() else "ineligible"
                     print(f"[P2P] Leader {self.leader_id} is {reason}, starting election")
+                    # Clear stale/ineligible leader to avoid proxy/relay selecting it.
+                    self.leader_id = None
+                    self.leader_lease_id = ""
+                    self.leader_lease_expires = 0.0
+                    if self.role != NodeRole.LEADER:
+                        self.role = NodeRole.FOLLOWER
                     asyncio.create_task(self._start_election())
 
     async def _start_election(self):
@@ -8444,6 +8480,10 @@ print(json.dumps({{
                 leader = self.peers.get(self.leader_id)
             if leader and self._is_leader_eligible(leader, conflict_keys):
                 return
+            # Drop stale/ineligible leader so we don't keep advertising it.
+            self.leader_id = None
+            self.leader_lease_id = ""
+            self.leader_lease_expires = 0.0
         if self._maybe_adopt_leader_from_peers():
             return
 
@@ -8489,9 +8529,13 @@ print(json.dumps({{
             else:
                 # Wait for coordinator message
                 await asyncio.sleep(ELECTION_TIMEOUT * 2)
+                # If no coordinator arrives, fall back to adopting any eligible leader we can see.
+                self._maybe_adopt_leader_from_peers()
 
         finally:
             self.election_in_progress = False
+            if self.role == NodeRole.CANDIDATE:
+                self.role = NodeRole.FOLLOWER
 
     async def _become_leader(self):
         """Become the cluster leader with lease-based leadership."""
@@ -9565,6 +9609,7 @@ print(json.dumps({{
         if HAS_DYNAMIC_REGISTRY:
             tasks.append(asyncio.create_task(self._vast_ip_update_loop()))
             tasks.append(asyncio.create_task(self._aws_ip_update_loop()))
+            tasks.append(asyncio.create_task(self._tailscale_ip_update_loop()))
 
         # Add automatic data management loop (export triggers, training triggers, data sync)
         tasks.append(asyncio.create_task(self._data_management_loop()))
