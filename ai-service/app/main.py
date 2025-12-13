@@ -36,6 +36,7 @@ from .config.ladder_config import (
 
 from .ai.random_ai import RandomAI
 from .ai.heuristic_ai import HeuristicAI
+from .ai.heuristic_weights import load_trained_profiles_if_available
 from .ai.descent_ai import DescentAI
 from .models import (
     GameState,
@@ -70,6 +71,20 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Best-effort: load trained heuristic profiles (CMA-ES / calibration) when
+# RINGRIFT_TRAINED_HEURISTIC_PROFILES points at a JSON bundle. This keeps the
+# stable heuristic_profile_id values used by ladder_config.py while allowing
+# deployments to override weights without code changes.
+try:
+    _trained_profiles = load_trained_profiles_if_available()
+    if _trained_profiles:
+        logger.info(
+            "Loaded trained heuristic profiles",
+            extra={"profile_count": len(_trained_profiles)},
+        )
+except Exception:  # pragma: no cover - defensive startup path
+    logger.warning("Failed to load trained heuristic profiles", exc_info=True)
 
 # Create FastAPI app
 app = FastAPI(

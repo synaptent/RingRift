@@ -933,26 +933,50 @@ class BatchGameState:
         )
 
         # Map GPU board_size back to BoardType
+        # Note: hex uses 25x25 embedding (radius 12 -> 2*12+1 = 25)
         board_type_map = {
             8: BoardType.SQUARE8,
             19: BoardType.SQUARE19,
             13: BoardType.HEXAGONAL,
+            25: BoardType.HEXAGONAL,  # Hex 25x25 embedding
         }
         board_type = board_type_map.get(self.board_size, BoardType.SQUARE8)
 
+        # Hex boards: convert GPU grid coords (row, col in 25x25) to axial (x, y)
+        # CPU hex uses size=13 (radius), GPU uses size=25 (embedding)
+        is_hex = board_type == BoardType.HEXAGONAL
+        hex_center = self.board_size // 2 if is_hex else 0  # 12 for 25x25
+        cpu_board_size = 13 if is_hex else self.board_size
+
+        def grid_to_cpu_coords(row: int, col: int):
+            """Convert GPU grid coords to CPU format."""
+            if is_hex:
+                # GPU grid -> axial: (x, y) = (col - center, row - center)
+                ax = col - hex_center
+                ay = row - hex_center
+                az = -ax - ay  # Cube constraint
+                return ax, ay, az
+            return col, row, None
+
         # Build stacks dict from GPU tensors
         stacks = {}
-        for y in range(self.board_size):
-            for x in range(self.board_size):
-                owner = self.stack_owner[game_idx, y, x].item()
-                height = self.stack_height[game_idx, y, x].item()
+        for row in range(self.board_size):
+            for col in range(self.board_size):
+                owner = self.stack_owner[game_idx, row, col].item()
+                height = self.stack_height[game_idx, row, col].item()
                 if owner > 0 and height > 0:
-                    key = f"{x},{y}"
+                    ax, ay, az = grid_to_cpu_coords(row, col)
+                    if is_hex:
+                        key = f"{ax},{ay},{az}"
+                        pos = Position(x=ax, y=ay, z=az)
+                    else:
+                        key = f"{ax},{ay}"
+                        pos = Position(x=ax, y=ay)
                     # Reconstruct rings list (simplified - all same owner)
                     rings = [owner] * height
-                    cap = self.cap_height[game_idx, y, x].item()
+                    cap = self.cap_height[game_idx, row, col].item()
                     stacks[key] = RingStack(
-                        position=Position(x=x, y=y),
+                        position=pos,
                         rings=rings,
                         stackHeight=height,
                         capHeight=cap,
@@ -961,30 +985,44 @@ class BatchGameState:
 
         # Build markers dict
         markers = {}
-        for y in range(self.board_size):
-            for x in range(self.board_size):
-                marker_player = self.marker_owner[game_idx, y, x].item()
+        for row in range(self.board_size):
+            for col in range(self.board_size):
+                marker_player = self.marker_owner[game_idx, row, col].item()
                 if marker_player > 0:
-                    key = f"{x},{y}"
+                    ax, ay, az = grid_to_cpu_coords(row, col)
+                    if is_hex:
+                        key = f"{ax},{ay},{az}"
+                        pos = Position(x=ax, y=ay, z=az)
+                    else:
+                        key = f"{ax},{ay}"
+                        pos = Position(x=ax, y=ay)
                     markers[key] = MarkerInfo(
                         player=marker_player,
-                        position=Position(x=x, y=y),
+                        position=pos,
                         type="regular",
                     )
 
         # Build collapsed_spaces dict
+        # For hex, skip out-of-bounds collapsed cells (they are just embedding padding)
         collapsed_spaces = {}
-        for y in range(self.board_size):
-            for x in range(self.board_size):
-                if self.is_collapsed[game_idx, y, x].item():
-                    territory_player = self.territory_owner[game_idx, y, x].item()
-                    key = f"{x},{y}"
+        for row in range(self.board_size):
+            for col in range(self.board_size):
+                if self.is_collapsed[game_idx, row, col].item():
+                    ax, ay, az = grid_to_cpu_coords(row, col)
+                    # For hex, skip out-of-bounds cells (embedding padding)
+                    if is_hex and max(abs(ax), abs(ay), abs(ax + ay)) > hex_center:
+                        continue  # This is embedding padding, not a real collapsed cell
+                    territory_player = self.territory_owner[game_idx, row, col].item()
+                    if is_hex:
+                        key = f"{ax},{ay},{az}"
+                    else:
+                        key = f"{ax},{ay}"
                     collapsed_spaces[key] = territory_player
 
         # Build board state
         board = BoardState(
             type=board_type,
-            size=self.board_size,
+            size=cpu_board_size,
             stacks=stacks,
             markers=markers,
             collapsedSpaces=collapsed_spaces,
@@ -1060,6 +1098,19 @@ class BatchGameState:
             lps_consecutive_player_raw if lps_consecutive_player_raw > 0 else None
         )
 
+        # Convert must_move_from_y/x to must_move_from_stack_key for CPU validation
+        # This constrains CPU move generation to the same stack the GPU is constrained to
+        must_move_from_stack_key = None
+        must_y = int(self.must_move_from_y[game_idx].item())
+        must_x = int(self.must_move_from_x[game_idx].item())
+        if must_y >= 0 and must_x >= 0:
+            # Convert GPU grid coords to CPU stack key format
+            ax, ay, az = grid_to_cpu_coords(must_y, must_x)
+            if is_hex:
+                must_move_from_stack_key = f"{ax},{ay},{az}"
+            else:
+                must_move_from_stack_key = f"{ax},{ay}"
+
         return GameState(
             id=f"gpu_game_{game_idx}",
             boardType=board_type,
@@ -1089,6 +1140,7 @@ class BatchGameState:
             ),
             lpsRoundsRequired=3,  # Default LPS rounds required
             lpsConsecutiveExclusivePlayer=lps_consecutive_player,
+            mustMoveFromStackKey=must_move_from_stack_key,
         )
 
     def get_active_mask(self) -> torch.Tensor:
@@ -1391,8 +1443,8 @@ def generate_placement_moves_batch(
         move_type=torch.full((total_moves,), MoveType.PLACEMENT, dtype=torch.int8, device=device),
         from_y=y_idx.int(),
         from_x=x_idx.int(),
-        to_y=torch.zeros(total_moves, dtype=torch.int32, device=device),
-        to_x=torch.zeros(total_moves, dtype=torch.int32, device=device),
+        to_y=y_idx.int(),  # For placements, to == from (the placement cell)
+        to_x=x_idx.int(),
         moves_per_game=moves_per_game.int(),
         move_offsets=move_offsets.int(),
         total_moves=total_moves,
@@ -4136,9 +4188,21 @@ class ParallelGameRunner:
             for i in range(move_count):
                 idx = move_start + i
                 # Placement moves store position in from_y, from_x (target position)
-                y = moves.from_y[idx].item()
-                x = moves.from_x[idx].item()
-                # Convert to (x, y) format to match CPU Position format
+                row = moves.from_y[idx].item()
+                col = moves.from_x[idx].item()
+
+                # Convert GPU grid coords to CPU format
+                # For hex boards (25x25 embedding): convert to axial coords
+                # CPU axial (x, y) = GPU grid (col - center, row - center)
+                if self.board_type and self.board_type.lower() in ("hexagonal", "hex"):
+                    center = self.board_size // 2  # 12 for 25x25
+                    x = col - center
+                    y = row - center
+                else:
+                    # Square boards: grid coords match directly
+                    x = col
+                    y = row
+
                 gpu_positions.append((x, y))
 
             # Convert to CPU state and validate
@@ -4169,6 +4233,16 @@ class ParallelGameRunner:
             if not self.shadow_validator.should_validate():
                 continue
 
+            # Hex coordinate conversion helper
+            is_hex = self.board_type and self.board_type.lower() in ("hexagonal", "hex")
+            hex_center = self.board_size // 2 if is_hex else 0
+
+            def to_cpu_coords(row: int, col: int):
+                """Convert GPU grid to CPU coords."""
+                if is_hex:
+                    return col - hex_center, row - hex_center
+                return col, row
+
             # Extract GPU movement moves
             move_start = movement_moves.move_offsets[g].item()
             move_count = movement_moves.moves_per_game[g].item()
@@ -4176,11 +4250,13 @@ class ParallelGameRunner:
             gpu_movement = []
             for i in range(move_count):
                 idx = move_start + i
-                from_y = movement_moves.from_y[idx].item()
-                from_x = movement_moves.from_x[idx].item()
-                to_y = movement_moves.to_y[idx].item()
-                to_x = movement_moves.to_x[idx].item()
-                # Convert from GPU [y, x] to CPU (x, y) format
+                from_row = movement_moves.from_y[idx].item()
+                from_col = movement_moves.from_x[idx].item()
+                to_row = movement_moves.to_y[idx].item()
+                to_col = movement_moves.to_x[idx].item()
+                # Convert to CPU format
+                from_x, from_y = to_cpu_coords(from_row, from_col)
+                to_x, to_y = to_cpu_coords(to_row, to_col)
                 gpu_movement.append(((from_x, from_y), (to_x, to_y)))
 
             # Extract GPU capture moves
@@ -4190,11 +4266,13 @@ class ParallelGameRunner:
             gpu_captures = []
             for i in range(cap_count):
                 idx = cap_start + i
-                from_y = capture_moves.from_y[idx].item()
-                from_x = capture_moves.from_x[idx].item()
-                to_y = capture_moves.to_y[idx].item()
-                to_x = capture_moves.to_x[idx].item()
-                # Convert from GPU [y, x] to CPU (x, y) format
+                from_row = capture_moves.from_y[idx].item()
+                from_col = capture_moves.from_x[idx].item()
+                to_row = capture_moves.to_y[idx].item()
+                to_col = capture_moves.to_x[idx].item()
+                # Convert to CPU format
+                from_x, from_y = to_cpu_coords(from_row, from_col)
+                to_x, to_y = to_cpu_coords(to_row, to_col)
                 gpu_captures.append(((from_x, from_y), (to_x, to_y)))
 
             # Convert to CPU state and validate

@@ -2582,13 +2582,28 @@ function processPostMovePhases(
     // not the stale `state` snapshot from function start.
     const updatedStateForLines = stateMachine.gameState;
     const allLines = findAllLines(updatedStateForLines.board);
-    const lines = allLines.filter((l) => l.player === updatedStateForLines.currentPlayer);
+    // RR-PARITY-FIX-2025-12-13: Filter lines by effective line length threshold.
+    // For 2-player square8, the minimum line length is 4 (not 3). The findAllLines
+    // function from LineAggregate uses the base config lineLength (3 for square8),
+    // so we must additionally filter by the effective threshold here to match
+    // Python's _get_line_processing_moves which uses getEffectiveLineLengthThreshold.
+    const effectiveLineLength = getEffectiveLineLengthThreshold(
+      updatedStateForLines.board.type,
+      updatedStateForLines.players.length,
+      updatedStateForLines.rulesOptions
+    );
+    const lines = allLines.filter(
+      (l) => l.player === updatedStateForLines.currentPlayer && l.length >= effectiveLineLength
+    );
 
     // DEBUG: Trace line detection in processPostMovePhases
     if (
       process.env.RINGRIFT_TRACE_DEBUG === '1' &&
       (originalMoveType === 'choose_line_option' || originalMoveType === 'choose_line_reward')
     ) {
+      const player2Markers = Array.from(updatedStateForLines.board.markers.entries())
+        .filter(([, m]) => m.player === 2)
+        .map(([k]) => k);
       // eslint-disable-next-line no-console
       console.log('[processPostMovePhases] LINE_DETECTION:', {
         originalMoveType,
@@ -2596,6 +2611,8 @@ function processPostMovePhases(
         allLinesCount: allLines.length,
         playerLinesCount: lines.length,
         allLinesPlayers: allLines.map((l) => ({ player: l.player, len: l.length })),
+        player2Markers,
+        linePositions: lines.length > 0 ? lines[0].positions.map((p) => `${p.x},${p.y}`) : [],
       });
     }
 
