@@ -10,8 +10,21 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getSelfPlayGameService } from '../services/SelfPlayGameService';
 import { httpLogger } from '../utils/logger';
+import { config } from '../config';
 
 const router = Router();
+
+/**
+ * Sanitize error messages for client responses.
+ * In production, returns a generic message to prevent information leakage.
+ * In development, returns the actual error for debugging.
+ */
+const sanitizeErrorMessage = (error: unknown, fallback: string): string => {
+  if (config.isDevelopment) {
+    return error instanceof Error ? error.message : fallback;
+  }
+  return fallback;
+};
 
 const MAX_LIMIT = 500;
 const MAX_OFFSET = 100_000;
@@ -279,11 +292,10 @@ router.get('/games', (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
     httpLogger.error(req, 'Failed to list games', { error, dbPath });
     res.status(500).json({
       success: false,
-      error: message,
+      error: sanitizeErrorMessage(error, 'Failed to list games'),
     });
   }
 });
@@ -355,11 +367,10 @@ router.get('/games/:gameId', (req: Request, res: Response) => {
       game,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
     httpLogger.error(req, 'Failed to get game', { error, gameId, dbPath });
     res.status(500).json({
       success: false,
-      error: message,
+      error: sanitizeErrorMessage(error, 'Failed to get game'),
     });
   }
 });
@@ -456,11 +467,10 @@ router.get('/games/:gameId/state', (req: Request, res: Response) => {
       state,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
     httpLogger.error(req, 'Failed to get state', { error, gameId, dbPath, moveNumber });
     res.status(500).json({
       success: false,
-      error: message,
+      error: sanitizeErrorMessage(error, 'Failed to get state'),
     });
   }
 });
@@ -515,11 +525,10 @@ router.get('/stats', (req: Request, res: Response) => {
       stats,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
     httpLogger.error(req, 'Failed to get stats', { error, dbPath });
     res.status(500).json({
       success: false,
-      error: message,
+      error: sanitizeErrorMessage(error, 'Failed to get stats'),
     });
   }
 });
