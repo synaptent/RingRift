@@ -322,7 +322,8 @@ export function deserializeGameState(data: SerializedGameState): GameState {
     totalRingsEliminated: data.totalRingsEliminated || 0,
     victoryThreshold: data.victoryThreshold,
     territoryVictoryThreshold: data.territoryVictoryThreshold,
-    rulesOptions,
+    // Only include rulesOptions when defined (exactOptionalPropertyTypes compliance)
+    ...(rulesOptions ? { rulesOptions } : {}),
   };
 }
 

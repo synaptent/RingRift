@@ -21,10 +21,11 @@ class _DummyNeuralNet:
         # Model is injected; nothing to do.
         _ = board_type
 
-    def evaluate_batch(self, game_states):  # type: ignore[no-untyped-def]
+    def evaluate_batch(self, game_states, value_head=None):  # type: ignore[no-untyped-def]
         self._call_sizes.append(len(game_states))
         values = [float(getattr(s, "tag")) for s in game_states]
         policies = np.asarray([[float(getattr(s, "tag"))] for s in game_states], dtype=np.float32)
+        _ = value_head
         return values, policies
 
 
@@ -66,3 +67,45 @@ def test_async_neural_batcher_microbatches_across_instances_on_cuda(
         batcher1.shutdown()
         batcher2.shutdown()
 
+
+def test_async_neural_batcher_keeps_value_heads_separate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RINGRIFT_NN_EVAL_QUEUE", "1")
+    monkeypatch.setenv("RINGRIFT_NN_EVAL_BATCH_TIMEOUT_MS", "50")
+    monkeypatch.setenv("RINGRIFT_NN_EVAL_MAX_BATCH", "256")
+
+    calls: list[int] = []
+    call_heads: list[int | None] = []
+    shared_model = object()
+
+    class _ValueHeadNet(_DummyNeuralNet):
+        def __init__(self) -> None:
+            super().__init__(model=shared_model, call_sizes=calls)
+
+        def evaluate_batch(self, game_states, value_head=None):  # type: ignore[no-untyped-def]
+            calls.append(len(game_states))
+            call_heads.append(value_head)
+            # Encode head into output so we can assert routing.
+            head = int(value_head) if value_head is not None else 0
+            values = [float(getattr(s, "tag")) + head * 100.0 for s in game_states]
+            policies = np.asarray([[float(getattr(s, "tag"))] for s in game_states], dtype=np.float32)
+            return values, policies
+
+    nn = _ValueHeadNet()
+    batcher = AsyncNeuralBatcher(nn)  # type: ignore[arg-type]
+    try:
+        fut1 = batcher.submit([_state(1)], value_head=0)
+        fut2 = batcher.submit([_state(2)], value_head=3)
+
+        values1, _pol1 = fut1.result(timeout=2)
+        values2, _pol2 = fut2.result(timeout=2)
+
+        assert values1 == [1.0]
+        assert values2 == [302.0]
+
+        # Different value_head requests must not be coalesced into the same batch.
+        assert sorted(calls) == [1, 1]
+        assert set(call_heads) == {0, 3}
+    finally:
+        batcher.shutdown()

@@ -293,7 +293,13 @@ function getLineDecisionMovesForSandboxAI(gameState: GameState, hooks: SandboxAI
     return eliminationMoves;
   }
 
-  return allMoves.filter((m) => m.type === 'process_line' || m.type === 'choose_line_reward');
+  // RR-FIX-2025-12-13: Include no_line_action in decision moves. This move is
+  // synthesized by SandboxOrchestratorAdapter.getValidMoves when there are no
+  // lines to process, and the AI must apply it to advance to territory_processing.
+  return allMoves.filter(
+    (m) =>
+      m.type === 'process_line' || m.type === 'choose_line_reward' || m.type === 'no_line_action'
+  );
 }
 
 function getTerritoryDecisionMovesForSandboxAI(
@@ -321,7 +327,15 @@ function getTerritoryDecisionMovesForSandboxAI(
   }
 
   // 2. Otherwise, fall back to any explicit elimination decisions.
-  return allMoves.filter((m) => m.type === 'eliminate_rings_from_stack');
+  const eliminationMoves = allMoves.filter((m) => m.type === 'eliminate_rings_from_stack');
+  if (eliminationMoves.length > 0) {
+    return eliminationMoves;
+  }
+
+  // RR-FIX-2025-12-13: Include no_territory_action in decision moves. This move is
+  // synthesized by SandboxOrchestratorAdapter.getValidMoves when there are no
+  // territory regions to process, and the AI must apply it to end the turn.
+  return allMoves.filter((m) => m.type === 'no_territory_action');
 }
 
 export function buildSandboxMovementCandidates(

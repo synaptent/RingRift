@@ -56,7 +56,6 @@ import type {
   Move,
   Territory,
   AdjacencyType,
-  RingStack,
 } from '../../types/game';
 import { BOARD_CONFIGS, positionToString } from '../../types/game';
 

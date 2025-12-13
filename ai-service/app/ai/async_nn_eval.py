@@ -68,6 +68,7 @@ class _EvalRequest:
     neural_net: NeuralNetAI
     game_states: List[GameState]
     future: Future
+    value_head: Optional[int] = None
 
 
 class _GlobalNNMicroBatcher:
@@ -89,9 +90,22 @@ class _GlobalNNMicroBatcher:
         )
         self._thread.start()
 
-    def submit(self, neural_net: NeuralNetAI, game_states: List[GameState]) -> Future:
+    def submit(
+        self,
+        neural_net: NeuralNetAI,
+        game_states: List[GameState],
+        *,
+        value_head: Optional[int] = None,
+    ) -> Future:
         fut: Future = Future()
-        self._queue.put(_EvalRequest(neural_net=neural_net, game_states=game_states, future=fut))
+        self._queue.put(
+            _EvalRequest(
+                neural_net=neural_net,
+                game_states=game_states,
+                future=fut,
+                value_head=value_head,
+            )
+        )
         return fut
 
     def shutdown(self) -> None:
@@ -175,7 +189,8 @@ class _GlobalNNMicroBatcher:
             offsets.append((req, start, end))
 
         try:
-            values, policies = rep.evaluate_batch(combined_states)
+            value_head = group[0].value_head
+            values, policies = rep.evaluate_batch(combined_states, value_head=value_head)
             for req, start, end in offsets:
                 req.future.set_result((values[start:end], policies[start:end]))
         except Exception as e:
@@ -217,6 +232,7 @@ class _GlobalNNMicroBatcher:
             int(first_size),
             history_len,
             share_key,
+            req.value_head,
         )
 
 
@@ -277,26 +293,34 @@ class AsyncNeuralBatcher:
     def evaluate(
         self,
         game_states: List[GameState],
+        *,
+        value_head: Optional[int] = None,
     ) -> Tuple[List[float], np.ndarray]:
         if self._use_microbatcher and self._global_batcher is not None:
-            return self.submit(game_states).result()
+            return self.submit(game_states, value_head=value_head).result()
 
         with self._lock:
-            return self.neural_net.evaluate_batch(game_states)
+            return self.neural_net.evaluate_batch(game_states, value_head=value_head)
 
     def submit(
         self,
         game_states: List[GameState],
+        *,
+        value_head: Optional[int] = None,
     ) -> Future:
         if self._use_microbatcher and self._global_batcher is not None:
-            return self._global_batcher.submit(self.neural_net, game_states)
+            return self._global_batcher.submit(
+                self.neural_net,
+                game_states,
+                value_head=value_head,
+            )
 
         if self._executor is None:
             raise RuntimeError("AsyncNeuralBatcher is shut down")
 
         def _run():
             with self._lock:
-                return self.neural_net.evaluate_batch(game_states)
+                return self.neural_net.evaluate_batch(game_states, value_head=value_head)
 
         return self._executor.submit(_run)
 

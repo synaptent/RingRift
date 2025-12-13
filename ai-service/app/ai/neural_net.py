@@ -3340,6 +3340,7 @@ class NeuralNetAI(BaseAI):
         game_states: list[GameState],
         tensor_input: Optional[torch.Tensor] = None,
         globals_input: Optional[torch.Tensor] = None,
+        value_head: Optional[int] = None,
     ) -> tuple[list[float], np.ndarray]:
         """
         Evaluate a batch of game states.
@@ -3432,13 +3433,22 @@ class NeuralNetAI(BaseAI):
             # Apply softmax to logits to get probabilities for MCTS / Descent.
             policy_probs = torch.softmax(policy_logits, dim=1)
 
-        # NOTE: RingRiftCNN v2/v3 models output a multi-value head by default.
-        # The NeuralNetAI wrapper (and all search AIs) currently consume a
-        # *single scalar* value per state. We treat the first value head as
-        # the canonical scalar value and ignore any additional heads.
+        # NOTE: Many RingRiftCNN models output a multi-value head by default.
+        # The NeuralNetAI wrapper (and most search AIs) currently consume a
+        # *single scalar* value per state. By default we return value_head=0,
+        # but callers may request a specific column via value_head (e.g. for
+        # multi-player value heads trained to predict per-player utilities).
         values_np = values.detach().cpu().numpy()
         if values_np.ndim == 2:
-            scalar_values = values_np[:, 0]
+            head = 0
+            if value_head is not None:
+                try:
+                    head = int(value_head)
+                except Exception:
+                    head = 0
+            if head < 0 or head >= values_np.shape[1]:
+                head = 0
+            scalar_values = values_np[:, head]
         else:
             scalar_values = values_np.reshape(values_np.shape[0])
 

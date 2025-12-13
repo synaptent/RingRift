@@ -24,6 +24,7 @@ import torch
 
 from .bounded_transposition_table import BoundedTranspositionTable
 from .async_nn_eval import AsyncNeuralBatcher
+from .game_state_utils import infer_num_players
 from .heuristic_ai import HeuristicAI
 from .neural_net import (
     NeuralNetAI,
@@ -656,6 +657,19 @@ class MCTSAI(HeuristicAI):
             AsyncNeuralBatcher(self.neural_net) if self.neural_net else None
         )
 
+        # Optional vector value-head selection for multi-player search.
+        # When enabled, callers can request a specific NeuralNetAI value head
+        # (e.g. per-player utility) instead of always using head 0.
+        vector_env = os.environ.get("RINGRIFT_VECTOR_VALUE_HEAD", "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self.use_vector_value_head: bool = bool(
+            getattr(config, "use_vector_value_head", False)
+        ) or vector_env
+
         # Optional async NN leaf evaluation to overlap CPU tree traversal with
         # GPU inference. Enabled via env var and only when a non-CPU device is used.
         async_env = os.environ.get("RINGRIFT_MCTS_ASYNC_NN_EVAL", "").lower() in {
@@ -1198,6 +1212,13 @@ class MCTSAI(HeuristicAI):
                     and states
                     and states[0].board.type == BoardType.HEXAGONAL
                 )
+                use_vector_head = (
+                    self.use_vector_value_head
+                    and not use_hex_nn
+                    and bool(states)
+                    and infer_num_players(states[0]) > 2
+                )
+                value_head = (self.player_number - 1) if use_vector_head else None
 
                 if uncached_states:
                     if use_hex_nn:
@@ -1206,9 +1227,15 @@ class MCTSAI(HeuristicAI):
                         )
                     else:
                         eval_values, eval_policies = (
-                            self.nn_batcher.evaluate(uncached_states)
+                            self.nn_batcher.evaluate(
+                                uncached_states,
+                                value_head=value_head,
+                            )
                             if self.nn_batcher is not None
-                            else self.neural_net.evaluate_batch(uncached_states)
+                            else self.neural_net.evaluate_batch(
+                                uncached_states,
+                                value_head=value_head,
+                            )
                         )
 
                     for j, orig_idx in enumerate(uncached_indices):
@@ -1246,7 +1273,15 @@ class MCTSAI(HeuristicAI):
                         (p == self.player_number) for p in players_by_depth
                     ]
 
-                    current_val = float(value) if value is not None else 0.0
+                    raw_val = float(value) if value is not None else 0.0
+                    if use_vector_head:
+                        current_val = (
+                            raw_val
+                            if state.current_player == self.player_number
+                            else -raw_val
+                        )
+                    else:
+                        current_val = raw_val
                     depth_idx = len(played_moves)
                     curr_node: Optional[MCTSNode] = node
 
@@ -1339,6 +1374,13 @@ class MCTSAI(HeuristicAI):
             and states
             and states[0].board.type == BoardType.HEXAGONAL
         )
+        use_vector_head = (
+            self.use_vector_value_head
+            and not use_hex_nn
+            and bool(states)
+            and infer_num_players(states[0]) > 2
+        )
+        value_head = (self.player_number - 1) if use_vector_head else None
 
         future: Optional[Future] = None
         if uncached_states:
@@ -1353,12 +1395,16 @@ class MCTSAI(HeuristicAI):
                     future = fut
             else:
                 if self.nn_batcher is not None:
-                    future = self.nn_batcher.submit(uncached_states)
+                    future = self.nn_batcher.submit(
+                        uncached_states,
+                        value_head=value_head,
+                    )
                 else:
                     fut = Future()
                     fut.set_result(
                         self.neural_net.evaluate_batch(  # type: ignore[union-attr]
-                            uncached_states
+                            uncached_states,
+                            value_head=value_head,
                         )
                     )
                     future = fut
@@ -1379,6 +1425,12 @@ class MCTSAI(HeuristicAI):
         future: Optional[Future],
     ) -> None:
         states = batch.states
+        use_vector_head = (
+            self.use_vector_value_head
+            and not batch.use_hex_nn
+            and bool(states)
+            and infer_num_players(states[0]) > 2
+        )
         values: List[float] = [0.0] * len(states)
         policies: List[Any] = [None] * len(states)
 
@@ -1417,7 +1469,15 @@ class MCTSAI(HeuristicAI):
                     (p == self.player_number) for p in players_by_depth
                 ]
 
-                current_val = float(value) if value is not None else 0.0
+                raw_val = float(value) if value is not None else 0.0
+                if use_vector_head:
+                    current_val = (
+                        raw_val
+                        if state.current_player == self.player_number
+                        else -raw_val
+                    )
+                else:
+                    current_val = raw_val
                 depth_idx = len(played_moves)
                 curr_node: Optional[MCTSNode] = node
 
@@ -1509,6 +1569,13 @@ class MCTSAI(HeuristicAI):
             and states
             and states[0].board.type == BoardType.HEXAGONAL
         )
+        use_vector_head = (
+            self.use_vector_value_head
+            and not use_hex_nn
+            and bool(states)
+            and infer_num_players(states[0]) > 2
+        )
+        value_head = (self.player_number - 1) if use_vector_head else None
 
         future: Optional[Future] = None
         if uncached_states:
@@ -1523,12 +1590,16 @@ class MCTSAI(HeuristicAI):
                     future = fut
             else:
                 if self.nn_batcher is not None:
-                    future = self.nn_batcher.submit(uncached_states)
+                    future = self.nn_batcher.submit(
+                        uncached_states,
+                        value_head=value_head,
+                    )
                 else:
                     fut = Future()
                     fut.set_result(
                         self.neural_net.evaluate_batch(  # type: ignore[union-attr]
-                            uncached_states
+                            uncached_states,
+                            value_head=value_head,
                         )
                     )
                     future = fut
@@ -1550,6 +1621,12 @@ class MCTSAI(HeuristicAI):
         mutable_state: MutableGameState,
     ) -> None:
         states = batch.states
+        use_vector_head = (
+            self.use_vector_value_head
+            and not batch.use_hex_nn
+            and bool(states)
+            and infer_num_players(states[0]) > 2
+        )
         values: List[float] = [0.0] * len(states)
         policies: List[Any] = [None] * len(states)
 
@@ -1586,7 +1663,15 @@ class MCTSAI(HeuristicAI):
                     (p == self.player_number) for p in players_by_depth
                 ]
 
-                current_val = float(value) if value is not None else 0.0
+                raw_val = float(value) if value is not None else 0.0
+                if use_vector_head:
+                    current_val = (
+                        raw_val
+                        if state.current_player == self.player_number
+                        else -raw_val
+                    )
+                else:
+                    current_val = raw_val
                 depth_idx = len(path_undos)
                 curr_node: Optional[MCTSNodeLite] = node
 
@@ -2149,6 +2234,13 @@ class MCTSAI(HeuristicAI):
                     and states
                     and states[0].board.type == BoardType.HEXAGONAL
                 )
+                use_vector_head = (
+                    self.use_vector_value_head
+                    and not use_hex_nn
+                    and bool(states)
+                    and infer_num_players(states[0]) > 2
+                )
+                value_head = (self.player_number - 1) if use_vector_head else None
 
                 if uncached_states:
                     if use_hex_nn:
@@ -2157,9 +2249,15 @@ class MCTSAI(HeuristicAI):
                         )
                     else:
                         eval_values, eval_policies = (
-                            self.nn_batcher.evaluate(uncached_states)
+                            self.nn_batcher.evaluate(
+                                uncached_states,
+                                value_head=value_head,
+                            )
                             if self.nn_batcher is not None
-                            else self.neural_net.evaluate_batch(uncached_states)
+                            else self.neural_net.evaluate_batch(
+                                uncached_states,
+                                value_head=value_head,
+                            )
                         )
 
                     for j, orig_idx in enumerate(uncached_indices):
@@ -2191,7 +2289,15 @@ class MCTSAI(HeuristicAI):
                         (p == self.player_number) for p in players_by_depth
                     ]
 
-                    current_val = float(value) if value is not None else 0.0
+                    raw_val = float(value) if value is not None else 0.0
+                    if use_vector_head:
+                        current_val = (
+                            raw_val
+                            if state.current_player == self.player_number
+                            else -raw_val
+                        )
+                    else:
+                        current_val = raw_val
                     depth_idx = len(path_undos)
                     curr_node: Optional[MCTSNodeLite] = node
 
@@ -2602,6 +2708,12 @@ class MCTSAI(HeuristicAI):
                 and self.hex_encoder is not None
                 and board_type == BoardType.HEXAGONAL
             )
+            use_vector_head = (
+                self.use_vector_value_head
+                and not use_hex_nn
+                and infer_num_players(game_state) > 2
+            )
+            value_head = (self.player_number - 1) if use_vector_head else None
 
             if use_hex_nn:
                 eval_values, eval_policies = self._evaluate_hex_batch([game_state])
@@ -2609,9 +2721,15 @@ class MCTSAI(HeuristicAI):
                 value = float(eval_values[0]) if eval_values else 0.0
             else:
                 eval_values, policy_batch = (
-                    self.nn_batcher.evaluate([game_state])
+                    self.nn_batcher.evaluate(
+                        [game_state],
+                        value_head=value_head,
+                    )
                     if self.nn_batcher is not None
-                    else self.neural_net.evaluate_batch([game_state])
+                    else self.neural_net.evaluate_batch(
+                        [game_state],
+                        value_head=value_head,
+                    )
                 )
                 policy_vec = policy_batch[0]
                 value = float(eval_values[0]) if eval_values else 0.0

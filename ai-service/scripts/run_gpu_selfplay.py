@@ -160,6 +160,8 @@ def _get_board_type(board_str: str) -> BoardType:
     board_map = {
         "square8": BoardType.SQUARE8,
         "square19": BoardType.SQUARE19,
+        # Legacy alias used by some historical JSONLs / embeddings.
+        "square25": BoardType.HEXAGONAL,
         "hexagonal": BoardType.HEXAGONAL,
         "hex": BoardType.HEXAGONAL,
     }
@@ -468,7 +470,12 @@ class GPUSelfPlayGenerator:
 
         # Pre-compute initial state for training data compatibility
         # All GPU games start from the same initial state with custom rules applied
-        board_type_map = {8: BoardType.SQUARE8, 19: BoardType.SQUARE19}
+        board_type_map = {
+            8: BoardType.SQUARE8,
+            19: BoardType.SQUARE19,
+            # Hex boards use a 25×25 embedding in the GPU kernels.
+            25: BoardType.HEXAGONAL,
+        }
         board_type = board_type_map.get(board_size, BoardType.SQUARE8)
         self._initial_state = create_initial_state(
             board_type,
@@ -572,7 +579,8 @@ class GPUSelfPlayGenerator:
                 results = self.generate_batch(seed=batch_idx * 1000)
 
                 # Create game records
-                board_type_str = {8: "square8", 19: "square19"}.get(self.board_size, "square8")
+                # GPU kernels use board_size=25 as the hex embedding size.
+                board_type_str = {8: "square8", 19: "square19", 25: "hexagonal"}.get(self.board_size, "square8")
                 for i in range(actual_batch):
                     game_idx = len(all_records)
                     vtype = results["victory_types"][i]

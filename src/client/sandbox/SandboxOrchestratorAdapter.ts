@@ -281,6 +281,17 @@ export class SandboxOrchestratorAdapter {
       // reflect the post-move board BEFORE any pending decisions are surfaced.
       let workingState = initialState;
       let result = runProcessTurn(workingState, move);
+
+      // RR-DEBUG-2025-12-13: Trace decision loop entry for all moves
+      // eslint-disable-next-line no-console
+      console.log('[SandboxOrchestratorAdapter.processMove] After runProcessTurn:', {
+        moveType: move.type,
+        resultStatus: result.status,
+        pendingDecision: result.pendingDecision?.type ?? 'none',
+        nextPhase: result.nextState.currentPhase,
+        nextPlayer: result.nextState.currentPlayer,
+      });
+
       const afterPrimary = result.nextState;
       const primaryEntry = createHistoryEntry(workingState, afterPrimary, move, {
         normalizeMoveNumber: true,
@@ -299,8 +310,21 @@ export class SandboxOrchestratorAdapter {
       // Resolve any pending decisions (line order, rewards, territory, elimination)
       // in-process, updating the sandbox game state after each canonical move so
       // the UI always sees the latest board snapshot during decision phases.
+      // RR-DEBUG-2025-12-13: Trace decision loop iterations
+      let decisionLoopIteration = 0;
       while (result.status === 'awaiting_decision' && result.pendingDecision) {
         const decision = result.pendingDecision;
+        decisionLoopIteration++;
+
+        // RR-DEBUG-2025-12-13: Log every decision loop iteration
+        // eslint-disable-next-line no-console
+        console.log('[SandboxOrchestratorAdapter.processMove] Decision loop iteration:', {
+          iteration: decisionLoopIteration,
+          decisionType: decision.type,
+          decisionPlayer: decision.player,
+          skipTerritoryAutoResolve: this.skipTerritoryAutoResolve,
+          currentPhase: workingState.currentPhase,
+        });
 
         // DEBUG: Trace decision loop for choose_line_reward
         if (process.env.NODE_ENV === 'test' && move.type === 'choose_line_reward') {
@@ -690,6 +714,38 @@ export class SandboxOrchestratorAdapter {
           moveNumber,
         };
         return [noMovement];
+      }
+
+      // RR-FIX-2025-12-13: Synthesize no_line_action when in line_processing
+      // with no lines. This matches the pending decision surfaced by
+      // processPostMovePhases and prevents sandbox AI freeze.
+      if (state.currentPhase === 'line_processing') {
+        const noLineAction: Move = {
+          id: `no-line-action-${moveNumber}`,
+          type: 'no_line_action',
+          player: state.currentPlayer,
+          to: { x: 0, y: 0 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber,
+        };
+        return [noLineAction];
+      }
+
+      // RR-FIX-2025-12-13: Synthesize no_territory_action when in territory_processing
+      // with no regions. This matches the pending decision surfaced by
+      // processPostMovePhases and prevents sandbox AI freeze.
+      if (state.currentPhase === 'territory_processing') {
+        const noTerritoryAction: Move = {
+          id: `no-territory-action-${moveNumber}`,
+          type: 'no_territory_action',
+          player: state.currentPlayer,
+          to: { x: 0, y: 0 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber,
+        };
+        return [noTerritoryAction];
       }
     }
 

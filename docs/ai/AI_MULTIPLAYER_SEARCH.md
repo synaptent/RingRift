@@ -53,6 +53,7 @@ Key invariant:
   - Uses a “most threatening opponent” selector based on **victory progress**
     (max of territory-control, ring-elimination, and LPS proximity) so Paranoid
     search reacts to whichever canonical win path is closest.
+  - LPS proximity respects the per-game `lpsRoundsRequired` threshold.
 
 ### MCTSAI
 

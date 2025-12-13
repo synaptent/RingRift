@@ -1,0 +1,38 @@
+{
+  "board": "square8",
+  "candidate_id": "sq8_2p_d2_cand_20251213_024804",
+  "config": {
+    "env": {
+      "board_type": "SQUARE8",
+      "lps_rounds_required": 2,
+      "max_moves": null,
+      "num_players": 2,
+      "reward_mode": "terminal",
+      "rings_per_player": null,
+      "seed": null,
+      "use_default_rules_engine": true
+    },
+    "training_params": {
+      "base_profile_id": "heuristic_v1_balanced",
+      "candidate_profile_id": "sq8_2p_d2_cand_20251213_024804",
+      "games_per_candidate": 24,
+      "generations": 5,
+      "ladder_heuristic_profile_id": "heuristic_v1_2p",
+      "mode": "heuristic_stub",
+      "population_size": 8,
+      "seed": 1,
+      "tier_spec_id": "sq8_heuristic_baseline_v1",
+      "trainer": "heuristic_cmaes"
+    }
+  },
+  "created_at": "2025-12-13T02:48:04.699084+00:00",
+  "metrics": {
+    "extra": {
+      "note": "stub configuration; wire to run_cmaes_heuristic_optimization for full runs"
+    },
+    "loss": null,
+    "training_steps": 0
+  },
+  "num_players": 2,
+  "tier": "D2"
+}

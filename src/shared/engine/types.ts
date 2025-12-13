@@ -36,6 +36,11 @@ export interface GameState {
   readonly totalRingsEliminated: number;
   readonly victoryThreshold: number;
   readonly territoryVictoryThreshold: number;
+  // Optional per-game rules overrides (mirrors canonical GameState from game.ts)
+  readonly rulesOptions?: {
+    ringsPerPlayer?: number;
+    lpsRoundsRequired?: number;
+  };
 }
 
 /**

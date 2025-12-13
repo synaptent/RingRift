@@ -227,6 +227,20 @@ class TestThreatOpponentSelection(unittest.TestCase):
             victory_progress_for_player(game_state, 2),
         )
 
+    def test_victory_progress_respects_lps_rounds_required(self) -> None:
+        game_state = _make_square8_state(num_players=3)
+
+        game_state.lps_consecutive_exclusive_player = 3
+        game_state.lps_consecutive_exclusive_rounds = 1
+
+        default_progress = victory_progress_for_player(game_state, 3)
+        self.assertGreater(default_progress, 0.0)
+
+        # Make LPS harder to achieve; progress should decrease accordingly.
+        game_state.lps_rounds_required = 3
+        adjusted_progress = victory_progress_for_player(game_state, 3)
+        self.assertLess(adjusted_progress, default_progress)
+
     def test_incremental_backprop_does_not_flip_between_opponents(self) -> None:
         class FakeMutableState:
             def __init__(self, current_player: int) -> None:

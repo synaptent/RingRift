@@ -14,6 +14,7 @@ for A/B testing and for backwards‑compatible behaviour.
 from __future__ import annotations
 
 import logging
+import math
 import os
 from typing import Optional, List, Dict, Any, Tuple
 import time
@@ -23,7 +24,7 @@ import numpy as np
 
 from .base import BaseAI
 from .bounded_transposition_table import BoundedTranspositionTable
-from .game_state_utils import victory_progress_for_player
+from .game_state_utils import infer_num_players, victory_progress_for_player
 from .async_nn_eval import AsyncNeuralBatcher
 from .neural_net import (
     NeuralNetAI,
@@ -210,6 +211,46 @@ class DescentAI(BaseAI):
             config, 'use_incremental_search', True
         )
 
+        # Optional vector value-head selection for multi-player evaluation.
+        # When enabled, Descent can request a specific NeuralNetAI value head
+        # (e.g. per-player utility) instead of always using head 0.
+        vector_env = os.environ.get("RINGRIFT_VECTOR_VALUE_HEAD", "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self.use_vector_value_head: bool = bool(
+            getattr(config, "use_vector_value_head", False)
+        ) or vector_env
+
+        # Optional uncertainty-aware child selection (UCB-style) for Descent.
+        # This encourages exploration of under-visited children in deep search.
+        ucb_env = os.environ.get("RINGRIFT_DESCENT_UCB", "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self.use_uncertainty_selection: bool = bool(
+            getattr(config, "use_uncertainty_selection", False)
+        ) or ucb_env
+        self.uncertainty_ucb_c: float = 0.25
+        cfg_c = getattr(config, "uncertainty_ucb_c", None)
+        if cfg_c is not None:
+            try:
+                self.uncertainty_ucb_c = float(cfg_c)
+            except Exception:
+                pass
+        env_c = os.environ.get("RINGRIFT_DESCENT_UCB_C", "").strip()
+        if env_c:
+            try:
+                self.uncertainty_ucb_c = float(env_c)
+            except Exception:
+                pass
+        if self.uncertainty_ucb_c <= 0:
+            self.use_uncertainty_selection = False
+
     def _default_nn_batch_size(self) -> int:
         """Default NN batch size for Descent leaf evaluation.
 
@@ -252,6 +293,73 @@ class DescentAI(BaseAI):
         alpha = 0.5
         v = max(1, int(visits))
         return max(min_children, int(c * (v**alpha)))
+
+    def _select_child_key(
+        self,
+        children_values: Dict[str, Any],
+        *,
+        parent_visits: int,
+        maximizing: bool,
+    ) -> str:
+        """Select a child move key to descend into.
+
+        Default behaviour matches the legacy greedy selection:
+        - maximize (root-to-move): pick highest value, tie-break by policy prob.
+        - minimize (opponent-to-move): pick lowest value.
+
+        When ``self.use_uncertainty_selection`` is enabled, use an
+        optimism/pessimism bound similar to UCB:
+        - maximize: value + c * sqrt(log(N) / (n + 1))
+        - minimize: value - c * sqrt(log(N) / (n + 1))
+        where n is per-child visit count tracked in the TT entry.
+        """
+        if not children_values:
+            raise ValueError("No children to select from")
+
+        def _prob(data: Any) -> float:
+            if isinstance(data, tuple) and len(data) > 2:
+                try:
+                    return float(data[2])
+                except Exception:
+                    return 0.0
+            return 0.0
+
+        def _visits(data: Any) -> int:
+            if isinstance(data, tuple) and len(data) > 3:
+                try:
+                    return int(data[3])
+                except Exception:
+                    return 0
+            return 0
+
+        if not self.use_uncertainty_selection:
+            if maximizing:
+                return max(
+                    children_values.items(),
+                    key=lambda item: (float(item[1][1]), _prob(item[1])),
+                )[0]
+            return min(
+                children_values.items(),
+                key=lambda item: (float(item[1][1]), -_prob(item[1])),
+            )[0]
+
+        log_term = math.log(max(2.0, float(parent_visits) + 1.0))
+        c = float(self.uncertainty_ucb_c)
+
+        def _score(item: tuple[str, Any]) -> tuple[float, float]:
+            _key, data = item
+            try:
+                mean = float(data[1])
+            except Exception:
+                mean = 0.0
+            bonus = c * math.sqrt(log_term / float(_visits(data) + 1))
+            if maximizing:
+                return (mean + bonus, _prob(data))
+            return (mean - bonus, -_prob(data))
+
+        if maximizing:
+            return max(children_values.items(), key=_score)[0]
+        return min(children_values.items(), key=_score)[0]
 
     def _unpack_tt_entry(
         self, entry: Any
@@ -572,6 +680,7 @@ class DescentAI(BaseAI):
                         next_move,
                         next_val,
                         float(next_prob),
+                        0,
                     )
                     # Refresh current value after widening.
                     if state.current_player == self.player_number:
@@ -582,28 +691,12 @@ class DescentAI(BaseAI):
             # Select best child to descend
             if not children_values:
                 return current_val
-
-            # Use value + policy tie-breaking
-            # children_values stores (move, val, prob) or (move, val)
-            def get_sort_key(item):
-                move_key, data = item
-                val = data[1]
-                prob = data[2] if len(data) > 2 else 0.0
-                # Primary: Value, Secondary: Policy prob
-                return (val, prob)
-
-            if state.current_player == self.player_number:
-                best_move_key = max(
-                    children_values.items(),
-                    key=get_sort_key,
-                )[0]
-            else:
-                # Opponent minimizes value. If values are equal we could
-                # break ties by policy, but for now we simply minimise val.
-                best_move_key = min(
-                    children_values.items(),
-                    key=lambda x: x[1][1],
-                )[0]
+            maximizing = state.current_player == self.player_number
+            best_move_key = self._select_child_key(
+                children_values,
+                parent_visits=visits,
+                maximizing=maximizing,
+            )
 
             best_move = children_values[best_move_key][0]
 
@@ -615,13 +708,22 @@ class DescentAI(BaseAI):
                 deadline=deadline,
             )
 
-            # Update child value
-            # Preserve existing data (move, old_val, prob)
+            # Update child value and per-child visit count.
             old_data = children_values[best_move_key]
-            if len(old_data) == 3:
-                children_values[best_move_key] = (best_move, val, old_data[2])
-            else:
-                children_values[best_move_key] = (best_move, val)
+            prob = 0.0
+            child_visits = 0
+            if isinstance(old_data, tuple):
+                if len(old_data) > 2:
+                    try:
+                        prob = float(old_data[2])
+                    except Exception:
+                        prob = 0.0
+                if len(old_data) > 3:
+                    try:
+                        child_visits = int(old_data[3])
+                    except Exception:
+                        child_visits = 0
+            children_values[best_move_key] = (best_move, val, prob, child_visits + 1)
 
             # Update current node value and status
             if state.current_player == self.player_number:
@@ -652,15 +754,7 @@ class DescentAI(BaseAI):
 
             self.transposition_table.put(
                 state_key,
-                (
-                    new_best_val,
-                    children_values,
-                    new_status,
-                    remaining_moves,
-                    visits,
-                )
-                if self._use_progressive_widening(state.board.type)
-                else (new_best_val, children_values, new_status),
+                (new_best_val, children_values, new_status, remaining_moves, visits),
             )
 
             # Log update (only if collecting training data)
@@ -799,7 +893,7 @@ class DescentAI(BaseAI):
                     nt_idx += 1
 
                 move_key = str(move)
-                children_values[move_key] = (move, val, prob)
+                children_values[move_key] = (move, val, prob, 0)
 
                 if state.current_player == self.player_number:
                     best_val = max(best_val, val)
@@ -818,15 +912,7 @@ class DescentAI(BaseAI):
 
             self.transposition_table.put(
                 state_key,
-                (
-                    best_val,
-                    children_values,
-                    status,
-                    remaining_moves,
-                    1,
-                )
-                if use_pw
-                else (best_val, children_values, status),
+                (best_val, children_values, status, remaining_moves, 1),
             )
 
             # Log initial visit (only if collecting training data)
@@ -908,6 +994,7 @@ class DescentAI(BaseAI):
                         next_move,
                         next_val,
                         float(next_prob),
+                        0,
                     )
                     if state.current_player == self.player_number:
                         current_val = max(v[1] for v in children_values.values())
@@ -917,28 +1004,12 @@ class DescentAI(BaseAI):
             # Select best child to descend
             if not children_values:
                 return current_val
-
-            # Use value + policy tie-breaking
-            # children_values stores (move, val, prob) or (move, val)
-            def get_sort_key(item):
-                move_key, data = item
-                val = data[1]
-                prob = data[2] if len(data) > 2 else 0.0
-                # Primary: Value, Secondary: Policy prob
-                return (val, prob)
-
-            if state.current_player == self.player_number:
-                best_move_key = max(
-                    children_values.items(),
-                    key=get_sort_key,
-                )[0]
-            else:
-                # Opponent minimizes value. If values are equal we could
-                # break ties by policy, but for now we simply minimise val.
-                best_move_key = min(
-                    children_values.items(),
-                    key=lambda x: x[1][1],
-                )[0]
+            maximizing = state.current_player == self.player_number
+            best_move_key = self._select_child_key(
+                children_values,
+                parent_visits=visits,
+                maximizing=maximizing,
+            )
 
             best_move = children_values[best_move_key][0]
 
@@ -951,13 +1022,22 @@ class DescentAI(BaseAI):
             )
             state.unmake_move(undo)
 
-            # Update child value
-            # Preserve existing data (move, old_val, prob)
+            # Update child value and per-child visit count.
             old_data = children_values[best_move_key]
-            if len(old_data) == 3:
-                children_values[best_move_key] = (best_move, val, old_data[2])
-            else:
-                children_values[best_move_key] = (best_move, val)
+            prob = 0.0
+            child_visits = 0
+            if isinstance(old_data, tuple):
+                if len(old_data) > 2:
+                    try:
+                        prob = float(old_data[2])
+                    except Exception:
+                        prob = 0.0
+                if len(old_data) > 3:
+                    try:
+                        child_visits = int(old_data[3])
+                    except Exception:
+                        child_visits = 0
+            children_values[best_move_key] = (best_move, val, prob, child_visits + 1)
 
             # Update current node value and status
             if state.current_player == self.player_number:
@@ -988,15 +1068,7 @@ class DescentAI(BaseAI):
 
             self.transposition_table.put(
                 state_key,
-                (
-                    new_best_val,
-                    children_values,
-                    new_status,
-                    remaining_moves,
-                    visits,
-                )
-                if self._use_progressive_widening(state.board_type)
-                else (new_best_val, children_values, new_status),
+                (new_best_val, children_values, new_status, remaining_moves, visits),
             )
 
             # Log update (only if collecting training data)
@@ -1118,7 +1190,7 @@ class DescentAI(BaseAI):
 
                     move_key = str(move)
                     prob = move_probs.get(move_key, 0.0)
-                    children_values[move_key] = (move, val, prob)
+                    children_values[move_key] = (move, val, prob, 0)
 
                     if state.current_player == self.player_number:
                         best_val = max(best_val, val)
@@ -1173,7 +1245,7 @@ class DescentAI(BaseAI):
                         nt_idx += 1
 
                     move_key = str(move)
-                    children_values[move_key] = (move, val, prob)
+                    children_values[move_key] = (move, val, prob, 0)
 
                     if state.current_player == self.player_number:
                         best_val = max(best_val, val)
@@ -1192,15 +1264,7 @@ class DescentAI(BaseAI):
 
             self.transposition_table.put(
                 state_key,
-                (
-                    best_val,
-                    children_values,
-                    status,
-                    remaining_moves,
-                    1,
-                )
-                if use_pw
-                else (best_val, children_values, status),
+                (best_val, children_values, status, remaining_moves, 1),
             )
 
             # Log initial visit (only if collecting training data)
@@ -1340,6 +1404,13 @@ class DescentAI(BaseAI):
             return [self.evaluate_position(s) for s in game_states]
 
         try:
+            use_vector_head = (
+                self.use_vector_value_head
+                and bool(game_states)
+                and infer_num_players(game_states[0]) > 2
+            )
+            value_head = (self.player_number - 1) if use_vector_head else None
+
             if self.nn_batcher and self.enable_async_nn_eval:
                 batch_size = int(self._default_nn_batch_size())
                 step = max(1, batch_size)
@@ -1353,13 +1424,20 @@ class DescentAI(BaseAI):
                     values, _policy = fut.result()
                     for val, st in zip(values, chunk):
                         v = float(val)
-                        if st.current_player != self.player_number:
+                        if (not use_vector_head) and (
+                            st.current_player != self.player_number
+                        ):
                             v = -v
                         adjusted.append(max(-0.99, min(0.99, v)))
 
                 for i in range(0, len(game_states), step):
                     chunk = game_states[i:i + step]
-                    pending.append((chunk, self.nn_batcher.submit(chunk)))
+                    pending.append(
+                        (
+                            chunk,
+                            self.nn_batcher.submit(chunk, value_head=value_head),
+                        )
+                    )
                     if len(pending) >= max_pending:
                         _drain_one()
 
@@ -1369,14 +1447,20 @@ class DescentAI(BaseAI):
                 return adjusted
 
             if self.nn_batcher:
-                values, _ = self.nn_batcher.evaluate(game_states)
+                values, _ = self.nn_batcher.evaluate(
+                    game_states,
+                    value_head=value_head,
+                )
             else:
-                values, _ = self.neural_net.evaluate_batch(game_states)
+                values, _ = self.neural_net.evaluate_batch(
+                    game_states,
+                    value_head=value_head,
+                )
 
             adjusted: List[float] = []
             for val, st in zip(values, game_states):
                 v = float(val)
-                if (
+                if (not use_vector_head) and (
                     st.current_player != self.player_number
                 ):
                     v = -v
@@ -1508,16 +1592,33 @@ class DescentAI(BaseAI):
         val = 0.0
         if self.neural_net:
             try:
+                use_vector_head = (
+                    self.use_vector_value_head
+                    and infer_num_players(game_state) > 2
+                )
+                value_head = (self.player_number - 1) if use_vector_head else None
+
                 if self.nn_batcher:
-                    values, _ = self.nn_batcher.evaluate([game_state])
+                    values, _ = self.nn_batcher.evaluate(
+                        [game_state],
+                        value_head=value_head,
+                    )
                     val = float(values[0]) if values else 0.0
                 else:
-                    val = self.neural_net.evaluate_position(game_state)
-                # NeuralNetAI encodes features relative to the state's
-                # current_player. For Paranoid-style reductions (root vs
-                # opponent coalition), convert the resulting value into this
-                # agent's fixed perspective by negating opponent-to-move states.
-                if (
+                    values, _ = self.neural_net.evaluate_batch(
+                        [game_state],
+                        value_head=value_head,
+                    )
+                    val = float(values[0]) if values else 0.0
+
+                # Default path: NeuralNetAI encodes features relative to the state's
+                # current_player, so convert to this agent's fixed perspective by
+                # negating opponent-to-move states.
+                #
+                # When using a vector value head we assume the selected head already
+                # represents this agent's utility, so no turn-based negation is
+                # applied here.
+                if (not use_vector_head) and (
                     game_state.current_player != self.player_number
                 ):
                     val = -val

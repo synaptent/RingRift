@@ -123,6 +123,9 @@ def victory_progress_for_player(state: Any, player_number: int) -> float:
 
     elim_progress = float(eliminated) / float(victory_threshold)
     terr_progress = float(territory) / float(territory_threshold)
+    # Clamp for safety (synthetic states / legacy data can exceed thresholds).
+    elim_progress = max(0.0, min(1.0, elim_progress))
+    terr_progress = max(0.0, min(1.0, terr_progress))
     base_progress = max(elim_progress, terr_progress)
 
     lps_player = getattr(
@@ -138,8 +141,26 @@ def victory_progress_for_player(state: Any, player_number: int) -> float:
 
     lps_progress = 0.0
     if lps_player == player_number and isinstance(lps_rounds, int) and lps_rounds > 0:
-        # One completed exclusive round is a high-threat precursor to LPS victory.
-        lps_progress = 1.0 if lps_rounds >= 2 else 0.95
+        required_rounds = getattr(
+            state,
+            "lps_rounds_required",
+            getattr(state, "_lps_rounds_required", getattr(state, "lpsRoundsRequired", 2)),
+        )
+        if not isinstance(required_rounds, int) or required_rounds <= 0:
+            required_rounds = 2
+
+        # LPS can convert quickly once a player has any exclusive-round momentum.
+        # Use a high-threat scale rather than a simple linear fraction.
+        if lps_rounds >= required_rounds:
+            lps_progress = 1.0
+        elif required_rounds == 1:
+            lps_progress = 1.0
+        else:
+            # Map 1..(required-1) → [0.90, 0.99] with the final pre-win round
+            # treated as near-certain imminent threat.
+            denom = float(required_rounds - 1)
+            frac = min(1.0, max(0.0, float(lps_rounds) / denom))
+            lps_progress = 0.90 + 0.09 * frac
 
     return max(base_progress, lps_progress)
 

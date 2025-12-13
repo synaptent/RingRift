@@ -1,0 +1,21 @@
+{
+  "board": "square8",
+  "candidate_id": "sq8_2p_d2_cand_20251213_024804",
+  "created_at": "2025-12-13T02:48:52.978605+00:00",
+  "cross_tier_sanity": {
+    "run": false
+  },
+  "evaluation": {
+    "overall_pass": false,
+    "promotion_plan_path": "promotion_plan.json",
+    "result_path": "tier_eval_result.json"
+  },
+  "final_decision": "reject",
+  "num_players": 2,
+  "perf": {
+    "overall_pass": null,
+    "result_path": null,
+    "run": false
+  },
+  "tier": "D2"
+}

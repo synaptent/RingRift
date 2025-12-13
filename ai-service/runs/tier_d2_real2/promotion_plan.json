@@ -1,0 +1,18 @@
+{
+  "board_type": "square8",
+  "candidate_model_id": "sq8_2p_d2_cand_20251213_024804",
+  "current_model_id": "heuristic_v1_2p",
+  "decision": "reject",
+  "num_players": 2,
+  "reason": {
+    "candidate_artifact_loaded": null,
+    "candidate_artifact_present": false,
+    "overall_pass": false,
+    "use_candidate_artifact": false,
+    "win_rate_vs_baseline": 0.5,
+    "win_rate_vs_baseline_ci_low": 0.15,
+    "win_rate_vs_previous_tier": null
+  },
+  "tier": "D2",
+  "timestamp": "2025-12-13T02:48:52.679479+00:00"
+}
