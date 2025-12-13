@@ -2612,10 +2612,17 @@ class P2POrchestrator:
         return 0
 
     def _check_local_changes(self) -> bool:
-        """Check if there are uncommitted local changes."""
+        """Check if there are uncommitted local changes.
+
+        Notes:
+        - Ignore untracked files by default. Cluster nodes often accumulate local
+          artifacts (logs, data, env backups) that should not block git updates.
+        - Still blocks on tracked/staged modifications to avoid stomping on
+          local hotfixes.
+        """
         try:
             result = subprocess.run(
-                self._git_cmd("status", "--porcelain"),
+                self._git_cmd("status", "--porcelain", "--untracked-files=no"),
                 cwd=self.ringrift_path,
                 capture_output=True, text=True, timeout=10
             )
