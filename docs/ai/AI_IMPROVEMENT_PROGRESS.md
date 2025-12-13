@@ -35,6 +35,31 @@ Status tags:
 - **next** Re-run 2P canonical self-play soaks to establish new swap usage
   baseline and update registry health summaries.
 
+## Pipeline Orchestrator (2025-12-13)
+
+- **done** SSH retry logic with exponential backoff (3 retries, 2-30s delays
+  with jitter) for robust distributed execution.
+- **done** Smart polling replaces fixed 45-minute waits for selfplay/CMA-ES/training
+  phase completion detection.
+- **done** Checkpointing and `--resume` flag for resuming interrupted iterations
+  from last completed phase.
+- **done** Elo rating system (K=32) with full history persistence for model
+  comparison and leaderboard tracking.
+- **done** Model registry for tracking trained models with lineage (parent_id),
+  metrics, and deprecation status.
+- **done** Tier gating integration (D2→D4→D6→D8) with automatic promotion
+  based on 55% win rate threshold over 10+ matches.
+- **done** Game deduplication via SHA256 hashing to prevent duplicate games
+  in training data.
+- **done** Resource monitoring (CPU/MEM/DISK/GPU) across all distributed workers.
+- **done** Enhanced error logging with full stdout/stderr capture to daily log files.
+- **done** Board-specific heuristic profiles for all 9 board×player configurations
+  (square8/square19/hex × 2p/3p/4p).
+- **done** 22 diverse selfplay job configurations (mixed, heuristic-only,
+  minimax-only, mcts-only, descent-only, nn-only) across all boards.
+- **done** Tournament games now saved and synced for training data augmentation.
+- **done** CMA-ES matrix integrated with pipeline orchestrator for all 9 configs.
+
 ## Canonical Data Pipeline
 
 - **done** Regenerated and re-gated `canonical_square8.db` (2P) via distributed
