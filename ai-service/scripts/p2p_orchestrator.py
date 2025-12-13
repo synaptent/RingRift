@@ -776,6 +776,20 @@ class P2POrchestrator:
         self.last_improvement_cycle_check: float = 0.0
         self.improvement_cycle_check_interval: float = 600.0  # Check every 10 minutes
 
+        # Diversity tracking metrics
+        self.diversity_metrics = {
+            "games_by_engine_mode": {},      # engine_mode -> count
+            "games_by_board_config": {},     # "board_players" -> count
+            "games_by_difficulty": {},       # difficulty -> count
+            "asymmetric_games": 0,           # count of asymmetric games scheduled
+            "symmetric_games": 0,            # count of symmetric games scheduled
+            "training_triggers": 0,          # count of training triggers
+            "cmaes_triggers": 0,             # count of CMA-ES triggers
+            "promotions": 0,                 # count of model promotions
+            "rollbacks": 0,                  # count of rollbacks
+            "last_reset": time.time(),       # when metrics were last reset
+        }
+
         # LEARNED LESSONS - Stuck job detection (leader-only)
         # Track when each node's GPU first went idle with running jobs
         self.gpu_idle_since: Dict[str, float] = {}  # node_id -> timestamp when GPU went idle
@@ -1209,6 +1223,64 @@ class P2POrchestrator:
             print(f"[P2P] Resource check error: {e}")
 
         return result
+
+    def _get_diversity_metrics(self) -> Dict[str, Any]:
+        """Get diversity tracking metrics for monitoring."""
+        metrics = dict(self.diversity_metrics)
+        metrics["uptime_seconds"] = time.time() - metrics.get("last_reset", time.time())
+
+        # Calculate diversity ratios
+        total_games = metrics.get("asymmetric_games", 0) + metrics.get("symmetric_games", 0)
+        if total_games > 0:
+            metrics["asymmetric_ratio"] = metrics["asymmetric_games"] / total_games
+        else:
+            metrics["asymmetric_ratio"] = 0.0
+
+        # Engine mode distribution
+        engine_total = sum(metrics.get("games_by_engine_mode", {}).values())
+        if engine_total > 0:
+            metrics["engine_mode_distribution"] = {
+                k: v / engine_total
+                for k, v in metrics.get("games_by_engine_mode", {}).items()
+            }
+        else:
+            metrics["engine_mode_distribution"] = {}
+
+        return metrics
+
+    def _track_selfplay_diversity(self, config: Dict[str, Any]):
+        """Track diversity metrics for a scheduled selfplay game."""
+        # Track engine mode
+        engine_mode = config.get("engine_mode", "unknown")
+        if engine_mode not in self.diversity_metrics["games_by_engine_mode"]:
+            self.diversity_metrics["games_by_engine_mode"][engine_mode] = 0
+        self.diversity_metrics["games_by_engine_mode"][engine_mode] += 1
+
+        # Track board config
+        board_key = f"{config.get('board_type', 'unknown')}_{config.get('num_players', 0)}p"
+        if board_key not in self.diversity_metrics["games_by_board_config"]:
+            self.diversity_metrics["games_by_board_config"][board_key] = 0
+        self.diversity_metrics["games_by_board_config"][board_key] += 1
+
+        # Track asymmetric vs symmetric
+        if config.get("asymmetric"):
+            self.diversity_metrics["asymmetric_games"] += 1
+            strong = config.get("strong_config", {})
+            weak = config.get("weak_config", {})
+            print(f"[P2P] DIVERSE: Asymmetric game scheduled - "
+                  f"Strong({strong.get('engine_mode')}@D{strong.get('difficulty')}) vs "
+                  f"Weak({weak.get('engine_mode')}@D{weak.get('difficulty')}) "
+                  f"on {board_key}")
+        else:
+            self.diversity_metrics["symmetric_games"] += 1
+
+        # Track difficulty if available
+        difficulty = config.get("difficulty", config.get("difficulty_band"))
+        if difficulty:
+            diff_key = str(difficulty)
+            if diff_key not in self.diversity_metrics["games_by_difficulty"]:
+                self.diversity_metrics["games_by_difficulty"][diff_key] = 0
+            self.diversity_metrics["games_by_difficulty"][diff_key] += 1
 
     def _count_local_jobs(self) -> Tuple[int, int]:
         """Count running selfplay and training jobs on this node."""
@@ -2329,6 +2401,17 @@ class P2POrchestrator:
         with self.jobs_lock:
             jobs = {k: v.to_dict() for k, v in self.local_jobs.items()}
 
+        # Get improvement cycle manager status
+        improvement_status = None
+        if self.improvement_cycle_manager:
+            try:
+                improvement_status = self.improvement_cycle_manager.get_status()
+            except Exception as e:
+                improvement_status = {"error": str(e)}
+
+        # Get diversity metrics
+        diversity_metrics = self._get_diversity_metrics()
+
         return web.json_response({
             "node_id": self.node_id,
             "role": self.role.value,
@@ -2337,6 +2420,8 @@ class P2POrchestrator:
             "peers": peers,
             "local_jobs": jobs,
             "alive_peers": len([p for p in self.peers.values() if p.is_alive()]),
+            "improvement_cycle_manager": improvement_status,
+            "diversity_metrics": diversity_metrics,
         })
 
     async def handle_election(self, request: web.Request) -> web.Response:
@@ -3229,6 +3314,31 @@ class P2POrchestrator:
             state.status = "completed"
             print(f"[P2P] CMA-ES job {job_id} completed: best_fitness={state.best_fitness:.4f}")
             print(f"[P2P] Best weights: {state.best_weights}")
+
+            # Feed CMA-ES results back to improvement cycle manager
+            if self.improvement_cycle_manager and state.best_weights:
+                try:
+                    agent_id = self.improvement_cycle_manager.handle_cmaes_complete(
+                        state.board_type, state.num_players, state.best_weights
+                    )
+                    print(f"[P2P] CMA-ES weights registered as agent: {agent_id}")
+                    self.diversity_metrics["cmaes_triggers"] += 1
+
+                    # Save weights to file for future use
+                    weights_file = Path(self.ringrift_path) / "ai-service" / "data" / "cmaes" / f"best_weights_{state.board_type}_{state.num_players}p.json"
+                    weights_file.parent.mkdir(parents=True, exist_ok=True)
+                    import json as json_mod
+                    with open(weights_file, "w") as f:
+                        json_mod.dump({
+                            "weights": state.best_weights,
+                            "fitness": state.best_fitness,
+                            "job_id": job_id,
+                            "generation": state.current_generation,
+                            "timestamp": time.time(),
+                        }, f, indent=2)
+                    print(f"[P2P] Saved CMA-ES weights to {weights_file}")
+                except Exception as e:
+                    print(f"[P2P] Failed to register CMA-ES weights: {e}")
 
         except Exception as e:
             import traceback
@@ -4967,6 +5077,19 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             print(f"[P2P] CMA-ES optimization ready for {board_type}_{num_players}p")
             asyncio.create_task(self._trigger_auto_cmaes(board_type, num_players))
 
+        # Check for rollback needs (consecutive training failures)
+        for key, cycle in self.improvement_cycle_manager.state.cycles.items():
+            if not cycle.pending_training and not cycle.pending_evaluation:
+                should_rollback, reason = self.improvement_cycle_manager.check_rollback_needed(
+                    cycle.board_type, cycle.num_players
+                )
+                if should_rollback:
+                    print(f"[P2P] ROLLBACK NEEDED for {key}: {reason}")
+                    if self.improvement_cycle_manager.execute_rollback(cycle.board_type, cycle.num_players):
+                        self.diversity_metrics["rollbacks"] += 1
+                        # Increase diversity to escape plateau
+                        print(f"[P2P] Increasing diversity to escape training plateau for {key}")
+
         for job_config in jobs_to_start:
             cycle_id = job_config["cycle_id"]
             board_type = job_config["board_type"]
@@ -5936,6 +6059,12 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     async def handle_api_cluster_status(self, request: web.Request) -> web.Response:
         """Get comprehensive cluster status for external clients and dashboard."""
         try:
+            # Ensure local resource stats are fresh for dashboard consumers.
+            try:
+                self._update_self_info()
+            except Exception:
+                pass
+
             # Collect peer info (dashboard-oriented shape)
             peers_info: List[Dict[str, Any]] = []
             with self.peers_lock:
@@ -5947,6 +6076,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         "node_id": peer_id,
                         "host": peer.host,
                         "port": peer.port,
+                        "scheme": getattr(peer, "scheme", "http"),
+                        "role": peer.role.value if hasattr(peer.role, "value") else str(peer.role),
                         "status": status,
                         "last_seen": peer.last_heartbeat,
                         "capabilities": list(peer.capabilities) if peer.capabilities else [],
@@ -6035,6 +6166,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 "role": self.role.value if hasattr(self.role, 'value') else str(self.role),
                 "leader_id": self.leader_id,
                 "is_leader": self.role == NodeRole.LEADER,
+                "self": self.self_info.to_dict() if hasattr(self.self_info, "to_dict") else asdict(self.self_info),
                 "uptime_seconds": time.time() - self.start_time,
                 "peers": peers_info,
                 "peer_count": len(self.peers),
@@ -6091,6 +6223,96 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "timestamp": time.time(),
                 }
             )
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    async def handle_api_elo_leaderboard(self, request: web.Request) -> web.Response:
+        """Get Elo leaderboard for all board types from persistent database.
+
+        Query params:
+            board_type: Filter by board type (optional)
+            num_players: Filter by number of players (optional)
+            limit: Max results per config (default 20)
+        """
+        try:
+            # Try to import Elo database functions
+            try:
+                from scripts.run_model_elo_tournament import (
+                    init_elo_database,
+                    get_leaderboard,
+                    ELO_DB_PATH,
+                )
+            except ImportError:
+                return web.json_response({
+                    "success": False,
+                    "error": "Elo database module not available",
+                }, status=500)
+
+            # Check if database exists
+            if not ELO_DB_PATH or not ELO_DB_PATH.exists():
+                return web.json_response({
+                    "success": True,
+                    "leaderboards": {},
+                    "message": "No Elo database found yet. Run cross-model tournament to populate.",
+                })
+
+            board_type = request.query.get("board_type")
+            num_players_str = request.query.get("num_players")
+            num_players = int(num_players_str) if num_players_str else None
+            limit = int(request.query.get("limit", "20"))
+
+            conn = init_elo_database()
+
+            # If specific filter requested, return just that
+            if board_type and num_players:
+                leaderboard = get_leaderboard(conn, board_type, num_players, limit=limit)
+                conn.close()
+                return web.json_response({
+                    "success": True,
+                    "leaderboards": {f"{board_type}_{num_players}p": leaderboard},
+                    "total_models": len(leaderboard),
+                    "timestamp": time.time(),
+                })
+
+            # Otherwise return all board/player combinations
+            # Query unique board_type/num_players combinations
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT board_type, num_players
+                FROM elo_ratings
+                WHERE board_type IS NOT NULL AND num_players IS NOT NULL
+                ORDER BY board_type, num_players
+            """)
+            configs = cursor.fetchall()
+
+            leaderboards = {}
+            total_models = 0
+            total_games = 0
+
+            for bt, np in configs:
+                key = f"{bt}_{np}p"
+                lb = get_leaderboard(conn, bt, np, limit=limit)
+                if lb:
+                    leaderboards[key] = lb
+                    total_models += len(lb)
+                    total_games += sum(entry.get("games_played", 0) for entry in lb)
+
+            # Get match history stats
+            cursor.execute("SELECT COUNT(*) FROM match_history")
+            match_count = cursor.fetchone()[0]
+
+            conn.close()
+
+            return web.json_response({
+                "success": True,
+                "leaderboards": leaderboards,
+                "total_models": total_models,
+                "total_matches": match_count,
+                "total_games_recorded": total_games,
+                "configs": [f"{bt}_{np}p" for bt, np in configs],
+                "timestamp": time.time(),
+            })
+
         except Exception as e:
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
@@ -6701,133 +6923,17 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
     async def handle_dashboard(self, request: web.Request) -> web.Response:
         """Serve the web dashboard HTML."""
-        dashboard_html = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RingRift P2P Cluster Dashboard</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; padding: 20px; }
-        .header { text-align: center; margin-bottom: 30px; }
-        .header h1 { color: #00d4ff; margin-bottom: 10px; }
-        .header .subtitle { color: #888; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
-        .card { background: #16213e; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .card h2 { color: #00d4ff; margin-bottom: 15px; font-size: 1.2em; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #222; }
-        .stat:last-child { border-bottom: none; }
-        .stat-label { color: #888; }
-        .stat-value { color: #00d4ff; font-weight: bold; }
-        .status-online { color: #00ff88; }
-        .status-offline { color: #ff4444; }
-        .status-pending { color: #ffaa00; }
-        .status-running { color: #00d4ff; }
-        .status-completed { color: #00ff88; }
-        .status-failed { color: #ff4444; }
-        .peer-list, .job-list { max-height: 300px; overflow-y: auto; }
-        .peer-item, .job-item { background: #0f3460; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-        .peer-item:last-child, .job-item:last-child { margin-bottom: 0; }
-        .peer-name, .job-name { font-weight: bold; color: #fff; }
-        .peer-meta, .job-meta { font-size: 0.85em; color: #888; margin-top: 5px; }
-        .refresh-btn { background: #00d4ff; color: #000; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        .refresh-btn:hover { background: #00b8e6; }
-        .actions { margin-top: 20px; text-align: center; }
-        .leader-badge { background: #ffd700; color: #000; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; margin-left: 8px; }
-        .loading { text-align: center; padding: 40px; color: #888; }
-        #error { background: #ff4444; color: #fff; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: none; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>RingRift P2P Cluster Dashboard</h1>
-        <p class="subtitle" id="node-info">Loading...</p>
-    </div>
-    <div id="error"></div>
-    <div class="grid">
-        <div class="card">
-            <h2>Cluster Overview</h2>
-            <div id="cluster-stats" class="loading">Loading cluster status...</div>
-        </div>
-        <div class="card">
-            <h2>Active Peers</h2>
-            <div id="peer-list" class="peer-list loading">Loading peers...</div>
-        </div>
-        <div class="card">
-            <h2>Training Jobs</h2>
-            <div id="training-jobs" class="job-list loading">Loading jobs...</div>
-        </div>
-        <div class="card">
-            <h2>Data Manifests</h2>
-            <div id="data-manifests" class="loading">Loading data...</div>
-        </div>
-    </div>
-    <div class="actions">
-        <button class="refresh-btn" onclick="refresh()">Refresh</button>
-    </div>
-    <script>
-        async function refresh() {
-            try {
-                const resp = await fetch('/api/cluster/status');
-                const data = await resp.json();
-                if (!data.success) throw new Error(data.error);
-
-                document.getElementById('error').style.display = 'none';
-
-                // Node info
-                const roleText = data.is_leader ? '<span class="leader-badge">LEADER</span>' : '';
-                document.getElementById('node-info').innerHTML =
-                    `Node: ${data.node_id} ${roleText} | Leader: ${data.leader_id || 'Unknown'}`;
-
-                // Cluster stats
-                document.getElementById('cluster-stats').innerHTML = `
-                    <div class="stat"><span class="stat-label">Peers</span><span class="stat-value">${data.peer_count}</span></div>
-                    <div class="stat"><span class="stat-label">Active Jobs</span><span class="stat-value">${data.job_count}</span></div>
-                    <div class="stat"><span class="stat-label">Training Jobs</span><span class="stat-value">${data.training_job_count}</span></div>
-                    <div class="stat"><span class="stat-label">Uptime</span><span class="stat-value">${Math.floor(data.uptime_seconds / 60)}m</span></div>
-                `;
-
-                // Peers
-                const peerHtml = data.peers.map(p => `
-                    <div class="peer-item">
-                        <div class="peer-name">${p.node_id} <span class="status-${p.status}">[${p.status}]</span></div>
-                        <div class="peer-meta">${p.host}:${p.port} | GPU: ${p.has_gpu ? 'Yes' : 'No'}</div>
-                        ${p.current_job ? `<div class="peer-meta">Job: ${p.current_job}</div>` : ''}
-                    </div>
-                `).join('') || '<div class="loading">No peers connected</div>';
-                document.getElementById('peer-list').innerHTML = peerHtml;
-
-                // Training jobs
-                const jobHtml = data.training_jobs.map(j => `
-                    <div class="job-item">
-                        <div class="job-name">${j.job_type.toUpperCase()} - ${j.board_type} ${j.num_players}p <span class="status-${j.status}">[${j.status}]</span></div>
-                        <div class="job-meta">ID: ${j.job_id.slice(0,8)}... | Worker: ${j.assigned_worker || 'Unassigned'}</div>
-                        ${j.error_message ? `<div class="job-meta" style="color:#ff4444">Error: ${j.error_message}</div>` : ''}
-                    </div>
-                `).join('') || '<div class="loading">No training jobs</div>';
-                document.getElementById('training-jobs').innerHTML = jobHtml;
-
-                // Data manifests
-                const manifestHtml = Object.entries(data.data_manifests).map(([node, m]) => `
-                    <div class="stat">
-                        <span class="stat-label">${node}</span>
-                        <span class="stat-value">${m.game_count} games</span>
-                    </div>
-                `).join('') || '<div class="loading">No data manifests</div>';
-                document.getElementById('data-manifests').innerHTML = manifestHtml;
-
-            } catch (err) {
-                document.getElementById('error').textContent = 'Error: ' + err.message;
-                document.getElementById('error').style.display = 'block';
-            }
-        }
-        refresh();
-        setInterval(refresh, 10000);
-    </script>
-</body>
-</html>'''
-        return web.Response(text=dashboard_html, content_type='text/html')
+        dashboard_path = Path(__file__).resolve().parent / "dashboard_assets" / "dashboard.html"
+        try:
+            html = dashboard_path.read_text(encoding="utf-8")
+        except Exception as e:
+            html = (
+                "<!doctype html><html><body style='font-family:monospace'>"
+                f"<h3>Dashboard asset unavailable</h3><pre>{e}</pre>"
+                f"<pre>Expected: {dashboard_path}</pre>"
+                "</body></html>"
+            )
+        return web.Response(text=html, content_type="text/html")
 
     async def _run_evaluation(self, job_id: str):
         """Evaluate new model against current best.
@@ -7584,14 +7690,13 @@ print(json.dumps({{
                         config = self.improvement_cycle_manager.get_next_selfplay_config(
                             self.cluster_data_manifest
                         )
-                        # Handle asymmetric configs - use mixed mode with difficulty hints
-                        if config.get("asymmetric"):
-                            # For asymmetric games, log the configuration for training analysis
-                            print(f"[P2P] Scheduling asymmetric game: {config.get('strong_config')} vs {config.get('weak_config')}")
                     else:
                         # Fallback to static weighted selection
                         config_idx = (hash(node.node_id) + i + int(time.time() // 1800)) % len(weighted_configs)
                         config = weighted_configs[config_idx]
+
+                    # Track diversity metrics for monitoring
+                    self._track_selfplay_diversity(config)
 
                     if node.node_id == self.node_id:
                         await self._start_local_job(
@@ -8107,6 +8212,7 @@ print(json.dumps({{
         app.router.add_get('/', self.handle_root)
         app.router.add_get('/api/cluster/status', self.handle_api_cluster_status)
         app.router.add_get('/api/selfplay/stats', self.handle_api_selfplay_stats)
+        app.router.add_get('/api/elo/leaderboard', self.handle_api_elo_leaderboard)
         app.router.add_get('/api/canonical/health', self.handle_api_canonical_health)
         app.router.add_get('/api/canonical/jobs', self.handle_api_canonical_jobs_list)
         app.router.add_get('/api/canonical/jobs/{job_id}', self.handle_api_canonical_job_get)

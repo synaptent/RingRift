@@ -777,6 +777,158 @@ class ImprovementCycleManager:
         conn.close()
         return distribution
 
+    # =========================================================================
+    # Training Data Quality Tracking
+    # =========================================================================
+
+    def get_training_quality_metrics(self) -> Dict[str, Any]:
+        """Get training data quality metrics for monitoring.
+
+        Returns metrics about:
+        - AI type diversity in training data
+        - Difficulty level distribution
+        - Asymmetric vs symmetric game ratio
+        - Game length statistics
+        - Win rate balance
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        metrics = {
+            "ai_type_diversity": {},
+            "difficulty_distribution": {},
+            "asymmetric_ratio": 0.0,
+            "total_games": 0,
+            "games_by_config": {},
+        }
+
+        # Get AI type diversity (from engine_mode)
+        cursor.execute("""
+            SELECT engine_mode, SUM(game_count) as total
+            FROM game_counts
+            GROUP BY engine_mode
+        """)
+        engine_counts = {}
+        total_games = 0
+        for row in cursor.fetchall():
+            engine_counts[row[0]] = row[1]
+            total_games += row[1]
+
+        metrics["total_games"] = total_games
+        if total_games > 0:
+            metrics["ai_type_diversity"] = {
+                k: v / total_games for k, v in engine_counts.items()
+            }
+
+        # Get config distribution
+        cursor.execute("""
+            SELECT board_type, num_players, SUM(game_count) as total
+            FROM game_counts
+            GROUP BY board_type, num_players
+        """)
+        for row in cursor.fetchall():
+            key = f"{row[0]}_{row[1]}p"
+            metrics["games_by_config"][key] = row[2]
+
+        conn.close()
+
+        # Calculate diversity score (0-1, higher is more diverse)
+        if metrics["ai_type_diversity"]:
+            # Shannon entropy normalized to 0-1
+            import math
+            entropy = -sum(p * math.log(p) for p in metrics["ai_type_diversity"].values() if p > 0)
+            max_entropy = math.log(len(metrics["ai_type_diversity"]))
+            metrics["diversity_score"] = entropy / max_entropy if max_entropy > 0 else 0.0
+        else:
+            metrics["diversity_score"] = 0.0
+
+        return metrics
+
+    # =========================================================================
+    # Automatic Rollback Detection
+    # =========================================================================
+
+    def check_rollback_needed(self, board_type: str, num_players: int,
+                               max_consecutive_failures: int = 5) -> Tuple[bool, str]:
+        """Check if rollback is needed due to consecutive training failures.
+
+        Returns (should_rollback, reason).
+        """
+        key = self._get_cycle_key(board_type, num_players)
+        cycle = self.state.cycles.get(key)
+
+        if not cycle:
+            return False, "No cycle state"
+
+        # Check training history for consecutive failures
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT promoted, completed_at
+            FROM training_history
+            WHERE board_type = ? AND num_players = ?
+            ORDER BY completed_at DESC
+            LIMIT ?
+        """, (board_type, num_players, max_consecutive_failures))
+
+        results = cursor.fetchall()
+        conn.close()
+
+        if len(results) < max_consecutive_failures:
+            return False, f"Only {len(results)} training runs, need {max_consecutive_failures}"
+
+        # Check if all recent runs failed to promote
+        failures = sum(1 for r in results if r[0] == 0)
+        if failures >= max_consecutive_failures:
+            return True, f"{failures} consecutive training failures without promotion"
+
+        return False, "Training improving normally"
+
+    def execute_rollback(self, board_type: str, num_players: int) -> bool:
+        """Execute rollback to previous best model.
+
+        Returns True if rollback succeeded.
+        """
+        key = self._get_cycle_key(board_type, num_players)
+        cycle = self.state.cycles.get(key)
+
+        if not cycle or not cycle.best_model_path:
+            print(f"[ImprovementManager] No model to rollback for {key}")
+            return False
+
+        # Find previous best model
+        prev_best_path = str(cycle.best_model_path).replace("_best.", "_prev_best.")
+        prev_best = Path(prev_best_path)
+
+        if not prev_best.exists():
+            print(f"[ImprovementManager] No previous best model at {prev_best}")
+            return False
+
+        try:
+            import shutil
+            current_best = Path(cycle.best_model_path)
+
+            # Backup current (failed) best
+            failed_backup = str(current_best).replace("_best.", f"_failed_{int(time.time())}.")
+            if current_best.exists():
+                shutil.copy2(current_best, failed_backup)
+
+            # Restore previous best
+            shutil.copy2(prev_best, current_best)
+
+            print(f"[ImprovementManager] Rollback complete: {prev_best} -> {current_best}")
+
+            # Reset cycle state
+            cycle.pending_training = False
+            cycle.pending_evaluation = False
+            self._save_state()
+
+            return True
+        except Exception as e:
+            print(f"[ImprovementManager] Rollback failed: {e}")
+            return False
+
 
 # =============================================================================
 # CLI Interface

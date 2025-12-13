@@ -62,6 +62,31 @@ except ImportError:
     HAS_PERSISTENT_ELO = False
     ELO_DB_PATH = None
 
+# Import ImprovementCycleManager for diverse AI scheduling
+try:
+    from scripts.improvement_cycle_manager import ImprovementCycleManager
+    HAS_IMPROVEMENT_MANAGER = True
+except ImportError:
+    HAS_IMPROVEMENT_MANAGER = False
+    ImprovementCycleManager = None
+
+# Global improvement cycle manager instance
+_improvement_manager = None
+
+def get_improvement_manager():
+    """Get or create the global ImprovementCycleManager instance."""
+    global _improvement_manager
+    if _improvement_manager is None and HAS_IMPROVEMENT_MANAGER:
+        try:
+            _improvement_manager = ImprovementCycleManager(
+                db_path=AI_SERVICE_ROOT / "logs" / "improvement_daemon" / "improvement_manager.db",
+                ringrift_path=AI_SERVICE_ROOT.parent,
+            )
+            print("[Daemon] ImprovementCycleManager initialized")
+        except Exception as e:
+            print(f"[Daemon] Failed to initialize ImprovementCycleManager: {e}")
+    return _improvement_manager
+
 # =============================================================================
 # P2P Orchestrator Integration
 # =============================================================================
@@ -475,9 +500,13 @@ async def run_asymmetric_selfplay(state: DaemonState, board_type: str, num_playe
 async def run_balanced_selfplay(state: DaemonState, duration_minutes: int = 10) -> int:
     """Run selfplay balanced across board types based on priority and need.
 
+    Uses ImprovementCycleManager for diverse AI opponent selection when available.
     Incorporates P2P cluster data manifest if available for smarter balancing.
     """
     total_games = 0
+
+    # Get improvement manager for diverse config selection
+    manager = get_improvement_manager()
 
     # Query P2P orchestrator for cluster-wide data manifest
     cluster_manifest = await get_p2p_cluster_status()
@@ -487,62 +516,125 @@ async def run_balanced_selfplay(state: DaemonState, duration_minutes: int = 10) 
             cluster_games_by_config[board_key] = board_data.get("total_games", 0)
         print(f"[Daemon] Using cluster manifest: {sum(cluster_games_by_config.values())} total games across cluster")
 
-    # Calculate weights based on priority and data deficit
-    weights = []
-    for config in BOARD_CONFIGS:
-        key = get_config_key(config["board"], config["players"])
-        bs = state.board_states.get(key, BoardTypeState(config["board"], config["players"]))
+    # Use ImprovementCycleManager for diverse configs when available
+    if manager:
+        # Get a batch of diverse selfplay configs
+        diverse_configs = manager.get_diverse_selfplay_batch(batch_size=5)
+        print(f"[Daemon] Using ImprovementCycleManager: {len(diverse_configs)} diverse configs")
 
-        # Use cluster-wide game count if available, else local count
-        total_games_for_config = cluster_games_by_config.get(key, bs.total_games)
+        for config in diverse_configs:
+            board_type = config.get("board_type", "square8")
+            num_players = config.get("num_players", 2)
+            engine_mode = config.get("engine_mode", "mixed")
+            key = get_config_key(board_type, num_players)
 
-        # Higher weight if we have less data relative to minimum
-        deficit_ratio = max(0, 1 - total_games_for_config / config["min_games"])
-        weight = config["priority"] * (1 + deficit_ratio)
-        weights.append((config, weight))
+            batch_games = max(10, int(SELFPLAY_BATCH_SIZE * 0.4))  # ~40 games per config
+            output_file = AI_SERVICE_ROOT / "data" / "selfplay" / f"daemon_{key}" / f"games_{int(time.time())}.jsonl"
+            output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Normalize weights
-    total_weight = sum(w for _, w in weights)
-    weights = [(c, w / total_weight) for c, w in weights]
+            # Handle asymmetric games
+            if config.get("asymmetric"):
+                strong = config.get("strong_config", {})
+                weak = config.get("weak_config", {})
+                print(f"[Daemon] DIVERSE: Asymmetric {key} - "
+                      f"Strong({strong.get('engine_mode')}@D{strong.get('difficulty')}) vs "
+                      f"Weak({weak.get('engine_mode')}@D{weak.get('difficulty')})")
 
-    # Run selfplay for each config based on weight
-    for config, weight in weights:
-        if weight < 0.05:  # Skip very low weight configs
-            continue
+                # Run asymmetric games via run_ai_tournament.py
+                games = await run_asymmetric_selfplay(state, board_type, num_players)
+                total_games += games
 
-        batch_games = max(10, int(SELFPLAY_BATCH_SIZE * weight * 2))
-        engine = random.choice(SELFPLAY_ENGINES)
+                # Record to manager
+                manager.record_games_completed(board_type, num_players, games, engine_mode)
+                continue
 
-        key = get_config_key(config["board"], config["players"])
-        output_file = AI_SERVICE_ROOT / "data" / "selfplay" / f"daemon_{key}" / f"games_{int(time.time())}.jsonl"
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+            cmd = [
+                sys.executable, "scripts/run_self_play_soak.py",
+                "--board-type", board_type,
+                "--num-players", str(num_players),
+                "--num-games", str(batch_games),
+                "--engine-mode", engine_mode,
+                "--log-jsonl", str(output_file),
+                "--max-moves", "10000",
+            ]
 
-        cmd = [
-            sys.executable, "scripts/run_self_play_soak.py",
-            "--board-type", config["board"],
-            "--num-players", str(config["players"]),
-            "--num-games", str(batch_games),
-            "--engine-mode", engine,
-            "--log-jsonl", str(output_file),
-            "--max-moves", "10000",  # Avoid draws due to move limit
-        ]
+            print(f"[Daemon] DIVERSE: Running {batch_games} {key} games with {engine_mode}...")
+            success, output = run_command(cmd, timeout=duration_minutes * 60)
 
-        print(f"[Daemon] Running {batch_games} {key} selfplay games with {engine}...")
-        success, output = run_command(cmd, timeout=duration_minutes * 60)
+            if success:
+                games_generated = count_games_in_jsonl(output_file)
+                total_games += games_generated
 
-        if success:
-            games_generated = count_games_in_jsonl(output_file)
-            total_games += games_generated
+                # Update daemon state
+                if key not in state.board_states:
+                    state.board_states[key] = BoardTypeState(board_type, num_players)
+                state.board_states[key].total_games += games_generated
+                state.board_states[key].games_since_last_training += games_generated
 
-            # Update state
-            if key not in state.board_states:
-                state.board_states[key] = BoardTypeState(config["board"], config["players"])
-            state.board_states[key].total_games += games_generated
-            state.board_states[key].games_since_last_training += games_generated
+                # Record to improvement manager
+                manager.record_games_completed(board_type, num_players, games_generated, engine_mode)
 
-            print(f"[Daemon] Generated {games_generated} {key} games")
-        else:
-            print(f"[Daemon] Selfplay failed for {key}: {output[:200]}")
+                print(f"[Daemon] Generated {games_generated} {key} games")
+            else:
+                print(f"[Daemon] Selfplay failed for {key}: {output[:200]}")
+
+    else:
+        # Fallback: Calculate weights based on priority and data deficit
+        weights = []
+        for config in BOARD_CONFIGS:
+            key = get_config_key(config["board"], config["players"])
+            bs = state.board_states.get(key, BoardTypeState(config["board"], config["players"]))
+
+            # Use cluster-wide game count if available, else local count
+            total_games_for_config = cluster_games_by_config.get(key, bs.total_games)
+
+            # Higher weight if we have less data relative to minimum
+            deficit_ratio = max(0, 1 - total_games_for_config / config["min_games"])
+            weight = config["priority"] * (1 + deficit_ratio)
+            weights.append((config, weight))
+
+        # Normalize weights
+        total_weight = sum(w for _, w in weights)
+        weights = [(c, w / total_weight) for c, w in weights]
+
+        # Run selfplay for each config based on weight
+        for config, weight in weights:
+            if weight < 0.05:  # Skip very low weight configs
+                continue
+
+            batch_games = max(10, int(SELFPLAY_BATCH_SIZE * weight * 2))
+            engine = random.choice(SELFPLAY_ENGINES)
+
+            key = get_config_key(config["board"], config["players"])
+            output_file = AI_SERVICE_ROOT / "data" / "selfplay" / f"daemon_{key}" / f"games_{int(time.time())}.jsonl"
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+
+            cmd = [
+                sys.executable, "scripts/run_self_play_soak.py",
+                "--board-type", config["board"],
+                "--num-players", str(config["players"]),
+                "--num-games", str(batch_games),
+                "--engine-mode", engine,
+                "--log-jsonl", str(output_file),
+                "--max-moves", "10000",  # Avoid draws due to move limit
+            ]
+
+            print(f"[Daemon] Running {batch_games} {key} selfplay games with {engine}...")
+            success, output = run_command(cmd, timeout=duration_minutes * 60)
+
+            if success:
+                games_generated = count_games_in_jsonl(output_file)
+                total_games += games_generated
+
+                # Update state
+                if key not in state.board_states:
+                    state.board_states[key] = BoardTypeState(config["board"], config["players"])
+                state.board_states[key].total_games += games_generated
+                state.board_states[key].games_since_last_training += games_generated
+
+                print(f"[Daemon] Generated {games_generated} {key} games")
+            else:
+                print(f"[Daemon] Selfplay failed for {key}: {output[:200]}")
 
     state.total_games_generated += total_games
     return total_games
