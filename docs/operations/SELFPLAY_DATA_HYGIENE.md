@@ -46,6 +46,7 @@ Then inspect:
 
 - `ai-service/logs/selfplay/collected_last24h/<ts>/combined.md`
   - **Config Drift (ring supply)**
+  - **Recovery (recovery_slide)** (stack‑strike usage + mode breakdown)
   - **Outcomes By ringsPerPlayer (mixed configs)**
 
 Notes:

@@ -4143,6 +4143,25 @@ class GameEngine:
                 f"found for move at {move_key} by player {player}"
             )
 
+        # Self-elimination prerequisite (RR-CANON-R145 / RR-CANON-R114): a
+        # disconnected region may only be processed if the moving player has
+        # at least one eligible elimination target outside the region.
+        #
+        # TS applyProcessTerritoryRegionDecision treats non-processable regions
+        # as a no-op rather than mutating the board. Mirror that behavior here
+        # so invalid choose_territory_option moves cannot silently bypass the
+        # prerequisite and create TS↔Python parity drift.
+        if not GameEngine._can_process_disconnected_region(
+            game_state,
+            target_region,
+            player,
+        ):
+            _debug(
+                "DEBUG: _apply_territory_claim skipped non-processable region "
+                f"at {move_key} for P{player}\n"
+            )
+            return
+
         # 1c. Gather border markers for territory elimination.
 
         border_markers = BoardManager.get_border_marker_positions(

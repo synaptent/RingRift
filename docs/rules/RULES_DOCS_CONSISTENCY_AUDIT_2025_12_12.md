@@ -3,6 +3,8 @@
 > **Status:** Completed
 >
 > **Purpose:** Quick audit that the four primary rules documents stay mutually consistent (and consistent with the canonical spec), with a focused check of adjacent rules/docs that commonly drift.
+>
+> **Re-verified:** 2025-12-13 (post recovery + selfplay doc updates). No new inconsistencies found.
 
 ---
 

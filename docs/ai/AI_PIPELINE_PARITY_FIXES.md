@@ -290,8 +290,8 @@ When a game is recorded to the DB, it should stop recording moves once victory i
 
 - **RR-CANON-R172:** Early Last-Player-Standing victory condition
 - **RR-CANON-R100/R203:** Players with stacks can always act (ANM/FE machinery)
-- **Section 13.1:** Ring-elimination victory (> 50% eliminated)
-- **Section 13.2:** Territory-control victory (> 50% board spaces)
+- **RR-CANON-R061 / R170 (rulebook §13.1):** Ring-elimination victory (`victoryThreshold`, scales with player count)
+- **Rulebook §13.2:** Territory-control victory (> 50% board spaces)
 - **Section 13.4:** Stalemate tie-break ladder
 
 ---

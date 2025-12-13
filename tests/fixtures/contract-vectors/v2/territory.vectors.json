@@ -797,10 +797,10 @@
         }
       },
       "expectedOutput": {
-        "status": "complete",
+        "status": "awaiting_decision",
         "assertions": {
-          "currentPlayer": 2,
-          "currentPhase": "ring_placement",
+          "currentPlayer": 1,
+          "currentPhase": "territory_processing",
           "gameStatus": "active",
           "stackCount": 1,
           "markerCount": 0,
@@ -1061,10 +1061,10 @@
         }
       },
       "expectedOutput": {
-        "status": "complete",
+        "status": "awaiting_decision",
         "assertions": {
-          "currentPlayer": 2,
-          "currentPhase": "ring_placement",
+          "currentPlayer": 1,
+          "currentPhase": "territory_processing",
           "gameStatus": "active",
           "stackCount": 4,
           "markerCount": 0,
@@ -1647,10 +1647,10 @@
         }
       },
       "expectedOutput": {
-        "status": "complete",
+        "status": "awaiting_decision",
         "assertions": {
-          "currentPlayer": 2,
-          "currentPhase": "ring_placement",
+          "currentPlayer": 1,
+          "currentPhase": "territory_processing",
           "gameStatus": "active",
           "stackCount": 11,
           "markerCount": 0,
@@ -2223,14 +2223,14 @@
       "expectedOutput": {
         "status": "complete",
         "assertions": {
-          "currentPlayer": 2,
-          "currentPhase": "ring_placement",
+          "currentPlayer": 1,
+          "currentPhase": "territory_processing",
           "gameStatus": "active",
-          "stackCount": 5,
+          "stackCount": 8,
           "markerCount": 0,
-          "collapsedCount": 3,
-          "player1EliminatedRings": 3,
-          "player1TerritorySpaces": 3,
+          "collapsedCount": 0,
+          "player1EliminatedRings": 0,
+          "player1TerritorySpaces": 0,
           "player2EliminatedRings": 0
         }
       }
