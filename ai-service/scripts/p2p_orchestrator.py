@@ -94,6 +94,10 @@ HTTP_TOTAL_TIMEOUT = 30       # Total request timeout
 MAX_CONSECUTIVE_FAILURES = 3  # Mark node dead after 3 failures
 RETRY_DEAD_NODE_INTERVAL = 300  # Retry dead nodes every 5 minutes
 
+# LEARNED LESSONS - Stuck job detection
+GPU_IDLE_RESTART_TIMEOUT = 300  # Restart jobs after 5 min of GPU at 0%
+GPU_IDLE_THRESHOLD = 2          # Consider GPU idle if utilization < 2%
+
 # Git auto-update settings
 GIT_UPDATE_CHECK_INTERVAL = 300  # Check for updates every 5 minutes
 GIT_REMOTE_NAME = "origin"       # Git remote to check
@@ -720,6 +724,10 @@ class P2POrchestrator:
         self.training_check_interval: float = 300.0  # Check every 5 minutes
         self.games_at_last_nnue_train: Dict[str, int] = {}  # board_type -> game_count
         self.games_at_last_cmaes_train: Dict[str, int] = {}
+
+        # LEARNED LESSONS - Stuck job detection (leader-only)
+        # Track when each node's GPU first went idle with running jobs
+        self.gpu_idle_since: Dict[str, float] = {}  # node_id -> timestamp when GPU went idle
 
         # Locks for thread safety
         self.peers_lock = threading.Lock()
@@ -2251,12 +2259,21 @@ class P2POrchestrator:
             return web.json_response({"error": str(e)}, status=400)
 
     async def handle_coordinator(self, request: web.Request) -> web.Response:
-        """Handle coordinator announcement from new leader."""
+        """Handle coordinator announcement from new leader.
+
+        LEARNED LESSONS - Only accept leadership from higher-priority nodes (Bully algorithm).
+        """
         try:
             data = await request.json()
             new_leader = data.get("leader_id")
 
-            print(f"[P2P] New leader announced: {new_leader}")
+            # LEARNED LESSONS - Verify the announced leader has higher priority than us
+            # (Bully algorithm: higher node_id wins)
+            if self.role == NodeRole.LEADER and new_leader < self.node_id:
+                print(f"[P2P] Rejecting leader announcement from lower-priority node: {new_leader} < {self.node_id}")
+                return web.json_response({"accepted": False, "reason": "lower_priority"})
+
+            print(f"[P2P] Accepting leader announcement: {new_leader}")
             self.leader_id = new_leader
             if new_leader == self.node_id:
                 self.role = NodeRole.LEADER
@@ -2324,6 +2341,25 @@ class P2POrchestrator:
                 "success": True,
                 "disk_percent_before": usage["disk_percent"],
                 "message": "Cleanup initiated",
+            })
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_restart_stuck_jobs(self, request: web.Request) -> web.Response:
+        """Handle request to restart stuck selfplay jobs.
+
+        LEARNED LESSONS - Called by leader when it detects GPU idle with running processes.
+        Kills all selfplay processes and clears job tracking so they restart.
+        """
+        try:
+            print(f"[P2P] Restart stuck jobs request received")
+
+            # Run in background to avoid blocking
+            asyncio.create_task(self._restart_local_stuck_jobs())
+
+            return web.json_response({
+                "success": True,
+                "message": "Stuck job restart initiated",
             })
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
@@ -6207,11 +6243,65 @@ print(json.dumps({{
 
         self._save_state()
 
+    async def _check_and_resolve_split_brain(self) -> bool:
+        """Check for split-brain (multiple leaders) and resolve by stepping down if needed.
+
+        LEARNED LESSONS - This addresses the cluster status showing multiple leaders.
+        Uses Bully algorithm: highest node_id wins.
+
+        Returns True if we stepped down (caller should skip leadership duties).
+        """
+        if self.role != NodeRole.LEADER:
+            return False
+
+        # Gather all peers claiming to be leader
+        other_leaders = []
+        with self.peers_lock:
+            for peer in self.peers.values():
+                if peer.role == NodeRole.LEADER and peer.node_id != self.node_id and peer.is_alive():
+                    other_leaders.append(peer)
+
+        if not other_leaders:
+            return False  # No split-brain
+
+        # Find the highest-priority leader (including ourselves)
+        all_leaders = other_leaders + [self.self_info]
+        highest_leader = max(all_leaders, key=lambda p: p.node_id)
+
+        if highest_leader.node_id != self.node_id:
+            # We're not the highest-priority leader - step down
+            print(f"[P2P] SPLIT-BRAIN detected! Found leaders: {[p.node_id for p in other_leaders]}")
+            print(f"[P2P] Stepping down in favor of higher-priority leader: {highest_leader.node_id}")
+            self.role = NodeRole.FOLLOWER
+            self.leader_id = highest_leader.node_id
+            self._save_state()
+            return True
+
+        # We are the highest - other leaders should step down
+        # Send coordinator message to assert our leadership
+        print(f"[P2P] SPLIT-BRAIN detected! Asserting leadership over: {[p.node_id for p in other_leaders]}")
+        timeout = ClientTimeout(total=5)
+        async with ClientSession(timeout=timeout) as session:
+            for peer in other_leaders:
+                try:
+                    url = self._url_for_peer(peer, "/coordinator")
+                    await session.post(url, json={"leader_id": self.node_id}, headers=self._auth_headers())
+                except:
+                    pass
+
+        return False  # We remain leader
+
     async def _job_management_loop(self):
         """Leader-only: Manage jobs across the cluster."""
         while self.running:
             try:
                 if self.role == NodeRole.LEADER:
+                    # LEARNED LESSONS - Check for split-brain before acting as leader
+                    if await self._check_and_resolve_split_brain():
+                        # We stepped down, skip this cycle
+                        await asyncio.sleep(JOB_CHECK_INTERVAL)
+                        continue
+
                     await self._manage_cluster_jobs()
                     # Phase 3: Check if training should be triggered automatically
                     await self._check_and_trigger_training()
@@ -6254,6 +6344,41 @@ print(json.dumps({{
             if node.memory_percent >= MEMORY_WARNING_THRESHOLD:
                 print(f"[P2P] {node.node_id}: Memory at {node.memory_percent:.0f}% - reducing jobs")
                 # Don't start new jobs, let existing ones complete
+
+        # Phase 1.5: LEARNED LESSONS - Detect stuck jobs (GPU idle with running processes)
+        # This addresses the vast-5090-quad issue where 582 processes ran at 0% GPU
+        for node in all_nodes:
+            if not node.has_gpu or node.selfplay_jobs <= 0:
+                # No GPU or no jobs running - not stuck
+                if node.node_id in self.gpu_idle_since:
+                    del self.gpu_idle_since[node.node_id]
+                continue
+
+            # Check if GPU is idle (< threshold) with jobs running
+            gpu_name = (node.gpu_name or "").upper()
+            is_cuda_gpu = "MPS" not in gpu_name and "APPLE" not in gpu_name
+            if not is_cuda_gpu:
+                continue  # Skip Apple Silicon, doesn't have nvidia-smi
+
+            if node.gpu_percent < GPU_IDLE_THRESHOLD:
+                # GPU idle with jobs running - track or take action
+                if node.node_id not in self.gpu_idle_since:
+                    self.gpu_idle_since[node.node_id] = time.time()
+                    print(f"[P2P] {node.node_id}: GPU idle ({node.gpu_percent:.0f}%) with {node.selfplay_jobs} jobs - monitoring")
+                else:
+                    idle_duration = time.time() - self.gpu_idle_since[node.node_id]
+                    if idle_duration >= GPU_IDLE_RESTART_TIMEOUT:
+                        print(f"[P2P] {node.node_id}: STUCK! GPU idle for {idle_duration:.0f}s with {node.selfplay_jobs} jobs")
+                        print(f"[P2P] {node.node_id}: Requesting job restart...")
+                        if node.node_id == self.node_id:
+                            await self._restart_local_stuck_jobs()
+                        else:
+                            await self._request_job_restart(node)
+                        del self.gpu_idle_since[node.node_id]
+            else:
+                # GPU is working - clear idle tracking
+                if node.node_id in self.gpu_idle_since:
+                    del self.gpu_idle_since[node.node_id]
 
         # Phase 2: Calculate desired job distribution for healthy nodes
         for node in all_nodes:
@@ -6386,6 +6511,57 @@ print(json.dumps({{
                         print(f"[P2P] Cleanup requested on {node.node_id}")
         except Exception as e:
             print(f"[P2P] Failed to request cleanup from {node.node_id}: {e}")
+
+    async def _restart_local_stuck_jobs(self):
+        """Kill stuck selfplay processes and let job management restart them.
+
+        LEARNED LESSONS - Addresses the issue where processes accumulate but GPU stays at 0%.
+        """
+        print("[P2P] Killing stuck local selfplay processes...")
+        try:
+            # Kill GPU selfplay processes
+            subprocess.run(
+                ["pkill", "-9", "-f", "run_gpu_selfplay"],
+                capture_output=True,
+                timeout=10,
+            )
+            # Kill regular selfplay processes
+            subprocess.run(
+                ["pkill", "-9", "-f", "run_self_play_soak"],
+                capture_output=True,
+                timeout=10,
+            )
+
+            # Clear our job tracking - they'll be restarted next cycle
+            with self.jobs_lock:
+                dead_jobs = [
+                    jid for jid, job in self.local_jobs.items()
+                    if job.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY)
+                ]
+                for jid in dead_jobs:
+                    del self.local_jobs[jid]
+
+            print(f"[P2P] Killed stuck processes, cleared {len(dead_jobs)} job records")
+        except Exception as e:
+            print(f"[P2P] Error killing stuck processes: {e}")
+
+    async def _request_job_restart(self, node: NodeInfo):
+        """Request a remote node to restart its stuck selfplay jobs."""
+        try:
+            timeout = ClientTimeout(total=HTTP_TOTAL_TIMEOUT)
+            async with ClientSession(timeout=timeout) as session:
+                url = self._url_for_peer(node, "/restart_stuck_jobs")
+                async with session.post(url, json={}, headers=self._auth_headers()) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if data.get("success"):
+                            print(f"[P2P] Job restart requested on {node.node_id}")
+                        else:
+                            print(f"[P2P] Job restart failed on {node.node_id}: {data.get('error')}")
+                    else:
+                        print(f"[P2P] Job restart request failed with status {resp.status}")
+        except Exception as e:
+            print(f"[P2P] Failed to request job restart from {node.node_id}: {e}")
 
     async def _start_local_job(
         self,
@@ -6698,6 +6874,7 @@ print(json.dumps({{
         app.router.add_post('/start_job', self.handle_start_job)
         app.router.add_post('/stop_job', self.handle_stop_job)
         app.router.add_post('/cleanup', self.handle_cleanup)
+        app.router.add_post('/restart_stuck_jobs', self.handle_restart_stuck_jobs)
         app.router.add_get('/health', self.handle_health)
         app.router.add_get('/git/status', self.handle_git_status)
         app.router.add_post('/git/update', self.handle_git_update)

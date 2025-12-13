@@ -456,12 +456,94 @@ class NodeResilience:
             pass
         return 0
 
+    def check_gpu_health(self) -> bool:
+        """Check GPU health and kill stuck processes.
+
+        Detects stuck jobs: processes running but GPU utilization at 0% for extended period.
+        Returns True if healthy, False if stuck processes were killed.
+        """
+        if self.config.num_gpus <= 0:
+            return True
+
+        try:
+            # Get GPU utilization
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                return True  # Can't check, assume healthy
+
+            utilizations = []
+            for line in result.stdout.strip().split('\n'):
+                try:
+                    util = int(line.strip().replace('%', '').replace(' ', ''))
+                    utilizations.append(util)
+                except ValueError:
+                    continue
+
+            if not utilizations:
+                return True
+
+            # Count selfplay processes
+            selfplay_procs = 0
+            try:
+                ps_result = subprocess.run(
+                    ["pgrep", "-f", "run_gpu_selfplay|run_self_play"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if ps_result.returncode == 0:
+                    selfplay_procs = len(ps_result.stdout.strip().split('\n'))
+            except Exception:
+                pass
+
+            # Stuck detection: processes running but all GPUs at 0%
+            all_idle = all(u < 2 for u in utilizations)  # Allow 1-2% idle noise
+
+            if selfplay_procs > 0 and all_idle:
+                # Track how long GPUs have been idle
+                if not hasattr(self, '_gpu_idle_since'):
+                    self._gpu_idle_since = time.time()
+                    logger.warning(f"GPU idle detected: {selfplay_procs} procs, util={utilizations}")
+                    return True  # Give it time
+
+                idle_duration = time.time() - self._gpu_idle_since
+                if idle_duration > 300:  # 5 minutes of idle
+                    logger.error(f"Stuck processes detected: {selfplay_procs} procs, GPU idle for {idle_duration:.0f}s")
+                    logger.info("Killing stuck selfplay processes...")
+
+                    # Kill stuck processes
+                    subprocess.run(["pkill", "-9", "-f", "run_gpu_selfplay"], timeout=10)
+                    subprocess.run(["pkill", "-9", "-f", "run_self_play_soak"], timeout=10)
+
+                    # Reset tracking
+                    self._gpu_idle_since = None
+                    self.local_selfplay_pids = []
+
+                    return False
+            else:
+                # GPU is working, reset idle tracking
+                self._gpu_idle_since = None
+
+            return True
+
+        except Exception as e:
+            logger.error(f"GPU health check failed: {e}")
+            return True
+
     def run_once(self) -> None:
         """Run a single check cycle."""
         now = time.time()
 
         # Check disk and cleanup if needed (critical for Vast instances)
         self.check_and_cleanup_disk()
+
+        # Check GPU health and kill stuck processes
+        self.check_gpu_health()
 
         # Check P2P health
         p2p_healthy = self.check_p2p_health()
