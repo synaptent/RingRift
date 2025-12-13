@@ -187,10 +187,15 @@ class GPUSelfPlayGenerator:
         self.draws = 0
 
         # Pre-compute initial state for training data compatibility
-        # All GPU games start from the same default initial state
+        # All GPU games start from the same initial state with custom rules applied
         board_type_map = {8: BoardType.SQUARE8, 19: BoardType.SQUARE19}
         board_type = board_type_map.get(board_size, BoardType.SQUARE8)
-        self._initial_state = create_initial_state(board_type, num_players)
+        self._initial_state = create_initial_state(
+            board_type,
+            num_players,
+            rings_per_player_override=rings_per_player,
+            lps_rounds_required=lps_victory_rounds,
+        )
         self._initial_state_json = self._initial_state.model_dump(mode="json")
 
     def generate_batch(
