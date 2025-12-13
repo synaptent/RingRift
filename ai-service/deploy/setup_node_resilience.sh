@@ -80,6 +80,22 @@ if command -v git &> /dev/null; then
     if ! printf '%s\n' "$EXISTING_SAFE_DIRS" | grep -Fxq "$RINGRIFT_ROOT"; then
         HOME=/root git config --global --add safe.directory "$RINGRIFT_ROOT" 2>/dev/null || true
     fi
+
+    # Prefer HTTPS remotes so root-run services can `git fetch/pull` without
+    # relying on per-user SSH keys. (The repo is public; HTTPS avoids auth.)
+    ORIGIN_URL="$(git -C "$RINGRIFT_ROOT" remote get-url origin 2>/dev/null || true)"
+    HTTPS_URL=""
+    case "$ORIGIN_URL" in
+        git@github.com:*)
+            HTTPS_URL="https://github.com/${ORIGIN_URL#git@github.com:}"
+            ;;
+        ssh://git@github.com/*)
+            HTTPS_URL="https://github.com/${ORIGIN_URL#ssh://git@github.com/}"
+            ;;
+    esac
+    if [ -n "$HTTPS_URL" ]; then
+        git -C "$RINGRIFT_ROOT" remote set-url origin "$HTTPS_URL" 2>/dev/null || true
+    fi
 fi
 
 # Create directories
