@@ -231,12 +231,10 @@ export interface RulesOptions {
    * this flag is mis-set.
    */
   swapRuleEnabled?: boolean;
-  // (future) p2DoubleTurnMode?: 'off' | 'sequential' | 'mega';
-  // (future) p1NoFirstTurnCaptures?: boolean;
-  // (future) p1NoFirstTurnLines?: boolean;
-  // (future) openingMode?: 'standard' | 'randomized_openings' | 'opening_book';
-  // (future) ringHandicapByPlayer?: Record<number, number>;
-  // (future) territoryTemplateId?: string;
+  /** Override rings per player (affects initial hand + victory threshold). */
+  ringsPerPlayer?: number;
+  /** Override LPS victory rounds (default 2). */
+  lpsRoundsRequired?: number;
 }
 
 /**
@@ -871,6 +869,8 @@ export interface GameState {
         consecutiveExclusivePlayer: number | null;
       }
     | undefined;
+  /** LPS victory round threshold (default 2, set from rulesOptions). */
+  lpsRoundsRequired?: number;
 }
 
 export interface GameResult {

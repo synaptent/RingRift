@@ -8,6 +8,7 @@ import {
 } from '../types/game';
 import { generateGameSeed } from '../utils/rng';
 import { computeRingEliminationVictoryThreshold } from './core';
+import { LPS_DEFAULT_REQUIRED_ROUNDS } from './lpsTracking';
 
 /**
  * Creates a pristine initial GameState for a new game.
@@ -32,13 +33,16 @@ export function createInitialGameState(
 ): GameState {
   const config = BOARD_CONFIGS[boardType];
 
+  const effectiveRingsPerPlayer = rulesOptions?.ringsPerPlayer ?? config.ringsPerPlayer;
+  const effectiveLpsRoundsRequired = rulesOptions?.lpsRoundsRequired ?? LPS_DEFAULT_REQUIRED_ROUNDS;
+
   // Initialize players with starting values
   const initializedPlayers = players.map((p, index) => ({
     ...p,
     playerNumber: index + 1,
     timeRemaining: timeControl.initialTime * 1000, // Convert to milliseconds
     isReady: p.type === 'ai', // AI players are always ready
-    ringsInHand: config.ringsPerPlayer,
+    ringsInHand: effectiveRingsPerPlayer,
     eliminatedRings: 0,
     territorySpaces: 0,
   }));
@@ -87,7 +91,11 @@ export function createInitialGameState(
     // Note: Using Math.round() to handle floating-point precision
     // In 2p, threshold = ringsPerPlayer (must eliminate all opponent rings)
     // In 3p/4p, threshold scales with combined opponent rings
-    victoryThreshold: computeRingEliminationVictoryThreshold(config.ringsPerPlayer, players.length),
+    victoryThreshold: computeRingEliminationVictoryThreshold(
+      effectiveRingsPerPlayer,
+      players.length
+    ),
     territoryVictoryThreshold: Math.floor(config.totalSpaces / 2) + 1,
+    lpsRoundsRequired: effectiveLpsRoundsRequired,
   };
 }

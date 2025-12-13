@@ -287,12 +287,8 @@ export const CreateGameSchema = z.object({
   rulesOptions: z
     .object({
       swapRuleEnabled: z.boolean().optional(),
-      // (future) p2DoubleTurnMode?: 'off' | 'sequential' | 'mega';
-      // (future) p1NoFirstTurnCaptures?: boolean;
-      // (future) p1NoFirstTurnLines?: boolean;
-      // (future) openingMode?: 'standard' | 'randomized_openings' | 'opening_book';
-      // (future) ringHandicapByPlayer?: Record<number, number>;
-      // (future) territoryTemplateId?: string;
+      ringsPerPlayer: z.number().int().positive().max(200).optional(),
+      lpsRoundsRequired: z.number().int().min(1).max(10).optional(),
     })
     .optional(),
   /**

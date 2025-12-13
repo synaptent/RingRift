@@ -291,11 +291,14 @@ export interface LpsEvaluationResult {
 }
 
 /**
- * Number of consecutive exclusive rounds required for LPS victory.
+ * Default number of consecutive exclusive rounds required for LPS victory.
  * Per RR-CANON-R172, a player must be the exclusive real-action holder
- * for TWO consecutive full rounds before winning by LPS.
+ * for this many consecutive full rounds before winning by LPS.
  */
-export const LPS_REQUIRED_CONSECUTIVE_ROUNDS = 2;
+export const LPS_DEFAULT_REQUIRED_ROUNDS = 2;
+
+/** @deprecated Use LPS_DEFAULT_REQUIRED_ROUNDS instead. */
+export const LPS_REQUIRED_CONSECUTIVE_ROUNDS = LPS_DEFAULT_REQUIRED_ROUNDS;
 
 /**
  * Evaluate whether the Last-Player-Standing victory condition (R172) is satisfied.
@@ -336,11 +339,16 @@ export function evaluateLpsVictory(options: LpsEvaluationOptions): LpsEvaluation
     return { isVictory: false, reason: 'not_interactive_phase' };
   }
 
-  // Must have completed at least 2 consecutive rounds with the same exclusive player
-  if (lps.consecutiveExclusiveRounds < LPS_REQUIRED_CONSECUTIVE_ROUNDS) {
+  const requiredRounds =
+    gameState.lpsRoundsRequired ??
+    gameState.rulesOptions?.lpsRoundsRequired ??
+    LPS_DEFAULT_REQUIRED_ROUNDS;
+
+  // Must have completed at least N consecutive rounds with the same exclusive player
+  if (lps.consecutiveExclusiveRounds < requiredRounds) {
     return {
       isVictory: false,
-      reason: `insufficient_consecutive_rounds_${lps.consecutiveExclusiveRounds}_of_${LPS_REQUIRED_CONSECUTIVE_ROUNDS}`,
+      reason: `insufficient_consecutive_rounds_${lps.consecutiveExclusiveRounds}_of_${requiredRounds}`,
     };
   }
 
