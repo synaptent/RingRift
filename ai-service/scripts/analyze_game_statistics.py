@@ -521,6 +521,17 @@ class DataQualityMetrics:
 
 
 @dataclass
+class CleanResult:
+    """Result of cleaning a JSONL file."""
+
+    total_records: int = 0
+    kept_records: int = 0
+    fixed_records: int = 0
+    quarantined_by_reason: dict[str, int] = field(default_factory=dict)
+    malformed_records: int = 0
+
+
+@dataclass
 class AnalysisReport:
     """Complete analysis report across all configurations."""
 
@@ -788,6 +799,131 @@ def fix_jsonl_in_place(
                 print(f"Error writing {path}: {e}", file=sys.stderr)
 
     return len([r for r in records if r]), modified_count
+
+
+def clean_jsonl_file(
+    path: Path,
+    quarantine_dir: Path | None = None,
+    *,
+    dry_run: bool = False,
+    quiet: bool = False,
+) -> CleanResult:
+    """Clean a JSONL file: fix metadata and quarantine bad records.
+
+    This function:
+    1. Normalizes metadata (board_type, num_players, victory_type)
+    2. Removes quarantinable records (timeout, unknown_board, no_winner, malformed)
+    3. Writes quarantined records to quarantine_dir (if provided)
+    4. Rewrites the original file with only good, normalized records
+
+    Args:
+        path: Path to the JSONL file
+        quarantine_dir: Directory to write quarantined records (optional)
+        dry_run: If True, don't actually write changes
+        quiet: Suppress progress messages
+
+    Returns:
+        CleanResult with counts of processed/kept/fixed/quarantined records
+    """
+    file_path_str = str(path)
+    result = CleanResult()
+
+    good_records: list[str] = []
+    quarantined: dict[str, list[dict[str, Any]]] = {}
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+
+                result.total_records += 1
+
+                # Try to parse
+                try:
+                    game = json.loads(line)
+                except json.JSONDecodeError:
+                    result.malformed_records += 1
+                    quarantined.setdefault("malformed", []).append({"_raw_line": line})
+                    result.quarantined_by_reason["malformed"] = result.quarantined_by_reason.get("malformed", 0) + 1
+                    continue
+
+                # Normalize the game
+                normalized = normalize_game(game, file_path_str)
+
+                # Check if normalization changed anything
+                was_fixed = False
+                for field in ["board_type", "num_players", "victory_type"]:
+                    if field in normalized and normalized[field] != game.get(field):
+                        was_fixed = True
+                        game[field] = normalized[field]
+
+                if was_fixed:
+                    result.fixed_records += 1
+
+                # Check quarantine conditions
+                quarantine_reason: str | None = None
+
+                # Check for unknown board type
+                board_type = game.get("board_type")
+                if board_type is None or board_type == "unknown":
+                    quarantine_reason = "unknown_board"
+
+                # Check for timeout/no winner
+                termination = game.get("termination_reason") or game.get("termination")
+                if termination == "timeout":
+                    quarantine_reason = "timeout"
+                elif termination in ("no_winner", "draw"):
+                    quarantine_reason = "no_winner"
+
+                # Check for missing winner (for completed games)
+                if quarantine_reason is None:
+                    winner = game.get("winner")
+                    moves = game.get("moves") or game.get("move_history") or []
+                    if winner is None and len(moves) > 0:
+                        quarantine_reason = "no_winner"
+
+                if quarantine_reason:
+                    quarantined.setdefault(quarantine_reason, []).append(game)
+                    result.quarantined_by_reason[quarantine_reason] = result.quarantined_by_reason.get(quarantine_reason, 0) + 1
+                else:
+                    good_records.append(json.dumps(game))
+                    result.kept_records += 1
+
+    except OSError as e:
+        if not quiet:
+            print(f"Error reading {path}: {e}", file=sys.stderr)
+        return result
+
+    # Write quarantined records
+    if quarantine_dir and quarantined and not dry_run:
+        for reason, records in quarantined.items():
+            reason_dir = quarantine_dir / reason
+            reason_dir.mkdir(parents=True, exist_ok=True)
+            quarantine_file = reason_dir / path.name
+            try:
+                with open(quarantine_file, "a", encoding="utf-8") as f:
+                    for record in records:
+                        f.write(json.dumps(record) + "\n")
+            except OSError as e:
+                if not quiet:
+                    print(f"Error writing quarantine file {quarantine_file}: {e}", file=sys.stderr)
+
+    # Rewrite original file with only good records
+    if not dry_run and result.total_records > 0:
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                for record in good_records:
+                    f.write(record + "\n")
+            if not quiet and (result.fixed_records > 0 or sum(result.quarantined_by_reason.values()) > 0):
+                q_total = sum(result.quarantined_by_reason.values())
+                print(f"Cleaned {path.name}: {result.kept_records} kept, {result.fixed_records} fixed, {q_total} quarantined", file=sys.stderr)
+        except OSError as e:
+            if not quiet:
+                print(f"Error writing {path}: {e}", file=sys.stderr)
+
+    return result
 
 
 def _get_first(d: dict[str, Any], keys: list[str]) -> Any:
@@ -2089,6 +2225,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Include quarantined records in statistics (default: exclude).",
     )
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Clean JSONL files: fix metadata AND remove quarantinable records (timeout, unknown_board, malformed). Use with --quarantine-dir to save removed records.",
+    )
     return parser.parse_args(argv)
 
 
@@ -2139,6 +2280,44 @@ def main(argv: list[str] | None = None) -> int:
         if not args.quiet:
             mode = "Would fix" if args.dry_run else "Fixed"
             print(f"{mode} {total_modified:,} records across {len(jsonl_files)} files ({total_records:,} total records)", file=sys.stderr)
+        return 0
+
+    # Handle clean mode (fix metadata + remove bad records)
+    if getattr(args, "clean", False):
+        if not jsonl_files:
+            print("Error: --clean requires JSONL files (use --jsonl, --jsonl-dir, or --jsonl-filelist)", file=sys.stderr)
+            return 1
+
+        quarantine_path = args.quarantine_dir if args.quarantine_dir else None
+
+        total_result = CleanResult()
+        for i, jsonl_path in enumerate(jsonl_files, 1):
+            if not args.quiet and i % 100 == 0:
+                print(f"Cleaning file {i}/{len(jsonl_files)}...", file=sys.stderr)
+            result = clean_jsonl_file(
+                jsonl_path,
+                quarantine_dir=quarantine_path,
+                dry_run=bool(args.dry_run),
+                quiet=bool(args.quiet),
+            )
+            total_result.total_records += result.total_records
+            total_result.kept_records += result.kept_records
+            total_result.fixed_records += result.fixed_records
+            total_result.malformed_records += result.malformed_records
+            for reason, count in result.quarantined_by_reason.items():
+                total_result.quarantined_by_reason[reason] = total_result.quarantined_by_reason.get(reason, 0) + count
+
+        if not args.quiet:
+            mode = "Would clean" if args.dry_run else "Cleaned"
+            q_total = sum(total_result.quarantined_by_reason.values())
+            print(f"\n{mode} {len(jsonl_files)} files:", file=sys.stderr)
+            print(f"  Total records: {total_result.total_records:,}", file=sys.stderr)
+            print(f"  Kept: {total_result.kept_records:,}", file=sys.stderr)
+            print(f"  Fixed metadata: {total_result.fixed_records:,}", file=sys.stderr)
+            print(f"  Quarantined: {q_total:,}", file=sys.stderr)
+            if total_result.quarantined_by_reason:
+                for reason, count in sorted(total_result.quarantined_by_reason.items(), key=lambda x: -x[1]):
+                    print(f"    - {reason}: {count:,}", file=sys.stderr)
         return 0
 
     # Create quarantine writer if requested
