@@ -11,7 +11,9 @@ set -e
 
 NODE_ID="${1:?Usage: $0 <node-id> <coordinator-url>}"
 COORDINATOR_URL="${2:?Usage: $0 <node-id> <coordinator-url>}"
-RINGRIFT_DIR="${RINGRIFT_DIR:-/root/ringrift/ai-service}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_RINGRIFT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+RINGRIFT_DIR="${RINGRIFT_DIR:-$DEFAULT_RINGRIFT_DIR}"
 LOG_DIR="/var/log/ringrift"
 P2P_PORT="${P2P_PORT:-}"
 # Vast.ai instances typically expose a public port-mapping for container 8080
@@ -68,6 +70,18 @@ PY
 fi
 SSH_PORT="${SSH_PORT:-22}"
 
+# Determine RingRift repo root (parent of ai-service).
+RINGRIFT_ROOT="$(cd "$(dirname "$RINGRIFT_DIR")" && pwd)"
+
+# Git 2.35+ safe.directory: services often run as root against an ubuntu-owned
+# checkout; ensure root can run git commands (auto-update, status, etc.).
+if command -v git &> /dev/null; then
+    EXISTING_SAFE_DIRS="$(HOME=/root git config --global --get-all safe.directory 2>/dev/null || true)"
+    if ! printf '%s\n' "$EXISTING_SAFE_DIRS" | grep -Fxq "$RINGRIFT_ROOT"; then
+        HOME=/root git config --global --add safe.directory "$RINGRIFT_ROOT" 2>/dev/null || true
+    fi
+fi
+
 # Create directories
 mkdir -p /etc/ringrift
 mkdir -p "$LOG_DIR"
@@ -114,7 +128,6 @@ if [ "$HAS_USABLE_SYSTEMD" = "1" ]; then
 
     # Rewrite hard-coded paths for non-root installations.
     if [ "$RINGRIFT_DIR" != "/root/ringrift/ai-service" ]; then
-        RINGRIFT_ROOT="$(cd "$(dirname "$RINGRIFT_DIR")" && pwd)"
         sed -i "s|/root/ringrift/ai-service|$RINGRIFT_DIR|g" /etc/systemd/system/ringrift-*.service
         sed -i "s|/root/ringrift|$RINGRIFT_ROOT|g" /etc/systemd/system/ringrift-*.service
     fi

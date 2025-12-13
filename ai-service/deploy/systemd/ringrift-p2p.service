@@ -8,6 +8,7 @@ Type=simple
 User=root
 WorkingDirectory=/root/ringrift/ai-service
 Environment=PYTHONPATH=/root/ringrift/ai-service
+Environment=HOME=/root
 EnvironmentFile=-/etc/ringrift/node.conf
 ExecStart=/bin/bash -lc 'PY="/root/ringrift/ai-service/venv/bin/python"; if [ ! -x "$PY" ]; then PY="/usr/bin/python3"; fi; exec "$PY" "/root/ringrift/ai-service/scripts/p2p_orchestrator.py" --node-id "$NODE_ID" --port "$P2P_PORT" --peers "$COORDINATOR_URL" --ringrift-path "/root/ringrift"'
 Restart=always
