@@ -148,6 +148,8 @@ export interface SandboxConfig {
   boardType: BoardType;
   numPlayers: number;
   playerKinds: SandboxPlayerKind[]; // indexed 0..3 for players 1..4
+  /** AI difficulty levels per player (1-10), indexed 0..3 for players 1..4 */
+  aiDifficulties?: number[];
 }
 
 /**

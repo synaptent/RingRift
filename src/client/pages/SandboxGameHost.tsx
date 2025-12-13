@@ -30,7 +30,14 @@ import {
   CreateGameRequest,
 } from '../../shared/types/game';
 import { useAuth } from '../contexts/AuthContext';
-import { useSandbox, LocalConfig, LocalPlayerType } from '../contexts/SandboxContext';
+import {
+  useSandbox,
+  LocalConfig,
+  LocalPlayerType,
+  DEFAULT_AI_DIFFICULTY,
+} from '../contexts/SandboxContext';
+import { AIDifficultySelector, AIDifficultyBadge } from '../components/AIDifficultySelector';
+import { getDifficultyDescriptor } from '../utils/difficultyUx';
 import { useSandboxInteractions } from '../hooks/useSandboxInteractions';
 import { useAutoMoveAnimation } from '../hooks/useMoveAnimation';
 import {
@@ -563,11 +570,12 @@ export const SandboxGameHost: React.FC = () => {
       // Create interaction handler
       const interactionHandler = createSandboxInteractionHandler(playerTypes);
 
-      // Initialize sandbox engine
+      // Initialize sandbox engine (use config's aiDifficulties for scenarios)
       const engine = initLocalSandboxEngine({
         boardType: scenario.boardType,
         numPlayers: scenario.playerCount,
         playerTypes,
+        aiDifficulties: config.aiDifficulties.slice(0, scenario.playerCount),
         interactionHandler,
       });
 
@@ -861,6 +869,9 @@ export const SandboxGameHost: React.FC = () => {
         playerTypes: numPlayers
           ? prev.playerTypes.map((t, idx) => (idx < numPlayers ? t : prev.playerTypes[idx]))
           : prev.playerTypes,
+        aiDifficulties: numPlayers
+          ? prev.aiDifficulties.map((d, idx) => (idx < numPlayers ? d : prev.aiDifficulties[idx]))
+          : prev.aiDifficulties,
       };
     });
   };
@@ -870,6 +881,14 @@ export const SandboxGameHost: React.FC = () => {
       const next = [...prev.playerTypes];
       next[index] = type;
       return { ...prev, playerTypes: next };
+    });
+  };
+
+  const handleAIDifficultyChange = (index: number, difficulty: number) => {
+    setConfig((prev) => {
+      const next = [...prev.aiDifficulties];
+      next[index] = difficulty;
+      return { ...prev, aiDifficulties: next };
     });
   };
 
@@ -884,6 +903,7 @@ export const SandboxGameHost: React.FC = () => {
       boardType: nextBoardType,
       numPlayers: snapshot.numPlayers,
       playerTypes: snapshot.playerTypes.slice(0, snapshot.numPlayers) as LocalPlayerType[],
+      aiDifficulties: snapshot.aiDifficulties.slice(0, snapshot.numPlayers),
       interactionHandler,
     });
 
@@ -1892,34 +1912,63 @@ export const SandboxGameHost: React.FC = () => {
                       {Array.from({ length: config.numPlayers }, (_, i) => {
                         const type = config.playerTypes[i];
                         const meta = PLAYER_TYPE_META[type];
+                        const difficulty = config.aiDifficulties[i];
+                        const difficultyDesc = getDifficultyDescriptor(difficulty);
                         return (
                           <div
                             key={i}
-                            className={`rounded-xl border bg-slate-900/60 px-4 py-3 flex items-center justify-between gap-4 ${meta.accent}`}
+                            className={`rounded-xl border bg-slate-900/60 px-4 py-3 ${meta.accent}`}
                           >
-                            <div>
-                              <p className="text-sm font-semibold text-white">Player {i + 1}</p>
-                              <p className="text-xs text-slate-300">{meta.description}</p>
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-white">Player {i + 1}</p>
+                                <p className="text-xs text-slate-300">
+                                  {type === 'ai' && difficultyDesc
+                                    ? `AI • ${difficultyDesc.name.split('(')[0].trim()}`
+                                    : meta.description}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {/* AI Difficulty selector - only shown for AI players */}
+                                {type === 'ai' && (
+                                  <AIDifficultyBadge
+                                    value={difficulty}
+                                    onChange={(d) => handleAIDifficultyChange(i, d)}
+                                  />
+                                )}
+                                {/* Player type toggles */}
+                                <div className="flex gap-1">
+                                  {(['human', 'ai'] as LocalPlayerType[]).map((candidate) => {
+                                    const isActive = type === candidate;
+                                    return (
+                                      <button
+                                        key={candidate}
+                                        type="button"
+                                        onClick={() => handlePlayerTypeChange(i, candidate)}
+                                        aria-pressed={isActive}
+                                        className={`px-3 py-1 rounded-full border text-xs font-semibold transition ${
+                                          isActive
+                                            ? 'border-white/80 text-white bg-white/10'
+                                            : 'border-slate-600 text-slate-300 hover:border-slate-400'
+                                        }`}
+                                      >
+                                        {PLAYER_TYPE_META[candidate].label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex gap-2">
-                              {(['human', 'ai'] as LocalPlayerType[]).map((candidate) => {
-                                const isActive = type === candidate;
-                                return (
-                                  <button
-                                    key={candidate}
-                                    type="button"
-                                    onClick={() => handlePlayerTypeChange(i, candidate)}
-                                    className={`px-3 py-1 rounded-full border text-xs font-semibold transition ${
-                                      isActive
-                                        ? 'border-white/80 text-white bg-white/10'
-                                        : 'border-slate-600 text-slate-300 hover:border-slate-400'
-                                    }`}
-                                  >
-                                    {PLAYER_TYPE_META[candidate].label}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                            {/* Expanded difficulty selector for AI players */}
+                            {type === 'ai' && (
+                              <div className="mt-3 pt-3 border-t border-slate-700/50">
+                                <AIDifficultySelector
+                                  value={difficulty}
+                                  onChange={(d) => handleAIDifficultyChange(i, d)}
+                                  playerNumber={i + 1}
+                                />
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -1993,6 +2042,18 @@ export const SandboxGameHost: React.FC = () => {
                       <span className="text-slate-300">AI opponents</span>
                       <span className="font-semibold">{setupAiSeatCount}</span>
                     </div>
+                    {setupAiSeatCount > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-300">AI strength</span>
+                        <span className="font-semibold text-sky-300">
+                          {Array.from({ length: config.numPlayers }, (_, i) =>
+                            config.playerTypes[i] === 'ai' ? `D${config.aiDifficulties[i]}` : null
+                          )
+                            .filter(Boolean)
+                            .join(', ')}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="text-slate-300">Total seats</span>
                       <span className="font-semibold">{config.numPlayers}</span>
@@ -2123,6 +2184,7 @@ export const SandboxGameHost: React.FC = () => {
                 boardType: config.boardType,
                 numPlayers: config.numPlayers,
                 playerTypes: config.playerTypes.slice(0, config.numPlayers) as LocalPlayerType[],
+                aiDifficulties: config.aiDifficulties.slice(0, config.numPlayers),
                 interactionHandler,
               });
 

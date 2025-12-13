@@ -9,10 +9,15 @@ import { isSandboxAiStallDiagnosticsEnabled } from '../../shared/utils/envFlags'
 
 export type LocalPlayerType = 'human' | 'ai';
 
+/** Default AI difficulty level for sandbox (D4 = Intermediate) */
+export const DEFAULT_AI_DIFFICULTY = 4;
+
 export interface LocalConfig {
   numPlayers: number;
   boardType: BoardType;
   playerTypes: LocalPlayerType[]; // indexed 0..3 for players 1..4
+  /** AI difficulty levels per player (1-10), indexed 0..3 for players 1..4 */
+  aiDifficulties: number[];
 }
 
 interface SandboxContextValue {
@@ -68,6 +73,12 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     numPlayers: 2,
     boardType: 'square8',
     playerTypes: ['human', 'human', 'ai', 'ai'],
+    aiDifficulties: [
+      DEFAULT_AI_DIFFICULTY,
+      DEFAULT_AI_DIFFICULTY,
+      DEFAULT_AI_DIFFICULTY,
+      DEFAULT_AI_DIFFICULTY,
+    ],
   });
   const [isConfigured, setIsConfigured] = useState(false);
   const [backendSandboxError, setBackendSandboxError] = useState<string | null>(null);
@@ -85,12 +96,14 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     boardType: BoardType;
     numPlayers: number;
     playerTypes: LocalPlayerType[];
+    aiDifficulties?: number[];
     interactionHandler: SandboxInteractionHandler;
   }): ClientSandboxEngine => {
     const sandboxConfig: SandboxConfig = {
       boardType: options.boardType,
       numPlayers: options.numPlayers,
       playerKinds: options.playerTypes,
+      aiDifficulties: options.aiDifficulties,
     };
 
     const engine = new ClientSandboxEngine({
