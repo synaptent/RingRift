@@ -93,10 +93,14 @@ def register_with_coordinator(
 
     try:
         data = json.dumps(payload).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        token = (os.environ.get("RINGRIFT_CLUSTER_AUTH_TOKEN") or "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         request = urllib.request.Request(
             url,
             data=data,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
 

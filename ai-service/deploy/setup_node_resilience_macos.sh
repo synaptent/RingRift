@@ -60,6 +60,8 @@ cat > "$P2P_PLIST" <<EOF
   <dict>
     <key>PYTHONPATH</key>
     <string>${AI_SERVICE_DIR}</string>
+    <key>RINGRIFT_CLUSTER_AUTH_TOKEN</key>
+    <string>${RINGRIFT_CLUSTER_AUTH_TOKEN:-}</string>
   </dict>
   <key>ProgramArguments</key>
   <array>
@@ -99,6 +101,8 @@ cat > "$RES_PLIST" <<EOF
   <dict>
     <key>PYTHONPATH</key>
     <string>${AI_SERVICE_DIR}</string>
+    <key>RINGRIFT_CLUSTER_AUTH_TOKEN</key>
+    <string>${RINGRIFT_CLUSTER_AUTH_TOKEN:-}</string>
   </dict>
   <key>ProgramArguments</key>
   <array>

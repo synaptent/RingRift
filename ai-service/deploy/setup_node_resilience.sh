@@ -60,6 +60,10 @@ P2P_PORT=$P2P_PORT
 SSH_PORT=$SSH_PORT
 EOF
 
+if [ -n "${RINGRIFT_CLUSTER_AUTH_TOKEN:-}" ]; then
+    echo "RINGRIFT_CLUSTER_AUTH_TOKEN=$RINGRIFT_CLUSTER_AUTH_TOKEN" >> /etc/ringrift/node.conf
+fi
+
 echo "Created /etc/ringrift/node.conf"
 
 # Install systemd services if available
@@ -89,6 +93,7 @@ PATH=/usr/local/bin:/usr/bin:/bin
 PYTHONPATH=$RINGRIFT_DIR
 P2P_PORT=$P2P_PORT
 SSH_PORT=$SSH_PORT
+RINGRIFT_CLUSTER_AUTH_TOKEN=${RINGRIFT_CLUSTER_AUTH_TOKEN:-}
 
 # Health check and reconnection every 5 minutes
 */5 * * * * root python3 $RINGRIFT_DIR/scripts/node_resilience.py --node-id $NODE_ID --coordinator $COORDINATOR_URL --ai-service-dir $RINGRIFT_DIR --p2p-port $P2P_PORT --once >> $LOG_DIR/cron.log 2>&1

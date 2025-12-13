@@ -133,10 +133,14 @@ class NodeResilience:
                 "port": self._get_ssh_port(),
             }
             data = json.dumps(payload).encode("utf-8")
+            headers = {"Content-Type": "application/json"}
+            token = (os.environ.get("RINGRIFT_CLUSTER_AUTH_TOKEN") or "").strip()
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
             request = urllib.request.Request(
                 url,
                 data=data,
-                headers={"Content-Type": "application/json"},
+                headers=headers,
                 method="POST",
             )
             with urllib.request.urlopen(request, timeout=10) as response:

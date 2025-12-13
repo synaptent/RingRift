@@ -21,6 +21,7 @@ Notes:
 
 - `/etc/ringrift/node.conf` is the per-node config (includes `NODE_ID`, `COORDINATOR_URL`, `RINGRIFT_DIR`, `P2P_PORT`, `SSH_PORT`).
 - If `SSH_PORT` isn’t provided, the setup script tries to infer it from `ai-service/config/distributed_hosts.yaml`.
+- For hardened clusters, export `RINGRIFT_CLUSTER_AUTH_TOKEN` before running setup; it will be persisted into `node.conf` and used for authenticated requests.
 
 ## macOS (launchd)
 
