@@ -56,6 +56,19 @@ except ImportError:
     HAS_AIOHTTP = False
     print("Warning: aiohttp not installed. Install with: pip install aiohttp")
 
+# Dynamic host registry for IP auto-update
+try:
+    from app.distributed.dynamic_registry import (
+        DynamicHostRegistry,
+        get_registry,
+        NodeState,
+    )
+    HAS_DYNAMIC_REGISTRY = True
+except ImportError:
+    HAS_DYNAMIC_REGISTRY = False
+    get_registry = None
+    NodeState = None
+
 # ============================================
 # Configuration
 # ============================================
@@ -1830,6 +1843,37 @@ class P2POrchestrator:
                 print(f"[P2P] Training sync loop error: {e}")
                 await asyncio.sleep(60)  # Wait before retrying
 
+    async def _vast_ip_update_loop(self):
+        """Background loop to periodically check Vast.ai API for IP changes.
+
+        Only runs if VAST_API_KEY is set. Updates the dynamic registry with
+        current IPs for all Vast instances.
+        """
+        if not HAS_DYNAMIC_REGISTRY:
+            return
+
+        vast_api_key = os.environ.get("VAST_API_KEY")
+        if not vast_api_key:
+            print("[P2P] Vast IP update loop disabled (no VAST_API_KEY)")
+            return
+
+        print("[P2P] Vast IP update loop started")
+        registry = get_registry()
+
+        while self.running:
+            try:
+                await asyncio.sleep(300)  # Check every 5 minutes
+
+                updated = await registry.update_vast_ips()
+                if updated > 0:
+                    print(f"[P2P] Updated {updated} Vast instance IPs from API")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[P2P] Vast IP update loop error: {e}")
+                await asyncio.sleep(60)
+
     # ============================================
     # Git Auto-Update Methods
     # ============================================
@@ -2298,6 +2342,129 @@ class P2POrchestrator:
             })
         except Exception as e:
             return web.json_response({"error": str(e), "healthy": False}, status=500)
+
+    async def handle_register(self, request: web.Request) -> web.Response:
+        """POST /register - Node self-registration for dynamic IP updates.
+
+        Nodes call this endpoint to announce their current IP address.
+        Useful when Vast.ai instances restart and get new IPs.
+
+        Request body:
+        {
+            "node_id": "vast-5090-quad",
+            "host": "211.72.13.202",
+            "port": 45875,
+            "vast_instance_id": "28654132"  // optional
+        }
+        """
+        if not HAS_DYNAMIC_REGISTRY:
+            return web.json_response({
+                "error": "Dynamic registry not available"
+            }, status=501)
+
+        try:
+            data = await request.json()
+            node_id = data.get("node_id")
+            host = data.get("host")
+            port = data.get("port", 22)
+            vast_instance_id = data.get("vast_instance_id")
+
+            if not node_id or not host:
+                return web.json_response({
+                    "error": "Missing required fields: node_id, host"
+                }, status=400)
+
+            registry = get_registry()
+            success = registry.register_node(node_id, host, port, vast_instance_id)
+
+            if success:
+                print(f"[P2P] Node registered: {node_id} at {host}:{port}")
+                return web.json_response({
+                    "success": True,
+                    "node_id": node_id,
+                    "registered_host": host,
+                    "registered_port": port,
+                })
+            else:
+                return web.json_response({
+                    "error": "Registration failed"
+                }, status=500)
+
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_registry_status(self, request: web.Request) -> web.Response:
+        """GET /registry/status - Get dynamic registry status for all nodes.
+
+        Returns current state of all nodes including:
+        - Effective IP addresses (dynamic if registered)
+        - Health state (online/degraded/offline)
+        - Failure counters
+        """
+        if not HAS_DYNAMIC_REGISTRY:
+            return web.json_response({
+                "error": "Dynamic registry not available"
+            }, status=501)
+
+        try:
+            registry = get_registry()
+            nodes_status = registry.get_all_nodes_status()
+            online_nodes = registry.get_online_nodes()
+
+            return web.json_response({
+                "total_nodes": len(nodes_status),
+                "online_nodes": len(online_nodes),
+                "online_node_ids": online_nodes,
+                "nodes": nodes_status,
+            })
+
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_registry_update_vast(self, request: web.Request) -> web.Response:
+        """POST /registry/update_vast - Query Vast.ai API and update IPs.
+
+        Requires VAST_API_KEY environment variable to be set.
+        """
+        if not HAS_DYNAMIC_REGISTRY:
+            return web.json_response({
+                "error": "Dynamic registry not available"
+            }, status=501)
+
+        try:
+            registry = get_registry()
+            updated = await registry.update_vast_ips()
+
+            return web.json_response({
+                "success": True,
+                "nodes_updated": updated,
+            })
+
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_registry_save_yaml(self, request: web.Request) -> web.Response:
+        """POST /registry/save_yaml - Write dynamic IPs back to YAML config.
+
+        Creates a backup before modifying. Only updates hosts where
+        dynamic IP differs from static IP.
+        """
+        if not HAS_DYNAMIC_REGISTRY:
+            return web.json_response({
+                "error": "Dynamic registry not available"
+            }, status=501)
+
+        try:
+            registry = get_registry()
+            updated = registry.update_yaml_config()
+
+            return web.json_response({
+                "success": True,
+                "config_updated": updated,
+            })
+
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
 
     async def handle_git_status(self, request: web.Request) -> web.Response:
         """Get git status for this node.
@@ -6139,6 +6306,12 @@ print(json.dumps({{
         app.router.add_get('/git/status', self.handle_git_status)
         app.router.add_post('/git/update', self.handle_git_update)
 
+        # Dynamic host registry routes (for IP auto-updates)
+        app.router.add_post('/register', self.handle_register)
+        app.router.add_get('/registry/status', self.handle_registry_status)
+        app.router.add_post('/registry/update_vast', self.handle_registry_update_vast)
+        app.router.add_post('/registry/save_yaml', self.handle_registry_save_yaml)
+
         # Phase 2: Distributed data manifest routes
         app.router.add_get('/data_manifest', self.handle_data_manifest)
         app.router.add_get('/cluster_data_manifest', self.handle_cluster_data_manifest)
@@ -6215,6 +6388,10 @@ print(json.dumps({{
 
         # Add training node priority sync loop (leader-only sync to high-GPU nodes)
         tasks.append(asyncio.create_task(self._training_sync_loop()))
+
+        # Add Vast.ai IP update loop (if VAST_API_KEY is set)
+        if HAS_DYNAMIC_REGISTRY:
+            tasks.append(asyncio.create_task(self._vast_ip_update_loop()))
 
         # If no leader known, start election after short delay
         await asyncio.sleep(5)

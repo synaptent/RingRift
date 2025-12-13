@@ -235,6 +235,7 @@ def load_cmaes_weights(path: str = "heuristic_weights_optimized.json") -> Dict[s
 def create_ai(
     ai_type: str,
     player_num: int,
+    board_type: BoardType,
     checkpoint: Optional[str] = None,
     mm_depth: int = 3,
     cmaes_path: Optional[str] = None,
@@ -342,6 +343,7 @@ def create_ai(
             randomness=0.0,
             rngSeed=ai_rng_seed,
             heuristic_profile_id=None,
+            allow_fresh_weights=False,
         )
 
         # Create DescentAI
@@ -349,21 +351,16 @@ def create_ai(
 
         # Load checkpoint if available
         if ckpt and os.path.exists(ckpt):
+            if ai.neural_net is None:
+                raise RuntimeError(f"NeuralNetAI unavailable; cannot load checkpoint: {ckpt}")
             try:
-                import torch
-                from typing import Dict, Any
-
-                checkpoint_data: Dict[str, Any] = torch.load(ckpt, map_location="cpu", weights_only=False)
-                # Checkpoints contain model_state_dict - load into NN
-                if ai.neural_net is not None and "model_state_dict" in checkpoint_data:
-                    state_dict = checkpoint_data["model_state_dict"]
-                    ai.neural_net.model.load_state_dict(state_dict)
-                    ai.neural_net.model.eval()
-                    print(f"Loaded checkpoint: {ckpt}")
-                else:
-                    print(f"Warning: No neural net for {ckpt}")
+                # NeuralNetAI is lazily initialized; ensure model exists for the
+                # target board type before loading the checkpoint.
+                ai.neural_net._ensure_model_initialized(board_type)
+                ai.neural_net._load_model_checkpoint(ckpt)
+                print(f"Loaded checkpoint: {ckpt}")
             except Exception as e:
-                print(f"Warning: Could not load {ckpt}: {e}")
+                raise RuntimeError(f"Failed to load checkpoint {ckpt}: {e}") from e
 
         return ai
 
@@ -603,15 +600,47 @@ def run_evaluation(
         # Even games: player1_type as P1, odd games: player2_type as P1
         if i % 2 == 0:
             # player1_type plays as Player 1
-            ai_p1 = create_ai(player1_type, 1, p1_checkpoint, minimax_depth, cmaes_weights_path, game_seed)
-            ai_p2 = create_ai(player2_type, 2, p2_checkpoint, minimax_depth, cmaes_weights_path, game_seed)
+            ai_p1 = create_ai(
+                player1_type,
+                1,
+                board_type,
+                p1_checkpoint,
+                minimax_depth,
+                cmaes_weights_path,
+                game_seed,
+            )
+            ai_p2 = create_ai(
+                player2_type,
+                2,
+                board_type,
+                p2_checkpoint,
+                minimax_depth,
+                cmaes_weights_path,
+                game_seed,
+            )
             p1_is_player1_type = True
         else:
             # player2_type plays as Player 1 (color swap)
             # When swapping colors, also swap checkpoints so each AI type
             # always uses its designated checkpoint
-            ai_p1 = create_ai(player2_type, 1, p2_checkpoint, minimax_depth, cmaes_weights_path, game_seed)
-            ai_p2 = create_ai(player1_type, 2, p1_checkpoint, minimax_depth, cmaes_weights_path, game_seed)
+            ai_p1 = create_ai(
+                player2_type,
+                1,
+                board_type,
+                p2_checkpoint,
+                minimax_depth,
+                cmaes_weights_path,
+                game_seed,
+            )
+            ai_p2 = create_ai(
+                player1_type,
+                2,
+                board_type,
+                p1_checkpoint,
+                minimax_depth,
+                cmaes_weights_path,
+                game_seed,
+            )
             p1_is_player1_type = False
 
         # Reset environment with different seed for variety

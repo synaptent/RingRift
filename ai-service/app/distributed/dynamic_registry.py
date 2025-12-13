@@ -1,0 +1,472 @@
+"""Dynamic Host Registry - Auto-updates host IPs and handles transient failures.
+
+This module provides:
+1. Soft/hard offline detection (degraded vs dead)
+2. Self-registration endpoint for nodes to announce IP changes
+3. Vast.ai API integration for automatic IP updates
+4. Optional YAML config writeback
+
+Usage:
+    from app.distributed.dynamic_registry import DynamicHostRegistry
+
+    registry = DynamicHostRegistry()
+
+    # Node self-registration (call from each node)
+    registry.register_node("vast-5090-quad", "211.72.13.202", 45875)
+
+    # Get current host config (uses dynamic IP if available)
+    host = registry.get_host("vast-5090-quad")
+
+    # Check health state
+    state = registry.get_node_state("vast-5090-quad")  # "online", "degraded", "offline"
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import threading
+import time
+from dataclasses import dataclass, field, asdict
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+class NodeState(str, Enum):
+    """Health state of a node."""
+    ONLINE = "online"           # Responding normally
+    DEGRADED = "degraded"       # Temporary failures, still trying
+    OFFLINE = "offline"         # Confirmed offline after multiple failures
+    UNKNOWN = "unknown"         # Never contacted
+
+
+# Configuration
+DEGRADED_THRESHOLD = 2          # Failures before degraded
+OFFLINE_THRESHOLD = 5           # Failures before offline
+RECOVERY_CHECKS = 2             # Successful checks to go from degraded to online
+VAST_API_CHECK_INTERVAL = 300   # Check Vast API every 5 minutes
+STATE_FILE = "logs/p2p_orchestrator/dynamic_registry.json"
+
+
+@dataclass
+class DynamicNodeInfo:
+    """Dynamic information about a node."""
+    node_id: str
+    static_host: str            # Original host from YAML
+    static_port: int            # Original port from YAML
+    dynamic_host: Optional[str] = None   # Self-registered or API-discovered host
+    dynamic_port: Optional[int] = None   # Self-registered or API-discovered port
+    state: NodeState = NodeState.UNKNOWN
+    consecutive_failures: int = 0
+    consecutive_successes: int = 0
+    last_check_time: float = 0.0
+    last_success_time: float = 0.0
+    last_failure_time: float = 0.0
+    last_registration_time: float = 0.0
+    failure_reason: Optional[str] = None
+    vast_instance_id: Optional[str] = None   # For Vast.ai API queries
+
+    @property
+    def effective_host(self) -> str:
+        """Get the current effective host (dynamic if available)."""
+        return self.dynamic_host or self.static_host
+
+    @property
+    def effective_port(self) -> int:
+        """Get the current effective port (dynamic if available)."""
+        return self.dynamic_port or self.static_port
+
+
+class DynamicHostRegistry:
+    """Registry that tracks dynamic host information and health states."""
+
+    def __init__(self, config_path: Optional[str] = None):
+        self._nodes: Dict[str, DynamicNodeInfo] = {}
+        self._lock = threading.RLock()
+        self._config_path = config_path
+        self._state_file = Path(__file__).parent.parent.parent / STATE_FILE
+        self._state_file.parent.mkdir(parents=True, exist_ok=True)
+        self._vast_api_key: Optional[str] = os.environ.get("VAST_API_KEY")
+        self._last_vast_check = 0.0
+
+        # Load static config
+        self._load_static_config()
+
+        # Load persisted dynamic state
+        self._load_state()
+
+    def _load_static_config(self) -> None:
+        """Load hosts from YAML config."""
+        try:
+            from app.distributed.hosts import load_remote_hosts
+            hosts = load_remote_hosts(self._config_path)
+
+            with self._lock:
+                for name, host_config in hosts.items():
+                    if name not in self._nodes:
+                        self._nodes[name] = DynamicNodeInfo(
+                            node_id=name,
+                            static_host=host_config.ssh_host,
+                            static_port=host_config.ssh_port,
+                        )
+
+                        # Extract Vast instance ID if present
+                        props = host_config.properties
+                        if "vast_instance_id" in props:
+                            self._nodes[name].vast_instance_id = props["vast_instance_id"]
+                        elif name.startswith("vast-"):
+                            # Try to extract from comments in YAML
+                            for key, val in props.items():
+                                if isinstance(val, str) and "Instance ID:" in val:
+                                    # Parse "Instance ID: 28654132" from comments
+                                    parts = val.split("Instance ID:")
+                                    if len(parts) > 1:
+                                        instance_id = parts[1].strip().split()[0]
+                                        self._nodes[name].vast_instance_id = instance_id
+                    else:
+                        # Update static config but preserve dynamic state
+                        self._nodes[name].static_host = host_config.ssh_host
+                        self._nodes[name].static_port = host_config.ssh_port
+
+            logger.info(f"Loaded {len(self._nodes)} hosts into dynamic registry")
+        except Exception as e:
+            logger.warning(f"Failed to load static config: {e}")
+
+    def _load_state(self) -> None:
+        """Load persisted dynamic state from disk."""
+        try:
+            if self._state_file.exists():
+                with open(self._state_file) as f:
+                    data = json.load(f)
+
+                with self._lock:
+                    for node_id, node_data in data.get("nodes", {}).items():
+                        if node_id in self._nodes:
+                            node = self._nodes[node_id]
+                            node.dynamic_host = node_data.get("dynamic_host")
+                            node.dynamic_port = node_data.get("dynamic_port")
+                            node.vast_instance_id = node_data.get("vast_instance_id")
+                            # Don't restore state - re-check on startup
+                            node.state = NodeState.UNKNOWN
+                            node.consecutive_failures = 0
+                            node.consecutive_successes = 0
+
+                logger.info(f"Loaded dynamic registry state from {self._state_file}")
+        except Exception as e:
+            logger.warning(f"Failed to load registry state: {e}")
+
+    def _save_state(self) -> None:
+        """Persist dynamic state to disk."""
+        try:
+            with self._lock:
+                data = {
+                    "timestamp": datetime.now().isoformat(),
+                    "nodes": {
+                        node_id: {
+                            "dynamic_host": node.dynamic_host,
+                            "dynamic_port": node.dynamic_port,
+                            "vast_instance_id": node.vast_instance_id,
+                            "state": node.state.value,
+                            "last_success_time": node.last_success_time,
+                        }
+                        for node_id, node in self._nodes.items()
+                    }
+                }
+
+            with open(self._state_file, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to save registry state: {e}")
+
+    def register_node(
+        self,
+        node_id: str,
+        host: str,
+        port: int,
+        vast_instance_id: Optional[str] = None,
+    ) -> bool:
+        """Register or update a node's dynamic address.
+
+        Called by nodes to announce their current IP (e.g., after Vast restart).
+
+        Args:
+            node_id: Node identifier (e.g., "vast-5090-quad")
+            host: Current IP address
+            port: Current SSH port
+            vast_instance_id: Optional Vast.ai instance ID
+
+        Returns:
+            True if registration was accepted
+        """
+        with self._lock:
+            if node_id not in self._nodes:
+                # New node - create entry
+                self._nodes[node_id] = DynamicNodeInfo(
+                    node_id=node_id,
+                    static_host=host,
+                    static_port=port,
+                )
+
+            node = self._nodes[node_id]
+            old_host = node.effective_host
+            old_port = node.effective_port
+
+            node.dynamic_host = host
+            node.dynamic_port = port
+            node.last_registration_time = time.time()
+
+            if vast_instance_id:
+                node.vast_instance_id = vast_instance_id
+
+            # If IP changed, reset failure counters
+            if host != old_host or port != old_port:
+                node.consecutive_failures = 0
+                node.state = NodeState.UNKNOWN
+                logger.info(f"Node {node_id} updated: {old_host}:{old_port} -> {host}:{port}")
+
+            self._save_state()
+            return True
+
+    def record_check_result(
+        self,
+        node_id: str,
+        success: bool,
+        failure_reason: Optional[str] = None,
+    ) -> NodeState:
+        """Record result of a health check and update node state.
+
+        Args:
+            node_id: Node identifier
+            success: Whether the check succeeded
+            failure_reason: Optional reason for failure
+
+        Returns:
+            New node state
+        """
+        with self._lock:
+            if node_id not in self._nodes:
+                return NodeState.UNKNOWN
+
+            node = self._nodes[node_id]
+            node.last_check_time = time.time()
+
+            if success:
+                node.consecutive_failures = 0
+                node.consecutive_successes += 1
+                node.last_success_time = time.time()
+                node.failure_reason = None
+
+                # Transition to online
+                if node.state == NodeState.DEGRADED:
+                    if node.consecutive_successes >= RECOVERY_CHECKS:
+                        node.state = NodeState.ONLINE
+                        logger.info(f"Node {node_id} recovered: degraded -> online")
+                elif node.state in (NodeState.UNKNOWN, NodeState.OFFLINE):
+                    node.state = NodeState.ONLINE
+                    logger.info(f"Node {node_id} is now online")
+            else:
+                node.consecutive_successes = 0
+                node.consecutive_failures += 1
+                node.last_failure_time = time.time()
+                node.failure_reason = failure_reason
+
+                # Transition through states
+                if node.consecutive_failures >= OFFLINE_THRESHOLD:
+                    if node.state != NodeState.OFFLINE:
+                        node.state = NodeState.OFFLINE
+                        logger.warning(f"Node {node_id} is now offline after {node.consecutive_failures} failures")
+                elif node.consecutive_failures >= DEGRADED_THRESHOLD:
+                    if node.state == NodeState.ONLINE:
+                        node.state = NodeState.DEGRADED
+                        logger.warning(f"Node {node_id} is degraded: {failure_reason}")
+
+            return node.state
+
+    def get_node_state(self, node_id: str) -> NodeState:
+        """Get current state of a node."""
+        with self._lock:
+            if node_id in self._nodes:
+                return self._nodes[node_id].state
+            return NodeState.UNKNOWN
+
+    def get_effective_address(self, node_id: str) -> Optional[Tuple[str, int]]:
+        """Get current effective address for a node.
+
+        Returns:
+            Tuple of (host, port) or None if node not found
+        """
+        with self._lock:
+            if node_id in self._nodes:
+                node = self._nodes[node_id]
+                return (node.effective_host, node.effective_port)
+            return None
+
+    def get_online_nodes(self) -> List[str]:
+        """Get list of nodes that are online or degraded (still usable)."""
+        with self._lock:
+            return [
+                node_id for node_id, node in self._nodes.items()
+                if node.state in (NodeState.ONLINE, NodeState.DEGRADED)
+            ]
+
+    def get_all_nodes_status(self) -> Dict[str, Dict[str, Any]]:
+        """Get status summary of all nodes."""
+        with self._lock:
+            return {
+                node_id: {
+                    "state": node.state.value,
+                    "effective_host": node.effective_host,
+                    "effective_port": node.effective_port,
+                    "consecutive_failures": node.consecutive_failures,
+                    "last_success": datetime.fromtimestamp(node.last_success_time).isoformat() if node.last_success_time else None,
+                    "failure_reason": node.failure_reason,
+                }
+                for node_id, node in self._nodes.items()
+            }
+
+    async def update_vast_ips(self) -> int:
+        """Query Vast.ai API and update IPs for Vast instances.
+
+        Returns:
+            Number of nodes updated
+        """
+        if not self._vast_api_key:
+            logger.debug("No VAST_API_KEY set, skipping Vast IP update")
+            return 0
+
+        # Rate limit API calls
+        if time.time() - self._last_vast_check < VAST_API_CHECK_INTERVAL:
+            return 0
+
+        self._last_vast_check = time.time()
+
+        try:
+            import aiohttp
+
+            async with aiohttp.ClientSession() as session:
+                headers = {"Authorization": f"Bearer {self._vast_api_key}"}
+                async with session.get(
+                    "https://console.vast.ai/api/v0/instances/",
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"Vast API returned {resp.status}")
+                        return 0
+
+                    data = await resp.json()
+        except ImportError:
+            logger.warning("aiohttp not installed, can't query Vast API")
+            return 0
+        except Exception as e:
+            logger.warning(f"Failed to query Vast API: {e}")
+            return 0
+
+        updated = 0
+        instances = data.get("instances", [])
+
+        with self._lock:
+            # Build map of instance_id -> node_id
+            instance_to_node = {}
+            for node_id, node in self._nodes.items():
+                if node.vast_instance_id:
+                    instance_to_node[node.vast_instance_id] = node_id
+
+            for instance in instances:
+                instance_id = str(instance.get("id"))
+                if instance_id not in instance_to_node:
+                    continue
+
+                node_id = instance_to_node[instance_id]
+                node = self._nodes[node_id]
+
+                # Get current IP and port from Vast
+                ssh_host = instance.get("ssh_host")
+                ssh_port = instance.get("ssh_port")
+
+                if ssh_host and ssh_port:
+                    if ssh_host != node.dynamic_host or ssh_port != node.dynamic_port:
+                        logger.info(f"Vast API: {node_id} IP updated to {ssh_host}:{ssh_port}")
+                        node.dynamic_host = ssh_host
+                        node.dynamic_port = ssh_port
+                        node.consecutive_failures = 0
+                        node.state = NodeState.UNKNOWN
+                        updated += 1
+
+        if updated:
+            self._save_state()
+
+        return updated
+
+    def update_yaml_config(self) -> bool:
+        """Write current dynamic addresses back to YAML config.
+
+        This is optional and only updates hosts where dynamic != static.
+        Creates a backup before modifying.
+
+        Returns:
+            True if config was updated
+        """
+        try:
+            import yaml
+            from app.distributed.hosts import get_ai_service_dir, CONFIG_FILE_PATH
+
+            config_path = get_ai_service_dir() / CONFIG_FILE_PATH
+            if not config_path.exists():
+                return False
+
+            # Create backup
+            backup_path = config_path.with_suffix(".yaml.bak")
+            with open(config_path) as f:
+                original_content = f.read()
+            with open(backup_path, "w") as f:
+                f.write(original_content)
+
+            # Load and update
+            config = yaml.safe_load(original_content)
+
+            updated = False
+            with self._lock:
+                for node_id, node in self._nodes.items():
+                    if node_id not in config.get("hosts", {}):
+                        continue
+
+                    if node.dynamic_host and node.dynamic_host != node.static_host:
+                        config["hosts"][node_id]["ssh_host"] = node.dynamic_host
+                        updated = True
+
+                    if node.dynamic_port and node.dynamic_port != node.static_port:
+                        config["hosts"][node_id]["ssh_port"] = node.dynamic_port
+                        updated = True
+
+            if updated:
+                # Add timestamp comment
+                config["# Last updated by dynamic_registry"] = datetime.now().isoformat()
+
+                with open(config_path, "w") as f:
+                    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+                logger.info(f"Updated YAML config with dynamic addresses")
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Failed to update YAML config: {e}")
+            return False
+
+
+# Global registry instance
+_registry: Optional[DynamicHostRegistry] = None
+
+
+def get_registry() -> DynamicHostRegistry:
+    """Get or create the global dynamic host registry."""
+    global _registry
+    if _registry is None:
+        _registry = DynamicHostRegistry()
+    return _registry
