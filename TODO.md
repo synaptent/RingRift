@@ -633,6 +633,39 @@ SandboxGameHost integration requires mapping existing state to hooks:
 | Heuristic weight optimization | P2       | In Progress |
 | MinimaxAI production wiring   | P2       | ✅ Complete |
 
+#### Ruleset Optimization Findings (Dec 2025)
+
+Ablation experiments tested ring counts to find balanced termination distributions:
+
+**Square8 (64 spaces, default 18 rings):**
+
+- 18 rings → 100% elimination victories ✅ (current default is balanced)
+- 24 rings → 100% LPS victories
+
+**Square19 (361 spaces, default 72 rings):**
+
+- 18 rings → 100% elimination victories
+- 19+ rings → 100% LPS victories
+- **Recommendation:** Use 18-20 rings for training to allow both victory types
+- Current default (72) results in ~100% LPS victories
+
+**Hexagonal (469 spaces, default 96 rings):**
+
+- 12 rings → 100% elimination victories
+- 14-18 rings → mixed/inconsistent (seed-dependent)
+- **Recommendation:** Use 12-16 rings for training
+- Current default (96) results in ~100% LPS victories
+
+**Key Finding:** Ring count is the dominant factor affecting game termination. LPS threshold (2 vs 3 rounds) had negligible impact.
+
+**Training Recommendations:**
+
+- Square8: Use default (18 rings) - already balanced
+- Square19: Use `--rings-per-player 18` in training scripts
+- Hexagonal: Use `--rings-per-player 14` in training scripts
+
+Results in `ai-service/logs/lps_ablation/lps_ablation_*.json`
+
 ---
 
 ## 4. Documentation Tasks

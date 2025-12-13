@@ -562,8 +562,6 @@ describe('TerritoryAggregate - Branch Coverage (Core)', () => {
   describe('enumerateTerritoryEliminationMoves edge cases', () => {
     it('returns empty when count is zero', () => {
       const state = createTestGameState();
-      state.pendingTerritoryElimination = true;
-      state.pendingTerritoryEliminationCount = 0;
       state.board.stacks.clear();
       addStack(state.board, { x: 0, y: 0 }, 1, 2, 3);
 
@@ -573,11 +571,32 @@ describe('TerritoryAggregate - Branch Coverage (Core)', () => {
 
     it('handles multiple stacks for elimination', () => {
       const state = createTestGameState();
-      state.pendingTerritoryElimination = true;
-      state.pendingTerritoryEliminationCount = 2;
+      state.currentPhase = 'territory_processing';
+      state.currentPlayer = 1;
       state.board.stacks.clear();
       addStack(state.board, { x: 0, y: 0 }, 1, 3, 4);
       addStack(state.board, { x: 1, y: 1 }, 1, 2, 3);
+
+      const processedRegion: Territory = {
+        player: 1,
+        spaces: [{ x: 7, y: 7 }],
+        stacks: [],
+        isDisconnected: true,
+        controllingPlayer: 1,
+      };
+
+      state.moveHistory = [
+        {
+          id: 'choose-territory',
+          type: 'choose_territory_option',
+          player: 1,
+          to: { x: 7, y: 7 },
+          disconnectedRegions: [processedRegion],
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: 1,
+        } as any,
+      ];
 
       const moves = enumerateTerritoryEliminationMoves(state, 1);
       expect(moves.length).toBeGreaterThan(0);

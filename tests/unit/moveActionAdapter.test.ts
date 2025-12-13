@@ -845,7 +845,8 @@ describe('moveActionAdapter', () => {
 
         const move = gameActionToMove(action, state);
 
-        expect(move.type).toBe('choose_line_reward');
+        // Canonical line option move type (legacy alias: choose_line_reward).
+        expect(move.type).toBe('choose_line_option');
         expect(move.collapsedMarkers).toHaveLength(2);
       });
 
@@ -865,7 +866,7 @@ describe('moveActionAdapter', () => {
     });
 
     describe('PROCESS_TERRITORY', () => {
-      it('should convert ProcessTerritoryAction to process_territory_region Move', () => {
+      it('should convert ProcessTerritoryAction to choose_territory_option Move', () => {
         const state = createMockState();
         state.board.territories = new Map([
           ['region-abc', { spaces: [{ x: 1, y: 2 }], controllingPlayer: 1 }],
@@ -879,7 +880,8 @@ describe('moveActionAdapter', () => {
 
         const move = gameActionToMove(action, state);
 
-        expect(move.type).toBe('process_territory_region');
+        // Canonical territory decision move type (legacy alias: process_territory_region).
+        expect(move.type).toBe('choose_territory_option');
         expect(move.disconnectedRegions).toHaveLength(1);
       });
 

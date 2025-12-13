@@ -389,7 +389,7 @@ describe('Move↔GameAction adapter – round-trip semantics', () => {
     expect((chooseAction as any).collapsedPositions).toEqual(minSubset);
 
     const chooseBack = gameActionToMove(chooseAction, sharedState);
-    expect(chooseBack.type).toBe('choose_line_reward');
+    expect(chooseBack.type).toBe('choose_line_option');
     expect(chooseBack.player).toBe(1);
     expect((chooseBack as any).collapsedMarkers).toEqual(minSubset);
   });
@@ -435,7 +435,7 @@ describe('Move↔GameAction adapter – round-trip semantics', () => {
     });
 
     const back = gameActionToMove(action, sharedState);
-    expect(back.type).toBe('process_territory_region');
+    expect(back.type).toBe('choose_territory_option');
     expect(back.player).toBe(1);
     expect(back.disconnectedRegions).toBeDefined();
     expect(back.disconnectedRegions![0].spaces).toEqual(regionSpaces);

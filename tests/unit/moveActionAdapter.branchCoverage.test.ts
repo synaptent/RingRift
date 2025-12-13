@@ -484,7 +484,7 @@ describe('moveActionAdapter branch coverage', () => {
         };
 
         expect(() => moveToGameAction(move, state)).toThrow(
-          'No territories available on state for process_territory_region Move'
+          'No territories available on state for choose_territory_option Move'
         );
       });
 
@@ -785,8 +785,8 @@ describe('moveActionAdapter branch coverage', () => {
         };
 
         const move = gameActionToMove(action, state);
-        expect(move.type).toBe('choose_line_reward');
-        expect(move.collapsedMarkers).toBeUndefined();
+        expect(move.type).toBe('choose_line_option');
+        expect(move.collapsedMarkers).toEqual(line.positions);
       });
 
       it('converts CHOOSE_LINE_REWARD with MINIMUM_COLLAPSE', () => {
@@ -836,7 +836,7 @@ describe('moveActionAdapter branch coverage', () => {
         };
 
         const move = gameActionToMove(action, state);
-        expect(move.type).toBe('process_territory_region');
+        expect(move.type).toBe('choose_territory_option');
         expect(move.disconnectedRegions).toHaveLength(1);
       });
 

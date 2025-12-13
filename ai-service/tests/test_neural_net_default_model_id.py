@@ -56,20 +56,21 @@ def _write_v3_versioned_checkpoint(
     manager.save_checkpoint(model, metadata, str(models_dir / filename))
 
 
-def test_neural_netai_defaults_to_v4_sq8_model_id(
+def test_neural_netai_defaults_to_v5_sq8_model_id_when_available(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """When nn_model_id is unset, square8 should default to ringrift_v4_sq8_2p."""
+    """When nn_model_id is unset, square8 should prefer v5/v3-family checkpoints."""
     monkeypatch.setenv("RINGRIFT_FORCE_CPU", "1")
 
     base_dir = tmp_path / "ai-service"
     models_dir = base_dir / "models"
 
-    _write_versioned_checkpoint(
+    _write_v3_versioned_checkpoint(
         models_dir,
-        "ringrift_v4_sq8_2p.pth",
+        "ringrift_v5_sq8_2p_2xh100.pth",
         board_size=8,
+        num_players=2,
     )
 
     neural_net_mod._MODEL_CACHE.clear()
@@ -86,7 +87,7 @@ def test_neural_netai_defaults_to_v4_sq8_model_id(
 
     assert nn.model is not None
     model = getattr(nn.model, "_orig_mod", nn.model)
-    assert isinstance(model, RingRiftCNN_v2)
+    assert isinstance(model, RingRiftCNN_v3)
 
 
 def test_neural_netai_does_not_append_square19_suffix_when_model_id_includes_board_hint(

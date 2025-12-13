@@ -2492,10 +2492,32 @@ class NeuralNetAI(BaseAI):
             # Default model selection.
             #
             # We intentionally do NOT fall back to deprecated v1/v1_mps ids.
-            # Instead, prefer the latest canonical v4/v3 square8 2p models and
-            # require callers to explicitly set nn_model_id for other boards.
+            # Instead, prefer the latest canonical square8 2p models and require
+            # callers to explicitly set nn_model_id for other boards.
+            #
+            # "v4"/"v5" here are model-id lineage prefixes (checkpoint families),
+            # not architecture class names. See ai-service/docs/MPS_ARCHITECTURE.md.
+            def _pick_first_existing_model_id(candidates: list[str]) -> str:
+                models_dir = os.path.join(self._base_dir, "models")
+                for candidate in candidates:
+                    # Prefer the exact filename, but allow timestamped variants.
+                    for suffix in ("_mps.pth", ".pth"):
+                        if os.path.exists(os.path.join(models_dir, f"{candidate}{suffix}")):
+                            return candidate
+                    try:
+                        from pathlib import Path
+
+                        if list(Path(models_dir).glob(f"{candidate}_*.pth")):
+                            return candidate
+                    except Exception:
+                        pass
+                return candidates[0]
+
             if board_type == BoardType.SQUARE8:
-                model_id = "ringrift_v4_sq8_2p"
+                # Prefer v3-family checkpoints when available; fall back to v2-family.
+                model_id = _pick_first_existing_model_id(
+                    ["ringrift_v5_sq8_2p_2xh100", "ringrift_v4_sq8_2p"]
+                )
             elif board_type == BoardType.SQUARE19:
                 model_id = "ringrift_v4_sq19_2p"
             else:  # HEXAGONAL

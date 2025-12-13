@@ -110,6 +110,11 @@ Notes:
    - Gate phase coercions / compatibility allowances in `src/shared/engine/orchestration/turnOrchestrator.ts` behind an explicit replay option.
    - Keep default behavior strict for canonical engines and canonical DB generation.
 
+6. **Experimental ruleset overrides (TS + GPU tooling) ✅ DONE (2025-12-12)**
+   - Added per-game overrides for `ringsPerPlayer` and `lpsRoundsRequired` via `rulesOptions` (plus `GameState.lpsRoundsRequired` for serialization parity).
+   - Updated shared TS engine entry points to honour overrides (initial state, placement cap checks, LPS evaluation, FSM context).
+   - Fixed GPU simulator step semantics so each `ParallelGameRunner._step_games()` call processes at most one phase per game (restoring RR-CANON-R172 timing expectations in `ai-service/tests/gpu/test_gpu_lps_victory.py`).
+
 ### Verification commands (recommended)
 
 - **TS (focused):**

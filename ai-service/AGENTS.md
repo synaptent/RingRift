@@ -54,6 +54,7 @@ Canonical DBs must pass all of:
 1. **Parity gate** (TS↔Python replay parity):
    - `ai-service/scripts/run_canonical_selfplay_parity_gate.py`
    - Or via the unified generator below.
+   - Observability: pass `--summary <path>` and watch it with `tail -f <path>`; the gate emits stage/heartbeat progress to stderr every `--heartbeat-seconds` (default: 60).
 2. **Canonical history validation**:
    - `app/rules/history_validation.validate_canonical_history_for_game(...)`.
    - CLIs: `scripts/check_canonical_phase_history.py`, `scripts/scan_canonical_phase_dbs.py`.

@@ -541,6 +541,9 @@ export class GameEngine {
             if (eliminationContext === 'line') {
               prompt =
                 'Line reward cost: You must eliminate ONE ring from the top of any stack you control.';
+            } else if (eliminationContext === 'recovery') {
+              prompt =
+                'Recovery territory cost: You must extract ONE buried ring from a stack outside the region.';
             } else if (eliminationContext === 'forced') {
               prompt =
                 'Forced elimination: You must eliminate your ENTIRE CAP from a controlled stack.';
@@ -566,8 +569,11 @@ export class GameEngine {
                   (move.eliminationFromStack && move.eliminationFromStack.totalHeight) ||
                   (stack ? stack.stackHeight : capHeight || 1);
 
-                // Per RR-CANON-R122: line costs 1 ring; territory/forced costs entire cap
-                const ringsToEliminate = eliminationContext === 'line' ? 1 : capHeight;
+                // Per RR-CANON-R122 / RR-CANON-R114: line + recovery cost 1 ring; territory/forced costs entire cap.
+                const ringsToEliminate =
+                  eliminationContext === 'line' || eliminationContext === 'recovery'
+                    ? 1
+                    : capHeight;
 
                 return {
                   stackPosition: pos,

@@ -568,6 +568,12 @@ def main() -> None:
                     db_path=db_path,
                     stage_label="selfplay",
                 )
+        print(
+            f"[parity-gate] starting selfplay: board={args.board_type} players={args.num_players} "
+            f"games={args.num_games} max_moves={max_moves} db={db_path}",
+            file=sys.stderr,
+            flush=True,
+        )
         soak_result = run_selfplay_soak(
             args.board_type,
             args.num_games,
@@ -581,6 +587,11 @@ def main() -> None:
         )
         if selfplay_heartbeat_stop is not None:
             selfplay_heartbeat_stop.set()
+        print(
+            f"[parity-gate] selfplay complete: returncode={soak_result.get('returncode')}",
+            file=sys.stderr,
+            flush=True,
+        )
 
         parity_heartbeat_stop: threading.Event | None = None
         if summary_path is not None:
@@ -600,6 +611,12 @@ def main() -> None:
                     db_path=db_path,
                     stage_label="parity",
                 )
+        print(
+            f"[parity-gate] starting parity: db={db_path} progress_every={args.parity_progress_every} "
+            f"timeout={args.parity_timeout_seconds or 'none'}",
+            file=sys.stderr,
+            flush=True,
+        )
         parity_summary = run_parity_check(
             db_path,
             progress_every=args.parity_progress_every,
@@ -607,6 +624,11 @@ def main() -> None:
         )
         if parity_heartbeat_stop is not None:
             parity_heartbeat_stop.set()
+        print(
+            f"[parity-gate] parity complete: returncode={parity_summary.get('returncode')}",
+            file=sys.stderr,
+            flush=True,
+        )
 
     # Basic gate: soak must succeed and the canonical parity gate must pass.
     #

@@ -1,6 +1,7 @@
 import { Move, positionToString } from '../types/game';
 import type { Position, Territory, LineInfo } from '../types/game';
 import { flagEnabled, debugLog } from '../utils/envFlags';
+import { getRingsToEliminate, type EliminationContext } from './aggregates/EliminationAggregate';
 import {
   GameState as EngineGameState,
   GameAction,
@@ -241,6 +242,7 @@ function mapEliminateRingsFromStackMove(move: Move): EliminateStackAction {
     type: 'ELIMINATE_STACK',
     playerId: move.player,
     stackPosition: move.to,
+    ...(move.eliminationContext ? { eliminationContext: move.eliminationContext } : {}),
   };
 }
 
@@ -478,18 +480,35 @@ function actionToEliminateStackMove(
   const key = positionToString(action.stackPosition);
   const stack = before.board.stacks.get(key);
   const capHeight = stack ? stack.capHeight : 0;
+  const totalHeight = stack ? (stack.stackHeight ?? capHeight) : capHeight;
+  const eliminationContext: EliminationContext = (action.eliminationContext ??
+    'territory') as EliminationContext;
+  let ringsToEliminate = 0;
+  if (stack) {
+    // Some adapter tests stub stacks without a `rings` array. Use canonical
+    // elimination semantics when `rings` is present; otherwise, fall back to
+    // the stack's capHeight metadata.
+    if (Array.isArray((stack as any).rings)) {
+      ringsToEliminate = getRingsToEliminate(stack as any, eliminationContext);
+    } else if (eliminationContext === 'line' || eliminationContext === 'recovery') {
+      ringsToEliminate = 1;
+    } else {
+      ringsToEliminate = capHeight;
+    }
+  }
   return {
     type: 'eliminate_rings_from_stack',
     player: action.playerId,
     to: action.stackPosition,
     thinkTime: 0,
-    ...(capHeight > 0
+    ...(action.eliminationContext ? { eliminationContext: action.eliminationContext } : {}),
+    ...(ringsToEliminate > 0
       ? {
-          eliminatedRings: [{ player: action.playerId, count: capHeight }],
+          eliminatedRings: [{ player: action.playerId, count: ringsToEliminate }],
           eliminationFromStack: {
             position: action.stackPosition,
             capHeight,
-            totalHeight: stack?.stackHeight ?? capHeight,
+            totalHeight,
           },
         }
       : {}),

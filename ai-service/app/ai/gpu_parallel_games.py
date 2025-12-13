@@ -223,9 +223,6 @@ def apply_capture_moves_vectorized(
     # Get current players for active games
     current_players = state.current_player
 
-    # Record moves in history (vectorized where possible)
-    move_counts = state.move_count.clone()
-
     # Apply moves game by game (some operations require iteration due to variable paths)
     # This is the minimal iteration - just for path processing
     game_indices = torch.where(has_selection)[0]
@@ -236,7 +233,7 @@ def apply_capture_moves_vectorized(
         to_y = selected_to_y[g].item()
         to_x = selected_to_x[g].item()
         player = current_players[g].item()
-        mc = move_counts[g].item()
+        mc = int(state.move_count[g].item())
 
         # Record in history
         if mc < state.max_history_moves:
@@ -246,10 +243,11 @@ def apply_capture_moves_vectorized(
             state.move_history[g, mc, 3] = from_x
             state.move_history[g, mc, 4] = to_y
             state.move_history[g, mc, 5] = to_x
-            state.move_count[g] += 1
+        state.move_count[g] += 1
 
         # Get stack info
         attacker_height = state.stack_height[g, from_y, from_x].item()
+        attacker_cap_height = state.cap_height[g, from_y, from_x].item()
         defender_height = state.stack_height[g, to_y, to_x].item()
         defender_owner = state.stack_owner[g, to_y, to_x].item()
 
@@ -278,15 +276,19 @@ def apply_capture_moves_vectorized(
         # Merge stacks
         if defender_new_height > 0:
             new_height = attacker_height + defender_new_height
-            state.stack_height[g, to_y, to_x] = new_height
         else:
-            state.stack_height[g, to_y, to_x] = attacker_height
+            new_height = attacker_height
+        state.stack_height[g, to_y, to_x] = new_height
 
         state.stack_owner[g, to_y, to_x] = player
+        # Cap is the attacker's original cap (multicolor stacks preserve cap_height).
+        # (Best-effort: GPU state does not store full ring sequences.)
+        state.cap_height[g, to_y, to_x] = min(attacker_cap_height, new_height)
 
         # Clear origin
         state.stack_height[g, from_y, from_x] = 0
         state.stack_owner[g, from_y, from_x] = 0
+        state.cap_height[g, from_y, from_x] = 0
 
 
 def apply_movement_moves_vectorized(
@@ -317,8 +319,6 @@ def apply_movement_moves_vectorized(
     selected_to_x = moves.to_x[global_idx]
 
     current_players = state.current_player
-    move_counts = state.move_count.clone()
-
     game_indices = torch.where(has_selection)[0]
 
     for g in game_indices.tolist():
@@ -327,7 +327,7 @@ def apply_movement_moves_vectorized(
         to_y = selected_to_y[g].item()
         to_x = selected_to_x[g].item()
         player = current_players[g].item()
-        mc = move_counts[g].item()
+        mc = int(state.move_count[g].item())
 
         # Record in history
         if mc < state.max_history_moves:
@@ -337,9 +337,10 @@ def apply_movement_moves_vectorized(
             state.move_history[g, mc, 3] = from_x
             state.move_history[g, mc, 4] = to_y
             state.move_history[g, mc, 5] = to_x
-            state.move_count[g] += 1
+        state.move_count[g] += 1
 
         moving_height = state.stack_height[g, from_y, from_x].item()
+        moving_cap_height = state.cap_height[g, from_y, from_x].item()
 
         # Process markers along path
         dy = 0 if to_y == from_y else (1 if to_y > from_y else -1)
@@ -378,12 +379,28 @@ def apply_movement_moves_vectorized(
             state.rings_caused_eliminated[g, player] += landing_ring_cost
 
         # Update destination
-        state.stack_height[g, to_y, to_x] = max(1, new_height)
-        state.stack_owner[g, to_y, to_x] = player
+        final_height = max(0, new_height)
+        if final_height <= 0:
+            # Landing cost can eliminate the final ring; the destination remains
+            # empty (but may still become collapsed if the move landed on a marker).
+            state.stack_height[g, to_y, to_x] = 0
+            state.stack_owner[g, to_y, to_x] = 0
+            state.cap_height[g, to_y, to_x] = 0
+        else:
+            state.stack_height[g, to_y, to_x] = final_height
+            state.stack_owner[g, to_y, to_x] = player
+            # Best-effort cap update (GPU does not track ring colors beyond capHeight metadata).
+            new_cap = moving_cap_height - landing_ring_cost
+            if new_cap <= 0:
+                new_cap = 1
+            if new_cap > final_height:
+                new_cap = final_height
+            state.cap_height[g, to_y, to_x] = new_cap
 
         # Clear origin
         state.stack_height[g, from_y, from_x] = 0
         state.stack_owner[g, from_y, from_x] = 0
+        state.cap_height[g, from_y, from_x] = 0
 
 
 def apply_recovery_moves_vectorized(
@@ -410,8 +427,6 @@ def apply_recovery_moves_vectorized(
     selected_to_x = moves.to_x[global_idx]
 
     current_players = state.current_player
-    move_counts = state.move_count.clone()
-
     game_indices = torch.where(has_selection)[0]
 
     for g in game_indices.tolist():
@@ -420,7 +435,7 @@ def apply_recovery_moves_vectorized(
         to_y = selected_to_y[g].item()
         to_x = selected_to_x[g].item()
         player = current_players[g].item()
-        mc = move_counts[g].item()
+        mc = int(state.move_count[g].item())
 
         # Record in history
         if mc < state.max_history_moves:
@@ -430,7 +445,7 @@ def apply_recovery_moves_vectorized(
             state.move_history[g, mc, 3] = from_x
             state.move_history[g, mc, 4] = to_y
             state.move_history[g, mc, 5] = to_x
-            state.move_count[g] += 1
+        state.move_count[g] += 1
 
         # Move marker
         state.marker_owner[g, from_y, from_x] = 0
@@ -441,6 +456,7 @@ def apply_recovery_moves_vectorized(
             # Stack-strike recovery (RR-CANON-R112(b2)): sacrifice the marker
             # and eliminate the attacked stack's top ring (credited to P).
             new_height = max(0, dest_height - 1)
+            old_cap = int(state.cap_height[g, to_y, to_x].item())
 
             state.eliminated_rings[g, dest_owner] += 1
             state.rings_caused_eliminated[g, player] += 1
@@ -448,6 +464,14 @@ def apply_recovery_moves_vectorized(
             state.stack_height[g, to_y, to_x] = new_height
             if new_height == 0:
                 state.stack_owner[g, to_y, to_x] = 0
+                state.cap_height[g, to_y, to_x] = 0
+            else:
+                new_cap = old_cap - 1
+                if new_cap <= 0:
+                    new_cap = 1
+                if new_cap > new_height:
+                    new_cap = new_height
+                state.cap_height[g, to_y, to_x] = new_cap
         else:
             # Normal recovery slide: marker occupies the destination cell.
             state.marker_owner[g, to_y, to_x] = player
@@ -1756,7 +1780,7 @@ def apply_single_chain_capture(
         (new_y, new_x) landing position for potential chain continuation
     """
     player = state.current_player[game_idx].item()
-    mc = state.move_count[game_idx].item()
+    mc = int(state.move_count[game_idx].item())
 
     # Record in history
     if mc < state.max_history_moves:
@@ -1766,9 +1790,11 @@ def apply_single_chain_capture(
         state.move_history[game_idx, mc, 3] = from_x
         state.move_history[game_idx, mc, 4] = to_y
         state.move_history[game_idx, mc, 5] = to_x
+    state.move_count[game_idx] += 1
 
     # Get stack info
     attacker_height = state.stack_height[game_idx, from_y, from_x].item()
+    attacker_cap_height = state.cap_height[game_idx, from_y, from_x].item()
     defender_height = state.stack_height[game_idx, to_y, to_x].item()
     defender_owner = state.stack_owner[game_idx, to_y, to_x].item()
 
@@ -1791,19 +1817,23 @@ def apply_single_chain_capture(
     if defender_owner > 0:
         current_elim = state.eliminated_rings[game_idx, defender_owner].item()
         state.eliminated_rings[game_idx, defender_owner] = current_elim + 1
+        # Credit the attacker for causing the elimination (RR-CANON-R060).
+        state.rings_caused_eliminated[game_idx, player] += 1
 
     # Merge stacks
     if defender_new_height > 0:
         new_height = attacker_height + defender_new_height
-        state.stack_height[game_idx, to_y, to_x] = new_height
     else:
-        state.stack_height[game_idx, to_y, to_x] = attacker_height
+        new_height = attacker_height
+    state.stack_height[game_idx, to_y, to_x] = new_height
 
     state.stack_owner[game_idx, to_y, to_x] = player
+    state.cap_height[game_idx, to_y, to_x] = min(attacker_cap_height, new_height)
 
     # Clear origin
     state.stack_height[game_idx, from_y, from_x] = 0
     state.stack_owner[game_idx, from_y, from_x] = 0
+    state.cap_height[game_idx, from_y, from_x] = 0
 
     return to_y, to_x
 
@@ -3753,6 +3783,13 @@ class ParallelGameRunner:
         if not active_mask.any():
             return
 
+        # Snapshot phases at the start of the step so a single call processes
+        # at most one phase per game. (If we re-read current_phase after each
+        # handler, games that advance phases could be processed multiple times
+        # per call, which breaks RR-CANON-R172 round-based LPS timing and makes
+        # tests non-deterministic.)
+        phase_snapshot = self.state.current_phase.clone()
+
         device = self.device
         batch_size = self.batch_size
 
@@ -3760,27 +3797,27 @@ class ParallelGameRunner:
         # Games may be in different phases, so we handle each group
 
         # PHASE: RING_PLACEMENT (0)
-        placement_mask = active_mask & (self.state.current_phase == GamePhase.RING_PLACEMENT)
+        placement_mask = active_mask & (phase_snapshot == GamePhase.RING_PLACEMENT)
         if placement_mask.any():
             self._step_placement_phase(placement_mask, weights_list)
 
         # PHASE: MOVEMENT (1)
-        movement_mask = active_mask & (self.state.current_phase == GamePhase.MOVEMENT)
+        movement_mask = active_mask & (phase_snapshot == GamePhase.MOVEMENT)
         if movement_mask.any():
             self._step_movement_phase(movement_mask, weights_list)
 
         # PHASE: LINE_PROCESSING (2)
-        line_mask = active_mask & (self.state.current_phase == GamePhase.LINE_PROCESSING)
+        line_mask = active_mask & (phase_snapshot == GamePhase.LINE_PROCESSING)
         if line_mask.any():
             self._step_line_phase(line_mask)
 
         # PHASE: TERRITORY_PROCESSING (3)
-        territory_mask = active_mask & (self.state.current_phase == GamePhase.TERRITORY_PROCESSING)
+        territory_mask = active_mask & (phase_snapshot == GamePhase.TERRITORY_PROCESSING)
         if territory_mask.any():
             self._step_territory_phase(territory_mask)
 
         # PHASE: END_TURN (4)
-        end_turn_mask = active_mask & (self.state.current_phase == GamePhase.END_TURN)
+        end_turn_mask = active_mask & (phase_snapshot == GamePhase.END_TURN)
         if end_turn_mask.any():
             self._step_end_turn_phase(end_turn_mask)
 
