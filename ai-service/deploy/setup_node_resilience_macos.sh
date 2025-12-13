@@ -40,6 +40,17 @@ LOG_DIR="${HOME}/Library/Logs/RingRift"
 PLIST_DIR="${HOME}/Library/LaunchAgents"
 mkdir -p "$LOG_DIR" "$PLIST_DIR"
 
+# Store the cluster auth token in a local user-only file and reference it via
+# RINGRIFT_CLUSTER_AUTH_TOKEN_FILE (avoid embedding secrets in launchd plists).
+TOKEN_DIR="${HOME}/Library/Application Support/RingRift"
+TOKEN_FILE="${TOKEN_DIR}/cluster_auth_token"
+if [ -n "${RINGRIFT_CLUSTER_AUTH_TOKEN:-}" ]; then
+  umask 077
+  mkdir -p "$TOKEN_DIR"
+  printf "%s" "$RINGRIFT_CLUSTER_AUTH_TOKEN" > "$TOKEN_FILE"
+  chmod 600 "$TOKEN_FILE"
+fi
+
 P2P_PLIST="${PLIST_DIR}/com.ringrift.p2p.plist"
 RES_PLIST="${PLIST_DIR}/com.ringrift.resilience.plist"
 
@@ -60,8 +71,8 @@ cat > "$P2P_PLIST" <<EOF
   <dict>
     <key>PYTHONPATH</key>
     <string>${AI_SERVICE_DIR}</string>
-    <key>RINGRIFT_CLUSTER_AUTH_TOKEN</key>
-    <string>${RINGRIFT_CLUSTER_AUTH_TOKEN:-}</string>
+    <key>RINGRIFT_CLUSTER_AUTH_TOKEN_FILE</key>
+    <string>${TOKEN_FILE}</string>
   </dict>
   <key>ProgramArguments</key>
   <array>
@@ -101,8 +112,8 @@ cat > "$RES_PLIST" <<EOF
   <dict>
     <key>PYTHONPATH</key>
     <string>${AI_SERVICE_DIR}</string>
-    <key>RINGRIFT_CLUSTER_AUTH_TOKEN</key>
-    <string>${RINGRIFT_CLUSTER_AUTH_TOKEN:-}</string>
+    <key>RINGRIFT_CLUSTER_AUTH_TOKEN_FILE</key>
+    <string>${TOKEN_FILE}</string>
   </dict>
   <key>ProgramArguments</key>
   <array>

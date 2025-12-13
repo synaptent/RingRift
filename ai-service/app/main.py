@@ -459,6 +459,12 @@ async def get_ai_move(request: MoveRequest):
     effective_seed, seed_source = _select_effective_seed(request)
 
     try:
+        use_neural_net = (
+            ladder_config.use_neural_net
+            if ladder_config is not None
+            else bool(profile.get("use_neural_net", False))
+        )
+
         heuristic_profile_id: Optional[str] = None
         nn_model_id: Optional[str] = None
 
@@ -467,12 +473,13 @@ async def get_ai_move(request: MoveRequest):
         elif ai_type == AIType.HEURISTIC:
             heuristic_profile_id = profile.get("profile_id")
 
-        if (
-            ladder_config is not None
-            and ladder_config.model_id
-            and ai_type in (AIType.MCTS, AIType.DESCENT)
-        ):
+        if use_neural_net and ladder_config is not None and ladder_config.model_id:
             nn_model_id = ladder_config.model_id
+
+        if ai_type not in (AIType.MINIMAX, AIType.MCTS, AIType.DESCENT, AIType.NEURAL_DEMO):
+            # Defensive: ignore model ids for non-neural engines.
+            nn_model_id = None
+            use_neural_net = False
 
         if seed_source == "derived":
             # Mark non-SSOT / non-parity-critical paths explicitly so they
@@ -503,6 +510,7 @@ async def get_ai_move(request: MoveRequest):
             rngSeed=effective_seed,
             heuristic_profile_id=heuristic_profile_id,
             nn_model_id=nn_model_id,
+            use_neural_net=use_neural_net,
         )
         ai = None
         cache_key: Optional[str] = None

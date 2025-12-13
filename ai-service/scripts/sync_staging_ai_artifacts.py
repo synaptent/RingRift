@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""Sync promoted AI artifacts (NN, NNUE, heuristic weights) to staging.
+
+This script is intended to be called from training/promotion automation
+(for example scripts/continuous_improvement_daemon.py) after new artifacts are
+published locally:
+
+- Neural net best-alias checkpoints: ai-service/models/ringrift_best_*.pth
+- NNUE checkpoints: ai-service/models/nnue/*.pt
+- CMA-ES heuristic overrides: ai-service/data/trained_heuristic_profiles.json
+- Ladder runtime overrides (optional): ai-service/data/ladder_runtime_overrides.json
+
+The staging host should run docker-compose.staging.yml with volumes that mount:
+  - ./ai-service/models -> /app/models
+  - ./ai-service/data   -> /app/data
+
+Configuration is driven by CLI flags or environment variables:
+  - RINGRIFT_STAGING_SSH_HOST
+  - RINGRIFT_STAGING_SSH_USER
+  - RINGRIFT_STAGING_SSH_PORT
+  - RINGRIFT_STAGING_SSH_KEY
+  - RINGRIFT_STAGING_ROOT
+  - RINGRIFT_STAGING_COMPOSE_FILE
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shlex
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+from pathlib import Path
+from typing import Iterable, List
+
+
+def _env_bool(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _gather_files(project_root: Path) -> List[Path]:
+    candidates: list[Path] = []
+
+    models_dir = project_root / "ai-service" / "models"
+    if models_dir.exists():
+        candidates.extend(sorted(models_dir.glob("ringrift_best_*.pth")))
+        candidates.extend(sorted(models_dir.glob("ringrift_best_*.meta.json")))
+
+        nnue_dir = models_dir / "nnue"
+        if nnue_dir.exists():
+            candidates.extend(sorted(nnue_dir.glob("*.pt")))
+
+    data_dir = project_root / "ai-service" / "data"
+    for rel in (
+        "trained_heuristic_profiles.json",
+        "ladder_runtime_overrides.json",
+        "promoted_models.json",
+    ):
+        path = data_dir / rel
+        if path.exists():
+            candidates.append(path)
+
+    # De-dup while preserving deterministic ordering.
+    seen: set[Path] = set()
+    files: list[Path] = []
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+        except Exception:
+            resolved = path
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if path.is_file():
+            files.append(path)
+
+    return files
+
+
+def _make_tarball(
+    *,
+    project_root: Path,
+    files: Iterable[Path],
+    tar_path: Path,
+) -> None:
+    with tarfile.open(tar_path, "w:gz") as tar:
+        for file_path in files:
+            rel = file_path.resolve().relative_to(project_root.resolve())
+            tar.add(file_path, arcname=str(rel))
+
+
+def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        cmd,
+        check=check,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+
+def _ssh_base_args(args: argparse.Namespace) -> list[str]:
+    ssh_cmd = ["ssh", "-o", "BatchMode=yes"]
+    if args.port:
+        ssh_cmd.extend(["-p", str(args.port)])
+    if args.key:
+        ssh_cmd.extend(["-i", str(args.key)])
+    dest = args.host if not args.user else f"{args.user}@{args.host}"
+    ssh_cmd.append(dest)
+    return ssh_cmd
+
+
+def _scp_base_args(args: argparse.Namespace) -> list[str]:
+    scp_cmd = ["scp", "-o", "BatchMode=yes"]
+    if args.port:
+        scp_cmd.extend(["-P", str(args.port)])
+    if args.key:
+        scp_cmd.extend(["-i", str(args.key)])
+    return scp_cmd
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", default=os.getenv("RINGRIFT_STAGING_SSH_HOST"))
+    parser.add_argument("--user", default=os.getenv("RINGRIFT_STAGING_SSH_USER"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("RINGRIFT_STAGING_SSH_PORT", "22")))
+    parser.add_argument("--key", default=os.getenv("RINGRIFT_STAGING_SSH_KEY"))
+    parser.add_argument("--remote-root", default=os.getenv("RINGRIFT_STAGING_ROOT"))
+    parser.add_argument(
+        "--compose-file",
+        default=os.getenv("RINGRIFT_STAGING_COMPOSE_FILE", "docker-compose.staging.yml"),
+    )
+    parser.add_argument("--restart", action="store_true", help="Restart docker compose services after sync.")
+    parser.add_argument(
+        "--restart-services",
+        default=os.getenv("RINGRIFT_STAGING_RESTART_SERVICES", "ai-service"),
+        help="Comma-separated compose service names (default: ai-service).",
+    )
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--verbose", action="store_true")
+
+    args = parser.parse_args(argv)
+
+    project_root = Path(__file__).resolve().parents[2]
+    files = _gather_files(project_root)
+    if not files:
+        print("No artifacts found to sync.", file=sys.stderr)
+        return 1
+
+    if args.dry_run:
+        for path in files:
+            print(str(path))
+        return 0
+
+    if not args.host:
+        print("Missing --host (or RINGRIFT_STAGING_SSH_HOST)", file=sys.stderr)
+        return 2
+    if not args.remote_root:
+        print("Missing --remote-root (or RINGRIFT_STAGING_ROOT)", file=sys.stderr)
+        return 2
+
+    remote_root = str(args.remote_root)
+    timestamp = int(time.time())
+    remote_tar = f"/tmp/ringrift_ai_artifacts_{timestamp}.tar.gz"
+
+    with tempfile.TemporaryDirectory(prefix="ringrift_ai_sync_") as tmp_dir:
+        tar_path = Path(tmp_dir) / "artifacts.tar.gz"
+        _make_tarball(project_root=project_root, files=files, tar_path=tar_path)
+
+        if args.verbose:
+            print(f"[sync] Packaging {len(files)} files -> {tar_path}")
+
+        scp_cmd = _scp_base_args(args) + [
+            str(tar_path),
+            f"{args.user + '@' if args.user else ''}{args.host}:{remote_tar}",
+        ]
+        result = _run(scp_cmd, check=False)
+        if result.returncode != 0:
+            print(result.stdout, file=sys.stderr)
+            return result.returncode
+
+        extract_cmd = (
+            f"mkdir -p {shlex.quote(remote_root)} && "
+            f"tar -xzf {shlex.quote(remote_tar)} -C {shlex.quote(remote_root)} && "
+            f"rm -f {shlex.quote(remote_tar)}"
+        )
+        ssh_cmd = _ssh_base_args(args) + [extract_cmd]
+        result = _run(ssh_cmd, check=False)
+        if result.returncode != 0:
+            print(result.stdout, file=sys.stderr)
+            return result.returncode
+
+        if args.restart:
+            services = [s.strip() for s in str(args.restart_services or "").split(",") if s.strip()]
+            if services:
+                compose_file = str(Path(remote_root) / str(args.compose_file))
+                restart_cmd = (
+                    f"cd {shlex.quote(remote_root)} && "
+                    f"docker compose -f {shlex.quote(compose_file)} up -d --force-recreate "
+                    + " ".join(shlex.quote(s) for s in services)
+                )
+                ssh_cmd = _ssh_base_args(args) + [restart_cmd]
+                result = _run(ssh_cmd, check=False)
+                if result.returncode != 0:
+                    print(result.stdout, file=sys.stderr)
+                    return result.returncode
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

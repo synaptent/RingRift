@@ -2478,6 +2478,7 @@ class NeuralNetAI(BaseAI):
 
         Args:
             board_type: The board type to initialize the model for.
+            num_players: Optional player count for model selection.
         """
         # Already initialized for this board type?
         if self._initialized_board_type == board_type and self.model is not None:
@@ -2516,8 +2517,9 @@ class NeuralNetAI(BaseAI):
             # Default model selection.
             #
             # We intentionally do NOT fall back to deprecated v1/v1_mps ids.
-            # Instead, prefer the latest canonical square8 2p models and require
-            # callers to explicitly set nn_model_id for other boards.
+            # Instead, prefer the latest canonical models for the current board
+            # and player count. Callers should explicitly set nn_model_id when
+            # they require a specific checkpoint (e.g. ringrift_best_* aliases).
             #
             # "v4"/"v5" here are model-id lineage prefixes (checkpoint families),
             # not architecture class names. See ai-service/docs/MPS_ARCHITECTURE.md.
@@ -2536,19 +2538,52 @@ class NeuralNetAI(BaseAI):
                         pass
                 return candidates[0]
 
+            players_for_alias = int(num_players or 2)
+
             if board_type == BoardType.SQUARE8:
-                # Prefer v3-family checkpoints when available; fall back to v2-family.
-                model_id = _pick_first_existing_model_id(
-                    ["ringrift_v5_sq8_2p_2xh100", "ringrift_v4_sq8_2p"]
-                )
+                if num_players == 3:
+                    model_id = _pick_first_existing_model_id(
+                        [
+                            f"ringrift_best_sq8_{players_for_alias}p",
+                            "ringrift_v5_sq8_3p",
+                            "ringrift_v4_sq8_3p",
+                        ]
+                    )
+                elif num_players == 4:
+                    model_id = _pick_first_existing_model_id(
+                        [
+                            f"ringrift_best_sq8_{players_for_alias}p",
+                            "ringrift_v5_sq8_4p",
+                            "ringrift_v4_sq8_4p",
+                        ]
+                    )
+                else:
+                    model_id = _pick_first_existing_model_id(
+                        [
+                            f"ringrift_best_sq8_{players_for_alias}p",
+                            "ringrift_v5_sq8_2p_2xh100",
+                            "ringrift_v4_sq8_2p",
+                        ]
+                    )
             elif board_type == BoardType.SQUARE19:
-                model_id = "ringrift_v4_sq19_2p"
+                model_id = _pick_first_existing_model_id(
+                    [
+                        f"ringrift_best_sq19_{players_for_alias}p",
+                        f"ringrift_v4_sq19_{players_for_alias}p",
+                    ]
+                )
             else:  # HEXAGONAL
-                model_id = "ringrift_v4_hex_2p"
+                model_id = _pick_first_existing_model_id(
+                    [
+                        f"ringrift_best_hex_{players_for_alias}p",
+                        f"ringrift_v4_hex_{players_for_alias}p",
+                    ]
+                )
             logger.info(
-                "AIConfig.nn_model_id not set; defaulting to %s for board=%s",
+                "AIConfig.nn_model_id not set; defaulting to %s for board=%s players=%s",
                 model_id,
                 board_type,
+                num_players,
             )
 
         # Allow nn_model_id to be an explicit checkpoint path (useful for
@@ -3479,7 +3514,10 @@ class NeuralNetAI(BaseAI):
         Select the best move using neural network evaluation.
         """
         # Ensure model is initialized for this board type (lazy initialization)
-        self._ensure_model_initialized(game_state.board.type)
+        self._ensure_model_initialized(
+            game_state.board.type,
+            num_players=infer_num_players(game_state),
+        )
 
         # Update history for the current game state
         current_features, _ = self._extract_features(game_state)
@@ -3624,7 +3662,10 @@ class NeuralNetAI(BaseAI):
                     )
 
             # Ensure model is initialized for this board type (lazy initialization)
-            self._ensure_model_initialized(first_type)
+            self._ensure_model_initialized(
+                first_type,
+                num_players=infer_num_players(game_states[0]),
+            )
 
             # Cache the canonical spatial dimension for downstream tools.
             self.board_size = _infer_board_size(first_board)

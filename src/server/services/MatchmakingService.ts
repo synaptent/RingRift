@@ -148,7 +148,7 @@ export class MatchmakingService {
   }
 
   private async createMatch(player1: QueueEntry, player2: QueueEntry) {
-    // Remove both from queue
+    // Remove both from queue before attempting match creation
     this.removeFromQueue(player1.userId);
     this.removeFromQueue(player2.userId);
 
@@ -193,15 +193,45 @@ export class MatchmakingService {
         player2: player2.userId,
       });
     } catch (err) {
-      logger.error('Failed to create match', err);
-      // Re-queue players? Or notify error?
+      logger.error('Failed to create match', {
+        error: err instanceof Error ? err.message : String(err),
+        player1: player1.userId,
+        player2: player2.userId,
+      });
+
+      // Re-queue both players so they don't lose their matchmaking session.
+      // Preserve their original join time so they maintain queue priority.
+      this.reQueuePlayer(player1);
+      this.reQueuePlayer(player2);
+
+      // Notify players of temporary failure (they remain in queue)
       const errorPayload: WebSocketErrorPayload = {
         type: 'error',
         code: 'INTERNAL_ERROR',
-        message: 'Failed to create match',
+        message: 'Match creation failed temporarily. You remain in the queue.',
       };
       this.wsServer.sendToUser(player1.userId, 'error', errorPayload);
       this.wsServer.sendToUser(player2.userId, 'error', errorPayload);
+
+      // Emit updated status so clients know they're still queued
+      this.emitStatus(player1);
+      this.emitStatus(player2);
+    }
+  }
+
+  /**
+   * Re-add a player to the queue after a failed match creation.
+   * Preserves their original queue entry (including join time for priority).
+   */
+  private reQueuePlayer(entry: QueueEntry): void {
+    // Only re-queue if not already in queue (avoid duplicates)
+    const existingIndex = this.queue.findIndex((e) => e.userId === entry.userId);
+    if (existingIndex === -1) {
+      this.queue.push(entry);
+      logger.info('Re-queued player after failed match creation', {
+        userId: entry.userId,
+        ticketId: entry.ticketId,
+      });
     }
   }
 

@@ -1,10 +1,73 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { asyncHandler, createError } from '../middleware/errorHandler';
+import { telemetryRateLimiter } from '../middleware/rateLimiter';
 import { getMetricsService } from '../services/MetricsService';
 import { isRulesUxEventType, type RulesUxEventPayload } from '../../shared/telemetry/rulesUxEvents';
 
 const router = Router();
+
+// Payload size limits to prevent memory exhaustion and metric pollution
+const MAX_STRING_LENGTH = 256;
+const MAX_PAYLOAD_DEPTH = 3;
+const MAX_PAYLOAD_KEYS = 20;
+const MAX_PAYLOAD_SIZE_BYTES = 4096;
+
+/**
+ * Truncate a string to the maximum allowed length.
+ */
+function truncateString(value: string, maxLength = MAX_STRING_LENGTH): string {
+  return value.length > maxLength ? value.slice(0, maxLength) : value;
+}
+
+/**
+ * Validate and sanitize the optional nested payload object.
+ * Rejects payloads that are too deep, have too many keys, or exceed size limits.
+ */
+function sanitizeNestedPayload(raw: unknown, depth = 0): Record<string, unknown> | null {
+  if (raw === null || raw === undefined || typeof raw !== 'object') {
+    return null;
+  }
+
+  if (depth > MAX_PAYLOAD_DEPTH) {
+    return null; // Too deep, reject
+  }
+
+  // Check serialized size as a rough bound
+  try {
+    const serialized = JSON.stringify(raw);
+    if (serialized.length > MAX_PAYLOAD_SIZE_BYTES) {
+      return null; // Too large, reject
+    }
+  } catch {
+    return null; // Not serializable, reject
+  }
+
+  const obj = raw as Record<string, unknown>;
+  const keys = Object.keys(obj);
+
+  if (keys.length > MAX_PAYLOAD_KEYS) {
+    return null; // Too many keys, reject
+  }
+
+  const sanitized: Record<string, unknown> = {};
+  for (const key of keys.slice(0, MAX_PAYLOAD_KEYS)) {
+    const value = obj[key];
+    if (typeof value === 'string') {
+      sanitized[key] = truncateString(value);
+    } else if (typeof value === 'number' || typeof value === 'boolean') {
+      sanitized[key] = value;
+    } else if (typeof value === 'object' && value !== null) {
+      const nested = sanitizeNestedPayload(value, depth + 1);
+      if (nested !== null) {
+        sanitized[key] = nested;
+      }
+    }
+    // Skip functions, symbols, undefined
+  }
+
+  return sanitized;
+}
 
 /**
  * Coerce and validate an arbitrary payload into a RulesUxEventPayload.
@@ -88,19 +151,19 @@ function coerceRulesUxEventPayload(raw: unknown): RulesUxEventPayload {
   }
 
   if (typeof difficulty === 'string' && difficulty.length > 0) {
-    payload.difficulty = difficulty;
+    payload.difficulty = truncateString(difficulty);
   }
 
   if (typeof rulesContext === 'string' && rulesContext.length > 0) {
-    payload.rulesContext = rulesContext;
+    payload.rulesContext = truncateString(rulesContext);
   }
 
   if (typeof source === 'string' && source.length > 0) {
-    payload.source = source;
+    payload.source = truncateString(source);
   }
 
   if (typeof gameId === 'string' && gameId.length > 0) {
-    payload.gameId = gameId;
+    payload.gameId = truncateString(gameId);
   }
 
   if (typeof isRanked === 'boolean') {
@@ -116,7 +179,7 @@ function coerceRulesUxEventPayload(raw: unknown): RulesUxEventPayload {
   }
 
   if (typeof aiProfile === 'string' && aiProfile.length > 0) {
-    payload.aiProfile = aiProfile;
+    payload.aiProfile = truncateString(aiProfile);
   }
 
   if (
@@ -138,55 +201,55 @@ function coerceRulesUxEventPayload(raw: unknown): RulesUxEventPayload {
   }
 
   if (typeof ts === 'string' && ts.length > 0) {
-    payload.ts = ts;
+    payload.ts = truncateString(ts);
   }
 
   if (typeof clientBuild === 'string' && clientBuild.length > 0) {
-    payload.clientBuild = clientBuild;
+    payload.clientBuild = truncateString(clientBuild);
   }
 
   if (typeof clientPlatform === 'string' && clientPlatform.length > 0) {
-    payload.clientPlatform = clientPlatform;
+    payload.clientPlatform = truncateString(clientPlatform);
   }
 
   if (typeof locale === 'string' && locale.length > 0) {
-    payload.locale = locale;
+    payload.locale = truncateString(locale);
   }
 
   if (typeof sessionId === 'string' && sessionId.length > 0) {
-    payload.sessionId = sessionId;
+    payload.sessionId = truncateString(sessionId);
   }
 
   if (typeof helpSessionId === 'string' && helpSessionId.length > 0) {
-    payload.helpSessionId = helpSessionId;
+    payload.helpSessionId = truncateString(helpSessionId);
   }
 
   if (typeof overlaySessionId === 'string' && overlaySessionId.length > 0) {
-    payload.overlaySessionId = overlaySessionId;
+    payload.overlaySessionId = truncateString(overlaySessionId);
   }
 
   if (typeof teachingFlowId === 'string' && teachingFlowId.length > 0) {
-    payload.teachingFlowId = teachingFlowId;
+    payload.teachingFlowId = truncateString(teachingFlowId);
   }
 
   if (typeof topic === 'string' && topic.length > 0) {
-    payload.topic = topic;
+    payload.topic = truncateString(topic);
   }
 
   if (typeof rulesConcept === 'string' && rulesConcept.length > 0) {
-    payload.rulesConcept = rulesConcept;
+    payload.rulesConcept = truncateString(rulesConcept);
   }
 
   if (typeof scenarioId === 'string' && scenarioId.length > 0) {
-    payload.scenarioId = scenarioId;
+    payload.scenarioId = truncateString(scenarioId);
   }
 
   if (typeof weirdStateType === 'string' && weirdStateType.length > 0) {
-    payload.weirdStateType = weirdStateType;
+    payload.weirdStateType = truncateString(weirdStateType);
   }
 
   if (typeof reasonCode === 'string' && reasonCode.length > 0) {
-    payload.reasonCode = reasonCode;
+    payload.reasonCode = truncateString(reasonCode);
   }
 
   if (typeof undoStreak === 'number' && Number.isFinite(undoStreak) && undoStreak > 0) {
@@ -205,8 +268,12 @@ function coerceRulesUxEventPayload(raw: unknown): RulesUxEventPayload {
     payload.secondsSinceWeirdState = secondsSinceWeirdState;
   }
 
+  // Sanitize nested payload with depth/size limits to prevent abuse
   if (rawPayload && typeof rawPayload === 'object') {
-    payload.payload = rawPayload as Record<string, unknown>;
+    const sanitized = sanitizeNestedPayload(rawPayload);
+    if (sanitized !== null) {
+      payload.payload = sanitized;
+    }
   }
 
   return payload;
@@ -231,6 +298,7 @@ export function handleRulesUxTelemetry(req: Request, res: Response): void {
 
 router.post(
   '/rules-ux',
+  telemetryRateLimiter,
   asyncHandler(async (req, res) => {
     handleRulesUxTelemetry(req, res);
   })

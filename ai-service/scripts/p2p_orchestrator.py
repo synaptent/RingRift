@@ -8103,7 +8103,43 @@ print(json.dumps({{
         sender's full peer list, allowing new nodes to quickly learn about the
         leader and other cluster members.
         """
-        if not self.known_peers:
+        # Seed peers are configured via `--peers`, but relying on a single
+        # coordinator makes clusters brittle. Also bootstrap from any
+        # previously-seen directly-reachable peers so nodes can re-join after
+        # restarts even if the original seed goes offline.
+        seed_peers: List[str] = []
+        seed_peers.extend([p for p in (self.known_peers or []) if p])
+
+        with self.peers_lock:
+            peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
+
+        for peer in peers_snapshot:
+            if getattr(peer, "nat_blocked", False):
+                # NAT-blocked nodes cannot serve as inbound seeds.
+                continue
+            if not peer.should_retry():
+                continue
+
+            scheme = (getattr(peer, "scheme", "http") or "http").lower()
+            host = str(getattr(peer, "host", "") or "").strip()
+            try:
+                port = int(getattr(peer, "port", DEFAULT_PORT) or DEFAULT_PORT)
+            except Exception:
+                port = DEFAULT_PORT
+            if host:
+                seed_peers.append(f"{scheme}://{host}:{port}")
+
+            rh = str(getattr(peer, "reported_host", "") or "").strip()
+            try:
+                rp = int(getattr(peer, "reported_port", 0) or 0)
+            except Exception:
+                rp = 0
+            if rh and rp:
+                seed_peers.append(f"{scheme}://{rh}:{rp}")
+
+        seen: Set[str] = set()
+        seed_peers = [p for p in seed_peers if not (p in seen or seen.add(p))]
+        if not seed_peers:
             return False
 
         now = time.time()
@@ -8112,7 +8148,7 @@ print(json.dumps({{
 
         timeout = ClientTimeout(total=15)
         async with ClientSession(timeout=timeout) as session:
-            for peer_addr in self.known_peers:
+            for peer_addr in seed_peers:
                 try:
                     scheme, host, port = self._parse_peer_address(peer_addr)
                     scheme = (scheme or "http").lower()
@@ -8346,6 +8382,8 @@ print(json.dumps({{
 
                 for peer in peer_list:
                     if peer.node_id != self.node_id:
+                        if not peer.should_retry():
+                            continue
                         peer_scheme = getattr(peer, "scheme", "http") or "http"
                         info = await self._send_heartbeat_to_peer(peer.host, peer.port, scheme=peer_scheme)
                         if not info and getattr(peer, "reported_host", "") and getattr(peer, "reported_port", 0):
@@ -8359,6 +8397,8 @@ print(json.dumps({{
                             if rh and rp and (rh != peer.host or rp != peer.port):
                                 info = await self._send_heartbeat_to_peer(rh, rp, scheme=peer_scheme)
                         if info:
+                            info.consecutive_failures = 0
+                            info.last_failure_time = 0.0
                             with self.peers_lock:
                                 info.last_heartbeat = time.time()
                                 self.peers[info.node_id] = info
@@ -8367,14 +8407,19 @@ print(json.dumps({{
                                     print(f"[P2P] Adopted leader from heartbeat: {info.node_id}")
                                 self.leader_id = info.node_id
                                 self.role = NodeRole.FOLLOWER
+                        else:
+                            with self.peers_lock:
+                                existing = self.peers.get(peer.node_id)
+                                if existing:
+                                    existing.consecutive_failures = int(getattr(existing, "consecutive_failures", 0) or 0) + 1
+                                    existing.last_failure_time = time.time()
 
                 # If we're only connected to a seed peer (or lost cluster membership),
                 # pull a fresh peer snapshot so leader election converges quickly.
-                if self.known_peers:
-                    await self._bootstrap_from_known_peers()
+                await self._bootstrap_from_known_peers()
 
                 # NAT-blocked nodes: poll a relay endpoint for peer snapshots + commands.
-                if getattr(self.self_info, "nat_blocked", False) and self.known_peers:
+                if getattr(self.self_info, "nat_blocked", False):
                     now = time.time()
                     if now - self.last_relay_heartbeat >= RELAY_HEARTBEAT_INTERVAL:
                         relay_urls: List[str] = []

@@ -226,7 +226,7 @@ describe('ClientSandboxEngine territory decision phases (Move-driven)', () => {
     expect(territoryMoves.length).toBeGreaterThan(0);
 
     const regionMove = territoryMoves.find(
-      (m) => m.type === 'process_territory_region' && m.disconnectedRegions?.length
+      (m) => m.type === 'choose_territory_option' && m.disconnectedRegions?.length
     ) as Move | undefined;
     expect(regionMove).toBeDefined();
 
@@ -265,11 +265,18 @@ describe('ClientSandboxEngine territory decision phases (Move-driven)', () => {
     expect(afterTerritoryP1).toBeGreaterThanOrEqual(beforeTerritoryP1);
 
     // If this region triggered a self-elimination requirement in the shared
-    // helper, any additional eliminated rings for Player 1 should match.
+    // helper, the sandbox in traceMode auto-applies it, so eliminated rings
+    // may exceed the helper's nextState (which doesn't include elimination).
     const afterElimsP1 = after.players.find((p) => p.playerNumber === 1)!.eliminatedRings;
     const expectedElimsP1 = expected.players.find((p) => p.playerNumber === 1)!.eliminatedRings;
     expect(afterElimsP1).toBeGreaterThanOrEqual(beforeElimsP1);
-    expect(afterElimsP1).toBe(expectedElimsP1);
+    // When pendingSelfElimination is true, sandbox auto-applies and will have
+    // more eliminations than the helper's nextState.
+    if (helperOutcome.pendingSelfElimination) {
+      expect(afterElimsP1).toBeGreaterThanOrEqual(expectedElimsP1);
+    } else {
+      expect(afterElimsP1).toBe(expectedElimsP1);
+    }
   });
 
   it('exposes territory_processing decisions via getValidMoves in parity with shared helper', async () => {
@@ -286,14 +293,14 @@ describe('ClientSandboxEngine territory decision phases (Move-driven)', () => {
 
     // Host-level getValidMoves surface from the sandbox engine.
     const hostAllMoves = engine.getValidMoves(movingPlayer);
-    const hostRegionMoves = hostAllMoves.filter((m) => m.type === 'process_territory_region');
+    const hostRegionMoves = hostAllMoves.filter((m) => m.type === 'choose_territory_option');
 
-    // In territory_processing phase, valid moves are process_territory_region,
+    // In territory_processing phase, valid moves are choose_territory_option,
     // skip_territory_processing, territory_elimination, and eliminate_rings_from_stack
     // (for self-elimination). We expect at least one region move.
     expect(hostRegionMoves.length).toBeGreaterThan(0);
     const validTerritoryMoveTypes = [
-      'process_territory_region',
+      'choose_territory_option',
       'skip_territory_processing',
       'territory_elimination',
       'eliminate_rings_from_stack', // Self-elimination moves

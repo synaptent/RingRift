@@ -353,7 +353,7 @@ describe('MatchmakingService', () => {
       expect(errorCalls[0][2]).toMatchObject({
         type: 'error',
         code: 'INTERNAL_ERROR',
-        message: 'Failed to create match',
+        message: 'Match creation failed temporarily. You remain in the queue.',
       });
     });
 

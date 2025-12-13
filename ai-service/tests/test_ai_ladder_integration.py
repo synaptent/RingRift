@@ -158,3 +158,87 @@ def test_ai_move_uses_ladder_config_overrides(monkeypatch) -> None:
     assert cfg.randomness == pytest.approx(sentinel_randomness)
     assert cfg.think_time == sentinel_think_time
     assert cfg.heuristic_profile_id == sentinel_profile
+
+
+@pytest.mark.timeout(30)
+def test_ai_move_threads_ladder_neural_settings(monkeypatch) -> None:
+    """get_ai_move should thread LadderTierConfig neural fields into AIConfig."""
+    client = TestClient(main_mod.app)
+
+    sentinel_randomness = 0.01
+    sentinel_think_time = 4321
+    sentinel_profile = "heuristic_v1_sq8_2p"
+    sentinel_model_id = "ringrift_best_sq8_2p"
+
+    ladder_cfg = LadderTierConfig(
+        difficulty=6,
+        board_type=BoardType.SQUARE8,
+        num_players=2,
+        ai_type=main_mod.AIType.MCTS,
+        model_id=sentinel_model_id,
+        heuristic_profile_id=sentinel_profile,
+        randomness=sentinel_randomness,
+        think_time_ms=sentinel_think_time,
+        use_neural_net=True,
+        notes="test neural override",
+    )
+
+    def _fake_get_ladder_tier_config(
+        difficulty: int,
+        board_type: BoardType,
+        num_players: int,
+    ) -> LadderTierConfig:
+        assert difficulty == 6
+        assert board_type == BoardType.SQUARE8
+        assert num_players == 2
+        return ladder_cfg
+
+    monkeypatch.setattr(
+        main_mod,
+        "get_ladder_tier_config",
+        _fake_get_ladder_tier_config,
+    )
+    monkeypatch.setattr(main_mod, "_should_cache_ai", lambda *_args, **_kwargs: False)
+
+    captured: Dict[str, Any] = {}
+
+    def _fake_create_ai_instance(ai_type, player_number, config):
+        captured["ai_type"] = ai_type
+        captured["config"] = config
+
+        class DummyAI:
+            def __init__(self, player_number: int, cfg: Any) -> None:
+                self.player_number = player_number
+                self.config = cfg
+
+            def select_move(self, game_state: GameState):
+                return None
+
+            def evaluate_position(self, game_state: GameState) -> float:
+                return 0.0
+
+        return DummyAI(player_number, config)
+
+    monkeypatch.setattr(
+        main_mod,
+        "_create_ai_instance",
+        _fake_create_ai_instance,
+    )
+
+    state = _make_square8_2p_state()
+    payload = {
+        "game_state": jsonable_encoder(state, by_alias=True),
+        "player_number": 1,
+        "difficulty": 6,
+    }
+
+    response = client.post("/ai/move", json=payload)
+    assert response.status_code == 200, response.text
+
+    cfg = captured["config"]
+    assert cfg.difficulty == 6
+    assert cfg.randomness == pytest.approx(sentinel_randomness)
+    assert cfg.think_time == sentinel_think_time
+    assert cfg.heuristic_profile_id == sentinel_profile
+    assert cfg.use_neural_net is True
+    assert cfg.nn_model_id == sentinel_model_id

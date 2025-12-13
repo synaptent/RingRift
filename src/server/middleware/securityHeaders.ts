@@ -18,6 +18,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import { RequestHandler } from 'express';
 import { config } from '../config';
+import { logger } from '../utils/logger';
 
 // ====================================================================
 // CSP (Content Security Policy) Configuration
@@ -41,9 +42,7 @@ export const securityHeaders: RequestHandler = helmet({
 
       // Script sources - no inline scripts in production for XSS protection
       // In development, we may need 'unsafe-eval' for HMR/Vite tooling
-      scriptSrc: config.isDevelopment
-        ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"]
-        : ["'self'"],
+      scriptSrc: config.isDevelopment ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"] : ["'self'"],
 
       // Styles - allow inline for CSS-in-JS libraries (React Hot Toast, etc.)
       styleSrc: ["'self'", "'unsafe-inline'"],
@@ -166,11 +165,7 @@ const getAllowedOrigins = (): (string | RegExp)[] => {
 
   // In development, also allow common local development URLs
   if (config.isDevelopment) {
-    return [
-      ...origins,
-      /^http:\/\/localhost:\d+$/,
-      /^http:\/\/127\.0\.0\.1:\d+$/,
-    ];
+    return [...origins, /^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/];
   }
 
   return origins;
@@ -211,7 +206,7 @@ export const corsMiddleware: RequestHandler = cors({
     } else {
       // Log rejected origins in non-production for debugging
       if (!config.isProduction) {
-        console.warn(`[CORS] Rejected origin: ${origin}`);
+        logger.warn('CORS rejected origin', { origin, event: 'cors_rejected' });
       }
       callback(new Error(`Origin ${origin} not allowed by CORS`));
     }

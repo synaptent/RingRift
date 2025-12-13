@@ -311,6 +311,82 @@ class P2PBackend:
             return await resp.json()
 
 
+def _normalize_p2p_seed_url(raw: str) -> str:
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    if "://" not in raw:
+        raw = f"http://{raw}"
+    return raw.rstrip("/")
+
+
+async def discover_p2p_leader_url(
+    seed_urls: List[str],
+    *,
+    auth_token: str = "",
+    timeout_seconds: float = 5.0,
+) -> Optional[str]:
+    """Discover the current effective P2P leader URL from one or more seed nodes.
+
+    This keeps orchestration scripts resilient to leader churn: any reachable
+    seed node can be used to locate the current leader without hard-coding a
+    specific instance.
+    """
+    if not HAS_AIOHTTP:
+        raise ImportError("aiohttp required for P2P leader discovery: pip install aiohttp")
+
+    seeds = [_normalize_p2p_seed_url(s) for s in (seed_urls or [])]
+    seeds = [s for s in seeds if s]
+    if not seeds:
+        return None
+
+    headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+    timeout = aiohttp.ClientTimeout(total=float(timeout_seconds))
+
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        for seed in seeds:
+            try:
+                async with session.get(f"{seed}/status") as resp:
+                    if resp.status != 200:
+                        continue
+                    status = await resp.json()
+            except Exception:
+                continue
+
+            if not isinstance(status, dict):
+                continue
+
+            leader_id = (status.get("effective_leader_id") or status.get("leader_id") or "").strip()
+            if not leader_id:
+                continue
+
+            self_block = status.get("self") if isinstance(status.get("self"), dict) else {}
+            peers_block = status.get("peers") if isinstance(status.get("peers"), dict) else {}
+
+            leader_info: Dict[str, Any] = {}
+            node_id = (status.get("node_id") or "").strip()
+            if leader_id == node_id or leader_id == (self_block.get("node_id") or "").strip():
+                leader_info = self_block
+            else:
+                leader_info = peers_block.get(leader_id) if isinstance(peers_block.get(leader_id), dict) else {}
+
+            host = (leader_info.get("host") or "").strip()
+            scheme = (leader_info.get("scheme") or "http").strip() or "http"
+            try:
+                port_i = int(leader_info.get("port", None))
+            except Exception:
+                port_i = None
+
+            if host and port_i:
+                return f"{scheme}://{host}:{port_i}"
+
+            # Fallback: use the seed itself if it claims to be leader.
+            if leader_id == node_id:
+                return seed
+
+    return None
+
+
 @dataclass
 class PipelineState:
     """Current state of the pipeline with full checkpointing support."""
@@ -2422,6 +2498,16 @@ def main():
         help="URL of P2P leader node (e.g., http://192.168.1.100:8770)",
     )
     parser.add_argument(
+        "--p2p-seeds",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated list of seed P2P nodes to discover the current leader "
+            "(used when --p2p-leader is not set). Example: "
+            "http://54.198.219.106:8770,http://192.222.53.22:8770"
+        ),
+    )
+    parser.add_argument(
         "--p2p-auth-token",
         type=str,
         default=None,
@@ -2429,23 +2515,45 @@ def main():
     )
     args = parser.parse_args()
 
-    # Validate P2P backend requirements
-    if args.backend == "p2p" and not args.p2p_leader:
-        parser.error("--p2p-leader is required when using --backend p2p")
-
-    orchestrator = PipelineOrchestrator(
-        config_path=args.config,
-        state_path=args.state_path,
-        dry_run=args.dry_run,
-        backend=args.backend,
-        p2p_leader_url=args.p2p_leader,
-        p2p_auth_token=args.p2p_auth_token,
-    )
-
     async def main_async():
+        orchestrator: Optional[PipelineOrchestrator] = None
         try:
+            p2p_leader_url = args.p2p_leader
+            p2p_auth_token = args.p2p_auth_token or os.environ.get("RINGRIFT_CLUSTER_AUTH_TOKEN", "")
+
+            if args.backend == "p2p":
+                if not p2p_leader_url:
+                    seeds_raw = (args.p2p_seeds or "").strip()
+                    seed_urls = [s.strip() for s in seeds_raw.split(",") if s.strip()]
+                    if not seed_urls:
+                        raise ValueError("P2P backend requires --p2p-leader or --p2p-seeds")
+                    p2p_leader_url = await discover_p2p_leader_url(
+                        seed_urls,
+                        auth_token=p2p_auth_token,
+                    )
+                    if not p2p_leader_url:
+                        raise RuntimeError(f"Failed to discover P2P leader from seeds: {seed_urls}")
+
+                orchestrator = PipelineOrchestrator(
+                    config_path=args.config,
+                    state_path=args.state_path,
+                    dry_run=args.dry_run,
+                    backend=args.backend,
+                    p2p_leader_url=p2p_leader_url,
+                    p2p_auth_token=p2p_auth_token,
+                )
+            else:
+                orchestrator = PipelineOrchestrator(
+                    config_path=args.config,
+                    state_path=args.state_path,
+                    dry_run=args.dry_run,
+                    backend=args.backend,
+                    p2p_leader_url=None,
+                    p2p_auth_token=None,
+                )
+
             # Optionally discover Vast instances (SSH backend only)
-            if args.discover_vast and args.backend == "ssh":
+            if args.discover_vast and orchestrator.backend_mode == "ssh":
                 await orchestrator.refresh_workers()
 
             await orchestrator.run(
@@ -2459,7 +2567,7 @@ def main():
             )
         finally:
             # Clean up P2P backend session
-            if orchestrator.p2p_backend:
+            if orchestrator and orchestrator.p2p_backend:
                 await orchestrator.p2p_backend.close()
 
     asyncio.run(main_async())

@@ -751,6 +751,25 @@ def load_trained_profiles_if_available(
     if not path or not os.path.exists(path):
         return {}
 
+    alias_targets: list[tuple[str, str]] = []
+    if mode == "override":
+        # If callers provide only legacy player-count keys (heuristic_v1_2p/3p/4p),
+        # propagate those trained weights into any board-specific ids that are
+        # configured as strict aliases of the legacy keys. This avoids silently
+        # ignoring trained weights when production ladder tiers reference
+        # board×player ids such as heuristic_v1_sq8_3p.
+        for (board_type, num_players), board_profile_id in BOARD_PROFILE_MAP.items():
+            legacy_profile_id = PLAYER_COUNT_PROFILE_MAP.get(num_players)
+            if not legacy_profile_id:
+                continue
+            if (
+                board_profile_id in HEURISTIC_WEIGHT_PROFILES
+                and legacy_profile_id in HEURISTIC_WEIGHT_PROFILES
+                and HEURISTIC_WEIGHT_PROFILES[board_profile_id]
+                is HEURISTIC_WEIGHT_PROFILES[legacy_profile_id]
+            ):
+                alias_targets.append((board_profile_id, legacy_profile_id))
+
     with open(path, "r", encoding="utf-8") as f:
         payload = json.load(f)
 
@@ -769,5 +788,18 @@ def load_trained_profiles_if_available(
 
         HEURISTIC_WEIGHT_PROFILES[target_id] = dict(weights)
         loaded[target_id] = HEURISTIC_WEIGHT_PROFILES[target_id]
+
+    if mode == "override" and alias_targets and isinstance(profiles, dict):
+        for board_profile_id, legacy_profile_id in alias_targets:
+            if legacy_profile_id not in loaded:
+                continue
+            # If the JSON payload included an explicit board-specific key,
+            # prefer it over legacy-key propagation.
+            if board_profile_id in profiles or board_profile_id in loaded:
+                continue
+            HEURISTIC_WEIGHT_PROFILES[board_profile_id] = dict(
+                HEURISTIC_WEIGHT_PROFILES[legacy_profile_id]
+            )
+            loaded[board_profile_id] = HEURISTIC_WEIGHT_PROFILES[board_profile_id]
 
     return loaded

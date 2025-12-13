@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { asyncHandler, createError } from '../middleware/errorHandler';
+import { telemetryRateLimiter } from '../middleware/rateLimiter';
 import { getMetricsService } from '../services/MetricsService';
 import {
   isDifficultyCalibrationEventType,
@@ -125,6 +126,7 @@ export function handleDifficultyCalibrationTelemetry(req: Request, res: Response
 
 router.post(
   '/difficulty-calibration',
+  telemetryRateLimiter,
   asyncHandler(async (req, res) => {
     handleDifficultyCalibrationTelemetry(req, res);
   })

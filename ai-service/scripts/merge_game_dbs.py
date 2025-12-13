@@ -106,6 +106,9 @@ def _merge_single_db(
     src_path: str,
     on_conflict: str = "skip",
     seen_game_ids: Set[str] | None = None,
+    *,
+    store_history_entries: bool,
+    compress_states: bool,
 ) -> Dict[str, int]:
     """Merge all games from a single source DB into the destination DB.
 
@@ -191,8 +194,8 @@ def _merge_single_db(
                 final_state=final_state,
                 moves=moves,
                 metadata=metadata,
-                store_history_entries=True,
-                compress_states=False,
+                store_history_entries=bool(store_history_entries),
+                compress_states=bool(compress_states),
             )
             stats["merged"] += 1
         except Exception as e:
@@ -236,6 +239,25 @@ def main() -> None:
             "Useful for incremental syncs where games may appear in multiple sources."
         ),
     )
+    parser.add_argument(
+        "--store-history-entries",
+        action="store_true",
+        help=(
+            "Store full per-move state history entries (state_before/state_after) in the output DB. "
+            "This can make databases ~100x larger; default is disabled (lean merge)."
+        ),
+    )
+    parser.add_argument(
+        "--compress-states",
+        action="store_true",
+        default=True,
+        help="Compress state JSON blobs in the output DB (default: enabled).",
+    )
+    parser.add_argument(
+        "--no-compress-states",
+        action="store_true",
+        help="Disable state compression in the output DB.",
+    )
 
     args = parser.parse_args()
 
@@ -258,6 +280,13 @@ def main() -> None:
     print(f"[merge_game_dbs] Merging {len(args.db)} database(s) into {args.output}")
     if args.dedupe_by_game_id:
         print("[merge_game_dbs] Cross-source deduplication enabled")
+    if args.store_history_entries:
+        print(
+            "[merge_game_dbs] WARNING: --store-history-entries enabled; output DBs can grow very large.",
+            file=sys.stderr,
+        )
+
+    compress_states = bool(args.compress_states) and not bool(args.no_compress_states)
 
     for src in args.db:
         if not os.path.exists(src):
@@ -266,7 +295,12 @@ def main() -> None:
 
         print(f"[merge_game_dbs] Processing source DB: {src}")
         stats = _merge_single_db(
-            dest_db, src, on_conflict=args.on_conflict, seen_game_ids=seen_game_ids
+            dest_db,
+            src,
+            on_conflict=args.on_conflict,
+            seen_game_ids=seen_game_ids,
+            store_history_entries=bool(args.store_history_entries),
+            compress_states=compress_states,
         )
         for key in total_stats:
             total_stats[key] += stats.get(key, 0)

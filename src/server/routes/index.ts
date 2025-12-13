@@ -8,6 +8,7 @@ import selfplayRoutes from './selfplay';
 import rulesUxTelemetryRoutes from './rulesUxTelemetry';
 import difficultyCalibrationTelemetryRoutes from './difficultyCalibrationTelemetry';
 import { authenticate } from '../middleware/auth';
+import { clientErrorsRateLimiter } from '../middleware/rateLimiter';
 import { httpLogger } from '../utils/logger';
 import { swaggerSpec } from '../openapi/config';
 import type { WebSocketServer } from '../websocket/server';
@@ -71,7 +72,7 @@ export const setupRoutes = (wsServer: WebSocketServer): Router => {
    *         description: Error report accepted
    */
   // Client-side error reporting endpoint (no auth; used by SPA error reporter)
-  router.post('/client-errors', (req, res) => {
+  router.post('/client-errors', clientErrorsRateLimiter, (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const { name, message, stack, type, url, userAgent, timestamp, context } = body as {
       name?: unknown;

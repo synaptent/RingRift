@@ -375,16 +375,38 @@ export class WebSocketServer {
             return;
           }
 
-          // Get user rating from database
+          // Get user rating from database with timeout protection.
+          // Falls back to default rating (1200) if DB is slow or unavailable.
+          const DB_QUERY_TIMEOUT_MS = 5000;
           const prisma = getDatabaseClient();
-          const user = prisma
-            ? await prisma.user.findUnique({
+          let rating = 1200; // Default rating
+
+          if (prisma) {
+            try {
+              const timeoutPromise = new Promise<null>((resolve) =>
+                setTimeout(() => resolve(null), DB_QUERY_TIMEOUT_MS)
+              );
+              const queryPromise = prisma.user.findUnique({
                 where: { id: socket.userId },
                 select: { rating: true },
-              })
-            : null;
+              });
 
-          const rating = user?.rating ?? 1200;
+              const user = await Promise.race([queryPromise, timeoutPromise]);
+              if (user?.rating !== undefined) {
+                rating = user.rating;
+              } else if (user === null) {
+                logger.warn('Matchmaking DB query timed out, using default rating', {
+                  userId: socket.userId,
+                  timeoutMs: DB_QUERY_TIMEOUT_MS,
+                });
+              }
+            } catch (dbError) {
+              logger.warn('Matchmaking DB query failed, using default rating', {
+                userId: socket.userId,
+                error: dbError instanceof Error ? dbError.message : String(dbError),
+              });
+            }
+          }
 
           this.matchmakingService.addToQueue(socket.userId, socket.id, payload.preferences, rating);
 

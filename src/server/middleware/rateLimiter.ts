@@ -209,6 +209,22 @@ export const getRateLimitConfigs = (): Record<string, RateLimitConfig> => ({
     duration: getEnvNumber('RATE_LIMIT_DATA_EXPORT_DURATION', 3600), // per hour
     blockDuration: getEnvNumber('RATE_LIMIT_DATA_EXPORT_BLOCK_DURATION', 3600), // 1 hour block
   },
+
+  // Telemetry events - moderate limit to prevent abuse while allowing normal gameplay
+  telemetry: {
+    keyPrefix: 'telemetry_limit',
+    points: getEnvNumber('RATE_LIMIT_TELEMETRY_POINTS', 100), // events
+    duration: getEnvNumber('RATE_LIMIT_TELEMETRY_DURATION', 60), // per minute
+    blockDuration: getEnvNumber('RATE_LIMIT_TELEMETRY_BLOCK_DURATION', 300), // 5 min block
+  },
+
+  // Client error reporting - limited to prevent log flooding
+  clientErrors: {
+    keyPrefix: 'client_errors_limit',
+    points: getEnvNumber('RATE_LIMIT_CLIENT_ERRORS_POINTS', 20), // errors
+    duration: getEnvNumber('RATE_LIMIT_CLIENT_ERRORS_DURATION', 60), // per minute
+    blockDuration: getEnvNumber('RATE_LIMIT_CLIENT_ERRORS_BLOCK_DURATION', 300), // 5 min block
+  },
 });
 
 // Cache the configs to avoid re-parsing env vars on every request
@@ -492,6 +508,13 @@ export const dataExportRateLimiter = createRateLimiter('dataExport', {
   keyGenerator: (req: Request) => {
     const authReq = req as AuthenticatedRequest;
     return authReq.user?.id || req.ip || 'unknown';
+  },
+});
+export const telemetryRateLimiter = createRateLimiter('telemetry');
+export const clientErrorsRateLimiter = createRateLimiter('clientErrors', {
+  keyGenerator: (req: Request) => {
+    // Use IP for anonymous error reporting
+    return req.ip || 'unknown';
   },
 });
 

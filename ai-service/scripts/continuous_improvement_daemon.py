@@ -101,6 +101,15 @@ P2P_ORCHESTRATOR_URL = os.environ.get("P2P_ORCHESTRATOR_URL", "http://localhost:
 P2P_AUTH_TOKEN = os.environ.get("RINGRIFT_CLUSTER_AUTH_TOKEN", "")
 USE_P2P_ORCHESTRATOR = os.environ.get("USE_P2P_ORCHESTRATOR", "").lower() in ("1", "true", "yes")
 
+# Optional: sync promoted artifacts to a staging deployment.
+SYNC_STAGING = os.environ.get("RINGRIFT_SYNC_STAGING", "").lower() in ("1", "true", "yes", "on")
+SYNC_STAGING_RESTART = os.environ.get("RINGRIFT_SYNC_STAGING_RESTART", "1").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 
 async def get_p2p_cluster_status() -> Optional[Dict[str, Any]]:
     """Query P2P orchestrator for cluster status and data manifest."""
@@ -146,6 +155,34 @@ async def notify_p2p_training_complete(model_id: str, board_type: str, num_playe
                 return resp.status == 200
     except Exception as e:
         print(f"[Daemon] P2P notification failed: {e}")
+    return False
+
+
+def maybe_sync_staging(reason: str) -> bool:
+    """Best-effort: push promoted models/weights to staging via SSH."""
+    if not SYNC_STAGING:
+        return False
+
+    if not os.environ.get("RINGRIFT_STAGING_SSH_HOST") or not os.environ.get("RINGRIFT_STAGING_ROOT"):
+        print(
+            f"[Daemon] Staging sync requested ({reason}) but missing "
+            "RINGRIFT_STAGING_SSH_HOST / RINGRIFT_STAGING_ROOT"
+        )
+        return False
+
+    cmd = [sys.executable, "scripts/sync_staging_ai_artifacts.py"]
+    if SYNC_STAGING_RESTART:
+        cmd.append("--restart")
+        services = os.environ.get("RINGRIFT_STAGING_RESTART_SERVICES")
+        if services:
+            cmd.extend(["--restart-services", services])
+
+    success, output = run_command(cmd, timeout=900)
+    if success:
+        print(f"[Daemon] Synced AI artifacts to staging ({reason})")
+        return True
+
+    print(f"[Daemon] Staging sync failed ({reason}): {output[:200]}")
     return False
 
 
@@ -1415,6 +1452,8 @@ async def daemon_cycle(state: DaemonState) -> bool:
         # Phase 5: Auto-promote best Elo models to production (every cycle, but rate-limited)
         print("[Daemon] Phase 5: Checking auto-promotion...")
         promotions = await run_auto_promotion(state)
+        if promotions > 0:
+            maybe_sync_staging("auto_promotion")
 
         # Phase 6: NNUE retraining (when enough new games accumulated)
         if state.total_cycles % 5 == 0:
@@ -1422,6 +1461,7 @@ async def daemon_cycle(state: DaemonState) -> bool:
             nnue_trained = await check_and_run_nnue_training(state)
             if nnue_trained:
                 print(f"[Daemon] NNUE models retrained for: {', '.join(nnue_trained)}")
+                maybe_sync_staging("nnue_training")
 
         # Phase 7: CMAES heuristic optimization (when enough new games accumulated)
         if state.total_cycles % 15 == 0:
@@ -1429,6 +1469,7 @@ async def daemon_cycle(state: DaemonState) -> bool:
             cmaes_optimized = await check_and_run_cmaes_optimization(state)
             if cmaes_optimized:
                 print(f"[Daemon] CMAES heuristics optimized for: {', '.join(cmaes_optimized)}")
+                maybe_sync_staging("cmaes_optimization")
 
         # Phase 8: Print status
         print_leaderboard(state)

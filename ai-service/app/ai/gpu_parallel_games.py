@@ -21,6 +21,7 @@ Performance targets:
 from __future__ import annotations
 
 import gc
+import os
 import logging
 import time
 from dataclasses import dataclass, field
@@ -119,10 +120,19 @@ def select_moves_vectorized(
     # This is a vectorized segment-wise multinomial
 
     # Compute cumsum per game using segment operations
-    # Sort moves by game_idx to enable cumsum
-    sorted_indices = torch.argsort(game_idx)
-    sorted_game_idx = game_idx[sorted_indices]
-    sorted_probs = probs[sorted_indices]
+    # Check if already sorted (common case: moves generated game-by-game)
+    is_sorted = (game_idx[1:] >= game_idx[:-1]).all() if moves.total_moves > 1 else True
+
+    if is_sorted:
+        # Fast path: moves already sorted by game_idx
+        sorted_indices = torch.arange(moves.total_moves, device=device)
+        sorted_game_idx = game_idx
+        sorted_probs = probs
+    else:
+        # Need to sort
+        sorted_indices = torch.argsort(game_idx)
+        sorted_game_idx = game_idx[sorted_indices]
+        sorted_probs = probs[sorted_indices]
 
     # Cumsum all probs
     cumsum_probs = torch.cumsum(sorted_probs, dim=0)
@@ -487,80 +497,110 @@ def apply_recovery_moves_vectorized(
     moves: "BatchMoves",
     active_mask: torch.Tensor,
 ) -> None:
-    """Apply recovery slide moves in a vectorized manner."""
+    """Apply recovery slide moves in a fully vectorized manner.
+
+    Optimized 2025-12-13: Eliminated Python loops and .item() calls.
+    """
     device = state.device
-    batch_size = state.batch_size
 
     has_selection = (selected_local_idx >= 0) & active_mask & (moves.moves_per_game > 0)
 
     if not has_selection.any():
         return
 
-    global_idx = moves.move_offsets + selected_local_idx
+    game_indices = torch.where(has_selection)[0]
+    n_games = game_indices.shape[0]
+
+    global_idx = moves.move_offsets[game_indices] + selected_local_idx[game_indices]
     global_idx = torch.clamp(global_idx, 0, max(0, moves.total_moves - 1))
 
-    selected_from_y = moves.from_y[global_idx]
-    selected_from_x = moves.from_x[global_idx]
-    selected_to_y = moves.to_y[global_idx]
-    selected_to_x = moves.to_x[global_idx]
+    from_y = moves.from_y[global_idx].long()
+    from_x = moves.from_x[global_idx].long()
+    to_y = moves.to_y[global_idx].long()
+    to_x = moves.to_x[global_idx].long()
 
-    current_players = state.current_player
-    game_indices = torch.where(has_selection)[0]
+    players = state.current_player[game_indices]
 
-    for g in game_indices.tolist():
-        from_y = selected_from_y[g].item()
-        from_x = selected_from_x[g].item()
-        to_y = selected_to_y[g].item()
-        to_x = selected_to_x[g].item()
-        player = current_players[g].item()
-        mc = int(state.move_count[g].item())
+    # Record in history
+    move_idx = state.move_count[game_indices]
+    history_mask = move_idx < state.max_history_moves
+    if history_mask.any():
+        hist_games = game_indices[history_mask]
+        hist_move_idx = move_idx[history_mask].long()
+        hist_dtype = state.move_history.dtype
+        state.move_history[hist_games, hist_move_idx, 0] = MoveType.RECOVERY_SLIDE
+        state.move_history[hist_games, hist_move_idx, 1] = players[history_mask].to(hist_dtype)
+        state.move_history[hist_games, hist_move_idx, 2] = from_y[history_mask].to(hist_dtype)
+        state.move_history[hist_games, hist_move_idx, 3] = from_x[history_mask].to(hist_dtype)
+        state.move_history[hist_games, hist_move_idx, 4] = to_y[history_mask].to(hist_dtype)
+        state.move_history[hist_games, hist_move_idx, 5] = to_x[history_mask].to(hist_dtype)
 
-        # Record in history
-        if mc < state.max_history_moves:
-            state.move_history[g, mc, 0] = MoveType.RECOVERY_SLIDE
-            state.move_history[g, mc, 1] = player
-            state.move_history[g, mc, 2] = from_y
-            state.move_history[g, mc, 3] = from_x
-            state.move_history[g, mc, 4] = to_y
-            state.move_history[g, mc, 5] = to_x
-        state.move_count[g] += 1
+    state.move_count[game_indices] += 1
 
-        # Move marker
-        state.marker_owner[g, from_y, from_x] = 0
-        dest_height = state.stack_height[g, to_y, to_x].item()
-        dest_owner = state.stack_owner[g, to_y, to_x].item()
+    # Clear source marker
+    state.marker_owner[game_indices, from_y, from_x] = 0
 
-        if dest_height > 0 and dest_owner > 0:
-            # Stack-strike recovery (RR-CANON-R112(b2)): sacrifice the marker
-            # and eliminate the attacked stack's top ring (credited to P).
-            new_height = max(0, dest_height - 1)
-            old_cap = int(state.cap_height[g, to_y, to_x].item())
+    # Check destination for stack-strike vs normal recovery
+    dest_height = state.stack_height[game_indices, to_y, to_x]
+    dest_owner = state.stack_owner[game_indices, to_y, to_x]
+    is_stack_strike = (dest_height > 0) & (dest_owner > 0)
 
-            state.eliminated_rings[g, dest_owner] += 1
-            state.rings_caused_eliminated[g, player] += 1
+    # Handle stack-strike recovery (RR-CANON-R112(b2))
+    if is_stack_strike.any():
+        ss_games = game_indices[is_stack_strike]
+        ss_to_y = to_y[is_stack_strike]
+        ss_to_x = to_x[is_stack_strike]
+        ss_players = players[is_stack_strike]
+        ss_dest_owner = dest_owner[is_stack_strike]
+        ss_dest_height = dest_height[is_stack_strike]
+        ss_old_cap = state.cap_height[ss_games, ss_to_y, ss_to_x]
 
-            state.stack_height[g, to_y, to_x] = new_height
-            if new_height == 0:
-                state.stack_owner[g, to_y, to_x] = 0
-                state.cap_height[g, to_y, to_x] = 0
-            else:
-                new_cap = old_cap - 1
-                if new_cap <= 0:
-                    new_cap = 1
-                if new_cap > new_height:
-                    new_cap = new_height
-                state.cap_height[g, to_y, to_x] = new_cap
-        else:
-            # Normal recovery slide: marker occupies the destination cell.
-            state.marker_owner[g, to_y, to_x] = player
+        # Update eliminated rings tracking
+        ones = torch.ones(ss_games.shape[0], dtype=state.eliminated_rings.dtype, device=device)
+        state.eliminated_rings.index_put_(
+            (ss_games, ss_dest_owner.long()),
+            ones,
+            accumulate=True
+        )
+        state.rings_caused_eliminated.index_put_(
+            (ss_games, ss_players.long()),
+            ones,
+            accumulate=True
+        )
 
-        # Deduct buried ring cost
-        current_buried = state.buried_rings[g, player].item()
-        if current_buried > 0:
-            state.buried_rings[g, player] = current_buried - 1
-            # Buried ring extraction is a self-elimination (RR-CANON-R114/R115).
-            state.eliminated_rings[g, player] += 1
-            state.rings_caused_eliminated[g, player] += 1
+        # Update stack
+        new_height = torch.clamp(ss_dest_height - 1, min=0)
+        new_cap = torch.clamp(ss_old_cap - 1, min=1)
+        new_cap = torch.minimum(new_cap, new_height)
+        new_cap = torch.where(new_height > 0, new_cap, torch.zeros_like(new_cap))
+
+        state.stack_height[ss_games, ss_to_y, ss_to_x] = new_height.to(state.stack_height.dtype)
+        is_cleared = new_height == 0
+        state.stack_owner[ss_games[is_cleared], ss_to_y[is_cleared], ss_to_x[is_cleared]] = 0
+        state.cap_height[ss_games, ss_to_y, ss_to_x] = new_cap.to(state.cap_height.dtype)
+
+    # Handle normal recovery slide
+    is_normal = ~is_stack_strike
+    if is_normal.any():
+        nr_games = game_indices[is_normal]
+        nr_to_y = to_y[is_normal]
+        nr_to_x = to_x[is_normal]
+        nr_players = players[is_normal]
+        state.marker_owner[nr_games, nr_to_y, nr_to_x] = nr_players.to(state.marker_owner.dtype)
+
+    # Deduct buried ring cost - only if player has buried rings
+    current_buried = state.buried_rings[game_indices, players.long()]
+    has_buried = current_buried > 0
+    if has_buried.any():
+        hb_games = game_indices[has_buried]
+        hb_players = players[has_buried].long()
+        neg_ones = torch.full((hb_games.shape[0],), -1, dtype=state.buried_rings.dtype, device=device)
+        pos_ones = torch.ones(hb_games.shape[0], dtype=state.eliminated_rings.dtype, device=device)
+
+        state.buried_rings.index_put_((hb_games, hb_players), neg_ones, accumulate=True)
+        # Self-elimination for buried ring extraction (RR-CANON-R114/R115)
+        state.eliminated_rings.index_put_((hb_games, hb_players), pos_ones, accumulate=True)
+        state.rings_caused_eliminated.index_put_((hb_games, hb_players), pos_ones, accumulate=True)
 
 
 def apply_no_action_moves_batch(
@@ -571,25 +611,31 @@ def apply_no_action_moves_batch(
 
     This is used to avoid silent phase progression when a player has no
     legal action in an interactive phase (RR-CANON-R075).
+
+    Optimized 2025-12-13: Eliminated Python loops and .item() calls.
     """
     active_mask = mask & state.get_active_mask()
     if not active_mask.any():
         return
 
     game_indices = torch.where(active_mask)[0]
-    for g in game_indices.tolist():
-        mc = int(state.move_count[g].item())
-        player = int(state.current_player[g].item())
+    move_idx = state.move_count[game_indices]
+    players = state.current_player[game_indices]
 
-        if mc < state.max_history_moves:
-            state.move_history[g, mc, 0] = MoveType.NO_ACTION
-            state.move_history[g, mc, 1] = player
-            state.move_history[g, mc, 2] = -1
-            state.move_history[g, mc, 3] = -1
-            state.move_history[g, mc, 4] = -1
-            state.move_history[g, mc, 5] = -1
+    # Record in history for games with space
+    history_mask = move_idx < state.max_history_moves
+    if history_mask.any():
+        hist_games = game_indices[history_mask]
+        hist_move_idx = move_idx[history_mask].long()
+        hist_dtype = state.move_history.dtype
+        state.move_history[hist_games, hist_move_idx, 0] = MoveType.NO_ACTION
+        state.move_history[hist_games, hist_move_idx, 1] = players[history_mask].to(hist_dtype)
+        state.move_history[hist_games, hist_move_idx, 2] = -1
+        state.move_history[hist_games, hist_move_idx, 3] = -1
+        state.move_history[hist_games, hist_move_idx, 4] = -1
+        state.move_history[hist_games, hist_move_idx, 5] = -1
 
-        state.move_count[g] += 1
+    state.move_count[game_indices] += 1
 
 
 # =============================================================================
@@ -2460,6 +2506,8 @@ def generate_chain_capture_moves_from_position(
     This function checks captures only from the specified position, not all stacks.
     Uses cap_height comparison per RR-CANON-R101.
 
+    Optimized 2025-12-13: Pre-extract numpy arrays to avoid .item() calls.
+
     Args:
         state: Current batch game state
         game_idx: Game index in batch
@@ -2470,15 +2518,20 @@ def generate_chain_capture_moves_from_position(
         List of (landing_y, landing_x) positions for valid capture segments
     """
     board_size = state.board_size
-    player = state.current_player[game_idx].item()
+
+    # Pre-extract game state as numpy to avoid repeated .item() calls
+    player = int(state.current_player[game_idx].item())
+    stack_owner_np = state.stack_owner[game_idx].cpu().numpy()
+    stack_height_np = state.stack_height[game_idx].cpu().numpy()
+    cap_height_np = state.cap_height[game_idx].cpu().numpy()
+    is_collapsed_np = state.is_collapsed[game_idx].cpu().numpy()
 
     # Verify we control this stack
-    stack_owner = state.stack_owner[game_idx, from_y, from_x].item()
-    if stack_owner != player:
+    if stack_owner_np[from_y, from_x] != player:
         return []
 
-    my_height = state.stack_height[game_idx, from_y, from_x].item()
-    my_cap_height = state.cap_height[game_idx, from_y, from_x].item()
+    my_height = int(stack_height_np[from_y, from_x])
+    my_cap_height = int(cap_height_np[from_y, from_x])
     if my_height <= 0:
         return []
 
@@ -2502,12 +2555,12 @@ def generate_chain_capture_moves_from_position(
             if not (0 <= check_y < board_size and 0 <= check_x < board_size):
                 break
 
-            if state.is_collapsed[game_idx, check_y, check_x].item():
+            if is_collapsed_np[check_y, check_x]:
                 break
 
-            cell_owner = state.stack_owner[game_idx, check_y, check_x].item()
+            cell_owner = stack_owner_np[check_y, check_x]
             if cell_owner != 0:
-                target_cap = state.cap_height[game_idx, check_y, check_x].item()
+                target_cap = cap_height_np[check_y, check_x]
                 if my_cap_height >= target_cap:
                     target_y = check_y
                     target_x = check_x
@@ -2528,7 +2581,7 @@ def generate_chain_capture_moves_from_position(
             if not (0 <= landing_y < board_size and 0 <= landing_x < board_size):
                 break
 
-            if state.is_collapsed[game_idx, landing_y, landing_x].item():
+            if is_collapsed_np[landing_y, landing_x]:
                 break
 
             # Ensure the path from target -> landing is clear (no stacks, no collapsed spaces).
@@ -2536,10 +2589,10 @@ def generate_chain_capture_moves_from_position(
             for step in range(target_dist + 1, landing_dist):
                 check_y = from_y + dy * step
                 check_x = from_x + dx * step
-                if state.stack_owner[game_idx, check_y, check_x].item() != 0:
+                if stack_owner_np[check_y, check_x] != 0:
                     path_clear = False
                     break
-                if state.is_collapsed[game_idx, check_y, check_x].item():
+                if is_collapsed_np[check_y, check_x]:
                     path_clear = False
                     break
 
@@ -2547,7 +2600,7 @@ def generate_chain_capture_moves_from_position(
                 break
 
             # Landing must be empty (markers are allowed).
-            if state.stack_owner[game_idx, landing_y, landing_x].item() != 0:
+            if stack_owner_np[landing_y, landing_x] != 0:
                 break
 
             captures.append((landing_y, landing_x))
@@ -2572,6 +2625,8 @@ def apply_single_chain_capture(
     - Process marker interactions along the path as in movement (R092), including
       the landing marker removal + cap-elimination cost.
 
+    Optimized 2025-12-13: Pre-extract numpy arrays to avoid .item() calls in loops.
+
     Args:
         state: BatchGameState to modify
         game_idx: Game index in batch
@@ -2581,8 +2636,14 @@ def apply_single_chain_capture(
     Returns:
         (new_y, new_x) landing position for potential chain continuation
     """
-    player = state.current_player[game_idx].item()
+    # Pre-extract game slice as numpy for efficient reading (avoid .item() calls)
+    player = int(state.current_player[game_idx].item())
     mc = int(state.move_count[game_idx].item())
+    stack_owner_np = state.stack_owner[game_idx].cpu().numpy()
+    stack_height_np = state.stack_height[game_idx].cpu().numpy()
+    cap_height_np = state.cap_height[game_idx].cpu().numpy()
+    marker_owner_np = state.marker_owner[game_idx].cpu().numpy()
+    is_collapsed_np = state.is_collapsed[game_idx].cpu().numpy()
 
     # Record in history
     if mc < state.max_history_moves:
@@ -2597,8 +2658,8 @@ def apply_single_chain_capture(
     # Capture move representation:
     # - (from -> landing) is passed in as (to_y, to_x)
     # - The target stack is implicit as the first stack along the ray
-    attacker_height = int(state.stack_height[game_idx, from_y, from_x].item())
-    attacker_cap_height = int(state.cap_height[game_idx, from_y, from_x].item())
+    attacker_height = int(stack_height_np[from_y, from_x])
+    attacker_cap_height = int(cap_height_np[from_y, from_x])
 
     dy = 0 if to_y == from_y else (1 if to_y > from_y else -1)
     dx = 0 if to_x == from_x else (1 if to_x > from_x else -1)
@@ -2609,7 +2670,7 @@ def apply_single_chain_capture(
     for step in range(1, dist):
         check_y = from_y + dy * step
         check_x = from_x + dx * step
-        if state.stack_owner[game_idx, check_y, check_x].item() != 0:
+        if stack_owner_np[check_y, check_x] != 0:
             target_y = check_y
             target_x = check_x
             break
@@ -2632,22 +2693,22 @@ def apply_single_chain_capture(
         if check_y == target_y and check_x == target_x:
             continue
 
-        marker_owner = state.marker_owner[game_idx, check_y, check_x].item()
-        if marker_owner == 0:
+        marker_owner_val = marker_owner_np[check_y, check_x]
+        if marker_owner_val == 0:
             continue
-        if marker_owner != player:
+        if marker_owner_val != player:
             state.marker_owner[game_idx, check_y, check_x] = player
             continue
 
         # Own marker on intermediate cell: collapse to territory.
         state.marker_owner[game_idx, check_y, check_x] = 0
-        if not state.is_collapsed[game_idx, check_y, check_x].item():
+        if not is_collapsed_np[check_y, check_x]:
             state.is_collapsed[game_idx, check_y, check_x] = True
             state.territory_owner[game_idx, check_y, check_x] = player
             state.territory_count[game_idx, player] += 1
 
     # Landing marker: remove any marker and pay cap-elimination cost.
-    dest_marker = state.marker_owner[game_idx, to_y, to_x].item()
+    dest_marker = marker_owner_np[to_y, to_x]
     landing_ring_cost = 1 if dest_marker != 0 else 0
     if landing_ring_cost:
         state.marker_owner[game_idx, to_y, to_x] = 0
@@ -2655,9 +2716,9 @@ def apply_single_chain_capture(
         state.rings_caused_eliminated[game_idx, player] += 1
 
     # Pop top ring from the implicit target and append to the bottom of attacker.
-    target_owner = int(state.stack_owner[game_idx, target_y, target_x].item())
-    target_height = int(state.stack_height[game_idx, target_y, target_x].item())
-    target_cap_height = int(state.cap_height[game_idx, target_y, target_x].item())
+    target_owner = int(stack_owner_np[target_y, target_x])
+    target_height = int(stack_height_np[target_y, target_x])
+    target_cap_height = int(cap_height_np[target_y, target_x])
 
     state.marker_owner[game_idx, target_y, target_x] = 0
 
@@ -2727,6 +2788,8 @@ def generate_recovery_moves_batch(
     it surfaces both empty-cell and stack-strike recovery options whenever the
     player is recovery-eligible.
 
+    Optimized 2025-12-13: Pre-extract numpy arrays to avoid .item() calls.
+
     Args:
         state: Current batch game state
         active_mask: Mask of games to generate moves for
@@ -2762,7 +2825,17 @@ def generate_recovery_moves_batch(
         (1, -1),
     ]
 
-    def _is_line_forming_recovery_slide(
+    # Pre-extract state arrays as numpy once to avoid repeated .item() calls
+    active_mask_np = active_mask.cpu().numpy()
+    current_player_np = state.current_player.cpu().numpy()
+    stack_owner_np = state.stack_owner.cpu().numpy()
+    stack_height_np = state.stack_height.cpu().numpy()
+    marker_owner_np = state.marker_owner.cpu().numpy()
+    territory_owner_np = state.territory_owner.cpu().numpy()
+    buried_rings_np = state.buried_rings.cpu().numpy()
+    is_collapsed_np = state.is_collapsed.cpu().numpy() if hasattr(state, 'is_collapsed') else None
+
+    def _is_line_forming_recovery_slide_np(
         g: int,
         player: int,
         from_y: int,
@@ -2772,12 +2845,7 @@ def generate_recovery_moves_batch(
     ) -> bool:
         """Return True when sliding marker to (to_y,to_x) forms a legal line.
 
-        Per RR-CANON-R112(a), the moved marker must complete a line of at least
-        ``required_line_length`` consecutive markers of the player's colour.
-
-        This helper checks only lines that include the destination marker; any
-        newly formed line must include the moved marker because the move only
-        removes a marker from (from_y,from_x) and adds one at (to_y,to_x).
+        Uses numpy arrays instead of tensor .item() calls.
         """
         for dy, dx in line_axes:
             length = 1  # include destination marker
@@ -2786,11 +2854,11 @@ def generate_recovery_moves_batch(
             y = to_y + dy
             x = to_x + dx
             while 0 <= y < board_size and 0 <= x < board_size:
-                if getattr(state, "is_collapsed", None) is not None and state.is_collapsed[g, y, x].item():
+                if is_collapsed_np is not None and is_collapsed_np[g, y, x]:
                     break
-                if state.stack_owner[g, y, x].item() != 0:
+                if stack_owner_np[g, y, x] != 0:
                     break
-                marker = state.marker_owner[g, y, x].item()
+                marker = marker_owner_np[g, y, x]
                 if y == from_y and x == from_x:
                     marker = 0
                 if marker != player:
@@ -2803,11 +2871,11 @@ def generate_recovery_moves_batch(
             y = to_y - dy
             x = to_x - dx
             while 0 <= y < board_size and 0 <= x < board_size:
-                if getattr(state, "is_collapsed", None) is not None and state.is_collapsed[g, y, x].item():
+                if is_collapsed_np is not None and is_collapsed_np[g, y, x]:
                     break
-                if state.stack_owner[g, y, x].item() != 0:
+                if stack_owner_np[g, y, x] != 0:
                     break
-                marker = state.marker_owner[g, y, x].item()
+                marker = marker_owner_np[g, y, x]
                 if y == from_y and x == from_x:
                     marker = 0
                 if marker != player:
@@ -2828,42 +2896,36 @@ def generate_recovery_moves_batch(
     all_to_x = []
 
     for g in range(batch_size):
-        if not active_mask[g]:
+        if not active_mask_np[g]:
             continue
 
-        player = state.current_player[g].item()
+        player = int(current_player_np[g])
 
         # Check recovery eligibility per RR-CANON-R110:
         # 1. No controlled stacks
-        has_stacks = (state.stack_owner[g] == player).any().item()
+        has_stacks = (stack_owner_np[g] == player).any()
         if has_stacks:
             continue
 
         # 2. Has markers on board
-        my_markers = (state.marker_owner[g] == player)
-        marker_positions = torch.nonzero(my_markers, as_tuple=False)
+        my_markers = (marker_owner_np[g] == player)
+        marker_positions = np.argwhere(my_markers)
         if marker_positions.shape[0] == 0:
             continue
 
         # 3. Has buried rings (can afford recovery cost)
-        buried_rings = state.buried_rings[g, player].item()
+        buried_rings = buried_rings_np[g, player]
         if buried_rings <= 0:
             continue
 
         # Player is eligible for recovery.
-        #
-        # Per RR-CANON-R112, recovery move legality is gated:
-        # - If ANY line-forming recovery slide exists anywhere, ONLY those
-        #   line-forming slides are legal (fallback-class is not allowed).
-        # - Otherwise, fallback-class recovery is allowed (adjacent empty-cell
-        #   slides and stack-strike).
         line_moves: list[tuple[int, int, int, int]] = []
         fallback_moves: list[tuple[int, int, int, int]] = []
         stack_strike_moves: list[tuple[int, int, int, int]] = []
 
         for pos_idx in range(marker_positions.shape[0]):
-            from_y = marker_positions[pos_idx, 0].item()
-            from_x = marker_positions[pos_idx, 1].item()
+            from_y = int(marker_positions[pos_idx, 0])
+            from_x = int(marker_positions[pos_idx, 1])
 
             for dy, dx in directions:
                 to_y = from_y + dy
@@ -2873,31 +2935,29 @@ def generate_recovery_moves_batch(
                 if not (0 <= to_y < board_size and 0 <= to_x < board_size):
                     continue
 
-                # Target may be either:
-                # - empty cell (no stack, no marker, no territory/collapse), or
-                # - adjacent stack (stack-strike).
-                if getattr(state, "is_collapsed", None) is not None and state.is_collapsed[g, to_y, to_x].item():
+                # Target may be either empty cell or adjacent stack (stack-strike)
+                if is_collapsed_np is not None and is_collapsed_np[g, to_y, to_x]:
                     continue
 
-                has_stack = state.stack_height[g, to_y, to_x].item() > 0 and state.stack_owner[g, to_y, to_x].item() > 0
+                has_stack = stack_height_np[g, to_y, to_x] > 0 and stack_owner_np[g, to_y, to_x] > 0
 
                 if has_stack:
-                    # Stack-strike: destination is a stack; markers cannot coexist.
-                    if state.marker_owner[g, to_y, to_x].item() != 0:
+                    # Stack-strike: destination is a stack
+                    if marker_owner_np[g, to_y, to_x] != 0:
                         continue
-                    if state.territory_owner[g, to_y, to_x].item() != 0:
+                    if territory_owner_np[g, to_y, to_x] != 0:
                         continue
                     stack_strike_moves.append((from_y, from_x, to_y, to_x))
                 else:
-                    # Empty-cell slide: destination must be empty.
-                    if state.stack_owner[g, to_y, to_x].item() != 0:
+                    # Empty-cell slide: destination must be empty
+                    if stack_owner_np[g, to_y, to_x] != 0:
                         continue
-                    if state.marker_owner[g, to_y, to_x].item() != 0:
+                    if marker_owner_np[g, to_y, to_x] != 0:
                         continue
-                    if state.territory_owner[g, to_y, to_x].item() != 0:
+                    if territory_owner_np[g, to_y, to_x] != 0:
                         continue
 
-                    if _is_line_forming_recovery_slide(
+                    if _is_line_forming_recovery_slide_np(
                         g,
                         player,
                         from_y,
@@ -3053,20 +3113,25 @@ def apply_placement_moves_batch_vectorized(
     state.stack_height[game_indices, y, x] = new_height.to(state.stack_height.dtype)
     state.cap_height[game_indices, y, x] = new_cap.to(state.cap_height.dtype)
 
-    # Handle buried rings for opponent stacks
+    # Handle buried rings for opponent stacks - vectorized with index_put_
     is_opponent = ~is_empty & (dest_owner != 0) & (dest_owner != players)
     if is_opponent.any():
         opp_games = game_indices[is_opponent]
         opp_owners = dest_owner[is_opponent].long()
-        # Scatter add 1 to buried_rings for each opponent
-        state.buried_rings[opp_games, opp_owners] += 1
+        opp_ones = torch.ones(opp_games.shape[0], dtype=state.buried_rings.dtype, device=device)
+        state.buried_rings.index_put_(
+            (opp_games, opp_owners),
+            opp_ones,
+            accumulate=True
+        )
 
-    # Update rings_in_hand (scatter subtract)
-    # Use a loop for scatter_add with player indices (more reliable)
-    for i in range(n_games):
-        g = game_indices[i].item()
-        p = players[i].item()
-        state.rings_in_hand[g, p] -= 1
+    # Update rings_in_hand - vectorized with index_put_
+    neg_ones = torch.full((n_games,), -1, dtype=state.rings_in_hand.dtype, device=device)
+    state.rings_in_hand.index_put_(
+        (game_indices, players.long()),
+        neg_ones,
+        accumulate=True
+    )
 
     # Update must_move_from (cast to match dtype)
     state.must_move_from_y[game_indices] = y.to(state.must_move_from_y.dtype)
@@ -3474,14 +3539,18 @@ def apply_capture_moves_batch_vectorized(
             flip_players = players_exp[is_opponent_marker]
             state.marker_owner[flip_games, flip_y, flip_x] = flip_players.to(state.marker_owner.dtype)
 
-    # Eliminate defender's ring (update tracking tensors)
-    # Use loop for scatter operations on 2D indexed tensors
-    for i in range(n_games):
-        g = game_indices[i].item()
-        def_owner = defender_owner[i].item()
-        p = players[i].item()
-        state.eliminated_rings[g, def_owner] += 1
-        state.rings_caused_eliminated[g, p] += 1
+    # Eliminate defender's ring (update tracking tensors) - vectorized using index_put_
+    ones = torch.ones(n_games, dtype=state.eliminated_rings.dtype, device=device)
+    state.eliminated_rings.index_put_(
+        (game_indices, defender_owner.long()),
+        ones,
+        accumulate=True
+    )
+    state.rings_caused_eliminated.index_put_(
+        (game_indices, players.long()),
+        ones,
+        accumulate=True
+    )
 
     # Clear origin
     state.stack_owner[game_indices, from_y, from_x] = 0
@@ -3823,6 +3892,8 @@ def detect_lines_with_metadata(
     Returns structured line data including whether each line is overlength,
     enabling proper Option 1/2 handling per RR-CANON-R122.
 
+    Optimized 2025-12-13: Use vectorized early-exit and numpy for iteration.
+
     Args:
         state: Current batch game state
         player: Player number to detect lines for
@@ -3842,15 +3913,25 @@ def detect_lines_with_metadata(
 
     lines_per_game: List[List[DetectedLine]] = [[] for _ in range(batch_size)]
 
+    # Early exit: use vectorized detection to quickly identify games WITH lines
+    _, line_counts = detect_lines_vectorized(state, player, game_mask)
+    games_with_lines = (line_counts > 0) & game_mask
+
+    if not games_with_lines.any():
+        return lines_per_game
+
+    # Get marker mask for all games at once (batch, H, W)
+    player_markers_batch = (state.marker_owner == player) & (state.stack_owner == 0)
+
     # 4 directions to check for lines: horizontal, vertical, diagonal, anti-diagonal
     directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
 
-    for g in range(batch_size):
-        if not game_mask[g]:
-            continue
+    # Only process games that have lines
+    games_to_check = games_with_lines.nonzero(as_tuple=True)[0].tolist()
 
-        # Per RR-CANON-R120: Lines are formed by MARKERS, not stacks
-        player_markers = (state.marker_owner[g] == player) & (state.stack_owner[g] == 0)
+    for g in games_to_check:
+        # Get this game's markers as numpy for faster iteration
+        player_markers = player_markers_batch[g].cpu().numpy()
 
         # Track which positions have been assigned to a line
         assigned = set()
@@ -5646,7 +5727,8 @@ class ParallelGameRunner:
             self._validate_placement_moves_sample(moves, games_with_rings)
 
             if moves.total_moves > 0:
-                selected = self._select_best_moves(moves, weights_list, games_with_rings)
+                # Use vectorized move selection (no Python loops or .item() calls)
+                selected = select_moves_vectorized(moves, games_with_rings, self.board_size)
                 apply_placement_moves_batch(self.state, selected, moves)
 
         # Advance to MOVEMENT for this player's turn regardless of whether a
@@ -5741,64 +5823,80 @@ class ParallelGameRunner:
                 selected_captures = select_moves_vectorized(
                     capture_moves, games_with_captures, self.board_size
                 )
-                apply_capture_moves_vectorized(
-                    self.state, selected_captures, capture_moves, games_with_captures
+                apply_capture_moves_batch(
+                    self.state, selected_captures, capture_moves
                 )
 
                 # Track landing positions for chain capture continuation
-                # For each game that had a capture, check if more captures are available
+                # Pre-extract data in batch to minimize .item() calls
                 game_indices = torch.where(games_with_captures)[0]
 
-                for g in game_indices.tolist():
-                    local_idx = selected_captures[g].item()
-                    if local_idx < 0:
-                        continue
+                if game_indices.numel() > 0:
+                    # Batch extract local indices and compute global indices
+                    local_indices = selected_captures[game_indices]
+                    valid_local = local_indices >= 0
 
-                    global_idx = (capture_moves.move_offsets[g] + local_idx).item()
-                    if global_idx >= capture_moves.total_moves:
-                        continue
+                    # Compute global indices for valid selections
+                    offsets = capture_moves.move_offsets[game_indices]
+                    global_indices = offsets + local_indices
+                    valid_global = valid_local & (global_indices < capture_moves.total_moves)
 
-                    # Get landing position from the capture we just applied
-                    landing_y = capture_moves.to_y[global_idx].item()
-                    landing_x = capture_moves.to_x[global_idx].item()
+                    # Get landing positions for all valid captures
+                    clamped_global = global_indices.clamp(0, max(0, capture_moves.total_moves - 1))
+                    landing_y_batch = capture_moves.to_y[clamped_global]
+                    landing_x_batch = capture_moves.to_x[clamped_global]
 
-                    # Chain capture loop: continue capturing from landing position
-                    # per RR-CANON-R103 (mandatory chain captures)
-                    max_chain_depth = 10  # Safety limit to prevent infinite loops
-                    chain_depth = 0
+                    # Convert to numpy for efficient iteration
+                    game_indices_np = game_indices.cpu().numpy()
+                    valid_global_np = valid_global.cpu().numpy()
+                    landing_y_np = landing_y_batch.cpu().numpy()
+                    landing_x_np = landing_x_batch.cpu().numpy()
 
-                    while chain_depth < max_chain_depth:
-                        chain_depth += 1
+                    # Process chain captures for each game
+                    for idx, g in enumerate(game_indices_np):
+                        if not valid_global_np[idx]:
+                            continue
 
-                        # Generate captures from current landing position only
-                        chain_captures = generate_chain_capture_moves_from_position(
-                            self.state, g, landing_y, landing_x
-                        )
+                        landing_y = int(landing_y_np[idx])
+                        landing_x = int(landing_x_np[idx])
 
-                        if not chain_captures:
-                            # No more captures available from this position
-                            break
+                        # Chain capture loop: continue capturing from landing position
+                        # per RR-CANON-R103 (mandatory chain captures)
+                        max_chain_depth = 10  # Safety limit to prevent infinite loops
+                        chain_depth = 0
 
-                        # Select a chain capture (use first available for simplicity)
-                        # In training, randomizing might be better but for correctness
-                        # any valid chain is acceptable
-                        to_y, to_x = chain_captures[0]
+                        while chain_depth < max_chain_depth:
+                            chain_depth += 1
 
-                        # Apply the chain capture
-                        new_y, new_x = apply_single_chain_capture(
-                            self.state, g, landing_y, landing_x, to_y, to_x
-                        )
+                            # Generate captures from current landing position only
+                            chain_captures = generate_chain_capture_moves_from_position(
+                                self.state, int(g), landing_y, landing_x
+                            )
 
-                        # Update landing position for next iteration
-                        landing_y, landing_x = new_y, new_x
+                            if not chain_captures:
+                                # No more captures available from this position
+                                break
+
+                            # Select a chain capture (use first available for simplicity)
+                            # In training, randomizing might be better but for correctness
+                            # any valid chain is acceptable
+                            to_y, to_x = chain_captures[0]
+
+                            # Apply the chain capture
+                            new_y, new_x = apply_single_chain_capture(
+                                self.state, int(g), landing_y, landing_x, to_y, to_x
+                            )
+
+                            # Update landing position for next iteration
+                            landing_y, landing_x = new_y, new_x
 
             # Apply movement moves for games without captures
             if games_movement_only.any():
                 selected_movements = select_moves_vectorized(
                     movement_moves, games_movement_only, self.board_size
                 )
-                apply_movement_moves_vectorized(
-                    self.state, selected_movements, movement_moves, games_movement_only
+                apply_movement_moves_batch(
+                    self.state, selected_movements, movement_moves
                 )
 
             if games_no_action.any():
@@ -5858,9 +5956,9 @@ class ParallelGameRunner:
 
         Used for cascade detection per RR-CANON-R144.
 
-        Refactored 2025-12-11 for batch efficiency:
-        - Call detect_lines_batch once per player (not per game)
-        - Accumulate results across all players
+        Refactored 2025-12-13 for vectorized efficiency:
+        - Use detect_lines_vectorized which returns line counts
+        - O(1) check via count > 0
 
         Args:
             mask: Games to check
@@ -5872,13 +5970,10 @@ class ParallelGameRunner:
 
         # Check each player's lines across all masked games at once
         for p in range(1, self.num_players + 1):
-            # detect_lines_batch returns List[List[positions]] for all games
-            lines_by_game = detect_lines_batch(self.state, p, mask)
-
-            # Check which games have lines for this player
-            for g in range(self.batch_size):
-                if mask[g] and lines_by_game[g]:
-                    has_new_lines[g] = True
+            # detect_lines_vectorized returns (in_line_mask, line_counts)
+            _, line_counts = detect_lines_vectorized(self.state, p, mask)
+            # Games with line_count > 0 have lines
+            has_new_lines = has_new_lines | (line_counts > 0)
 
         return has_new_lines
 
@@ -6252,10 +6347,10 @@ class ParallelGameRunner:
         single_game_mask[g] = True
 
         for iteration in range(max_iterations):
-            # Check for lines for the current player
-            lines = detect_lines_batch(self.state, player, single_game_mask)
+            # Check for lines for the current player using vectorized detection
+            _, line_counts = detect_lines_vectorized(self.state, player, single_game_mask)
 
-            if not lines[g]:
+            if line_counts[g].item() == 0:
                 # No lines formed, we're done with cascade
                 break
 

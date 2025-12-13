@@ -54,6 +54,8 @@ services:
       - ORCHESTRATOR_ERROR_THRESHOLD_PERCENT=5
       - ORCHESTRATOR_ERROR_WINDOW_SECONDS=300
       - ORCHESTRATOR_LATENCY_THRESHOLD_MS=500
+      # Enable sandbox-only AI helper endpoints in staging.
+      - ENABLE_SANDBOX_AI_ENDPOINTS=${ENABLE_SANDBOX_AI_ENDPOINTS:-true}
       # Rate limits (production-realistic with headroom for load testing)
       - RATE_LIMIT_API_POINTS=${RATE_LIMIT_API_POINTS:-10000}
       - RATE_LIMIT_API_AUTH_POINTS=${RATE_LIMIT_API_AUTH_POINTS:-10000}
@@ -250,11 +252,16 @@ services:
       - PYTHON_ENV=production
       - LOG_LEVEL=${AI_LOG_LEVEL:-INFO}
       - AI_SERVICE_PORT=8001
+      # Canonical ladder resources (models + CMA-ES heuristic overrides)
+      - RINGRIFT_TRAINED_HEURISTIC_PROFILES=${RINGRIFT_TRAINED_HEURISTIC_PROFILES:-/app/data/trained_heuristic_profiles.json}
       # AI performance configuration
       - AI_MAX_CONCURRENT_REQUESTS=${AI_MAX_CONCURRENT_REQUESTS:-50}
       - AI_REQUEST_TIMEOUT=${AI_REQUEST_TIMEOUT:-5000}
     ports:
       - '8001:8001'
+    volumes:
+      - ./ai-service/models:/app/models:ro
+      - ./ai-service/data:/app/data:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -46,7 +46,7 @@ def _minimal_square8_state() -> GameState:
 
 
 class _ExplodingNeuralNet:
-    def evaluate_batch(self, _states):
+    def evaluate_batch(self, _states, **_kwargs):
         raise RuntimeError("boom")
 
 
@@ -110,4 +110,3 @@ def test_descent_without_require_neural_net_falls_back_and_disables_nn(monkeypat
     values = ai._batch_evaluate_positions([_minimal_square8_state()])
     assert values == [0.0]
     assert ai.neural_net is None
-

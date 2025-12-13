@@ -17,6 +17,13 @@ fi
 echo "🔌 Activating virtual environment..."
 source venv/bin/activate
 
+# Prefer local CMA-ES trained heuristic weights when available.
+# This keeps sandbox play aligned with the production ladder without requiring
+# manual env-var setup for local development.
+if [ -z "${RINGRIFT_TRAINED_HEURISTIC_PROFILES:-}" ] && [ -f "data/trained_heuristic_profiles.json" ]; then
+    export RINGRIFT_TRAINED_HEURISTIC_PROFILES="$(pwd)/data/trained_heuristic_profiles.json"
+fi
+
 # Check if uvicorn is installed
 if ! python -c "import uvicorn" &> /dev/null; then
     echo "❌ uvicorn not found in virtual environment!"
