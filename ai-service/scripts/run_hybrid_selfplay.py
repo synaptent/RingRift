@@ -208,7 +208,8 @@ def run_hybrid_selfplay(
     os.makedirs(output_dir, exist_ok=True)
     np.random.seed(seed)
 
-    board_size = {"square8": 8, "square19": 19, "hex": 25}.get(board_type.lower(), 8)
+    board_type_key = board_type.lower()
+    board_size = {"square8": 8, "square19": 19, "hex": 25, "hexagonal": 25}.get(board_type_key, 8)
 
     # Auto-calculate max_moves based on board type if not specified
     # Larger boards need more moves (multiple actions per turn are counted)
@@ -219,7 +220,13 @@ def run_hybrid_selfplay(
             "hex": 2500,       # Hex boards also need higher limits
         }
         max_moves = max_moves_defaults.get(board_type.lower(), 2500)
-    board_type_enum = getattr(BoardType, board_type.upper(), BoardType.SQUARE8)
+    board_type_enum_map = {
+        "square8": BoardType.SQUARE8,
+        "square19": BoardType.SQUARE19,
+        "hex": BoardType.HEXAGONAL,
+        "hexagonal": BoardType.HEXAGONAL,
+    }
+    board_type_enum = board_type_enum_map.get(board_type_key, BoardType.SQUARE8)
     device = get_device()
 
     logger.info("=" * 60)

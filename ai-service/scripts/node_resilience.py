@@ -56,7 +56,9 @@ class NodeConfig:
     coordinator_url: str
     ai_service_dir: str
     num_gpus: int
-    selfplay_script: str = "scripts/run_gpu_selfplay.py"
+    # Fallback selfplay script for GPU nodes. Prefer hybrid for rule fidelity; can
+    # be overridden per-node via --selfplay-script or env.
+    selfplay_script: str = "scripts/run_hybrid_selfplay.py"
     p2p_port: int = 8770
     peers: str = ""  # comma-separated list for p2p_orchestrator.py --peers
     check_interval: int = 60  # seconds
@@ -303,10 +305,14 @@ class NodeResilience:
                     ts,
                 )
 
-                proc = subprocess.Popen(
-                    [
+                script = (self.config.selfplay_script or "scripts/run_hybrid_selfplay.py").strip()
+                script_path = script if os.path.isabs(script) else os.path.join(self.config.ai_service_dir, script)
+
+                cmd: List[str]
+                if script_path.endswith("run_gpu_selfplay.py"):
+                    cmd = [
                         sys.executable,
-                        os.path.join(self.config.ai_service_dir, "scripts/run_gpu_selfplay.py"),
+                        script_path,
                         "--board", self.config.fallback_board,
                         "--num-players", str(self.config.fallback_num_players),
                         "--num-games", str(self.config.fallback_num_games_gpu),
@@ -314,7 +320,23 @@ class NodeResilience:
                         "--max-moves", "10000",  # Avoid draws due to move limit
                         "--output-dir", output_dir,
                         "--seed", str(int(time.time()) + gpu_id),
-                    ],
+                    ]
+                else:
+                    # Default: hybrid selfplay (CPU rules + GPU eval).
+                    cmd = [
+                        sys.executable,
+                        script_path,
+                        "--board-type", self.config.fallback_board,
+                        "--num-players", str(self.config.fallback_num_players),
+                        "--num-games", str(self.config.fallback_num_games_gpu),
+                        "--max-moves", "10000",  # Avoid draws due to move limit
+                        "--output-dir", output_dir,
+                        "--engine-mode", "mixed",
+                        "--seed", str(int(time.time()) + gpu_id),
+                    ]
+
+                proc = subprocess.Popen(
+                    cmd,
                     cwd=self.config.ai_service_dir,
                     env=env,
                     stdout=subprocess.DEVNULL,
@@ -637,6 +659,11 @@ def main():
     parser.add_argument("--max-local-procs", type=int, default=4, help="Max fallback workers to run when disconnected")
     parser.add_argument("--disk-threshold", type=int, default=80, help="Disk usage percent threshold for cleanup")
     parser.add_argument("--min-free-gb", type=float, default=2.0, help="Minimum free GB headroom before forcing cleanup")
+    parser.add_argument(
+        "--selfplay-script",
+        default=os.environ.get("RINGRIFT_FALLBACK_SELFPLAY_SCRIPT", "scripts/run_hybrid_selfplay.py"),
+        help="Fallback selfplay script for GPU nodes (relative to ai-service dir unless absolute)",
+    )
     parser.add_argument("--once", action="store_true", help="Run once and exit (for cron)")
 
     args = parser.parse_args()
@@ -646,6 +673,7 @@ def main():
         coordinator_url=args.coordinator,
         ai_service_dir=args.ai_service_dir,
         num_gpus=args.num_gpus,
+        selfplay_script=args.selfplay_script,
         p2p_port=args.p2p_port,
         peers=args.peers,
         check_interval=args.check_interval,

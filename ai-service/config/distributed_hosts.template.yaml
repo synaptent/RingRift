@@ -9,6 +9,11 @@ hosts:
     ssh_key: '~/.ssh/id_rsa' # Optional: Path to SSH key
     ringrift_path: '~/Development/RingRift' # Path to RingRift repo on remote
     venv_activate: 'source ~/Development/RingRift/ai-service/venv/bin/activate'
+    status: 'ready' # ready, disabled, maintenance
+    role: 'selfplay' # selfplay, mixed, nn_training, cmaes, etc.
+    cpus: 16 # Optional: CPU cores (used for scheduling hints)
+    gpu: '' # Optional: GPU name/label (e.g. "RTX 4090", "Apple M3 (MPS)")
+    max_parallel_jobs: 2 # Optional: concurrency cap for SSH orchestration
     # memory_gb: RAM in GB - used for smart job distribution
     # If not specified, will be auto-detected via SSH
     # Memory requirements:

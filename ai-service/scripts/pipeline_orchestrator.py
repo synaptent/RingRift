@@ -133,10 +133,24 @@ class WorkerConfig:
     host: str  # user@hostname format
     role: str  # "selfplay", "training", "cmaes", "mixed"
     capabilities: List[str]
+    cpus: int = 0
+    memory_gb: int = 0
+    gpu: str = ""
     ssh_key: Optional[str] = None
     ssh_port: int = 22  # Non-standard port for Vast.ai etc
     remote_path: str = "~/ringrift/ai-service"
     max_parallel_jobs: int = 1
+
+    def is_gpu_worker(self) -> bool:
+        """Whether this worker should be treated as GPU/accelerator-capable."""
+        role = (self.role or "").lower()
+        if self.gpu:
+            return True
+        return "nn_training" in role or role.endswith("_mps") or role.endswith("_gpu")
+
+    def is_cpu_worker(self) -> bool:
+        """Whether this worker should be treated as CPU-only."""
+        return not self.is_gpu_worker()
 
 
 @dataclass
@@ -342,6 +356,9 @@ def load_workers_from_config() -> List[WorkerConfig]:
             host=f"{host_config.get('ssh_user', 'ubuntu')}@{host_config.get('ssh_host', '')}",
             role=host_config.get("role", "selfplay"),
             capabilities=host_config.get("capabilities", ["square8"]),
+            cpus=int(host_config.get("cpus", 0) or 0),
+            memory_gb=int(host_config.get("memory_gb", 0) or 0),
+            gpu=str(host_config.get("gpu", "") or ""),
             ssh_key=host_config.get("ssh_key"),
             ssh_port=host_config.get("ssh_port", 22),
             remote_path=host_config.get("ringrift_path", "~/ringrift/ai-service"),
@@ -1085,7 +1102,8 @@ export RINGRIFT_TRAINED_HEURISTIC_PROFILES={worker.remote_path}/data/trained_heu
         # Check worker health
         healthy_workers = []
         for worker in WORKERS:
-            if worker.role in ["selfplay", "mixed"]:
+            # CPU-bound selfplay (run_self_play_soak) should run on CPU workers.
+            if worker.role in ["selfplay", "mixed"] and worker.is_cpu_worker():
                 if await self.check_worker_health(worker):
                     healthy_workers.append(worker)
                     self.log(f"Worker {worker.name}: healthy", "OK")
@@ -1096,17 +1114,21 @@ export RINGRIFT_TRAINED_HEURISTIC_PROFILES={worker.remote_path}/data/trained_heu
             self.log("No healthy workers available!", "ERROR")
             return {}
 
-        # Distribute jobs across workers with round-robin assignment
-        # This ensures all job types get dispatched, not just the first few
+        # Distribute jobs across workers with slot-weighted round-robin assignment.
+        # This respects per-worker concurrency limits (max_parallel_jobs) while
+        # still ensuring all job types get dispatched.
         job_items = list(DEFAULT_SELFPLAY_CONFIG.items())
         tasks = []
+        worker_slots: List[WorkerConfig] = []
+        for worker in healthy_workers:
+            worker_slots.extend([worker] * max(1, int(worker.max_parallel_jobs or 1)))
         worker_idx = 0
 
         for job_key, job in job_items:
-            if not healthy_workers:
+            if not worker_slots:
                 break
             # Round-robin worker assignment
-            worker = healthy_workers[worker_idx % len(healthy_workers)]
+            worker = worker_slots[worker_idx % len(worker_slots)]
             tasks.append(self.dispatch_selfplay(worker, job, iteration, job_key))
             worker_idx += 1
 
@@ -1249,9 +1271,11 @@ export RINGRIFT_TRAINED_HEURISTIC_PROFILES={worker.remote_path}/data/trained_heu
         self._save_state()
         self.log(f"=== Starting Canonical Selfplay Phase (Iteration {iteration}) ===")
 
-        # Find healthy workers
+        # Find healthy CPU workers (canonical selfplay is CPU-bound)
         healthy_workers = []
         for worker in WORKERS:
+            if not worker.is_cpu_worker():
+                continue
             if await self.check_worker_health(worker):
                 healthy_workers.append(worker)
                 self.log(f"Worker {worker.name}: healthy", "OK")
@@ -1394,11 +1418,10 @@ python3 scripts/run_self_play_soak.py \\
             "passed": False,
         }
 
-        # Find validation worker (preferably local or fast host)
-        validation_worker = next(
-            (w for w in WORKERS if w.name in ["mac-studio", "lambda-a10", "aws-staging"]),
-            WORKERS[0] if WORKERS else None
-        )
+        # Find validation worker (prefer CPU-heavy host; parity validation is CPU-bound)
+        preferred_names = ["mac-studio", "lambda-a10", "aws-staging"]
+        candidates = [w for w in WORKERS if w.is_cpu_worker()] or list(WORKERS)
+        validation_worker = next((w for w in candidates if w.name in preferred_names), candidates[0] if candidates else None)
 
         if not validation_worker or not await self.check_worker_health(validation_worker):
             self.log("No worker available for parity validation", "ERROR")

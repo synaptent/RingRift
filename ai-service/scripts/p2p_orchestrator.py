@@ -97,6 +97,7 @@ DISK_WARNING_THRESHOLD = 80   # Reduce job count at 80% disk
 DISK_CLEANUP_THRESHOLD = 85   # Trigger automatic cleanup at 85%
 MEMORY_CRITICAL_THRESHOLD = 95  # OOM prevention - stop jobs at 95%
 MEMORY_WARNING_THRESHOLD = 85   # Reduce jobs at 85% memory
+LOAD_MAX_FOR_NEW_JOBS = 85      # Stop starting new jobs when node is overloaded
 
 # LEARNED LESSONS - Connection robustness
 HTTP_CONNECT_TIMEOUT = 10     # Fast timeout for connection phase
@@ -135,6 +136,13 @@ ADVERTISE_PORT_ENV = "RINGRIFT_ADVERTISE_PORT"
 # Data manifest collection settings
 MANIFEST_JSONL_LINECOUNT_MAX_BYTES = 64 * 1024 * 1024  # Skip line-counting for huge JSONL files
 MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES = 1024 * 1024
+
+# LEARNED LESSONS - Automatic data management settings
+DATA_MANAGEMENT_INTERVAL = 600  # Check data status every 10 minutes
+DB_EXPORT_THRESHOLD_MB = 100    # Trigger export when DB exceeds 100MB
+TRAINING_DATA_SYNC_THRESHOLD_MB = 10  # Sync training data when > 10MB new data
+MAX_CONCURRENT_EXPORTS = 2      # Limit concurrent export jobs per node
+AUTO_TRAINING_THRESHOLD_MB = 50 # Auto-trigger training when training data exceeds 50MB
 
 # GPU Power Rankings for training node priority
 # Higher score = more powerful GPU = higher priority for receiving training data
@@ -284,8 +292,8 @@ class NodeInfo:
         return self.has_gpu and "MPS" not in gpu_name and "APPLE" not in gpu_name
 
     def is_cpu_only_node(self) -> bool:
-        """Check if this node is CPU-only (no CUDA GPU)."""
-        return not self.is_gpu_node()
+        """Check if this node is CPU-only (no accelerator)."""
+        return not self.has_gpu
 
     def should_retry(self) -> bool:
         """Check if we should retry connecting to a failed node."""
@@ -322,6 +330,11 @@ class NodeInfo:
         """Convert to dictionary for JSON serialization."""
         d = asdict(self)
         d['role'] = self.role.value
+        # Derived metrics (not persisted as dataclass fields).
+        d["load_score"] = self.get_load_score()
+        d["gpu_power_score"] = self.gpu_power_score()
+        d["is_cpu_only_node"] = self.is_cpu_only_node()
+        d["is_cuda_gpu_node"] = self.is_gpu_node()
         return d
 
     @classmethod
@@ -2325,6 +2338,188 @@ class P2POrchestrator:
             except Exception as e:
                 print(f"[P2P] Vast IP update loop error: {e}")
                 await asyncio.sleep(60)
+
+    async def _data_management_loop(self):
+        """Background loop for automatic data management.
+
+        LEARNED LESSONS - Automated data pipeline:
+        - Triggers exports when databases exceed threshold
+        - Syncs training data to GPU nodes
+        - Auto-triggers training when enough data available
+        """
+        print(f"[P2P] Data management loop started (interval: {DATA_MANAGEMENT_INTERVAL}s)")
+
+        # Track active export jobs
+        active_exports: Dict[str, float] = {}  # path -> start_time
+
+        while self.running:
+            try:
+                await asyncio.sleep(DATA_MANAGEMENT_INTERVAL)
+
+                if not self._is_leader():
+                    continue
+
+                print("[P2P] Running data management check...")
+
+                # 1. Check local database sizes and trigger exports
+                data_dir = self.get_data_directory()
+                games_dir = data_dir / "games"
+                training_dir = data_dir / "training"
+                training_dir.mkdir(parents=True, exist_ok=True)
+
+                # Count current exports
+                current_exports = len([p for p, t in active_exports.items()
+                                       if time.time() - t < 3600])  # 1 hour timeout
+
+                if games_dir.exists():
+                    for db_file in games_dir.glob("*.db"):
+                        db_size_mb = db_file.stat().st_size / (1024 * 1024)
+
+                        if db_size_mb >= DB_EXPORT_THRESHOLD_MB:
+                            # Check if already exporting
+                            export_key = str(db_file)
+                            if export_key in active_exports:
+                                continue
+
+                            # Check concurrent export limit
+                            if current_exports >= MAX_CONCURRENT_EXPORTS:
+                                print(f"[P2P] Skipping export for {db_file.name} (max concurrent reached)")
+                                continue
+
+                            # Determine board type from filename
+                            board_type = "square8"  # default
+                            if "hex" in db_file.name.lower():
+                                board_type = "hexagonal"
+                            elif "square19" in db_file.name.lower() or "sq19" in db_file.name.lower():
+                                board_type = "square19"
+
+                            # Start export job
+                            print(f"[P2P] Auto-triggering export for {db_file.name} ({db_size_mb:.0f}MB)")
+                            export_output = training_dir / f"auto_{db_file.stem}_{int(time.time())}.npz"
+
+                            try:
+                                cmd = [
+                                    "python3",
+                                    f"{self.ringrift_path}/ai-service/scripts/export_replay_dataset.py",
+                                    "--db", str(db_file),
+                                    "--board-type", board_type,
+                                    "--num-players", "2",
+                                    "--board-aware-encoding",
+                                    "--require-completed",
+                                    "--min-moves", "10",
+                                    "--output", str(export_output),
+                                ]
+
+                                env = os.environ.copy()
+                                env["PYTHONPATH"] = f"{self.ringrift_path}/ai-service"
+
+                                subprocess.Popen(
+                                    cmd,
+                                    stdout=open(f"/tmp/auto_export_{db_file.stem}.log", "w"),
+                                    stderr=subprocess.STDOUT,
+                                    env=env,
+                                    cwd=f"{self.ringrift_path}/ai-service",
+                                )
+                                active_exports[export_key] = time.time()
+                                current_exports += 1
+                                print(f"[P2P] Started export job for {db_file.name}")
+
+                            except Exception as e:
+                                print(f"[P2P] Failed to start export for {db_file.name}: {e}")
+
+                # 2. Calculate total training data size
+                total_training_mb = 0.0
+                if training_dir.exists():
+                    for npz_file in training_dir.glob("*.npz"):
+                        total_training_mb += npz_file.stat().st_size / (1024 * 1024)
+
+                print(f"[P2P] Training data available: {total_training_mb:.1f}MB")
+
+                # 3. Auto-trigger training if threshold exceeded and GPU available
+                if total_training_mb >= AUTO_TRAINING_THRESHOLD_MB:
+                    # Check if this node has GPU and no training running
+                    if self.self_info.is_gpu_node() and self.self_info.training_jobs == 0:
+                        print(f"[P2P] Auto-triggering training ({total_training_mb:.1f}MB data available)")
+                        # Find largest training file
+                        largest_npz = max(
+                            training_dir.glob("*.npz"),
+                            key=lambda f: f.stat().st_size,
+                            default=None
+                        )
+                        if largest_npz:
+                            await self._start_auto_training(str(largest_npz))
+
+                # 4. Request data sync from peers with large databases
+                await self._request_data_from_peers()
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[P2P] Data management loop error: {e}")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(60)
+
+    async def _start_auto_training(self, data_path: str):
+        """Start automatic training job on local node."""
+        try:
+            run_dir = f"{self.ringrift_path}/ai-service/models/auto_train_{int(time.time())}"
+            Path(run_dir).mkdir(parents=True, exist_ok=True)
+
+            cmd = [
+                "python3",
+                f"{self.ringrift_path}/ai-service/scripts/run_nn_training_baseline.py",
+                "--board", "square8",
+                "--num-players", "2",
+                "--run-dir", run_dir,
+                "--data-path", data_path,
+                "--epochs", "50",
+            ]
+
+            env = os.environ.copy()
+            env["PYTHONPATH"] = f"{self.ringrift_path}/ai-service"
+
+            subprocess.Popen(
+                cmd,
+                stdout=open(f"{run_dir}/training.log", "w"),
+                stderr=subprocess.STDOUT,
+                env=env,
+                cwd=f"{self.ringrift_path}/ai-service",
+            )
+            print(f"[P2P] Started auto-training job in {run_dir}")
+            self.self_info.training_jobs += 1
+
+        except Exception as e:
+            print(f"[P2P] Failed to start auto-training: {e}")
+
+    async def _request_data_from_peers(self):
+        """Request training data sync from peers with large datasets."""
+        try:
+            with self.peers_lock:
+                peers = list(self.peers.values())
+
+            # This node is a training node if it has GPU
+            if not self.self_info.is_gpu_node():
+                return
+
+            # Check manifest for peers with more data
+            for peer in peers:
+                if not peer.is_alive():
+                    continue
+
+                # Check peer's data manifest
+                peer_data = self.cluster_data_manifest.get(peer.node_id, {})
+                peer_training_mb = sum(
+                    f.get("size_mb", 0)
+                    for f in peer_data.get("training_files", [])
+                )
+
+                if peer_training_mb > TRAINING_DATA_SYNC_THRESHOLD_MB:
+                    # Request sync via existing sync mechanism
+                    print(f"[P2P] Peer {peer.node_id} has {peer_training_mb:.1f}MB training data")
+
+        except Exception as e:
+            print(f"[P2P] Data sync request error: {e}")
 
     # ============================================
     # Git Auto-Update Methods
@@ -5141,24 +5336,25 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             data_games_count=job_config.get("total_games", 0),
         )
 
-        # Find suitable worker
-        worker_node = None
+        # Find suitable worker (CPU/GPU-aware + load-balanced)
+        self._update_self_info()
         with self.peers_lock:
-            if job_type == "nnue":
-                # NNUE needs GPU
-                for peer in self.peers.values():
-                    if peer.has_gpu and peer.is_healthy():
-                        worker_node = peer
-                        break
-            else:
-                # CMA-ES can run on any node, prefer GPU for speed
-                for peer in self.peers.values():
-                    if peer.is_healthy():
-                        if peer.has_gpu:
-                            worker_node = peer
-                            break
-                        elif worker_node is None:
-                            worker_node = peer
+            all_nodes = list(self.peers.values())
+        all_nodes.append(self.self_info)
+        healthy_nodes = [n for n in all_nodes if n.is_healthy()]
+
+        worker_node: Optional[NodeInfo] = None
+        if job_type == "nnue":
+            # NNUE training prefers accelerator nodes (CUDA/MPS).
+            gpu_nodes = [n for n in healthy_nodes if n.has_gpu]
+            gpu_nodes.sort(key=lambda n: (-n.gpu_power_score(), n.get_load_score()))
+            worker_node = gpu_nodes[0] if gpu_nodes else None
+        else:
+            # CMA-ES is CPU-heavy. Prefer CPU-only nodes, then fall back to any healthy node.
+            cpu_nodes = [n for n in healthy_nodes if n.is_cpu_only_node()]
+            candidates = cpu_nodes if cpu_nodes else healthy_nodes
+            candidates.sort(key=lambda n: n.get_load_score())
+            worker_node = candidates[0] if candidates else None
 
         if not worker_node:
             print(f"[P2P] No suitable worker for {job_type} training job")
@@ -6086,7 +6282,12 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             if phase == "canonical_selfplay":
                 result = await self._start_canonical_selfplay_pipeline(
-                    board_type, num_players, data.get("games_per_node", 500), data.get("seed", 0))
+                    board_type,
+                    num_players,
+                    data.get("games_per_node", 500),
+                    data.get("seed", 0),
+                    include_gpu_nodes=bool(data.get("include_gpu_nodes", False)),
+                )
             elif phase == "parity_validation":
                 result = await self._start_parity_validation_pipeline(
                     board_type, num_players, data.get("db_paths"))
@@ -6123,17 +6324,36 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         except Exception as e:
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
-    async def _start_canonical_selfplay_pipeline(self, board_type: str, num_players: int,
-                                                 games_per_node: int, seed: int) -> Dict[str, Any]:
-        """Start canonical selfplay on all healthy nodes in the cluster."""
+    async def _start_canonical_selfplay_pipeline(
+        self,
+        board_type: str,
+        num_players: int,
+        games_per_node: int,
+        seed: int,
+        include_gpu_nodes: bool = False,
+    ) -> Dict[str, Any]:
+        """Start canonical selfplay on healthy nodes in the cluster.
+
+        Canonical selfplay is CPU-bound. By default, prefer CPU-only nodes so GPU
+        machines remain available for GPU-utilizing tasks (training/hybrid selfplay).
+        """
         job_id = f"pipeline-selfplay-{int(time.time())}"
-        healthy_nodes = []
+        healthy_nodes: List[Tuple[str, NodeInfo]] = []
         with self.peers_lock:
             for peer_id, peer in self.peers.items():
                 if peer.is_alive() and peer.is_healthy():
                     healthy_nodes.append((peer_id, peer))
         if self.self_info.is_healthy():
             healthy_nodes.append((self.node_id, self.self_info))
+
+        if not include_gpu_nodes:
+            cpu_nodes = [(nid, n) for nid, n in healthy_nodes if n.is_cpu_only_node()]
+            if cpu_nodes:
+                healthy_nodes = cpu_nodes
+
+        # Load-balance: least-loaded nodes first.
+        healthy_nodes.sort(key=lambda pair: pair[1].get_load_score())
+
         if not healthy_nodes:
             return {"success": False, "error": "No healthy nodes available"}
 
@@ -8124,6 +8344,11 @@ print(json.dumps({{
             print(f"[P2P] Load balancing: {load_summary}")
 
         for node in healthy_nodes:
+            load_score = node.get_load_score()
+            if load_score >= LOAD_MAX_FOR_NEW_JOBS:
+                print(f"[P2P] {node.node_id}: Load {load_score:.0f}% - skipping new job starts")
+                continue
+
             # LEARNED LESSONS - Reduce target when approaching limits
             target_selfplay = 2  # Base minimum
             if node.memory_gb >= 64:
@@ -8175,13 +8400,13 @@ print(json.dumps({{
                 # Start jobs (max 2 at a time to avoid overwhelming)
                 for i in range(min(needed, 2)):
                     # LEARNED LESSONS - Smart CPU/GPU task routing:
-                    # - GPU nodes (CUDA) get HYBRID_SELFPLAY (CPU rules + GPU eval)
+                    # - Accelerator nodes (CUDA/MPS) get HYBRID_SELFPLAY (CPU rules + GPU eval)
                     # - CPU-only nodes get regular SELFPLAY
                     # This ensures expensive GPU resources are utilized properly
                     # while CPU instances handle CPU-bound tasks efficiently
-                    if node.is_gpu_node():
+                    if node.has_gpu:
                         job_type = JobType.HYBRID_SELFPLAY
-                        task_type_str = "HYBRID (GPU)"
+                        task_type_str = "HYBRID (accel)"
                     else:
                         job_type = JobType.SELFPLAY
                         task_type_str = "CPU-only"
