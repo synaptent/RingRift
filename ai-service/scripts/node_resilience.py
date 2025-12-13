@@ -123,13 +123,14 @@ class NodeResilience:
             url = f"http://localhost:{self.config.p2p_port}/status"
             with urllib.request.urlopen(url, timeout=5) as response:
                 data = json.loads(response.read().decode())
-                # Check if this node has P2P-assigned jobs running
-                selfplay_jobs = data.get("selfplay_jobs", 0)
-                # Check if we're connected to a leader
-                leader_id = data.get("leader_id", "")
-                is_leader = data.get("is_leader", False)
-                # If we have jobs or are leader/connected to leader, P2P is managing
-                return selfplay_jobs > 0 or is_leader or bool(leader_id)
+                # Only treat P2P as "managing jobs" when it is actually running
+                # work on this node. A common failure mode is a partitioned node
+                # electing itself leader (peers unreachable) while dispatching no
+                # jobs; in that case we still want fallback selfplay to keep the
+                # machine utilized.
+                selfplay_jobs = int(data.get("selfplay_jobs", 0) or 0)
+                training_jobs = int(data.get("training_jobs", 0) or 0)
+                return (selfplay_jobs + training_jobs) > 0
         except Exception:
             return False
 
