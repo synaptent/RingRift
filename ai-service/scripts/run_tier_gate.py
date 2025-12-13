@@ -45,6 +45,7 @@ from app.config.ladder_config import (  # noqa: E402
     get_ladder_tier_config,
 )
 from app.models import AIType  # noqa: E402
+from app.training.tier_eval_runner import TierEvaluationResult  # noqa: E402
 
 
 def _get_heuristic_tier_spec(tier_id: str) -> HeuristicTierSpec:
@@ -291,6 +292,10 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
         current_model_id = None
 
     candidate_override_id: str | None = None
+    candidate_artifact_present: bool | None = None
+    candidate_artifact_loaded: bool | None = None
+    candidate_artifact_error: str | None = None
+
     if args.use_candidate_artifact and production_ladder is not None:
         candidate_id = str(args.candidate_model_id)
         ai_type = production_ladder.ai_type
@@ -327,20 +332,134 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
                     candidate_override_id = candidate_id
                     break
 
-    result = run_tier_evaluation(
-        tier_config=tier_config,
-        candidate_id=args.candidate_model_id,
-        candidate_override_id=candidate_override_id,
-        seed=args.seed,
-        num_games_override=args.num_games,
-        time_budget_ms_override=args.time_budget_ms,
-        max_moves_override=args.max_moves,
-    )
+        candidate_artifact_present = candidate_override_id is not None
+
+        # For neural tiers, ensure the checkpoint is loadable before running
+        # a long evaluation (and before producing a promotion plan).
+        if (
+            candidate_override_id is not None
+            and ai_type not in (AIType.HEURISTIC, AIType.MINIMAX)
+            and bool(getattr(production_ladder, "use_neural_net", False))
+        ):
+            try:
+                import os as _os
+
+                # Preflight on CPU so we only validate checkpoint correctness.
+                prev_force_cpu = _os.environ.get("RINGRIFT_FORCE_CPU")
+                _os.environ["RINGRIFT_FORCE_CPU"] = "1"
+                try:
+                    from app.ai.neural_net import NeuralNetAI
+                    from app.models import AIConfig
+
+                    probe_cfg = AIConfig(
+                        difficulty=tier_config.candidate_difficulty,
+                        randomness=0.0,
+                        think_time=0,
+                        nn_model_id=candidate_override_id,
+                        use_neural_net=True,
+                        allow_fresh_weights=False,
+                    )
+                    NeuralNetAI(
+                        player_number=1,
+                        config=probe_cfg,
+                        board_type=tier_config.board_type,
+                    )
+                    candidate_artifact_loaded = True
+                finally:
+                    if prev_force_cpu is None:
+                        _os.environ.pop("RINGRIFT_FORCE_CPU", None)
+                    else:
+                        _os.environ["RINGRIFT_FORCE_CPU"] = prev_force_cpu
+            except Exception as exc:
+                candidate_artifact_loaded = False
+                candidate_artifact_error = str(exc)
+
+    result: TierEvaluationResult
+    eval_error: str | None = None
+    if args.use_candidate_artifact and production_ladder is not None:
+        if candidate_artifact_present is False:
+            result = TierEvaluationResult(
+                tier_name=tier_config.tier_name,
+                board_type=tier_config.board_type,
+                num_players=tier_config.num_players,
+                candidate_id=str(args.candidate_model_id),
+                candidate_difficulty=tier_config.candidate_difficulty,
+                total_games=0,
+                overall_pass=False,
+            )
+        elif candidate_artifact_loaded is False:
+            result = TierEvaluationResult(
+                tier_name=tier_config.tier_name,
+                board_type=tier_config.board_type,
+                num_players=tier_config.num_players,
+                candidate_id=str(args.candidate_model_id),
+                candidate_difficulty=tier_config.candidate_difficulty,
+                total_games=0,
+                overall_pass=False,
+            )
+        else:
+            require_neural_env_set = False
+            prev_require_neural = None
+            if bool(getattr(production_ladder, "use_neural_net", False)):
+                prev_require_neural = os.environ.get("RINGRIFT_REQUIRE_NEURAL_NET")
+                os.environ["RINGRIFT_REQUIRE_NEURAL_NET"] = "1"
+                require_neural_env_set = True
+            try:
+                result = run_tier_evaluation(
+                    tier_config=tier_config,
+                    candidate_id=args.candidate_model_id,
+                    candidate_override_id=candidate_override_id,
+                    seed=args.seed,
+                    num_games_override=args.num_games,
+                    time_budget_ms_override=args.time_budget_ms,
+                    max_moves_override=args.max_moves,
+                )
+            except Exception as exc:
+                eval_error = str(exc)
+                result = TierEvaluationResult(
+                    tier_name=tier_config.tier_name,
+                    board_type=tier_config.board_type,
+                    num_players=tier_config.num_players,
+                    candidate_id=str(args.candidate_model_id),
+                    candidate_difficulty=tier_config.candidate_difficulty,
+                    total_games=0,
+                    overall_pass=False,
+                )
+            finally:
+                if require_neural_env_set:
+                    if prev_require_neural is None:
+                        os.environ.pop("RINGRIFT_REQUIRE_NEURAL_NET", None)
+                    else:
+                        os.environ["RINGRIFT_REQUIRE_NEURAL_NET"] = prev_require_neural
+    else:
+        try:
+            result = run_tier_evaluation(
+                tier_config=tier_config,
+                candidate_id=args.candidate_model_id,
+                candidate_override_id=None,
+                seed=args.seed,
+                num_games_override=args.num_games,
+                time_budget_ms_override=args.time_budget_ms,
+                max_moves_override=args.max_moves,
+            )
+        except Exception as exc:
+            eval_error = str(exc)
+            result = TierEvaluationResult(
+                tier_name=tier_config.tier_name,
+                board_type=tier_config.board_type,
+                num_players=tier_config.num_players,
+                candidate_id=str(args.candidate_model_id),
+                candidate_difficulty=tier_config.candidate_difficulty,
+                total_games=0,
+                overall_pass=False,
+            )
 
     if args.use_candidate_artifact:
-        used = candidate_override_id is not None
+        used = bool(candidate_artifact_present)
         result.criteria["candidate_artifact_present"] = used
-        if not used:
+        if candidate_artifact_loaded is not None:
+            result.criteria["candidate_artifact_loaded"] = bool(candidate_artifact_loaded)
+        if not used or candidate_artifact_loaded is False:
             result.overall_pass = False
 
     _print_difficulty_summary(
@@ -349,9 +468,17 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
         production_model_id=current_model_id,
         result=result,
     )
+    if candidate_artifact_error:
+        print(f"\nCandidate artefact load error: {candidate_artifact_error}")
+    if eval_error:
+        print(f"\nEvaluation error: {eval_error}")
 
     # JSON summary (TierEvaluationResult.to_dict)
     payload = result.to_dict()
+    if candidate_artifact_error:
+        payload["candidate_artifact_error"] = candidate_artifact_error
+    if eval_error:
+        payload["evaluation_error"] = eval_error
     if current_model_id is not None:
         payload.setdefault("ladder", {})
         payload["ladder"]["current_model_id"] = current_model_id
@@ -363,6 +490,8 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
         candidate_override_id is not None
     )
     payload["ladder"]["use_candidate_artifact"] = bool(args.use_candidate_artifact)
+    if candidate_artifact_loaded is not None:
+        payload["ladder"]["candidate_artifact_loaded"] = bool(candidate_artifact_loaded)
 
     if args.output_json:
         out_path = os.path.abspath(args.output_json)
@@ -380,6 +509,9 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
             "overall_pass": result.overall_pass,
             "candidate_artifact_present": bool(candidate_override_id is not None),
             "use_candidate_artifact": bool(args.use_candidate_artifact),
+            "candidate_artifact_loaded": (
+                bool(candidate_artifact_loaded) if candidate_artifact_loaded is not None else None
+            ),
             "win_rate_vs_baseline": payload["metrics"].get("win_rate_vs_baseline"),
             "win_rate_vs_baseline_ci_low": payload["metrics"].get(
                 "win_rate_vs_baseline_ci_low"

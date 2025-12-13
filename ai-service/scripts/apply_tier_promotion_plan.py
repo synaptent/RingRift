@@ -84,6 +84,17 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help=("Do not write changes to the registry; still validate the plan " "and emit summary/patch guide."),
     )
+    parser.add_argument(
+        "--allow-unsafe-plan",
+        action="store_true",
+        help=(
+            "Allow applying a promotion plan that was generated without "
+            "candidate artefact enforcement (use_candidate_artifact=false). "
+            "This is intended only for legacy plans or manual experiments; "
+            "canonical promotions should be gated via run_full_tier_gating "
+            "(non-demo) or run_tier_gate --use-candidate-artifact."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -334,6 +345,42 @@ def main(argv: Optional[list[str]] = None) -> int:
             "Error: promotion plan 'decision' must be 'promote' or " f"'reject', got {plan.get('decision')!r}.",
         )
         return 1
+    if decision == "promote" and not args.allow_unsafe_plan:
+        reason = plan.get("reason")
+        reason_dict: Dict[str, Any] = reason if isinstance(reason, dict) else {}
+        used = bool(reason_dict.get("use_candidate_artifact", False))
+        present = bool(reason_dict.get("candidate_artifact_present", False))
+        loaded = reason_dict.get("candidate_artifact_loaded", None)
+
+        if not used:
+            print(
+                "Error: refusing to apply a promotion plan that was generated "
+                "without candidate artefact enforcement "
+                "(reason.use_candidate_artifact=false).\n"
+                "Regenerate the plan via:\n"
+                "  - scripts/run_full_tier_gating.py (non-demo), or\n"
+                "  - scripts/run_tier_gate.py --use-candidate-artifact\n"
+                "To override (unsafe), re-run with --allow-unsafe-plan.",
+            )
+            return 1
+        if not present:
+            print(
+                "Error: refusing to apply a promotion plan with "
+                "reason.candidate_artifact_present=false.\n"
+                "This usually indicates the candidate id was label-only and "
+                "no promotable artefact was found.\n"
+                "To override (unsafe), re-run with --allow-unsafe-plan.",
+            )
+            return 1
+        if loaded is False:
+            print(
+                "Error: refusing to apply a promotion plan with "
+                "reason.candidate_artifact_loaded=false.\n"
+                "This indicates the candidate artefact exists but failed to "
+                "load during gating.\n"
+                "To override (unsafe), re-run with --allow-unsafe-plan.",
+            )
+            return 1
 
     ladder_info = _validate_ladder_view(
         tier=tier,

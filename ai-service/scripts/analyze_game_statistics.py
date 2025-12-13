@@ -483,10 +483,10 @@ def collect_stats_from_jsonl(jsonl_files: list[Path], report: AnalysisReport) ->
                 # Track phase-specific actions
                 if move_type == "place_ring":
                     stats.ring_placement_moves += 1
-                    elif move_type in ("choose_territory_option", "process_territory_region"):
-                        stats.territory_claims += 1
-                    elif move_type in ("choose_line_option", "choose_line_reward", "process_line"):
-                        stats.line_formations += 1
+                elif move_type in ("choose_territory_option", "process_territory_region"):
+                    stats.territory_claims += 1
+                elif move_type in ("choose_line_option", "choose_line_reward", "process_line"):
+                    stats.line_formations += 1
 
                 # Track active vs skip moves
                 is_skip = move_type.startswith("no_") or move_type.startswith("skip_")

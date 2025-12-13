@@ -36,7 +36,12 @@ def _make_promotion_plan(tier: str, candidate_id: str) -> Dict[str, Any]:
         "candidate_model_id": candidate_id,
         "decision": "promote",
         "timestamp": "2025-01-01T00:00:00Z",
-        "reason": {"overall_pass": True},
+        "reason": {
+            "overall_pass": True,
+            "use_candidate_artifact": True,
+            "candidate_artifact_present": True,
+            "candidate_artifact_loaded": None,
+        },
     }
 
 
@@ -261,3 +266,68 @@ def test_apply_tier_promotion_plan_rejects_invalid_decision(
     patch_path = run_dir_path / apply_plan.PROMOTION_PATCH_GUIDE_FILENAME
     assert not summary_path.exists()
     assert not patch_path.exists()
+
+
+def test_apply_tier_promotion_plan_rejects_unsafe_promote_plan_by_default(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
+    """Promote decisions require candidate artefact enforcement by default."""
+    run_dir_path = Path(tmp_path)
+    plan_path = run_dir_path / "promotion_plan.json"
+    registry_path = run_dir_path / "tier_candidate_registry.square8_2p.json"
+
+    candidate_id = "sq8_d4_candidate_unsafe"
+    plan_payload = _make_promotion_plan("D4", candidate_id)
+    plan_payload["decision"] = "promote"
+    plan_payload["reason"] = {"overall_pass": True}
+    plan_path.write_text(json.dumps(plan_payload), encoding="utf-8")
+
+    argv = [
+        "--plan-path",
+        os.fspath(plan_path),
+        "--tier",
+        "D4",
+        "--board",
+        "square8",
+        "--num-players",
+        "2",
+        "--registry-path",
+        os.fspath(registry_path),
+    ]
+
+    rc = apply_plan.main(argv)
+    assert rc == 1
+    assert not registry_path.exists()
+
+
+def test_apply_tier_promotion_plan_allows_unsafe_plan_with_flag(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
+    """--allow-unsafe-plan permits applying legacy promotion plans."""
+    run_dir_path = Path(tmp_path)
+    plan_path = run_dir_path / "promotion_plan.json"
+    registry_path = run_dir_path / "tier_candidate_registry.square8_2p.json"
+
+    candidate_id = "sq8_d4_candidate_unsafe_allowed"
+    plan_payload = _make_promotion_plan("D4", candidate_id)
+    plan_payload["decision"] = "promote"
+    plan_payload["reason"] = {"overall_pass": True}
+    plan_path.write_text(json.dumps(plan_payload), encoding="utf-8")
+
+    argv = [
+        "--plan-path",
+        os.fspath(plan_path),
+        "--tier",
+        "D4",
+        "--board",
+        "square8",
+        "--num-players",
+        "2",
+        "--registry-path",
+        os.fspath(registry_path),
+        "--allow-unsafe-plan",
+    ]
+
+    rc = apply_plan.main(argv)
+    assert rc == 0
+    assert registry_path.exists()

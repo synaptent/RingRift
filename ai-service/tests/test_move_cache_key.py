@@ -8,7 +8,10 @@ from app.models import (
     GameState,
     GameStatus,
     ChainCaptureState,
+    Move,
+    MoveType,
     Player,
+    Position,
     TimeControl,
 )
 
@@ -22,6 +25,7 @@ def _make_state(
     must_move_from_stack_key: str | None = None,
     rules_options: dict | None = None,
     chain_capture_state: ChainCaptureState | None = None,
+    current_phase: GamePhase = GamePhase.RING_PLACEMENT,
 ) -> GameState:
     now = datetime.now()
     board = BoardState(type=board_type, size=board_size)
@@ -47,7 +51,7 @@ def _make_state(
         rngSeed=None,
         board=board,
         players=players,
-        currentPhase=GamePhase.RING_PLACEMENT,
+        currentPhase=current_phase,
         currentPlayer=1,
         moveHistory=[],
         timeControl=TimeControl(initialTime=600, increment=0, type="blitz"),
@@ -128,3 +132,101 @@ def test_move_cache_bypasses_chain_capture_state() -> None:
     state = _make_state(zobrist_hash=999, chain_capture_state=chain_state)
     cache_moves(state, 1, ["m"])
     assert get_cached_moves(state, 1) is None
+
+
+def test_move_cache_bypasses_decision_phases() -> None:
+    for phase in (GamePhase.LINE_PROCESSING, GamePhase.TERRITORY_PROCESSING):
+        state = _make_state(zobrist_hash=123, current_phase=phase)
+        cache_moves(state, 1, ["m"])
+        assert get_cached_moves(state, 1) is None
+
+
+def test_move_cache_key_includes_last_move_signature() -> None:
+    """Last-move metadata affects some decision-phase move surfaces."""
+    now = datetime.now()
+    base = _make_state(zobrist_hash=2024)
+
+    move_a = Move(
+        id="m1",
+        type=MoveType.PLACE_RING,
+        player=1,
+        to=Position(x=0, y=0),
+        timestamp=now,
+        thinkTime=0,
+        moveNumber=1,
+    )
+    move_b = Move(
+        id="m1b",
+        type=MoveType.SKIP_PLACEMENT,
+        player=1,
+        to=Position(x=0, y=0),
+        timestamp=now,
+        thinkTime=0,
+        moveNumber=1,
+    )
+
+    state_a = base.model_copy(update={"move_history": [move_a]})
+    state_b = base.model_copy(update={"move_history": [move_b]})
+
+    cache_moves(state_a, 1, ["m"])
+    assert get_cached_moves(state_a, 1) == ["m"]
+    assert get_cached_moves(state_b, 1) is None
+
+
+def test_move_cache_key_includes_territory_turn_recovery_context() -> None:
+    """Territory-processing eligibility depends on recovery-in-turn context."""
+    now = datetime.now()
+    base = _make_state(zobrist_hash=2025).model_copy(
+        update={
+            "current_phase": GamePhase.TERRITORY_PROCESSING,
+            "current_player": 1,
+        }
+    )
+
+    last_move = Move(
+        id="t1",
+        type=MoveType.CHOOSE_TERRITORY_OPTION,
+        player=1,
+        to=Position(x=0, y=0),
+        timestamp=now,
+        thinkTime=0,
+        moveNumber=2,
+    )
+
+    with_recovery = base.model_copy(
+        update={
+            "move_history": [
+                Move(
+                    id="r1",
+                    type=MoveType.RECOVERY_SLIDE,
+                    player=1,
+                    to=Position(x=1, y=1),
+                    timestamp=now,
+                    thinkTime=0,
+                    moveNumber=1,
+                ),
+                last_move,
+            ]
+        }
+    )
+    without_recovery = base.model_copy(
+        update={
+            "move_history": [
+                Move(
+                    id="mv1",
+                    type=MoveType.MOVE_STACK,
+                    player=1,
+                    from_pos=Position(x=1, y=1),
+                    to=Position(x=2, y=2),
+                    timestamp=now,
+                    thinkTime=0,
+                    moveNumber=1,
+                ),
+                last_move,
+            ]
+        }
+    )
+
+    cache_moves(with_recovery, 1, ["m"])
+    assert get_cached_moves(with_recovery, 1) == ["m"]
+    assert get_cached_moves(without_recovery, 1) is None

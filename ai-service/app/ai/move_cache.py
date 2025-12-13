@@ -51,6 +51,30 @@ def _move_player_int(move: object) -> int | None:
         return None
 
 
+def _pos_key(pos: object) -> str:
+    if pos is None:
+        return ""
+    if hasattr(pos, "to_key"):
+        try:
+            return str(pos.to_key())
+        except Exception:
+            return ""
+    if isinstance(pos, dict):
+        try:
+            x = pos.get("x", pos.get("col", 0))
+            y = pos.get("y", pos.get("row", 0))
+            z = pos.get("z")
+            if z is None:
+                return f"{int(x)},{int(y)}"
+            return f"{int(x)},{int(y)},{int(z)}"
+        except Exception:
+            return ""
+    try:
+        return str(pos)
+    except Exception:
+        return ""
+
+
 class MoveCache:
     """
     LRU cache for valid moves keyed by board state hash.
@@ -81,6 +105,15 @@ class MoveCache:
         if not USE_MOVE_CACHE:
             return None
 
+        phase = getattr(state, "current_phase", None)
+        phase_value = phase.value if hasattr(phase, "value") else str(phase)
+        # In decision phases (line/territory), legal move generation can depend
+        # on move_history content (e.g., which region was processed last) and
+        # other transient metadata not reliably captured by board/zobrist alone.
+        # Prefer correctness over caching here.
+        if phase_value in {"line_processing", "territory_processing"}:
+            return None
+
         # chainCaptureState metadata (visited positions / remaining captures)
         # affects legal move generation but is not encoded in board geometry or
         # zobristHash. Bypass caching for these transient states to avoid stale
@@ -101,6 +134,11 @@ class MoveCache:
     def put(self, state: 'GameState', player: int, moves: List['Move']):
         """Cache moves for a game state."""
         if not USE_MOVE_CACHE:
+            return
+
+        phase = getattr(state, "current_phase", None)
+        phase_value = phase.value if hasattr(phase, "value") else str(phase)
+        if phase_value in {"line_processing", "territory_processing"}:
             return
 
         if getattr(state, "chain_capture_state", None) is not None:
@@ -137,9 +175,13 @@ class MoveCache:
         CRITICAL: Legal move generation depends on small pieces of metadata
         that are NOT captured by board structure alone:
 
-        - move_history: meta-moves like swap_sides (pie rule) depend on the
-          *presence* of certain earlier moves (P1 moved? P2 moved? swap used?)
-          and do not change the structural board hash.
+        - move_history: some move families depend on small pieces of history
+          context that do not change the structural board hash, including:
+            - swap_sides eligibility (pie rule),
+            - territory-processing follow-ups (e.g. eliminate_rings_from_stack
+              after choose_territory_option), and
+            - recovery-in-turn context (RR-CANON-R114) which affects territory
+              prerequisites.
         - must_move_from_stack_key: constrains legal movement/capture options
           after certain placements; this is not encoded in board geometry.
         - rulesOptions: rule toggles like swapRuleEnabled can change the move
@@ -187,6 +229,40 @@ class MoveCache:
         else:
             rules_digest = ""
 
+        # Last-move signature: some phases derive their interactive move surface
+        # from the immediately preceding move (e.g., territory follow-ups).
+        last_move_sig = ""
+        try:
+            last_move = (state.move_history or [])[-1]
+        except Exception:
+            last_move = None
+        if last_move is not None:
+            last_type = _move_type_str(last_move)
+            last_player = _move_player_int(last_move) or 0
+            last_from = getattr(last_move, "from_pos", None)
+            if last_from is None and isinstance(last_move, dict):
+                last_from = last_move.get("from") or last_move.get("from_pos")
+            last_to = getattr(last_move, "to", None)
+            if last_to is None and isinstance(last_move, dict):
+                last_to = last_move.get("to")
+            last_move_sig = (
+                f"lm:{last_player}:{last_type}:{_pos_key(last_from)}->{_pos_key(last_to)}"
+            )
+
+        # Territory-processing context: whether the current player's turn
+        # included a recovery_slide affects eligibility rules (RR-CANON-R114).
+        territory_turn_sig = ""
+        if phase_value == "territory_processing":
+            has_recovery = False
+            for mv in reversed(state.move_history or []):
+                mv_player = _move_player_int(mv)
+                if mv_player != player:
+                    break
+                if _move_type_str(mv) == "recovery_slide":
+                    has_recovery = True
+                    break
+            territory_turn_sig = f"tr:{int(has_recovery)}"
+
         # swap_sides eligibility depends on move history composition (not just length).
         # Without encoding this, a cached move surface can leak swap_sides into a
         # position where Player 2 has already taken a non-swap move (or where swap
@@ -223,7 +299,7 @@ class MoveCache:
             return (
                 f"{board_type}:{board_size}:{max_players}:{players_digest}:"
                 f"{state.zobrist_hash}:{player}:{phase_value}:{history_len}:"
-                f"{must_move_key}:{rules_digest}:{swap_sig}"
+                f"{must_move_key}:{rules_digest}:{last_move_sig}:{territory_turn_sig}:{swap_sig}"
             )
 
         # Fallback: compute hash from board state
@@ -238,6 +314,8 @@ class MoveCache:
             f"hl:{history_len}",  # History length for swap_sides eligibility
             f"mm:{must_move_key}",
             f"ro:{rules_digest}",
+            f"{last_move_sig}",
+            f"{territory_turn_sig}",
             f"{swap_sig}",
         ]
 

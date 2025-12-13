@@ -230,6 +230,7 @@ class DefaultRulesEngine(RulesEngine):
                         and m.type in {
                             MoveType.PROCESS_TERRITORY_REGION,
                             MoveType.CHOOSE_TERRITORY_OPTION,
+                            MoveType.ELIMINATE_RINGS_FROM_STACK,
                             MoveType.SKIP_TERRITORY_PROCESSING,
                             MoveType.NO_TERRITORY_ACTION,
                         }
