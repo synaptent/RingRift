@@ -832,7 +832,8 @@ def clean_jsonl_file(
     quarantined: dict[str, list[dict[str, Any]]] = {}
 
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        # Use errors="replace" to handle files with encoding issues (corrupted bytes)
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
