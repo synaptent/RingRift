@@ -9061,6 +9061,9 @@ print(json.dumps({{
         if HAS_DYNAMIC_REGISTRY:
             tasks.append(asyncio.create_task(self._vast_ip_update_loop()))
 
+        # Add automatic data management loop (export triggers, training triggers, data sync)
+        tasks.append(asyncio.create_task(self._data_management_loop()))
+
         # Best-effort bootstrap from seed peers before running elections. This
         # helps newly started cloud nodes quickly learn about the full cluster.
         try:
