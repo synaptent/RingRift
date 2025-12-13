@@ -97,6 +97,33 @@ def player_has_stacks_on_board(game_state: GameState, player: int) -> bool:
     return False
 
 
+def _did_process_territory_region(game_state: GameState, move: Move) -> bool:
+    """
+    True iff a CHOOSE_TERRITORY_OPTION / PROCESS_TERRITORY_REGION move actually
+    collapsed at least one space in the chosen region.
+
+    TS `applyProcessTerritoryRegionDecision` treats non-processable regions as a
+    no-op (state unchanged). In that case, the move must NOT be allowed to
+    advance/exit TERRITORY_PROCESSING; hosts must still record NO_TERRITORY_ACTION
+    to mark the phase as visited (RR-CANON-R075).
+    """
+    board = game_state.board
+
+    if move.to is not None:
+        if move.to.to_key() in board.collapsed_spaces:
+            return True
+
+    if move.disconnected_regions:
+        for region in move.disconnected_regions:
+            for pos in region.spaces:
+                if pos.to_key() in board.collapsed_spaces:
+                    return True
+
+    # If we can't determine (malformed move), fall back to "processed" so we
+    # don't accidentally deadlock phase advancement on legacy data.
+    return move.to is None and not move.disconnected_regions
+
+
 def _on_line_processing_complete(game_state: GameState, *, trace_mode: bool) -> None:
     """
     Shared helper for exiting LINE_PROCESSING.
@@ -365,6 +392,13 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
         MoveType.CHOOSE_TERRITORY_OPTION,
         MoveType.PROCESS_TERRITORY_REGION,  # legacy alias
     ):
+        # TS treat non-processable territory decisions as a no-op, which must NOT
+        # end the phase. Keep the current player in TERRITORY_PROCESSING so hosts
+        # can emit NO_TERRITORY_ACTION when no processable regions exist.
+        if not _did_process_territory_region(game_state, last_move):
+            game_state.current_phase = GamePhase.TERRITORY_PROCESSING
+            return
+
         # After processing a disconnected territory region (choose_territory_option;
         # legacy alias: process_territory_region), re-evaluate whether more territory
         # decisions remain for the **same player**. This mirrors the TS orchestrator
