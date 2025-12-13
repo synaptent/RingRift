@@ -13,7 +13,17 @@ NODE_ID="${1:?Usage: $0 <node-id> <coordinator-url>}"
 COORDINATOR_URL="${2:?Usage: $0 <node-id> <coordinator-url>}"
 RINGRIFT_DIR="${RINGRIFT_DIR:-/root/ringrift/ai-service}"
 LOG_DIR="/var/log/ringrift"
-P2P_PORT="${P2P_PORT:-8770}"
+P2P_PORT="${P2P_PORT:-}"
+# Vast.ai instances typically expose a public port-mapping for container 8080
+# (VAST_TCP_PORT_8080). Default the P2P listening port to 8080 there so the
+# orchestrator is reachable externally.
+if [ -z "$P2P_PORT" ]; then
+    if [ -n "${VAST_TCP_PORT_8080:-}" ]; then
+        P2P_PORT="8080"
+    else
+        P2P_PORT="8770"
+    fi
+fi
 SSH_PORT="${SSH_PORT:-}"
 
 echo "Setting up node resilience for $NODE_ID"
@@ -65,6 +75,23 @@ RINGRIFT_DIR=$RINGRIFT_DIR
 P2P_PORT=$P2P_PORT
 SSH_PORT=$SSH_PORT
 EOF
+
+# Persist an explicit advertised P2P port for port-mapped environments (Vast.ai)
+# so the orchestrator can report a reachable endpoint even in minimal
+# environments where VAST_* vars may not be propagated to daemons.
+if [ -z "${RINGRIFT_ADVERTISE_PORT:-}" ]; then
+    varname="VAST_TCP_PORT_${P2P_PORT}"
+    mapped="${!varname:-}"
+    if [ -n "$mapped" ]; then
+        export RINGRIFT_ADVERTISE_PORT="$mapped"
+    fi
+fi
+if [ -n "${RINGRIFT_ADVERTISE_HOST:-}" ]; then
+    echo "RINGRIFT_ADVERTISE_HOST=$RINGRIFT_ADVERTISE_HOST" >> /etc/ringrift/node.conf
+fi
+if [ -n "${RINGRIFT_ADVERTISE_PORT:-}" ]; then
+    echo "RINGRIFT_ADVERTISE_PORT=$RINGRIFT_ADVERTISE_PORT" >> /etc/ringrift/node.conf
+fi
 
 if [ -n "${RINGRIFT_CLUSTER_AUTH_TOKEN:-}" ]; then
     echo "RINGRIFT_CLUSTER_AUTH_TOKEN=$RINGRIFT_CLUSTER_AUTH_TOKEN" >> /etc/ringrift/node.conf

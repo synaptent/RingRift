@@ -670,6 +670,8 @@ class P2POrchestrator:
         port: int = DEFAULT_PORT,
         known_peers: List[str] = None,
         ringrift_path: str = None,
+        advertise_host: Optional[str] = None,
+        advertise_port: Optional[int] = None,
         auth_token: Optional[str] = None,
         require_auth: bool = False,
     ):
@@ -679,6 +681,14 @@ class P2POrchestrator:
         self.known_peers = known_peers or []
         self.ringrift_path = ringrift_path or self._detect_ringrift_path()
         self.start_time = time.time()
+
+        # Public endpoint peers should use to reach us. Peers learn our host from
+        # the heartbeat socket address, but the port must be self-reported. This
+        # matters for port-mapped environments like Vast.ai.
+        self.advertise_host = (advertise_host or os.environ.get(ADVERTISE_HOST_ENV, "")).strip()
+        if not self.advertise_host:
+            self.advertise_host = self._get_local_ip()
+        self.advertise_port = advertise_port if advertise_port is not None else self._infer_advertise_port()
 
         # Optional auth token used to protect mutating endpoints and cluster control.
         # Default is allow-all unless a token is configured.
@@ -723,6 +733,11 @@ class P2POrchestrator:
         # enable lightweight throughput charts without adding DB migrations.
         self.selfplay_stats_history: List[Dict[str, Any]] = []
         self.selfplay_stats_history_max_samples: int = 288  # ~24h @ 5-min cadence
+
+        # Canonical gate jobs (leader-only): dashboard-triggered runs of
+        # scripts/generate_canonical_selfplay.py.
+        self.canonical_gate_jobs: Dict[str, Dict[str, Any]] = {}
+        self.canonical_gate_jobs_lock = threading.Lock()
 
         # Phase 2: P2P rsync coordination state
         self.active_sync_jobs: Dict[str, DataSyncJob] = {}
@@ -799,7 +814,10 @@ class P2POrchestrator:
         # Self info
         self.self_info = self._create_self_info()
 
-        print(f"[P2P] Initialized node {node_id} on {host}:{port}")
+        print(
+            f"[P2P] Initialized node {node_id} on {host}:{port} "
+            f"(advertise {self.advertise_host}:{self.advertise_port})"
+        )
         print(f"[P2P] RingRift path: {self.ringrift_path}")
         print(f"[P2P] Known peers: {self.known_peers}")
         if self.auth_token:
@@ -832,6 +850,31 @@ class P2POrchestrator:
             if (path / "ai-service").exists():
                 return str(path)
         return str(Path(__file__).parent.parent.parent)
+
+    def _infer_advertise_port(self) -> int:
+        """Infer the externally reachable port for this node.
+
+        - Explicit `RINGRIFT_ADVERTISE_PORT` always wins.
+        - Vast.ai exposes container ports via `VAST_TCP_PORT_<PORT>`; when set,
+          use that public port so peers can reach us.
+        - Default to the listening port.
+        """
+        explicit = (os.environ.get(ADVERTISE_PORT_ENV, "")).strip()
+        if explicit:
+            try:
+                return int(explicit)
+            except ValueError:
+                pass
+
+        vast_key = f"VAST_TCP_PORT_{self.port}"
+        mapped = (os.environ.get(vast_key, "")).strip()
+        if mapped:
+            try:
+                return int(mapped)
+            except ValueError:
+                pass
+
+        return int(self.port)
 
     def _parse_peer_address(self, peer_addr: str) -> Tuple[str, str, int]:
         """Parse `--peers` entries.
@@ -1023,8 +1066,8 @@ class P2POrchestrator:
 
         return NodeInfo(
             node_id=self.node_id,
-            host=self._get_local_ip(),
-            port=self.port,
+            host=self.advertise_host,
+            port=self.advertise_port,
             role=self.role,
             last_heartbeat=time.time(),
             has_gpu=has_gpu,
@@ -6051,6 +6094,300 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         except Exception as e:
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
+    def _canonical_slug_for_board(self, board_type: str) -> str:
+        return {
+            "square8": "square8",
+            "square19": "square19",
+            "hexagonal": "hex",
+        }.get(board_type, board_type)
+
+    def _canonical_gate_paths(self, board_type: str, num_players: int) -> Tuple[Path, Path]:
+        """Compute canonical DB + gate summary paths (leader-side conventions)."""
+        slug = self._canonical_slug_for_board(board_type)
+        suffix = "" if int(num_players) == 2 else f"_{int(num_players)}p"
+        ai_root = Path(self.ringrift_path) / "ai-service"
+        db_path = (ai_root / "data" / "games" / f"canonical_{slug}{suffix}.db").resolve()
+        summary_path = (ai_root / "data" / "games" / f"db_health.canonical_{slug}{suffix}.json").resolve()
+        return db_path, summary_path
+
+    def _tail_text_file(self, path: Path, *, max_lines: int = 200, max_bytes: int = 256_000) -> str:
+        """Best-effort tail of a potentially large log file."""
+        try:
+            if not path.exists():
+                return ""
+            with path.open("rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                seek = max(0, size - int(max_bytes))
+                f.seek(seek)
+                data = f.read().decode("utf-8", errors="replace")
+            lines = data.splitlines()
+            return "\n".join(lines[-int(max_lines) :])
+        except Exception as e:
+            return f"[tail_error] {e}"
+
+    async def handle_api_canonical_health(self, request: web.Request) -> web.Response:
+        """List canonical gate summary JSONs found on this node."""
+        try:
+            ai_root = Path(self.ringrift_path) / "ai-service"
+            games_dir = (ai_root / "data" / "games").resolve()
+            summaries: List[Dict[str, Any]] = []
+
+            for path in sorted(games_dir.glob("db_health.canonical_*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                except Exception as exc:
+                    payload = {"error": "failed_to_parse_json", "message": str(exc)}
+
+                mtime = 0.0
+                try:
+                    mtime = float(path.stat().st_mtime)
+                except Exception:
+                    mtime = 0.0
+
+                db_path_str = str(payload.get("db_path") or "")
+                db_size_bytes = None
+                if db_path_str:
+                    try:
+                        db_path = Path(db_path_str)
+                        if not db_path.is_absolute():
+                            db_path = (games_dir / db_path).resolve()
+                        db_size_bytes = int(db_path.stat().st_size)
+                    except Exception:
+                        db_size_bytes = None
+
+                summaries.append(
+                    {
+                        "path": str(path),
+                        "modified_time": mtime,
+                        "db_size_bytes": db_size_bytes,
+                        "summary": payload,
+                    }
+                )
+
+            return web.json_response(
+                {
+                    "success": True,
+                    "node_id": self.node_id,
+                    "is_leader": self._is_leader(),
+                    "summaries": summaries,
+                    "timestamp": time.time(),
+                }
+            )
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    async def handle_api_canonical_jobs_list(self, request: web.Request) -> web.Response:
+        """List canonical gate jobs started from this node."""
+        try:
+            with self.canonical_gate_jobs_lock:
+                jobs = list(self.canonical_gate_jobs.values())
+            jobs.sort(key=lambda j: float(j.get("started_at", 0.0) or 0.0), reverse=True)
+            return web.json_response(
+                {
+                    "success": True,
+                    "node_id": self.node_id,
+                    "is_leader": self._is_leader(),
+                    "jobs": jobs[:100],
+                    "timestamp": time.time(),
+                }
+            )
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    async def handle_api_canonical_job_get(self, request: web.Request) -> web.Response:
+        """Get details for a canonical gate job."""
+        try:
+            job_id = (request.match_info.get("job_id") or "").strip()
+            if not job_id:
+                return web.json_response({"success": False, "error": "job_id is required"}, status=400)
+            with self.canonical_gate_jobs_lock:
+                job = self.canonical_gate_jobs.get(job_id)
+            if not job:
+                return web.json_response({"success": False, "error": f"Job {job_id} not found"}, status=404)
+            return web.json_response({"success": True, "job": job})
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    async def handle_api_canonical_job_log(self, request: web.Request) -> web.Response:
+        """Tail the log file for a canonical gate job."""
+        try:
+            job_id = (request.match_info.get("job_id") or "").strip()
+            if not job_id:
+                return web.json_response({"success": False, "error": "job_id is required"}, status=400)
+            tail_lines = int(request.query.get("tail", 200))
+            tail_lines = max(10, min(tail_lines, 1000))
+
+            with self.canonical_gate_jobs_lock:
+                job = self.canonical_gate_jobs.get(job_id)
+            if not job:
+                return web.json_response({"success": False, "error": f"Job {job_id} not found"}, status=404)
+
+            log_path = Path(str(job.get("log_path") or ""))
+            text = self._tail_text_file(log_path, max_lines=tail_lines)
+            return web.json_response({"success": True, "job_id": job_id, "log_tail": text})
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    async def _monitor_canonical_gate_job(self, job_id: str, proc: asyncio.subprocess.Process, summary_path: Path) -> None:
+        """Background task: wait for canonical gate to finish and record summary."""
+        try:
+            returncode = await proc.wait()
+        except Exception:
+            returncode = -1
+
+        finished_at = time.time()
+        gate_summary: Dict[str, Any] | None = None
+        try:
+            if summary_path.exists():
+                gate_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except Exception:
+            gate_summary = None
+
+        with self.canonical_gate_jobs_lock:
+            job = self.canonical_gate_jobs.get(job_id, {})
+            prior_status = str(job.get("status") or "")
+            if prior_status == "cancelling":
+                status = "cancelled"
+            else:
+                status = "completed" if int(returncode) == 0 else "failed"
+            job.update(
+                {
+                    "status": status,
+                    "returncode": int(returncode),
+                    "completed_at": finished_at,
+                    "gate_summary": gate_summary,
+                }
+            )
+            self.canonical_gate_jobs[job_id] = job
+
+    async def handle_api_canonical_generate(self, request: web.Request) -> web.Response:
+        """Start a canonical selfplay+gate run (leader-only, dashboard-triggered)."""
+        if not self._is_leader():
+            return web.json_response(
+                {"success": False, "error": "Only leader can start canonical gate runs", "leader_id": self.leader_id},
+                status=403,
+            )
+
+        try:
+            data = await request.json()
+            board_type = str(data.get("board_type") or "square8")
+            num_players = int(data.get("num_players") or 2)
+            num_games = int(data.get("num_games") or 0)
+            difficulty_band = str(data.get("difficulty_band") or "light")
+            reset_db = bool(data.get("reset_db") or False)
+            hosts = (str(data.get("hosts") or "").strip()) or None
+
+            if board_type not in ("square8", "square19", "hexagonal"):
+                return web.json_response({"success": False, "error": f"Unsupported board_type: {board_type}"}, status=400)
+            if num_players not in (2, 3, 4):
+                return web.json_response({"success": False, "error": f"Unsupported num_players: {num_players}"}, status=400)
+            if num_games < 0 or num_games > 250_000:
+                return web.json_response({"success": False, "error": f"num_games out of range: {num_games}"}, status=400)
+            if difficulty_band not in ("light", "canonical"):
+                return web.json_response({"success": False, "error": f"Unsupported difficulty_band: {difficulty_band}"}, status=400)
+            if hosts and any(c.isspace() for c in hosts):
+                return web.json_response({"success": False, "error": "hosts must be comma-separated with no spaces"}, status=400)
+
+            db_path, summary_path = self._canonical_gate_paths(board_type, num_players)
+
+            job_id = f"canon_gate_{board_type}_{num_players}p_{int(time.time())}_{secrets.token_hex(4)}"
+            ai_root = Path(self.ringrift_path) / "ai-service"
+            log_dir = (ai_root / "logs" / "canonical_gate").resolve()
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = (log_dir / f"{job_id}.log").resolve()
+
+            cmd = [
+                sys.executable,
+                "scripts/generate_canonical_selfplay.py",
+                "--board-type", board_type,
+                "--num-players", str(num_players),
+                "--num-games", str(num_games),
+                "--difficulty-band", difficulty_band,
+                "--db", str(db_path),
+                "--summary", str(summary_path),
+            ]
+            if hosts:
+                cmd.extend(["--hosts", hosts])
+            if reset_db:
+                cmd.append("--reset-db")
+
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(ai_root)
+            env.setdefault("RINGRIFT_JOB_ORIGIN", "dashboard")
+            env.setdefault("PYTHONUNBUFFERED", "1")
+
+            with log_path.open("a", encoding="utf-8") as log_handle:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    cwd=str(ai_root),
+                    env=env,
+                    stdout=log_handle,
+                    stderr=log_handle,
+                )
+
+            job = {
+                "job_id": job_id,
+                "status": "running",
+                "board_type": board_type,
+                "num_players": num_players,
+                "num_games": num_games,
+                "difficulty_band": difficulty_band,
+                "hosts": hosts,
+                "reset_db": reset_db,
+                "db_path": str(db_path),
+                "summary_path": str(summary_path),
+                "log_path": str(log_path),
+                "pid": int(proc.pid),
+                "started_at": time.time(),
+            }
+
+            with self.canonical_gate_jobs_lock:
+                self.canonical_gate_jobs[job_id] = job
+
+            asyncio.create_task(self._monitor_canonical_gate_job(job_id, proc, summary_path))
+
+            return web.json_response({"success": True, "job": job})
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    async def handle_api_canonical_job_cancel(self, request: web.Request) -> web.Response:
+        """Cancel a running canonical gate job."""
+        if not self._is_leader():
+            return web.json_response(
+                {"success": False, "error": "Only leader can cancel canonical gate runs", "leader_id": self.leader_id},
+                status=403,
+            )
+
+        try:
+            job_id = (request.match_info.get("job_id") or "").strip()
+            if not job_id:
+                return web.json_response({"success": False, "error": "job_id is required"}, status=400)
+
+            with self.canonical_gate_jobs_lock:
+                job = self.canonical_gate_jobs.get(job_id)
+            if not job:
+                return web.json_response({"success": False, "error": f"Job {job_id} not found"}, status=404)
+
+            pid = int(job.get("pid") or 0)
+            if pid <= 0:
+                return web.json_response({"success": False, "error": "No pid recorded for job"}, status=400)
+
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except Exception as exc:
+                return web.json_response({"success": False, "error": f"Failed to signal pid {pid}: {exc}"}, status=500)
+
+            with self.canonical_gate_jobs_lock:
+                job = self.canonical_gate_jobs.get(job_id, job)
+                job["status"] = "cancelling"
+                job["cancel_requested_at"] = time.time()
+                self.canonical_gate_jobs[job_id] = job
+
+            return web.json_response({"success": True, "message": f"Cancel signaled for {job_id}", "job": job})
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
     async def handle_api_jobs_list(self, request: web.Request) -> web.Response:
         """List all jobs with optional filtering."""
         try:
@@ -7770,6 +8107,12 @@ print(json.dumps({{
         app.router.add_get('/', self.handle_root)
         app.router.add_get('/api/cluster/status', self.handle_api_cluster_status)
         app.router.add_get('/api/selfplay/stats', self.handle_api_selfplay_stats)
+        app.router.add_get('/api/canonical/health', self.handle_api_canonical_health)
+        app.router.add_get('/api/canonical/jobs', self.handle_api_canonical_jobs_list)
+        app.router.add_get('/api/canonical/jobs/{job_id}', self.handle_api_canonical_job_get)
+        app.router.add_get('/api/canonical/jobs/{job_id}/log', self.handle_api_canonical_job_log)
+        app.router.add_post('/api/canonical/generate', self.handle_api_canonical_generate)
+        app.router.add_post('/api/canonical/jobs/{job_id}/cancel', self.handle_api_canonical_job_cancel)
         app.router.add_get('/api/jobs', self.handle_api_jobs_list)
         app.router.add_post('/api/jobs/submit', self.handle_api_jobs_submit)
         app.router.add_get('/api/jobs/{job_id}', self.handle_api_job_get)
@@ -7824,6 +8167,17 @@ def main():
     parser.add_argument("--node-id", required=True, help="Unique identifier for this node")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port to listen on")
+    parser.add_argument(
+        "--advertise-host",
+        default=None,
+        help=f"Host to advertise to peers (or set {ADVERTISE_HOST_ENV})",
+    )
+    parser.add_argument(
+        "--advertise-port",
+        type=int,
+        default=None,
+        help=f"Port to advertise to peers (or set {ADVERTISE_PORT_ENV})",
+    )
     parser.add_argument("--peers", help="Comma-separated list of known peers (host[:port] or http(s)://host[:port])")
     parser.add_argument("--ringrift-path", help="Path to RingRift installation")
     parser.add_argument("--auth-token", help=f"Shared auth token (or set {AUTH_TOKEN_ENV})")
@@ -7841,6 +8195,8 @@ def main():
         port=args.port,
         known_peers=known_peers,
         ringrift_path=args.ringrift_path,
+        advertise_host=args.advertise_host,
+        advertise_port=args.advertise_port,
         auth_token=args.auth_token,
         require_auth=args.require_auth,
     )
