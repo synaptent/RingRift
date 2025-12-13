@@ -356,8 +356,15 @@ export class ClientSandboxEngine {
    * sandbox game state. This mirrors the backend GameEngine
    * appendHistoryEntry but runs entirely client-side and is primarily used
    * by parity/debug tooling.
+   *
+   * @param skipMoveHistory - When true, skip updating moveHistory (use when
+   *   the orchestrator adapter has already added the move to moveHistory).
    */
-  private appendHistoryEntry(before: GameState, action: Move): void {
+  private appendHistoryEntry(
+    before: GameState,
+    action: Move,
+    opts?: { skipMoveHistory?: boolean }
+  ): void {
     const after = this.getGameState();
 
     // Use the shared helper to create a consistent history entry.
@@ -380,7 +387,11 @@ export class ClientSandboxEngine {
       // Keep moveHistory in sync with canonical actions so board
       // animation hooks (useAutoMoveAnimation) can observe new moves
       // in both backend and sandbox hosts.
-      moveHistory: [...this.gameState.moveHistory, action],
+      // When skipMoveHistory is true, the orchestrator adapter has already
+      // added the move to moveHistory, so we don't add it again.
+      moveHistory: opts?.skipMoveHistory
+        ? this.gameState.moveHistory
+        : [...this.gameState.moveHistory, action],
       history: [...this.gameState.history, entry],
     };
   }
@@ -3416,7 +3427,9 @@ export class ClientSandboxEngine {
 
       // Record history AFTER advancing the turn for captures.
       // This matches backend ordering where history is recorded after advanceGame().
-      this.appendHistoryEntry(beforeStateForHistory, move);
+      // Note: The orchestrator adapter already adds the move to moveHistory, so we
+      // skip that here to avoid duplicate entries.
+      this.appendHistoryEntry(beforeStateForHistory, move, { skipMoveHistory: true });
     }
   }
 
@@ -3745,7 +3758,7 @@ export class ClientSandboxEngine {
 
       // Align terminal metadata with backend: when the game ends, advance the
       // current player to the next turn holder so game_over snapshots match
-      // Python’s post-advance semantics used in parity harnesses.
+      // Python's post-advance semantics used in parity harnesses.
       if (this.gameState.gameStatus !== 'active' && this.gameState.currentPhase === 'game_over') {
         const nextPlayer = this.getNextPlayerNumber(move.player);
         this.gameState = {
@@ -3754,7 +3767,9 @@ export class ClientSandboxEngine {
         };
       }
 
-      this.appendHistoryEntry(beforeStateForHistory, move);
+      // Note: The orchestrator adapter already adds the move to moveHistory, so we
+      // skip that here to avoid duplicate entries.
+      this.appendHistoryEntry(beforeStateForHistory, move, { skipMoveHistory: true });
     } else {
       // No semantic change, but we still want a stable history step for
       // replay purposes. Record a history entry with identical before/after
@@ -3843,6 +3858,8 @@ export class ClientSandboxEngine {
         };
       }
 
+      // For no-change moves, the orchestrator adapter doesn't add to moveHistory,
+      // so we need to add it here (don't skip).
       this.appendHistoryEntry(beforeStateForHistory, move);
     }
   }

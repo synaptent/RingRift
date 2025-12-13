@@ -156,6 +156,14 @@ def merge_reports(report_paths: list[Path], *, strict: bool) -> dict[str, Any]:
                     "first_capture_by_player": {},
                     "first_capturer_wins": 0,
                     "first_capturer_loses": 0,
+                    "starting_rings_per_player_counts": {},
+                    "victory_threshold_counts": {},
+                    "territory_victory_threshold_counts": {},
+                    "lps_rounds_required_counts": {},
+                    "recovery_slides_by_mode": {},
+                    "games_with_stack_strike": 0,
+                    "wins_with_stack_strike": 0,
+                    "timeout_move_count_hist": {},
                 }
 
             out = by_config[key]
@@ -169,6 +177,8 @@ def merge_reports(report_paths: list[Path], *, strict: bool) -> dict[str, Any]:
             out["wins_with_recovery_slide"] += int(cfg.get("wins_with_recovery_slide", 0) or 0)
             out["wins_without_recovery_slide"] += int(cfg.get("wins_without_recovery_slide", 0) or 0)
             out["games_with_late_fe_winner"] += int(cfg.get("games_with_late_fe_winner", 0) or 0)
+            out["games_with_stack_strike"] += int(cfg.get("games_with_stack_strike", 0) or 0)
+            out["wins_with_stack_strike"] += int(cfg.get("wins_with_stack_strike", 0) or 0)
 
             # Float fields
             try:
@@ -184,6 +194,18 @@ def merge_reports(report_paths: list[Path], *, strict: bool) -> dict[str, Any]:
             _merge_counter_dict(out["fe_by_player"], cfg.get("fe_by_player"))
             _merge_counter_dict(out["move_type_counts"], cfg.get("move_type_counts"))
             _merge_counter_dict(out["first_capture_by_player"], cfg.get("first_capture_by_player"))
+            _merge_counter_dict(
+                out["starting_rings_per_player_counts"], cfg.get("starting_rings_per_player_counts")
+            )
+            _merge_counter_dict(out["victory_threshold_counts"], cfg.get("victory_threshold_counts"))
+            _merge_counter_dict(
+                out["territory_victory_threshold_counts"], cfg.get("territory_victory_threshold_counts")
+            )
+            _merge_counter_dict(
+                out["lps_rounds_required_counts"], cfg.get("lps_rounds_required_counts")
+            )
+            _merge_counter_dict(out["recovery_slides_by_mode"], cfg.get("recovery_slides_by_mode"))
+            _merge_counter_dict(out["timeout_move_count_hist"], cfg.get("timeout_move_count_hist"))
 
             # Scalar counters
             for scalar in [
@@ -324,4 +346,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

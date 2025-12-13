@@ -366,11 +366,14 @@ export function deriveStateFromGame(gameState: GameState, moveHint?: Move): Turn
   // TS and Python to have different current players. This includes:
   // - Bookkeeping moves (existing behavior)
   // - Territory region processing (Python may detect more regions than TS)
+  // - Territory elimination (eliminate_rings_from_stack after choose_territory_option)
   // - Forced elimination (Python records the player whose rings are eliminated,
   //   which may differ from the current turn's player in multiplayer games)
   // RR-CANON-R075: Trust recorded moves during replay.
   const isTerritoryRegionMove =
-    moveHint?.type === 'process_territory_region' || moveHint?.type === 'choose_territory_option';
+    moveHint?.type === 'process_territory_region' ||
+    moveHint?.type === 'choose_territory_option' ||
+    moveHint?.type === 'eliminate_rings_from_stack';
   const isForcedEliminationMove = moveHint?.type === 'forced_elimination';
   const player =
     (isBookkeepingOrSkipMove || isTerritoryRegionMove || isForcedEliminationMove) &&
@@ -385,8 +388,14 @@ export function deriveStateFromGame(gameState: GameState, moveHint?: Move): Turn
   let phase = gameState.currentPhase;
   if (
     moveHint?.type === 'process_territory_region' ||
-    moveHint?.type === 'choose_territory_option'
+    moveHint?.type === 'choose_territory_option' ||
+    moveHint?.type === 'eliminate_rings_from_stack'
   ) {
+    // RR-FIX-2025-12-13: Include eliminate_rings_from_stack in territory phase coercion.
+    // After eliminate_rings_from_stack, processPostMovePhases already advanced to the
+    // next player's ring_placement. When FSM is called afterward, the game state's
+    // currentPhase won't match the move's originating phase. Coercing to
+    // territory_processing ensures the FSM derives the correct state for validation.
     phase = 'territory_processing';
   } else if (
     moveHint?.type === 'choose_line_option' ||

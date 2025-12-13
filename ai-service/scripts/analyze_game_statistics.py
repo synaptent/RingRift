@@ -36,6 +36,7 @@ from typing import Any, Iterator
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+AI_SERVICE_ROOT = Path(PROJECT_ROOT).resolve()
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -216,7 +217,7 @@ def normalize_game(game: dict[str, Any], file_path: str = "") -> dict[str, Any]:
     return normalized
 
 
-def is_completed_game(game: dict[str, Any]) -> bool:
+def is_completed_game(game: dict[str, Any], *, include_winner_only: bool) -> bool:
     """Check if a game record represents a completed game (not an eval pool position)."""
     if game.get("game_status") == "active":
         return False
@@ -229,7 +230,7 @@ def is_completed_game(game: dict[str, Any]) -> bool:
     if is_eval_pool:
         return False
 
-    return has_moves or has_victory or has_winner
+    return has_moves or has_victory or (include_winner_only and has_winner)
 
 
 @dataclass
@@ -279,6 +280,17 @@ class GameStats:
     first_capture_by_player: dict[str, int] = field(default_factory=dict)
     first_capturer_wins: int = 0
     first_capturer_loses: int = 0
+    # Config/value sanity checks (helps detect rule drift in mixed datasets)
+    starting_rings_per_player_counts: dict[str, int] = field(default_factory=dict)
+    victory_threshold_counts: dict[str, int] = field(default_factory=dict)
+    territory_victory_threshold_counts: dict[str, int] = field(default_factory=dict)
+    lps_rounds_required_counts: dict[str, int] = field(default_factory=dict)
+    # Recovery mode breakdown (RR-CANON-R112)
+    recovery_slides_by_mode: dict[str, int] = field(default_factory=dict)
+    games_with_stack_strike: int = 0
+    wins_with_stack_strike: int = 0
+    # Timeout diagnostics
+    timeout_move_count_hist: dict[str, int] = field(default_factory=dict)
 
     @property
     def moves_per_game(self) -> float:
@@ -394,7 +406,7 @@ def load_recovery_analysis(path: Path) -> dict[str, Any] | None:
     return None
 
 
-def iter_jsonl_games(path: Path) -> Iterator[dict[str, Any]]:
+def iter_jsonl_games(path: Path, *, include_winner_only: bool) -> Iterator[dict[str, Any]]:
     """Yield normalized completed games from a JSONL file.
 
     This is streaming by design to avoid loading large JSONL files into memory.
@@ -410,18 +422,91 @@ def iter_jsonl_games(path: Path) -> Iterator[dict[str, Any]]:
                     game = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if not is_completed_game(game):
+                if not is_completed_game(game, include_winner_only=include_winner_only):
                     continue
                 yield normalize_game(game, file_path_str)
     except OSError:
         return
 
 
-def collect_stats_from_jsonl(jsonl_files: list[Path], report: AnalysisReport) -> None:
+def _get_first(d: dict[str, Any], keys: list[str]) -> Any:
+    for k in keys:
+        if k in d:
+            return d.get(k)
+    return None
+
+
+def _extract_starting_rings_per_player(game: dict[str, Any]) -> int | None:
+    state = game.get("initial_state") or game.get("initialState") or game.get("initial_state_json")
+    if isinstance(state, dict):
+        players = state.get("players")
+        if isinstance(players, list) and players:
+            rings: list[int] = []
+            for p in players:
+                if not isinstance(p, dict):
+                    continue
+                value = _get_first(p, ["rings_in_hand", "ringsInHand"])
+                if isinstance(value, int):
+                    rings.append(value)
+            if rings:
+                if len(set(rings)) == 1:
+                    return rings[0]
+                return min(rings)
+
+        # Some traces store a matrix of rings-in-hand by player index.
+        matrix = _get_first(state, ["rings_in_hand", "ringsInHand"])
+        if isinstance(matrix, list) and matrix:
+            ints = [v for v in matrix if isinstance(v, int)]
+            if ints:
+                if len(set(ints)) == 1:
+                    return ints[0]
+                return min(ints)
+
+    config = game.get("config")
+    if isinstance(config, dict):
+        value = _get_first(config, ["rings_per_player", "ringsPerPlayer"])
+        if isinstance(value, int):
+            return value
+
+    return None
+
+
+def _extract_victory_threshold(game: dict[str, Any]) -> int | None:
+    state = game.get("initial_state") or game.get("initialState") or game.get("initial_state_json")
+    if isinstance(state, dict):
+        value = _get_first(state, ["victory_threshold", "victoryThreshold"])
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _extract_territory_victory_threshold(game: dict[str, Any]) -> int | None:
+    state = game.get("initial_state") or game.get("initialState") or game.get("initial_state_json")
+    if isinstance(state, dict):
+        value = _get_first(state, ["territory_victory_threshold", "territoryVictoryThreshold"])
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _extract_lps_rounds_required(game: dict[str, Any]) -> int | None:
+    state = game.get("initial_state") or game.get("initialState") or game.get("initial_state_json")
+    if isinstance(state, dict):
+        rules_options = _get_first(state, ["rules_options", "rulesOptions"])
+        if isinstance(rules_options, dict):
+            value = _get_first(rules_options, ["lpsRoundsRequired", "lps_rounds_required"])
+            if isinstance(value, int):
+                return value
+    return None
+
+
+def collect_stats_from_jsonl(
+    jsonl_files: list[Path], report: AnalysisReport, *, include_winner_only: bool
+) -> None:
     """Collect statistics from JSONL files and add to report."""
     for jsonl_path in jsonl_files:
         any_games = False
-        for game in iter_jsonl_games(jsonl_path):
+        for game in iter_jsonl_games(jsonl_path, include_winner_only=include_winner_only):
             any_games = True
             board_type = game.get("board_type", "unknown")
             num_players = int(game.get("num_players", 2) or 2)
@@ -437,6 +522,35 @@ def collect_stats_from_jsonl(jsonl_files: list[Path], report: AnalysisReport) ->
             stats.game_lengths.append(move_count)
             stats.total_time_seconds += game.get("game_time_seconds", 0.0)
 
+            # Initial-state sanity checks / drift detection.
+            starting_rings = _extract_starting_rings_per_player(game)
+            if starting_rings is not None:
+                key_str = str(starting_rings)
+                stats.starting_rings_per_player_counts[key_str] = (
+                    stats.starting_rings_per_player_counts.get(key_str, 0) + 1
+                )
+
+            victory_threshold = _extract_victory_threshold(game)
+            if victory_threshold is not None:
+                key_str = str(victory_threshold)
+                stats.victory_threshold_counts[key_str] = (
+                    stats.victory_threshold_counts.get(key_str, 0) + 1
+                )
+
+            territory_threshold = _extract_territory_victory_threshold(game)
+            if territory_threshold is not None:
+                key_str = str(territory_threshold)
+                stats.territory_victory_threshold_counts[key_str] = (
+                    stats.territory_victory_threshold_counts.get(key_str, 0) + 1
+                )
+
+            lps_rounds_required = _extract_lps_rounds_required(game)
+            if lps_rounds_required is not None:
+                key_str = str(lps_rounds_required)
+                stats.lps_rounds_required_counts[key_str] = (
+                    stats.lps_rounds_required_counts.get(key_str, 0) + 1
+                )
+
             # Winner
             winner = game.get("winner")
             if winner is not None:
@@ -446,6 +560,11 @@ def collect_stats_from_jsonl(jsonl_files: list[Path], report: AnalysisReport) ->
             victory_type = game.get("victory_type")
             if victory_type:
                 stats.victory_types[victory_type] = stats.victory_types.get(victory_type, 0) + 1
+                if victory_type == "timeout":
+                    move_key = str(int(move_count) if isinstance(move_count, int) else 0)
+                    stats.timeout_move_count_hist[move_key] = (
+                        stats.timeout_move_count_hist.get(move_key, 0) + 1
+                    )
 
             # Stalemate tiebreaker
             tiebreaker = game.get("stalemate_tiebreaker")
@@ -459,7 +578,9 @@ def collect_stats_from_jsonl(jsonl_files: list[Path], report: AnalysisReport) ->
             has_fe = False
             fe_count = 0
             has_recovery_slide = False
+            has_stack_strike = False
             recovery_slides_by_player_in_game: dict[str, int] = {}
+            stack_strikes_by_player_in_game: set[str] = set()
             fe_by_player_in_game: dict[str, int] = {}
             capture_chain_length = 0
             max_chain_in_game = 0
@@ -516,6 +637,15 @@ def collect_stats_from_jsonl(jsonl_files: list[Path], report: AnalysisReport) ->
                 # Track recovery slide
                 if move_type == "recovery_slide":
                     has_recovery_slide = True
+                    recovery_mode = m.get("recoveryMode") or m.get("recovery_mode")
+                    if isinstance(recovery_mode, str) and recovery_mode:
+                        stats.recovery_slides_by_mode[recovery_mode] = (
+                            stats.recovery_slides_by_mode.get(recovery_mode, 0) + 1
+                        )
+                        if recovery_mode == "stack_strike":
+                            has_stack_strike = True
+                            if player_str:
+                                stack_strikes_by_player_in_game.add(player_str)
                     if player_str:
                         recovery_slides_by_player_in_game[player_str] = (
                             recovery_slides_by_player_in_game.get(player_str, 0) + 1
@@ -576,6 +706,11 @@ def collect_stats_from_jsonl(jsonl_files: list[Path], report: AnalysisReport) ->
             elif winner is not None:
                 stats.wins_without_recovery_slide += 1
 
+            if has_stack_strike:
+                stats.games_with_stack_strike += 1
+                if winner is not None and str(winner) in stack_strikes_by_player_in_game:
+                    stats.wins_with_stack_strike += 1
+
             if max_chain_in_game > 0:
                 stats.max_capture_chain_lengths.append(max_chain_in_game)
 
@@ -590,63 +725,66 @@ def collect_stats_from_jsonl(jsonl_files: list[Path], report: AnalysisReport) ->
             report.data_sources.append(str(jsonl_path))
 
 
-def collect_stats(data_dir: Path, jsonl_files: list[Path] | None = None) -> AnalysisReport:
+def collect_stats(
+    data_dir: Path, jsonl_files: list[Path] | None = None, *, include_winner_only: bool = False
+) -> AnalysisReport:
     """Collect statistics from all subdirectories in data_dir and optional JSONL files."""
     report = AnalysisReport()
 
     # Process JSONL files first if provided
     if jsonl_files:
-        collect_stats_from_jsonl(jsonl_files, report)
+        collect_stats_from_jsonl(jsonl_files, report, include_winner_only=include_winner_only)
 
-    # Find all stats.json files
-    for stats_path in data_dir.rglob("stats.json"):
-        data = load_stats_json(stats_path)
-        if data is None:
-            continue
+    if data_dir.exists():
+        # Find all stats.json files
+        for stats_path in data_dir.rglob("stats.json"):
+            data = load_stats_json(stats_path)
+            if data is None:
+                continue
 
-        board_type = data.get("board_type", "unknown")
-        num_players = data.get("num_players", 2)
-        key = (board_type, num_players)
+            board_type = data.get("board_type", "unknown")
+            num_players = data.get("num_players", 2)
+            key = (board_type, num_players)
 
-        if key not in report.stats_by_config:
-            report.stats_by_config[key] = GameStats(board_type=board_type, num_players=num_players)
+            if key not in report.stats_by_config:
+                report.stats_by_config[key] = GameStats(board_type=board_type, num_players=num_players)
 
-        stats = report.stats_by_config[key]
-        stats.total_games += data.get("total_games", 0)
-        stats.total_moves += data.get("total_moves", 0)
-        stats.total_time_seconds += data.get("total_time_seconds", 0.0)
-        stats.draws += data.get("draws", 0)
-        stats.games_with_recovery += data.get("games_with_recovery_opportunities", 0)
-        stats.total_recovery_opportunities += data.get("total_recovery_opportunities", 0)
-        stats.games_with_fe += data.get("games_with_fe", 0)
+            stats = report.stats_by_config[key]
+            stats.total_games += data.get("total_games", 0)
+            stats.total_moves += data.get("total_moves", 0)
+            stats.total_time_seconds += data.get("total_time_seconds", 0.0)
+            stats.draws += data.get("draws", 0)
+            stats.games_with_recovery += data.get("games_with_recovery_opportunities", 0)
+            stats.total_recovery_opportunities += data.get("total_recovery_opportunities", 0)
+            stats.games_with_fe += data.get("games_with_fe", 0)
 
-        # Merge wins by player
-        for player, wins in data.get("wins_by_player", {}).items():
-            stats.wins_by_player[player] = stats.wins_by_player.get(player, 0) + wins
+            # Merge wins by player
+            for player, wins in data.get("wins_by_player", {}).items():
+                stats.wins_by_player[player] = stats.wins_by_player.get(player, 0) + wins
 
-        # Merge victory types
-        victory_types = data.get("victory_type_counts", data.get("victory_types", {}))
-        for vtype, count in victory_types.items():
-            stats.victory_types[vtype] = stats.victory_types.get(vtype, 0) + count
+            # Merge victory types
+            victory_types = data.get("victory_type_counts", data.get("victory_types", {}))
+            for vtype, count in victory_types.items():
+                stats.victory_types[vtype] = stats.victory_types.get(vtype, 0) + count
 
-        # Merge stalemate tiebreaker breakdown
-        stalemate_tiebreakers = data.get("stalemate_by_tiebreaker", {})
-        for tiebreaker, count in stalemate_tiebreakers.items():
-            stats.stalemate_by_tiebreaker[tiebreaker] = (
-                stats.stalemate_by_tiebreaker.get(tiebreaker, 0) + count
-            )
+            # Merge stalemate tiebreaker breakdown
+            stalemate_tiebreakers = data.get("stalemate_by_tiebreaker", {})
+            for tiebreaker, count in stalemate_tiebreakers.items():
+                stats.stalemate_by_tiebreaker[tiebreaker] = (
+                    stats.stalemate_by_tiebreaker.get(tiebreaker, 0) + count
+                )
 
-        # Collect individual game lengths if available
-        game_lengths = data.get("game_lengths", [])
-        if game_lengths:
-            stats.game_lengths.extend(game_lengths)
+            # Collect individual game lengths if available
+            game_lengths = data.get("game_lengths", [])
+            if game_lengths:
+                stats.game_lengths.extend(game_lengths)
 
-        report.data_sources.append(str(stats_path))
+            report.data_sources.append(str(stats_path))
 
-    # Load recovery analysis if available
-    recovery_data = load_recovery_analysis(data_dir)
-    if recovery_data:
-        report.recovery_analysis = recovery_data
+        # Load recovery analysis if available
+        recovery_data = load_recovery_analysis(data_dir)
+        if recovery_data:
+            report.recovery_analysis = recovery_data
 
     return report
 
@@ -803,9 +941,40 @@ def generate_markdown_report(report: AnalysisReport) -> str:
 
     lines.append("")
 
+    # Rules/config drift detection (rings/thresholds).
+    any_rings_data = any(
+        stats.starting_rings_per_player_counts or stats.victory_threshold_counts
+        for stats in report.stats_by_config.values()
+    )
+    if any_rings_data:
+        lines.append("## 4. Rules/Config Sanity Checks")
+        lines.append("")
+        lines.append("*Detects mixed datasets (e.g., different rings-per-player or LPS thresholds) that can silently skew conclusions.*")
+        lines.append("")
+        lines.append("| Config | Starting Rings/Player (top) | Victory Threshold (top) | Territory Threshold (top) | LPS Rounds (top) |")
+        lines.append("|--------|-----------------------------|-------------------------|---------------------------|-----------------|")
+
+        def fmt_top_counts(counts: dict[str, int]) -> str:
+            if not counts:
+                return "-"
+            items = sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:2]
+            return ", ".join(f"{k}×{v}" for k, v in items)
+
+        for (board_type, num_players), stats in sorted(report.stats_by_config.items()):
+            if stats.total_games == 0:
+                continue
+            lines.append(
+                f"| {board_type} {num_players}p | "
+                f"{fmt_top_counts(stats.starting_rings_per_player_counts)} | "
+                f"{fmt_top_counts(stats.victory_threshold_counts)} | "
+                f"{fmt_top_counts(stats.territory_victory_threshold_counts)} | "
+                f"{fmt_top_counts(stats.lps_rounds_required_counts)} |"
+            )
+        lines.append("")
+
     # Recovery Action Analysis
     if report.recovery_analysis:
-        lines.append("## 4. Recovery Action Analysis")
+        lines.append("## 5. Recovery Action Analysis")
         lines.append("")
         ra = report.recovery_analysis
 
@@ -847,7 +1016,7 @@ def generate_markdown_report(report: AnalysisReport) -> str:
     # Enhanced Move Analysis Section
     any_move_data = any(stats.move_type_counts for stats in report.stats_by_config.values())
     if any_move_data:
-        lines.append("## 5. Move Type Distribution")
+        lines.append("## 6. Move Type Distribution")
         lines.append("")
         lines.append("*Top 10 move types across all configurations*")
         lines.append("")
@@ -866,7 +1035,7 @@ def generate_markdown_report(report: AnalysisReport) -> str:
 
     # Recovery Slide Analysis
     any_recovery_data = any(stats.games_with_recovery_slide > 0 for stats in report.stats_by_config.values())
-    lines.append("## 6. Recovery Slide Analysis")
+    lines.append("## 7. Recovery Slide Analysis")
     lines.append("")
     if any_recovery_data:
         lines.append("| Config | Games w/ Recovery | Recovery User Wins | Non-Recovery Wins (in recovery games) |")
@@ -895,10 +1064,28 @@ def generate_markdown_report(report: AnalysisReport) -> str:
         lines.append("*No recovery slides detected in the analyzed games.*")
         lines.append("")
 
+    any_recovery_mode_data = any(stats.recovery_slides_by_mode for stats in report.stats_by_config.values())
+    if any_recovery_mode_data:
+        lines.append("### Recovery Mode Breakdown")
+        lines.append("")
+        lines.append("| Config | Line | Fallback | Stack-Strike | Games w/ Stack-Strike | Winner Used Stack-Strike |")
+        lines.append("|--------|------|----------|--------------|------------------------|--------------------------|")
+        for (board_type, num_players), stats in sorted(report.stats_by_config.items()):
+            if stats.total_games == 0:
+                continue
+            line_count = stats.recovery_slides_by_mode.get("line", 0)
+            fallback_count = stats.recovery_slides_by_mode.get("fallback", 0)
+            strike_count = stats.recovery_slides_by_mode.get("stack_strike", 0)
+            lines.append(
+                f"| {board_type} {num_players}p | {line_count} | {fallback_count} | {strike_count} | "
+                f"{stats.games_with_stack_strike} | {stats.wins_with_stack_strike} |"
+            )
+        lines.append("")
+
     # Capture Chain Analysis
     any_capture_data = any(stats.max_capture_chain_lengths for stats in report.stats_by_config.values())
     if any_capture_data:
-        lines.append("## 7. Capture Chain Analysis")
+        lines.append("## 8. Capture Chain Analysis")
         lines.append("")
         lines.append("| Config | Total Captures | Chain Captures | Max Chain | Avg Max Chain |")
         lines.append("|--------|----------------|----------------|-----------|---------------|")
@@ -915,7 +1102,7 @@ def generate_markdown_report(report: AnalysisReport) -> str:
     # Forced Elimination Analysis
     any_fe_data = any(stats.games_with_fe > 0 for stats in report.stats_by_config.values())
     if any_fe_data:
-        lines.append("## 8. Forced Elimination Analysis")
+        lines.append("## 9. Forced Elimination Analysis")
         lines.append("")
         lines.append("| Config | Games w/ FE | FE Count | Winner Had FE | Comeback Rate |")
         lines.append("|--------|-------------|----------|---------------|---------------|")
@@ -936,7 +1123,7 @@ def generate_markdown_report(report: AnalysisReport) -> str:
     # First Blood Analysis
     any_first_capture = any(stats.first_capture_by_player for stats in report.stats_by_config.values())
     if any_first_capture:
-        lines.append("## 9. First Blood Analysis")
+        lines.append("## 10. First Blood Analysis")
         lines.append("")
         lines.append("*Does making the first capture correlate with winning?*")
         lines.append("")
@@ -961,7 +1148,7 @@ def generate_markdown_report(report: AnalysisReport) -> str:
     # Game Tempo/Activity Analysis
     any_activity_data = any(stats.active_moves_per_game for stats in report.stats_by_config.values())
     if any_activity_data:
-        lines.append("## 10. Game Activity Analysis")
+        lines.append("## 11. Game Activity Analysis")
         lines.append("")
         lines.append("*Active moves (excluding skip/no-action moves)*")
         lines.append("")
@@ -976,8 +1163,29 @@ def generate_markdown_report(report: AnalysisReport) -> str:
             lines.append(f"| {board_type} {num_players}p | {avg_total:.1f} | {avg_active:.1f} | {activity_rate:.1f}% |")
         lines.append("")
 
+    any_timeout_diag = any(stats.timeout_move_count_hist for stats in report.stats_by_config.values())
+    if any_timeout_diag:
+        lines.append("## 12. Timeout Diagnostics")
+        lines.append("")
+        lines.append("*Flags suspiciously consistent timeouts (often a runner/config pathology rather than real gameplay).*")
+        lines.append("")
+        lines.append("| Config | Timeout Games | Unique Move Counts | Most Common Move Count |")
+        lines.append("|--------|--------------:|------------------:|------------------------|")
+        for (board_type, num_players), stats in sorted(report.stats_by_config.items()):
+            timeout_total = stats.victory_types.get("timeout", 0)
+            if timeout_total == 0:
+                continue
+            hist = stats.timeout_move_count_hist
+            unique = len(hist)
+            most_common = "-"
+            if hist:
+                k, v = sorted(hist.items(), key=lambda x: (-x[1], x[0]))[0]
+                most_common = f"{k} ({v})"
+            lines.append(f"| {board_type} {num_players}p | {timeout_total} | {unique} | {most_common} |")
+        lines.append("")
+
     # Key Findings
-    lines.append("## 11. Key Findings")
+    lines.append("## 13. Key Findings")
     lines.append("")
 
     # Position advantage analysis
@@ -1083,6 +1291,14 @@ def generate_json_report(report: AnalysisReport) -> dict[str, Any]:
             "first_capture_by_player": stats.first_capture_by_player,
             "first_capturer_wins": stats.first_capturer_wins,
             "first_capturer_loses": stats.first_capturer_loses,
+            "starting_rings_per_player_counts": stats.starting_rings_per_player_counts,
+            "victory_threshold_counts": stats.victory_threshold_counts,
+            "territory_victory_threshold_counts": stats.territory_victory_threshold_counts,
+            "lps_rounds_required_counts": stats.lps_rounds_required_counts,
+            "recovery_slides_by_mode": stats.recovery_slides_by_mode,
+            "games_with_stack_strike": stats.games_with_stack_strike,
+            "wins_with_stack_strike": stats.wins_with_stack_strike,
+            "timeout_move_count_hist": stats.timeout_move_count_hist,
         }
         # Add detailed game length statistics if available
         if stats.game_lengths:
@@ -1134,7 +1350,15 @@ def _read_jsonl_filelist(filelist_path: Path) -> list[Path]:
         parts = [p.strip() for p in line.split("\t") if p.strip()]
         if not parts:
             continue
-        candidates.append(Path(parts[-1]))
+        raw = os.path.expanduser(parts[-1])
+        path = Path(raw)
+        if not path.is_absolute():
+            local_candidate = filelist_path.parent / path
+            if local_candidate.exists():
+                path = local_candidate
+            else:
+                path = AI_SERVICE_ROOT / path
+        candidates.append(path)
 
     # De-duplicate while preserving order.
     seen: set[str] = set()
@@ -1225,6 +1449,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="Text/TSV file listing JSONL files to include (path in last column for TSV).",
     )
+    parser.add_argument(
+        "--max-age-hours",
+        type=float,
+        default=None,
+        help="Only include JSONL files modified within the last N hours.",
+    )
+    parser.add_argument(
+        "--include-winner-only",
+        action="store_true",
+        help="Include records that have a winner but no moves/termination fields (often non-game logs).",
+    )
     return parser.parse_args(argv)
 
 
@@ -1249,29 +1484,42 @@ def main(argv: list[str] | None = None) -> int:
         if len(missing_files) > 10:
             print(f"Warning: ... and {len(missing_files) - 10} more missing JSONL files", file=sys.stderr)
     jsonl_files = [p for p in jsonl_files if p.exists()]
+    if args.max_age_hours is not None:
+        cutoff = datetime.now(timezone.utc).timestamp() - (args.max_age_hours * 3600)
+        jsonl_files = [p for p in jsonl_files if p.stat().st_mtime >= cutoff]
 
     # Check if we have any data sources
     has_data_dir = args.data_dir.exists()
     has_jsonl = len(jsonl_files) > 0
 
     if not has_data_dir and not has_jsonl:
-        print(f"Error: No data sources found. Data directory does not exist: {args.data_dir}", file=sys.stderr)
-        return 1
+        if args.allow_empty:
+            report = AnalysisReport()
+        else:
+            print(f"Error: No data sources found. Data directory does not exist: {args.data_dir}", file=sys.stderr)
+            return 1
+    else:
+        if not args.quiet:
+            if has_data_dir:
+                print(f"Analyzing data in {args.data_dir}...", file=sys.stderr)
+            if has_jsonl:
+                print(f"Including {len(jsonl_files)} JSONL file(s)...", file=sys.stderr)
 
-    if not args.quiet:
-        if has_data_dir:
-            print(f"Analyzing data in {args.data_dir}...", file=sys.stderr)
-        if has_jsonl:
-            print(f"Including {len(jsonl_files)} JSONL file(s)...", file=sys.stderr)
+        report = collect_stats(
+            args.data_dir,
+            jsonl_files if has_jsonl else None,
+            include_winner_only=bool(args.include_winner_only),
+        )
 
-    report = collect_stats(args.data_dir if has_data_dir else Path("."), jsonl_files if has_jsonl else None)
+        if report.total_games() == 0 and not args.allow_empty:
+            print("Error: No game data found", file=sys.stderr)
+            return 1
 
-    if report.total_games() == 0 and not args.allow_empty:
-        print("Error: No game data found", file=sys.stderr)
-        return 1
-
-    if not args.quiet:
-        print(f"Found {report.total_games()} games across {len(report.stats_by_config)} configurations", file=sys.stderr)
+        if not args.quiet:
+            print(
+                f"Found {report.total_games()} games across {len(report.stats_by_config)} configurations",
+                file=sys.stderr,
+            )
 
     # Generate outputs
     if args.format in ("markdown", "both"):

@@ -173,8 +173,8 @@ def test_move_cache_key_includes_last_move_signature() -> None:
     assert get_cached_moves(state_b, 1) is None
 
 
-def test_move_cache_key_includes_territory_turn_recovery_context() -> None:
-    """Territory-processing eligibility depends on recovery-in-turn context."""
+def test_move_cache_bypasses_territory_phase_due_to_turn_context() -> None:
+    """Territory-processing move surfaces depend on turn context; cache is bypassed."""
     now = datetime.now()
     base = _make_state(zobrist_hash=2025).model_copy(
         update={
@@ -228,5 +228,5 @@ def test_move_cache_key_includes_territory_turn_recovery_context() -> None:
     )
 
     cache_moves(with_recovery, 1, ["m"])
-    assert get_cached_moves(with_recovery, 1) == ["m"]
+    assert get_cached_moves(with_recovery, 1) is None
     assert get_cached_moves(without_recovery, 1) is None

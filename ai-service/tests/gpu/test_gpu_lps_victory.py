@@ -25,6 +25,7 @@ pytestmark = pytest.mark.skipif(
 def test_gpu_lps_victory_requires_two_exclusive_rounds() -> None:
     """RR-CANON-R172: LPS is round-based, not material-only."""
     device = torch.device("cpu")
+    torch.manual_seed(0)
     runner = ParallelGameRunner(
         batch_size=1,
         board_size=8,
@@ -41,17 +42,12 @@ def test_gpu_lps_victory_requires_two_exclusive_rounds() -> None:
     p1 = 1
     p2 = 2
 
-    # Disable global placement stage: no rings in hand for either player.
-    state.rings_in_hand[g, p1] = 0
+    # Player 1 has real actions via ring placement.
+    state.rings_in_hand[g, p1] = 5
     state.rings_in_hand[g, p2] = 0
 
-    # Player 1 has a stack that can always move.
-    state.stack_owner[g, 0, 0] = p1
-    state.stack_height[g, 0, 0] = 1
-    state.cap_height[g, 0, 0] = 1
-
-    # Player 2 has no turn-material, but is not permanently eliminated:
-    # they have buried rings and a marker, so recovery moves exist.
+    # Player 2 has no real actions (no rings, no stacks), but is not permanently
+    # eliminated because recovery moves exist (buried rings + marker).
     state.buried_rings[g, p2] = 5
     state.marker_owner[g, 4, 4] = p2
 
@@ -71,8 +67,8 @@ def test_gpu_lps_victory_requires_two_exclusive_rounds() -> None:
             break
 
     assert completed_at is not None
-    assert completed_at >= 10  # Must not be "immediate" material-based LPS.
     assert state.winner[g].item() == p1
+    victory_type, _ = state.derive_victory_type(g, max_moves=500)
+    assert victory_type == "lps"
     assert state.lps_consecutive_exclusive_player[g].item() == p1
     assert state.lps_consecutive_exclusive_rounds[g].item() >= 2
-

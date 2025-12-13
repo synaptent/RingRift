@@ -61,7 +61,10 @@ from app.ai.gpu_parallel_games import (
     benchmark_parallel_games,
 )
 from app.models.core import BoardType
+from app.models import Move, MoveType, Position, GameState
 from app.training.generate_data import create_initial_state
+from app.db.game_replay import GameReplayDB
+from app.game_engine import GameEngine
 
 # NOTE: Victory type derivation is now handled internally by the
 # BatchGameState class in gpu_parallel_games.py, which derives
@@ -88,6 +91,65 @@ DEFAULT_WEIGHTS = {
     "line_potential_weight": 0.6,
     "defensive_weight": 0.3,
 }
+
+
+def _parse_move(move_dict: Dict[str, Any], move_number: int, timestamp: str) -> Move:
+    """Parse a move dict into a Move object."""
+    move_type_str = move_dict.get("type", "unknown")
+
+    # Map move type strings to MoveType enum
+    move_type_map = {
+        "place_ring": MoveType.PLACE_RING,
+        "move_stack": MoveType.MOVE_STACK,
+        "overtaking_capture": MoveType.OVERTAKING_CAPTURE,
+        "continue_capture_segment": MoveType.CONTINUE_CAPTURE_SEGMENT,
+        "end_capture_chain": MoveType.END_CAPTURE_CHAIN,
+        "choose_line_option": MoveType.CHOOSE_LINE_OPTION,
+        "choose_line_reward": MoveType.CHOOSE_LINE_REWARD,
+        "process_line": MoveType.PROCESS_LINE,
+        "no_line_action": MoveType.NO_LINE_ACTION,
+        "choose_territory_option": MoveType.CHOOSE_TERRITORY_OPTION,
+        "process_territory_region": MoveType.PROCESS_TERRITORY_REGION,
+        "no_territory_action": MoveType.NO_TERRITORY_ACTION,
+        "eliminate_rings_from_stack": MoveType.ELIMINATE_RINGS_FROM_STACK,
+        "recovery_slide": MoveType.RECOVERY_SLIDE,
+        "skip_recovery": MoveType.SKIP_RECOVERY,
+        "pass_turn": MoveType.PASS_TURN,
+    }
+
+    move_type = move_type_map.get(move_type_str, MoveType.PLACE_RING)
+
+    # Parse positions
+    from_dict = move_dict.get("from")
+    to_dict = move_dict.get("to")
+    capture_dict = move_dict.get("capture_target")
+
+    from_pos = Position(x=from_dict["x"], y=from_dict["y"], z=from_dict.get("z")) if from_dict else None
+    to_pos = Position(x=to_dict["x"], y=to_dict["y"], z=to_dict.get("z")) if to_dict else None
+    capture_target = Position(x=capture_dict["x"], y=capture_dict["y"], z=capture_dict.get("z")) if capture_dict else None
+
+    return Move(
+        id=f"move-{move_number}",
+        type=move_type,
+        player=move_dict.get("player", 1),
+        from_pos=from_pos,
+        to=to_pos,
+        capture_target=capture_target,
+        timestamp=timestamp,
+        thinkTime=move_dict.get("think_time_ms", 0),
+        moveNumber=move_number,
+    )
+
+
+def _get_board_type(board_str: str) -> BoardType:
+    """Convert board type string to BoardType enum."""
+    board_map = {
+        "square8": BoardType.SQUARE8,
+        "square19": BoardType.SQUARE19,
+        "square25": BoardType.SQUARE25,
+        "hexagonal": BoardType.HEXAGONAL,
+    }
+    return board_map.get(board_str, BoardType.SQUARE8)
 
 
 def load_weights_from_profile(
@@ -239,6 +301,7 @@ class GPUSelfPlayGenerator:
         self,
         num_games: int,
         output_file: Optional[str] = None,
+        output_db: Optional[str] = None,
         progress_interval: int = 10,
     ) -> List[Dict[str, Any]]:
         """Generate multiple batches of games.
@@ -246,6 +309,7 @@ class GPUSelfPlayGenerator:
         Args:
             num_games: Total number of games to generate
             output_file: Optional JSONL file to stream results to
+            output_db: Optional SQLite DB file to write games to (canonical format)
             progress_interval: Log progress every N batches
 
         Returns:
@@ -261,6 +325,7 @@ class GPUSelfPlayGenerator:
 
         start_time = time.time()
         file_handle = None
+        db = None
 
         if output_file:
             os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
@@ -272,6 +337,19 @@ class GPUSelfPlayGenerator:
                 logger.error(f"Cannot acquire lock on {output_file} - another process is writing")
                 file_handle.close()
                 sys.exit(1)
+
+        if output_db:
+            os.makedirs(os.path.dirname(output_db) or ".", exist_ok=True)
+            db = GameReplayDB(output_db)
+            logger.info(f"  Writing to DB: {output_db}")
+
+        # Create initial state for DB storage
+        board_type_str = {8: "square8", 19: "square19", 25: "hexagonal"}.get(self.board_size, "square8")
+        board_type = _get_board_type(board_type_str)
+        initial_state = GameEngine.create_initial_state(
+            board_type=board_type,
+            num_players=self.num_players,
+        )
 
         try:
             for batch_idx in range(num_batches):
@@ -321,6 +399,42 @@ class GPUSelfPlayGenerator:
 
                     if file_handle:
                         file_handle.write(json.dumps(record) + "\n")
+
+                    # Store to DB in canonical format
+                    if db:
+                        try:
+                            # Parse moves to Move objects
+                            moves_data = results["move_histories"][i]
+                            timestamp = record["timestamp"]
+                            moves = [
+                                _parse_move(m, j + 1, timestamp)
+                                for j, m in enumerate(moves_data)
+                            ]
+
+                            # Replay moves to get final state
+                            current_state = initial_state
+                            for move in moves:
+                                current_state = GameEngine.apply_move(current_state, move)
+
+                            # Store with full state snapshots
+                            metadata = {
+                                "source": "gpu_selfplay",
+                                "termination_reason": record["termination_reason"],
+                                "victory_type": record["victory_type"],
+                                "engine_mode": record["engine_mode"],
+                                "batch_id": record["batch_id"],
+                                "device": record["device"],
+                            }
+                            db.store_game(
+                                game_id=record["game_id"],
+                                initial_state=initial_state,
+                                final_state=current_state,
+                                moves=moves,
+                                metadata=metadata,
+                                store_history_entries=True,
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to store game {record['game_id']} to DB: {e}")
 
                 # Progress logging
                 if (batch_idx + 1) % progress_interval == 0:
@@ -400,6 +514,7 @@ def run_gpu_selfplay(
     shadow_threshold: float = 0.001,
     lps_victory_rounds: int = 2,
     rings_per_player: Optional[int] = None,
+    output_db: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run GPU-accelerated self-play generation.
 
@@ -418,6 +533,7 @@ def run_gpu_selfplay(
         shadow_threshold: Max divergence rate before error (default 0.1%)
         lps_victory_rounds: LPS victory threshold (default 2)
         rings_per_player: Starting rings per player (None = board default)
+        output_db: Optional path to SQLite DB for canonical game storage
 
     Returns:
         Statistics dict
@@ -471,9 +587,11 @@ def run_gpu_selfplay(
 
     # Generate games
     games_file = os.path.join(output_dir, "games.jsonl")
+    db_path = output_db or os.path.join(output_dir, "games.db")
     records = generator.generate_games(
         num_games=num_games,
         output_file=games_file,
+        output_db=db_path,
         progress_interval=10,
     )
 
@@ -505,6 +623,7 @@ def run_gpu_selfplay(
         logger.info(f"  Player {p}: {stats[f'p{p}_win_rate']:.1%}")
     logger.info("")
     logger.info(f"Games saved to: {games_file}")
+    logger.info(f"Games DB saved to: {db_path}")
     logger.info(f"Stats saved to: {stats_file}")
 
     return stats
@@ -558,6 +677,12 @@ def main():
         type=str,
         default="data/selfplay/gpu",
         help="Output directory",
+    )
+    parser.add_argument(
+        "--output-db",
+        type=str,
+        default=None,
+        help="Output SQLite DB path for canonical game storage (default: output-dir/games.db)",
     )
     parser.add_argument(
         "--weights-file",
@@ -655,6 +780,7 @@ def main():
         shadow_threshold=args.shadow_threshold,
         lps_victory_rounds=args.lps_victory_rounds,
         rings_per_player=args.rings_per_player,
+        output_db=args.output_db,
     )
 
 

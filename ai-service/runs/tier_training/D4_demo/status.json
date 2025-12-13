@@ -1,0 +1,29 @@
+{
+  "automated_gate": {
+    "eval_json": null,
+    "promotion_plan": null,
+    "status": "not_started"
+  },
+  "board": "square8",
+  "candidate_id": "sq8_2p_d4_demo_20251213_015304",
+  "gating": {
+    "report_path": null,
+    "status": "not_started"
+  },
+  "human_calibration": {
+    "min_games": 50,
+    "required": true,
+    "status": "pending"
+  },
+  "num_players": 2,
+  "perf": {
+    "perf_json": null,
+    "status": "not_started"
+  },
+  "tier": "D4",
+  "training": {
+    "report_path": "training_report.json",
+    "status": "completed"
+  },
+  "updated_at": "2025-12-13T01:53:04.119478+00:00"
+}

@@ -169,8 +169,11 @@ def run_selfplay_soak(
     logs_dir = AI_SERVICE_ROOT / "logs" / "selfplay"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    summary_path = logs_dir / f"soak.{board_type}.parity_gate.summary.json"
-    jsonl_path = logs_dir / f"soak.{board_type}.parity_gate.jsonl"
+    # Use a DB-scoped log path so concurrent parity gates don't contend on the
+    # same JSONL lock file (run_self_play_soak.py uses fcntl flock).
+    run_tag = f"{db_path.stem}.{board_type}.{num_players}p.{difficulty_band}"
+    summary_path = logs_dir / f"soak.{run_tag}.summary.json"
+    jsonl_path = logs_dir / f"soak.{run_tag}.jsonl"
 
     extra_args: list[str] = []
     if board_type in {"square19", "hexagonal"}:

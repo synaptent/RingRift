@@ -841,15 +841,15 @@ class RingRiftDataset(Dataset):
                     # Newer datasets may include scalar or per-sample arrays
                     # named 'board_type' and/or 'board_size'. Older datasets
                     # will simply omit these keys.
-                    files = getattr(self.data, "files", [])
-                    if "board_type" in files:
+                    available_keys = set(self.data.keys())
+                    if "board_type" in available_keys:
                         self.board_type_meta = self.data["board_type"]
-                    if "board_size" in files:
+                    if "board_size" in available_keys:
                         self.board_size_meta = self.data["board_size"]
 
                     # Multi-player value targets: optional 'values_mp'
                     # (N, MAX_PLAYERS) and 'num_players' (N,) arrays.
-                    if "values_mp" in files and "num_players" in files:
+                    if "values_mp" in available_keys and "num_players" in available_keys:
                         self.has_multi_player_values = True
                         self.num_players_arr = np.asarray(
                             self.data["num_players"],
@@ -1352,6 +1352,7 @@ def train_model(
             data_path_str = data_path
 
         inferred_size: Optional[int] = None
+        policy_encoding: Optional[str] = None
         if data_path_str:
             try:
                 if os.path.exists(data_path_str):
@@ -1360,6 +1361,11 @@ def train_model(
                         mmap_mode="r",
                         allow_pickle=True,
                     ) as d:
+                        if "policy_encoding" in d:
+                            try:
+                                policy_encoding = str(np.asarray(d["policy_encoding"]).item())
+                            except Exception:
+                                policy_encoding = None
                         if "policy_indices" in d:
                             pi = d["policy_indices"]
                             max_idx = -1
@@ -1381,15 +1387,40 @@ def train_model(
                     )
 
         if inferred_size is not None:
-            # V3 models use spatial policy heads with fixed index mappings that
-            # require the full policy space. Don't use inferred size for v3.
             board_default_size = get_policy_size_for_board(config.board_type)
-            if model_version == 'v3' and inferred_size < board_default_size:
+            if model_version == 'v3':
+                # V3 models use spatial policy heads with fixed index mappings
+                # (encode_move_for_board). Training must therefore use a dataset
+                # whose policy indices were encoded with the same board-aware
+                # mapping; otherwise the network learns probabilities for the
+                # wrong action IDs and neural tiers degrade toward heuristic
+                # rollouts.
+                if policy_encoding == "legacy_max_n":
+                    raise ValueError(
+                        "Dataset uses legacy MAX_N policy encoding but --model-version=v3 "
+                        "requires board-aware policy encoding.\n"
+                        f"  dataset={data_path_str}\n"
+                        f"  inferred_policy_size={inferred_size}\n"
+                        f"  board_default_policy_size={board_default_size}\n\n"
+                        "Regenerate the dataset with:\n"
+                        "  PYTHONPATH=. python scripts/export_replay_dataset.py "
+                        "--db <canonical_db> --board-type <square8|square19> "
+                        "--num-players <2|3|4> --board-aware-encoding --output <path>.npz\n"
+                    )
+                if inferred_size > board_default_size:
+                    raise ValueError(
+                        "Dataset policy indices exceed the v3 board-aware policy space. "
+                        "This usually means the dataset was exported with legacy MAX_N encoding.\n"
+                        f"  dataset={data_path_str}\n"
+                        f"  inferred_policy_size={inferred_size}\n"
+                        f"  board_default_policy_size={board_default_size}\n\n"
+                        "Regenerate the dataset with --board-aware-encoding (see scripts/export_replay_dataset.py).\n"
+                    )
                 policy_size = board_default_size
                 if not distributed or is_main_process():
                     logger.info(
-                        "V3 model requires full policy space; using board-default "
-                        "policy_size=%d instead of inferred %d",
+                        "V3 model requires board-aware policy space; using "
+                        "board-default policy_size=%d (dataset max index implies %d)",
                         policy_size,
                         inferred_size,
                     )

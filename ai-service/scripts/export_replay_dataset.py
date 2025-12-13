@@ -645,6 +645,12 @@ def export_replay_dataset(
         "values": values_arr,
         "policy_indices": policy_indices_arr,
         "policy_values": policy_values_arr,
+        # Dataset-level metadata for downstream tooling (training + audits).
+        "board_type": np.asarray(board_type.value),
+        "board_size": np.asarray(int(features_arr.shape[-1])),
+        "policy_encoding": np.asarray(
+            "board_aware" if use_board_aware_encoding else "legacy_max_n"
+        ),
         # Metadata for weighted sampling (optional, used by WeightedRingRiftDataset)
         "move_numbers": move_numbers_arr,
         "total_game_moves": total_game_moves_arr,

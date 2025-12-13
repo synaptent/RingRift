@@ -2566,6 +2566,10 @@ class NeuralNetAI(BaseAI):
         # match architecture hyperparameters to the checkpoint metadata.
         models_dir = os.path.join(self._base_dir, "models")
         allow_fresh = bool(getattr(self.config, "allow_fresh_weights", False))
+        if os.environ.get("RINGRIFT_REQUIRE_NEURAL_NET", "").lower() in {"1", "true", "yes"}:
+            # Fail-fast mode: never allow random-weight fallback when neural
+            # tiers are expected to be functional.
+            allow_fresh = False
 
         arch_suffix = "_mps" if self.architecture_type == "mps" else ""
         other_arch_suffix = "" if arch_suffix == "_mps" else "_mps"
@@ -2612,8 +2616,58 @@ class NeuralNetAI(BaseAI):
             latest_matches = sorted(
                 p for p in set(latest_matches) if _is_usable_checkpoint(p)
             )
+
+            def _is_loadable_checkpoint(path: str) -> bool:
+                """Return True iff we can torch.load the checkpoint.
+
+                Some long-running training jobs may leave behind truncated
+                checkpoints (EOFError) even though the file exists and has a
+                non-zero size. Selecting the "latest" file by mtime/name alone
+                can therefore cause neural tiers to fail and silently fall back
+                to heuristic rollouts.
+                """
+                try:
+                    try:
+                        checkpoint_obj = torch.load(
+                            path,
+                            map_location="cpu",
+                            weights_only=False,
+                        )
+                    except TypeError:
+                        checkpoint_obj = torch.load(
+                            path,
+                            map_location="cpu",
+                        )
+                except Exception:
+                    return False
+
+                if not isinstance(checkpoint_obj, dict):
+                    return False
+
+                # Accept versioned and legacy checkpoint layouts.
+                if any(
+                    k in checkpoint_obj
+                    for k in (
+                        "model_state_dict",
+                        "state_dict",
+                        "_versioning_metadata",
+                        "conv1.weight",
+                        "module.conv1.weight",
+                        "policy_fc2.weight",
+                        "module.policy_fc2.weight",
+                    )
+                ):
+                    return True
+
+                return False
+
             if latest_matches:
-                chosen_path = latest_matches[-1]
+                # Iterate newest→oldest, selecting the first loadable checkpoint.
+                max_probe = int(os.environ.get("RINGRIFT_NN_RESOLVE_MAX_PROBE", "25") or "25")
+                for candidate in reversed(latest_matches[-max_probe:]):
+                    if _is_loadable_checkpoint(candidate):
+                        chosen_path = candidate
+                        break
 
         effective_model_path = chosen_path or model_path
 
@@ -2967,6 +3021,8 @@ class NeuralNetAI(BaseAI):
         import os
 
         allow_fresh = bool(getattr(self.config, "allow_fresh_weights", False))
+        if os.environ.get("RINGRIFT_REQUIRE_NEURAL_NET", "").lower() in {"1", "true", "yes"}:
+            allow_fresh = False
 
         try:
             # Try to use versioned loading first

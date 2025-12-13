@@ -352,7 +352,14 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
             # surface the next CHOOSE_TERRITORY_OPTION decision.
             game_state.current_phase = GamePhase.TERRITORY_PROCESSING
         else:
-            _on_territory_processing_complete(game_state, trace_mode=trace_mode)
+            # RR-CANON-R075/R204: When TERRITORY_PROCESSING has no remaining interactive
+            # decisions, hosts must record an explicit NO_TERRITORY_ACTION bookkeeping
+            # move before we rotate to the next player. Do not silently advance here.
+            #
+            # This mirrors TS replay semantics and prevents a parity divergence where
+            # Python rotates early while TS remains in territory_processing awaiting
+            # NO_TERRITORY_ACTION.
+            game_state.current_phase = GamePhase.TERRITORY_PROCESSING
 
     elif last_move.type in (
         MoveType.CHOOSE_TERRITORY_OPTION,

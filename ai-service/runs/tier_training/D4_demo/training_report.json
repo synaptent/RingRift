@@ -1,0 +1,35 @@
+{
+  "board": "square8",
+  "candidate_id": "sq8_2p_d4_demo_20251213_015304",
+  "config": {
+    "env": {
+      "board_type": "SQUARE8",
+      "lps_rounds_required": 2,
+      "max_moves": null,
+      "num_players": 2,
+      "reward_mode": "terminal",
+      "rings_per_player": null,
+      "seed": 42,
+      "use_default_rules_engine": true
+    },
+    "training_params": {
+      "enable_pruning": true,
+      "heuristic_profile_id": "heuristic_v1_2p",
+      "mode": "search_persona_demo",
+      "persona_id": "sq8_2p_d4_demo_20251213_015304",
+      "search_depth": 4,
+      "seed": 42,
+      "use_iterative_deepening": true
+    }
+  },
+  "created_at": "2025-12-13T01:53:04.118734+00:00",
+  "metrics": {
+    "extra": {
+      "note": "demo mode; no real tournaments run; persona config only"
+    },
+    "loss": null,
+    "training_steps": 0
+  },
+  "num_players": 2,
+  "tier": "D4"
+}

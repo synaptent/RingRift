@@ -60,6 +60,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import json
+import logging
 import os
 import random
 import sys
@@ -103,6 +104,10 @@ from app.game_engine import (  # type: ignore  # noqa: E402
 # GPU imports - lazy imported only when --gpu is used to avoid torch import overhead
 GPU_IMPORTS_LOADED = False
 GPUSelfPlayGenerator = None  # Populated on first GPU use
+
+# Module-level logger used throughout the soak harness. The wider app stack
+# configures logging handlers/levels, so we only need a named logger here.
+logger = logging.getLogger(__name__)
 
 
 def _load_gpu_imports() -> bool:
@@ -235,6 +240,8 @@ class GameRecord:
     # These are optional and only included when --include-training-data is set
     moves: Optional[List[Dict[str, Any]]] = None
     initial_state: Optional[Dict[str, Any]] = None
+    # Failure diagnostics (populated only for skipped/exception games)
+    failure_debug: Optional[Dict[str, Any]] = None
 
 
 def _record_invariant_violation(
@@ -1014,6 +1021,7 @@ def run_self_play_soak(
             move_count = 0
             termination_reason = "unknown"
             last_move = None
+            failure_debug: Optional[Dict[str, Any]] = None
             per_game_violations: Dict[str, int] = {}
             swap_sides_moves_for_game = 0
             skipped = False  # track games we drop but continue
@@ -1353,6 +1361,42 @@ def run_self_play_soak(
 
                     print(f"[DEBUG] Step exception: {exc}")
                     traceback.print_exc()
+                    try:
+                        failure_debug = {
+                            "kind": "step_exception",
+                            "exception_type": type(exc).__name__,
+                            "exception_message": str(exc),
+                            "pre_step": {
+                                "phase": getattr(state.current_phase, "value", str(state.current_phase)),
+                                "player": getattr(state, "current_player", None),
+                                "move_count": move_count,
+                            },
+                            "selected_move": (
+                                move.model_dump(mode="json")  # type: ignore[attr-defined]
+                                if move is not None and hasattr(move, "model_dump")
+                                else None
+                            ),
+                            "legal_moves_surface": [
+                                {"type": mv.type.value, "player": mv.player} for mv in (legal_moves or [])
+                            ],
+                            "traceback": traceback.format_exc(limit=50),
+                        }
+                        try:
+                            from app.rules.fsm import FSMValidationError  # type: ignore
+
+                            if isinstance(exc, FSMValidationError):
+                                failure_debug["fsm"] = {
+                                    "code": getattr(exc, "code", None),
+                                    "message": getattr(exc, "message", None),
+                                    "phase": getattr(exc, "current_phase", None),
+                                    "move_type": getattr(exc, "move_type", None),
+                                    "player": getattr(exc, "player", None),
+                                }
+                        except Exception:
+                            pass
+                    except Exception:
+                        # Never let debug capture crash the soak loop.
+                        failure_debug = None
                     termination_reason = f"step_exception:{type(exc).__name__}"
                     skipped = True
                     state = state  # keep last known state
@@ -1642,6 +1686,7 @@ def run_self_play_soak(
                 stalemate_tiebreaker=stalemate_tb,
                 moves=training_moves,
                 initial_state=training_initial_state,
+                failure_debug=failure_debug,
             )
             log_f.write(json.dumps(asdict(rec)) + "\n")
             # Ensure per-game records are visible to tail/analysis tools even

@@ -1655,18 +1655,23 @@ export function processTurn(
         moveNumber: state.moveHistory.length + 1,
       });
     } else {
-      // Territory-phase moves (choose_territory_option, no_territory_action,
-      // skip_territory_processing; legacy alias: process_territory_region) have their post-move phase/player semantics
-      // driven by the shared orchestrator + TurnStateMachine helpers
-      // (onLineProcessingComplete / onTerritoryProcessingComplete), which are
-      // already aligned with Python's phase_machine. To avoid double-advancing
+      // Territory-phase moves (choose_territory_option, eliminate_rings_from_stack,
+      // no_territory_action, skip_territory_processing; legacy alias: process_territory_region)
+      // have their post-move phase/player semantics driven by the shared orchestrator +
+      // TurnStateMachine helpers (onLineProcessingComplete / onTerritoryProcessingComplete),
+      // which are already aligned with Python's phase_machine. To avoid double-advancing
       // the turn and prematurely rotating out of territory_processing while
       // Python remains in territory_processing, we **do not** apply FSM
       // nextPhase/nextPlayer for these moves. FSM is still used for validation
       // and for non-territory phases.
+      // RR-FIX-2025-12-13: Added eliminate_rings_from_stack to isTerritoryPhaseMove.
+      // After eliminate_rings_from_stack, processPostMovePhases already advances to the
+      // next player's ring_placement. Without this inclusion, the FSM result would
+      // override that state, causing the game to get stuck in territory_processing.
       const isTerritoryPhaseMove =
         move.type === 'choose_territory_option' ||
         move.type === 'process_territory_region' ||
+        move.type === 'eliminate_rings_from_stack' ||
         move.type === 'no_territory_action' ||
         move.type === 'skip_territory_processing';
 
@@ -2168,6 +2173,7 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
           currentPlayer: nextPlayer,
           currentPhase: 'ring_placement' as GamePhase, // Always ring_placement - NO PHASE SKIPPING
           mustMoveFromStackKey: undefined, // Clear for new turn
+          chainCapturePosition: undefined, // Clear for new turn
         },
       };
     }
@@ -2427,12 +2433,13 @@ function processPostMovePhases(
     // - Proper FSM state tracking
     // - LPS round tracking accuracy
 
-    // Clear mustMoveFromStackKey for new turn.
+    // Clear mustMoveFromStackKey and chainCapturePosition for new turn.
     stateMachine.updateGameState({
       ...currentState,
       currentPlayer: nextPlayer,
       currentPhase: 'ring_placement', // Always ring_placement - NO PHASE SKIPPING
       mustMoveFromStackKey: undefined, // Clear for new turn
+      chainCapturePosition: undefined, // Clear for new turn
     });
 
     return {};
@@ -2501,6 +2508,20 @@ function processPostMovePhases(
     state.currentPhase === 'chain_capture' ||
     state.currentPhase === 'ring_placement'
   ) {
+    // RR-FIX-2025-12-12: Clear chainCapturePosition and mustMoveFromStackKey when
+    // transitioning to line_processing. These values are only relevant during
+    // movement/capture phases and must be cleared to prevent stale values from
+    // persisting into later phases (line_processing, territory_processing).
+    const needsClear =
+      stateMachine.gameState.chainCapturePosition !== undefined ||
+      stateMachine.gameState.mustMoveFromStackKey !== undefined;
+    if (needsClear) {
+      stateMachine.updateGameState({
+        ...stateMachine.gameState,
+        chainCapturePosition: undefined,
+        mustMoveFromStackKey: undefined,
+      });
+    }
     stateMachine.transitionTo('line_processing');
   }
 
@@ -2605,6 +2626,20 @@ function processPostMovePhases(
       // This fixes parity divergence where TS would skip directly to turn rotation
       // while Python stays in territory_processing waiting for no_territory_action.
       stateMachine.transitionTo('territory_processing');
+      // RR-FIX-2025-12-12: Clear stale chain capture state when entering territory_processing.
+      // These values should have been cleared when the chain capture ended, but
+      // in some edge cases (e.g., fixture loading, async state sync) they may persist.
+      // Territory processing never needs these values.
+      if (
+        stateMachine.gameState.chainCapturePosition !== undefined ||
+        stateMachine.gameState.mustMoveFromStackKey !== undefined
+      ) {
+        stateMachine.updateGameState({
+          ...stateMachine.gameState,
+          chainCapturePosition: undefined,
+          mustMoveFromStackKey: undefined,
+        });
+      }
     }
   }
 
@@ -2806,6 +2841,7 @@ function processPostMovePhases(
       currentPlayer: nextPlayer,
       currentPhase: 'ring_placement', // Always ring_placement - NO PHASE SKIPPING
       mustMoveFromStackKey: undefined, // Clear for new turn
+      chainCapturePosition: undefined, // Clear for new turn
     });
     return {};
   }
@@ -2842,6 +2878,7 @@ function processPostMovePhases(
     currentPlayer: nextPlayer,
     currentPhase: 'ring_placement', // Always ring_placement - NO PHASE SKIPPING
     mustMoveFromStackKey: undefined, // Clear for new turn
+    chainCapturePosition: undefined, // Clear for new turn
   });
 
   return {};

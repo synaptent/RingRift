@@ -1,0 +1,56 @@
+{
+  "board_type": "square8",
+  "candidate": {
+    "difficulty": 2,
+    "id": "sq8_2p_d2_demo_20251213_015241"
+  },
+  "criteria": {
+    "min_win_rate_vs_baseline": false,
+    "no_major_regression_vs_previous_tier": null
+  },
+  "ladder": {
+    "candidate_artifact_present": false,
+    "candidate_model_id": "sq8_2p_d2_demo_20251213_015241",
+    "current_model_id": "heuristic_v1_2p",
+    "use_candidate_artifact": false
+  },
+  "metrics": {
+    "win_rate_vs_baseline": 0.5,
+    "win_rate_vs_baseline_ci_high": 0.85,
+    "win_rate_vs_baseline_ci_low": 0.15,
+    "win_rate_vs_previous_tier": null
+  },
+  "num_players": 2,
+  "overall_pass": false,
+  "stats": {
+    "by_opponent": {
+      "random_d1": {
+        "average_game_length": 127.0,
+        "draws": 0,
+        "games": 4,
+        "losses": 2,
+        "opponent_ai_type": "random",
+        "opponent_difficulty": 1,
+        "opponent_id": "random_d1",
+        "victory_reasons": {
+          "last_player_standing": 3,
+          "unknown": 1
+        },
+        "win_rate": 0.5,
+        "wins": 2
+      }
+    },
+    "overall": {
+      "average_game_length": 127.0,
+      "draws": 0,
+      "losses": 2,
+      "victory_reasons": {
+        "last_player_standing": 3,
+        "unknown": 1
+      },
+      "wins": 2
+    },
+    "total_games": 4
+  },
+  "tier": "D2"
+}
