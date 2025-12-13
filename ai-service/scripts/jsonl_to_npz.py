@@ -8,6 +8,10 @@ The script replays each game from its initial_state using the moves list,
 extracting proper 56-channel features at each position using NeuralNetAI's
 feature extraction (matching the format expected by app.training.train).
 
+**Checkpointing**: The script saves intermediate chunks to disk every N games
+(default: 100) to prevent data loss on interruption. Use --checkpoint-dir to
+enable this feature. Chunks are merged at the end into the final NPZ file.
+
 Output NPZ format (compatible with train.py):
 - features: (N, 56, H, W) float32 - Full feature channels
 - globals: (N, 20) float32 - Global features
@@ -28,21 +32,35 @@ Usage:
         --board-type square8 \\
         --num-players 2
 
-    # With subsampling for large datasets
+    # With checkpointing (saves progress every 100 games)
     PYTHONPATH=. python scripts/jsonl_to_npz.py \\
         --input-dir data/selfplay/ \\
         --output data/training/sampled.npz \\
-        --max-games 1000 \\
-        --sample-every 2
+        --board-type square19 \\
+        --num-players 2 \\
+        --checkpoint-dir /tmp/npz_checkpoints \\
+        --checkpoint-interval 100
+
+    # Resume from checkpoint after interruption
+    PYTHONPATH=. python scripts/jsonl_to_npz.py \\
+        --input-dir data/selfplay/ \\
+        --output data/training/sampled.npz \\
+        --board-type square19 \\
+        --num-players 2 \\
+        --checkpoint-dir /tmp/npz_checkpoints \\
+        --resume
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
+import shutil
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -427,6 +445,190 @@ class ConversionStats:
     positions_extracted: int = 0
 
 
+class CheckpointManager:
+    """Manages checkpointing for long-running NPZ conversions.
+
+    Saves intermediate chunks to disk periodically to prevent data loss.
+    Supports resume from checkpoint after interruption.
+    """
+
+    def __init__(
+        self,
+        checkpoint_dir: Path,
+        checkpoint_interval: int = 100,
+        enabled: bool = True,
+    ):
+        self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
+        self.checkpoint_interval = checkpoint_interval
+        self.enabled = enabled and self.checkpoint_dir is not None
+        self.chunk_count = 0
+        self.progress_file: Optional[Path] = None
+        self.progress: Dict[str, Any] = {}
+
+        if self.enabled:
+            self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            self.progress_file = self.checkpoint_dir / "progress.json"
+
+    def load_progress(self) -> Dict[str, Any]:
+        """Load progress from checkpoint if exists."""
+        if not self.enabled or not self.progress_file.exists():
+            return {"games_completed": 0, "chunks": [], "stats": {}}
+
+        try:
+            with open(self.progress_file, "r") as f:
+                self.progress = json.load(f)
+                logger.info(f"Loaded checkpoint: {self.progress.get('games_completed', 0)} games completed")
+                return self.progress
+        except Exception as e:
+            logger.warning(f"Failed to load checkpoint: {e}")
+            return {"games_completed": 0, "chunks": [], "stats": {}}
+
+    def save_progress(self, games_completed: int, stats: ConversionStats):
+        """Save current progress."""
+        if not self.enabled:
+            return
+
+        self.progress = {
+            "games_completed": games_completed,
+            "chunks": [f"chunk_{i:04d}.npz" for i in range(self.chunk_count)],
+            "stats": {
+                "files_processed": stats.files_processed,
+                "games_processed": stats.games_processed,
+                "games_skipped_filter": stats.games_skipped_filter,
+                "games_skipped_no_data": stats.games_skipped_no_data,
+                "games_skipped_error": stats.games_skipped_error,
+                "positions_extracted": stats.positions_extracted,
+            },
+            "timestamp": time.time(),
+        }
+
+        with open(self.progress_file, "w") as f:
+            json.dump(self.progress, f, indent=2)
+
+    def save_chunk(
+        self,
+        features: List[np.ndarray],
+        globals_vec: List[np.ndarray],
+        values: List[float],
+        values_mp: List[np.ndarray],
+        num_players: List[int],
+        policy_indices: List[np.ndarray],
+        policy_values: List[np.ndarray],
+        move_numbers: List[int],
+        total_game_moves: List[int],
+        phases: List[str],
+    ) -> Optional[Path]:
+        """Save a chunk of data to disk."""
+        if not self.enabled or not features:
+            return None
+
+        chunk_path = self.checkpoint_dir / f"chunk_{self.chunk_count:04d}.npz"
+
+        try:
+            np.savez_compressed(
+                chunk_path,
+                features=np.stack(features, axis=0).astype(np.float32),
+                globals=np.stack(globals_vec, axis=0).astype(np.float32),
+                values=np.array(values, dtype=np.float32),
+                values_mp=np.stack(values_mp, axis=0).astype(np.float32),
+                num_players=np.array(num_players, dtype=np.int32),
+                policy_indices=np.array(policy_indices, dtype=object),
+                policy_values=np.array(policy_values, dtype=object),
+                move_numbers=np.array(move_numbers, dtype=np.int32),
+                total_game_moves=np.array(total_game_moves, dtype=np.int32),
+                phases=np.array(phases, dtype=object),
+            )
+
+            self.chunk_count += 1
+            logger.info(f"Saved checkpoint chunk {self.chunk_count}: {len(features)} samples to {chunk_path}")
+            return chunk_path
+
+        except Exception as e:
+            logger.error(f"Failed to save chunk: {e}")
+            return None
+
+    def merge_chunks(self, output_path: Path) -> bool:
+        """Merge all chunks into final NPZ file."""
+        if not self.enabled:
+            return False
+
+        chunk_files = sorted(self.checkpoint_dir.glob("chunk_*.npz"))
+        if not chunk_files:
+            logger.warning("No chunks to merge")
+            return False
+
+        logger.info(f"Merging {len(chunk_files)} chunks into {output_path}...")
+
+        # Load all chunks
+        all_features = []
+        all_globals = []
+        all_values = []
+        all_values_mp = []
+        all_num_players = []
+        all_policy_indices = []
+        all_policy_values = []
+        all_move_numbers = []
+        all_total_game_moves = []
+        all_phases = []
+
+        for chunk_file in chunk_files:
+            try:
+                with np.load(chunk_file, allow_pickle=True) as data:
+                    all_features.append(data["features"])
+                    all_globals.append(data["globals"])
+                    all_values.append(data["values"])
+                    all_values_mp.append(data["values_mp"])
+                    all_num_players.append(data["num_players"])
+                    all_policy_indices.extend(data["policy_indices"])
+                    all_policy_values.extend(data["policy_values"])
+                    all_move_numbers.append(data["move_numbers"])
+                    all_total_game_moves.append(data["total_game_moves"])
+                    all_phases.extend(data["phases"])
+            except Exception as e:
+                logger.error(f"Failed to load chunk {chunk_file}: {e}")
+                return False
+
+        # Concatenate arrays
+        features_arr = np.concatenate(all_features, axis=0)
+        globals_arr = np.concatenate(all_globals, axis=0)
+        values_arr = np.concatenate(all_values, axis=0)
+        values_mp_arr = np.concatenate(all_values_mp, axis=0)
+        num_players_arr = np.concatenate(all_num_players, axis=0)
+        move_numbers_arr = np.concatenate(all_move_numbers, axis=0)
+        total_game_moves_arr = np.concatenate(all_total_game_moves, axis=0)
+        policy_indices_arr = np.array(all_policy_indices, dtype=object)
+        policy_values_arr = np.array(all_policy_values, dtype=object)
+        phases_arr = np.array(all_phases, dtype=object)
+
+        # Save merged file
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            output_path,
+            features=features_arr,
+            globals=globals_arr,
+            values=values_arr,
+            policy_indices=policy_indices_arr,
+            policy_values=policy_values_arr,
+            move_numbers=move_numbers_arr,
+            total_game_moves=total_game_moves_arr,
+            phases=phases_arr,
+            values_mp=values_mp_arr,
+            num_players=num_players_arr,
+        )
+
+        logger.info(f"Merged {len(features_arr)} samples into {output_path}")
+        return True
+
+    def cleanup(self):
+        """Remove checkpoint directory after successful completion."""
+        if self.enabled and self.checkpoint_dir.exists():
+            try:
+                shutil.rmtree(self.checkpoint_dir)
+                logger.info(f"Cleaned up checkpoint directory: {self.checkpoint_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to cleanup checkpoint dir: {e}")
+
+
 def process_jsonl_file(
     filepath: Path,
     encoder: NeuralNetAI,
@@ -665,10 +867,43 @@ def convert_jsonl_to_npz(
     sample_every: int = 1,
     history_length: int = 3,
     gpu_selfplay_mode: bool = False,
+    checkpoint_dir: Optional[Path] = None,
+    checkpoint_interval: int = 100,
+    resume: bool = False,
 ) -> ConversionStats:
-    """Convert JSONL files to NPZ training data."""
+    """Convert JSONL files to NPZ training data.
+
+    Args:
+        input_paths: List of JSONL files to process
+        output_path: Output NPZ file path
+        board_type_str: Board type (square8, square19, hexagonal)
+        players_filter: Filter games by player count
+        max_games: Maximum number of games to process
+        sample_every: Sample every Nth position
+        history_length: Number of history frames to stack
+        gpu_selfplay_mode: Use GPU selfplay simplified format
+        checkpoint_dir: Directory for checkpoint chunks (enables checkpointing)
+        checkpoint_interval: Save checkpoint every N games
+        resume: Resume from existing checkpoint
+    """
     board_type = BOARD_TYPE_MAP.get(board_type_str, BoardType.SQUARE8)
     encoder = build_encoder(board_type)
+
+    # Initialize checkpoint manager
+    checkpoint_mgr = CheckpointManager(
+        checkpoint_dir=checkpoint_dir,
+        checkpoint_interval=checkpoint_interval,
+        enabled=checkpoint_dir is not None,
+    )
+
+    # Check for resume
+    games_to_skip = 0
+    if resume and checkpoint_mgr.enabled:
+        progress = checkpoint_mgr.load_progress()
+        games_to_skip = progress.get("games_completed", 0)
+        checkpoint_mgr.chunk_count = len(progress.get("chunks", []))
+        if games_to_skip > 0:
+            logger.info(f"Resuming from checkpoint: skipping first {games_to_skip} games")
 
     all_features = []
     all_globals = []
@@ -682,9 +917,12 @@ def convert_jsonl_to_npz(
     all_phases = []
 
     total_stats = ConversionStats()
+    games_since_checkpoint = 0
 
     logger.info(f"Processing {len(input_paths)} JSONL files...")
     logger.info(f"Board type: {board_type_str}, Players: {players_filter or 'any'}")
+    if checkpoint_mgr.enabled:
+        logger.info(f"Checkpointing enabled: saving every {checkpoint_interval} games to {checkpoint_dir}")
 
     for i, filepath in enumerate(input_paths):
         if max_games and total_stats.games_processed >= max_games:
@@ -723,6 +961,30 @@ def convert_jsonl_to_npz(
         total_stats.games_skipped_error += stats.games_skipped_error
         total_stats.positions_extracted += stats.positions_extracted
 
+        games_since_checkpoint += stats.games_processed
+
+        # Save checkpoint if interval reached
+        if checkpoint_mgr.enabled and games_since_checkpoint >= checkpoint_interval:
+            checkpoint_mgr.save_chunk(
+                all_features, all_globals, all_values, all_values_mp,
+                all_num_players, all_policy_indices, all_policy_values,
+                all_move_numbers, all_total_game_moves, all_phases,
+            )
+            checkpoint_mgr.save_progress(total_stats.games_processed, total_stats)
+
+            # Clear buffers after saving chunk
+            all_features.clear()
+            all_globals.clear()
+            all_values.clear()
+            all_values_mp.clear()
+            all_num_players.clear()
+            all_policy_indices.clear()
+            all_policy_values.clear()
+            all_move_numbers.clear()
+            all_total_game_moves.clear()
+            all_phases.clear()
+            games_since_checkpoint = 0
+
         if (i + 1) % 10 == 0 or i == len(input_paths) - 1:
             logger.info(
                 f"Processed {i + 1}/{len(input_paths)} files, "
@@ -730,40 +992,56 @@ def convert_jsonl_to_npz(
                 f"{total_stats.positions_extracted} positions"
             )
 
-    if not all_features:
+    # Save any remaining data as final chunk
+    if checkpoint_mgr.enabled and all_features:
+        checkpoint_mgr.save_chunk(
+            all_features, all_globals, all_values, all_values_mp,
+            all_num_players, all_policy_indices, all_policy_values,
+            all_move_numbers, all_total_game_moves, all_phases,
+        )
+        checkpoint_mgr.save_progress(total_stats.games_processed, total_stats)
+
+    # Merge chunks or save directly
+    if checkpoint_mgr.enabled and checkpoint_mgr.chunk_count > 0:
+        # Merge all chunks into final output
+        if checkpoint_mgr.merge_chunks(output_path):
+            checkpoint_mgr.cleanup()
+        else:
+            logger.error("Failed to merge chunks - checkpoint data preserved")
+            return total_stats
+    elif all_features:
+        # No checkpointing - save directly (original behavior)
+        logger.info("Converting to numpy arrays...")
+        features_arr = np.stack(all_features, axis=0).astype(np.float32)
+        globals_arr = np.stack(all_globals, axis=0).astype(np.float32)
+        values_arr = np.array(all_values, dtype=np.float32)
+        values_mp_arr = np.stack(all_values_mp, axis=0).astype(np.float32)
+        num_players_arr = np.array(all_num_players, dtype=np.int32)
+        policy_indices_arr = np.array(all_policy_indices, dtype=object)
+        policy_values_arr = np.array(all_policy_values, dtype=object)
+        move_numbers_arr = np.array(all_move_numbers, dtype=np.int32)
+        total_game_moves_arr = np.array(all_total_game_moves, dtype=np.int32)
+        phases_arr = np.array(all_phases, dtype=object)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Saving to {output_path}...")
+
+        np.savez_compressed(
+            output_path,
+            features=features_arr,
+            globals=globals_arr,
+            values=values_arr,
+            policy_indices=policy_indices_arr,
+            policy_values=policy_values_arr,
+            move_numbers=move_numbers_arr,
+            total_game_moves=total_game_moves_arr,
+            phases=phases_arr,
+            values_mp=values_mp_arr,
+            num_players=num_players_arr,
+        )
+    else:
         logger.warning("No training data extracted!")
         return total_stats
-
-    # Convert to numpy arrays
-    logger.info("Converting to numpy arrays...")
-    features_arr = np.stack(all_features, axis=0).astype(np.float32)
-    globals_arr = np.stack(all_globals, axis=0).astype(np.float32)
-    values_arr = np.array(all_values, dtype=np.float32)
-    values_mp_arr = np.stack(all_values_mp, axis=0).astype(np.float32)
-    num_players_arr = np.array(all_num_players, dtype=np.int32)
-    policy_indices_arr = np.array(all_policy_indices, dtype=object)
-    policy_values_arr = np.array(all_policy_values, dtype=object)
-    move_numbers_arr = np.array(all_move_numbers, dtype=np.int32)
-    total_game_moves_arr = np.array(all_total_game_moves, dtype=np.int32)
-    phases_arr = np.array(all_phases, dtype=object)
-
-    # Save
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Saving to {output_path}...")
-
-    np.savez_compressed(
-        output_path,
-        features=features_arr,
-        globals=globals_arr,
-        values=values_arr,
-        policy_indices=policy_indices_arr,
-        policy_values=policy_values_arr,
-        move_numbers=move_numbers_arr,
-        total_game_moves=total_game_moves_arr,
-        phases=phases_arr,
-        values_mp=values_mp_arr,
-        num_players=num_players_arr,
-    )
 
     output_size_mb = output_path.stat().st_size / (1024 * 1024)
     logger.info(f"Output file size: {output_size_mb:.2f} MB")
@@ -826,6 +1104,22 @@ def main():
         action="store_true",
         help="Enable GPU selfplay mode: auto-inject phase transitions for simplified move format",
     )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=str,
+        help="Directory for checkpoint chunks (enables incremental saves to prevent data loss)",
+    )
+    parser.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=100,
+        help="Save checkpoint every N games (default: 100)",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from existing checkpoint in --checkpoint-dir",
+    )
 
     args = parser.parse_args()
 
@@ -850,6 +1144,9 @@ def main():
         sample_every=args.sample_every,
         history_length=args.history_length,
         gpu_selfplay_mode=args.gpu_selfplay,
+        checkpoint_dir=Path(args.checkpoint_dir) if args.checkpoint_dir else None,
+        checkpoint_interval=args.checkpoint_interval,
+        resume=args.resume,
     )
 
     logger.info("")

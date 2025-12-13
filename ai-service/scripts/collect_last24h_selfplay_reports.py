@@ -263,7 +263,7 @@ for scan_root, recursive in scan_specs:
                 len(parts) >= 4
                 and parts[0] == "data"
                 and parts[1] == "selfplay"
-                and parts[2] in {"new_ruleset", "vast_sync", "combined_gpu"}
+                and parts[2] in {"new_ruleset", "vast_sync", "combined_gpu", "toxic_archives"}
             ):
                 continue
 
@@ -384,7 +384,7 @@ def collect_local(*, ts: str, hours: float, local_out: Path, scan_profile: str) 
                     len(parts) >= 4
                     and parts[0] == "data"
                     and parts[1] == "selfplay"
-                    and parts[2] in {"new_ruleset", "vast_sync", "combined_gpu"}
+                    and parts[2] in {"new_ruleset", "vast_sync", "combined_gpu", "toxic_archives"}
                 ):
                     continue
             entries.append((int(st.st_mtime), int(st.st_size), rel))

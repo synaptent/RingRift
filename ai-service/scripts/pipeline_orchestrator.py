@@ -31,8 +31,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -40,10 +42,23 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Allow imports from app/
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+# SSH retry configuration
+SSH_MAX_RETRIES = 3
+SSH_BASE_DELAY = 2.0  # seconds
+SSH_MAX_DELAY = 30.0  # seconds
+SSH_BACKOFF_FACTOR = 2.0
+
+# Smart polling configuration
+POLL_INTERVAL_SECONDS = 60  # Check every minute
+MAX_PHASE_WAIT_MINUTES = 120  # Maximum wait for any phase
+SELFPLAY_MIN_GAMES_THRESHOLD = 50  # Min games before proceeding
+CMAES_COMPLETION_CHECK_CMD = "pgrep -f 'run_iterative_cmaes' >/dev/null && echo running || echo done"
 
 
 @dataclass
@@ -76,14 +91,24 @@ class SelfplayJob:
 
 @dataclass
 class PipelineState:
-    """Current state of the pipeline."""
+    """Current state of the pipeline with full checkpointing support."""
 
     iteration: int = 0
     phase: str = "idle"
+    phase_completed: Dict[str, bool] = field(default_factory=dict)  # Tracks which phases completed
     games_generated: Dict[str, int] = field(default_factory=dict)
     models_trained: List[str] = field(default_factory=list)
     last_sync: Optional[str] = None
     errors: List[str] = field(default_factory=list)
+    # Elo tracking
+    elo_ratings: Dict[str, float] = field(default_factory=dict)  # model_id -> Elo rating
+    elo_history: List[Dict[str, Any]] = field(default_factory=list)  # List of Elo updates
+    # Model registry
+    model_registry: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # model_id -> metadata
+    # Game deduplication
+    seen_game_hashes: Set[str] = field(default_factory=set)
+    # Tier gating
+    tier_promotions: Dict[str, str] = field(default_factory=dict)  # config -> current tier
 
 
 # Worker configurations loaded from gitignored config file
@@ -372,41 +397,106 @@ export RINGRIFT_TRAINED_HEURISTIC_PROFILES={worker.remote_path}/data/trained_heu
         return {"dispatched": success_count, "total": len(tasks)}
 
     async def run_sync_phase(self) -> bool:
-        """Sync all selfplay data from remote workers to local."""
+        """Sync all selfplay AND tournament data from remote workers.
+
+        This phase pulls:
+        1. Selfplay game databases from workers (via sync_selfplay_data.sh)
+        2. Tournament JSONL files from workers (for training data)
+
+        Both sources are merged into the training data pool.
+        """
         self.state.phase = "sync"
         self._save_state()
         self.log("=== Starting Data Sync Phase ===")
 
+        success = True
+
+        # Step 1: Sync selfplay databases using existing script
         sync_script = Path(__file__).parent / "sync_selfplay_data.sh"
-        if not sync_script.exists():
-            self.log(f"Sync script not found: {sync_script}", "ERROR")
-            return False
-
-        if self.dry_run:
-            self.log(f"[DRY RUN] Would run: {sync_script} --merge --to-mac-studio")
-            return True
-
-        try:
-            result = subprocess.run(
-                [str(sync_script), "--merge", "--to-mac-studio"],
-                capture_output=True,
-                text=True,
-                timeout=1800,  # 30 minute timeout
-            )
-            if result.returncode == 0:
-                self.log("Data sync completed successfully", "OK")
-                self.state.last_sync = datetime.now().isoformat()
-                self._save_state()
-                return True
+        if sync_script.exists():
+            if self.dry_run:
+                self.log(f"[DRY RUN] Would run: {sync_script} --merge --to-mac-studio")
             else:
-                self.log(f"Sync failed: {result.stderr}", "ERROR")
-                return False
-        except subprocess.TimeoutExpired:
-            self.log("Sync timed out after 30 minutes", "ERROR")
-            return False
-        except Exception as e:
-            self.log(f"Sync error: {e}", "ERROR")
-            return False
+                try:
+                    result = subprocess.run(
+                        [str(sync_script), "--merge", "--to-mac-studio"],
+                        capture_output=True,
+                        text=True,
+                        timeout=1800,  # 30 minute timeout
+                    )
+                    if result.returncode == 0:
+                        self.log("Selfplay DB sync completed", "OK")
+                    else:
+                        self.log(f"Selfplay sync failed: {result.stderr[:200]}", "ERROR")
+                        success = False
+                except subprocess.TimeoutExpired:
+                    self.log("Selfplay sync timed out", "ERROR")
+                    success = False
+                except Exception as e:
+                    self.log(f"Selfplay sync error: {e}", "ERROR")
+                    success = False
+        else:
+            self.log(f"Sync script not found: {sync_script}", "WARN")
+
+        # Step 2: Sync tournament JSONL files from workers
+        await self.sync_tournament_games()
+
+        self.state.last_sync = datetime.now().isoformat()
+        self._save_state()
+        return success
+
+    async def sync_tournament_games(self) -> int:
+        """Pull tournament game JSONL files from all workers and merge locally.
+
+        Tournament games are high-quality training data from strong AI matchups.
+        They are saved as JSONL files in logs/tournaments/ on each worker.
+        """
+        self.log("Syncing tournament games from workers...")
+
+        local_tournament_dir = Path("logs/tournaments/merged")
+        local_tournament_dir.mkdir(parents=True, exist_ok=True)
+
+        merged_count = 0
+
+        for worker in WORKERS:
+            if not await self.check_worker_health(worker):
+                continue
+
+            # Find tournament JSONL files on worker
+            find_cmd = f"find {worker.remote_path}/logs/tournaments -name 'games.jsonl' 2>/dev/null || true"
+            code, stdout, _ = await self.run_remote_command(worker, find_cmd)
+
+            if code != 0 or not stdout.strip():
+                continue
+
+            jsonl_files = stdout.strip().split("\n")
+            self.log(f"  {worker.name}: Found {len(jsonl_files)} tournament files")
+
+            for remote_path in jsonl_files:
+                if not remote_path.strip():
+                    continue
+
+                # Read remote file content
+                cat_cmd = f"cat {remote_path}"
+                code, content, _ = await self.run_remote_command(worker, cat_cmd)
+
+                if code != 0 or not content.strip():
+                    continue
+
+                # Append to local merged file
+                merged_file = local_tournament_dir / "all_tournaments.jsonl"
+                with open(merged_file, "a") as f:
+                    f.write(content)
+                    if not content.endswith("\n"):
+                        f.write("\n")
+
+                lines = len(content.strip().split("\n"))
+                merged_count += lines
+
+        if merged_count > 0:
+            self.log(f"Merged {merged_count} tournament games to {local_tournament_dir}", "OK")
+
+        return merged_count
 
     async def sync_heuristic_profiles(self) -> bool:
         """Sync trained heuristic profiles from all workers.
@@ -717,41 +807,101 @@ python scripts/run_iterative_cmaes.py \\
         return results
 
     async def run_evaluation_phase(self, iteration: int) -> Dict[str, float]:
-        """Run evaluation tournaments to compare models."""
+        """Run evaluation tournaments and SAVE games for training.
+
+        This phase serves two purposes:
+        1. Evaluate model/heuristic strength via head-to-head tournaments
+        2. Generate high-quality training data from strong AI matchups
+
+        Tournament games are saved to logs/tournaments/iter{N}/ and should be
+        merged into training data during the sync phase.
+        """
         self.state.phase = "evaluation"
         self._save_state()
         self.log(f"=== Starting Evaluation Phase (Iteration {iteration}) ===")
 
         results = {}
 
-        # Find a worker for evaluation
-        worker = next((w for w in WORKERS if await self.check_worker_health(w)), None)
-        if not worker:
+        # Find workers for evaluation (distribute tournaments)
+        eval_workers = [w for w in WORKERS if await self.check_worker_health(w)]
+        if not eval_workers:
             self.log("No healthy workers for evaluation", "ERROR")
             return results
 
-        # Run tournament between iterations
-        eval_cmd = f"""
+        # Comprehensive tournament matchups for diverse training data
+        # Format: (p1_type, p1_diff, p2_type, p2_diff, board, games)
+        # Higher difficulty = stronger AI = higher quality games
+        TOURNAMENT_MATCHUPS = [
+            # Cross-AI-type matchups (generates diverse training data)
+            ("Heuristic", 5, "MCTS", 6, "Square8", 10),
+            ("Heuristic", 5, "Minimax", 5, "Square8", 10),
+            ("MCTS", 6, "Minimax", 5, "Square8", 10),
+
+            # Same-type tier progression (measures improvement)
+            ("Heuristic", 3, "Heuristic", 5, "Square8", 8),
+            ("MCTS", 5, "MCTS", 7, "Square8", 8),
+
+            # Multi-board coverage
+            ("Heuristic", 5, "MCTS", 5, "Square19", 6),
+            ("Heuristic", 5, "MCTS", 5, "Hex", 6),
+
+            # Strong vs strong (highest quality games)
+            ("MCTS", 7, "MCTS", 8, "Square8", 6),
+        ]
+
+        # Distribute matchups across workers
+        tasks = []
+        for idx, (p1, p1d, p2, p2d, board, games) in enumerate(TOURNAMENT_MATCHUPS):
+            worker = eval_workers[idx % len(eval_workers)]
+            matchup_key = f"{p1}{p1d}_vs_{p2}{p2d}_{board}"
+            output_dir = f"logs/tournaments/iter{iteration}/{matchup_key}"
+
+            eval_cmd = f"""
 source venv/bin/activate
 export PYTHONPATH={worker.remote_path}
 export RINGRIFT_SKIP_SHADOW_CONTRACTS=true
-python scripts/run_ai_tournament.py \
-    --p1 Heuristic --p1-diff 5 \
-    --p2 MCTS --p2-diff 5 \
-    --board Square8 \
-    --games 10 \
-    --output logs/tournaments/eval_iter{iteration}.json
+export RINGRIFT_TRAINED_HEURISTIC_PROFILES={worker.remote_path}/data/trained_heuristic_profiles.json
+mkdir -p {output_dir}
+python scripts/run_ai_tournament.py \\
+    --p1 {p1} --p1-diff {p1d} \\
+    --p2 {p2} --p2-diff {p2d} \\
+    --board {board} \\
+    --games {games} \\
+    --output-dir {output_dir}
 """
-        self.log("Running evaluation tournament...")
-        code, stdout, _ = await self.run_remote_command(worker, eval_cmd)
-        if code == 0:
-            self.log("Evaluation completed", "OK")
-            # Parse results (simplified)
-            results["tournament_complete"] = 1.0
-        else:
-            self.log("Evaluation failed", "ERROR")
+            self.log(f"Dispatching tournament {matchup_key} to {worker.name}")
+            tasks.append(self._run_tournament(worker, eval_cmd, matchup_key))
+
+        # Run all tournaments concurrently
+        tournament_results = await asyncio.gather(*tasks)
+        for matchup_key, success, win_rate in tournament_results:
+            results[matchup_key] = win_rate if success else 0.0
+
+        # Summary
+        success_count = sum(1 for _, s, _ in tournament_results if s)
+        self.log(f"Evaluation: {success_count}/{len(TOURNAMENT_MATCHUPS)} tournaments completed")
 
         return results
+
+    async def _run_tournament(
+        self,
+        worker: WorkerConfig,
+        cmd: str,
+        matchup_key: str,
+    ) -> Tuple[str, bool, float]:
+        """Run a single tournament and parse results."""
+        code, stdout, stderr = await self.run_remote_command(worker, cmd)
+        if code != 0:
+            self.log(f"Tournament {matchup_key} failed: {stderr[:100]}", "ERROR")
+            return matchup_key, False, 0.0
+
+        # Parse win rate from output (e.g., "P1 wins: 6/10 (60.0%)")
+        import re
+        match = re.search(r"(\d+\.?\d*)%", stdout)
+        win_rate = float(match.group(1)) / 100 if match else 0.5
+
+        self.log(f"Tournament {matchup_key}: {win_rate:.1%} P1 win rate", "OK")
+        return matchup_key, True, win_rate
 
     async def run_full_iteration(self, iteration: int) -> bool:
         """Run a complete pipeline iteration.
