@@ -72,6 +72,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Backwards-compatible import surface for tests and callers that patch
+# `app.main.get_ladder_tier_config`. We route through the effective ladder
+# config so that env overrides remain honoured in production.
+def get_ladder_tier_config(
+    difficulty: int,
+    board_type: Any,
+    num_players: int,
+) -> LadderTierConfig:
+    return get_effective_ladder_config(difficulty, board_type, num_players)
+
 # Best-effort: load trained heuristic profiles (CMA-ES / calibration) when
 # RINGRIFT_TRAINED_HEURISTIC_PROFILES points at a JSON bundle. This keeps the
 # stable heuristic_profile_id values used by ladder_config.py while allowing
@@ -394,7 +404,7 @@ async def get_ai_move(request: MoveRequest):
         players = getattr(request.game_state, "players", None)
         num_players = len(players) if players is not None else None
         if board_type is not None and num_players:
-            ladder_config = get_effective_ladder_config(
+            ladder_config = get_ladder_tier_config(
                 request.difficulty,
                 board_type,
                 num_players,
