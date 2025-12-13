@@ -720,7 +720,7 @@ class BatchGameState:
             device=device,
         )
 
-        return cls(
+        batch = cls(
             stack_owner=torch.zeros(shape_board, dtype=torch.int8, device=device),
             stack_height=torch.zeros(shape_board, dtype=torch.int8, device=device),
             cap_height=torch.zeros(shape_board, dtype=torch.int8, device=device),
@@ -771,6 +771,34 @@ class BatchGameState:
             board_size=board_size,
             num_players=num_players,
         )
+
+        # Mark hex out-of-bounds cells as collapsed (GPU parity fix)
+        # Hex boards are embedded in a square bounding box (e.g., 25x25 for radius-12).
+        # Only cells satisfying max(|q|, |r|, |q+r|) <= radius are valid.
+        # All other cells must be marked as collapsed to prevent invalid placements.
+        if board_type and board_type.lower() in ("hexagonal", "hex"):
+            center = board_size // 2
+            radius = center  # Hex radius = half the bounding box size (e.g., 12 for 25x25)
+
+            # Create hex validity mask
+            for row in range(board_size):
+                for col in range(board_size):
+                    # Convert to axial coordinates (q, r) centered at origin
+                    q = col - center
+                    r = row - center
+                    # Check if outside hex radius using axial distance formula
+                    if max(abs(q), abs(r), abs(q + r)) > radius:
+                        # Mark as collapsed (out of bounds) for all games in batch
+                        batch.is_collapsed[:, row, col] = True
+
+            # Count valid cells for logging
+            valid_cells = (~batch.is_collapsed[0]).sum().item()
+            logger.info(
+                f"Hex board initialized: {board_size}x{board_size} embedding, "
+                f"radius={radius}, valid_cells={valid_cells} (expected ~{3*radius**2 + 3*radius + 1})"
+            )
+
+        return batch
 
     @classmethod
     def from_single_game(
