@@ -216,3 +216,14 @@ brew install python@3.11
 - **Distributed runner**: `scripts/run_distributed_selfplay_matrix.sh`
 - **Worker service**: `scripts/cluster_worker.py`
 - **Results**: `logs/selfplay_matrix/`, `data/games/`
+
+## Advanced: Pipeline Orchestrator
+
+For production training pipelines with P2P cluster coordination, see [PIPELINE_ORCHESTRATOR.md](PIPELINE_ORCHESTRATOR.md).
+
+The pipeline orchestrator provides:
+
+- **P2P Backend**: REST API-based job dispatch without SSH
+- **Unified Pipeline**: Self-play → Parity validation → NPZ export
+- **State Management**: Resumable pipeline execution
+- **Cluster Operations**: Code sync, health checks, data transfer
