@@ -293,7 +293,7 @@ export function TeachingOverlay({
       pendingLineCount,
       pendingRegionCount,
       chainContinuationCount,
-      forcedEliminationCount,
+      forcedEliminationCount: _forcedEliminationCount,
     } = fsmContext;
 
     // Add contextual tip based on FSM decision type

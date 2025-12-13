@@ -891,7 +891,8 @@ function groupIntoConnectedRegions(positions: Position[], board: BoardState): Po
     visited.add(key);
 
     while (queue.length > 0) {
-      const current = queue.shift()!;
+      const current = queue.shift();
+      if (!current) break; // Type guard, should never happen due to loop condition
       region.push(current);
 
       // Get territory-adjacent neighbors

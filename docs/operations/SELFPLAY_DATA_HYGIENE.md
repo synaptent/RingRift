@@ -50,8 +50,8 @@ Then inspect:
 
 Notes:
 
-- This is file-level “last 24h” by JSONL modification time, not per-game timestamps.
-- The `recent` scan profile excludes known stale/backfill buckets, including `data/selfplay/toxic_archives/**`.
+- File selection is “last 24h” by JSONL modification time, but the analyzer also filters **games** by per-game timestamps when present (`--game-max-age-hours`), which avoids counting older games in recently-copied/merged files.
+- The `recent` scan profile excludes known stale/backfill buckets, including `data/selfplay/toxic_archives/**` and `data/selfplay/imported/**`.
 
 ---
 

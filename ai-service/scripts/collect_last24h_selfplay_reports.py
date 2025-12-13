@@ -263,7 +263,7 @@ for scan_root, recursive in scan_specs:
                 len(parts) >= 4
                 and parts[0] == "data"
                 and parts[1] == "selfplay"
-                and parts[2] in {"new_ruleset", "vast_sync", "combined_gpu", "toxic_archives"}
+                and parts[2] in {"new_ruleset", "vast_sync", "combined_gpu", "toxic_archives", "imported"}
             ):
                 continue
 
@@ -295,7 +295,8 @@ PY
             "--format json "
             f"--output {sh_quote(report_rel)} "
             "--allow-empty --quiet "
-            f"--max-age-hours {sh_quote(str(hours))}"
+            f"--max-age-hours {sh_quote(str(hours))} "
+            f"--game-max-age-hours {sh_quote(str(hours))}"
         )
     )
 
@@ -384,7 +385,7 @@ def collect_local(*, ts: str, hours: float, local_out: Path, scan_profile: str) 
                     len(parts) >= 4
                     and parts[0] == "data"
                     and parts[1] == "selfplay"
-                    and parts[2] in {"new_ruleset", "vast_sync", "combined_gpu", "toxic_archives"}
+                    and parts[2] in {"new_ruleset", "vast_sync", "combined_gpu", "toxic_archives", "imported"}
                 ):
                     continue
             entries.append((int(st.st_mtime), int(st.st_size), rel))
@@ -409,6 +410,8 @@ def collect_local(*, ts: str, hours: float, local_out: Path, scan_profile: str) 
         "--allow-empty",
         "--quiet",
         "--max-age-hours",
+        str(hours),
+        "--game-max-age-hours",
         str(hours),
     ]
     proc = _run(analyze, timeout=1800)
@@ -447,7 +450,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "File selection profile: 'broad' scans all data/selfplay JSONLs (recursive) + top-level logs/selfplay JSONLs; "
             "'recent' excludes top-level data/selfplay/*.jsonl and known legacy/sync buckets (data/selfplay/new_ruleset/**, "
-            "data/selfplay/vast_sync/**, data/selfplay/combined_gpu/**, data/selfplay/toxic_archives/**) to reduce stale/backfilled drift."
+            "data/selfplay/vast_sync/**, data/selfplay/combined_gpu/**, data/selfplay/toxic_archives/**, data/selfplay/imported/**) to reduce stale/backfilled drift."
         ),
     )
     parser.add_argument(

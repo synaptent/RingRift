@@ -469,7 +469,8 @@ export class SandboxOrchestratorAdapter {
             chosenMoveType: chosenMove.type,
             chosenMoveFrom: chosenMove.from,
             chosenMoveTo: chosenMove.to,
-            eliminationTarget: (chosenMove as any).eliminationTarget,
+            eliminationTarget:
+              'eliminationTarget' in chosenMove ? chosenMove.eliminationTarget : undefined,
           }
         );
 

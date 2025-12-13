@@ -1,5 +1,12 @@
 import { GameState, PlaceRingAction, SkipPlacementAction, ValidationResult } from '../types';
-import { BoardState, BoardType, Position, BOARD_CONFIGS, positionToString } from '../../types/game';
+import {
+  BoardState,
+  BoardType,
+  Position,
+  BOARD_CONFIGS,
+  positionToString,
+  GameState as CanonicalGameState,
+} from '../../types/game';
 import {
   hasAnyLegalMoveOrCaptureFromOnBoard,
   MovementBoardView,
@@ -368,7 +375,8 @@ export function validateSkipPlacement(
   }
 
   if (!hasControlledStack) {
-    if (isEligibleForRecovery(state, action.playerId)) {
+    // Cast to CanonicalGameState for isEligibleForRecovery which expects the full type
+    if (isEligibleForRecovery(state as unknown as CanonicalGameState, action.playerId)) {
       return { valid: true };
     }
     return {

@@ -431,7 +431,58 @@ def load_recovery_analysis(path: Path) -> dict[str, Any] | None:
     return None
 
 
-def iter_jsonl_games(path: Path, *, include_winner_only: bool) -> Iterator[dict[str, Any]]:
+def _parse_game_timestamp(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+
+    raw = value.strip()
+    if not raw:
+        return None
+
+    # Support "Z" suffix.
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def _extract_game_timestamp_seconds(game: dict[str, Any]) -> float | None:
+    # Prefer top-level timestamps when present (common in GPU selfplay JSONLs).
+    for key in ("timestamp", "created_at", "generated_at", "start_time"):
+        ts = _parse_game_timestamp(game.get(key))
+        if ts is not None:
+            return ts
+
+    # Fallback to first move timestamp (common in soak JSONLs).
+    moves = game.get("moves")
+    if isinstance(moves, list) and moves:
+        first = moves[0]
+        if isinstance(first, dict):
+            ts = _parse_game_timestamp(first.get("timestamp"))
+            if ts is not None:
+                return ts
+
+    return None
+
+
+def iter_jsonl_games(
+    path: Path,
+    *,
+    include_winner_only: bool,
+    game_cutoff_ts: float | None = None,
+    include_unknown_game_timestamp: bool = False,
+) -> Iterator[dict[str, Any]]:
     """Yield normalized completed games from a JSONL file.
 
     This is streaming by design to avoid loading large JSONL files into memory.
@@ -449,6 +500,13 @@ def iter_jsonl_games(path: Path, *, include_winner_only: bool) -> Iterator[dict[
                     continue
                 if not is_completed_game(game, include_winner_only=include_winner_only):
                     continue
+                if game_cutoff_ts is not None:
+                    game_ts = _extract_game_timestamp_seconds(game)
+                    if game_ts is None:
+                        if not include_unknown_game_timestamp:
+                            continue
+                    elif game_ts < game_cutoff_ts:
+                        continue
                 yield normalize_game(game, file_path_str)
     except OSError:
         return
@@ -526,12 +584,22 @@ def _extract_lps_rounds_required(game: dict[str, Any]) -> int | None:
 
 
 def collect_stats_from_jsonl(
-    jsonl_files: list[Path], report: AnalysisReport, *, include_winner_only: bool
+    jsonl_files: list[Path],
+    report: AnalysisReport,
+    *,
+    include_winner_only: bool,
+    game_cutoff_ts: float | None = None,
+    include_unknown_game_timestamp: bool = False,
 ) -> None:
     """Collect statistics from JSONL files and add to report."""
     for jsonl_path in jsonl_files:
         any_games = False
-        for game in iter_jsonl_games(jsonl_path, include_winner_only=include_winner_only):
+        for game in iter_jsonl_games(
+            jsonl_path,
+            include_winner_only=include_winner_only,
+            game_cutoff_ts=game_cutoff_ts,
+            include_unknown_game_timestamp=include_unknown_game_timestamp,
+        ):
             any_games = True
             board_type = game.get("board_type", "unknown")
             num_players = int(game.get("num_players", 2) or 2)
@@ -790,14 +858,25 @@ def collect_stats_from_jsonl(
 
 
 def collect_stats(
-    data_dir: Path, jsonl_files: list[Path] | None = None, *, include_winner_only: bool = False
+    data_dir: Path,
+    jsonl_files: list[Path] | None = None,
+    *,
+    include_winner_only: bool = False,
+    game_cutoff_ts: float | None = None,
+    include_unknown_game_timestamp: bool = False,
 ) -> AnalysisReport:
     """Collect statistics from all subdirectories in data_dir and optional JSONL files."""
     report = AnalysisReport()
 
     # Process JSONL files first if provided
     if jsonl_files:
-        collect_stats_from_jsonl(jsonl_files, report, include_winner_only=include_winner_only)
+        collect_stats_from_jsonl(
+            jsonl_files,
+            report,
+            include_winner_only=include_winner_only,
+            game_cutoff_ts=game_cutoff_ts,
+            include_unknown_game_timestamp=include_unknown_game_timestamp,
+        )
 
     if data_dir.exists():
         # Find all stats.json files
@@ -1524,6 +1603,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Only include JSONL files modified within the last N hours.",
     )
     parser.add_argument(
+        "--game-max-age-hours",
+        type=float,
+        default=None,
+        help=(
+            "Only include games whose per-game timestamp (top-level timestamp or first move timestamp) "
+            "is within the last N hours. This is a per-record filter (more accurate than file mtime)."
+        ),
+    )
+    parser.add_argument(
+        "--include-unknown-game-timestamp",
+        action="store_true",
+        help="When --game-max-age-hours is set, include games with no parseable timestamp.",
+    )
+    parser.add_argument(
         "--include-winner-only",
         action="store_true",
         help="Include records that have a winner but no moves/termination fields (often non-game logs).",
@@ -1556,6 +1649,10 @@ def main(argv: list[str] | None = None) -> int:
         cutoff = datetime.now(timezone.utc).timestamp() - (args.max_age_hours * 3600)
         jsonl_files = [p for p in jsonl_files if p.stat().st_mtime >= cutoff]
 
+    game_cutoff_ts: float | None = None
+    if args.game_max_age_hours is not None:
+        game_cutoff_ts = datetime.now(timezone.utc).timestamp() - (float(args.game_max_age_hours) * 3600)
+
     # Check if we have any data sources
     has_data_dir = args.data_dir.exists()
     has_jsonl = len(jsonl_files) > 0
@@ -1577,6 +1674,8 @@ def main(argv: list[str] | None = None) -> int:
             args.data_dir,
             jsonl_files if has_jsonl else None,
             include_winner_only=bool(args.include_winner_only),
+            game_cutoff_ts=game_cutoff_ts,
+            include_unknown_game_timestamp=bool(args.include_unknown_game_timestamp),
         )
 
         if report.total_games() == 0 and not args.allow_empty:

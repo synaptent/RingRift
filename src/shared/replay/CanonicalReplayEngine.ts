@@ -139,12 +139,14 @@ export class CanonicalReplayEngine {
 
       // If the caller passed a live GameState (with Map-backed board fields),
       // reuse it directly. Otherwise treat it as a serialized recording.
-      const maybeState = sanitized as any;
+      // Use Record<string, unknown> for safe property access on potentially mixed data.
+      const maybeState = sanitized as Record<string, unknown>;
+      const maybeBoard = maybeState['board'] as Record<string, unknown> | undefined;
       const hasLiveBoardMaps =
-        maybeState.board &&
-        (maybeState.board.stacks instanceof Map ||
-          maybeState.board.markers instanceof Map ||
-          maybeState.board.collapsedSpaces instanceof Map);
+        maybeBoard &&
+        (maybeBoard['stacks'] instanceof Map ||
+          maybeBoard['markers'] instanceof Map ||
+          maybeBoard['collapsedSpaces'] instanceof Map);
 
       if (hasLiveBoardMaps) {
         this.currentState = sanitized as GameState;

@@ -46,7 +46,7 @@ import os
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -339,7 +339,7 @@ def merge_distributed_dbs(
 
     archived_path: str | None = None
     if reset_db and dest_db.exists():
-        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         archived = dest_db.with_suffix(dest_db.suffix + f".archived_{ts}")
         dest_db.replace(archived)
         archived_path = str(archived)
@@ -376,11 +376,28 @@ def run_canonical_history_check(db_path: Path) -> Dict[str, Any]:
     by replaying the recorded move list through GameEngine.apply_move with the
     strict per-phase move invariant enabled.
     """
+    return _run_canonical_history_check(
+        db_path=db_path,
+        max_games=None,
+        stop_after_first_failure=False,
+    )
+
+
+def _run_canonical_history_check(
+    *,
+    db_path: Path,
+    max_games: int | None,
+    stop_after_first_failure: bool,
+) -> Dict[str, Any]:
+    """Inner implementation of canonical history check with optional limits."""
     db = GameReplayDB(str(db_path))
 
     with db._get_conn() as conn:  # type: ignore[attr-defined]
         rows = conn.execute("SELECT game_id FROM games").fetchall()
         game_ids = [row["game_id"] for row in rows]
+
+    if max_games is not None and max_games >= 0:
+        game_ids = game_ids[:max_games]
 
     issues_by_game: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -426,6 +443,8 @@ def run_canonical_history_check(db_path: Path) -> Dict[str, Any]:
                     }
                 ]
                 break
+        if stop_after_first_failure and gid in issues_by_game:
+            break
 
     games_checked = len(game_ids)
     non_canonical_games = len(issues_by_game)
@@ -444,11 +463,28 @@ def run_canonical_history_check(db_path: Path) -> Dict[str, Any]:
 
 def run_canonical_config_check(db_path: Path) -> Dict[str, Any]:
     """Validate initial-state canonical configuration for every game."""
+    return _run_canonical_config_check(
+        db_path=db_path,
+        max_games=None,
+        stop_after_first_failure=False,
+    )
+
+
+def _run_canonical_config_check(
+    *,
+    db_path: Path,
+    max_games: int | None,
+    stop_after_first_failure: bool,
+) -> Dict[str, Any]:
+    """Inner implementation of canonical config check with optional limits."""
     db = GameReplayDB(str(db_path))
 
     with db._get_conn() as conn:  # type: ignore[attr-defined]
         rows = conn.execute("SELECT game_id FROM games").fetchall()
         game_ids = [row["game_id"] for row in rows]
+
+    if max_games is not None and max_games >= 0:
+        game_ids = game_ids[:max_games]
 
     issues_by_game: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -479,6 +515,8 @@ def run_canonical_config_check(db_path: Path) -> Dict[str, Any]:
             }
             for issue in report.issues[:25]
         ]
+        if stop_after_first_failure:
+            break
 
     games_checked = len(game_ids)
     non_canonical_games = len(issues_by_game)
@@ -492,6 +530,14 @@ def run_canonical_config_check(db_path: Path) -> Dict[str, Any]:
         "non_canonical_games": non_canonical_games,
         "sample_issues": sample_issues,
     }
+
+
+def archive_db_in_place(db_path: Path) -> Path:
+    """Archive *db_path* in-place and return the archived path."""
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    archived = db_path.with_suffix(db_path.suffix + f".archived_{ts}")
+    db_path.replace(archived)
+    return archived
 
 
 def run_fe_territory_fixtures(board_type: str) -> bool:
@@ -735,10 +781,9 @@ def main(argv: List[str] | None = None) -> int:
         "--reset-db",
         action="store_true",
         help=(
-            "When using --hosts, archive any existing canonical DB and "
-            "rebuild it from scratch by merging the distributed outputs. "
-            "Without this flag, distributed games are merged into the "
-            "existing DB (deduping by game_id)."
+            "Archive any existing destination DB before generating new games. "
+            "For --hosts, this also controls whether the merge step starts from "
+            "a clean DB (vs merging into the existing DB and deduping by game_id)."
         ),
     )
 
@@ -764,6 +809,11 @@ def main(argv: List[str] | None = None) -> int:
         db_path = (AI_SERVICE_ROOT / "data" / "games" / db_name).resolve()
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    archived_dest_db: str | None = None
+    if bool(args.reset_db) and num_games > 0 and db_path.exists() and not hosts:
+        archived = archive_db_in_place(db_path)
+        archived_dest_db = str(archived)
 
     try:
         parity_summary = run_selfplay_and_parity(
@@ -822,18 +872,36 @@ def main(argv: List[str] | None = None) -> int:
     non_canonical = 0
     config_non_canonical = 0
 
-    if base_ok:
-        canonical_config = run_canonical_config_check(db_path)
-        config_non_canonical = int(
-            canonical_config.get("non_canonical_games", 0) or 0
+    # Postchecks (config + canonical history) are still useful when parity
+    # fails: they often point directly at the first invalid move/phase pair or
+    # a mis-set non-canonical rules override. To keep failure cases debuggable
+    # without making worst-case runs prohibitively slow, we run a small sample
+    # and stop on the first failure when base_ok is false.
+    if db_path.exists():
+        postcheck_max_games = None
+        stop_after_first_failure = False
+        if not base_ok:
+            num_games_in_db = _count_games_in_db_ro(db_path)
+            if isinstance(num_games_in_db, int) and num_games_in_db > 0:
+                postcheck_max_games = min(5, num_games_in_db)
+            else:
+                postcheck_max_games = 5
+            stop_after_first_failure = True
+
+        canonical_config = _run_canonical_config_check(
+            db_path=db_path,
+            max_games=postcheck_max_games,
+            stop_after_first_failure=stop_after_first_failure,
         )
-        canonical_history = run_canonical_history_check(db_path)
-        games_checked = int(
-            canonical_history.get("games_checked", 0) or 0
+        config_non_canonical = int(canonical_config.get("non_canonical_games", 0) or 0)
+
+        canonical_history = _run_canonical_history_check(
+            db_path=db_path,
+            max_games=postcheck_max_games,
+            stop_after_first_failure=stop_after_first_failure,
         )
-        non_canonical = int(
-            canonical_history.get("non_canonical_games", 0) or 0
-        )
+        games_checked = int(canonical_history.get("games_checked", 0) or 0)
+        non_canonical = int(canonical_history.get("non_canonical_games", 0) or 0)
 
     fe_territory_fixtures_ok = run_fe_territory_fixtures(board_type)
     anm_invariants = run_anm_invariants(board_type)
@@ -854,6 +922,7 @@ def main(argv: List[str] | None = None) -> int:
         "db_path": str(db_path),
         "num_games_requested": num_games,
         "parity_gate": parity_summary,
+        "archived_dest_db": archived_dest_db,
         "merge_result": merge_result,
         "canonical_config": canonical_config,
         "canonical_history": canonical_history,
@@ -879,7 +948,7 @@ def main(argv: List[str] | None = None) -> int:
                 s = Path(args.summary).resolve()
                 analysis_dir = s.parent / f"{s.stem}.analysis"
             else:
-                ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
                 analysis_dir = (
                     AI_SERVICE_ROOT
                     / "logs"

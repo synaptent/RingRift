@@ -488,8 +488,8 @@ function actionToEliminateStackMove(
     // Some adapter tests stub stacks without a `rings` array. Use canonical
     // elimination semantics when `rings` is present; otherwise, fall back to
     // the stack's capHeight metadata.
-    if (Array.isArray((stack as any).rings)) {
-      ringsToEliminate = getRingsToEliminate(stack as any, eliminationContext);
+    if (Array.isArray(stack.rings)) {
+      ringsToEliminate = getRingsToEliminate(stack, eliminationContext);
     } else if (eliminationContext === 'line' || eliminationContext === 'recovery') {
       ringsToEliminate = 1;
     } else {

@@ -61,10 +61,7 @@ export interface SoundContextValue extends SoundPreferences {
   /** Set volume (0-1) */
   setVolume: (volume: number) => void;
   /** Update a preference */
-  setPreference: <K extends keyof SoundPreferences>(
-    key: K,
-    value: SoundPreferences[K]
-  ) => void;
+  setPreference: <K extends keyof SoundPreferences>(key: K, value: SoundPreferences[K]) => void;
   /** Whether audio is available (AudioContext supported) */
   audioAvailable: boolean;
 }
@@ -356,7 +353,9 @@ export function SoundProvider({ children }: SoundProviderProps): React.ReactElem
       if (audioContextRef.current) return;
 
       try {
-        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const AudioContextClass =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         if (AudioContextClass) {
           audioContextRef.current = new AudioContextClass();
           setAudioAvailable(true);
@@ -405,9 +404,8 @@ export function SoundProvider({ children }: SoundProviderProps): React.ReactElem
 
       try {
         playSoundEffect(audioContextRef.current, effect, preferences.volume);
-      } catch (err) {
+      } catch {
         // Silently fail - audio is non-critical
-        console.debug('Sound playback failed:', err);
       }
     },
     [preferences.muted, preferences.volume]

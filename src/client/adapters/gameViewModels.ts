@@ -33,7 +33,7 @@ import type {
   PlayerChoice,
   PlayerChoiceType,
 } from '../../shared/types/game';
-import type { FSMDecisionSurface, FSMOrchestrationResult } from '../../shared/engine/fsm';
+import type { FSMOrchestrationResult } from '../../shared/engine/fsm';
 import { positionToString, positionsEqual, BOARD_CONFIGS } from '../../shared/types/game';
 import type { ConnectionStatus } from '../domain/GameAPI';
 import { getChoiceViewModel, getChoiceViewModelForType } from './choiceViewModels';

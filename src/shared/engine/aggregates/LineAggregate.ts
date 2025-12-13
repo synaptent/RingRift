@@ -358,16 +358,20 @@ function resolveLineForMove(
   if (move.formedLines && move.formedLines.length > 0) {
     const target = move.formedLines[0] as LineInfo;
 
-    // Normalise optional fields in case the source omitted them.
-    const length = (target as any).length ?? target.positions.length;
+    // Normalise optional fields in case the source omitted them (legacy data).
+    // Use Record<string, unknown> for safe property access on potentially incomplete data.
+    const targetRecord = target as unknown as Record<string, unknown>;
+    const length =
+      typeof targetRecord['length'] === 'number' ? targetRecord['length'] : target.positions.length;
     const direction =
-      (target as any).direction ??
-      (target.positions.length >= 2
-        ? {
-            x: target.positions[1].x - target.positions[0].x,
-            y: target.positions[1].y - target.positions[0].y,
-          }
-        : { x: 1, y: 0 });
+      targetRecord['direction'] != null
+        ? (targetRecord['direction'] as Position)
+        : target.positions.length >= 2
+          ? {
+              x: target.positions[1].x - target.positions[0].x,
+              y: target.positions[1].y - target.positions[0].y,
+            }
+          : { x: 1, y: 0 };
 
     return {
       ...target,

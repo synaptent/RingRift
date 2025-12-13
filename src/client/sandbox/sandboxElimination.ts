@@ -4,7 +4,6 @@ import {
   isStackEligibleForElimination,
   calculateCapHeightElimination as calculateCapHeight,
 } from '../../shared/engine';
-import { positionToString } from '../../shared/types/game';
 import { flagEnabled, isTestEnvironment } from '../../shared/utils/envFlags';
 
 const TERRITORY_TRACE_DEBUG = flagEnabled('RINGRIFT_TRACE_DEBUG');

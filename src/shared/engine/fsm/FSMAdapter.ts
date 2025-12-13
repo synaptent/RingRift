@@ -611,11 +611,13 @@ function deriveCaptureState(
     (m) => m.type === 'overtaking_capture' || m.type === 'continue_capture_segment'
   );
 
-  const pendingCaptures = captureMoves.map((m) => ({
-    target: m.captureTarget!,
-    capturingPlayer: player,
-    isChainCapture: isChain,
-  }));
+  const pendingCaptures = captureMoves
+    .filter((m): m is typeof m & { captureTarget: Position } => m.captureTarget != null)
+    .map((m) => ({
+      target: m.captureTarget,
+      capturingPlayer: player,
+      isChainCapture: isChain,
+    }));
 
   // If the move being validated has a captureTarget but it's not in pendingCaptures,
   // include it. This handles cases where getValidMoves() doesn't find the capture
@@ -663,11 +665,13 @@ function deriveChainCaptureState(
   // captureChain is already Position[] - the list of capture targets visited
   const capturedTargets = lastMove?.captureChain ?? [];
 
-  const availableContinuations = continuationMoves.map((m) => ({
-    target: m.captureTarget!,
-    capturingPlayer: player,
-    isChainCapture: true,
-  }));
+  const availableContinuations = continuationMoves
+    .filter((m): m is typeof m & { captureTarget: Position } => m.captureTarget != null)
+    .map((m) => ({
+      target: m.captureTarget,
+      capturingPlayer: player,
+      isChainCapture: true,
+    }));
 
   // If the move being validated has a captureTarget but it's not in availableContinuations,
   // include it. This handles state timing issues during replay/shadow validation.
@@ -1747,9 +1751,12 @@ export function computeFSMOrchestration(
     if (initialCaptures.length > 0) {
       const landingKey = positionToString(move.to);
       const pendingCaptures = initialCaptures
-        .filter((m) => m.from && positionToString(m.from) === landingKey)
+        .filter(
+          (m): m is typeof m & { captureTarget: Position } =>
+            m.from != null && positionToString(m.from) === landingKey && m.captureTarget != null
+        )
         .map((m) => ({
-          target: m.captureTarget!,
+          target: m.captureTarget,
           capturingPlayer: move.player,
           isChainCapture: false,
         }));
