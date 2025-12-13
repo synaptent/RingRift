@@ -142,8 +142,8 @@ def _parse_move(move_dict: Dict[str, Any], move_number: int, timestamp: str) -> 
         to=to_pos,
         capture_target=capture_target,
         timestamp=timestamp,
-        thinkTime=move_dict.get("think_time_ms", 0),
-        moveNumber=move_number,
+        think_time=move_dict.get("think_time_ms", 0),
+        move_number=move_number,
     )
 
 
@@ -156,6 +156,184 @@ def _get_board_type(board_str: str) -> BoardType:
         "hex": BoardType.HEXAGONAL,
     }
     return board_map.get(board_str, BoardType.SQUARE8)
+
+
+def _expand_gpu_moves_to_canonical(
+    moves: List[Move],
+    initial_state: GameState,
+) -> Tuple[List[Move], GameState]:
+    """Expand GPU simplified moves to canonical moves with phase handling.
+
+    GPU moves are coarse-grained (place_ring, move_stack, overtaking_capture, recovery_slide).
+    The canonical game engine requires explicit phase handling moves (no_line_action,
+    no_territory_action) when those phases are visited but have no actions.
+
+    GPU selfplay automatically processes lines and territory during its phases, but
+    doesn't emit the explicit moves. This function:
+    1. Detects when the canonical engine expects line/territory processing
+    2. Queries the engine for available line/territory moves
+    3. Applies those moves (selecting first option) to match GPU's auto-processing
+    4. Only inserts NO_*_ACTION when there truly are no actions available
+
+    Returns:
+        Tuple of (expanded_moves, final_state)
+    """
+    from app.models.core import GamePhase
+
+    expanded_moves = []
+    current_state = initial_state
+    move_num = 0
+
+    for gpu_move in moves:
+        # Insert phase handling moves as needed before applying the GPU move
+        # Use a safety counter to prevent infinite loops
+        safety_counter = 0
+        max_phase_iterations = 100  # Prevent runaway loops
+
+        while current_state.game_status.value == "active" and safety_counter < max_phase_iterations:
+            safety_counter += 1
+            phase = current_state.current_phase
+            player = current_state.current_player
+
+            # Check if we need to insert a phase handling move
+            if phase == GamePhase.LINE_PROCESSING:
+                # GPU auto-processes lines - check if there are lines to process
+                if gpu_move.type not in (MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_OPTION, MoveType.NO_LINE_ACTION):
+                    # Get available line processing moves
+                    line_moves = GameEngine._get_line_processing_moves(current_state, player)
+
+                    if line_moves:
+                        # There are lines - apply them (GPU already processed these)
+                        # First apply PROCESS_LINE moves, then CHOOSE_LINE_OPTION
+                        process_moves = [m for m in line_moves if m.type == MoveType.PROCESS_LINE]
+                        choose_moves = [m for m in line_moves if m.type == MoveType.CHOOSE_LINE_OPTION]
+
+                        # Apply a CHOOSE_LINE_OPTION if available (this is the actual collapse)
+                        if choose_moves:
+                            line_move = choose_moves[0]  # Pick first option
+                            move_num += 1
+                            phase_move = Move(
+                                id=f"move-{move_num}",
+                                type=line_move.type,
+                                player=player,
+                                to=line_move.to,
+                                formed_lines=line_move.formed_lines,
+                                collapsed_markers=line_move.collapsed_markers,
+                                timestamp=gpu_move.timestamp,
+                                think_time=0,
+                                move_number=move_num,
+                            )
+                            expanded_moves.append(phase_move)
+                            current_state = GameEngine.apply_move(current_state, phase_move)
+                            continue
+                        elif process_moves:
+                            # Only PROCESS_LINE available (shouldn't happen often)
+                            line_move = process_moves[0]
+                            move_num += 1
+                            phase_move = Move(
+                                id=f"move-{move_num}",
+                                type=line_move.type,
+                                player=player,
+                                to=line_move.to,
+                                formed_lines=line_move.formed_lines,
+                                timestamp=gpu_move.timestamp,
+                                think_time=0,
+                                move_number=move_num,
+                            )
+                            expanded_moves.append(phase_move)
+                            current_state = GameEngine.apply_move(current_state, phase_move)
+                            continue
+                    else:
+                        # No lines to process - insert NO_LINE_ACTION
+                        move_num += 1
+                        phase_move = Move(
+                            id=f"move-{move_num}",
+                            type=MoveType.NO_LINE_ACTION,
+                            player=player,
+                            timestamp=gpu_move.timestamp,
+                            think_time=0,
+                            move_number=move_num,
+                        )
+                        expanded_moves.append(phase_move)
+                        current_state = GameEngine.apply_move(current_state, phase_move)
+                        continue
+
+            elif phase == GamePhase.TERRITORY_PROCESSING:
+                # GPU auto-processes territory - check if there are territory decisions
+                if gpu_move.type not in (MoveType.CHOOSE_TERRITORY_OPTION, MoveType.PROCESS_TERRITORY_REGION, MoveType.NO_TERRITORY_ACTION, MoveType.ELIMINATE_RINGS_FROM_STACK):
+                    # Get available territory processing moves
+                    territory_moves = GameEngine._get_territory_processing_moves(current_state, player)
+
+                    if territory_moves:
+                        # There are territory decisions - apply the first one
+                        terr_move = territory_moves[0]
+                        move_num += 1
+                        phase_move = Move(
+                            id=f"move-{move_num}",
+                            type=terr_move.type,
+                            player=player,
+                            to=terr_move.to,
+                            timestamp=gpu_move.timestamp,
+                            think_time=0,
+                            move_number=move_num,
+                        )
+                        expanded_moves.append(phase_move)
+                        current_state = GameEngine.apply_move(current_state, phase_move)
+                        continue
+                    else:
+                        # No territory to process - insert NO_TERRITORY_ACTION
+                        move_num += 1
+                        phase_move = Move(
+                            id=f"move-{move_num}",
+                            type=MoveType.NO_TERRITORY_ACTION,
+                            player=player,
+                            timestamp=gpu_move.timestamp,
+                            think_time=0,
+                            move_number=move_num,
+                        )
+                        expanded_moves.append(phase_move)
+                        current_state = GameEngine.apply_move(current_state, phase_move)
+                        continue
+
+            elif phase == GamePhase.CAPTURE:
+                # If next GPU move isn't a capture, insert skip_capture
+                if gpu_move.type not in (MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT, MoveType.SKIP_CAPTURE):
+                    move_num += 1
+                    phase_move = Move(
+                        id=f"move-{move_num}",
+                        type=MoveType.SKIP_CAPTURE,
+                        player=player,
+                        timestamp=gpu_move.timestamp,
+                        think_time=0,
+                        move_number=move_num,
+                    )
+                    expanded_moves.append(phase_move)
+                    current_state = GameEngine.apply_move(current_state, phase_move)
+                    continue
+
+            # No phase move needed, break the while loop
+            break
+
+        if safety_counter >= max_phase_iterations:
+            logger.warning(f"Phase handling loop exceeded {max_phase_iterations} iterations, breaking")
+
+        # Now apply the actual GPU move with updated move number
+        move_num += 1
+        gpu_move_updated = Move(
+            id=f"move-{move_num}",
+            type=gpu_move.type,
+            player=gpu_move.player,
+            from_pos=gpu_move.from_pos,
+            to=gpu_move.to,
+            capture_target=gpu_move.capture_target,
+            timestamp=gpu_move.timestamp,
+            think_time=gpu_move.think_time,
+            move_number=move_num,
+        )
+        expanded_moves.append(gpu_move_updated)
+        current_state = GameEngine.apply_move(current_state, gpu_move_updated)
+
+    return expanded_moves, current_state
 
 
 def load_weights_from_profile(
@@ -409,18 +587,18 @@ class GPUSelfPlayGenerator:
                     # Store to DB in canonical format
                     if db:
                         try:
-                            # Parse moves to Move objects
+                            # Parse GPU moves to Move objects
                             moves_data = results["move_histories"][i]
                             timestamp = record["timestamp"]
-                            moves = [
+                            gpu_moves = [
                                 _parse_move(m, j + 1, timestamp)
                                 for j, m in enumerate(moves_data)
                             ]
 
-                            # Replay moves to get final state
-                            current_state = initial_state
-                            for move in moves:
-                                current_state = GameEngine.apply_move(current_state, move)
+                            # Expand GPU moves to canonical format (inserts phase handling moves)
+                            canonical_moves, final_state = _expand_gpu_moves_to_canonical(
+                                gpu_moves, initial_state
+                            )
 
                             # Store with full state snapshots
                             metadata = {
@@ -430,12 +608,14 @@ class GPUSelfPlayGenerator:
                                 "engine_mode": record["engine_mode"],
                                 "batch_id": record["batch_id"],
                                 "device": record["device"],
+                                "gpu_move_count": len(gpu_moves),
+                                "canonical_move_count": len(canonical_moves),
                             }
                             db.store_game(
                                 game_id=record["game_id"],
                                 initial_state=initial_state,
-                                final_state=current_state,
-                                moves=moves,
+                                final_state=final_state,
+                                moves=canonical_moves,
                                 metadata=metadata,
                                 store_history_entries=True,
                             )
