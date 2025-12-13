@@ -7,7 +7,7 @@ hosts:
   my-remote-host:
     ssh_host: 'username@192.168.1.100' # SSH connection string
     ssh_key: '~/.ssh/id_rsa' # Optional: Path to SSH key
-    ringrift_path: '~/Development/RingRift' # Path to RingRift repo on remote
+    ringrift_path: '~/Development/RingRift/ai-service' # Path to ai-service/ on remote
     venv_activate: 'source ~/Development/RingRift/ai-service/venv/bin/activate'
     status: 'ready' # ready, disabled, maintenance
     role: 'selfplay' # selfplay, mixed, nn_training, cmaes, etc.
