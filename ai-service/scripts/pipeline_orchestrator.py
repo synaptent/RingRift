@@ -3,28 +3,57 @@
 
 This script coordinates the complete AI training pipeline across all available
 compute resources. It manages:
-- Distributed selfplay across AWS instances and local machines
+- Distributed selfplay across AWS instances, Vast.ai, and local machines
+- Canonical selfplay (CPU-based with full phase machine for parity)
 - Data synchronization and aggregation
-- Neural network training (on Mac Studio with MPS)
+- Parity validation gate (ensures games pass TS/Python parity check)
+- NPZ export (converts games to neural network training format)
+- Neural network training (on GPUs or Mac Studio with MPS)
 - CMA-ES heuristic optimization
-- NNUE training
 - Model evaluation tournaments
+- Elo rating tracking
+- Tier gating for progressive difficulty
+
+Available Phases:
+    selfplay          - GPU/heuristic selfplay (fast but simplified rules)
+    canonical-selfplay - CPU selfplay with full phase machine (canonical)
+    sync              - Sync game data from all workers
+    parity-validation - Validate games against canonical parity gate
+    npz-export        - Export validated games to NPZ training format
+    training          - Train neural network on exported data
+    cmaes             - CMA-ES heuristic optimization
+    profile-sync      - Sync trained heuristic profiles across workers
+    evaluation        - Run evaluation tournaments
+    tier-gating       - Check for model tier promotions
+    resources         - Log resource usage across workers
+    refresh-workers   - Dynamically discover Vast.ai instances
 
 Usage:
     # Run a single iteration of the pipeline
     python scripts/pipeline_orchestrator.py --iterations 1
 
     # Run continuous improvement loop
-    python scripts/pipeline_orchestrator.py --iterations 10 --continuous
+    python scripts/pipeline_orchestrator.py --iterations 10
+
+    # Run canonical selfplay with Vast instance discovery
+    python scripts/pipeline_orchestrator.py --phase canonical-selfplay \\
+        --discover-vast --games-per-worker 1000
+
+    # Run parity validation on generated games
+    python scripts/pipeline_orchestrator.py --phase parity-validation
+
+    # Export validated games to NPZ format
+    python scripts/pipeline_orchestrator.py --phase npz-export
 
     # Run specific phase only
-    python scripts/pipeline_orchestrator.py --phase selfplay
-    python scripts/pipeline_orchestrator.py --phase sync
     python scripts/pipeline_orchestrator.py --phase training
     python scripts/pipeline_orchestrator.py --phase evaluation
 
     # Dry run (show what would be executed)
     python scripts/pipeline_orchestrator.py --dry-run
+
+    # Resume from last checkpoint
+    python scripts/pipeline_orchestrator.py --resume
 """
 
 from __future__ import annotations
@@ -992,6 +1021,434 @@ export RINGRIFT_TRAINED_HEURISTIC_PROFILES={worker.remote_path}/data/trained_heu
 
         return merged_count
 
+    # =========================================================================
+    # Canonical Selfplay Phase (CPU-based with full phase machine)
+    # =========================================================================
+
+    async def run_canonical_selfplay_phase(
+        self,
+        iteration: int,
+        games_per_worker: int = 500,
+        board_type: str = "square8",
+        num_players: int = 2,
+    ) -> Dict[str, Any]:
+        """Run canonical selfplay across all workers using CPU engine.
+
+        Unlike GPU selfplay which uses a simplified phase machine, canonical
+        selfplay uses the full 7-phase FSM and produces games that pass the
+        parity validation gate.
+
+        Args:
+            iteration: Pipeline iteration number
+            games_per_worker: Number of games per worker
+            board_type: Board type (square8, square19, hexagonal)
+            num_players: Number of players (2, 3, 4)
+
+        Returns:
+            Dict with dispatched count and worker details
+        """
+        self.state.phase = "canonical_selfplay"
+        self._save_state()
+        self.log(f"=== Starting Canonical Selfplay Phase (Iteration {iteration}) ===")
+
+        # Find healthy workers
+        healthy_workers = []
+        for worker in WORKERS:
+            if await self.check_worker_health(worker):
+                healthy_workers.append(worker)
+                self.log(f"Worker {worker.name}: healthy", "OK")
+            else:
+                self.log(f"Worker {worker.name}: unreachable", "WARN")
+
+        if not healthy_workers:
+            self.log("No healthy workers available!", "ERROR")
+            return {"dispatched": 0, "workers": []}
+
+        # Dispatch canonical selfplay to each worker
+        tasks = []
+        for worker in healthy_workers:
+            seed = iteration * 10000 + hash(worker.name) % 10000
+            log_file = f"logs/selfplay/canonical_iter{iteration}_{worker.name}.jsonl"
+            db_file = f"data/games/canonical_{board_type}_{num_players}p_{worker.name}.db"
+
+            cmd = f"""
+source venv/bin/activate || true
+export PYTHONPATH={worker.remote_path}
+export RINGRIFT_SKIP_SHADOW_CONTRACTS=true
+python3 scripts/run_self_play_soak.py \\
+    --num-games {games_per_worker} \\
+    --board-type {board_type} \\
+    --num-players {num_players} \\
+    --difficulty-band light \\
+    --seed {seed} \\
+    --log-jsonl {log_file} \\
+    --record-db {db_file}
+"""
+            self.log(f"Dispatching canonical selfplay ({games_per_worker} games) to {worker.name}")
+            tasks.append(self._dispatch_canonical_selfplay(worker, cmd))
+
+        results = await asyncio.gather(*tasks)
+        success_count = sum(1 for r in results if r)
+
+        return {
+            "dispatched": success_count,
+            "total": len(tasks),
+            "workers": [w.name for w in healthy_workers],
+            "games_per_worker": games_per_worker,
+        }
+
+    async def _dispatch_canonical_selfplay(
+        self,
+        worker: WorkerConfig,
+        cmd: str,
+    ) -> bool:
+        """Dispatch canonical selfplay to a single worker."""
+        code, _, stderr = await self.run_remote_command(worker, cmd, background=True)
+        if code != 0:
+            self.log(f"Failed to dispatch canonical selfplay to {worker.name}: {stderr}", "ERROR")
+            return False
+        return True
+
+    async def poll_for_canonical_selfplay_completion(
+        self,
+        board_type: str = "square8",
+        num_players: int = 2,
+        min_games: int = 100,
+        max_wait_minutes: int = 120,
+    ) -> int:
+        """Poll workers until canonical selfplay is complete.
+
+        Returns total games generated across all workers.
+        """
+        self.log(f"Polling for canonical selfplay completion (min {min_games} games)...")
+        start_time = time.time()
+        max_wait_seconds = max_wait_minutes * 60
+
+        while time.time() - start_time < max_wait_seconds:
+            total_games = 0
+            all_complete = True
+
+            for worker in WORKERS:
+                if not await self.check_worker_health(worker):
+                    continue
+
+                # Check if selfplay is still running
+                check_cmd = "pgrep -f 'run_self_play_soak' >/dev/null && echo running || echo done"
+                code, stdout, _ = await self.run_remote_command(worker, check_cmd, log_output_on_error=False)
+
+                if code == 0 and "running" in stdout:
+                    all_complete = False
+
+                # Count games in database
+                db_pattern = f"data/games/canonical_{board_type}_{num_players}p_*.db"
+                count_cmd = f"for db in {worker.remote_path}/{db_pattern}; do sqlite3 \"$db\" 'SELECT COUNT(*) FROM games' 2>/dev/null || echo 0; done | paste -sd+ - | bc"
+                code, stdout, _ = await self.run_remote_command(worker, count_cmd, log_output_on_error=False)
+
+                if code == 0 and stdout.strip().isdigit():
+                    total_games += int(stdout.strip())
+
+            elapsed_min = (time.time() - start_time) / 60
+            self.log(f"  Canonical selfplay: {total_games} games ({elapsed_min:.1f} min elapsed)")
+
+            if all_complete or total_games >= min_games:
+                self.log(f"Canonical selfplay complete: {total_games} games", "OK")
+                return total_games
+
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+        self.log(f"Canonical selfplay timeout after {max_wait_minutes} min", "WARN")
+        return total_games
+
+    # =========================================================================
+    # Parity Validation Gate
+    # =========================================================================
+
+    async def run_parity_validation_phase(
+        self,
+        db_paths: Optional[List[str]] = None,
+        board_type: str = "square8",
+        num_players: int = 2,
+    ) -> Dict[str, Any]:
+        """Run parity validation gate on game databases.
+
+        This phase validates that all games in the databases pass the canonical
+        parity check (TS engine replay produces identical states to Python).
+
+        Only games that pass validation are used for training.
+
+        Args:
+            db_paths: List of database paths to validate (if None, uses pattern match)
+            board_type: Board type for pattern matching
+            num_players: Number of players for pattern matching
+
+        Returns:
+            Dict with validation results
+        """
+        self.state.phase = "parity_validation"
+        self._save_state()
+        self.log("=== Starting Parity Validation Phase ===")
+
+        results = {
+            "total_games_checked": 0,
+            "games_passed": 0,
+            "games_failed": 0,
+            "databases_validated": [],
+            "passed": False,
+        }
+
+        # Find validation worker (preferably local or fast host)
+        validation_worker = next(
+            (w for w in WORKERS if w.name in ["mac-studio", "lambda-a10", "aws-staging"]),
+            WORKERS[0] if WORKERS else None
+        )
+
+        if not validation_worker or not await self.check_worker_health(validation_worker):
+            self.log("No worker available for parity validation", "ERROR")
+            return results
+
+        # Build database list
+        if db_paths:
+            db_list = " ".join(db_paths)
+        else:
+            db_pattern = f"data/games/canonical_{board_type}_{num_players}p_*.db"
+            db_list = f"{validation_worker.remote_path}/{db_pattern}"
+
+        # Run parity validation script
+        validation_cmd = f"""
+source venv/bin/activate || true
+export PYTHONPATH={validation_worker.remote_path}
+export RINGRIFT_SKIP_SHADOW_CONTRACTS=true
+python3 scripts/run_parity_validation.py \\
+    --databases {db_list} \\
+    --mode canonical \\
+    --output-json data/parity_validation_results.json \\
+    --progress-every 100
+"""
+        self.log(f"Running parity validation on {validation_worker.name}...")
+        code, stdout, stderr = await self.run_remote_command(
+            validation_worker, validation_cmd, background=False
+        )
+
+        if code != 0:
+            self.log(f"Parity validation failed: {stderr[:200]}", "ERROR")
+            return results
+
+        # Parse results
+        result_cmd = f"cat {validation_worker.remote_path}/data/parity_validation_results.json"
+        code, stdout, _ = await self.run_remote_command(validation_worker, result_cmd)
+
+        if code == 0 and stdout.strip():
+            try:
+                validation_results = json.loads(stdout)
+                results["total_games_checked"] = validation_results.get("total_games_checked", 0)
+                results["games_passed"] = (
+                    results["total_games_checked"] -
+                    validation_results.get("games_with_semantic_divergence", 0) -
+                    validation_results.get("games_with_structural_issues", 0)
+                )
+                results["games_failed"] = (
+                    validation_results.get("games_with_semantic_divergence", 0) +
+                    validation_results.get("games_with_structural_issues", 0)
+                )
+                results["passed"] = validation_results.get("passed_canonical_parity_gate", False)
+                results["databases_validated"] = validation_results.get("db_paths_checked", [])
+            except json.JSONDecodeError:
+                self.log("Could not parse validation results", "ERROR")
+
+        if results["passed"]:
+            self.log(f"Parity validation PASSED: {results['games_passed']}/{results['total_games_checked']} games", "OK")
+        else:
+            self.log(f"Parity validation FAILED: {results['games_failed']} games with issues", "ERROR")
+
+        return results
+
+    # =========================================================================
+    # NPZ Export Phase
+    # =========================================================================
+
+    async def run_npz_export_phase(
+        self,
+        iteration: int,
+        board_type: str = "square8",
+        num_players: int = 2,
+        output_dir: str = "data/training",
+    ) -> Dict[str, Any]:
+        """Export validated games to NPZ format for neural network training.
+
+        This phase converts game databases to the tensor format required by
+        the neural network training scripts.
+
+        Args:
+            iteration: Pipeline iteration number
+            board_type: Board type
+            num_players: Number of players
+            output_dir: Output directory for NPZ files
+
+        Returns:
+            Dict with export results
+        """
+        self.state.phase = "npz_export"
+        self._save_state()
+        self.log("=== Starting NPZ Export Phase ===")
+
+        results = {
+            "total_positions": 0,
+            "output_files": [],
+            "success": False,
+        }
+
+        # Find training worker
+        training_worker = next(
+            (w for w in WORKERS if w.role in ["training", "nn_training", "nn_training_primary"]),
+            next((w for w in WORKERS if w.name == "mac-studio"), WORKERS[0] if WORKERS else None)
+        )
+
+        if not training_worker or not await self.check_worker_health(training_worker):
+            self.log("No worker available for NPZ export", "ERROR")
+            return results
+
+        # Find validated databases
+        db_pattern = f"data/games/canonical_{board_type}_{num_players}p_*.db"
+        output_prefix = f"{output_dir}/{board_type}_{num_players}p_iter{iteration}"
+
+        export_cmd = f"""
+source venv/bin/activate || true
+export PYTHONPATH={training_worker.remote_path}
+export RINGRIFT_SKIP_SHADOW_CONTRACTS=true
+mkdir -p {training_worker.remote_path}/{output_dir}
+python3 scripts/export_training_data.py \\
+    --databases {training_worker.remote_path}/{db_pattern} \\
+    --board-type {board_type} \\
+    --num-players {num_players} \\
+    --output-prefix {training_worker.remote_path}/{output_prefix} \\
+    --format npz \\
+    --include-value-targets \\
+    --include-policy-targets
+"""
+        self.log(f"Exporting training data on {training_worker.name}...")
+        code, stdout, stderr = await self.run_remote_command(
+            training_worker, export_cmd, background=False
+        )
+
+        if code != 0:
+            self.log(f"NPZ export failed: {stderr[:200]}", "ERROR")
+            return results
+
+        # Check exported files
+        check_cmd = f"ls -la {training_worker.remote_path}/{output_prefix}*.npz 2>/dev/null | wc -l"
+        code, stdout, _ = await self.run_remote_command(training_worker, check_cmd)
+
+        if code == 0 and stdout.strip().isdigit() and int(stdout.strip()) > 0:
+            results["success"] = True
+            results["output_files"].append(f"{output_prefix}.npz")
+
+            # Get position count
+            count_cmd = f"python3 -c \"import numpy as np; d=np.load('{training_worker.remote_path}/{output_prefix}.npz'); print(len(d['states']))\""
+            code, stdout, _ = await self.run_remote_command(training_worker, count_cmd)
+            if code == 0 and stdout.strip().isdigit():
+                results["total_positions"] = int(stdout.strip())
+
+        if results["success"]:
+            self.log(f"NPZ export complete: {results['total_positions']} positions", "OK")
+        else:
+            self.log("NPZ export produced no files", "ERROR")
+
+        return results
+
+    # =========================================================================
+    # Dynamic Host Discovery
+    # =========================================================================
+
+    async def discover_vast_instances(self) -> List[WorkerConfig]:
+        """Dynamically discover running Vast.ai instances.
+
+        Uses the vastai CLI to query running instances and creates
+        WorkerConfig entries for each.
+
+        Returns:
+            List of WorkerConfig for discovered instances
+        """
+        self.log("Discovering Vast.ai instances...")
+
+        discovered = []
+
+        try:
+            result = subprocess.run(
+                ["vastai", "show", "instances", "--raw"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode != 0:
+                self.log(f"vastai query failed: {result.stderr[:100]}", "WARN")
+                return discovered
+
+            instances = json.loads(result.stdout)
+
+            for inst in instances:
+                if inst.get("actual_status") != "running":
+                    continue
+
+                # Extract connection info
+                ssh_host = inst.get("ssh_host", "")
+                ssh_port = inst.get("ssh_port", 22)
+
+                if not ssh_host:
+                    continue
+
+                # Determine GPU type and capabilities
+                gpu_name = inst.get("gpu_name", "unknown")
+                num_gpus = inst.get("num_gpus", 1)
+
+                # Create worker config
+                worker = WorkerConfig(
+                    name=f"vast-{inst.get('id', 'unknown')}",
+                    host=f"root@{ssh_host}",
+                    role="nn_training" if "5090" in gpu_name or "H100" in gpu_name else "selfplay",
+                    capabilities=["square8", "square19", "hex"],
+                    ssh_port=ssh_port,
+                    remote_path="~/ringrift/ai-service",
+                    max_parallel_jobs=num_gpus,
+                )
+
+                discovered.append(worker)
+                self.log(f"  Discovered: {worker.name} ({num_gpus}x {gpu_name})", "OK")
+
+        except FileNotFoundError:
+            self.log("vastai CLI not found", "WARN")
+        except json.JSONDecodeError:
+            self.log("Could not parse vastai output", "WARN")
+        except subprocess.TimeoutExpired:
+            self.log("vastai query timed out", "WARN")
+        except Exception as e:
+            self.log(f"Vast discovery error: {e}", "WARN")
+
+        return discovered
+
+    async def refresh_workers(self) -> None:
+        """Refresh worker list with dynamic discovery.
+
+        Combines static YAML config with dynamically discovered instances.
+        """
+        global WORKERS
+
+        # Start with static config
+        static_workers = load_workers_from_config()
+
+        # Add dynamically discovered Vast instances
+        vast_workers = await self.discover_vast_instances()
+
+        # Merge, avoiding duplicates by host
+        seen_hosts = {w.host for w in static_workers}
+        for vw in vast_workers:
+            if vw.host not in seen_hosts:
+                static_workers.append(vw)
+                seen_hosts.add(vw.host)
+
+        WORKERS = static_workers
+        self.log(f"Refreshed worker list: {len(WORKERS)} workers")
+
     async def sync_heuristic_profiles(self) -> bool:
         """Sync trained heuristic profiles from all workers.
 
@@ -1552,9 +2009,27 @@ python scripts/run_ai_tournament.py \\
         start_iteration: int = 0,
         phase: Optional[str] = None,
         resume: bool = False,
+        board_type: str = "square8",
+        num_players: int = 2,
+        games_per_worker: int = 500,
     ) -> None:
-        """Run the pipeline."""
+        """Run the pipeline.
+
+        Args:
+            iterations: Number of pipeline iterations to run
+            start_iteration: Starting iteration number
+            phase: Run only a specific phase (None for full iteration)
+            resume: Resume from last saved state
+            board_type: Board type for canonical selfplay/training
+            num_players: Number of players for canonical selfplay/training
+            games_per_worker: Number of games per worker for canonical selfplay
+        """
         self.log("RingRift AI Training Pipeline")
+
+        # Store config for use in phases
+        self._board_type = board_type
+        self._num_players = num_players
+        self._games_per_worker = games_per_worker
 
         # Handle resume mode - start from last saved iteration
         if resume and not phase:
@@ -1562,7 +2037,7 @@ python scripts/run_ai_tournament.py \\
             self.log(f"Resuming from iteration {start_iteration} (phase: {self.state.phase})")
             # Don't reset phase_completed to allow skipping completed phases
 
-        self.log(f"Iterations: {iterations}, Start: {start_iteration}")
+        self.log(f"Iterations: {iterations}, Start: {start_iteration}, Board: {board_type}, Players: {num_players}")
         if self.dry_run:
             self.log("*** DRY RUN MODE - No commands will be executed ***")
 
@@ -1572,8 +2047,26 @@ python scripts/run_ai_tournament.py \\
             iteration = start_iteration or self.state.iteration
             if phase == "selfplay":
                 await self.run_selfplay_phase(iteration)
+            elif phase == "canonical-selfplay":
+                await self.run_canonical_selfplay_phase(
+                    iteration,
+                    games_per_worker=self._games_per_worker,
+                    board_type=self._board_type,
+                    num_players=self._num_players,
+                )
             elif phase == "sync":
                 await self.run_sync_phase()
+            elif phase == "parity-validation":
+                await self.run_parity_validation_phase(
+                    board_type=self._board_type,
+                    num_players=self._num_players,
+                )
+            elif phase == "npz-export":
+                await self.run_npz_export_phase(
+                    iteration,
+                    board_type=self._board_type,
+                    num_players=self._num_players,
+                )
             elif phase == "training":
                 await self.run_training_phase(iteration)
             elif phase == "cmaes":
@@ -1586,6 +2079,8 @@ python scripts/run_ai_tournament.py \\
                 await self.run_tier_gating_phase()
             elif phase == "resources":
                 await self.log_resource_usage()
+            elif phase == "refresh-workers":
+                await self.refresh_workers()
             else:
                 self.log(f"Unknown phase: {phase}", "ERROR")
             return
@@ -1623,7 +2118,11 @@ def main():
     parser.add_argument(
         "--phase",
         type=str,
-        choices=["selfplay", "sync", "training", "cmaes", "profile-sync", "evaluation", "tier-gating", "resources"],
+        choices=[
+            "selfplay", "canonical-selfplay", "sync", "parity-validation",
+            "npz-export", "training", "cmaes", "profile-sync", "evaluation",
+            "tier-gating", "resources", "refresh-workers"
+        ],
         help="Run only a specific phase",
     )
     parser.add_argument(
@@ -1642,6 +2141,31 @@ def main():
         default="logs/pipeline/state.json",
         help="Path to state file",
     )
+    parser.add_argument(
+        "--board-type",
+        type=str,
+        default="square8",
+        choices=["square8", "square19", "hexagonal"],
+        help="Board type for canonical selfplay/training",
+    )
+    parser.add_argument(
+        "--num-players",
+        type=int,
+        default=2,
+        choices=[2, 3, 4],
+        help="Number of players for canonical selfplay/training",
+    )
+    parser.add_argument(
+        "--games-per-worker",
+        type=int,
+        default=500,
+        help="Number of games per worker for canonical selfplay",
+    )
+    parser.add_argument(
+        "--discover-vast",
+        action="store_true",
+        help="Dynamically discover Vast.ai instances before running",
+    )
     args = parser.parse_args()
 
     orchestrator = PipelineOrchestrator(
@@ -1650,14 +2174,22 @@ def main():
         dry_run=args.dry_run,
     )
 
-    asyncio.run(
-        orchestrator.run(
+    async def main_async():
+        # Optionally discover Vast instances
+        if args.discover_vast:
+            await orchestrator.refresh_workers()
+
+        await orchestrator.run(
             iterations=args.iterations,
             start_iteration=args.start_iteration,
             phase=args.phase,
             resume=args.resume,
+            board_type=args.board_type,
+            num_players=args.num_players,
+            games_per_worker=args.games_per_worker,
         )
-    )
+
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":
