@@ -57,6 +57,25 @@ except ImportError:
     HAS_AIOHTTP = False
     print("Warning: aiohttp not installed. Install with: pip install aiohttp")
 
+# SOCKS proxy support for userspace Tailscale networking
+try:
+    from aiohttp_socks import ProxyConnector
+    HAS_SOCKS = True
+except ImportError:
+    HAS_SOCKS = False
+    ProxyConnector = None
+
+# Get SOCKS proxy from environment (e.g., socks5://localhost:1055)
+SOCKS_PROXY = os.environ.get("RINGRIFT_SOCKS_PROXY", "")
+
+
+def get_client_session(timeout: ClientTimeout = None) -> ClientSession:
+    """Create an aiohttp ClientSession with optional SOCKS proxy support."""
+    if SOCKS_PROXY and HAS_SOCKS:
+        connector = ProxyConnector.from_url(SOCKS_PROXY)
+        return ClientSession(connector=connector, timeout=timeout)
+    return ClientSession(timeout=timeout)
+
 # Dynamic host registry for IP auto-update
 try:
     from app.distributed.dynamic_registry import (
@@ -1315,7 +1334,7 @@ class P2POrchestrator:
             peers_by_id = dict(self.peers)
 
         timeout = ClientTimeout(total=5)
-        async with ClientSession(timeout=timeout) as session:
+        async with get_client_session(timeout) as session:
             for voter_id in voter_ids:
                 if acks >= quorum:
                     break
@@ -1386,7 +1405,7 @@ class P2POrchestrator:
             peers_by_id = dict(self.peers)
 
         timeout = ClientTimeout(total=5)
-        async with ClientSession(timeout=timeout) as session:
+        async with get_client_session(timeout) as session:
             for voter_id in voter_ids:
                 if voter_id == self.node_id:
                     continue
@@ -1588,7 +1607,7 @@ class P2POrchestrator:
         # should fail fast so the dashboard doesn't hang for a full minute.
         timeout = ClientTimeout(total=10)
         last_exc: Exception | None = None
-        async with ClientSession(timeout=timeout) as session:
+        async with get_client_session(timeout) as session:
             for target_url in candidate_urls:
                 try:
                     async with session.request(
@@ -2335,7 +2354,7 @@ class P2POrchestrator:
             # stall leader loops or external callers (e.g. the improvement
             # daemon). Prefer faster failure and rely on periodic retries.
             timeout = ClientTimeout(total=10, sock_connect=3, sock_read=7)
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 for url in self._urls_for_peer(peer_info, "/data_manifest"):
                     try:
                         async with session.get(url, headers=self._auth_headers()) as resp:
@@ -2572,7 +2591,7 @@ class P2POrchestrator:
                     payload["source_reported_port"] = rp
 
                 timeout = ClientTimeout(total=600)
-                async with ClientSession(timeout=timeout) as session:
+                async with get_client_session(timeout) as session:
                     result = None
                     last_err: Optional[str] = None
                     for url in self._urls_for_peer(target_peer, "/sync/pull"):
@@ -2672,7 +2691,7 @@ class P2POrchestrator:
 
         timeout = ClientTimeout(total=None, sock_connect=HTTP_CONNECT_TIMEOUT, sock_read=600)
 
-        async with ClientSession(timeout=timeout) as session:
+        async with get_client_session(timeout) as session:
             for rel_path in files:
                 rel_path = (rel_path or "").lstrip("/")
                 if not rel_path:
@@ -2880,7 +2899,7 @@ class P2POrchestrator:
                 return False
 
             timeout = ClientTimeout(total=60)
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 last_err: Optional[str] = None
                 for url in self._urls_for_peer(node, "/cleanup/files"):
                     try:
@@ -4831,7 +4850,7 @@ class P2POrchestrator:
                                 worker = self.peers.get(worker_id)
                             if worker:
                                 timeout = ClientTimeout(total=300)
-                                async with ClientSession(timeout=timeout) as session:
+                                async with get_client_session(timeout) as session:
                                     url = self._url_for_peer(worker, "/cmaes/evaluate")
                                     await session.post(url, json={
                                         "job_id": job_id,
@@ -5026,7 +5045,7 @@ print(wins / total)
                     if leader:
                         try:
                             timeout = ClientTimeout(total=30)
-                            async with ClientSession(timeout=timeout) as session:
+                            async with get_client_session(timeout) as session:
                                 url = self._url_for_peer(leader, "/cmaes/result")
                                 await session.post(url, json={
                                     "job_id": job_id,
@@ -5446,7 +5465,7 @@ print(wins / total)
                 return
 
             timeout = ClientTimeout(total=10)
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 url = self._url_for_peer(worker, "/tournament/match")
                 await session.post(url, json={"job_id": job_id, "match": match}, headers=self._auth_headers())
         except Exception as e:
@@ -5583,7 +5602,7 @@ print(json.dumps(result))
                 if leader:
                     try:
                         timeout = ClientTimeout(total=10)
-                        async with ClientSession(timeout=timeout) as session:
+                        async with get_client_session(timeout) as session:
                             url = self._url_for_peer(leader, "/tournament/result")
                             await session.post(url, json={
                                 "job_id": job_id,
@@ -6119,7 +6138,7 @@ print(json.dumps(result))
 
             try:
                 timeout = ClientTimeout(total=10)
-                async with ClientSession(timeout=timeout) as session:
+                async with get_client_session(timeout) as session:
                     url = self._url_for_peer(worker, "/improvement/selfplay")
                     await session.post(url, json={
                         "job_id": job_id,
@@ -6345,7 +6364,7 @@ else:
             # Delegate to GPU worker
             try:
                 timeout = ClientTimeout(total=3600)  # 1 hour for training
-                async with ClientSession(timeout=timeout) as session:
+                async with get_client_session(timeout) as session:
                     url = self._url_for_peer(gpu_worker, "/improvement/train")
                     async with session.post(url, json=training_config, headers=self._auth_headers()) as resp:
                         if resp.status == 200:
@@ -6596,7 +6615,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         try:
             endpoint = f"/training/{job_type}/start"
             timeout = ClientTimeout(total=30)
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 payload = {
                     "job_id": job_id,
                     "board_type": board_type,
@@ -6795,7 +6814,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             # Send to worker
             timeout = ClientTimeout(total=30)
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 last_err: Optional[str] = None
                 for url in self._urls_for_peer(worker_node, "/training/nnue/start"):
                     try:
@@ -7201,7 +7220,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 if leader:
                     try:
                         timeout = ClientTimeout(total=30)
-                        async with ClientSession(timeout=timeout) as session:
+                        async with get_client_session(timeout) as session:
                             url = self._url_for_peer(leader, "/training/update")
                             payload = {
                                 "job_id": job_id,
@@ -7667,7 +7686,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             "num_games": games_per_node,
                             "seed": node_seed,
                         }
-                        async with ClientSession(timeout=ClientTimeout(total=30)) as session:
+                        async with get_client_session(ClientTimeout(total=30)) as session:
                             for url in self._urls_for_peer(node, "/pipeline/selfplay_worker"):
                                 try:
                                     async with session.post(url, json=payload, headers=self._get_auth_headers()) as resp:
@@ -9256,7 +9275,7 @@ print(json.dumps({{
                 payload["voter_config_source"] = str(getattr(self, "voter_config_source", "") or "")
 
             timeout = ClientTimeout(total=10)
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 scheme = (scheme or "http").lower()
                 url = f"{scheme}://{peer_host}:{peer_port}/heartbeat"
                 async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
@@ -9339,7 +9358,7 @@ print(json.dumps({{
             return False
 
         timeout = ClientTimeout(total=15)
-        async with ClientSession(timeout=timeout) as session:
+        async with get_client_session(timeout) as session:
             for peer_addr in seed_peers:
                 try:
                     scheme, host, port = self._parse_peer_address(peer_addr)
@@ -9417,7 +9436,7 @@ print(json.dumps({{
             self._update_self_info()
 
             timeout = ClientTimeout(total=15)
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 # Use /relay/heartbeat endpoint
                 url = f"{relay_url.rstrip('/')}/relay/heartbeat"
                 payload = self.self_info.to_dict()
@@ -10048,7 +10067,7 @@ print(json.dumps({{
             got_response = False
 
             timeout = ClientTimeout(total=ELECTION_TIMEOUT)
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 for peer in higher_nodes:
                     try:
                         url = self._url_for_peer(peer, "/election")
@@ -10115,7 +10134,7 @@ print(json.dumps({{
             peers = list(self.peers.values())
 
         timeout = ClientTimeout(total=5)
-        async with ClientSession(timeout=timeout) as session:
+        async with get_client_session(timeout) as session:
             for peer in peers:
                 if peer.node_id != self.node_id:
                     try:
@@ -10176,7 +10195,7 @@ print(json.dumps({{
 
         timeout = ClientTimeout(total=3)
         try:
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 for peer in peers:
                     if peer.node_id != self.node_id and peer.is_alive():
                         try:
@@ -10288,7 +10307,7 @@ print(json.dumps({{
         # Send coordinator message to assert our leadership
         print(f"[P2P] SPLIT-BRAIN detected! Asserting leadership over: {[p.node_id for p in other_leaders]}")
         timeout = ClientTimeout(total=5)
-        async with ClientSession(timeout=timeout) as session:
+        async with get_client_session(timeout) as session:
             for peer in other_leaders:
                 try:
                     url = self._url_for_peer(peer, "/coordinator")
@@ -10702,7 +10721,7 @@ print(json.dumps({{
                 print(f"[P2P] Enqueued relay cleanup for {node.node_id}")
                 return
             timeout = ClientTimeout(total=HTTP_TOTAL_TIMEOUT)
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 last_err: Optional[str] = None
                 for url in self._urls_for_peer(node, "/cleanup"):
                     try:
@@ -10866,7 +10885,7 @@ print(json.dumps({{
             return
 
         timeout = ClientTimeout(total=HTTP_TOTAL_TIMEOUT)
-        async with ClientSession(timeout=timeout) as session:
+        async with get_client_session(timeout) as session:
             last_err: Optional[str] = None
             payload = {"target_selfplay_jobs": target, "reason": reason}
             for url in self._urls_for_peer(node, "/reduce_selfplay"):
@@ -10959,7 +10978,7 @@ print(json.dumps({{
                     print(f"[P2P] Relay queue full for {node.node_id}; skipping restart enqueue")
                 return
             timeout = ClientTimeout(total=HTTP_TOTAL_TIMEOUT)
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 last_err: Optional[str] = None
                 for url in self._urls_for_peer(node, "/restart_stuck_jobs"):
                     try:
@@ -11348,7 +11367,7 @@ print(json.dumps({{
                 return
 
             timeout = ClientTimeout(total=10)
-            async with ClientSession(timeout=timeout) as session:
+            async with get_client_session(timeout) as session:
                 payload = {
                     "job_id": job_id,
                     "job_type": job_type.value,
