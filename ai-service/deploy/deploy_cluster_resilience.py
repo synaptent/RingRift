@@ -304,6 +304,19 @@ def main() -> None:
                     # Best-effort restart (systemd may not exist in containers).
                     f"{sudo}systemctl restart ringrift-p2p ringrift-resilience 2>/dev/null || true\n"
                     f"{sudo}systemctl status ringrift-p2p --no-pager -n 0 2>/dev/null || true\n"
+                    # Non-systemd hosts (e.g. Vast.ai) still need an explicit restart
+                    # to pick up new code; watchdog will relaunch if /health fails.
+                    f"{sudo}pkill -f '[p]2p_orchestrator.py' 2>/dev/null || true\n"
+                    f"{sudo}pkill -f '[n]ode_resilience.py' 2>/dev/null || true\n"
+                    f"{sudo}/usr/local/bin/ringrift-watchdog 2>/dev/null || true\n"
+                    f"if [ -f /etc/ringrift/node.conf ]; then\n"
+                    f"  source /etc/ringrift/node.conf\n"
+                    f"  cd \"$RINGRIFT_DIR\" 2>/dev/null || exit 0\n"
+                    f"  PYTHONPATH=\"$RINGRIFT_DIR\" nohup python3 scripts/node_resilience.py "
+                    f"--node-id \"$NODE_ID\" --coordinator \"$COORDINATOR_URL\" "
+                    f"--ai-service-dir \"$RINGRIFT_DIR\" --p2p-port \"$P2P_PORT\" "
+                    f">> /var/log/ringrift/resilience.log 2>&1 &\n"
+                    f"fi\n"
                 )
 
             _run_ssh(target, remote_setup, dry_run=not args.apply)
