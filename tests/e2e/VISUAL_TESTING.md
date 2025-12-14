@@ -33,17 +33,17 @@ npx playwright test visual-regression -g "game board" --update-snapshots
 
 ## Test Coverage
 
-The visual regression suite covers:
+The visual regression suite covers **backend-independent** UI surfaces by default.
+Game-board screenshots are captured from the **local sandbox** to keep the suite stable even when Postgres/Redis are not running.
 
 ### Page Screenshots
 
-| Test                 | Description             | Screenshot                    |
-| -------------------- | ----------------------- | ----------------------------- |
-| Home page            | Landing page for guests | `home-page.png`               |
-| Login page           | Authentication form     | `login-page.png`              |
-| Register page        | Registration form       | `register-page.png`           |
-| Home (authenticated) | Home with user context  | `home-page-authenticated.png` |
-| Lobby page           | Game lobby              | `lobby-page.png`              |
+| Test                | Description            | Screenshot                  |
+| ------------------- | ---------------------- | --------------------------- |
+| Entry route (guest) | `/` redirects to login | `entry-guest.png`           |
+| Login page          | Authentication form    | `login-page.png`            |
+| Register page       | Registration form      | `register-page.png`         |
+| Sandbox setup       | Local sandbox pregame  | `sandbox-pregame-setup.png` |
 
 ### Game Board Screenshots
 
@@ -57,26 +57,25 @@ The visual regression suite covers:
 
 ### Component Screenshots
 
-| Test          | Description            | Screenshot           |
-| ------------- | ---------------------- | -------------------- |
-| Game HUD      | Turn/status indicators | `game-hud.png`       |
-| Event log     | Game move history      | `game-event-log.png` |
-| Victory modal | Win condition display  | `victory-modal.png`  |
+| Test      | Description            | Screenshot           |
+| --------- | ---------------------- | -------------------- |
+| Game HUD  | Turn/status indicators | `game-hud.png`       |
+| Event log | Game move history      | `game-event-log.png` |
 
 ### Sandbox Screenshots
 
 | Test           | Description           | Screenshot                   |
 | -------------- | --------------------- | ---------------------------- |
 | Pregame setup  | Sandbox configuration | `sandbox-pregame-setup.png`  |
-| Launched board | Active sandbox game   | `sandbox-launched-board.png` |
+| Launched board | Active sandbox game   | `sandbox-local-board.png`    |
 | Touch controls | Mobile control panel  | `sandbox-touch-controls.png` |
 
 ### Responsive Screenshots
 
-| Viewport          | Tests                      | Prefix     |
-| ----------------- | -------------------------- | ---------- |
-| Mobile (375x667)  | Home, Login, Game, Sandbox | `mobile-*` |
-| Tablet (768x1024) | Game board, Hex board      | `tablet-*` |
+| Viewport          | Tests                       | Prefix     |
+| ----------------- | --------------------------- | ---------- |
+| Mobile (375x667)  | Entry, Login, Game, Sandbox | `mobile-*` |
+| Tablet (768x1024) | Game board, Hex board       | `tablet-*` |
 
 ## Directory Structure
 
@@ -84,8 +83,8 @@ The visual regression suite covers:
 tests/e2e/
 ├── __snapshots__/
 │   └── visual-regression.e2e.spec.ts-snapshots/
-│       ├── home-page-chromium.png
-│       ├── home-page-Mobile-Chrome.png
+│       ├── entry-guest-chromium.png
+│       ├── mobile-entry-guest-Mobile-Chrome.png
 │       ├── login-page-chromium.png
 │       └── ... (other baselines)
 ├── visual-regression.e2e.spec.ts

@@ -1026,7 +1026,12 @@ class MinimaxAI(HeuristicAI):
         """Check if two moves are equal for killer move matching."""
         if move1.type != move2.type:
             return False
-        if move1.to.x != move2.to.x or move1.to.y != move2.to.y:
+        # Handle moves where `to` may be None (e.g., NO_ACTION, start_ring)
+        if move1.to is None and move2.to is None:
+            pass  # Both None, continue to check from_pos
+        elif move1.to is None or move2.to is None:
+            return False  # One is None, the other is not
+        elif move1.to.x != move2.to.x or move1.to.y != move2.to.y:
             return False
         if move1.from_pos is None and move2.from_pos is None:
             return True

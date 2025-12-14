@@ -430,6 +430,7 @@ class GPUSelfPlayGenerator:
         rings_per_player: Optional[int] = None,
         board_type: Optional[str] = None,
         use_heuristic_selection: bool = False,
+        weight_noise: float = 0.0,
     ):
         self.board_size = board_size
         self.num_players = num_players
@@ -486,6 +487,7 @@ class GPUSelfPlayGenerator:
             rings_per_player=rings_per_player,
             board_type=board_type,
             use_heuristic_selection=use_heuristic_selection,
+            weight_noise=weight_noise,
         )
 
         # Log shadow validation status
@@ -740,6 +742,7 @@ def run_gpu_selfplay(
     rings_per_player: Optional[int] = None,
     output_db: Optional[str] = None,
     use_heuristic_selection: bool = False,
+    weight_noise: float = 0.0,
 ) -> Dict[str, Any]:
     """Run GPU-accelerated self-play generation.
 
@@ -760,6 +763,7 @@ def run_gpu_selfplay(
         rings_per_player: Starting rings per player (None = board default)
         output_db: Optional path to SQLite DB for canonical game storage
         use_heuristic_selection: Use heuristic-based move selection instead of center-bias random
+        weight_noise: Multiplicative noise factor (0.0-1.0) for heuristic weights diversity
 
     Returns:
         Statistics dict
@@ -794,6 +798,7 @@ def run_gpu_selfplay(
         logger.info(f"  Sample rate: {shadow_sample_rate:.1%}")
         logger.info(f"  Threshold: {shadow_threshold:.2%}")
     logger.info(f"Move selection: {'heuristic-based' if use_heuristic_selection else 'center-bias random'}")
+    logger.info(f"Weight noise: {weight_noise:.1%}" if weight_noise > 0 else "Weight noise: disabled")
     logger.info(f"Output: {output_dir}")
     logger.info("")
 
@@ -812,6 +817,7 @@ def run_gpu_selfplay(
         rings_per_player=rings_per_player,
         board_type=board_type,
         use_heuristic_selection=use_heuristic_selection,
+        weight_noise=weight_noise,
     )
 
     # Generate games
@@ -971,6 +977,13 @@ def main():
         action="store_true",
         help="Use heuristic-based move selection (center distance, capture value, line potential) instead of center-bias random",
     )
+    parser.add_argument(
+        "--weight-noise",
+        type=float,
+        default=0.0,
+        help="Multiplicative noise (0.0-1.0) for heuristic weights to increase training diversity. "
+             "Each weight is multiplied by uniform(1-noise, 1+noise). Default: 0.0 (no noise)",
+    )
 
     args = parser.parse_args()
 
@@ -1015,6 +1028,7 @@ def main():
         rings_per_player=args.rings_per_player,
         output_db=args.output_db,
         use_heuristic_selection=args.use_heuristic,
+        weight_noise=args.weight_noise,
     )
 
 

@@ -26,11 +26,12 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 # Setup logging
 logging.basicConfig(
@@ -54,6 +55,9 @@ if _log_file:
 RUNAWAY_SELFPLAY_PROCESS_THRESHOLD = int(
     os.environ.get("RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD", "128") or 128
 )
+
+STATE_DIR = Path(__file__).parent.parent / "logs" / "node_resilience"
+STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _acquire_singleton_lock(node_id: str):
@@ -123,13 +127,47 @@ class NodeResilience:
 
     def __init__(self, config: NodeConfig):
         self.config = config
-        self.local_selfplay_pids: List[int] = self._discover_fallback_pids()
+        self.state_path = STATE_DIR / f"state_{self.config.node_id}.json"
+        state = self._load_state()
+        self.fallback_job_prefix = f"resilience_fallback_{self.config.node_id}_"
+        self.fallback_job_ids: List[str] = [
+            str(j).strip()
+            for j in (state.get("fallback_job_ids") or [])
+            if str(j).strip()
+        ]
+        self.local_selfplay_pids: List[int] = self._discover_fallback_pids(state=state)
         self.gpu_idle_since: Optional[float] = None
         self.last_p2p_check = 0
         self.last_registration = 0
         self.p2p_connected = False
         self.running = True
         self._last_good_coordinator: str = ""
+
+    def _load_state(self) -> Dict[str, Any]:
+        try:
+            if not self.state_path.exists():
+                return {}
+            raw = self.state_path.read_text().strip()
+            if not raw:
+                return {}
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_state(self) -> None:
+        try:
+            payload = {
+                "node_id": self.config.node_id,
+                "updated_at": datetime.utcnow().isoformat(),
+                "fallback_job_ids": list(self.fallback_job_ids),
+                "fallback_pids": list(self.local_selfplay_pids),
+            }
+            tmp = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
+            tmp.write_text(json.dumps(payload, indent=2, sort_keys=True))
+            tmp.replace(self.state_path)
+        except Exception:
+            pass
 
     def _coordinator_urls(self) -> List[str]:
         raw = (self.config.coordinator_url or "").strip()
@@ -184,26 +222,69 @@ class NodeResilience:
         except Exception:
             return False
 
+    def _local_orchestrator_url(self, path: str) -> str:
+        path = path if path.startswith("/") else f"/{path}"
+        return f"http://localhost:{self.config.p2p_port}{path}"
+
+    def _local_orchestrator_headers(self, *, json_body: bool = False) -> Dict[str, str]:
+        headers: Dict[str, str] = {}
+        if json_body:
+            headers["Content-Type"] = "application/json"
+        token = _load_cluster_auth_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    def _local_orchestrator_get_json(self, path: str, *, timeout: int = 5) -> Optional[Dict[str, Any]]:
+        try:
+            url = self._local_orchestrator_url(path)
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                data = json.loads(response.read().decode())
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+
+    def _local_orchestrator_post_json(
+        self, path: str, payload: Dict[str, Any], *, timeout: int = 15
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            url = self._local_orchestrator_url(path)
+            data = json.dumps(payload).encode("utf-8")
+            request = urllib.request.Request(
+                url,
+                data=data,
+                headers=self._local_orchestrator_headers(json_body=True),
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                decoded = json.loads(response.read().decode())
+            return decoded if isinstance(decoded, dict) else None
+        except Exception:
+            return None
+
+    def _list_local_jobs(self, *, status: Optional[str] = None, limit: int = 500) -> List[Dict[str, Any]]:
+        try:
+            qs: Dict[str, str] = {"local": "1", "limit": str(int(limit))}
+            if status:
+                qs["status"] = str(status)
+            query = urllib.parse.urlencode(qs)
+            data = self._local_orchestrator_get_json(f"/api/jobs?{query}", timeout=10) or {}
+            jobs = data.get("jobs") or []
+            return jobs if isinstance(jobs, list) else []
+        except Exception:
+            return []
+
     def check_p2p_managing_jobs(self) -> bool:
         """Check if P2P is actively managing jobs (to avoid cron conflicts).
 
         LEARNED LESSONS - Don't start fallback selfplay if P2P is managing jobs,
         even if P2P health check is slightly delayed. This prevents job conflicts.
         """
-        try:
-            url = f"http://localhost:{self.config.p2p_port}/status"
-            with urllib.request.urlopen(url, timeout=5) as response:
-                data = json.loads(response.read().decode())
-                # Only treat P2P as "managing jobs" when it is actually running
-                # work on this node. A common failure mode is a partitioned node
-                # electing itself leader (peers unreachable) while dispatching no
-                # jobs; in that case we still want fallback selfplay to keep the
-                # machine utilized.
-                selfplay_jobs = int(data.get("selfplay_jobs", 0) or 0)
-                training_jobs = int(data.get("training_jobs", 0) or 0)
-                return (selfplay_jobs + training_jobs) > 0
-        except Exception:
+        if not self.check_p2p_health():
             return False
+        jobs = self._list_local_jobs(status="running", limit=500)
+        # Any running job indicates the local orchestrator is already doing work.
+        return len(jobs) > 0
 
     def check_coordinator_reachable(self) -> bool:
         """Check if the coordinator is reachable."""
@@ -221,6 +302,27 @@ class NodeResilience:
                         return True
             except Exception:
                 continue
+        return False
+
+    def check_cluster_connected(self) -> bool:
+        """Check whether the local orchestrator appears connected to any peers/leader.
+
+        This is intentionally not tied to a single hard-coded coordinator URL; it
+        uses local P2P state so leadership can move without falsely triggering
+        fallback work.
+        """
+        if not self.check_p2p_health():
+            return False
+        status = self._local_orchestrator_get_json("/status", timeout=5) or {}
+        try:
+            alive_peers = int(status.get("alive_peers", 0) or 0)
+        except Exception:
+            alive_peers = 0
+        effective_leader_id = str(status.get("effective_leader_id") or "").strip()
+        if alive_peers > 0:
+            return True
+        if effective_leader_id and effective_leader_id != self.config.node_id:
+            return True
         return False
 
     def register_with_coordinator(self) -> bool:
@@ -295,27 +397,17 @@ class NodeResilience:
         except Exception:
             return 22
 
-    def _discover_fallback_pids(self) -> List[int]:
-        """Recover fallback selfplay PIDs from process table (for daemon restarts)."""
-        marker = f"fallback/{self.config.node_id}"
-        try:
-            out = subprocess.run(
-                ["pgrep", "-f", marker],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if out.returncode != 0:
-                return []
-            pids = []
-            for token in out.stdout.strip().split():
-                try:
-                    pids.append(int(token))
-                except ValueError:
-                    continue
-            return sorted(set(pids))
-        except Exception:
-            return []
+    def _discover_fallback_pids(self, *, state: Optional[Dict[str, Any]] = None) -> List[int]:
+        """Recover fallback selfplay PIDs from local state (for daemon restarts)."""
+        state = state or {}
+        raw_pids = state.get("fallback_pids") or []
+        pids: List[int] = []
+        for token in raw_pids:
+            try:
+                pids.append(int(token))
+            except Exception:
+                continue
+        return sorted(set(pids))
 
     def _ringrift_root(self) -> str:
         """Infer RingRift repo root from ai-service dir."""
@@ -506,47 +598,131 @@ class NodeResilience:
             except Exception as e:
                 logger.error(f"Failed to start CPU fallback selfplay: {e}")
 
-    def start_local_fallback_work(self) -> None:
-        """Start local fallback work when P2P is unavailable."""
-        # LEARNED LESSONS - Don't start fallback if P2P is already managing jobs
-        # This prevents cron conflicts with P2P job management
+    def _target_fallback_job_ids(self) -> List[str]:
+        max_procs = max(1, int(self.config.max_local_selfplay_procs or 1))
+        prefix = self.fallback_job_prefix
+        if self.config.num_gpus > 0:
+            target = min(int(self.config.num_gpus or 0), max_procs)
+            return [f"{prefix}gpu{gpu_id}" for gpu_id in range(target)]
+        return [f"{prefix}cpu{i}" for i in range(max_procs)]
+
+    def _start_fallback_jobs_via_orchestrator(self) -> bool:
+        """Start fallback work using the local P2P orchestrator so jobs are tracked."""
+        if not self.check_p2p_health():
+            return False
+
+        desired_job_ids = self._target_fallback_job_ids()
+
+        running_jobs = self._list_local_jobs(status="running", limit=500)
+        running_fallback = {
+            str(j.get("job_id") or "")
+            for j in running_jobs
+            if str(j.get("job_id") or "").startswith(self.fallback_job_prefix)
+        }
+
+        started_any = False
+        for job_id in desired_job_ids:
+            if job_id in running_fallback:
+                continue
+
+            if self.config.num_gpus > 0:
+                job_type = "hybrid_selfplay"
+                cuda_visible_devices = job_id.split("gpu")[-1] if "gpu" in job_id else None
+            else:
+                job_type = "selfplay"
+                cuda_visible_devices = None
+
+            payload: Dict[str, Any] = {
+                "job_id": job_id,
+                "job_type": job_type,
+                "board_type": self.config.fallback_board,
+                "num_players": int(self.config.fallback_num_players or 2),
+                "engine_mode": "mixed",
+            }
+            if cuda_visible_devices is not None:
+                payload["cuda_visible_devices"] = str(cuda_visible_devices)
+
+            resp = self._local_orchestrator_post_json("/start_job", payload, timeout=30) or {}
+            if resp.get("success"):
+                started_any = True
+                if job_id not in self.fallback_job_ids:
+                    self.fallback_job_ids.append(job_id)
+                    self._save_state()
+            else:
+                # If orchestrator start fails, don't spam retries in a tight loop.
+                err = resp.get("error") if isinstance(resp, dict) else None
+                logger.warning(f"Failed to start fallback via orchestrator (job_id={job_id}): {err or 'unknown_error'}")
+
+        return started_any or bool(running_fallback)
+
+    def _start_fallback_processes_direct(self) -> None:
+        """Direct fallback selfplay (legacy). Prefer orchestrator-managed jobs when possible."""
+        # LEARNED LESSONS - Don't start direct fallback if P2P is already managing jobs.
         if self.check_p2p_managing_jobs():
-            logger.info("P2P is managing jobs, skipping fallback work")
+            logger.info("P2P is managing jobs, skipping direct fallback work")
             return
 
         # Clean up dead processes
-        self.local_selfplay_pids = [
-            pid for pid in self.local_selfplay_pids
-            if self._process_running(pid)
-        ]
+        self.local_selfplay_pids = [pid for pid in self.local_selfplay_pids if self._process_running(pid)]
 
+        max_procs = max(1, self.config.max_local_selfplay_procs)
+        num_to_start = max_procs - len(self.local_selfplay_pids)
+        if num_to_start <= 0:
+            return
+
+        if self.config.num_gpus > 0:
+            self._start_gpu_fallback_selfplay(num_to_start=min(num_to_start, self.config.num_gpus))
+        else:
+            self._start_cpu_fallback_selfplay(num_to_start=min(num_to_start, 1))
+
+        self._save_state()
+
+    def start_local_fallback_work(self) -> None:
+        """Start local fallback work when P2P is unavailable."""
         # Avoid spawning new work when disk is under pressure.
         if not self.check_and_cleanup_disk():
             logger.warning("Skipping fallback work due to disk pressure")
             return
 
-        max_procs = max(1, self.config.max_local_selfplay_procs)
-        num_to_start = max_procs - len(self.local_selfplay_pids)
-
-        if num_to_start <= 0:
+        # Prefer orchestrator-managed jobs (tracked + visible to the leader).
+        if self._start_fallback_jobs_via_orchestrator():
             return
 
-        if self.config.num_gpus > 0:
-            # Prefer one worker per GPU, but respect the overall cap.
-            self._start_gpu_fallback_selfplay(num_to_start=min(num_to_start, self.config.num_gpus))
-        else:
-            # CPU-only nodes: keep it conservative by default.
-            self._start_cpu_fallback_selfplay(num_to_start=min(num_to_start, 1))
+        # Last resort: start direct processes if orchestrator is unavailable.
+        self._start_fallback_processes_direct()
 
-    def stop_local_selfplay(self) -> None:
-        """Stop all local selfplay processes (when P2P reconnects)."""
+    def stop_direct_fallback_processes(self) -> None:
+        """Stop only the direct (untracked) fallback selfplay processes."""
         for pid in self.local_selfplay_pids:
             try:
                 os.kill(pid, signal.SIGTERM)
-                logger.info(f"Stopped local selfplay (PID {pid})")
+                logger.info(f"Stopped direct fallback selfplay (PID {pid})")
             except ProcessLookupError:
                 pass
         self.local_selfplay_pids = []
+        self._save_state()
+
+    def stop_orchestrator_fallback_jobs(self) -> None:
+        """Stop orchestrator-tracked fallback jobs (identified by job_id prefix)."""
+        if not self.check_p2p_health():
+            return
+        running_jobs = self._list_local_jobs(status="running", limit=500)
+        fallback_job_ids = [
+            str(j.get("job_id") or "")
+            for j in running_jobs
+            if str(j.get("job_id") or "").startswith(self.fallback_job_prefix)
+        ]
+        for job_id in fallback_job_ids:
+            resp = self._local_orchestrator_post_json("/stop_job", {"job_id": job_id}, timeout=15) or {}
+            if resp.get("success"):
+                logger.info(f"Stopped orchestrator fallback job {job_id}")
+        self.fallback_job_ids = [j for j in self.fallback_job_ids if j not in set(fallback_job_ids)]
+        self._save_state()
+
+    def stop_local_fallback(self) -> None:
+        """Stop all fallback work (orchestrator jobs + direct processes)."""
+        self.stop_orchestrator_fallback_jobs()
+        self.stop_direct_fallback_processes()
 
     def check_and_cleanup_disk(self) -> bool:
         """Check disk usage and run cleanup if needed."""
@@ -769,36 +945,34 @@ class NodeResilience:
 
         Returns True when no runaway condition is detected.
         """
-        # Prefer the orchestrator-reported job counts when available.
+        # Prefer the orchestrator-tracked job list when available.
         if self.check_p2p_health():
             try:
-                url = f"http://localhost:{self.config.p2p_port}/status"
-                with urllib.request.urlopen(url, timeout=5) as response:
-                    data = json.loads(response.read().decode())
-                count = int(data.get("selfplay_jobs", 0) or 0)
+                jobs = self._list_local_jobs(status="running", limit=1000)
+                count = sum(
+                    1
+                    for j in jobs
+                    if str(j.get("job_type") or "") in {"selfplay", "gpu_selfplay", "hybrid_selfplay"}
+                )
                 if count < RUNAWAY_SELFPLAY_PROCESS_THRESHOLD:
                     return True
 
                 logger.error(
-                    f"Runaway selfplay detected via P2P status: {count} >= {RUNAWAY_SELFPLAY_PROCESS_THRESHOLD}"
+                    f"Runaway selfplay detected via local P2P jobs: {count} >= {RUNAWAY_SELFPLAY_PROCESS_THRESHOLD}"
                 )
 
-                headers = {"Content-Type": "application/json"}
-                token = _load_cluster_auth_token()
-                if token:
-                    headers["Authorization"] = f"Bearer {token}"
                 req = urllib.request.Request(
-                    f"http://localhost:{self.config.p2p_port}/restart_stuck_jobs",
+                    self._local_orchestrator_url("/restart_stuck_jobs"),
                     data=b"{}",
-                    headers=headers,
+                    headers=self._local_orchestrator_headers(json_body=True),
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=10) as resp:
+                with urllib.request.urlopen(req, timeout=15) as resp:
                     _ = resp.read()
                 logger.info("Requested /restart_stuck_jobs for runaway recovery")
                 return False
             except Exception as e:
-                logger.warning(f"Runaway selfplay check (via P2P) failed: {e}")
+                logger.warning(f"Runaway selfplay check (via local P2P jobs) failed: {e}")
 
         # Fallback: count processes directly.
         try:
@@ -830,12 +1004,12 @@ class NodeResilience:
 
         # Check P2P health
         p2p_healthy = self.check_p2p_health()
-        coordinator_reachable = self.check_coordinator_reachable()
+        cluster_connected = self.check_cluster_connected()
 
-        if p2p_healthy and coordinator_reachable:
+        if p2p_healthy and cluster_connected:
             if not self.p2p_connected:
-                logger.info("P2P connection restored - stopping local fallback")
-                self.stop_local_selfplay()
+                logger.info("P2P connection restored - stopping direct fallback processes")
+                self.stop_direct_fallback_processes()
             self.p2p_connected = True
         else:
             if self.p2p_connected:
@@ -851,7 +1025,7 @@ class NodeResilience:
 
         # Periodic registration
         if now - self.last_registration > self.config.reconnect_interval:
-            if coordinator_reachable:
+            if self.check_coordinator_reachable():
                 self.register_with_coordinator()
             self.last_registration = now
 
@@ -864,7 +1038,7 @@ class NodeResilience:
         def handle_signal(signum, frame):
             logger.info("Shutdown signal received")
             self.running = False
-            self.stop_local_selfplay()
+            self.stop_local_fallback()
             sys.exit(0)
 
         signal.signal(signal.SIGTERM, handle_signal)

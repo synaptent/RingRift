@@ -43,6 +43,22 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# MPS Compatibility Helpers
+# =============================================================================
+
+
+def get_int_dtype(device: torch.device) -> torch.dtype:
+    """Get appropriate integer dtype for device.
+
+    MPS (Apple Silicon) doesn't support int16 with index_put_(accumulate=True),
+    so we use int32 on MPS and int16 elsewhere for memory efficiency.
+    """
+    if device.type == "mps":
+        return torch.int32
+    return torch.int16
+
+
+# =============================================================================
 # Vectorized Selection Utilities
 # =============================================================================
 
@@ -954,6 +970,9 @@ class BatchGameState:
         if device is None:
             device = get_device()
 
+        # Get appropriate int dtype for device (int32 on MPS, int16 elsewhere)
+        int_dtype = get_int_dtype(device)
+
         # Initialize board tensors
         shape_board = (batch_size, board_size, board_size)
         shape_players = (batch_size, num_players + 1)  # +1 for 1-indexed players
@@ -970,7 +989,7 @@ class BatchGameState:
             # so the canonical hex supply must map to board_size=25 as well.
             starting_rings = {8: 18, 19: 72, 13: 96, 25: 96}.get(board_size, 18)
 
-        rings = torch.zeros(shape_players, dtype=torch.int16, device=device)
+        rings = torch.zeros(shape_players, dtype=int_dtype, device=device)
         rings[:, 1:num_players+1] = starting_rings
 
         # Move history: (batch_size, max_moves, 6) - [move_type, player, from_y, from_x, to_y, to_x]
@@ -978,7 +997,7 @@ class BatchGameState:
         move_history = torch.full(
             (batch_size, max_history_moves, 6),
             -1,
-            dtype=torch.int16,
+            dtype=int_dtype,
             device=device,
         )
 
@@ -990,11 +1009,11 @@ class BatchGameState:
             territory_owner=torch.zeros(shape_board, dtype=torch.int8, device=device),
             is_collapsed=torch.zeros(shape_board, dtype=torch.bool, device=device),
             rings_in_hand=rings,
-            territory_count=torch.zeros(shape_players, dtype=torch.int16, device=device),
+            territory_count=torch.zeros(shape_players, dtype=int_dtype, device=device),
             is_eliminated=torch.zeros(shape_players, dtype=torch.bool, device=device),
-            eliminated_rings=torch.zeros(shape_players, dtype=torch.int16, device=device),
-            buried_rings=torch.zeros(shape_players, dtype=torch.int16, device=device),
-            rings_caused_eliminated=torch.zeros(shape_players, dtype=torch.int16, device=device),
+            eliminated_rings=torch.zeros(shape_players, dtype=int_dtype, device=device),
+            buried_rings=torch.zeros(shape_players, dtype=int_dtype, device=device),
+            rings_caused_eliminated=torch.zeros(shape_players, dtype=int_dtype, device=device),
             current_player=torch.ones(batch_size, dtype=torch.int8, device=device),
             current_phase=torch.zeros(batch_size, dtype=torch.int8, device=device),  # RING_PLACEMENT
             move_count=torch.zeros(batch_size, dtype=torch.int32, device=device),
@@ -1002,10 +1021,10 @@ class BatchGameState:
             winner=torch.zeros(batch_size, dtype=torch.int8, device=device),
             swap_offered=torch.zeros(batch_size, dtype=torch.bool, device=device),
             must_move_from_y=torch.full(
-                (batch_size,), -1, dtype=torch.int16, device=device
+                (batch_size,), -1, dtype=int_dtype, device=device
             ),
             must_move_from_x=torch.full(
-                (batch_size,), -1, dtype=torch.int16, device=device
+                (batch_size,), -1, dtype=int_dtype, device=device
             ),
             lps_round_index=torch.zeros(batch_size, dtype=torch.int32, device=device),
             lps_current_round_first_player=torch.zeros(
@@ -1021,7 +1040,7 @@ class BatchGameState:
                 batch_size, dtype=torch.int8, device=device
             ),
             lps_consecutive_exclusive_rounds=torch.zeros(
-                batch_size, dtype=torch.int16, device=device
+                batch_size, dtype=int_dtype, device=device
             ),
             lps_consecutive_exclusive_player=torch.zeros(
                 batch_size, dtype=torch.int8, device=device
@@ -5299,6 +5318,7 @@ class ParallelGameRunner:
         rings_per_player: Optional[int] = None,
         board_type: Optional[str] = None,
         use_heuristic_selection: bool = False,
+        weight_noise: float = 0.0,
     ):
         """Initialize parallel game runner.
 
@@ -5321,6 +5341,10 @@ class ParallelGameRunner:
                        initialization. If "hexagonal", marks out-of-bounds cells as collapsed.
             use_heuristic_selection: When True, use heuristic-based move selection instead of
                        center-bias. Provides better move quality but slightly slower.
+            weight_noise: Multiplicative noise factor (0.0-1.0) for heuristic weights.
+                       Each weight is multiplied by a random factor in [1-noise, 1+noise].
+                       This increases training diversity by making each game use slightly
+                       different evaluation. Default 0.0 (no noise).
         """
         self.batch_size = batch_size
         self.board_size = board_size
@@ -5328,6 +5352,7 @@ class ParallelGameRunner:
         self.swap_enabled = swap_enabled
         self.board_type = board_type
         self.use_heuristic_selection = use_heuristic_selection
+        self.weight_noise = weight_noise
         # Default LPS victory rounds to 3 if not specified
         self.lps_victory_rounds = lps_victory_rounds if lps_victory_rounds is not None else 3
         self.rings_per_player = rings_per_player
@@ -5440,9 +5465,9 @@ class ParallelGameRunner:
         self.reset_games()
         start_time = time.perf_counter()
 
-        # Use default weights if not provided
+        # Use default weights if not provided (with optional noise for diversity)
         if weights_list is None:
-            weights_list = [self._default_weights()] * self.batch_size
+            weights_list = self._generate_weights_list()
 
         # In this runner, a single call to ``_step_games`` advances one phase
         # (ring_placement, movement, line_processing, territory_processing, end_turn).
@@ -6785,6 +6810,42 @@ class ParallelGameRunner:
             "rings_penalty": 0.1,
             "center_control": 0.3,
         }
+
+    def _apply_weight_noise(self, weights: Dict[str, float]) -> Dict[str, float]:
+        """Apply multiplicative noise to weights for training diversity.
+
+        Each weight is multiplied by a random factor in [1-noise, 1+noise].
+
+        Args:
+            weights: Base weights dictionary
+
+        Returns:
+            New weights dictionary with noise applied
+        """
+        if self.weight_noise <= 0:
+            return weights.copy()
+
+        import random
+        noisy_weights = {}
+        for key, value in weights.items():
+            # Multiplicative noise: value * uniform(1-noise, 1+noise)
+            noise_factor = 1.0 + random.uniform(-self.weight_noise, self.weight_noise)
+            noisy_weights[key] = value * noise_factor
+        return noisy_weights
+
+    def _generate_weights_list(self) -> List[Dict[str, float]]:
+        """Generate per-game weights with optional noise.
+
+        Returns:
+            List of weight dictionaries, one per game in batch.
+        """
+        base_weights = self._default_weights()
+        if self.weight_noise <= 0:
+            # No noise - all games use same weights
+            return [base_weights] * self.batch_size
+        else:
+            # Each game gets unique noisy weights
+            return [self._apply_weight_noise(base_weights) for _ in range(self.batch_size)]
 
     def get_stats(self) -> Dict[str, float]:
         """Get performance statistics."""

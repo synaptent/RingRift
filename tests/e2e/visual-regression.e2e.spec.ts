@@ -1,11 +1,6 @@
-import { test, expect, devices } from '@playwright/test';
-import {
-  registerAndLogin,
-  createGame,
-  goToSandbox,
-  createNearVictoryGame,
-} from './helpers/test-utils';
-import { LoginPage, RegisterPage, HomePage, GamePage } from './pages';
+import { test, expect } from '@playwright/test';
+import { goToSandbox } from './helpers/test-utils';
+import { LoginPage, RegisterPage } from './pages';
 
 /**
  * Visual Regression Test Suite
@@ -31,8 +26,7 @@ import { LoginPage, RegisterPage, HomePage, GamePage } from './pages';
  * - Run in CI with --update-snapshots only for intentional changes
  *
  * INFRASTRUCTURE REQUIREMENTS:
- * - PostgreSQL + Redis running (for authenticated pages)
- * - Dev server running on http://localhost:5173
+ * - Dev server running on http://localhost:5173 (Playwright webServer starts it)
  */
 
 test.describe('Visual Regression Tests', () => {
@@ -40,24 +34,19 @@ test.describe('Visual Regression Tests', () => {
   test.setTimeout(120_000);
 
   test.describe('Page Screenshots', () => {
-    test('home page visual appearance', async ({ page }) => {
+    test('entry route (guest) redirects to login', async ({ page }) => {
       await page.goto('/');
 
-      // Wait for page to be fully loaded
-      await expect(page.getByRole('heading', { name: /Welcome to RingRift/i })).toBeVisible({
+      // Guests are redirected to /login; assert the login shell is visible.
+      await expect(page.getByRole('heading', { name: /login/i })).toBeVisible({
         timeout: 10_000,
       });
 
       // Wait for any animations to settle
       await page.waitForTimeout(1000);
 
-      // Capture the main content area
-      await expect(page).toHaveScreenshot('home-page.png', {
+      await expect(page).toHaveScreenshot('entry-guest.png', {
         fullPage: true,
-        mask: [
-          // Mask any dynamic elements (e.g., timestamps, user-specific data)
-          page.locator('[data-testid="timestamp"]'),
-        ],
       });
     });
 
@@ -92,12 +81,8 @@ test.describe('Visual Regression Tests', () => {
 
   test.describe('Game Board Screenshots', () => {
     test('initial game board state', async ({ page }) => {
-      // Register and create a game to get to the game board
-      await registerAndLogin(page);
-      await createGame(page);
-
-      const gamePage = new GamePage(page);
-      await gamePage.waitForReady();
+      await goToSandbox(page);
+      await page.getByRole('button', { name: /Learn the Basics/i }).click();
 
       // Wait for board to fully render
       await page.waitForTimeout(1000);
@@ -108,14 +93,13 @@ test.describe('Visual Regression Tests', () => {
     });
 
     test('game board with valid placement targets highlighted', async ({ page }) => {
-      await registerAndLogin(page);
-      await createGame(page);
+      await goToSandbox(page);
+      await page.getByRole('button', { name: /Learn the Basics/i }).click();
 
-      const gamePage = new GamePage(page);
-      await gamePage.waitForReady();
-
-      // Wait for valid targets to appear (during ring placement phase)
-      await gamePage.assertValidTargetsVisible();
+      const validTargets = page
+        .getByTestId('board-view')
+        .locator('button[class*="outline-emerald"]');
+      await expect(validTargets.first()).toBeVisible({ timeout: 25_000 });
 
       // Wait a bit for highlights to render
       await page.waitForTimeout(500);
@@ -126,14 +110,14 @@ test.describe('Visual Regression Tests', () => {
     });
 
     test('game board after placing a ring', async ({ page }) => {
-      await registerAndLogin(page);
-      await createGame(page);
+      await goToSandbox(page);
+      await page.getByRole('button', { name: /Learn the Basics/i }).click();
 
-      const gamePage = new GamePage(page);
-      await gamePage.waitForReady();
-
-      // Place a ring
-      await gamePage.clickFirstValidTarget();
+      const validTargets = page
+        .getByTestId('board-view')
+        .locator('button[class*="outline-emerald"]');
+      await validTargets.first().waitFor({ state: 'visible', timeout: 25_000 });
+      await validTargets.first().click();
 
       // Wait for the move to be processed and board to update
       await page.waitForTimeout(1500);
@@ -146,97 +130,42 @@ test.describe('Visual Regression Tests', () => {
 
   test.describe('Component Screenshots', () => {
     test('game HUD appearance', async ({ page }) => {
-      await registerAndLogin(page);
-      await createGame(page);
+      await goToSandbox(page);
+      await page.getByRole('button', { name: /Learn the Basics/i }).click();
 
-      const gamePage = new GamePage(page);
-      await gamePage.waitForReady();
-
-      // The HUD contains turn indicator, connection status, phase info
-      // These should be visible in the game area
-      // Find the HUD container (typically at the top of game view)
-      const hudArea = page.locator('.flex.items-center.justify-between').first();
+      const hudArea = page.getByTestId('game-hud');
 
       // Wait for HUD to be fully rendered
       await page.waitForTimeout(500);
 
-      // Capture HUD if it exists, otherwise the full game header area
-      const hudVisible = await hudArea.isVisible();
-      if (hudVisible) {
-        await expect(hudArea).toHaveScreenshot('game-hud.png');
-      } else {
-        // Fallback to capturing the turn indicator area
-        const turnArea = page.locator('text=/Turn/i').locator('..');
-        await expect(turnArea).toHaveScreenshot('game-hud.png');
-      }
+      await expect(hudArea).toHaveScreenshot('game-hud.png');
     });
 
     test('game event log appearance', async ({ page }) => {
-      await registerAndLogin(page);
-      await createGame(page);
-
-      const gamePage = new GamePage(page);
-      await gamePage.waitForReady();
+      await goToSandbox(page);
+      await page.getByRole('button', { name: /Learn the Basics/i }).click();
 
       // Make a move to populate the event log
-      await gamePage.clickFirstValidTarget();
+      const validTargets = page
+        .getByTestId('board-view')
+        .locator('button[class*="outline-emerald"]');
+      await validTargets.first().waitFor({ state: 'visible', timeout: 25_000 });
+      await validTargets.first().click();
       await page.waitForTimeout(1500);
 
-      // Wait for the log to update
-      await expect(gamePage.recentMovesSection).toBeVisible({ timeout: 15_000 });
+      // Open advanced panels to reveal the event log in sandbox mode.
+      const advancedPanels = page.getByTestId('sandbox-advanced-sidebar-panels');
+      await advancedPanels.locator('summary').click();
+      await expect(advancedPanels).toHaveAttribute('open', '', { timeout: 10_000 });
 
       // Capture the game log section
       const gameLogSection = page.locator('text=/Game log/i').locator('..').locator('..');
       await expect(gameLogSection).toHaveScreenshot('game-event-log.png');
     });
 
-    test('lobby page appearance (authenticated)', async ({ page }) => {
-      await registerAndLogin(page);
-
-      // Navigate to lobby
-      await page.getByRole('link', { name: /lobby/i }).click();
-      await page.waitForURL('**/lobby', { timeout: 15_000 });
-
-      // Wait for lobby to load
-      await expect(page.getByRole('heading', { name: /Game Lobby/i })).toBeVisible({
-        timeout: 10_000,
-      });
-
-      // Wait for content to settle
-      await page.waitForTimeout(1000);
-
-      // Capture the lobby page
-      await expect(page).toHaveScreenshot('lobby-page.png', {
-        fullPage: true,
-        mask: [
-          // Mask dynamic content like game IDs, timestamps
-          page.locator('[data-testid="game-id"]'),
-          page.locator('[data-testid="timestamp"]'),
-          // Mask username which is dynamic
-          page.locator('text=/e2e-user-/'),
-        ],
-      });
-    });
-
-    test('home page appearance (authenticated)', async ({ page }) => {
-      await registerAndLogin(page);
-
-      const homePage = new HomePage(page);
-      await homePage.goto();
-      await homePage.waitForReady();
-
-      // Wait for content to settle
-      await page.waitForTimeout(500);
-
-      // Capture authenticated home page
-      await expect(page).toHaveScreenshot('home-page-authenticated.png', {
-        fullPage: true,
-        mask: [
-          // Mask dynamic username
-          page.locator('text=/e2e-user-/'),
-        ],
-      });
-    });
+    // Note: authenticated lobby/home visuals are covered by dedicated E2E suites and
+    // intentionally omitted from visual baselines to keep the screenshot suite
+    // backend-independent and stable.
   });
 
   test.describe('Sandbox Board Screenshots', () => {
@@ -244,9 +173,9 @@ test.describe('Visual Regression Tests', () => {
       await goToSandbox(page);
 
       // Wait for the setup form to render
-      await expect(
-        page.getByRole('heading', { name: /Start a RingRift Game \(Local Sandbox\)/i })
-      ).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByRole('heading', { name: /Start a Game \(Sandbox\)/i })).toBeVisible({
+        timeout: 10_000,
+      });
 
       // Wait for page to settle
       await page.waitForTimeout(500);
@@ -260,35 +189,20 @@ test.describe('Visual Regression Tests', () => {
     test('sandbox game board after launch', async ({ page }) => {
       await goToSandbox(page);
 
-      // Click the Launch Game button
-      await page.getByRole('button', { name: /Launch Game/i }).click();
+      // Click a preset to launch a local sandbox game immediately.
+      await page.getByRole('button', { name: /Learn the Basics/i }).click();
 
-      // Wait for either backend game or local sandbox to load
-      // Try backend first
-      try {
-        await page.waitForURL('**/game/**', { timeout: 15_000 });
-        const gamePage = new GamePage(page);
-        await gamePage.waitForReady(20_000);
+      await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 20_000 });
+      await page.waitForTimeout(1000);
 
-        // Capture the backend game board
-        const boardView = page.getByTestId('board-view');
-        await expect(boardView).toHaveScreenshot('sandbox-launched-board.png');
-      } catch {
-        // Fallback: local sandbox mode
-        await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 20_000 });
-        await page.waitForTimeout(1000);
-
-        // Capture local sandbox board
-        const boardView = page.getByTestId('board-view');
-        await expect(boardView).toHaveScreenshot('sandbox-local-board.png');
-      }
+      const boardView = page.getByTestId('board-view');
+      await expect(boardView).toHaveScreenshot('sandbox-local-board.png');
     });
 
     test('sandbox touch controls panel', async ({ page }) => {
       await goToSandbox(page);
 
-      // Click the Launch Game button
-      await page.getByRole('button', { name: /Launch Game/i }).click();
+      await page.getByRole('button', { name: /Learn the Basics/i }).click();
 
       // Wait for board to be ready
       await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 30_000 });
@@ -308,13 +222,8 @@ test.describe('Visual Regression Tests', () => {
 
   test.describe('Hex Board Screenshots', () => {
     test('hex board initial state', async ({ page }) => {
-      await registerAndLogin(page);
-
-      // Create a hexagonal board game
-      await createGame(page, { boardType: 'hexagonal' });
-
-      const gamePage = new GamePage(page);
-      await gamePage.waitForReady();
+      await goToSandbox(page);
+      await page.getByRole('button', { name: /Hex Challenge/i }).click();
 
       // Wait for hex board to fully render
       await page.waitForTimeout(1000);
@@ -325,16 +234,13 @@ test.describe('Visual Regression Tests', () => {
     });
 
     test('hex board with valid targets', async ({ page }) => {
-      await registerAndLogin(page);
+      await goToSandbox(page);
+      await page.getByRole('button', { name: /Hex Challenge/i }).click();
 
-      // Create a hexagonal board game
-      await createGame(page, { boardType: 'hexagonal' });
-
-      const gamePage = new GamePage(page);
-      await gamePage.waitForReady();
-
-      // Wait for valid targets to appear
-      await gamePage.assertValidTargetsVisible();
+      const validTargets = page
+        .getByTestId('board-view')
+        .locator('button[class*="outline-emerald"]');
+      await expect(validTargets.first()).toBeVisible({ timeout: 25_000 });
       await page.waitForTimeout(500);
 
       // Capture hex board with highlighted cells
@@ -345,13 +251,8 @@ test.describe('Visual Regression Tests', () => {
 
   test.describe('19x19 Board Screenshots', () => {
     test('19x19 board initial state', async ({ page }) => {
-      await registerAndLogin(page);
-
-      // Create a 19x19 board game
-      await createGame(page, { boardType: 'square19' });
-
-      const gamePage = new GamePage(page);
-      await gamePage.waitForReady();
+      await goToSandbox(page);
+      await page.getByRole('button', { name: /Full Board vs AI/i }).click();
 
       // Wait for large board to fully render
       await page.waitForTimeout(1500);
@@ -363,44 +264,9 @@ test.describe('Visual Regression Tests', () => {
   });
 
   test.describe('Victory Modal Screenshots', () => {
-    test('victory modal after winning capture', async ({ page }) => {
-      await registerAndLogin(page);
-
-      // Create a near-victory fixture game
-      const gameId = await createNearVictoryGame(page);
-
-      // The game should be set up with P1 about to win via elimination
-      // Wait for the board to be ready
-      await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 20_000 });
-
-      // Find and click the winning move target (the move that eliminates P2)
-      // The fixture places P2's last ring at (4,3) which P1 can capture
-      const targetCell = page.getByTestId('board-view').locator('button[data-x="4"][data-y="3"]');
-      const sourceCell = page.getByTestId('board-view').locator('button[data-x="3"][data-y="3"]');
-
-      // Wait for it to be our turn and make the winning move
-      await sourceCell.waitFor({ state: 'visible', timeout: 15_000 });
-      await sourceCell.click();
-      await targetCell.click();
-
-      // Wait for victory modal to appear
-      const victoryModal = page.locator(
-        '[data-testid="victory-modal"], [class*="victory"], .fixed.inset-0'
-      );
-
-      try {
-        await victoryModal.waitFor({ state: 'visible', timeout: 15_000 });
-        await page.waitForTimeout(500);
-
-        // Capture the victory modal
-        await expect(victoryModal.first()).toHaveScreenshot('victory-modal.png');
-      } catch {
-        // If modal doesn't appear, the fixture may not have triggered victory
-        // Skip this screenshot gracefully
-        console.log('Victory modal did not appear - fixture may not support this flow');
-        test.skip();
-      }
-    });
+    test.skip(
+      'victory modal screenshots are covered by scenario-driven E2E runs; keeping the baseline suite backend-independent'
+    );
   });
 });
 
@@ -410,17 +276,17 @@ test.describe('Mobile Viewport Visual Tests', () => {
 
   test.setTimeout(120_000);
 
-  test('home page on mobile', async ({ page }) => {
+  test('entry route (guest) on mobile', async ({ page }) => {
     await page.goto('/');
 
     // Wait for page to load
-    await expect(page.getByRole('heading', { name: /Welcome to RingRift/i })).toBeVisible({
+    await expect(page.getByRole('heading', { name: /login/i })).toBeVisible({
       timeout: 10_000,
     });
     await page.waitForTimeout(500);
 
-    // Capture mobile home page
-    await expect(page).toHaveScreenshot('mobile-home-page.png', {
+    // Capture mobile entry route (guests are redirected to login)
+    await expect(page).toHaveScreenshot('mobile-entry-guest.png', {
       fullPage: true,
     });
   });
@@ -438,11 +304,8 @@ test.describe('Mobile Viewport Visual Tests', () => {
   });
 
   test('game board on mobile', async ({ page }) => {
-    await registerAndLogin(page);
-    await createGame(page);
-
-    const gamePage = new GamePage(page);
-    await gamePage.waitForReady();
+    await goToSandbox(page);
+    await page.getByRole('button', { name: /Learn the Basics/i }).click();
     await page.waitForTimeout(1000);
 
     // Capture the game board on mobile viewport
@@ -454,9 +317,9 @@ test.describe('Mobile Viewport Visual Tests', () => {
   test('sandbox page on mobile', async ({ page }) => {
     await goToSandbox(page);
 
-    await expect(
-      page.getByRole('heading', { name: /Start a RingRift Game \(Local Sandbox\)/i })
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: /Start a Game \(Sandbox\)/i })).toBeVisible({
+      timeout: 10_000,
+    });
     await page.waitForTimeout(500);
 
     // Capture mobile sandbox setup
@@ -473,11 +336,8 @@ test.describe('Tablet Viewport Visual Tests', () => {
   test.setTimeout(120_000);
 
   test('game board on tablet', async ({ page }) => {
-    await registerAndLogin(page);
-    await createGame(page);
-
-    const gamePage = new GamePage(page);
-    await gamePage.waitForReady();
+    await goToSandbox(page);
+    await page.getByRole('button', { name: /Learn the Basics/i }).click();
     await page.waitForTimeout(1000);
 
     // Capture the game board on tablet viewport
@@ -486,11 +346,8 @@ test.describe('Tablet Viewport Visual Tests', () => {
   });
 
   test('hex board on tablet', async ({ page }) => {
-    await registerAndLogin(page);
-    await createGame(page, { boardType: 'hexagonal' });
-
-    const gamePage = new GamePage(page);
-    await gamePage.waitForReady();
+    await goToSandbox(page);
+    await page.getByRole('button', { name: /Hex Challenge/i }).click();
     await page.waitForTimeout(1000);
 
     // Capture hexagonal board on tablet viewport

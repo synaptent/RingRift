@@ -3860,6 +3860,7 @@ class P2POrchestrator:
             num_players = data.get("num_players", 2)
             engine_mode = data.get("engine_mode", "descent-only")
             job_id = data.get("job_id")
+            cuda_visible_devices = data.get("cuda_visible_devices")
 
             job = await self._start_local_job(
                 job_type,
@@ -3867,6 +3868,7 @@ class P2POrchestrator:
                 num_players=num_players,
                 engine_mode=engine_mode,
                 job_id=job_id,
+                cuda_visible_devices=cuda_visible_devices,
             )
 
             if job:
@@ -10627,6 +10629,7 @@ print(json.dumps({{
         num_players: int = 2,
         engine_mode: str = "descent-only",
         job_id: Optional[str] = None,
+        cuda_visible_devices: Optional[str] = None,
     ) -> Optional[ClusterJob]:
         """Start a job on the local node."""
         try:
@@ -10788,8 +10791,10 @@ print(json.dumps({{
                 env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
                 env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
 
+                if cuda_visible_devices is not None and str(cuda_visible_devices).strip():
+                    env["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices).strip()
                 # Choose a GPU automatically if not explicitly pinned.
-                if "CUDA_VISIBLE_DEVICES" not in env:
+                elif "CUDA_VISIBLE_DEVICES" not in env:
                     gpu_count = 0
                     try:
                         out = subprocess.run(
@@ -10890,6 +10895,33 @@ print(json.dumps({{
                 env["PYTHONPATH"] = f"{self.ringrift_path}/ai-service"
                 env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
                 env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
+
+                if cuda_visible_devices is not None and str(cuda_visible_devices).strip():
+                    env["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices).strip()
+                elif "CUDA_VISIBLE_DEVICES" not in env:
+                    gpu_count = 0
+                    try:
+                        out = subprocess.run(
+                            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                        if out.returncode == 0 and out.stdout.strip():
+                            gpu_count = len([l for l in out.stdout.splitlines() if l.strip()])
+                    except Exception:
+                        gpu_count = 0
+
+                    if gpu_count > 0:
+                        with self.jobs_lock:
+                            running_hybrid_jobs = sum(
+                                1
+                                for j in self.local_jobs.values()
+                                if j.job_type == JobType.HYBRID_SELFPLAY and j.status == "running"
+                            )
+                        env["CUDA_VISIBLE_DEVICES"] = str(running_hybrid_jobs % gpu_count)
+                    else:
+                        env["CUDA_VISIBLE_DEVICES"] = "0"
 
                 log_handle = open(output_dir / "hybrid_run.log", "a")
                 try:

@@ -37,6 +37,7 @@ from app.ai.neural_net import (
     RingRiftCNN_v2,
     RingRiftCNN_v3,
     HexNeuralNet,
+    HexNeuralNet_v2,
     HEX_BOARD_SIZE,
     P_HEX,
     MAX_PLAYERS,
@@ -1470,8 +1471,8 @@ def train_model(
     if not distributed or is_main_process():
         if use_hex_model:
             logger.info(
-                f"Initializing HexNeuralNet with board_size={board_size}, "
-                f"policy_size={policy_size}"
+                f"Initializing HexNeuralNet_v2 with board_size={board_size}, "
+                f"policy_size={policy_size}, in_channels=40"
             )
         else:
             logger.info(
@@ -1481,23 +1482,18 @@ def train_model(
 
     # Initialize model based on board type and multi-player mode
     if use_hex_model:
-        # HexNeuralNet for hexagonal boards
-        # in_channels = 10 base channels * (history_length + 1)
+        # HexNeuralNet_v2 for hexagonal boards with multi-player support
+        # Hex uses 10 base channels * (history_length + 1) = 40 channels
         hex_in_channels = 10 * (config.history_length + 1)
-        model = HexNeuralNet(
+        model = HexNeuralNet_v2(
             in_channels=hex_in_channels,
             global_features=20,  # Must match _extract_features() which returns 20 globals
-            num_res_blocks=8,
-            num_filters=128,
+            num_res_blocks=12,  # v2 uses 12 SE residual blocks
+            num_filters=192,    # v2 uses 192 filters for richer representations
             board_size=board_size,
             policy_size=policy_size,
+            num_players=MAX_PLAYERS if multi_player else num_players,
         )
-        if multi_player:
-            if not distributed or is_main_process():
-                logger.warning(
-                    "Multi-player value head not yet implemented for HexNeuralNet. "
-                    "Using standard scalar value head."
-                )
     elif model_version == 'v3':
         # V3 architecture with spatial policy heads and rank distribution output
         v3_num_players = MAX_PLAYERS if multi_player else num_players
@@ -1568,7 +1564,8 @@ def train_model(
     # which properly masks inactive player slots
     value_criterion = nn.MSELoss()  # Used for scalar mode; multi-player uses function
     policy_criterion = nn.KLDivLoss(reduction='batchmean')
-    use_multi_player_loss = multi_player and not use_hex_model
+    # HexNeuralNet_v2 supports multi-player outputs, so enable multi-player loss for all boards
+    use_multi_player_loss = multi_player
 
     optimizer = optim.Adam(
         model.parameters(),
