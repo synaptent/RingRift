@@ -1681,8 +1681,9 @@ def generate_dataset_gpu_parallel(
                         move_type_str, CPUMoveType.PLACE_RING
                     )
 
-                    # Create Move object
+                    # Create Move object with required fields
                     move = Move(
+                        id=f"gpu-{g}-{move_idx}",
                         type=cpu_move_type,
                         player=move_dict.get("player", current_player),
                         to=Position(
@@ -1691,6 +1692,9 @@ def generate_dataset_gpu_parallel(
                         from_pos=Position(
                             x=from_pos["x"], y=from_pos["y"]
                         ) if from_pos else None,
+                        timestamp=datetime.now(),
+                        think_time=0,
+                        move_number=move_idx + 1,
                     )
 
                     # Encode move to policy index
