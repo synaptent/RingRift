@@ -29,6 +29,7 @@ import argparse
 import os
 import shlex
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -152,7 +153,20 @@ def _run_ssh(
     if dry_run:
         print(f"[DRY-RUN] {printable}")
         return
-    subprocess.run(cmd, input=stdin_bytes, check=True)
+    # Vast.ai and some cloud networks can transiently reject SSH auth or drop
+    # connections; retry a few times on ssh's generic failure code (255).
+    max_attempts = 3
+    base_delay_seconds = 2.0
+    for attempt in range(1, max_attempts + 1):
+        try:
+            subprocess.run(cmd, input=stdin_bytes, check=True)
+            return
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode != 255 or attempt >= max_attempts:
+                raise
+            delay = base_delay_seconds * attempt
+            print(f"[WARN] {target.node_id}: ssh failed (255), retrying in {delay:.1f}s...")
+            time.sleep(delay)
 
 
 def main() -> None:
