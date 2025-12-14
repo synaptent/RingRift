@@ -204,7 +204,7 @@ describe('Selfplay HTTP routes', () => {
         .expect(500);
 
       expect(res.body.success).toBe(false);
-      expect(res.body.error).toBe('Query failed');
+      expect(res.body.error).toBe('Failed to list games');
     });
   });
 
@@ -254,7 +254,7 @@ describe('Selfplay HTTP routes', () => {
         .expect(500);
 
       expect(res.body.success).toBe(false);
-      expect(res.body.error).toBe('Database error');
+      expect(res.body.error).toBe('Failed to get game');
     });
   });
 
@@ -341,7 +341,7 @@ describe('Selfplay HTTP routes', () => {
         .expect(500);
 
       expect(res.body.success).toBe(false);
-      expect(res.body.error).toBe('Snapshot error');
+      expect(res.body.error).toBe('Failed to get state');
     });
   });
 
@@ -378,7 +378,7 @@ describe('Selfplay HTTP routes', () => {
         .expect(500);
 
       expect(res.body.success).toBe(false);
-      expect(res.body.error).toBe('Stats calculation failed');
+      expect(res.body.error).toBe('Failed to get stats');
     });
   });
 });

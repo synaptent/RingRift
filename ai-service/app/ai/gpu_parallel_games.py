@@ -24,6 +24,7 @@ import gc
 import os
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
@@ -1994,7 +1995,13 @@ def _generate_movement_moves_batch_legacy(
     to_t = torch.tensor(candidate_to, dtype=torch.int64, device=device)
     player_t = torch.tensor(candidate_player, dtype=torch.int64, device=device)
 
-    valid_mask = _validate_paths_vectorized(state, game_idx_t, from_t, to_t, player_t)
+    # Use fully vectorized fast path validation (avoids .item() calls)
+    valid_mask = _validate_paths_vectorized_fast(
+        state, game_idx_t,
+        from_t[:, 0], from_t[:, 1],  # from_y, from_x
+        to_t[:, 0], to_t[:, 1],      # to_y, to_x
+        max_path_len=board_size
+    )
     valid_indices = torch.where(valid_mask)[0]
 
     if valid_indices.numel() == 0:
@@ -3933,14 +3940,15 @@ def detect_lines_with_metadata(
         # Get this game's markers as numpy for faster iteration
         player_markers = player_markers_batch[g].cpu().numpy()
 
-        # Track which positions have been assigned to a line
-        assigned = set()
+        # Track which positions have been assigned to a line using numpy array
+        # (faster than Python set for dense coordinate checks)
+        assigned = np.zeros((board_size, board_size), dtype=np.bool_)
 
         # Check each direction for lines
         for dy, dx in directions:
             for start_y in range(board_size):
                 for start_x in range(board_size):
-                    if (start_y, start_x) in assigned:
+                    if assigned[start_y, start_x]:
                         continue
                     if not player_markers[start_y, start_x]:
                         continue
@@ -3950,7 +3958,7 @@ def detect_lines_with_metadata(
                     y, x = start_y + dy, start_x + dx
 
                     while 0 <= y < board_size and 0 <= x < board_size:
-                        if player_markers[y, x] and (y, x) not in assigned:
+                        if player_markers[y, x] and not assigned[y, x]:
                             line_positions.append((y, x))
                             y, x = y + dy, x + dx
                         else:
@@ -3958,8 +3966,8 @@ def detect_lines_with_metadata(
 
                     # If line meets required length, record it
                     if len(line_positions) >= required_length:
-                        for pos in line_positions:
-                            assigned.add(pos)
+                        for pos_y, pos_x in line_positions:
+                            assigned[pos_y, pos_x] = True
 
                         lines_per_game[g].append(DetectedLine(
                             positions=line_positions,
@@ -4021,6 +4029,8 @@ def _eliminate_one_ring_from_any_stack(
     Per RR-CANON-R122: Any controlled stack is eligible for line elimination,
     including height-1 standalone rings.
 
+    Optimized 2025-12-13: Use numpy to find eligible stack without .item() calls.
+
     Args:
         state: BatchGameState to modify
         game_idx: Game index
@@ -4029,25 +4039,32 @@ def _eliminate_one_ring_from_any_stack(
     Returns:
         True if elimination was performed, False if no eligible stack found
     """
-    board_size = state.board_size
+    # Use numpy to find first eligible stack (avoids .item() per cell)
+    stack_owner_np = state.stack_owner[game_idx].cpu().numpy()
+    stack_height_np = state.stack_height[game_idx].cpu().numpy()
 
-    for y in range(board_size):
-        for x in range(board_size):
-            if state.stack_owner[game_idx, y, x].item() == player:
-                stack_height = state.stack_height[game_idx, y, x].item()
-                if stack_height > 0:
-                    # Eliminate one ring from top
-                    state.stack_height[game_idx, y, x] = stack_height - 1
-                    state.eliminated_rings[game_idx, player] += 1
-                    # Player eliminates their own ring for line collapse cost
-                    state.rings_caused_eliminated[game_idx, player] += 1
+    # Find cells where this player has stacks with height > 0
+    eligible = (stack_owner_np == player) & (stack_height_np > 0)
+    positions = np.argwhere(eligible)
 
-                    # If stack is now empty, clear ownership
-                    if stack_height - 1 == 0:
-                        state.stack_owner[game_idx, y, x] = 0
+    if len(positions) == 0:
+        return False
 
-                    return True
-    return False
+    # Take first eligible position
+    y, x = int(positions[0, 0]), int(positions[0, 1])
+    stack_height = int(stack_height_np[y, x])
+
+    # Eliminate one ring from top
+    state.stack_height[game_idx, y, x] = stack_height - 1
+    state.eliminated_rings[game_idx, player] += 1
+    # Player eliminates their own ring for line collapse cost
+    state.rings_caused_eliminated[game_idx, player] += 1
+
+    # If stack is now empty, clear ownership
+    if stack_height - 1 == 0:
+        state.stack_owner[game_idx, y, x] = 0
+
+    return True
 
 
 def process_lines_batch(
@@ -4067,6 +4084,8 @@ def process_lines_batch(
     For GPU training, we implement probabilistic Option 1/2 selection for overlength
     lines to expose the AI to both strategies.
 
+    Optimized 2025-12-13: Pre-extract numpy arrays, batch random generation.
+
     Args:
         state: BatchGameState to modify
         game_mask: Mask of games to process
@@ -4075,11 +4094,18 @@ def process_lines_batch(
     """
     batch_size = state.batch_size
     board_size = state.board_size
+    device = state.device
 
     if game_mask is None:
         game_mask = state.get_active_mask()
 
     required_length = get_required_line_length(board_size, state.num_players)
+
+    # Pre-generate random values for option selection (max 100 lines per batch is generous)
+    # This avoids per-line .item() calls for random decisions
+    max_lines_estimate = 100
+    random_vals = torch.rand(max_lines_estimate, device=device).cpu().numpy()
+    random_idx = 0
 
     for p in range(1, state.num_players + 1):
         lines_with_meta = detect_lines_with_metadata(state, p, game_mask)
@@ -4092,14 +4118,18 @@ def process_lines_batch(
             if not game_lines:
                 continue
 
+            # Pre-extract stack_owner for this game as numpy for faster checks
+            stack_owner_np = state.stack_owner[g].cpu().numpy()
+
             # Process each line individually per RR-CANON-R121
             for line in game_lines:
                 positions_to_collapse = line.positions
 
                 if line.is_overlength:
                     # Per RR-CANON-R122 Case 2: Overlength line - Option 1 or Option 2
-                    # Use probabilistic selection for training variety
-                    use_option2 = (torch.rand(1, device=state.device).item() < option2_probability)
+                    # Use pre-generated random value (avoid .item() call)
+                    use_option2 = random_vals[random_idx % max_lines_estimate] < option2_probability
+                    random_idx += 1
 
                     if use_option2:
                         # Option 2: Collapse exactly required_length markers, NO elimination
@@ -4108,7 +4138,7 @@ def process_lines_batch(
                         all_positions = line.positions
                         if len(all_positions) > required_length:
                             # Randomly select which required_length positions to collapse
-                            indices = torch.randperm(len(all_positions), device=state.device)[:required_length]
+                            indices = torch.randperm(len(all_positions), device=device)[:required_length]
                             indices = indices.sort().values  # Keep line order for determinism
                             positions_to_collapse = [all_positions[i] for i in indices.tolist()]
                         else:
@@ -4117,16 +4147,15 @@ def process_lines_batch(
                     else:
                         # Option 1: Collapse ALL markers, pay one ring elimination
                         positions_to_collapse = line.positions
-                        # Check if player can pay elimination cost
-                        player_stacks = (state.stack_owner[g] == p)
-                        if player_stacks.any().item():
+                        # Check if player can pay elimination cost - use numpy
+                        if (stack_owner_np == p).any():
                             _eliminate_one_ring_from_any_stack(state, g, p)
                         # If no stack available, still collapse (per RR-CANON-R122 interpretation B)
                 else:
                     # Exact-length line: Must pay elimination cost
                     # Per RR-CANON-R122 Case 1: len == requiredLen
-                    player_stacks = (state.stack_owner[g] == p)
-                    if player_stacks.any().item():
+                    # Use numpy for check (avoid .item())
+                    if (stack_owner_np == p).any():
                         _eliminate_one_ring_from_any_stack(state, g, p)
 
                 # Collapse the selected markers to territory
@@ -4157,6 +4186,8 @@ def _find_eligible_territory_cap(
 
     Height-1 standalone rings are NOT eligible for territory elimination.
 
+    Optimized 2025-12-13: Use numpy to find eligible stack without .item() calls.
+
     Args:
         state: BatchGameState
         game_idx: Game index
@@ -4170,29 +4201,30 @@ def _find_eligible_territory_cap(
     if excluded_positions is None:
         excluded_positions = set()
 
-    for y in range(board_size):
-        for x in range(board_size):
-            if (y, x) in excluded_positions:
-                continue
+    # Use numpy to find eligible stacks (avoids .item() per cell)
+    stack_owner_np = state.stack_owner[game_idx].cpu().numpy()
+    stack_height_np = state.stack_height[game_idx].cpu().numpy()
 
-            owner = state.stack_owner[game_idx, y, x].item()
-            height = state.stack_height[game_idx, y, x].item()
+    # Per RR-CANON-R145: Height-1 standalone rings are NOT eligible
+    # Eligible: player owns stack AND height > 1
+    eligible = (stack_owner_np == player) & (stack_height_np > 1)
 
-            if owner != player or height <= 0:
-                continue
+    # Apply exclusions if any
+    if excluded_positions:
+        for y, x in excluded_positions:
+            if 0 <= y < board_size and 0 <= x < board_size:
+                eligible[y, x] = False
 
-            # Per RR-CANON-R145: Height-1 standalone rings are NOT eligible
-            # Eligible targets are:
-            # (i) Mixed-colour stack - player controls but other colors buried
-            # (ii) Single-colour stack of height > 1
-            #
-            # In simplified GPU representation, we don't track ring colors per position,
-            # only controlling player. So we use height > 1 as the eligibility criterion.
-            # This is a simplification that may need refinement for full parity.
-            if height > 1:
-                return (y, x, height)  # Return full height as "cap" (simplified)
+    positions = np.argwhere(eligible)
 
-    return None
+    if len(positions) == 0:
+        return None
+
+    # Take first eligible position
+    y, x = int(positions[0, 0]), int(positions[0, 1])
+    height = int(stack_height_np[y, x])
+
+    return (y, x, height)
 
 
 def _find_all_regions(
@@ -4201,9 +4233,11 @@ def _find_all_regions(
 ) -> List[Set[Tuple[int, int]]]:
     """Find all maximal connected regions of non-collapsed cells (R140).
 
-    Uses union-find/BFS to discover all connected regions of non-collapsed cells.
+    Uses BFS to discover all connected regions of non-collapsed cells.
     A region is a maximal set of non-collapsed cells where each cell is connected
     to at least one other cell in the region via 4-connectivity.
+
+    Optimized 2025-12-13: Use deque for O(1) queue ops and numpy for visited tracking.
 
     Args:
         state: BatchGameState
@@ -4218,28 +4252,32 @@ def _find_all_regions(
     # Non-collapsed cells are those that are not territory (collapsed spaces)
     non_collapsed = ~state.is_collapsed[g].cpu().numpy()
 
-    visited = [[False] * board_size for _ in range(board_size)]
+    # Use numpy array for visited tracking (faster than Python list of lists)
+    visited = np.zeros((board_size, board_size), dtype=np.bool_)
     regions = []
+
+    # Pre-compute direction offsets
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
     for start_y in range(board_size):
         for start_x in range(board_size):
-            if visited[start_y][start_x] or not non_collapsed[start_y, start_x]:
+            if visited[start_y, start_x] or not non_collapsed[start_y, start_x]:
                 continue
 
-            # BFS to find connected region
+            # BFS to find connected region using deque for O(1) popleft
             region = set()
-            queue = [(start_y, start_x)]
-            visited[start_y][start_x] = True
+            queue = deque([(start_y, start_x)])
+            visited[start_y, start_x] = True
 
             while queue:
-                y, x = queue.pop(0)
+                y, x = queue.popleft()  # O(1) instead of O(n) with list.pop(0)
                 region.add((y, x))
 
-                for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                for dy, dx in directions:
                     ny, nx = y + dy, x + dx
                     if 0 <= ny < board_size and 0 <= nx < board_size:
-                        if not visited[ny][nx] and non_collapsed[ny, nx]:
-                            visited[ny][nx] = True
+                        if not visited[ny, nx] and non_collapsed[ny, nx]:
+                            visited[ny, nx] = True
                             queue.append((ny, nx))
 
             if region:
@@ -4261,6 +4299,8 @@ def _is_physically_disconnected(
     - Board edge (off-board), and/or
     - Markers belonging to exactly ONE player B (the border color)
 
+    Optimized 2025-12-13: Use numpy arrays for membership checks.
+
     Args:
         state: BatchGameState
         game_idx: Game index
@@ -4273,41 +4313,36 @@ def _is_physically_disconnected(
     board_size = state.board_size
     g = game_idx
 
-    # Find all non-collapsed cells outside the region
+    # Pre-extract all numpy arrays at once
     non_collapsed = ~state.is_collapsed[g].cpu().numpy()
+    marker_owner_np = state.marker_owner[g].cpu().numpy() if hasattr(state, 'marker_owner') else None
 
-    outside_non_collapsed = set()
-    for y in range(board_size):
-        for x in range(board_size):
-            if (y, x) not in region and non_collapsed[y, x]:
-                outside_non_collapsed.add((y, x))
+    # Create numpy mask for region membership (faster than set for dense checks)
+    region_mask = np.zeros((board_size, board_size), dtype=np.bool_)
+    for y, x in region:
+        region_mask[y, x] = True
+
+    # Find outside_non_collapsed using numpy vectorized operation
+    outside_mask = non_collapsed & ~region_mask
+    outside_positions = np.argwhere(outside_mask)
 
     # If no cells outside region, region spans entire non-collapsed board
-    # This is a degenerate case - not physically disconnected in meaningful sense
-    if not outside_non_collapsed:
+    if len(outside_positions) == 0:
         return (False, None)
 
-    # Try to reach from region to outside using only:
-    # - Non-collapsed cells (stacks, markers, empty)
-    # Track which player's markers we cross
-
-    # Get marker ownership for all cells
-    marker_owner = state.marker_owner[g].cpu().numpy() if hasattr(state, 'marker_owner') else None
-    stack_owner = state.stack_owner[g].cpu().numpy()
-
-    # For each cell in region, try BFS to reach outside
-    # Blocking cells are: collapsed spaces, board edge
-    # We need to track if all blocking markers belong to single player
-
-    blocking_marker_players = set()
+    # Convert to set for O(1) lookup in later checks
+    outside_non_collapsed = set(map(tuple, outside_positions))
 
     # BFS from region boundary
+    blocking_marker_players = set()
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
     region_boundary = set()
     for y, x in region:
-        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        for dy, dx in directions:
             ny, nx = y + dy, x + dx
             if 0 <= ny < board_size and 0 <= nx < board_size:
-                if (ny, nx) not in region:
+                if not region_mask[ny, nx]:
                     region_boundary.add((y, x))
                     break
             else:
@@ -4315,20 +4350,20 @@ def _is_physically_disconnected(
                 region_boundary.add((y, x))
 
     # Check what separates region from outside
-    # Try to reach outside_non_collapsed from region
-    visited = set(region)
+    # Use numpy array for visited tracking (faster than set for dense boards)
+    visited = np.copy(region_mask)
     queue = list(region_boundary)
     can_reach_outside = False
 
     for y, x in queue:
-        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        for dy, dx in directions:
             ny, nx = y + dy, x + dx
 
             # Off-board - counts as barrier
             if not (0 <= ny < board_size and 0 <= nx < board_size):
                 continue
 
-            if (ny, nx) in visited:
+            if visited[ny, nx]:
                 continue
 
             # Collapsed space - counts as barrier
@@ -4336,15 +4371,14 @@ def _is_physically_disconnected(
                 continue
 
             # Non-collapsed cell outside region
-            if (ny, nx) in outside_non_collapsed:
+            if outside_mask[ny, nx]:
                 # Can we reach it directly, or is there a marker barrier?
-                # Check if this cell is a marker
                 cell_marker_owner = 0
-                if marker_owner is not None:
-                    cell_marker_owner = marker_owner[ny, nx]
+                if marker_owner_np is not None:
+                    cell_marker_owner = marker_owner_np[ny, nx]
 
                 if cell_marker_owner > 0:
-                    blocking_marker_players.add(cell_marker_owner)
+                    blocking_marker_players.add(int(cell_marker_owner))
                 else:
                     # Empty cell or stack - we can reach outside without marker barrier
                     can_reach_outside = True
@@ -4382,6 +4416,8 @@ def _is_color_disconnected(
     Empty regions (no stacks) have RegionColors = ∅, which is always a strict
     subset of any non-empty ActiveColors, so they satisfy color-disconnection.
 
+    Optimized 2025-12-13: Use numpy to compute colors without .item() calls.
+
     Args:
         state: BatchGameState
         game_idx: Game index
@@ -4391,18 +4427,14 @@ def _is_color_disconnected(
         True if region is color-disconnected (eligible for processing)
     """
     g = game_idx
-    board_size = state.board_size
 
-    # Compute ActiveColors: players with at least one ring on the board
-    # A player has rings if they control any stack (stack_owner == player and height > 0)
-    # or have rings buried in mixed stacks (simplified: check stack_owner > 0)
-    active_colors = set()
-    for y in range(board_size):
-        for x in range(board_size):
-            owner = state.stack_owner[g, y, x].item()
-            height = state.stack_height[g, y, x].item()
-            if owner > 0 and height > 0:
-                active_colors.add(owner)
+    # Use numpy to avoid .item() calls in board scan
+    stack_owner_np = state.stack_owner[g].cpu().numpy()
+    stack_height_np = state.stack_height[g].cpu().numpy()
+
+    # Compute ActiveColors: unique owners with height > 0 across entire board
+    active_mask = (stack_owner_np > 0) & (stack_height_np > 0)
+    active_colors = set(stack_owner_np[active_mask].tolist())
 
     # If no active colors (empty board), no territory processing possible
     if not active_colors:
@@ -4411,10 +4443,10 @@ def _is_color_disconnected(
     # Compute RegionColors: players controlling stacks in the region
     region_colors = set()
     for y, x in region:
-        owner = state.stack_owner[g, y, x].item()
-        height = state.stack_height[g, y, x].item()
+        owner = stack_owner_np[y, x]
+        height = stack_height_np[y, x]
         if owner > 0 and height > 0:
-            region_colors.add(owner)
+            region_colors.add(int(owner))
 
     # R is color-disconnected if RegionColors ⊂ ActiveColors (strict subset)
     # This means RegionColors != ActiveColors AND RegionColors ⊆ ActiveColors
@@ -4467,6 +4499,13 @@ def compute_territory_batch(
         if len(all_regions) <= 1:
             continue
 
+        # Pre-extract game arrays as numpy to avoid .item() calls in loops
+        # (Optimized 2025-12-13)
+        stack_height_np = state.stack_height[g].cpu().numpy()
+        stack_owner_np = state.stack_owner[g].cpu().numpy()
+        is_collapsed_np = state.is_collapsed[g].cpu().numpy()
+        marker_owner_np = state.marker_owner[g].cpu().numpy() if hasattr(state, 'marker_owner') else None
+
         # Process each region
         # Track which regions have been processed to avoid double-processing
         processed_regions = set()
@@ -4513,48 +4552,58 @@ def compute_territory_batch(
                     # 1. Collapse interior (all cells in region become territory)
                     territory_count = 0
                     for y, x in region:
-                        # Remove any stacks
-                        stack_height = state.stack_height[g, y, x].item()
-                        if stack_height > 0:
-                            # Track which player lost the rings
-                            stack_owner = state.stack_owner[g, y, x].item()
-                            if stack_owner > 0:
-                                state.eliminated_rings[g, stack_owner] += stack_height
+                        # Remove any stacks - use numpy for reading
+                        sh = int(stack_height_np[y, x])
+                        if sh > 0:
+                            # Track which player lost the rings - use numpy
+                            so = int(stack_owner_np[y, x])
+                            if so > 0:
+                                state.eliminated_rings[g, so] += sh
                             # Player processing territory CAUSED these eliminations (for victory)
-                            state.rings_caused_eliminated[g, player] += stack_height
+                            state.rings_caused_eliminated[g, player] += sh
                             state.stack_height[g, y, x] = 0
                             state.stack_owner[g, y, x] = 0
+                            # Update local numpy copy for consistency
+                            stack_height_np[y, x] = 0
+                            stack_owner_np[y, x] = 0
 
-                        # Collapse the cell
-                        if not state.is_collapsed[g, y, x]:
+                        # Collapse the cell - use numpy for reading
+                        if not is_collapsed_np[y, x]:
                             state.is_collapsed[g, y, x] = True
                             state.territory_owner[g, y, x] = player
                             territory_count += 1
+                            is_collapsed_np[y, x] = True
 
                     # 2. Collapse border markers of single border color B (if applicable)
-                    if border_player is not None and hasattr(state, 'marker_owner'):
-                        # Find and collapse border markers
+                    if border_player is not None and marker_owner_np is not None:
+                        # Convert region to set once for O(1) lookup
+                        region_set = set(region) if not isinstance(region, set) else region
+                        # Find and collapse border markers - use numpy for reading
                         for y in range(board_size):
                             for x in range(board_size):
-                                if state.marker_owner[g, y, x].item() == border_player:
+                                if marker_owner_np[y, x] == border_player:
                                     # Check if this marker is on the boundary of region
                                     is_boundary = False
                                     for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                                         ny, nx = y + dy, x + dx
                                         if 0 <= ny < board_size and 0 <= nx < board_size:
-                                            if (ny, nx) in region:
+                                            if (ny, nx) in region_set:
                                                 is_boundary = True
                                                 break
 
-                                    if is_boundary and not state.is_collapsed[g, y, x]:
+                                    if is_boundary and not is_collapsed_np[y, x]:
                                         state.is_collapsed[g, y, x] = True
                                         state.territory_owner[g, y, x] = player
                                         state.marker_owner[g, y, x] = 0
                                         territory_count += 1
+                                        is_collapsed_np[y, x] = True
+                                        marker_owner_np[y, x] = 0
 
                     # 4. Mandatory self-elimination (eliminate cap)
                     state.stack_height[g, cap_y, cap_x] = 0
                     state.stack_owner[g, cap_y, cap_x] = 0
+                    stack_height_np[cap_y, cap_x] = 0
+                    stack_owner_np[cap_y, cap_x] = 0
                     # Player eliminates own rings for territory cap cost
                     state.eliminated_rings[g, player] += cap_height
                     # Player CAUSED these eliminations (self-elimination counts for victory)
@@ -4576,6 +4625,11 @@ def compute_territory_batch(
             # Recompute regions after processing (new disconnections may appear)
             all_regions = _find_all_regions(state, g)
             processed_regions = set()  # Reset since region indices changed
+            # Re-extract numpy arrays since state changed
+            stack_height_np = state.stack_height[g].cpu().numpy()
+            stack_owner_np = state.stack_owner[g].cpu().numpy()
+            is_collapsed_np = state.is_collapsed[g].cpu().numpy()
+            marker_owner_np = state.marker_owner[g].cpu().numpy() if hasattr(state, 'marker_owner') else None
 
 
 # =============================================================================

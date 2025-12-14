@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import swaggerUi from 'swagger-ui-express';
 import authRoutes from './auth';
-import gameRoutes, { setWebSocketServer as setGameWebSocketServer } from './game';
+import gameRoutes, {
+  sandboxHelperRoutes,
+  setWebSocketServer as setGameWebSocketServer,
+} from './game';
 import userRoutes, { setWebSocketServer as setUserWebSocketServer } from './user';
 import adminRoutes from './admin';
 import selfplayRoutes from './selfplay';
@@ -47,6 +50,7 @@ export const setupRoutes = (wsServer: WebSocketServer): Router => {
   router.use('/internal', internalRoutes);
   router.use('/telemetry', rulesUxTelemetryRoutes);
   router.use('/telemetry', difficultyCalibrationTelemetryRoutes);
+  router.use('/games', sandboxHelperRoutes);
 
   // Protected routes (require authentication)
   router.use('/games', authenticate, gameRoutes);

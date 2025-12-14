@@ -272,6 +272,7 @@ function createLocalConfig(overrides: Partial<LocalConfig> = {}): LocalConfig {
     numPlayers: 2,
     boardType: 'square8',
     playerTypes: ['human', 'human', 'ai', 'ai'],
+    aiDifficulties: [5, 5, 5, 5],
   };
   return { ...base, ...overrides };
 }
@@ -405,6 +406,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
       numPlayers: 2,
       boardType: 'square8',
       playerTypes: ['ai', 'human', 'ai', 'ai'] as LocalPlayerType[],
+      aiDifficulties: [5, 5, 5, 5],
     };
 
     const aiPlayers: Player[] = createPlayers([

@@ -478,6 +478,235 @@ def _build_default_hex_two_player_configs() -> Dict[
     }
 
 
+def _build_default_generic_board_configs(
+    board_type: BoardType,
+    num_players: int,
+    heuristic_profile_id: str,
+    think_time_by_difficulty: Dict[int, int],
+) -> Dict[LadderKey, LadderTierConfig]:
+    """Return ladder assignments for (board_type, num_players) using shared defaults.
+
+    These are intentionally conservative defaults for boards/player counts that
+    do not yet have fully calibrated heuristic profiles or promoted neural
+    checkpoints. They exist primarily so the training loop can promote
+    per-tier model_id / heuristic_profile_id values via runtime overrides.
+    """
+
+    if num_players < 2 or num_players > 4:  # pragma: no cover - defensive
+        raise ValueError("num_players must be 2, 3, or 4")
+
+    best_model_prefix = {
+        BoardType.SQUARE8: "ringrift_best_sq8",
+        BoardType.SQUARE19: "ringrift_best_sq19",
+        BoardType.HEXAGONAL: "ringrift_best_hex",
+    }[board_type]
+
+    nnue_model_id = f"nnue_{board_type.value}_{num_players}p"
+    best_model_id = f"{best_model_prefix}_{num_players}p"
+
+    def _think(difficulty: int, fallback: int) -> int:
+        return int(think_time_by_difficulty.get(difficulty, fallback))
+
+    return {
+        (2, board_type, num_players): LadderTierConfig(
+            difficulty=2,
+            board_type=board_type,
+            num_players=num_players,
+            ai_type=AIType.HEURISTIC,
+            model_id=heuristic_profile_id,
+            heuristic_profile_id=heuristic_profile_id,
+            randomness=0.3,
+            think_time_ms=_think(2, 300),
+            use_neural_net=False,
+            notes=f"Easy {board_type.value} {num_players}p tier using heuristic evaluation.",
+        ),
+        (3, board_type, num_players): LadderTierConfig(
+            difficulty=3,
+            board_type=board_type,
+            num_players=num_players,
+            ai_type=AIType.MINIMAX,
+            model_id=None,
+            heuristic_profile_id=heuristic_profile_id,
+            randomness=0.15,
+            think_time_ms=_think(3, 2500),
+            use_neural_net=False,
+            notes=f"Lower-mid {board_type.value} {num_players}p tier using minimax (non-neural).",
+        ),
+        (4, board_type, num_players): LadderTierConfig(
+            difficulty=4,
+            board_type=board_type,
+            num_players=num_players,
+            ai_type=AIType.MINIMAX,
+            model_id=nnue_model_id,
+            heuristic_profile_id=heuristic_profile_id,
+            randomness=0.08,
+            think_time_ms=_think(4, 4000),
+            use_neural_net=True,
+            notes=f"Mid {board_type.value} {num_players}p tier using minimax with NNUE.",
+        ),
+        (5, board_type, num_players): LadderTierConfig(
+            difficulty=5,
+            board_type=board_type,
+            num_players=num_players,
+            ai_type=AIType.MCTS,
+            model_id=None,
+            heuristic_profile_id=heuristic_profile_id,
+            randomness=0.05,
+            think_time_ms=_think(5, 6000),
+            use_neural_net=False,
+            notes=f"Upper-mid {board_type.value} {num_players}p tier using MCTS (non-neural).",
+        ),
+        (6, board_type, num_players): LadderTierConfig(
+            difficulty=6,
+            board_type=board_type,
+            num_players=num_players,
+            ai_type=AIType.MCTS,
+            model_id=best_model_id,
+            heuristic_profile_id=heuristic_profile_id,
+            randomness=0.02,
+            think_time_ms=_think(6, 8000),
+            use_neural_net=True,
+            notes=f"High {board_type.value} {num_players}p tier using MCTS with neural guidance.",
+        ),
+        (7, board_type, num_players): LadderTierConfig(
+            difficulty=7,
+            board_type=board_type,
+            num_players=num_players,
+            ai_type=AIType.MCTS,
+            model_id=best_model_id,
+            heuristic_profile_id=heuristic_profile_id,
+            randomness=0.0,
+            think_time_ms=_think(7, 11000),
+            use_neural_net=True,
+            notes=f"Expert {board_type.value} {num_players}p tier using MCTS with neural guidance.",
+        ),
+        (8, board_type, num_players): LadderTierConfig(
+            difficulty=8,
+            board_type=board_type,
+            num_players=num_players,
+            ai_type=AIType.MCTS,
+            model_id=best_model_id,
+            heuristic_profile_id=heuristic_profile_id,
+            randomness=0.0,
+            think_time_ms=_think(8, 14000),
+            use_neural_net=True,
+            notes=f"Strong expert {board_type.value} {num_players}p tier using MCTS with neural.",
+        ),
+        (9, board_type, num_players): LadderTierConfig(
+            difficulty=9,
+            board_type=board_type,
+            num_players=num_players,
+            ai_type=AIType.DESCENT,
+            model_id=best_model_id,
+            heuristic_profile_id=heuristic_profile_id,
+            randomness=0.0,
+            think_time_ms=_think(9, 18000),
+            use_neural_net=True,
+            notes=f"Master {board_type.value} {num_players}p tier using Descent with neural.",
+        ),
+        (10, board_type, num_players): LadderTierConfig(
+            difficulty=10,
+            board_type=board_type,
+            num_players=num_players,
+            ai_type=AIType.DESCENT,
+            model_id=best_model_id,
+            heuristic_profile_id=heuristic_profile_id,
+            randomness=0.0,
+            think_time_ms=_think(10, 24000),
+            use_neural_net=True,
+            notes=f"Grandmaster {board_type.value} {num_players}p tier using strongest Descent.",
+        ),
+    }
+
+
+def _build_default_square19_three_player_configs() -> Dict[
+    LadderKey, LadderTierConfig
+]:
+    """Return ladder assignments for square19 3-player tiers (default heuristics)."""
+    return _build_default_generic_board_configs(
+        board_type=BoardType.SQUARE19,
+        num_players=3,
+        heuristic_profile_id="heuristic_v1_sq19_2p",
+        think_time_by_difficulty={
+            2: 350,
+            3: 2700,
+            4: 4300,
+            5: 6500,
+            6: 9000,
+            7: 12500,
+            8: 15500,
+            9: 20000,
+            10: 26000,
+        },
+    )
+
+
+def _build_default_square19_four_player_configs() -> Dict[
+    LadderKey, LadderTierConfig
+]:
+    """Return ladder assignments for square19 4-player tiers (default heuristics)."""
+    return _build_default_generic_board_configs(
+        board_type=BoardType.SQUARE19,
+        num_players=4,
+        heuristic_profile_id="heuristic_v1_sq19_2p",
+        think_time_by_difficulty={
+            2: 400,
+            3: 3000,
+            4: 4800,
+            5: 7000,
+            6: 10000,
+            7: 14000,
+            8: 17000,
+            9: 22000,
+            10: 28000,
+        },
+    )
+
+
+def _build_default_hex_three_player_configs() -> Dict[
+    LadderKey, LadderTierConfig
+]:
+    """Return ladder assignments for hexagonal 3-player tiers (default heuristics)."""
+    return _build_default_generic_board_configs(
+        board_type=BoardType.HEXAGONAL,
+        num_players=3,
+        heuristic_profile_id="heuristic_v1_hex_2p",
+        think_time_by_difficulty={
+            2: 350,
+            3: 2700,
+            4: 4300,
+            5: 6500,
+            6: 9000,
+            7: 12500,
+            8: 15500,
+            9: 20000,
+            10: 26000,
+        },
+    )
+
+
+def _build_default_hex_four_player_configs() -> Dict[
+    LadderKey, LadderTierConfig
+]:
+    """Return ladder assignments for hexagonal 4-player tiers (default heuristics)."""
+    return _build_default_generic_board_configs(
+        board_type=BoardType.HEXAGONAL,
+        num_players=4,
+        heuristic_profile_id="heuristic_v1_hex_2p",
+        think_time_by_difficulty={
+            2: 400,
+            3: 3000,
+            4: 4800,
+            5: 7000,
+            6: 10000,
+            7: 14000,
+            8: 17000,
+            9: 22000,
+            10: 28000,
+        },
+    )
+
+
 def _build_default_square8_three_player_configs() -> Dict[
     LadderKey, LadderTierConfig
 ]:
@@ -740,6 +969,10 @@ _LADDER_TIER_CONFIGS: Dict[LadderKey, LadderTierConfig] = {
     **_build_default_square8_two_player_configs(),
     **_build_default_square19_two_player_configs(),
     **_build_default_hex_two_player_configs(),
+    **_build_default_square19_three_player_configs(),
+    **_build_default_square19_four_player_configs(),
+    **_build_default_hex_three_player_configs(),
+    **_build_default_hex_four_player_configs(),
     **_build_default_square8_three_player_configs(),
     **_build_default_square8_four_player_configs(),
 }

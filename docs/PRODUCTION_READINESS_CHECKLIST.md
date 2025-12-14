@@ -478,6 +478,8 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 | Alertmanager rules defined    | ✅     | `monitoring/prometheus/alerts.yml`  |
 | Key SLO metrics tracked       | ✅     | Latency, error rate, AI fallback    |
 | Alert thresholds documented   | ✅     | `docs/ALERTING_THRESHOLDS.md`       |
+| Alert webhook endpoint        | ✅     | `/api/internal/alert-webhook`       |
+| Alert receivers configured    | ⏳     | Slack webhook URL needed (see §8.2) |
 
 ---
 
@@ -611,12 +613,14 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 
 ### 8.2 Launch Day
 
-| Item                               | Status | Notes                 |
-| ---------------------------------- | ------ | --------------------- |
-| Team availability confirmed        | ⬜     | Schedule coordination |
-| Monitoring dashboards ready        | ✅     | 3 Grafana dashboards  |
-| Rollback tested within last 24h    | ⬜     | Pre-launch task       |
-| Communication channels established | ⬜     | Slack #incidents      |
+| Item                               | Status | Notes                                    |
+| ---------------------------------- | ------ | ---------------------------------------- |
+| Team availability confirmed        | ⬜     | Schedule coordination                    |
+| Monitoring dashboards ready        | ✅     | 3 Grafana dashboards                     |
+| Rollback tested within last 24h    | ⬜     | Pre-launch task                          |
+| Communication channels established | ⬜     | Slack #incidents                         |
+| Slack alert webhook configured     | ⬜     | Set `SLACK_API_URL` in alertmanager.yml  |
+| Rate limit bypass disabled         | ⬜     | Verify `RATE_LIMIT_BYPASS_ENABLED=false` |
 
 ### 8.3 Post-Launch
 

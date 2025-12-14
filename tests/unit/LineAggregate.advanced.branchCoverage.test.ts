@@ -768,7 +768,7 @@ describe('LineAggregate - Advanced Branch Coverage', () => {
           moveNumber: 1,
           id: 'test',
         });
-      }).toThrow("expected move.type === 'choose_line_reward'");
+      }).toThrow("expected move.type === 'choose_line_option'");
     });
 
     it('returns no-op when line not found', () => {

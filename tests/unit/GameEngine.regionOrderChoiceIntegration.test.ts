@@ -174,7 +174,7 @@ describe('Region Order Integration', () => {
 
       // Verify move types and structure
       for (const move of firstResult) {
-        expect(move.type).toBe('process_territory_region');
+        expect(move.type).toBe('choose_territory_option');
         expect(move.player).toBe(1);
         expect(move.disconnectedRegions).toBeDefined();
         expect(move.disconnectedRegions!.length).toBe(1);
@@ -367,7 +367,7 @@ describe('Region Order Integration', () => {
 
       // Move should be available because player has eligible outside stack
       expect(moves).toHaveLength(1);
-      expect(moves[0].type).toBe('process_territory_region');
+      expect(moves[0].type).toBe('choose_territory_option');
     });
 
     it('should NOT enumerate region when outside stack is height-1', () => {

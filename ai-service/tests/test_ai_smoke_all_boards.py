@@ -8,7 +8,11 @@ import pytest
         ("square8", 3),
         ("square8", 4),
         ("square19", 2),
+        ("square19", 3),
+        ("square19", 4),
         ("hexagonal", 2),
+        ("hexagonal", 3),
+        ("hexagonal", 4),
     ],
 )
 @pytest.mark.parametrize(
@@ -53,9 +57,9 @@ def test_ai_smoke_select_move_all_boards(
         if board_type == "square8":
             nn_model_id = f"ringrift_best_sq8_{num_players}p"
         elif board_type == "square19":
-            nn_model_id = "ringrift_best_sq19_2p"
+            nn_model_id = f"ringrift_best_sq19_{num_players}p"
         else:
-            nn_model_id = "ringrift_best_hex_2p"
+            nn_model_id = f"ringrift_best_hex_{num_players}p"
 
     config = AIConfig(
         difficulty=int(case["difficulty"]),

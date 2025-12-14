@@ -3001,16 +3001,27 @@ class P2POrchestrator:
     async def handle_election(self, request: web.Request) -> web.Response:
         """Handle election message from another node."""
         try:
+            # Only "bully" lower-priority candidates when we're actually eligible
+            # to act as a leader. Otherwise (e.g. NAT-blocked / ambiguous endpoint),
+            # responding ALIVE can stall elections and leave the cluster leaderless.
+            self._update_self_info()
             data = await request.json()
-            candidate_id = data.get("candidate_id")
+            candidate_id = str(data.get("candidate_id") or "")
+            if not candidate_id:
+                return web.json_response({"error": "missing_candidate_id"}, status=400)
+
+            with self.peers_lock:
+                peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
+            conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+            eligible = self._is_leader_eligible(self.self_info, conflict_keys, require_alive=False)
 
             # If our ID is higher, we respond with "ALIVE" (Bully algorithm)
-            if self.node_id > candidate_id:
+            if self.node_id > candidate_id and eligible:
                 # Start our own election
                 asyncio.create_task(self._start_election())
-                return web.json_response({"response": "ALIVE", "node_id": self.node_id})
+                return web.json_response({"response": "ALIVE", "node_id": self.node_id, "eligible": True})
             else:
-                return web.json_response({"response": "OK"})
+                return web.json_response({"response": "OK", "node_id": self.node_id, "eligible": bool(eligible)})
         except Exception as e:
             return web.json_response({"error": str(e)}, status=400)
 
@@ -8365,7 +8376,18 @@ print(json.dumps({{
                         if info.role == NodeRole.LEADER and info.node_id != self.node_id:
                             if self.leader_id != info.node_id or self.role != NodeRole.FOLLOWER:
                                 print(f"[P2P] Following configured leader from heartbeat: {info.node_id}")
+                            prev_leader = self.leader_id
                             self.leader_id = info.node_id
+                            # Provisional lease: allow time for the leader to send
+                            # a /coordinator lease renewal after we discover it via
+                            # heartbeat (prevents leaderless oscillation right after
+                            # restarts/partitions).
+                            if prev_leader != info.node_id:
+                                self.leader_lease_id = ""
+                                self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
+                            elif not self._is_leader_lease_valid():
+                                self.leader_lease_id = ""
+                                self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
                             self.role = NodeRole.FOLLOWER
 
                 # Send to discovered peers (skip NAT-blocked peers and ambiguous endpoints).
@@ -8405,7 +8427,11 @@ print(json.dumps({{
                             if info.role == NodeRole.LEADER and self.role != NodeRole.LEADER:
                                 if self.leader_id != info.node_id:
                                     print(f"[P2P] Adopted leader from heartbeat: {info.node_id}")
+                                prev_leader = self.leader_id
                                 self.leader_id = info.node_id
+                                if prev_leader != info.node_id or not self._is_leader_lease_valid():
+                                    self.leader_lease_id = ""
+                                    self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
                                 self.role = NodeRole.FOLLOWER
                         else:
                             with self.peers_lock:
@@ -8581,6 +8607,22 @@ print(json.dumps({{
             for node_id in dead_peers:
                 print(f"[P2P] Peer {node_id} is dead (no heartbeat for {PEER_TIMEOUT}s)")
                 # Don't remove, just mark as dead for historical tracking
+
+        # LEARNED LESSONS - Clear stale leader IDs after restarts/partitions.
+        #
+        # Nodes persist `leader_id` but not lease metadata. After a restart, it's
+        # possible to have `leader_id` point at an alive peer that is no longer a
+        # leader (or to a leader whose lease is expired). Without an explicit lease
+        # validity check, the cluster can get stuck leaderless and stop dispatching
+        # jobs (while still "thinking" it has a leader).
+        if self.leader_id and not self._is_leader_lease_valid():
+            print(f"[P2P] Clearing stale/expired leader lease: leader_id={self.leader_id}")
+            self.leader_id = None
+            self.leader_lease_id = ""
+            self.leader_lease_expires = 0.0
+            if self.role != NodeRole.LEADER:
+                self.role = NodeRole.FOLLOWER
+            asyncio.create_task(self._start_election())
 
         # If leader is dead, start election
         if self.leader_id and self.leader_id != self.node_id:

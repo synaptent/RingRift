@@ -673,15 +673,15 @@ describe('useKeyboardNavigation', () => {
 });
 
 describe('useGlobalGameShortcuts', () => {
-  let originalAddEventListener: typeof document.addEventListener;
-  let originalRemoveEventListener: typeof document.removeEventListener;
+  let originalAddEventListener: typeof window.addEventListener;
+  let originalRemoveEventListener: typeof window.removeEventListener;
   let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
   beforeEach(() => {
-    originalAddEventListener = document.addEventListener;
-    originalRemoveEventListener = document.removeEventListener;
+    originalAddEventListener = window.addEventListener;
+    originalRemoveEventListener = window.removeEventListener;
 
-    document.addEventListener = jest.fn(
+    window.addEventListener = jest.fn(
       (event: string, handler: EventListenerOrEventListenerObject) => {
         if (event === 'keydown') {
           keydownHandler = handler as (e: KeyboardEvent) => void;
@@ -689,12 +689,12 @@ describe('useGlobalGameShortcuts', () => {
       }
     );
 
-    document.removeEventListener = jest.fn();
+    window.removeEventListener = jest.fn();
   });
 
   afterEach(() => {
-    document.addEventListener = originalAddEventListener;
-    document.removeEventListener = originalRemoveEventListener;
+    window.addEventListener = originalAddEventListener;
+    window.removeEventListener = originalRemoveEventListener;
     keydownHandler = null;
   });
 
@@ -705,7 +705,7 @@ describe('useGlobalGameShortcuts', () => {
       })
     );
 
-    expect(document.addEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
+    expect(window.addEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
   });
 
   it('unregisters keydown listener on unmount', () => {
@@ -717,7 +717,7 @@ describe('useGlobalGameShortcuts', () => {
 
     unmount();
 
-    expect(document.removeEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
+    expect(window.removeEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
   });
 
   it('calls onShowHelp for ? key', () => {

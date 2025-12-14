@@ -59,7 +59,11 @@ ALL_CONFIGS = [
     ("square8", 3),
     ("square8", 4),
     ("square19", 2),
+    ("square19", 3),
+    ("square19", 4),
     ("hexagonal", 2),
+    ("hexagonal", 3),
+    ("hexagonal", 4),
 ]
 
 BOARD_ALIAS_TOKENS = {

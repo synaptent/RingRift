@@ -102,6 +102,7 @@ def _ssh_base_cmd(target: HostTarget) -> List[str]:
         "ServerAliveInterval=30",
     ]
     if target.ssh_key:
+        cmd.extend(["-o", "IdentitiesOnly=yes"])
         cmd.extend(["-i", os.path.expanduser(target.ssh_key)])
     if int(target.ssh_port) != 22:
         cmd.extend(["-p", str(int(target.ssh_port))])

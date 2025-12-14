@@ -1229,14 +1229,14 @@ export class AIEngine {
     const descriptions: Record<number, string> = {
       1: 'Level 1 – Beginner: Random AI that plays legal but weak moves',
       2: 'Level 2 – Easy: Heuristic AI with simple patterns and clear weaknesses',
-      3: 'Level 3 – Minimax: Shallow search that sees basic tactics',
-      4: 'Level 4 – Minimax: Deeper search with more consistent tactics',
-      5: 'Level 5 – Minimax: Solid tactical play with occasional oversights',
-      6: 'Level 6 – Minimax: Strong tactical play and some planning ahead',
-      7: 'Level 7 – MCTS: Expert search that samples many futures positions',
-      8: 'Level 8 – MCTS: Strong expert play with robust search in complex boards',
-      9: 'Level 9 – Descent: Hybrid MCTS/NN engine aimed at very strong play',
-      10: 'Level 10 – Descent: Strongest available engine; very challenging but not perfect',
+      3: 'Level 3 – Minimax: Shallow search (heuristic evaluation only)',
+      4: 'Level 4 – Minimax: Neural/NNUE evaluation for stronger tactics',
+      5: 'Level 5 – MCTS: Search-based play (heuristic rollouts; non-neural)',
+      6: 'Level 6 – MCTS: Neural-guided search with stronger planning',
+      7: 'Level 7 – MCTS: Neural search with higher budget',
+      8: 'Level 8 – MCTS: Neural search with largest budget',
+      9: 'Level 9 – Descent (Experimental): High-end neural search engine',
+      10: 'Level 10 – Descent (Experimental): Strongest available engine; very challenging',
     };
 
     return descriptions[difficulty] || 'Unknown difficulty level';
