@@ -17,6 +17,9 @@ Usage:
     python scripts/analyze_game_statistics.py --data-dir data/selfplay --output report.json
     python scripts/analyze_game_statistics.py --data-dir data/selfplay --format markdown
 
+    # Recursively scan a directory tree for JSONL files:
+    python scripts/analyze_game_statistics.py --jsonl-dir /path/to/synced/data --recursive
+
     # Quarantine bad/timeout data:
     python scripts/analyze_game_statistics.py --jsonl-dir data/games --quarantine-dir data/quarantine
 
@@ -2199,6 +2202,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Directory to scan for JSONL files (*.jsonl)",
     )
     parser.add_argument(
+        "--recursive",
+        "-r",
+        action="store_true",
+        help="Recursively scan subdirectories when using --jsonl-dir",
+    )
+    parser.add_argument(
         "--jsonl-filelist",
         type=Path,
         help="Text/TSV file listing JSONL files to include (path in last column for TSV).",
@@ -2265,7 +2274,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.jsonl:
         jsonl_files.extend(args.jsonl)
     if args.jsonl_dir and args.jsonl_dir.exists():
-        jsonl_files.extend(args.jsonl_dir.glob("*.jsonl"))
+        if args.recursive:
+            jsonl_files.extend(args.jsonl_dir.rglob("*.jsonl"))
+        else:
+            jsonl_files.extend(args.jsonl_dir.glob("*.jsonl"))
     if args.jsonl_filelist:
         jsonl_files.extend(_read_jsonl_filelist(args.jsonl_filelist))
 

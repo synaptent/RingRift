@@ -17,6 +17,10 @@ Apply:
   python3 ai-service/deploy/deploy_cluster_resilience.py --apply \\
     --coordinator-url "http://192.222.53.22:8770,http://54.198.219.106:8770"
 
+Force-sync code (overwrites local changes) for broken/dirty workers:
+  python3 ai-service/deploy/deploy_cluster_resilience.py --apply --force-sync \\
+    --coordinator-url "http://192.222.53.22:8770,http://54.198.219.106:8770"
+
 Optionally distribute the cluster auth token securely (stdin → sudo tee):
   python3 ai-service/deploy/deploy_cluster_resilience.py --apply \\
     --cluster-auth-token-file /path/to/token \\
@@ -246,6 +250,11 @@ def main() -> None:
         action="store_true",
         help="Include macOS nodes (runs setup_node_resilience_macos.sh). Default skips mac-studio/mbp-* entries.",
     )
+    parser.add_argument(
+        "--force-sync",
+        action="store_true",
+        help="Force `git checkout -f main && git reset --hard origin/main` on targets (overwrites local changes).",
+    )
     parser.add_argument("--apply", action="store_true", help="Actually run commands (default: dry-run)")
     args = parser.parse_args()
 
@@ -319,17 +328,32 @@ def main() -> None:
                 )
 
             ringrift_dir_rhs = _remote_path_assignment(target.ringrift_path)
+            if args.force_sync:
+                git_sync = (
+                    "git fetch origin main\n"
+                    "git checkout -f main\n"
+                    "git reset --hard origin/main\n"
+                )
+            else:
+                git_sync = (
+                    "git fetch origin main\n"
+                    "git checkout main 2>/dev/null || true\n"
+                    "BR=\"$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)\"\n"
+                    "if [ \"$BR\" != \"main\" ]; then\n"
+                    "  echo \"[WARN] repo not on main (branch=$BR); skipping git sync (use --force-sync)\" >&2\n"
+                    "elif [ -n \"$(git status --porcelain 2>/dev/null || true)\" ]; then\n"
+                    "  echo \"[WARN] repo has local changes; skipping git sync (use --force-sync)\" >&2\n"
+                    "else\n"
+                    "  git merge --ff-only origin/main 2>/dev/null || echo \"[WARN] non-fast-forward; skipping git sync (use --force-sync)\" >&2\n"
+                    "fi\n"
+                )
             if is_macos:
                 remote_setup = (
                     f"set -euo pipefail\n"
                     f"RINGRIFT_DIR={ringrift_dir_rhs}\n"
                     f"RINGRIFT_ROOT=\"$(dirname \"$RINGRIFT_DIR\")\"\n"
                     f"cd \"$RINGRIFT_ROOT\"\n"
-                    # Deployment nodes should match origin/main exactly; avoid
-                    # leaving them in an unmerged/conflicted state.
-                    f"git fetch origin main\n"
-                    f"git checkout -f main\n"
-                    f"git reset --hard origin/main\n"
+                    f"{git_sync}"
                     f"chmod +x \"$RINGRIFT_DIR/deploy/setup_node_resilience_macos.sh\"\n"
                     f"P2P_PORT={int(p2p_port)} RINGRIFT_ROOT=\"$RINGRIFT_ROOT\" "
                     f"{voter_prefix}"
@@ -353,11 +377,7 @@ def main() -> None:
                     f"fi\n"
                     f"{sudo}chown -R \"$(id -un)\":\"$(id -gn)\" \"$RINGRIFT_ROOT/.git\" 2>/dev/null || true\n"
                     f"cd \"$RINGRIFT_ROOT\"\n"
-                    # Deployment nodes should match origin/main exactly; avoid
-                    # leaving them in an unmerged/conflicted state.
-                    f"git fetch origin main\n"
-                    f"git checkout -f main\n"
-                    f"git reset --hard origin/main\n"
+                    f"{git_sync}"
                     f"if [ ! -x \"$RINGRIFT_DIR/venv/bin/python\" ] && [ -x \"$RINGRIFT_DIR/setup.sh\" ] && [ ! -f /.launch ] && [ -z \"${{VAST_CONTAINERLABEL:-}}\" ]; then\n"
                     f"  if command -v apt-get >/dev/null 2>&1; then\n"
                     f"    {sudo}apt-get update -y\n"
