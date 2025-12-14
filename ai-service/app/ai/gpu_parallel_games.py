@@ -5778,8 +5778,6 @@ class ParallelGameRunner:
                     if owner > 0 and height > 0:
                         # Rotate perspective so current player is always plane 0
                         plane_offset = ((owner - current_player) % self.num_players)
-                        if plane_offset < 0:
-                            plane_offset += 4
 
                         # Set ring and stack features
                         ring_plane = plane_offset * num_positions + pos_idx
@@ -5794,8 +5792,6 @@ class ParallelGameRunner:
                     territory_owner = self.state.territory_owner[game_idx, y, x].item()
                     if territory_owner > 0:
                         plane_offset = ((territory_owner - current_player) % self.num_players)
-                        if plane_offset < 0:
-                            plane_offset += 4
                         territory_plane = (8 + plane_offset) * num_positions + pos_idx
                         if territory_plane < feature_dim:
                             features[territory_plane] = 1.0
