@@ -80,20 +80,20 @@ def get_elo_ratings() -> Dict[str, float]:
 
     try:
         cursor.execute("""
-            SELECT participant_id, elo, games_played
-            FROM participants
+            SELECT participant_id, rating, games_played
+            FROM elo_ratings
             WHERE games_played >= 5
         """)
 
         for row in cursor.fetchall():
-            participant_id, elo, games = row
-            ratings[participant_id] = elo
+            participant_id, rating, games = row
+            ratings[participant_id] = rating
 
             # Also add without prefix
             if participant_id.startswith("nn:"):
                 clean_id = participant_id[3:]
-                ratings[clean_id] = elo
-                ratings[Path(clean_id).name] = elo
+                ratings[clean_id] = rating
+                ratings[Path(clean_id).name] = rating
 
     except sqlite3.Error as e:
         print(f"Database error: {e}")
