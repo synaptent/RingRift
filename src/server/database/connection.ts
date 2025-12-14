@@ -143,6 +143,82 @@ export const withTransaction = async <T>(
   });
 };
 
+/**
+ * Default timeout for database queries in milliseconds.
+ * Can be overridden per-query.
+ */
+export const DEFAULT_DB_QUERY_TIMEOUT_MS = 5000;
+
+/**
+ * Wraps a database query promise with a timeout.
+ * Returns null if the timeout is reached, otherwise returns the query result.
+ *
+ * @param queryPromise - The database query promise to wrap
+ * @param timeoutMs - Timeout in milliseconds (defaults to DEFAULT_DB_QUERY_TIMEOUT_MS)
+ * @returns The query result or null if timed out
+ *
+ * @example
+ * const user = await withQueryTimeout(
+ *   prisma.user.findUnique({ where: { id } }),
+ *   3000
+ * );
+ * if (user === null) {
+ *   // Handle timeout - could be actual null result or timeout
+ *   // For nullable queries, consider using withQueryTimeoutStrict instead
+ * }
+ */
+export async function withQueryTimeout<T>(
+  queryPromise: Promise<T>,
+  timeoutMs: number = DEFAULT_DB_QUERY_TIMEOUT_MS
+): Promise<T | null> {
+  const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
+  return Promise.race([queryPromise, timeoutPromise]);
+}
+
+/**
+ * Result type for strict timeout wrapper that distinguishes timeout from null results.
+ */
+export type QueryTimeoutResult<T> =
+  | { success: true; data: T }
+  | { success: false; reason: 'timeout' };
+
+/**
+ * Wraps a database query promise with a timeout, distinguishing between
+ * timeout and actual null/undefined results from the query.
+ *
+ * @param queryPromise - The database query promise to wrap
+ * @param timeoutMs - Timeout in milliseconds (defaults to DEFAULT_DB_QUERY_TIMEOUT_MS)
+ * @returns QueryTimeoutResult indicating success with data or timeout failure
+ *
+ * @example
+ * const result = await withQueryTimeoutStrict(
+ *   prisma.user.findUnique({ where: { id } }),
+ *   3000
+ * );
+ * if (!result.success) {
+ *   // Definitely a timeout, not a null query result
+ *   throw new Error('Database query timed out');
+ * }
+ * const user = result.data; // Could be null if user doesn't exist
+ */
+export async function withQueryTimeoutStrict<T>(
+  queryPromise: Promise<T>,
+  timeoutMs: number = DEFAULT_DB_QUERY_TIMEOUT_MS
+): Promise<QueryTimeoutResult<T>> {
+  const TIMEOUT_SENTINEL = Symbol('timeout');
+  const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
+    setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutMs)
+  );
+
+  const result = await Promise.race([queryPromise, timeoutPromise]);
+
+  if (result === TIMEOUT_SENTINEL) {
+    return { success: false, reason: 'timeout' };
+  }
+
+  return { success: true, data: result as T };
+}
+
 // Graceful shutdown
 process.on('beforeExit', async () => {
   await disconnectDatabase();

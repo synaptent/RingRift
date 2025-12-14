@@ -1,6 +1,11 @@
 import { Router, Response } from 'express';
 import { Prisma, GameStatus as PrismaGameStatus } from '@prisma/client';
-import { getDatabaseClient, TransactionClient } from '../database/connection';
+import {
+  getDatabaseClient,
+  TransactionClient,
+  withQueryTimeoutStrict,
+} from '../database/connection';
+import { ErrorCodes } from '../errors';
 import { AuthenticatedRequest, getAuthUserId } from '../middleware/auth';
 import { createError, asyncHandler } from '../middleware/errorHandler';
 import { dataExportRateLimiter } from '../middleware/rateLimiter';
@@ -69,23 +74,30 @@ router.get(
       throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        role: true,
-        rating: true,
-        gamesPlayed: true,
-        gamesWon: true,
-        createdAt: true,
-        lastLoginAt: true,
-        emailVerified: true,
-        isActive: true,
-      },
-    });
+    const userResult = await withQueryTimeoutStrict(
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          role: true,
+          rating: true,
+          gamesPlayed: true,
+          gamesWon: true,
+          createdAt: true,
+          lastLoginAt: true,
+          emailVerified: true,
+          isActive: true,
+        },
+      })
+    );
 
+    if (!userResult.success) {
+      throw createError('Database query timed out', 504, ErrorCodes.SERVER_GATEWAY_TIMEOUT);
+    }
+
+    const user = userResult.data;
     if (!user) {
       throw createError('User not found', 404, 'USER_NOT_FOUND');
     }

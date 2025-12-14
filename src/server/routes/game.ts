@@ -4,7 +4,7 @@ import {
   GameStatus as PrismaGameStatus,
   BoardType as PrismaBoardType,
 } from '@prisma/client';
-import { getDatabaseClient } from '../database/connection';
+import { getDatabaseClient, withQueryTimeoutStrict } from '../database/connection';
 import { AuthenticatedRequest, getAuthUserId } from '../middleware/auth';
 import { createError, asyncHandler } from '../middleware/errorHandler';
 import { consumeRateLimit, adaptiveRateLimiter } from '../middleware/rateLimiter';
@@ -33,6 +33,7 @@ import {
 } from '../../shared/engine/contracts/serialization';
 import type { WebSocketServer } from '../websocket/server';
 const router = Router();
+export const sandboxHelperRoutes = Router();
 
 // WebSocket server instance will be injected
 let wsServerInstance: WebSocketServer | null = null;
@@ -47,6 +48,12 @@ export function setWebSocketServer(wsServer: WebSocketServer | null) {
 // Game creation still has its own per-user and per-IP quotas via
 // gameCreateUser/gameCreateIp in this module.
 router.use(adaptiveRateLimiter('apiAuthenticated', 'api'));
+
+// Sandbox helper endpoints are explicitly gated by config.featureFlags.sandboxAi
+// and are allowed to be unauthenticated so the /sandbox host can use them
+// without requiring a logged-in session. Apply a conservative anonymous
+// limiter to prevent abuse when enabled in staging/test environments.
+sandboxHelperRoutes.use(adaptiveRateLimiter('apiAuthenticated', 'api'));
 
 // Active games storage (in production, this would be in Redis)
 const activeGames = new Map<string, GameEngine>();
@@ -192,7 +199,7 @@ router.post(
  * Guarded to test/development environments to avoid exposing raw evaluation
  * of arbitrary positions in production.
  */
-router.post(
+sandboxHelperRoutes.post(
   '/sandbox/evaluate',
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     if (!config.isTest && !config.isDevelopment) {
@@ -244,7 +251,7 @@ router.post(
  * /sandbox host so that local sandbox games can use the same canonical
  * difficulty ladder (minimax/mcts/descent + neural variants) as backend games.
  */
-router.post(
+sandboxHelperRoutes.post(
   '/sandbox/ai/move',
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const enabled = config.isTest || config.isDevelopment || config.featureFlags.sandboxAi.enabled;
@@ -280,6 +287,8 @@ router.post(
         thinkingTimeMs: response.thinking_time_ms,
         aiType: response.ai_type,
         difficulty: response.difficulty,
+        nnModelId: response.nn_model_id,
+        nnCheckpoint: response.nn_checkpoint,
       });
     } catch (err) {
       const message =
@@ -1964,7 +1973,29 @@ router.get(
     // Parse query parameters
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 100);
     const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
-    const status = req.query.status as string | undefined;
+    const statusParam = req.query.status as string | undefined;
+
+    // Validate status parameter against Prisma GameStatus enum
+    const validStatuses = new Set([
+      'waiting',
+      'active',
+      'completed',
+      'cancelled',
+      'paused',
+      'abandoned',
+      'finished',
+    ]);
+    let status: PrismaGameStatus | undefined;
+    if (statusParam) {
+      if (!validStatuses.has(statusParam)) {
+        throw createError(
+          `Invalid status parameter. Must be one of: ${[...validStatuses].join(', ')}`,
+          400,
+          'INVALID_STATUS_PARAMETER'
+        );
+      }
+      status = statusParam as PrismaGameStatus;
+    }
 
     const prisma = getDatabaseClient();
     if (!prisma) {
@@ -1982,26 +2013,34 @@ router.get(
     };
 
     if (status) {
-      // Status from query param maps to Prisma GameStatus enum
-      // Cast through Prisma's enum type (excludes undefined from the assigned value)
-      (whereClause as { status?: string }).status = status;
+      whereClause.status = status;
     }
 
-    // Get games with move count
-    const games = await prisma.game.findMany({
-      where: whereClause,
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      skip: offset,
-      include: {
-        _count: {
-          select: { moves: true },
-        },
-        winner: { select: { id: true, username: true } },
-      },
-    });
+    // Get games with move count - run queries in parallel with timeout protection
+    const [gamesResult, totalResult] = await Promise.all([
+      withQueryTimeoutStrict(
+        prisma.game.findMany({
+          where: whereClause,
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+          include: {
+            _count: {
+              select: { moves: true },
+            },
+            winner: { select: { id: true, username: true } },
+          },
+        })
+      ),
+      withQueryTimeoutStrict(prisma.game.count({ where: whereClause })),
+    ]);
 
-    const total = await prisma.game.count({ where: whereClause });
+    if (!gamesResult.success || !totalResult.success) {
+      throw createError('Database query timed out', 504, ErrorCodes.SERVER_GATEWAY_TIMEOUT);
+    }
+
+    const games = gamesResult.data;
+    const total = totalResult.data;
 
     // Format response:
     // - Winner name is transformed to show "Deleted Player" for anonymized users.

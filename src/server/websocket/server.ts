@@ -60,6 +60,11 @@ const CHAT_RATE_LIMIT_MAX_MESSAGES = 20;
 const MATCHMAKING_RATE_LIMIT_WINDOW_SECONDS = 60;
 const MATCHMAKING_RATE_LIMIT_MAX_ATTEMPTS = 5;
 
+// Diagnostic ping rate limit: 60 pings per 10 seconds per socket
+// Generous for load testing, but prevents abuse
+const DIAGNOSTIC_RATE_LIMIT_WINDOW_SECONDS = 10;
+const DIAGNOSTIC_RATE_LIMIT_MAX_PINGS = 60;
+
 type InMemoryRateLimitCounter = {
   count: number;
   resetAt: number;
@@ -67,6 +72,7 @@ type InMemoryRateLimitCounter = {
 
 const inMemoryChatCounters = new Map<string, InMemoryRateLimitCounter>();
 const inMemoryMatchmakingCounters = new Map<string, InMemoryRateLimitCounter>();
+const inMemoryDiagnosticCounters = new Map<string, InMemoryRateLimitCounter>();
 
 async function checkChatRateLimit(socket: AuthenticatedSocket, gameId: string): Promise<boolean> {
   const userKey = socket.userId ?? socket.id;
@@ -205,6 +211,37 @@ async function checkMatchmakingRateLimit(socket: AuthenticatedSocket): Promise<b
     });
     return true;
   }
+}
+
+/**
+ * Check diagnostic ping rate limit per socket.
+ * Uses in-memory only (no Redis) since this is per-socket and ephemeral.
+ */
+function checkDiagnosticRateLimit(socket: AuthenticatedSocket): boolean {
+  const key = `diagnostic:${socket.id}`;
+  const windowSeconds = DIAGNOSTIC_RATE_LIMIT_WINDOW_SECONDS;
+  const maxPings = DIAGNOSTIC_RATE_LIMIT_MAX_PINGS;
+
+  const now = Date.now();
+  const windowMs = windowSeconds * 1000;
+
+  const existing = inMemoryDiagnosticCounters.get(key);
+  if (!existing || existing.resetAt <= now) {
+    inMemoryDiagnosticCounters.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+
+  if (existing.count >= maxPings) {
+    logger.warn('Diagnostic ping rate limit exceeded', {
+      socketId: socket.id,
+      userId: socket.userId,
+      count: existing.count + 1,
+    });
+    return false;
+  }
+
+  existing.count += 1;
+  return true;
 }
 
 export class WebSocketServer {
@@ -699,6 +736,17 @@ export class WebSocketServer {
       // This is intentionally transport-only and does not touch game
       // state, the rules engine, or the database.
       socket.on('diagnostic:ping', (data: unknown) => {
+        // Rate limit to prevent abuse while allowing legitimate load testing
+        if (!checkDiagnosticRateLimit(socket)) {
+          this.emitError(
+            socket,
+            'RATE_LIMITED',
+            'Too many diagnostic pings. Please slow down.',
+            'diagnostic:ping'
+          );
+          return;
+        }
+
         try {
           const payload = WebSocketPayloadSchemas['diagnostic:ping'].parse(data);
 
