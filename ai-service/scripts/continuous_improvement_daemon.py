@@ -588,6 +588,10 @@ def load_state() -> DaemonState:
             state.last_auto_promote_time = data.get("last_auto_promote_time", 0.0)
             state.total_auto_promotions = data.get("total_auto_promotions", 0)
 
+            # Load curriculum learning state
+            if "curriculum_state" in data:
+                state.curriculum_state = data["curriculum_state"]
+
             return state
         except Exception as e:
             print(f"Warning: Could not load state: {e}")
@@ -617,6 +621,7 @@ def save_state(state: DaemonState) -> None:
         "nnue_state": state.nnue_state,
         "nnue_policy_state": state.nnue_policy_state,
         "cmaes_state": state.cmaes_state,
+        "curriculum_state": state.curriculum_state,
         "last_auto_promote_time": state.last_auto_promote_time,
         "total_auto_promotions": state.total_auto_promotions,
     }
@@ -942,8 +947,21 @@ GPU_SELFPLAY_MAX_MOVES = 400
 
 
 async def run_gpu_policy_selfplay(state: DaemonState, games_per_config: int = 50) -> int:
-    """Run GPU-accelerated selfplay with policy-guided move selection."""
+    """Run GPU-accelerated selfplay with policy-guided move selection.
+
+    Uses curriculum learning parameters to control exploration/exploitation balance.
+    """
     total_games = 0
+
+    # Get curriculum parameters for current stage
+    curriculum_params = get_curriculum_params(state)
+    temperature = curriculum_params.get("temperature", 1.0)
+    noise_scale = curriculum_params.get("noise_scale", 0.1)
+    curriculum_max_moves = curriculum_params.get("max_moves", GPU_SELFPLAY_MAX_MOVES)
+    stage_name = curriculum_params.get("name", "unknown")
+
+    if CURRICULUM_ENABLED:
+        print(f"[Daemon] Curriculum stage: {stage_name} (temperature={temperature:.1f}, max_moves={curriculum_max_moves})")
 
     for config in BOARD_CONFIGS:
         key = get_config_key(config["board"], config["players"])
@@ -961,11 +979,13 @@ async def run_gpu_policy_selfplay(state: DaemonState, games_per_config: int = 50
             "--num-players", str(config["players"]),
             "--num-games", str(games_per_config),
             "--batch-size", str(GPU_SELFPLAY_BATCH_SIZE),
-            "--max-moves", str(GPU_SELFPLAY_MAX_MOVES),
+            "--max-moves", str(curriculum_max_moves),
             "--use-policy",
             "--policy-model", str(policy_model_path),
             "--output-dir", str(output_dir),
             "--output-db", str(output_db),
+            "--temperature", str(temperature),
+            "--noise-scale", str(noise_scale),
         ]
 
         print(f"[Daemon] Running {games_per_config} GPU policy selfplay games for {key}...")
@@ -991,6 +1011,11 @@ async def run_gpu_policy_selfplay(state: DaemonState, games_per_config: int = 50
             print(f"[Daemon] GPU policy selfplay failed for {key}: {output[:200]}")
 
     state.total_games_generated += total_games
+
+    # Check if curriculum should advance
+    if total_games > 0 and CURRICULUM_ENABLED:
+        maybe_advance_curriculum(state, total_games)
+
     return total_games
 
 

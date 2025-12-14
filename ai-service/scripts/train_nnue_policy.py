@@ -260,6 +260,27 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Custom path for model checkpoint",
     )
 
+    # Policy distillation from strong games
+    parser.add_argument(
+        "--distill-from-winners",
+        action="store_true",
+        help="Only train on positions from winning players (stronger signal)",
+    )
+    parser.add_argument(
+        "--winner-weight-boost",
+        type=float,
+        default=1.0,
+        help="Weight multiplier for winners' moves (1.0=no boost, 2.0=double weight). "
+             "Only effective with --distill-from-winners. (default: 1.0)",
+    )
+    parser.add_argument(
+        "--min-winner-margin",
+        type=int,
+        default=0,
+        help="Minimum victory margin (score difference) for distillation. "
+             "Filters to decisive wins only. (default: 0 = all wins)",
+    )
+
     # Other
     parser.add_argument(
         "--seed",

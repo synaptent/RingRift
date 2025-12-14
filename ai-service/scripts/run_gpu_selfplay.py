@@ -760,6 +760,8 @@ def run_gpu_selfplay(
     weight_noise: float = 0.0,
     use_policy: bool = False,
     policy_model_path: Optional[str] = None,
+    temperature: float = 1.0,
+    noise_scale: float = 0.1,
 ) -> Dict[str, Any]:
     """Run GPU-accelerated self-play generation.
 
@@ -840,6 +842,8 @@ def run_gpu_selfplay(
         weight_noise=weight_noise,
         use_policy=use_policy,
         policy_model_path=policy_model_path,
+        temperature=temperature,
+        noise_scale=noise_scale,
     )
 
     # Generate games
@@ -1081,6 +1085,8 @@ def main():
         weight_noise=args.weight_noise,
         use_policy=args.use_policy,
         policy_model_path=args.policy_model,
+        temperature=args.temperature,
+        noise_scale=args.noise_scale,
     )
 
 

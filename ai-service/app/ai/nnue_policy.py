@@ -494,6 +494,10 @@ class NNUEPolicyDatasetConfig:
     max_moves_per_position: int = 128  # Max legal moves to encode
     include_draws: bool = True
 
+    # Policy distillation options (for training on strong games)
+    distill_from_winners: bool = False  # Only include positions from winning players
+    winner_weight_boost: float = 1.0    # Sample weight multiplier for winners (for weighted loss)
+
 
 class NNUEPolicyDataset(Dataset):
     """PyTorch Dataset for NNUE policy training.
