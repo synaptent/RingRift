@@ -13,6 +13,14 @@ import type { AuthenticatedRequest } from '../middleware/auth';
 import { createError, asyncHandler } from '../middleware/errorHandler';
 import { authRegisterRateLimiter, authPasswordResetRateLimiter } from '../middleware/rateLimiter';
 import { logger, httpLogger, redactEmail } from '../utils/logger';
+import {
+  auditLoginSuccess,
+  auditLoginFailed,
+  auditLogout,
+  auditTokenRefresh,
+  auditLockout,
+  auditRegister,
+} from '../utils/auditLogger';
 import { sendVerificationEmail, sendPasswordResetEmail } from '../utils/email';
 import {
   RegisterSchema,
@@ -418,6 +426,9 @@ router.post(
       email: redactEmail(user.email),
     });
 
+    // Audit log successful registration
+    auditRegister(user.id, user.email, req);
+
     // Set refresh token as httpOnly cookie for security
     res.cookie('refreshToken', refreshToken, getRefreshTokenCookieOptions());
 
@@ -541,6 +552,7 @@ router.post(
 
     if (!user) {
       await recordFailedLoginAttempt(normalizedEmail, req.ip);
+      auditLoginFailed(email, 'User not found', req);
       throw createError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
     }
 
@@ -577,6 +589,7 @@ router.post(
 
     if (!isValidPassword) {
       await recordFailedLoginAttempt(normalizedEmail, req.ip);
+      auditLoginFailed(email, 'Invalid password', req);
       throw createError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
     }
 
@@ -664,6 +677,9 @@ router.post(
       userId: user.id,
       email: redactEmail(user.email),
     });
+
+    // Audit log successful login
+    auditLoginSuccess(user.id, user.email, req);
 
     // Strip the passwordHash field before returning the user payload
     const { passwordHash: _, ...userWithoutPassword } = user;

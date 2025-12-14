@@ -471,7 +471,9 @@ def get_storage(
 
     if scheme == "" or scheme == "file":
         # Local file storage
+        # Expand ~ and environment variables like $HOME
         path = parsed.path or uri
+        path = os.path.expanduser(os.path.expandvars(path))
         return LocalFileStorage(
             path=path,
             compress=compress,

@@ -292,8 +292,13 @@ async def run_tournament_remote(host: ClusterHost, config: TournamentConfig) -> 
 
     # Build remote command
     # Note: ringrift_path in config points to ai-service directory
+    # Expand ~ to $HOME for proper path expansion in file URIs
     ai_service_path = host.ringrift_path
-    remote_output = f"{ai_service_path}/data/tournaments/{os.path.basename(config.output_path)}"
+    if ai_service_path.startswith("~"):
+        expanded_path = f"$HOME{ai_service_path[1:]}"
+    else:
+        expanded_path = ai_service_path
+    remote_output = f"{expanded_path}/data/tournaments/{os.path.basename(config.output_path)}"
 
     # Build venv activation if configured
     venv_cmd = ""

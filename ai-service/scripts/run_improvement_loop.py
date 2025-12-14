@@ -325,6 +325,43 @@ def _promotion_gate(
     }
 
 
+def _log_promotion_decision(
+    *,
+    config: dict,
+    iteration: int,
+    summary: dict,
+    model_path: Optional[Path] = None,
+) -> None:
+    """Log promotion decision to JSONL file for audit trail.
+
+    This allows tracking of all promotion decisions over time, enabling
+    analysis of model quality trends and debugging promotion issues.
+    """
+    logs_dir = AI_SERVICE_ROOT / "logs" / "improvement"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    board = config.get("board", "unknown")
+    players = config.get("players", 2)
+    log_file = logs_dir / f"{board}_{players}p_promotion_gates.jsonl"
+
+    record = {
+        "timestamp": datetime.now().isoformat(),
+        "board": board,
+        "players": players,
+        "iteration": iteration,
+        "model_path": str(model_path) if model_path else None,
+        **summary,
+    }
+
+    # Append atomically (write to temp, then append)
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+            f.flush()
+    except OSError as e:
+        print(f"Warning: Could not log promotion decision: {e}", file=sys.stderr)
+
+
 def validate_model(model_path: Path) -> bool:
     """Quick sanity check that model file is valid.
 
@@ -914,6 +951,15 @@ def evaluate_model(
         f"(CI_low={summary['win_rate_ci_low']:.1%} "
         f"@ {summary['confidence']:.0%})"
     )
+
+    # Log promotion decision for audit trail and analysis
+    _log_promotion_decision(
+        config=config,
+        iteration=iteration,
+        summary=summary,
+        model_path=iter_model,
+    )
+
     return True, summary
 
 
