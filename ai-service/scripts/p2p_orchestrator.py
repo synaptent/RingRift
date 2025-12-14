@@ -2887,8 +2887,8 @@ class P2POrchestrator:
 
         try:
             if getattr(node, "nat_blocked", False):
-                cmd_id = self._enqueue_relay_command(
-                    node_id,
+                cmd_id = await self._enqueue_relay_command_for_peer(
+                    node,
                     "cleanup_files",
                     {"files": list(files or []), "reason": "post_sync_cleanup"},
                 )
@@ -4261,6 +4261,51 @@ class P2POrchestrator:
 
         except Exception as e:
             return web.json_response({"error": str(e)}, status=400)
+
+    async def handle_relay_enqueue(self, request: web.Request) -> web.Response:
+        """POST /relay/enqueue - Enqueue a command for a NAT-blocked node on this relay.
+
+        This enables multi-hop operation when NAT-blocked nodes can reach a
+        public relay hub (e.g., AWS) but cannot reach the cluster leader
+        directly (e.g., TUN-less Tailscale inside some containers).
+
+        Request body:
+          {
+            "target_node_id": "node-id",
+            "type": "start_job" | "cleanup" | ...,
+            "payload": { ... }
+          }
+
+        Response:
+          { "success": true, "id": "<cmd_id>" }
+        """
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+
+        try:
+            target_node_id = str(data.get("target_node_id") or data.get("node_id") or "").strip()
+            cmd_type = str(data.get("type") or data.get("cmd_type") or "").strip()
+            payload = data.get("payload") or {}
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            target_node_id = ""
+            cmd_type = ""
+            payload = {}
+
+        if not target_node_id or not cmd_type:
+            return web.json_response(
+                {"success": False, "error": "invalid_request", "message": "target_node_id and type are required"},
+                status=400,
+            )
+
+        cmd_id = self._enqueue_relay_command(target_node_id, cmd_type, payload)
+        if not cmd_id:
+            return web.json_response({"success": False, "error": "queue_full"}, status=429)
+
+        return web.json_response({"success": True, "id": cmd_id})
 
     async def handle_relay_peers(self, request: web.Request) -> web.Response:
         """GET /relay/peers - Get list of all peers including NAT-blocked ones.
@@ -7673,7 +7718,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             "num_games": games_per_node,
                             "seed": node_seed,
                         }
-                        cmd_id = self._enqueue_relay_command(node_id, "canonical_selfplay", payload)
+                        cmd_id = await self._enqueue_relay_command_for_peer(node, "canonical_selfplay", payload)
                         if cmd_id:
                             dispatched += 1
                         else:
@@ -9357,9 +9402,17 @@ print(json.dumps({{
         if now - self.last_peer_bootstrap < PEER_BOOTSTRAP_INTERVAL:
             return False
 
-        timeout = ClientTimeout(total=15)
+        max_seeds = int(os.environ.get("RINGRIFT_P2P_BOOTSTRAP_MAX_SEEDS_PER_RUN", "8") or 8)
+        max_seeds = max(1, min(max_seeds, 32))
+
+        timeout = ClientTimeout(total=8)
+        bootstrapped = False
+        imported_any = False
+
         async with get_client_session(timeout) as session:
-            for peer_addr in seed_peers:
+            for idx, peer_addr in enumerate(seed_peers):
+                if idx >= max_seeds:
+                    break
                 try:
                     scheme, host, port = self._parse_peer_address(peer_addr)
                     scheme = (scheme or "http").lower()
@@ -9371,6 +9424,8 @@ print(json.dumps({{
 
                     if not isinstance(data, dict) or not data.get("success"):
                         continue
+
+                    bootstrapped = True
 
                     incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
                     if incoming_voters:
@@ -9386,8 +9441,8 @@ print(json.dumps({{
                     if not isinstance(peers_data, dict):
                         continue
 
-                    imported = 0
                     with self.peers_lock:
+                        before = len(self.peers)
                         for node_id, peer_dict in peers_data.items():
                             if not node_id or node_id == self.node_id:
                                 continue
@@ -9396,7 +9451,12 @@ print(json.dumps({{
                             except Exception:
                                 continue
                             self.peers[info.node_id] = info
-                            imported += 1
+                        after = len(self.peers)
+
+                    new = max(0, after - before)
+                    if new:
+                        imported_any = True
+                        print(f"[P2P] Bootstrap: imported {new} new peers from {host}:{port}")
 
                     leader_id = str(data.get("leader_id") or "").strip()
                     if leader_id and leader_id != self.node_id:
@@ -9406,20 +9466,14 @@ print(json.dumps({{
                             print(f"[P2P] Bootstrap: stepping down for leader {leader_id}")
                             self.role = NodeRole.FOLLOWER
                         self.leader_id = leader_id
-
-                    self.last_peer_bootstrap = now
-                    if imported:
-                        print(f"[P2P] Bootstrap: imported {imported} peers from {host}:{port}")
-
-                    # If we can see an existing leader in the imported snapshot, follow it.
-                    self._maybe_adopt_leader_from_peers()
-                    self._save_state()
-                    return imported > 0
                 except Exception:
                     continue
 
         self.last_peer_bootstrap = now
-        return False
+        if bootstrapped:
+            self._maybe_adopt_leader_from_peers()
+            self._save_state()
+        return imported_any
 
     async def _send_relay_heartbeat(self, relay_url: str) -> Dict[str, Any]:
         """Send heartbeat via relay endpoint for NAT-blocked nodes.
@@ -10717,8 +10771,11 @@ print(json.dumps({{
         """Request a remote node to clean up disk space."""
         try:
             if getattr(node, "nat_blocked", False):
-                self._enqueue_relay_command(node.node_id, "cleanup", {})
-                print(f"[P2P] Enqueued relay cleanup for {node.node_id}")
+                cmd_id = await self._enqueue_relay_command_for_peer(node, "cleanup", {})
+                if cmd_id:
+                    print(f"[P2P] Enqueued relay cleanup for {node.node_id}")
+                else:
+                    print(f"[P2P] Relay queue full; skipping cleanup enqueue for {node.node_id}")
                 return
             timeout = ClientTimeout(total=HTTP_TOTAL_TIMEOUT)
             async with get_client_session(timeout) as session:
@@ -10877,7 +10934,7 @@ print(json.dumps({{
 
         if getattr(node, "nat_blocked", False):
             payload = {"target_selfplay_jobs": target, "reason": reason}
-            cmd_id = self._enqueue_relay_command(node.node_id, "reduce_selfplay", payload)
+            cmd_id = await self._enqueue_relay_command_for_peer(node, "reduce_selfplay", payload)
             if cmd_id:
                 print(f"[P2P] Enqueued relay reduce_selfplay for {node.node_id} (target={target}, reason={reason})")
             else:
@@ -10971,7 +11028,7 @@ print(json.dumps({{
         """Request a remote node to restart its stuck selfplay jobs."""
         try:
             if getattr(node, "nat_blocked", False):
-                cmd_id = self._enqueue_relay_command(node.node_id, "restart_stuck_jobs", {})
+                cmd_id = await self._enqueue_relay_command_for_peer(node, "restart_stuck_jobs", {})
                 if cmd_id:
                     print(f"[P2P] Enqueued relay restart_stuck_jobs for {node.node_id}")
                 else:
@@ -11356,7 +11413,7 @@ print(json.dumps({{
                     "num_players": num_players,
                     "engine_mode": engine_mode,
                 }
-                cmd_id = self._enqueue_relay_command(node.node_id, "start_job", payload)
+                cmd_id = await self._enqueue_relay_command_for_peer(node, "start_job", payload)
                 if cmd_id:
                     print(
                         f"[P2P] Enqueued relay job for {node.node_id}: "
@@ -11433,6 +11490,66 @@ print(json.dumps({{
             )
             self.relay_command_queue[node_id] = queue
             return cmd_id
+
+    async def _enqueue_relay_command_for_peer(
+        self,
+        peer: NodeInfo,
+        cmd_type: str,
+        payload: Dict[str, Any],
+    ) -> Optional[str]:
+        """Enqueue a relay command for `peer`, forwarding via its relay hub when needed.
+
+        Default behavior: NAT-blocked nodes poll the leader's `/relay/heartbeat`
+        endpoint and the leader stores commands in-memory.
+
+        Some nodes (notably certain containerized GPU providers) may be unable to
+        reach the leader over the mesh network (e.g. TUN-less Tailscale) and also
+        cannot accept inbound connections. Those nodes will instead send relay
+        heartbeats to an internet-reachable hub (e.g. `aws-staging`). When
+        `peer.relay_via` points to such a hub, the leader must enqueue the relay
+        command on that hub so the node can pull and execute it.
+        """
+        if not peer or not getattr(peer, "node_id", ""):
+            return None
+
+        peer_id = str(getattr(peer, "node_id", "") or "").strip()
+        if not peer_id:
+            return None
+
+        relay_node_id = str(getattr(peer, "relay_via", "") or "").strip()
+        if relay_node_id and relay_node_id != self.node_id:
+            with self.peers_lock:
+                relay_peer = self.peers.get(relay_node_id)
+            if relay_peer:
+                timeout = ClientTimeout(total=10)
+                async with get_client_session(timeout) as session:
+                    last_err: Optional[str] = None
+                    for url in self._urls_for_peer(relay_peer, "/relay/enqueue"):
+                        try:
+                            async with session.post(
+                                url,
+                                json={
+                                    "target_node_id": peer_id,
+                                    "type": cmd_type,
+                                    "payload": payload or {},
+                                },
+                                headers=self._auth_headers(),
+                            ) as resp:
+                                if resp.status != 200:
+                                    last_err = f"http_{resp.status}"
+                                    continue
+                                data = await resp.json()
+                                if data.get("success"):
+                                    return str(data.get("id") or "")
+                                last_err = str(data.get("error") or "enqueue_failed")
+                        except Exception as e:
+                            last_err = str(e)
+                            continue
+                    if last_err:
+                        print(f"[P2P] Relay enqueue via {relay_node_id} failed for {peer_id}: {last_err}")
+
+        # Fallback: enqueue locally (works when peer polls the leader directly).
+        return self._enqueue_relay_command(peer_id, cmd_type, payload)
 
     async def _discovery_loop(self):
         """Broadcast UDP discovery messages to find peers on local network."""
@@ -11518,6 +11635,7 @@ print(json.dumps({{
         # Relay/Hub routes for NAT-blocked nodes
         app.router.add_post('/relay/heartbeat', self.handle_relay_heartbeat)
         app.router.add_get('/relay/peers', self.handle_relay_peers)
+        app.router.add_post('/relay/enqueue', self.handle_relay_enqueue)
 
         # Phase 2: Distributed data manifest routes
         app.router.add_get('/data_manifest', self.handle_data_manifest)
