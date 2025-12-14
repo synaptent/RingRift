@@ -756,7 +756,7 @@ function getAIDifficultyInfo(difficulty: number): {
   bgColor: string;
 } {
   // Keep this categorisation broadly aligned with the canonical ladder:
-  // 1 → Random, 2 → Heuristic, 3–6 → Minimax, 7–8 → MCTS, 9–10 → Descent.
+  // 1 → Random, 2 → Heuristic, 3–4 → Minimax, 5–8 → MCTS, 9–10 → Descent.
   if (difficulty === 1) {
     return {
       label: 'Beginner · Random',
@@ -771,14 +771,14 @@ function getAIDifficultyInfo(difficulty: number): {
       bgColor: 'bg-emerald-900/40',
     };
   }
-  if (difficulty >= 3 && difficulty <= 6) {
+  if (difficulty >= 3 && difficulty <= 4) {
     return {
       label: 'Advanced · Minimax',
       color: 'text-blue-300',
       bgColor: 'bg-blue-900/40',
     };
   }
-  if (difficulty === 7 || difficulty === 8) {
+  if (difficulty >= 5 && difficulty <= 8) {
     return {
       label: 'Expert · MCTS',
       color: 'text-purple-300',
