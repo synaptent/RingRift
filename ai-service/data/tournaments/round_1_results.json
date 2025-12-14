@@ -4,14 +4,14 @@
       "board_type": "square8",
       "num_players": 2,
       "num_games": 2,
-      "output_path": "/Users/armand/Development/RingRift/ai-service/data/tournaments/diverse_square8_2p_20251214_021311.jsonl",
+      "output_path": "/Users/armand/Development/RingRift/ai-service/data/tournaments/diverse_square8_2p_20251214_021443.jsonl",
       "seed": null
     },
     "host": "mac-studio",
     "success": false,
     "games_completed": 0,
     "samples_generated": 0,
-    "duration_sec": 2.5757761001586914,
+    "duration_sec": 2.8045339584350586,
     "error": "and/.pyenv/versions/3.10.13/lib/python3.10/pathlib.py\", line 1179, in mkdir\n    self.parent.mkdir(parents=True, exist_ok=True)\n  File \"/Users/armand/.pyenv/versions/3.10.13/lib/python3.10/pathlib.py\", line 1179, in mkdir\n    self.parent.mkdir(parents=True, exist_ok=True)\n  [Previous line repeated 1 more time]\n  File \"/Users/armand/.pyenv/versions/3.10.13/lib/python3.10/pathlib.py\", line 1175, in mkdir\n    self._accessor.mkdir(self, mode)\nOSError: [Errno 30] Read-only file system: '/Development'\n"
   }
 ]

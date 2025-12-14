@@ -471,8 +471,12 @@ def get_storage(
 
     if scheme == "" or scheme == "file":
         # Local file storage
-        # Expand ~ and environment variables like $HOME
+        # Combine netloc and path (for file://$HOME/path format)
+        # then expand ~ and environment variables
         path = parsed.path or uri
+        if parsed.netloc:
+            # file://$HOME/path -> netloc='$HOME', path='/path'
+            path = parsed.netloc + path
         path = os.path.expanduser(os.path.expandvars(path))
         return LocalFileStorage(
             path=path,
