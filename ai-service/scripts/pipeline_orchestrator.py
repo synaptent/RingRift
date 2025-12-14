@@ -2236,7 +2236,7 @@ python3 scripts/export_training_data.py \\
                 results[config_key] = False
                 continue
 
-            # Train this configuration
+            # Train this configuration with v3 architecture (spatial policy heads)
             train_cmd = f"""
 source venv/bin/activate
 export PYTHONPATH={training_worker.remote_path}
@@ -2248,6 +2248,7 @@ python -m app.training.train \\
     --epochs {epochs} \\
     --batch-size 256 \\
     --device mps \\
+    --model-version v3 \\
     --save-path models/{config_key}_iter{iteration}.pth \\
     --save-best models/{config_key}_best.pth
 """

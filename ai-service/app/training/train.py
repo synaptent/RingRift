@@ -38,6 +38,7 @@ from app.ai.neural_net import (
     RingRiftCNN_v3,
     HexNeuralNet,
     HexNeuralNet_v2,
+    HexNeuralNet_v3,
     HEX_BOARD_SIZE,
     P_HEX,
     MAX_PLAYERS,
@@ -1472,14 +1473,18 @@ def train_model(
 
     hex_in_channels = 0
     hex_num_players = num_players
+    use_hex_v3 = use_hex_model and model_version == 'v3'
     if use_hex_model:
-        hex_in_channels = 10 * (config.history_length + 1)
+        # V3 hex encoder has 16 base channels, V2 has 10
+        hex_base_channels = 16 if use_hex_v3 else 10
+        hex_in_channels = hex_base_channels * (config.history_length + 1)
         hex_num_players = MAX_PLAYERS if multi_player else num_players
 
     if not distributed or is_main_process():
         if use_hex_model:
+            hex_model_name = "HexNeuralNet_v3" if use_hex_v3 else "HexNeuralNet_v2"
             logger.info(
-                f"Initializing HexNeuralNet_v2 with board_size={board_size}, "
+                f"Initializing {hex_model_name} with board_size={board_size}, "
                 f"policy_size={policy_size}, in_channels={hex_in_channels}, "
                 f"num_players={hex_num_players}"
             )
@@ -1506,9 +1511,21 @@ def train_model(
         )
 
     # Initialize model based on board type and multi-player mode
-    if use_hex_model:
+    if use_hex_v3:
+        # HexNeuralNet_v3 for hexagonal boards with spatial policy heads
+        # V3 uses 16 base channels * (history_length + 1) frames = 64 channels
+        model = HexNeuralNet_v3(
+            in_channels=hex_in_channels,
+            global_features=20,  # V3 encoder provides 20 global features
+            num_res_blocks=effective_blocks,
+            num_filters=effective_filters,
+            board_size=board_size,
+            policy_size=policy_size,
+            num_players=hex_num_players,
+        )
+    elif use_hex_model:
         # HexNeuralNet_v2 for hexagonal boards with multi-player support
-        # Hex uses 10 base channels * (history_length + 1) frames
+        # V2 uses 10 base channels * (history_length + 1) frames = 40 channels
         model = HexNeuralNet_v2(
             in_channels=hex_in_channels,
             global_features=20,  # Must match _extract_features() which returns 20 globals

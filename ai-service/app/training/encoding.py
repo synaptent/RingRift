@@ -587,6 +587,494 @@ class HexStateEncoder:
         )
 
 
+class HexStateEncoderV3:
+    """
+    V3 State encoder for hexagonal boards with enhanced feature channels.
+
+    Produces 16 base channels (vs 10 in V2) to support HexNeuralNet_v3
+    spatial policy architecture. With 4 frame stacking (history_length=3),
+    this produces 64 total input channels.
+
+    Feature Channels (16 total):
+        0-1: Player stacks (height normalized to [0,1]) - same as V2
+        2-3: Player markers - same as V2
+        4-5: Collapsed spaces (territory) - same as V2
+        6-7: Liberties (normalized empty neighbors) - same as V2
+        8-9: Line potential (friendly marker neighbors) - same as V2
+        10-11: Contestation (cells with both friendly & enemy neighbors)
+        12-13: Stack height gradient (sum of neighboring stack heights)
+        14-15: Ring placement validity (can place ring here, normalized)
+
+    Global Features (20 dims for V3):
+        0-4: Game phase one-hot
+        5-8: Ring counts (current/opponent rings_in_hand, eliminated_rings)
+        9: Turn indicator
+        10-14: Extended phase info (chain length, captures pending, etc.)
+        15-19: Reserved for future use
+    """
+
+    BOARD_SIZE = HEX_BOARD_SIZE  # 25
+    RADIUS = (HEX_BOARD_SIZE - 1) // 2  # 12
+    NUM_CHANNELS = 16  # 16 base channels for V3
+    NUM_GLOBAL_FEATURES = 20  # Extended global features for V3
+    POLICY_SIZE = P_HEX  # 91,876
+
+    def __init__(self, board_size: int = HEX_BOARD_SIZE):
+        """Initialize the V3 hex state encoder."""
+        self.board_size = board_size
+        self.radius = (board_size - 1) // 2
+        self.action_encoder = ActionEncoderHex(
+            board_size=board_size, policy_size=P_HEX
+        )
+        self._valid_mask = self._build_valid_mask()
+
+    def _build_valid_mask(self) -> np.ndarray:
+        """Build a mask of valid hex cells within the canonical grid."""
+        mask = np.zeros((self.board_size, self.board_size), dtype=bool)
+        for cy in range(self.board_size):
+            for cx in range(self.board_size):
+                q = cx - self.radius
+                r = cy - self.radius
+                s = -q - r
+                in_bounds = (
+                    abs(q) <= self.radius
+                    and abs(r) <= self.radius
+                    and abs(s) <= self.radius
+                )
+                if in_bounds:
+                    mask[cy, cx] = True
+        return mask
+
+    def get_valid_mask(self) -> np.ndarray:
+        """Get the valid hex cell mask for masking CNN outputs."""
+        return self._valid_mask.copy()
+
+    def get_valid_mask_tensor(self) -> np.ndarray:
+        """Get valid mask as float tensor for neural network masking."""
+        return self._valid_mask.astype(np.float32)
+
+    def encode_position(
+        self, pos: Position, board: BoardState
+    ) -> Optional[Tuple[int, int]]:
+        """Convert axial position to canonical grid coordinates."""
+        q, r = pos.x, pos.y
+        cx = q + self.radius
+        cy = r + self.radius
+        if 0 <= cx < self.board_size and 0 <= cy < self.board_size:
+            if self._valid_mask[cy, cx]:
+                return (cx, cy)
+        return None
+
+    def encode_state(
+        self, state: GameState
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Encode a hex game state to feature tensors.
+
+        Returns:
+            Tuple of (board_features, global_features):
+            - board_features: shape (16, board_size, board_size)
+            - global_features: shape (20,)
+        """
+        board = state.board
+
+        if board.type != BoardType.HEXAGONAL:
+            raise ValueError(
+                f"HexStateEncoderV3 requires HEXAGONAL board type, "
+                f"got {board.type}"
+            )
+
+        features = np.zeros(
+            (self.NUM_CHANNELS, self.board_size, self.board_size),
+            dtype=np.float32,
+        )
+
+        current_player = state.current_player
+
+        # === CHANNELS 0-9: Same as V2 ===
+
+        # Channel 0/1: Stacks (height normalized)
+        for pos_key, stack in board.stacks.items():
+            try:
+                pos = _pos_from_key(pos_key)
+            except ValueError:
+                continue
+            coords = self.encode_position(pos, board)
+            if coords is None:
+                continue
+            cx, cy = coords
+            val = min(stack.stack_height / 5.0, 1.0)
+            if stack.controlling_player == current_player:
+                features[0, cy, cx] = val
+            else:
+                features[1, cy, cx] = val
+
+        # Channel 2/3: Markers
+        for pos_key, marker in board.markers.items():
+            try:
+                pos = _pos_from_key(pos_key)
+            except ValueError:
+                continue
+            coords = self.encode_position(pos, board)
+            if coords is None:
+                continue
+            cx, cy = coords
+            if marker.player == current_player:
+                features[2, cy, cx] = 1.0
+            else:
+                features[3, cy, cx] = 1.0
+
+        # Channel 4/5: Collapsed spaces (territory)
+        for pos_key, owner in board.collapsed_spaces.items():
+            try:
+                pos = _pos_from_key(pos_key)
+            except ValueError:
+                continue
+            coords = self.encode_position(pos, board)
+            if coords is None:
+                continue
+            cx, cy = coords
+            if owner == current_player:
+                features[4, cy, cx] = 1.0
+            else:
+                features[5, cy, cx] = 1.0
+
+        # Channel 6/7: Liberties (normalized empty neighbor count)
+        for pos_key, stack in board.stacks.items():
+            try:
+                pos = _pos_from_key(pos_key)
+            except ValueError:
+                continue
+            coords = self.encode_position(pos, board)
+            if coords is None:
+                continue
+            cx, cy = coords
+
+            neighbors = BoardGeometry.get_adjacent_positions(
+                pos, board.type, board.size
+            )
+            liberties = 0
+            for npos in neighbors:
+                if not BoardGeometry.is_within_bounds(
+                    npos, board.type, board.size
+                ):
+                    continue
+                n_key = npos.to_key()
+                if n_key not in board.stacks and n_key not in board.collapsed_spaces:
+                    liberties += 1
+
+            val = min(liberties / 6.0, 1.0)
+            if stack.controlling_player == current_player:
+                features[6, cy, cx] = val
+            else:
+                features[7, cy, cx] = val
+
+        # Channel 8/9: Line potential (same-color marker neighbors)
+        for pos_key, marker in board.markers.items():
+            try:
+                pos = _pos_from_key(pos_key)
+            except ValueError:
+                continue
+            coords = self.encode_position(pos, board)
+            if coords is None:
+                continue
+            cx, cy = coords
+
+            neighbors = BoardGeometry.get_adjacent_positions(
+                pos, board.type, board.size
+            )
+            neighbor_count = 0
+            for npos in neighbors:
+                if not BoardGeometry.is_within_bounds(
+                    npos, board.type, board.size
+                ):
+                    continue
+                n_key = npos.to_key()
+                neighbor_marker = board.markers.get(n_key)
+                if neighbor_marker and neighbor_marker.player == marker.player:
+                    neighbor_count += 1
+
+            val = min(neighbor_count / 3.0, 1.0)
+            if marker.player == current_player:
+                features[8, cy, cx] = val
+            else:
+                features[9, cy, cx] = val
+
+        # === CHANNELS 10-15: V3 Enhanced Features ===
+
+        # Channel 10/11: Contestation (cells with both friendly & enemy neighbors)
+        # Identifies strategic contested zones on the board
+        for cy in range(self.board_size):
+            for cx in range(self.board_size):
+                if not self._valid_mask[cy, cx]:
+                    continue
+                q = cx - self.radius
+                r = cy - self.radius
+                pos = Position(q, r)
+
+                neighbors = BoardGeometry.get_adjacent_positions(
+                    pos, board.type, board.size
+                )
+                friendly_neighbors = 0
+                enemy_neighbors = 0
+                for npos in neighbors:
+                    if not BoardGeometry.is_within_bounds(
+                        npos, board.type, board.size
+                    ):
+                        continue
+                    n_key = npos.to_key()
+                    # Check stacks
+                    n_stack = board.stacks.get(n_key)
+                    if n_stack:
+                        if n_stack.controlling_player == current_player:
+                            friendly_neighbors += 1
+                        else:
+                            enemy_neighbors += 1
+                    # Check markers
+                    n_marker = board.markers.get(n_key)
+                    if n_marker:
+                        if n_marker.player == current_player:
+                            friendly_neighbors += 1
+                        else:
+                            enemy_neighbors += 1
+
+                # Contestation score: high when both friendly and enemy present
+                if friendly_neighbors > 0 and enemy_neighbors > 0:
+                    features[10, cy, cx] = min(friendly_neighbors / 3.0, 1.0)
+                    features[11, cy, cx] = min(enemy_neighbors / 3.0, 1.0)
+
+        # Channel 12/13: Stack height gradient (sum of neighboring heights)
+        for cy in range(self.board_size):
+            for cx in range(self.board_size):
+                if not self._valid_mask[cy, cx]:
+                    continue
+                q = cx - self.radius
+                r = cy - self.radius
+                pos = Position(q, r)
+
+                neighbors = BoardGeometry.get_adjacent_positions(
+                    pos, board.type, board.size
+                )
+                friendly_height_sum = 0.0
+                enemy_height_sum = 0.0
+                for npos in neighbors:
+                    if not BoardGeometry.is_within_bounds(
+                        npos, board.type, board.size
+                    ):
+                        continue
+                    n_key = npos.to_key()
+                    n_stack = board.stacks.get(n_key)
+                    if n_stack:
+                        height = n_stack.stack_height / 5.0
+                        if n_stack.controlling_player == current_player:
+                            friendly_height_sum += height
+                        else:
+                            enemy_height_sum += height
+
+                # Normalize by max possible (6 neighbors * 1.0 height)
+                features[12, cy, cx] = min(friendly_height_sum / 6.0, 1.0)
+                features[13, cy, cx] = min(enemy_height_sum / 6.0, 1.0)
+
+        # Channel 14/15: Ring placement validity
+        # Indicates cells where rings can legally be placed
+        pos_key_this = Position(0, 0).to_key()  # Just to get the string format
+        for cy in range(self.board_size):
+            for cx in range(self.board_size):
+                if not self._valid_mask[cy, cx]:
+                    continue
+                q = cx - self.radius
+                r = cy - self.radius
+                pos = Position(q, r)
+                pos_key = pos.to_key()
+
+                # Cell is valid for ring placement if:
+                # - No stack exists
+                # - No collapsed space
+                # - Within bounds (already checked by valid_mask)
+                can_place = (
+                    pos_key not in board.stacks
+                    and pos_key not in board.collapsed_spaces
+                )
+
+                if can_place:
+                    # Check neighbor accessibility for strategic value
+                    neighbors = BoardGeometry.get_adjacent_positions(
+                        pos, board.type, board.size
+                    )
+                    accessible = sum(
+                        1
+                        for npos in neighbors
+                        if BoardGeometry.is_within_bounds(
+                            npos, board.type, board.size
+                        )
+                        and npos.to_key() not in board.collapsed_spaces
+                    )
+                    # Channel 14: valid placement cell (1.0 if can place)
+                    features[14, cy, cx] = 1.0
+                    # Channel 15: accessibility score (normalized by max neighbors)
+                    features[15, cy, cx] = accessible / 6.0
+
+        # === GLOBAL FEATURES (20 dims for V3) ===
+        globals_vec = np.zeros(self.NUM_GLOBAL_FEATURES, dtype=np.float32)
+
+        # Phase one-hot (indices 0-4)
+        phase_index_map = {
+            GamePhase.RING_PLACEMENT: 0,
+            GamePhase.MOVEMENT: 1,
+            GamePhase.CAPTURE: 2,
+            GamePhase.LINE_PROCESSING: 3,
+            GamePhase.TERRITORY_PROCESSING: 4,
+            GamePhase.FORCED_ELIMINATION: 4,
+        }
+        phase_idx = phase_index_map.get(state.current_phase)
+        if phase_idx is not None and 0 <= phase_idx < 5:
+            globals_vec[phase_idx] = 1.0
+
+        # Rings info (indices 5-8)
+        my_player = next(
+            (p for p in state.players if p.player_number == current_player),
+            None,
+        )
+        opp_player = None
+        num_players = infer_num_players(state)
+        if num_players <= 2:
+            opp_player = next(
+                (p for p in state.players if p.player_number != current_player),
+                None,
+            )
+        else:
+            threat_pid = select_threat_opponent(state, current_player)
+            if threat_pid is not None:
+                opp_player = next(
+                    (p for p in state.players if p.player_number == threat_pid),
+                    None,
+                )
+            if opp_player is None:
+                opp_player = next(
+                    (p for p in state.players if p.player_number != current_player),
+                    None,
+                )
+
+        rings_per_player = float(infer_rings_per_player(state))
+        if my_player:
+            globals_vec[5] = my_player.rings_in_hand / rings_per_player
+            globals_vec[7] = my_player.eliminated_rings / rings_per_player
+        if opp_player:
+            globals_vec[6] = opp_player.rings_in_hand / rings_per_player
+            globals_vec[8] = opp_player.eliminated_rings / rings_per_player
+
+        # Turn indicator (index 9)
+        globals_vec[9] = 1.0
+
+        # Extended features (indices 10-19) - V3 additions
+        # Index 10: Total markers on board (normalized)
+        total_markers = len(board.markers)
+        globals_vec[10] = min(total_markers / 50.0, 1.0)
+
+        # Index 11: Total stacks on board (normalized)
+        total_stacks = len(board.stacks)
+        globals_vec[11] = min(total_stacks / 30.0, 1.0)
+
+        # Index 12: Territory control ratio
+        my_territory = sum(
+            1 for owner in board.collapsed_spaces.values()
+            if owner == current_player
+        )
+        total_territory = len(board.collapsed_spaces)
+        if total_territory > 0:
+            globals_vec[12] = my_territory / total_territory
+
+        # Index 13: Marker count ratio
+        my_markers = sum(
+            1 for m in board.markers.values()
+            if m.player == current_player
+        )
+        if total_markers > 0:
+            globals_vec[13] = my_markers / total_markers
+
+        # Index 14: Stack control ratio
+        my_stacks = sum(
+            1 for s in board.stacks.values()
+            if s.controlling_player == current_player
+        )
+        if total_stacks > 0:
+            globals_vec[14] = my_stacks / total_stacks
+
+        # Indices 15-19: Reserved (zeros for now)
+
+        return features, globals_vec
+
+    def encode_with_history(
+        self,
+        state: GameState,
+        history_frames: List[np.ndarray],
+        history_length: int = 3,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Encode state with history frame stacking.
+
+        Returns:
+            - stacked_features: shape (16 * (history_length + 1), H, W) = (64, 25, 25)
+            - global_features: shape (20,)
+        """
+        features, globals_vec = self.encode_state(state)
+
+        # Get history frames (most recent first)
+        hist = history_frames[::-1][:history_length]
+
+        # Pad with zeros if not enough history
+        while len(hist) < history_length:
+            hist.append(np.zeros_like(features))
+
+        # Stack: current + history
+        stack = np.concatenate([features] + hist, axis=0)
+
+        return stack, globals_vec
+
+    def encode_move(self, move: Move, board: BoardState) -> int:
+        """Encode a move to a policy index."""
+        return self.action_encoder.encode_move(move, board)
+
+    def decode_move(self, index: int, state: GameState) -> Optional[Move]:
+        """Decode a policy index to a move."""
+        return self.action_encoder.decode_move(index, state)
+
+    def encode_legal_moves(
+        self, moves: List[Move], board: BoardState
+    ) -> List[int]:
+        """Encode a list of legal moves."""
+        return encode_hex_legal_moves(moves, self.action_encoder, board)
+
+    def create_policy_target(
+        self,
+        move_indices: List[int],
+        move_probs: List[float],
+    ) -> np.ndarray:
+        """Create a dense policy target vector."""
+        policy = np.zeros(self.POLICY_SIZE, dtype=np.float32)
+        for idx, prob in zip(move_indices, move_probs):
+            if 0 <= idx < self.POLICY_SIZE:
+                policy[idx] = prob
+        return policy
+
+    def create_sparse_policy_target(
+        self,
+        move_indices: List[int],
+        move_probs: List[float],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Create sparse policy target arrays."""
+        valid_indices = []
+        valid_probs = []
+        for idx, prob in zip(move_indices, move_probs):
+            if 0 <= idx < self.POLICY_SIZE:
+                valid_indices.append(idx)
+                valid_probs.append(prob)
+        return (
+            np.array(valid_indices, dtype=np.int32),
+            np.array(valid_probs, dtype=np.float32),
+        )
+
+
 def detect_board_type_from_features(features: np.ndarray) -> BoardType:
     """
     Detect board type from feature tensor shape.
@@ -625,17 +1113,22 @@ def detect_board_type_from_features(features: np.ndarray) -> BoardType:
 
 def get_encoder_for_board_type(
     board_type: BoardType,
-) -> Union[HexStateEncoder, None]:
+    version: str = "v2",
+) -> Union[HexStateEncoder, HexStateEncoderV3, None]:
     """
     Get the appropriate encoder for a board type.
 
     Args:
         board_type: The board type
+        version: Encoder version ("v2" or "v3"). V3 produces 16 channels
+                 (64 with frame stacking) for HexNeuralNet_v3.
 
     Returns:
-        HexStateEncoder for HEXAGONAL boards, None for square boards
+        HexStateEncoder/HexStateEncoderV3 for HEXAGONAL boards, None for square boards
         (square boards use NeuralNetAI directly)
     """
     if board_type == BoardType.HEXAGONAL:
+        if version.lower() == "v3":
+            return HexStateEncoderV3()
         return HexStateEncoder()
     return None

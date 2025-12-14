@@ -1413,6 +1413,9 @@ async def check_and_run_training(state: DaemonState) -> List[str]:
         )
         run_dir.mkdir(parents=True, exist_ok=True)
 
+        # Use v3 for all board types (hex uses enhanced encoder, square uses spatial policy heads)
+        model_version = "v3"
+
         train_cmd = [
             sys.executable,
             "scripts/run_nn_training_baseline.py",
@@ -1428,7 +1431,7 @@ async def check_and_run_training(state: DaemonState) -> List[str]:
             str(data_path),
             "--epochs", "50",
             "--model-version",
-            "v2",
+            model_version,
         ]
 
         print(f"[Daemon] Training {model_id}...")
@@ -2725,8 +2728,8 @@ async def daemon_cycle(state: DaemonState) -> bool:
 async def run_daemon(foreground: bool = False) -> None:
     """Run the continuous improvement daemon."""
     # Check system memory - skip on low-memory machines to avoid OOM
-    # 32GB minimum is sufficient for coordinating selfplay; heavy training runs on cluster
-    MIN_MEMORY_GB = 32
+    # 64GB minimum required; machines below this threshold should not run local tasks
+    MIN_MEMORY_GB = 64
     try:
         import psutil
         system_memory_gb = psutil.virtual_memory().total / (1024**3)

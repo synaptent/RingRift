@@ -318,6 +318,8 @@ def main(argv: list[str]) -> int:
                 str(run_dir_base / "nn" / f"{board_value}_{num_players}p"),
                 "--model-id",
                 model_id,
+                "--model-version",
+                "v3",
             ]
             if args.demo:
                 cmd.append("--demo")

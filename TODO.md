@@ -345,12 +345,9 @@ Operational drills completed:
 - [x] Structured logging for production monitoring
 - [x] Rollout runbook: `docs/runbooks/FSM_VALIDATION_ROLLOUT.md`
 - [x] Validated: 10 games, 774 moves, 0 divergences
+- [x] **FSM now defaults to 'active' mode** (Dec 2025) - `envFlags.ts` returns 'active' by default
 
-**Production Rollout:**
-
-1. Deploy with `RINGRIFT_FSM_VALIDATION_MODE=shadow` for 1-2 days
-2. Monitor for divergences using structured logs
-3. Switch to `RINGRIFT_FSM_VALIDATION_MODE=active` when stable
+**Status:** FSM validation is now the canonical validator. The default mode is 'active' and shadow mode has been removed. See `src/shared/utils/envFlags.ts:168`.
 
 #### Sandbox Replay Refactor (Option E hybrid)
 

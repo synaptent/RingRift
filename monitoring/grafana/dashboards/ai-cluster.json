@@ -371,7 +371,7 @@
           "root_selector": "",
           "source": "url",
           "type": "json",
-          "url": "http://${orchestrator_host}:9101/nodes/table",
+          "url": "http://${orchestrator_host}:8770/nodes/table",
           "url_options": { "method": "GET" }
         }
       ],
@@ -510,7 +510,7 @@
           "root_selector": "",
           "source": "url",
           "type": "json",
-          "url": "http://${orchestrator_host}:9101/elo/table",
+          "url": "http://${orchestrator_host}:8770/elo/table",
           "url_options": { "method": "GET" }
         }
       ],
@@ -891,13 +891,13 @@
         "type": "datasource"
       },
       {
-        "current": { "selected": false, "text": "localhost", "value": "localhost" },
-        "description": "Orchestrator host for API calls",
+        "current": { "selected": false, "text": "209.20.157.81", "value": "209.20.157.81" },
+        "description": "Orchestrator host for API calls (lambda_h100)",
         "hide": 0,
         "label": "Orchestrator Host",
         "name": "orchestrator_host",
-        "options": [{ "selected": true, "text": "localhost", "value": "localhost" }],
-        "query": "localhost",
+        "options": [{ "selected": true, "text": "209.20.157.81", "value": "209.20.157.81" }],
+        "query": "209.20.157.81",
         "skipUrlSync": false,
         "type": "textbox"
       }

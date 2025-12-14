@@ -792,12 +792,16 @@ class TrainingScheduler:
             self.state.training_config = config_key
             self.state.training_started_at = time.time()
 
+            # Use v3 for all board types (best architecture with spatial policy heads)
+            model_version = "v3"
+
             # Start training process
             cmd = [
                 sys.executable,
                 str(AI_SERVICE_ROOT / self.config.training_script),
                 "--board-type", board_type,
                 "--num-players", str(num_players),
+                "--model-version", model_version,
             ]
 
             self._training_process = await asyncio.create_subprocess_exec(

@@ -4952,7 +4952,7 @@ class HexNeuralNet_v2(nn.Module):
 
     def __init__(
         self,
-        in_channels: int = 56,  # 14 base × 4 frames
+        in_channels: int = 40,  # 10 base × 4 frames (hex uses fewer channels than square)
         global_features: int = 20,
         num_res_blocks: int = 12,
         num_filters: int = 192,
@@ -5229,8 +5229,8 @@ class HexNeuralNet_v3(nn.Module):
 
     def __init__(
         self,
-        in_channels: int = 64,  # 14 base × 4 frames + 8 phase/chain planes
-        global_features: int = 20,
+        in_channels: int = 64,  # 16 base × 4 frames for V3 encoder
+        global_features: int = 20,  # V3 encoder provides 20 global features
         num_res_blocks: int = 12,
         num_filters: int = 192,
         board_size: int = HEX_BOARD_SIZE,

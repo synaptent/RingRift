@@ -3712,6 +3712,7 @@ class P2POrchestrator:
                 "--run-dir", run_dir,
                 "--data-path", data_path,
                 "--epochs", "50",
+                "--model-version", "v3",
             ]
 
             env = os.environ.copy()
