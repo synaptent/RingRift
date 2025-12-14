@@ -93,6 +93,16 @@ def _default_p2p_port_for_node(node_id: str) -> int:
     return 8770
 
 
+def _remote_path_assignment(path: str) -> str:
+    """Return a POSIX-shell assignment RHS that expands ~ on the remote."""
+    p = (path or "").strip()
+    if p == "~":
+        return "\"$HOME\""
+    if p.startswith("~/"):
+        return f"\"$HOME/{p[2:]}\""
+    return shlex.quote(p)
+
+
 def _ssh_base_cmd(target: HostTarget) -> List[str]:
     cmd = [
         "ssh",
@@ -195,6 +205,8 @@ def main() -> None:
     if token_path:
         token_bytes = Path(token_path).expanduser().read_text(encoding="utf-8").strip().encode("utf-8")
 
+    failures: List[str] = []
+
     for node_id, target in sorted(targets.items(), key=lambda kv: kv[0]):
         is_macos = node_id == "mac-studio" or node_id.startswith("mbp-") or node_id.startswith("mac-")
         p2p_port = _default_p2p_port_for_node(node_id)
@@ -203,62 +215,74 @@ def main() -> None:
 
         print(f"\n=== {node_id} ({target.ssh_target()}:{target.ssh_port}) ===")
 
-        if token_bytes:
+        try:
+            if token_bytes:
+                if is_macos:
+                    token_cmd = (
+                        "mkdir -p \"$HOME/Library/Application Support/RingRift\" && "
+                        "tee \"$HOME/Library/Application Support/RingRift/cluster_auth_token\" >/dev/null && "
+                        "chmod 600 \"$HOME/Library/Application Support/RingRift/cluster_auth_token\""
+                    )
+                else:
+                    # Push token securely via stdin (avoid putting it in argv/env).
+                    token_cmd = (
+                        f"{sudo}mkdir -p /etc/ringrift && "
+                        f"{sudo}tee /etc/ringrift/cluster_auth_token >/dev/null && "
+                        f"{sudo}chmod 600 /etc/ringrift/cluster_auth_token"
+                    )
+                # Avoid wrapping in `bash -c` when piping stdin; on some hosts
+                # that combination can cause unexpected sudo noise/failures.
+                _run_ssh(
+                    target,
+                    token_cmd,
+                    stdin_bytes=token_bytes,
+                    dry_run=not args.apply,
+                    login_shell=False,
+                    wrap_in_bash=False,
+                )
+
+            ringrift_dir_rhs = _remote_path_assignment(target.ringrift_path)
             if is_macos:
-                token_cmd = (
-                    "mkdir -p \"$HOME/Library/Application Support/RingRift\" && "
-                    "tee \"$HOME/Library/Application Support/RingRift/cluster_auth_token\" >/dev/null && "
-                    "chmod 600 \"$HOME/Library/Application Support/RingRift/cluster_auth_token\""
+                remote_setup = (
+                    f"set -euo pipefail\n"
+                    f"RINGRIFT_DIR={ringrift_dir_rhs}\n"
+                    f"RINGRIFT_ROOT=\"$(cd \"$(dirname \"$RINGRIFT_DIR\")\" && pwd)\"\n"
+                    f"cd \"$RINGRIFT_ROOT\"\n"
+                    f"git pull origin main\n"
+                    f"chmod +x \"$RINGRIFT_DIR/deploy/setup_node_resilience_macos.sh\"\n"
+                    f"P2P_PORT={int(p2p_port)} RINGRIFT_ROOT=\"$RINGRIFT_ROOT\" "
+                    f"bash \"$RINGRIFT_DIR/deploy/setup_node_resilience_macos.sh\" "
+                    f"{shlex.quote(node_id)} {shlex.quote(args.coordinator_url)}\n"
                 )
             else:
-                # Push token securely via stdin (avoid putting it in argv/env).
-                token_cmd = (
-                    f"{sudo}mkdir -p /etc/ringrift && "
-                    f"{sudo}tee /etc/ringrift/cluster_auth_token >/dev/null && "
-                    f"{sudo}chmod 600 /etc/ringrift/cluster_auth_token"
+                # Ensure the SSH user can update the repo even if root-owned git
+                # objects were created by long-running services.
+                remote_setup = (
+                    f"set -euo pipefail\n"
+                    f"RINGRIFT_DIR={ringrift_dir_rhs}\n"
+                    f"RINGRIFT_ROOT=\"$(cd \"$(dirname \"$RINGRIFT_DIR\")\" && pwd)\"\n"
+                    f"{sudo}chown -R \"$(id -un)\":\"$(id -gn)\" \"$RINGRIFT_ROOT/.git\" 2>/dev/null || true\n"
+                    f"cd \"$RINGRIFT_ROOT\"\n"
+                    f"git pull origin main\n"
+                    f"chmod +x \"$RINGRIFT_DIR/deploy/setup_node_resilience.sh\" || true\n"
+                    f"{sudo}RINGRIFT_DIR=\"$RINGRIFT_DIR\" "
+                    f"P2P_PORT={int(p2p_port)} "
+                    f"SSH_PORT={int(target.ssh_port)} "
+                    f"bash \"$RINGRIFT_DIR/deploy/setup_node_resilience.sh\" "
+                    f"{shlex.quote(node_id)} {shlex.quote(args.coordinator_url)}\n"
+                    # Best-effort restart (systemd may not exist in containers).
+                    f"{sudo}systemctl restart ringrift-p2p ringrift-resilience 2>/dev/null || true\n"
+                    f"{sudo}systemctl status ringrift-p2p --no-pager -n 0 2>/dev/null || true\n"
                 )
-            # Avoid login-shell initialization when piping stdin; some systems'
-            # profile scripts can emit noise or fail non-interactively.
-            _run_ssh(
-                target,
-                token_cmd,
-                stdin_bytes=token_bytes,
-                dry_run=not args.apply,
-                login_shell=False,
-                wrap_in_bash=False,
-            )
 
-        if is_macos:
-            remote_setup = (
-                f"set -euo pipefail\n"
-                f"RINGRIFT_DIR={shlex.quote(target.ringrift_path)}\n"
-                f"RINGRIFT_ROOT=\"$(cd \"$(dirname \"$RINGRIFT_DIR\")\" && pwd)\"\n"
-                f"cd \"$RINGRIFT_ROOT\"\n"
-                f"git pull origin main\n"
-                f"chmod +x \"$RINGRIFT_DIR/deploy/setup_node_resilience_macos.sh\"\n"
-                f"P2P_PORT={int(p2p_port)} RINGRIFT_ROOT=\"$RINGRIFT_ROOT\" "
-                f"bash \"$RINGRIFT_DIR/deploy/setup_node_resilience_macos.sh\" "
-                f"{shlex.quote(node_id)} {shlex.quote(args.coordinator_url)}\n"
-            )
-        else:
-            remote_setup = (
-                f"set -euo pipefail\n"
-                f"RINGRIFT_DIR={shlex.quote(target.ringrift_path)}\n"
-                f"RINGRIFT_ROOT=\"$(cd \"$(dirname \"$RINGRIFT_DIR\")\" && pwd)\"\n"
-                f"cd \"$RINGRIFT_ROOT\"\n"
-                f"git pull origin main\n"
-                f"chmod +x \"$RINGRIFT_DIR/deploy/setup_node_resilience.sh\"\n"
-                f"{sudo}RINGRIFT_DIR=\"$RINGRIFT_DIR\" "
-                f"P2P_PORT={int(p2p_port)} "
-                f"SSH_PORT={int(target.ssh_port)} "
-                f"bash \"$RINGRIFT_DIR/deploy/setup_node_resilience.sh\" "
-                f"{shlex.quote(node_id)} {shlex.quote(args.coordinator_url)}\n"
-                # Best-effort restart (systemd may not exist in containers).
-                f"{sudo}systemctl restart ringrift-p2p ringrift-resilience 2>/dev/null || true\n"
-                f"{sudo}systemctl status ringrift-p2p --no-pager -n 0 2>/dev/null || true\n"
-            )
+            _run_ssh(target, remote_setup, dry_run=not args.apply)
+        except subprocess.CalledProcessError as exc:
+            failures.append(node_id)
+            print(f"[ERROR] {node_id}: command failed with exit code {exc.returncode}")
+            continue
 
-        _run_ssh(target, remote_setup, dry_run=not args.apply)
+    if failures:
+        raise SystemExit(f"Deploy failed on {len(failures)} host(s): {', '.join(failures)}")
 
 
 if __name__ == "__main__":
