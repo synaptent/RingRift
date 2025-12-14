@@ -113,6 +113,42 @@ curl http://localhost:9090/health
 curl http://localhost:8770/health
 ```
 
+## System Requirements
+
+### Memory Requirements
+
+All compute-intensive scripts require **64GB RAM minimum**:
+
+| Script                             | Min RAM | Notes                                |
+| ---------------------------------- | ------- | ------------------------------------ |
+| `unified_ai_loop.py`               | 64GB    | Runs evaluations and training        |
+| `continuous_improvement_daemon.py` | 64GB    | Runs selfplay, training, tournaments |
+| `cluster_orchestrator.py`          | 64GB    | Filters hosts by memory              |
+| `run_diverse_tournaments.py`       | 64GB    | Filters hosts by memory              |
+| `p2p_orchestrator.py`              | 64GB    | Filters nodes by memory              |
+
+Scripts will exit with an error message if system memory is below the threshold.
+
+### Environment Variables
+
+| Variable                       | Default                 | Description                                |
+| ------------------------------ | ----------------------- | ------------------------------------------ |
+| `RINGRIFT_DISABLE_LOCAL_TASKS` | `false`                 | Skip local selfplay/training/tournaments   |
+| `RINGRIFT_SYNC_STAGING`        | `false`                 | Sync promoted models to staging deployment |
+| `USE_P2P_ORCHESTRATOR`         | `false`                 | Enable P2P cluster coordination            |
+| `P2P_ORCHESTRATOR_URL`         | `http://localhost:8770` | P2P orchestrator endpoint                  |
+
+**Low-Memory Dev Machines:**
+
+To run coordination services on a machine with <64GB RAM:
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+export RINGRIFT_DISABLE_LOCAL_TASKS=true
+```
+
+This allows the daemon to run for data aggregation and monitoring without spawning compute tasks.
+
 ## Configuration
 
 Services read configuration from:
