@@ -63,6 +63,7 @@ class HostConfig:
     ssh_port: int = 22
     ssh_key: Optional[str] = None
     ringrift_path: str = "~/ringrift/ai-service"
+    venv_activate: str = "source venv/bin/activate"
     memory_gb: int = 16
     cpus: int = 4
     has_gpu: bool = False
@@ -138,6 +139,7 @@ def load_hosts_config() -> List[HostConfig]:
                 ssh_port=cfg.get("ssh_port", 22),
                 ssh_key=cfg.get("ssh_key"),
                 ringrift_path=ringrift_path,
+                venv_activate=cfg.get("venv_activate") or "source venv/bin/activate",
                 memory_gb=cfg.get("memory_gb", 16),
                 cpus=cfg.get("cpus", 4),
                 has_gpu="gpu" in cfg,
@@ -672,7 +674,10 @@ def trigger_elo_calibration(hosts: List[HostConfig], statuses: Dict[str, HostSta
 
 
 def trigger_auto_scale_selfplay(
-    hosts: List[HostConfig], statuses: Dict[str, HostStatus], dry_run: bool = False
+    hosts: List[HostConfig],
+    statuses: Dict[str, HostStatus],
+    dry_run: bool = False,
+    include_local_hosts: bool = False,
 ) -> int:
     """Identify underutilized hosts and start canonical self-play on them.
 
@@ -688,16 +693,37 @@ def trigger_auto_scale_selfplay(
 
     # Board types to cycle through for canonical self-play
     board_configs = [
-        {"board": "square8", "players": 2},
-        {"board": "square8", "players": 3},
-        {"board": "square8", "players": 4},
-        {"board": "square19", "players": 2},
-        {"board": "hex", "players": 2},
+        {"board_type": "square8", "num_players": 2},
+        {"board_type": "square8", "num_players": 3},
+        {"board_type": "square8", "num_players": 4},
+        {"board_type": "square19", "num_players": 2},
+        {"board_type": "hexagonal", "num_players": 2},
     ]
+
+    def _is_local_host(host: HostConfig) -> bool:
+        name = host.name.strip().lower()
+        return name.startswith("mac") or name.startswith("mbp")
+
+    def _resolve_db_and_summary(board_type: str, num_players: int) -> tuple[str, str]:
+        bt = board_type.strip().lower()
+        np = int(num_players)
+        if bt == "square8" and np == 2:
+            return "canonical_square8.db", "data/games/db_health.canonical_square8.json"
+        if bt == "square8" and np == 3:
+            return "canonical_square8_3p.db", "data/games/db_health.canonical_square8_3p.json"
+        if bt == "square8" and np == 4:
+            return "canonical_square8_4p.db", "data/games/db_health.canonical_square8_4p.json"
+        if bt == "square19" and np == 2:
+            return "canonical_square19.db", "data/games/db_health.canonical_square19.json"
+        if bt == "hexagonal" and np == 2:
+            return "canonical_hex.db", "data/games/db_health.canonical_hex.json"
+        raise ValueError(f"Unsupported canonical selfplay config: board={board_type!r} players={num_players!r}")
 
     underutilized_hosts = []
     for host in hosts:
         if not host.enabled:
+            continue
+        if not include_local_hosts and _is_local_host(host):
             continue
         status = statuses.get(host.name)
         if not status or not status.reachable:
@@ -723,10 +749,13 @@ def trigger_auto_scale_selfplay(
     for idx, (host, status) in enumerate(underutilized_hosts):
         # Cycle through board configs
         cfg = board_configs[idx % len(board_configs)]
+        board_type = str(cfg["board_type"])
+        num_players = int(cfg["num_players"])
+        db_name, summary_path = _resolve_db_and_summary(board_type, num_players)
 
         log(
             f"  {host.name}: CPU={status.cpu_percent:.0f}%, "
-            f"jobs={status.python_jobs}, scaling up with {cfg['board']} {cfg['players']}p"
+            f"jobs={status.python_jobs}, scaling up with {board_type} {num_players}p"
         )
 
         # Build SSH command
@@ -740,19 +769,18 @@ def trigger_auto_scale_selfplay(
         ringrift_path = host.ringrift_path
 
         # Start canonical self-play
-        db_name = f"canonical_{cfg['board']}.db"
-        summary_name = f"db_health.autoscale_{cfg['board']}_{cfg['players']}p.json"
-        log_file = f"/tmp/autoscale_selfplay_{cfg['board']}_{cfg['players']}p.log"
+        log_file = f"/tmp/autoscale_selfplay_{board_type}_{num_players}p.log"
+        venv_activate = host.venv_activate.strip() if host.venv_activate else "source venv/bin/activate"
 
         remote_cmd = (
             f"cd {ringrift_path} && "
-            f"source venv/bin/activate 2>/dev/null || true && "
+            f"({venv_activate}) 2>/dev/null || true && "
             f"nohup python3 scripts/generate_canonical_selfplay.py "
-            f"--board-type {cfg['board']} "
-            f"--num-players {cfg['players']} "
+            f"--board-type {board_type} "
+            f"--num-players {num_players} "
             f"--num-games {SCALE_UP_GAMES_PER_HOST} "
             f"--db data/games/{db_name} "
-            f"--summary {summary_name} "
+            f"--summary {summary_path} "
             f"> {log_file} 2>&1 & "
             f"echo 'Auto-scale selfplay started'"
         )
@@ -795,6 +823,11 @@ def main():
     parser.add_argument("--no-auto-scale", action="store_true", help="Disable automatic scaling of underutilized hosts")
     parser.add_argument("--auto-scale-interval", type=int, default=AUTO_SCALE_INTERVAL,
                         help=f"Auto-scale check interval in iterations (default: {AUTO_SCALE_INTERVAL})")
+    parser.add_argument(
+        "--auto-scale-include-local-hosts",
+        action="store_true",
+        help="Include mac/mbp hosts when auto-scaling (default: skip local hosts).",
+    )
     args = parser.parse_args()
 
     # Acquire lockfile to prevent multiple instances
@@ -852,7 +885,12 @@ def main():
         for host in hosts:
             if host.enabled:
                 statuses[host.name] = check_host_status(host)
-        trigger_auto_scale_selfplay(hosts, statuses, args.dry_run)
+        trigger_auto_scale_selfplay(
+            hosts,
+            statuses,
+            args.dry_run,
+            include_local_hosts=bool(args.auto_scale_include_local_hosts),
+        )
         return
 
     while True:
@@ -919,7 +957,12 @@ def main():
         # Periodic auto-scale check (every auto_scale_interval iterations)
         if not args.no_auto_scale and state.iteration % args.auto_scale_interval == 0:
             log(f"Starting auto-scale check (every {args.auto_scale_interval} iterations)...")
-            trigger_auto_scale_selfplay(hosts, statuses, args.dry_run)
+            trigger_auto_scale_selfplay(
+                hosts,
+                statuses,
+                args.dry_run,
+                include_local_hosts=bool(args.auto_scale_include_local_hosts),
+            )
 
         save_state(state)
 
