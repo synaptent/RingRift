@@ -362,7 +362,10 @@ def cleanup_deprecated_data(ringrift_path: str, dry_run: bool = False) -> List[C
 def run_cleanup(ringrift_path: str, threshold: int = 80, force: bool = False,
                 dry_run: bool = False, aggressive: bool = False) -> dict:
     """Run full disk cleanup if needed."""
-    used, total, percent = get_disk_usage("/")
+    # Always measure disk usage on the volume that actually contains the RingRift
+    # checkout/data. On macOS (APFS split volumes) and some container overlays,
+    # checking "/" can under-report the real pressure where RingRift lives.
+    used, total, percent = get_disk_usage(ringrift_path)
     free_gb = (total - used) / (1024 ** 3) if total > 0 else 0.0
 
     print(f"Disk usage: {format_size(used)} / {format_size(total)} ({percent:.1f}%)")
@@ -407,8 +410,8 @@ def run_cleanup(ringrift_path: str, threshold: int = 80, force: bool = False,
     print(f"  Files processed: {len(all_results)}")
     print(f"  Space freed: {format_size(total_freed)}")
 
-    # Show new disk usage
-    new_used, new_total, new_percent = get_disk_usage("/")
+    # Show new disk usage (same volume as RingRift checkout)
+    new_used, new_total, new_percent = get_disk_usage(ringrift_path)
     print(f"  New disk usage: {format_size(new_used)} / {format_size(new_total)} ({new_percent:.1f}%)")
 
     return {

@@ -727,7 +727,10 @@ class NodeResilience:
     def check_and_cleanup_disk(self) -> bool:
         """Check disk usage and run cleanup if needed."""
         try:
-            stat = os.statvfs("/")
+            # Measure disk pressure on the volume that actually contains the
+            # RingRift checkout/data. On macOS (APFS split volumes) and some
+            # container overlays, checking "/" can under-report the data volume.
+            stat = os.statvfs(self._ringrift_root())
             total = stat.f_blocks * stat.f_frsize
             free = stat.f_bavail * stat.f_frsize
             used_percent = ((total - free) / total) * 100 if total > 0 else 0
