@@ -590,26 +590,15 @@ Several WebSocket and GameSession tests exhibit intermittent failures due to:
 
 ---
 
-### P2.4 – Jest TSX snapshot transform for React snapshot tests
+### P2.4 – Jest TSX snapshot transform for React snapshot tests ✅ RESOLVED
 
 **Component(s):** Jest configuration, React snapshot tests (`tests/unit/*.snapshot.test.tsx`)
-**Status:** One known suite currently fails due to JSX transformation
+**Status:** ✅ RESOLVED (Dec 13, 2025)
 
-- At least one React snapshot suite, `tests/unit/GameEventLog.snapshot.test.tsx`,
-  currently fails with `SyntaxError: Unexpected token '<'` because Jest is not
-  transforming the TSX/JSX in that test file.
-- This is a **tooling/configuration issue**: the runtime game/client code does
-  not depend on this test, but the failure prevents a clean "all green" Jest
-  run without additional flags.
-
-**Planned:**
-
-- Update `jest.config.js` (or the relevant project-level Jest setup) so that
-  TSX/JSX test files are transformed, either via `ts-jest` or a Babel
-  transform, consistent with how the rest of the React code is handled.
-- Once the transform is in place, regenerate the `GameEventLog` (and
-  `GameHUD`, if applicable) snapshots and re-enable the suite as part of the
-  normal Jest pass.
+**Details:**
+TSX/JSX test files are now properly transformed via ts-jest with the `tsconfig.jest.json`
+configuration using `"jsx": "react-jsx"`. Both `GameEventLog.snapshot.test.tsx` and
+`GameHUD.snapshot.test.tsx` pass successfully with correct snapshot generation.
 
 ---
 

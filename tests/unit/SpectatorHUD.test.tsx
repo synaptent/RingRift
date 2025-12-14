@@ -392,6 +392,113 @@ describe('SpectatorHUD', () => {
     });
   });
 
+  describe('Connection Status', () => {
+    it('shows live indicator when connected', () => {
+      const { container } = render(<SpectatorHUD {...defaultProps} connectionStatus="connected" />);
+
+      // Should show animated ping indicator for live status
+      expect(container.querySelector('.animate-ping')).toBeInTheDocument();
+    });
+
+    it('shows reconnecting banner when reconnecting', () => {
+      render(<SpectatorHUD {...defaultProps} connectionStatus="reconnecting" />);
+
+      expect(screen.getByText('Reconnecting...')).toBeInTheDocument();
+    });
+
+    it('shows connecting banner when connecting', () => {
+      render(<SpectatorHUD {...defaultProps} connectionStatus="connecting" />);
+
+      expect(screen.getByText('Connecting...')).toBeInTheDocument();
+    });
+
+    it('shows disconnected banner when disconnected', () => {
+      render(<SpectatorHUD {...defaultProps} connectionStatus="disconnected" />);
+
+      expect(screen.getByText('Disconnected')).toBeInTheDocument();
+    });
+
+    it('does not show connection banner when connected', () => {
+      render(<SpectatorHUD {...defaultProps} connectionStatus="connected" />);
+
+      expect(screen.queryByText('Reconnecting...')).not.toBeInTheDocument();
+      expect(screen.queryByText('Disconnected')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Active Choice Banner', () => {
+    it('displays active choice banner when player is making a decision', () => {
+      render(
+        <SpectatorHUD
+          {...defaultProps}
+          activeChoice={{
+            type: 'capture_direction',
+            playerNumber: 1,
+            timeRemaining: 25,
+          }}
+        />
+      );
+
+      const banner = screen.getByTestId('spectator-choice-banner');
+      expect(banner).toBeInTheDocument();
+      // Check banner contains player name and choice type
+      expect(banner).toHaveTextContent('Alice');
+      expect(banner).toHaveTextContent('is deciding:');
+      expect(banner).toHaveTextContent('Capture Direction');
+    });
+
+    it('displays time remaining for active choice', () => {
+      render(
+        <SpectatorHUD
+          {...defaultProps}
+          activeChoice={{
+            type: 'line_reward',
+            playerNumber: 1,
+            timeRemaining: 15,
+          }}
+        />
+      );
+
+      expect(screen.getByText('15s')).toBeInTheDocument();
+    });
+
+    it('applies urgent styling when time is low', () => {
+      const { container } = render(
+        <SpectatorHUD
+          {...defaultProps}
+          activeChoice={{
+            type: 'territory_action',
+            playerNumber: 2,
+            timeRemaining: 5,
+          }}
+        />
+      );
+
+      // Low time should show red color
+      expect(container.querySelector('.text-red-400')).toBeInTheDocument();
+    });
+
+    it('shows choice description', () => {
+      render(
+        <SpectatorHUD
+          {...defaultProps}
+          activeChoice={{
+            type: 'capture_direction',
+            playerNumber: 1,
+          }}
+        />
+      );
+
+      expect(screen.getByText('Choosing which direction to capture')).toBeInTheDocument();
+    });
+
+    it('does not display banner when no active choice', () => {
+      render(<SpectatorHUD {...defaultProps} />);
+
+      expect(screen.queryByTestId('spectator-choice-banner')).not.toBeInTheDocument();
+    });
+  });
+
   describe('Edge Cases', () => {
     it('handles 3+ players', () => {
       const players: Player[] = [

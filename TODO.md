@@ -1,6 +1,6 @@
 # RingRift Task Tracker
 
-**Last Updated:** 2025-12-08 (Assessment Update)
+**Last Updated:** 2025-12-13 (Documentation Refresh)
 **Project Health:** GREEN
 **Purpose:** Canonical task tracker for near- and mid-term work
 **Current Focus:** Production validation at scale, parity maintenance, client test coverage
@@ -257,7 +257,7 @@ Operational drills completed:
 
 - Add AIServiceClient/AIEngine tests for timeout/fallback behaviour and choice routing; emit lightweight latency/error metrics for service calls.
 - [x] Instrumented AIServiceClient choice endpoints (line_reward_option, ring_elimination, region_order, line_order, capture_direction) with success/error/timeout latency metrics and added unit coverage (`tests/unit/ai/AIServiceClient.metrics.test.ts`).
-- Document AI timeout/fallback SLO budgets and alerting expectations alongside the tests so AI-controlled seats never stall production games.
+- [x] Document AI timeout/fallback SLO budgets and alerting expectations alongside the tests so AI-controlled seats never stall production games. See `docs/ai/AI_SLO_BUDGETS.md`.
 
 **P2 – Telemetry tooling hardening**
 
