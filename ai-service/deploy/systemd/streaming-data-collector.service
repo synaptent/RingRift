@@ -1,0 +1,48 @@
+[Unit]
+Description=RingRift Streaming Data Collector
+Documentation=https://github.com/ringrift/ai-service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=/home/ubuntu/ringrift/ai-service"
+
+# Main process - runs data collection standalone
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python \
+    scripts/streaming_data_collector.py \
+    --config config/unified_loop.yaml \
+    --hosts config/remote_hosts.yaml \
+    --interval 60
+
+# Restart policy
+Restart=on-failure
+RestartSec=15
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+# Resource limits
+MemoryMax=1G
+CPUQuota=50%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=streaming-collector
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/data
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/logs
+
+[Install]
+WantedBy=multi-user.target

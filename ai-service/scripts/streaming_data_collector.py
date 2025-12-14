@@ -98,6 +98,12 @@ class CollectorConfig:
     max_backoff_seconds: int = 600
     local_sync_dir: str = "data/games/synced"
     manifest_db_path: str = "data/data_manifest.db"
+    # Hardening options
+    checksum_validation: bool = True
+    retry_max_attempts: int = 3
+    retry_base_delay_seconds: float = 5.0
+    dead_letter_enabled: bool = True
+    dead_letter_dir: str = "data/dead_letter"
 
 
 class DataManifest:
@@ -146,6 +152,22 @@ class DataManifest:
                 duration_seconds REAL,
                 success INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS dead_letter_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id TEXT NOT NULL,
+                source_host TEXT NOT NULL,
+                source_db TEXT NOT NULL,
+                error_message TEXT NOT NULL,
+                error_type TEXT NOT NULL,
+                added_at REAL NOT NULL,
+                retry_count INTEGER DEFAULT 0,
+                last_retry_at REAL,
+                resolved INTEGER DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_dead_letter_unresolved
+            ON dead_letter_queue(resolved, added_at);
         """)
         conn.commit()
         conn.close()
@@ -240,6 +262,87 @@ class DataManifest:
             INSERT INTO sync_history (host_name, sync_time, games_synced, duration_seconds, success)
             VALUES (?, ?, ?, ?, ?)
         """, (host_name, time.time(), games_synced, duration, int(success)))
+        conn.commit()
+        conn.close()
+
+    def add_to_dead_letter(
+        self,
+        game_id: str,
+        source_host: str,
+        source_db: str,
+        error_message: str,
+        error_type: str,
+    ):
+        """Add a failed game to the dead-letter queue."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO dead_letter_queue
+            (game_id, source_host, source_db, error_message, error_type, added_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (game_id, source_host, source_db, error_message, error_type, time.time()))
+        conn.commit()
+        conn.close()
+
+    def get_dead_letter_count(self) -> int:
+        """Get count of unresolved dead-letter entries."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM dead_letter_queue WHERE resolved = 0")
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
+
+    def get_dead_letter_entries(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get unresolved dead-letter entries for retry."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, game_id, source_host, source_db, error_message, error_type,
+                   added_at, retry_count, last_retry_at
+            FROM dead_letter_queue
+            WHERE resolved = 0
+            ORDER BY added_at ASC
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            {
+                "id": row[0],
+                "game_id": row[1],
+                "source_host": row[2],
+                "source_db": row[3],
+                "error_message": row[4],
+                "error_type": row[5],
+                "added_at": row[6],
+                "retry_count": row[7],
+                "last_retry_at": row[8],
+            }
+            for row in rows
+        ]
+
+    def mark_dead_letter_resolved(self, entry_id: int):
+        """Mark a dead-letter entry as resolved."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE dead_letter_queue SET resolved = 1 WHERE id = ?",
+            (entry_id,)
+        )
+        conn.commit()
+        conn.close()
+
+    def increment_dead_letter_retry(self, entry_id: int):
+        """Increment retry count for a dead-letter entry."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE dead_letter_queue
+            SET retry_count = retry_count + 1, last_retry_at = ?
+            WHERE id = ?
+        """, (time.time(), entry_id))
         conn.commit()
         conn.close()
 
@@ -374,13 +477,107 @@ class StreamingDataCollector:
 
             return 0
 
+    async def _sync_with_retry(self, host: HostConfig) -> int:
+        """Sync with exponential backoff retry."""
+        last_error = None
+
+        for attempt in range(self.config.retry_max_attempts):
+            try:
+                return await self._sync_host(host)
+            except Exception as e:
+                last_error = e
+                if attempt < self.config.retry_max_attempts - 1:
+                    delay = self.config.retry_base_delay_seconds * (2 ** attempt)
+                    print(f"[Collector] {host.name}: Retry {attempt + 1}/{self.config.retry_max_attempts} after {delay}s")
+                    await asyncio.sleep(delay)
+
+        # All retries failed - add to dead-letter if enabled
+        if self.config.dead_letter_enabled and last_error:
+            self.manifest.add_to_dead_letter(
+                game_id=f"sync_failure_{host.name}_{time.time()}",
+                source_host=host.name,
+                source_db="*",
+                error_message=str(last_error),
+                error_type=type(last_error).__name__,
+            )
+
+        raise last_error if last_error else RuntimeError("Unknown sync error")
+
+    def _compute_db_checksum(self, db_path: Path) -> str:
+        """Compute SHA256 checksum of a database file."""
+        import hashlib
+        sha256 = hashlib.sha256()
+        with open(db_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(65536), b''):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+    async def _validate_game_integrity(self, db_path: Path, host_name: str) -> List[str]:
+        """Validate game integrity in a synced database.
+
+        Returns list of valid game IDs. Invalid games are added to dead-letter queue.
+        """
+        valid_games = []
+        invalid_games = []
+
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Get all games with their essential fields
+            cursor.execute("""
+                SELECT game_id, board_type, num_players, moves, game_length
+                FROM games
+            """)
+
+            for row in cursor.fetchall():
+                game_id, board_type, num_players, moves, game_length = row
+
+                # Basic integrity checks
+                errors = []
+                if not game_id:
+                    errors.append("missing game_id")
+                if not board_type:
+                    errors.append("missing board_type")
+                if num_players is None or num_players < 2:
+                    errors.append(f"invalid num_players: {num_players}")
+                if game_length is not None and game_length < 0:
+                    errors.append(f"invalid game_length: {game_length}")
+
+                if errors:
+                    invalid_games.append((game_id or "unknown", ", ".join(errors)))
+                else:
+                    valid_games.append(game_id)
+
+            conn.close()
+
+            # Add invalid games to dead-letter queue
+            if self.config.dead_letter_enabled:
+                for game_id, error_msg in invalid_games:
+                    self.manifest.add_to_dead_letter(
+                        game_id=game_id,
+                        source_host=host_name,
+                        source_db=db_path.name,
+                        error_message=error_msg,
+                        error_type="integrity_check_failed",
+                    )
+
+            if invalid_games:
+                print(f"[Collector] {host_name}: {len(invalid_games)} invalid games added to dead-letter queue")
+
+        except Exception as e:
+            print(f"[Collector] {host_name}: Validation error: {e}")
+
+        return valid_games
+
     async def _incremental_sync(self, host: HostConfig) -> int:
         """Perform incremental rsync. Returns count of synced games."""
         local_dir = AI_SERVICE_ROOT / self.config.local_sync_dir / host.name
         local_dir.mkdir(parents=True, exist_ok=True)
 
         ssh_args = self._build_ssh_args(host)
-        rsync_cmd = f'rsync -avz --progress -e "ssh {ssh_args}" {host.ssh_user}@{host.ssh_host}:{host.remote_db_path}/*.db {local_dir}/'
+        # Add checksum for rsync integrity
+        rsync_cmd = f'rsync -avz --checksum --progress -e "ssh {ssh_args}" {host.ssh_user}@{host.ssh_host}:{host.remote_db_path}/*.db {local_dir}/'
 
         process = await asyncio.create_subprocess_shell(
             rsync_cmd,
@@ -395,17 +592,23 @@ class StreamingDataCollector:
         if process.returncode != 0:
             raise RuntimeError(f"rsync failed: {stderr.decode()}")
 
-        # Count games in synced DBs
+        # Count and validate games in synced DBs
         total = 0
         for db_file in local_dir.glob("*.db"):
             try:
-                conn = sqlite3.connect(db_file)
-                cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM games")
-                total += cursor.fetchone()[0]
-                conn.close()
-            except Exception:
-                pass
+                if self.config.checksum_validation:
+                    # Validate game integrity
+                    valid_games = await self._validate_game_integrity(db_file, host.name)
+                    total += len(valid_games)
+                else:
+                    # Just count games
+                    conn = sqlite3.connect(db_file)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM games")
+                    total += cursor.fetchone()[0]
+                    conn.close()
+            except Exception as e:
+                print(f"[Collector] Error processing {db_file}: {e}")
 
         return total
 

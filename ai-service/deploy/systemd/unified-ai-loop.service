@@ -1,0 +1,48 @@
+[Unit]
+Description=RingRift Unified AI Self-Improvement Loop
+Documentation=https://github.com/ringrift/ai-service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=/home/ubuntu/ringrift/ai-service"
+
+# Main process
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python \
+    scripts/unified_ai_loop.py \
+    --foreground \
+    --config config/unified_loop.yaml
+
+# Restart policy
+Restart=on-failure
+RestartSec=30
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+# Resource limits
+MemoryMax=4G
+CPUQuota=200%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=unified-ai-loop
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/data
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/logs
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/models
+
+[Install]
+WantedBy=multi-user.target

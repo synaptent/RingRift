@@ -1,29 +1,43 @@
 # Unified AI Self-Improvement Loop Configuration
 # This file configures all aspects of the integrated improvement cycle.
+#
+# Tuned defaults based on observed cluster performance:
+# - Shadow eval at 15min provides rapid feedback with minimal noise
+# - Training threshold of 500 games balances quality vs freshness
+# - Elo threshold of 25 reduces false positive promotions
+# - Curriculum weights capped at 1.5x to avoid over-rotation
 
-version: '1.0'
+version: '1.1'
 
 # Data ingestion from remote hosts
 data_ingestion:
-  poll_interval_seconds: 60 # How often to check for new games
+  poll_interval_seconds: 60 # Check for new games every 60s
   sync_method: 'incremental' # "incremental" (rsync append) or "full"
-  deduplication: true # Deduplicate games by ID
-  min_games_per_sync: 10 # Only sync if at least this many new games
+  deduplication: true # Deduplicate games by ID across hosts
+  min_games_per_sync: 5 # Reduced from 10 - sync smaller batches more frequently
   remote_db_pattern: 'data/games/*.db'
+  # Hardening options
+  checksum_validation: true # Validate game integrity on sync
+  retry_max_attempts: 3 # Max retries with exponential backoff
+  retry_base_delay_seconds: 5 # Base delay for exponential backoff
+  dead_letter_enabled: true # Enable dead-letter queue for failed syncs
 
 # Automatic training triggers
 training:
-  trigger_threshold_games: 1000 # Start training when this many new games available
-  min_interval_seconds: 1800 # At least 30 min between training runs
+  trigger_threshold_games: 500 # Reduced from 1000 - more frequent training
+  min_interval_seconds: 1200 # 20 min minimum (reduced from 30)
   max_concurrent_jobs: 1 # Only one training job at a time
   prefer_gpu_hosts: true # Schedule training on GPU hosts
   training_script: 'scripts/train_nnue.py'
+  # Additional options
+  warm_start: true # Continue from previous checkpoint if available
+  validation_split: 0.1 # Hold out 10% for validation
 
 # Continuous evaluation (shadow + full tournaments)
 evaluation:
   # Shadow tournaments: quick evaluation during normal operation
   shadow_interval_seconds: 900 # 15 minutes between shadow evals
-  shadow_games_per_config: 10 # Games per shadow tournament
+  shadow_games_per_config: 15 # Increased from 10 for lower variance
 
   # Full tournaments: comprehensive evaluation periodically
   full_tournament_interval_seconds: 3600 # 1 hour between full tournaments
@@ -36,20 +50,31 @@ evaluation:
     - 'mcts_100'
     - 'mcts_500'
 
+  # Evaluation quality settings
+  min_games_for_elo: 30 # Minimum games before Elo is reliable
+  elo_k_factor: 32 # K-factor for Elo updates
+
 # Automatic model promotion
 promotion:
   auto_promote: true # Enable automatic promotion
-  elo_threshold: 20 # Must beat current best by this many Elo
+  elo_threshold: 25 # Increased from 20 for more confidence
   min_games: 50 # Minimum games before promotion eligible
   significance_level: 0.05 # Statistical significance requirement
   sync_to_cluster: true # Sync promoted models to all hosts
+  # Safety settings
+  cooldown_seconds: 1800 # Wait 30min between promotions
+  max_promotions_per_day: 10 # Limit promotions to avoid instability
+  regression_test: true # Run regression tests before promotion
 
 # Adaptive curriculum (Elo-weighted training)
 curriculum:
   adaptive: true # Enable adaptive curriculum
-  rebalance_interval_seconds: 3600 # How often to recompute weights
-  max_weight_multiplier: 2.0 # Max boost for underperforming configs
-  min_weight_multiplier: 0.5 # Min weight for strong configs
+  rebalance_interval_seconds: 3600 # Recompute weights every hour
+  max_weight_multiplier: 1.5 # Reduced from 2.0 to avoid over-rotation
+  min_weight_multiplier: 0.7 # Increased from 0.5 for better coverage
+  # Smoothing to prevent oscillation
+  ema_alpha: 0.3 # Exponential moving average for weight updates
+  min_games_for_weight: 100 # Min games before adjusting weights
 
 # Host configuration file
 hosts_config_path: 'config/remote_hosts.yaml'
@@ -62,11 +87,15 @@ data_manifest_db: 'data/data_manifest.db'
 log_dir: 'logs/unified_loop'
 verbose: false
 
-# Pipeline orchestration (from async-forging-karp plan)
+# Metrics (Prometheus)
+metrics_enabled: true
+metrics_port: 9090
+
+# Pipeline orchestration
 pipeline:
   parallel_stages: true # Run selfplay concurrent with training
   hot_data_path: true # Use in-memory buffer for recent games
-  overlapped_selfplay: true # Start next iteration selfplay during training
+  overlapped_selfplay: true # Start next iteration during training
 
 # Validation settings
 validation:
@@ -74,7 +103,7 @@ validation:
   lightweight_mode: true # Skip full parity for hot path
   full_validation_background: true # Run full validation in background
 
-# Adaptive control (from async-forging-karp plan)
+# Adaptive control
 adaptive_control:
   enabled: true
   plateau_threshold: 5 # Stop after N iterations without improvement
@@ -82,13 +111,13 @@ adaptive_control:
   min_games: 50 # Minimum games per evaluation
   max_games: 200 # Maximum games per evaluation
 
-# Regression gate (from peppy-dazzling-newt plan)
+# Regression gate
 regression:
   hard_block: true # Block promotion on regression test failure
   test_script: 'scripts/run_regression_tests.py'
   timeout_seconds: 600
 
-# CMA-ES weight propagation (from peppy-dazzling-newt plan)
+# CMA-ES weight propagation
 cmaes:
   auto_propagate: true # Auto-inject weights to selfplay
   weights_config_path: 'config/heuristic_weights.json'
@@ -102,3 +131,10 @@ configurations:
     num_players: [2, 3, 4]
   - board_type: 'hexagonal'
     num_players: [2, 3, 4]
+
+# Alerting thresholds (for Grafana alerts)
+alerting:
+  sync_failure_threshold: 5 # Alert after N consecutive sync failures
+  training_timeout_hours: 4 # Alert if training exceeds this duration
+  elo_drop_threshold: 50 # Alert on significant Elo regression
+  games_per_hour_min: 100 # Alert if game collection drops below this

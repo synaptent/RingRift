@@ -73,6 +73,63 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def report_training_metrics(
+    board_type: str,
+    num_players: int,
+    train_loss: float,
+    val_loss: float,
+    val_accuracy: float,
+    epoch: int,
+    model_path: str = "",
+) -> None:
+    """Report training metrics to the P2P orchestrator for observability.
+
+    This posts metrics to the orchestrator's /metrics endpoint if available.
+    Falls back gracefully if orchestrator is not running.
+    """
+    try:
+        import requests
+
+        # Try common orchestrator ports
+        orchestrator_host = os.environ.get("RINGRIFT_ORCHESTRATOR_HOST", "localhost")
+        orchestrator_port = int(os.environ.get("RINGRIFT_ORCHESTRATOR_PORT", "8770"))
+
+        metrics = [
+            {
+                "metric_type": "training_loss",
+                "value": train_loss,
+                "board_type": board_type,
+                "num_players": num_players,
+                "metadata": {"epoch": epoch, "model_path": model_path},
+            },
+            {
+                "metric_type": "validation_loss",
+                "value": val_loss,
+                "board_type": board_type,
+                "num_players": num_players,
+                "metadata": {"epoch": epoch, "accuracy": val_accuracy},
+            },
+        ]
+
+        # Try to post to orchestrator
+        for metric in metrics:
+            try:
+                resp = requests.post(
+                    f"http://{orchestrator_host}:{orchestrator_port}/metrics/record",
+                    json=metric,
+                    timeout=2,
+                )
+                if resp.status_code == 200:
+                    logger.debug(f"Reported {metric['metric_type']} to orchestrator")
+            except Exception:
+                pass  # Orchestrator not available, skip silently
+
+    except ImportError:
+        pass  # requests not available
+    except Exception as e:
+        logger.debug(f"Metrics reporting error (non-fatal): {e}")
+
+
 def parse_board_type(value: str) -> BoardType:
     """Parse board type string to enum."""
     mapping = {
@@ -451,6 +508,17 @@ def train_nnue(
             f"train_loss={train_loss:.4f}, "
             f"val_loss={val_loss:.4f}, "
             f"val_accuracy={val_accuracy:.4f}"
+        )
+
+        # Report metrics to orchestrator for observability
+        report_training_metrics(
+            board_type=board_type,
+            num_players=num_players,
+            train_loss=train_loss,
+            val_loss=val_loss,
+            val_accuracy=val_accuracy,
+            epoch=epoch + 1,
+            model_path=str(output_path) if output_path else "",
         )
 
         # Check for improvement

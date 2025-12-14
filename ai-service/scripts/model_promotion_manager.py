@@ -542,6 +542,207 @@ def get_best_model_from_elo(board_type: str, num_players: int) -> Optional[Dict[
         return None
 
 
+# Rollback configuration
+ROLLBACK_ELO_DROP_THRESHOLD = float(os.environ.get("RINGRIFT_ROLLBACK_ELO_DROP", "50"))
+ROLLBACK_MIN_GAMES = int(os.environ.get("RINGRIFT_ROLLBACK_MIN_GAMES", "20"))
+ROLLBACK_ENABLED = os.environ.get("RINGRIFT_AUTO_ROLLBACK", "1").lower() in ("1", "true", "yes")
+
+
+@dataclass
+class RollbackCandidate:
+    """Model that should be rolled back due to Elo regression."""
+    board_type: str
+    num_players: int
+    current_model: str
+    current_elo: float
+    previous_model: str
+    previous_elo: float
+    elo_drop: float
+    games_since_promotion: int
+
+
+def check_for_elo_regression(board_type: str, num_players: int) -> Optional[RollbackCandidate]:
+    """Check if current promoted model has significant Elo regression.
+
+    Returns RollbackCandidate if rollback is recommended, None otherwise.
+    """
+    if not ROLLBACK_ENABLED:
+        return None
+
+    try:
+        # Get promotion history
+        if not PROMOTION_LOG_PATH.exists():
+            return None
+
+        with open(PROMOTION_LOG_PATH) as f:
+            history = json.load(f)
+
+        # Find recent promotions for this config
+        config_key = f"{board_type}_{num_players}p"
+        config_promotions = [
+            h for h in history
+            if h.get("board_type") == board_type and h.get("num_players") == num_players
+        ]
+
+        if len(config_promotions) < 2:
+            return None  # Need at least 2 promotions to compare
+
+        # Sort by timestamp descending
+        config_promotions.sort(key=lambda x: x.get("promoted_at", ""), reverse=True)
+
+        current = config_promotions[0]
+        previous = config_promotions[1]
+
+        # Get current Elo from database
+        current_model_elo = get_best_model_from_elo(board_type, num_players)
+        if not current_model_elo:
+            return None
+
+        # Check games since promotion
+        games_since = current_model_elo.get("games_played", 0)
+        if games_since < ROLLBACK_MIN_GAMES:
+            return None  # Not enough games to judge
+
+        # Check Elo drop
+        original_elo = current.get("elo_rating", 1500.0)
+        current_elo = current_model_elo.get("elo_rating", original_elo)
+        elo_drop = original_elo - current_elo
+
+        if elo_drop >= ROLLBACK_ELO_DROP_THRESHOLD:
+            return RollbackCandidate(
+                board_type=board_type,
+                num_players=num_players,
+                current_model=current.get("model_path", ""),
+                current_elo=current_elo,
+                previous_model=previous.get("model_path", ""),
+                previous_elo=previous.get("elo_rating", 1500.0),
+                elo_drop=elo_drop,
+                games_since_promotion=games_since,
+            )
+
+        return None
+
+    except Exception as e:
+        print(f"[model_promotion] Error checking Elo regression: {e}")
+        return None
+
+
+def perform_rollback(candidate: RollbackCandidate, *, verbose: bool = True) -> bool:
+    """Perform a model rollback to the previous version.
+
+    This:
+    1. Restores the previous model as the best alias
+    2. Logs the rollback
+    3. Emits rollback event for pipeline integration
+    """
+    try:
+        if verbose:
+            print(f"[model_promotion] Rolling back {candidate.board_type}_{candidate.num_players}p")
+            print(f"  Current model: {candidate.current_model} (Elo: {candidate.current_elo:.0f})")
+            print(f"  Previous model: {candidate.previous_model} (Elo: {candidate.previous_elo:.0f})")
+            print(f"  Elo drop: -{candidate.elo_drop:.0f} over {candidate.games_since_promotion} games")
+
+        # Find previous model file
+        previous_path = Path(candidate.previous_model)
+        if not previous_path.exists():
+            # Try to find it
+            model_id = previous_path.stem
+            found = find_model_file(model_id)
+            if found:
+                previous_path = found
+            else:
+                print(f"[model_promotion] ERROR: Previous model not found: {candidate.previous_model}")
+                return False
+
+        # Republish previous model as best
+        published = publish_best_alias(
+            board_type=candidate.board_type,
+            num_players=candidate.num_players,
+            best_model_path=previous_path,
+            best_model_id=previous_path.stem,
+            elo_rating=candidate.previous_elo,
+            games_played=0,  # Reset for new baseline
+            verbose=verbose,
+        )
+
+        if not published:
+            print(f"[model_promotion] ERROR: Failed to publish rollback alias")
+            return False
+
+        # Log the rollback
+        rollback_entry = {
+            "type": "rollback",
+            "board_type": candidate.board_type,
+            "num_players": candidate.num_players,
+            "rolled_back_model": candidate.current_model,
+            "restored_model": candidate.previous_model,
+            "elo_drop": candidate.elo_drop,
+            "games_since_promotion": candidate.games_since_promotion,
+            "rolled_back_at": datetime.utcnow().isoformat() + "Z",
+        }
+
+        # Append to promotion log (rollbacks are logged too)
+        try:
+            history = []
+            if PROMOTION_LOG_PATH.exists():
+                with open(PROMOTION_LOG_PATH) as f:
+                    history = json.load(f)
+            history.append(rollback_entry)
+            _write_json_atomic(PROMOTION_LOG_PATH, history)
+        except Exception as e:
+            print(f"[model_promotion] Warning: Could not log rollback: {e}")
+
+        # Emit rollback event if event bus is available
+        if HAS_EVENT_BUS:
+            try:
+                emit_model_promoted(
+                    candidate.previous_model,
+                    candidate.board_type,
+                    candidate.num_players,
+                    candidate.previous_elo,
+                    source="rollback",
+                )
+            except Exception as e:
+                print(f"[model_promotion] Event emission failed: {e}")
+
+        if verbose:
+            print(f"[model_promotion] Rollback complete: restored {candidate.previous_model}")
+
+        return True
+
+    except Exception as e:
+        print(f"[model_promotion] Rollback error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def check_and_rollback_all(*, verbose: bool = True) -> List[RollbackCandidate]:
+    """Check all configurations for Elo regression and perform rollbacks.
+
+    Returns list of rollback candidates that were processed.
+    """
+    rollbacks = []
+
+    # Check all board configs
+    configs = [
+        ("square8", 2), ("square8", 3), ("square8", 4),
+        ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
+        ("square19", 2), ("square19", 3), ("square19", 4),
+    ]
+
+    for board_type, num_players in configs:
+        candidate = check_for_elo_regression(board_type, num_players)
+        if candidate:
+            if verbose:
+                print(f"\n[model_promotion] Elo regression detected for {board_type}_{num_players}p!")
+
+            if perform_rollback(candidate, verbose=verbose):
+                rollbacks.append(candidate)
+
+    return rollbacks
+
+
 def find_model_file(model_id: str) -> Optional[Path]:
     """Find the actual model file for a given model ID."""
     # Prefer exact filenames, then fall back to best-effort prefix matches.
@@ -1240,6 +1441,25 @@ def main():
         help="Automatically promote any eligible candidates (one-shot mode)",
     )
 
+    # Rollback options
+    parser.add_argument(
+        "--check-rollback",
+        action="store_true",
+        help="Check for Elo regression and rollback if needed (one-shot mode)",
+    )
+    parser.add_argument(
+        "--rollback-threshold",
+        type=float,
+        default=50.0,
+        help="Elo drop threshold for rollback (default: 50)",
+    )
+    parser.add_argument(
+        "--rollback-min-games",
+        type=int,
+        default=20,
+        help="Minimum games before rollback is considered (default: 20)",
+    )
+
     args = parser.parse_args()
     verbose = not args.quiet
     run_regression = not args.no_regression
@@ -1279,6 +1499,28 @@ def main():
                 print("\n[AutoPromotion] Executing promotions...")
                 for candidate in candidates:
                     trigger.execute_promotion(candidate, verbose=verbose)
+        return
+
+    # Handle rollback check
+    if args.check_rollback:
+        # Set environment variables from args
+        global ROLLBACK_ELO_DROP_THRESHOLD, ROLLBACK_MIN_GAMES
+        ROLLBACK_ELO_DROP_THRESHOLD = args.rollback_threshold
+        ROLLBACK_MIN_GAMES = args.rollback_min_games
+
+        if verbose:
+            print("[Rollback] Checking for Elo regression...")
+            print(f"  Threshold: -{args.rollback_threshold} Elo")
+            print(f"  Min games: {args.rollback_min_games}")
+
+        rollbacks = check_and_rollback_all(verbose=verbose)
+
+        if not rollbacks:
+            print("[Rollback] No Elo regressions detected")
+        else:
+            print(f"\n[Rollback] Performed {len(rollbacks)} rollback(s)")
+            for r in rollbacks:
+                print(f"  {r.board_type}_{r.num_players}p: rolled back to {r.previous_model}")
         return
 
     promoted_models: List[PromotedModel] = []

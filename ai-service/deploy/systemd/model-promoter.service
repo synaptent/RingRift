@@ -1,0 +1,50 @@
+[Unit]
+Description=RingRift Model Promotion Daemon
+Documentation=https://github.com/ringrift/ai-service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=/home/ubuntu/ringrift/ai-service"
+
+# Main process
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python \
+    scripts/model_promotion_manager.py \
+    --daemon \
+    --check-interval 300 \
+    --elo-threshold 20 \
+    --auto-promote
+
+# Restart policy
+Restart=on-failure
+RestartSec=30
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+# Resource limits
+MemoryMax=2G
+CPUQuota=100%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=model-promoter
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/data
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/logs
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/models
+
+[Install]
+WantedBy=multi-user.target

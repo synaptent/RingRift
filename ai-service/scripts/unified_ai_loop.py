@@ -44,16 +44,191 @@ import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+from threading import Thread
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import yaml
+
+# Optional Prometheus client
+try:
+    from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
+    HAS_PROMETHEUS = True
+except ImportError:
+    HAS_PROMETHEUS = False
 
 # Allow imports from app/
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 RINGRIFT_ROOT = AI_SERVICE_ROOT.parent
+
+
+# =============================================================================
+# Prometheus Metrics
+# =============================================================================
+
+if HAS_PROMETHEUS:
+    # Data collection metrics
+    GAMES_SYNCED_TOTAL = Counter(
+        'ringrift_games_synced_total',
+        'Total games synced from remote hosts',
+        ['host']
+    )
+    SYNC_DURATION_SECONDS = Histogram(
+        'ringrift_sync_duration_seconds',
+        'Time taken to sync games from a host',
+        ['host'],
+        buckets=[1, 5, 10, 30, 60, 120, 300]
+    )
+    SYNC_ERRORS_TOTAL = Counter(
+        'ringrift_sync_errors_total',
+        'Total sync errors by host',
+        ['host', 'error_type']
+    )
+    GAMES_PENDING_TRAINING = Gauge(
+        'ringrift_games_pending_training',
+        'Games collected but not yet used for training',
+        ['config']
+    )
+
+    # Training metrics
+    TRAINING_RUNS_TOTAL = Counter(
+        'ringrift_training_runs_total',
+        'Total training runs',
+        ['config', 'status']
+    )
+    TRAINING_DURATION_SECONDS = Histogram(
+        'ringrift_training_duration_seconds',
+        'Training run duration in seconds',
+        ['config'],
+        buckets=[60, 300, 600, 1800, 3600, 7200]
+    )
+    TRAINING_IN_PROGRESS = Gauge(
+        'ringrift_training_in_progress',
+        'Whether training is currently running',
+        ['config']
+    )
+
+    # Evaluation metrics
+    EVALUATIONS_TOTAL = Counter(
+        'ringrift_evaluations_total',
+        'Total evaluation runs',
+        ['config', 'type']
+    )
+    EVALUATION_DURATION_SECONDS = Histogram(
+        'ringrift_evaluation_duration_seconds',
+        'Evaluation duration in seconds',
+        ['config', 'type'],
+        buckets=[30, 60, 120, 300, 600, 1200]
+    )
+    CURRENT_ELO = Gauge(
+        'ringrift_current_elo',
+        'Current Elo rating for configuration',
+        ['config', 'model']
+    )
+    ELO_TREND = Gauge(
+        'ringrift_elo_trend',
+        'Elo trend (positive = improving)',
+        ['config']
+    )
+
+    # Promotion metrics
+    PROMOTIONS_TOTAL = Counter(
+        'ringrift_promotions_total',
+        'Total model promotions',
+        ['config', 'status']
+    )
+    ELO_GAIN_ON_PROMOTION = Histogram(
+        'ringrift_elo_gain_on_promotion',
+        'Elo gain when model is promoted',
+        ['config'],
+        buckets=[5, 10, 20, 30, 50, 100]
+    )
+    PROMOTION_CANDIDATES = Gauge(
+        'ringrift_promotion_candidates',
+        'Number of promotion candidates',
+        []
+    )
+
+    # Curriculum metrics
+    CURRICULUM_WEIGHT = Gauge(
+        'ringrift_curriculum_weight',
+        'Training weight for configuration',
+        ['config']
+    )
+    CURRICULUM_REBALANCES_TOTAL = Counter(
+        'ringrift_curriculum_rebalances_total',
+        'Total curriculum rebalancing events',
+        []
+    )
+
+    # System metrics
+    LOOP_CYCLES_TOTAL = Counter(
+        'ringrift_loop_cycles_total',
+        'Total improvement loop cycles',
+        ['loop']
+    )
+    LOOP_ERRORS_TOTAL = Counter(
+        'ringrift_loop_errors_total',
+        'Total loop errors',
+        ['loop', 'error_type']
+    )
+    UPTIME_SECONDS = Gauge(
+        'ringrift_uptime_seconds',
+        'Daemon uptime in seconds',
+        []
+    )
+    HOSTS_ACTIVE = Gauge(
+        'ringrift_hosts_active',
+        'Number of active hosts',
+        []
+    )
+    HOSTS_FAILED = Gauge(
+        'ringrift_hosts_failed',
+        'Number of failed hosts (consecutive failures)',
+        []
+    )
+
+
+class MetricsHandler(BaseHTTPRequestHandler):
+    """HTTP handler for Prometheus metrics endpoint."""
+
+    def do_GET(self):
+        if self.path == '/metrics' and HAS_PROMETHEUS:
+            self.send_response(200)
+            self.send_header('Content-Type', CONTENT_TYPE_LATEST)
+            self.end_headers()
+            self.wfile.write(generate_latest())
+        elif self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'OK')
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass  # Suppress request logging
+
+
+def start_metrics_server(port: int = 9090) -> Optional[HTTPServer]:
+    """Start the Prometheus metrics HTTP server."""
+    if not HAS_PROMETHEUS:
+        print("[Metrics] prometheus_client not installed, metrics disabled")
+        return None
+
+    try:
+        server = HTTPServer(('0.0.0.0', port), MetricsHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        print(f"[Metrics] Prometheus metrics available at http://0.0.0.0:{port}/metrics")
+        return server
+    except Exception as e:
+        print(f"[Metrics] Failed to start metrics server: {e}")
+        return None
 
 
 # =============================================================================
@@ -129,6 +304,13 @@ class UnifiedLoopConfig:
     log_dir: str = "logs/unified_loop"
     verbose: bool = False
 
+    # Metrics
+    metrics_port: int = 9090
+    metrics_enabled: bool = True
+
+    # Operation modes
+    dry_run: bool = False
+
     @classmethod
     def from_yaml(cls, path: Path) -> "UnifiedLoopConfig":
         """Load configuration from YAML file."""
@@ -165,7 +347,8 @@ class UnifiedLoopConfig:
                 if hasattr(config.curriculum, k):
                     setattr(config.curriculum, k, v)
 
-        for key in ["hosts_config_path", "unified_elo_db", "data_manifest_db", "log_dir", "verbose"]:
+        for key in ["hosts_config_path", "unified_elo_db", "data_manifest_db", "log_dir",
+                    "verbose", "metrics_port", "metrics_enabled", "dry_run"]:
             if key in data:
                 setattr(config, key, data[key])
 
@@ -925,6 +1108,40 @@ class UnifiedAILoop:
         # Timing trackers
         self._last_shadow_eval: Dict[str, float] = {}
         self._last_full_eval: float = 0.0
+        self._started_time: float = 0.0
+
+    def _update_metrics(self):
+        """Update Prometheus metrics from current state."""
+        if not HAS_PROMETHEUS:
+            return
+
+        # Update uptime
+        if self._started_time > 0:
+            UPTIME_SECONDS.set(time.time() - self._started_time)
+
+        # Update host counts
+        active_hosts = sum(1 for h in self.state.hosts.values() if h.enabled and h.consecutive_failures < 3)
+        failed_hosts = sum(1 for h in self.state.hosts.values() if h.consecutive_failures >= 3)
+        HOSTS_ACTIVE.set(active_hosts)
+        HOSTS_FAILED.set(failed_hosts)
+
+        # Update curriculum weights
+        for config_key, weight in self.state.curriculum_weights.items():
+            CURRICULUM_WEIGHT.labels(config=config_key).set(weight)
+
+        # Update pending games
+        for config_key, config_state in self.state.configs.items():
+            GAMES_PENDING_TRAINING.labels(config=config_key).set(config_state.games_since_training)
+            if config_state.current_elo > 0:
+                CURRENT_ELO.labels(config=config_key, model="best").set(config_state.current_elo)
+            ELO_TREND.labels(config=config_key).set(config_state.elo_trend)
+
+        # Training in progress
+        if self.state.training_in_progress:
+            TRAINING_IN_PROGRESS.labels(config=self.state.training_config).set(1)
+        else:
+            for config_key in self.state.configs:
+                TRAINING_IN_PROGRESS.labels(config=config_key).set(0)
 
     def _load_state(self):
         """Load state from checkpoint file."""
@@ -1111,9 +1328,28 @@ class UnifiedAILoop:
             except asyncio.TimeoutError:
                 pass
 
+    async def _metrics_loop(self):
+        """Periodically update Prometheus metrics."""
+        while self._running:
+            try:
+                self._update_metrics()
+                if HAS_PROMETHEUS:
+                    LOOP_CYCLES_TOTAL.labels(loop="metrics").inc()
+            except Exception as e:
+                print(f"[Metrics] Error: {e}")
+                if HAS_PROMETHEUS:
+                    LOOP_ERRORS_TOTAL.labels(loop="metrics", error_type=type(e).__name__).inc()
+
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=15)
+                break
+            except asyncio.TimeoutError:
+                pass
+
     async def run(self):
         """Main entry point - runs all loops concurrently."""
         self._running = True
+        self._started_time = time.time()
         self.state.started_at = datetime.now().isoformat()
 
         # Load previous state and configuration
@@ -1121,18 +1357,29 @@ class UnifiedAILoop:
         self._load_hosts()
         self._init_configs()
 
-        print(f"[UnifiedLoop] Starting with {len(self.state.hosts)} hosts, {len(self.state.configs)} configs")
+        dry_run_msg = " (DRY RUN)" if self.config.dry_run else ""
+        print(f"[UnifiedLoop] Starting with {len(self.state.hosts)} hosts, {len(self.state.configs)} configs{dry_run_msg}")
         print(f"[UnifiedLoop] Data sync: {self.config.data_ingestion.poll_interval_seconds}s")
         print(f"[UnifiedLoop] Shadow eval: {self.config.evaluation.shadow_interval_seconds}s")
         print(f"[UnifiedLoop] Full eval: {self.config.evaluation.full_tournament_interval_seconds}s")
 
-        # Start all loops
+        if self.config.dry_run:
+            print("[UnifiedLoop] Dry run - showing planned operations:")
+            for host_name, host in self.state.hosts.items():
+                print(f"  - Would sync from {host.ssh_user}@{host.ssh_host}")
+            for config_key in self.state.configs:
+                print(f"  - Would run evaluations for {config_key}")
+            print("[UnifiedLoop] Dry run complete - exiting")
+            return
+
+        # Start all loops including metrics
         await asyncio.gather(
             self._data_collection_loop(),
             self._evaluation_loop(),
             self._training_loop(),
             self._promotion_loop(),
             self._curriculum_loop(),
+            self._metrics_loop(),
         )
 
         print("[UnifiedLoop] Shutdown complete")
@@ -1156,12 +1403,18 @@ def main():
     parser.add_argument("--status", action="store_true", help="Show daemon status")
     parser.add_argument("--config", type=str, default="config/unified_loop.yaml", help="Config file path")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    parser.add_argument("--dry-run", action="store_true", help="Dry run mode - simulate without executing")
+    parser.add_argument("--metrics-port", type=int, default=9090, help="Prometheus metrics port")
+    parser.add_argument("--no-metrics", action="store_true", help="Disable Prometheus metrics")
 
     args = parser.parse_args()
 
     config_path = AI_SERVICE_ROOT / args.config
     config = UnifiedLoopConfig.from_yaml(config_path)
     config.verbose = args.verbose
+    config.dry_run = args.dry_run
+    config.metrics_port = args.metrics_port
+    config.metrics_enabled = not args.no_metrics
 
     if args.status:
         state_path = AI_SERVICE_ROOT / config.log_dir / "unified_loop_state.json"
@@ -1195,12 +1448,22 @@ def main():
         return
 
     if args.start or args.foreground:
+        if config.dry_run:
+            print("[UnifiedLoop] DRY RUN MODE - no actual operations will be performed")
+
+        # Start metrics server
+        metrics_server = None
+        if config.metrics_enabled and not config.dry_run:
+            metrics_server = start_metrics_server(config.metrics_port)
+
         loop = UnifiedAILoop(config)
 
         # Handle signals
         def signal_handler(sig, frame):
             print("\n[UnifiedLoop] Received shutdown signal")
             loop.stop()
+            if metrics_server:
+                metrics_server.shutdown()
 
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)

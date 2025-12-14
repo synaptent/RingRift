@@ -854,6 +854,132 @@ class ClusterSyncPlan:
         return cls(**d)
 
 
+class WebhookNotifier:
+    """Sends alerts to Slack/Discord webhooks for important events.
+
+    Configure via environment variables:
+    - RINGRIFT_SLACK_WEBHOOK: Slack incoming webhook URL
+    - RINGRIFT_DISCORD_WEBHOOK: Discord webhook URL
+    - RINGRIFT_ALERT_LEVEL: Minimum level to alert (debug/info/warning/error) default: warning
+    """
+
+    LEVELS = {"debug": 0, "info": 1, "warning": 2, "error": 3}
+
+    def __init__(self):
+        self.slack_webhook = os.environ.get("RINGRIFT_SLACK_WEBHOOK", "")
+        self.discord_webhook = os.environ.get("RINGRIFT_DISCORD_WEBHOOK", "")
+        self.min_level = self.LEVELS.get(
+            os.environ.get("RINGRIFT_ALERT_LEVEL", "warning").lower(), 2
+        )
+        self._session: Optional[ClientSession] = None
+        self._last_alert: Dict[str, float] = {}  # Throttle repeated alerts
+        self._throttle_seconds = 300  # 5 minutes between duplicate alerts
+
+    async def _get_session(self) -> ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = ClientSession(timeout=ClientTimeout(total=10))
+        return self._session
+
+    def _should_throttle(self, alert_key: str) -> bool:
+        """Check if this alert should be throttled (duplicate within window)."""
+        now = time.time()
+        if alert_key in self._last_alert:
+            if now - self._last_alert[alert_key] < self._throttle_seconds:
+                return True
+        self._last_alert[alert_key] = now
+        return False
+
+    async def send(
+        self,
+        title: str,
+        message: str,
+        level: str = "warning",
+        fields: Dict[str, str] = None,
+        node_id: str = "",
+    ):
+        """Send an alert to configured webhooks.
+
+        Args:
+            title: Alert title/subject
+            message: Alert body text
+            level: debug/info/warning/error
+            fields: Additional key-value pairs to include
+            node_id: Node ID for deduplication
+        """
+        if self.LEVELS.get(level, 2) < self.min_level:
+            return
+
+        if not self.slack_webhook and not self.discord_webhook:
+            return
+
+        # Throttle duplicate alerts
+        alert_key = f"{title}:{node_id}"
+        if self._should_throttle(alert_key):
+            return
+
+        try:
+            session = await self._get_session()
+
+            # Color based on level
+            colors = {"debug": "#808080", "info": "#36a64f", "warning": "#ff9800", "error": "#ff0000"}
+            color = colors.get(level, "#808080")
+
+            # Send to Slack
+            if self.slack_webhook:
+                slack_fields = []
+                if fields:
+                    for k, v in fields.items():
+                        slack_fields.append({"title": k, "value": str(v), "short": True})
+
+                slack_payload = {
+                    "attachments": [{
+                        "color": color,
+                        "title": f"[{level.upper()}] {title}",
+                        "text": message,
+                        "fields": slack_fields,
+                        "footer": f"RingRift AI | {node_id}" if node_id else "RingRift AI",
+                        "ts": int(time.time()),
+                    }]
+                }
+                try:
+                    async with session.post(self.slack_webhook, json=slack_payload) as resp:
+                        if resp.status != 200:
+                            print(f"[Webhook] Slack alert failed: {resp.status}")
+                except Exception as e:
+                    print(f"[Webhook] Slack error: {e}")
+
+            # Send to Discord
+            if self.discord_webhook:
+                discord_fields = []
+                if fields:
+                    for k, v in fields.items():
+                        discord_fields.append({"name": k, "value": str(v), "inline": True})
+
+                discord_payload = {
+                    "embeds": [{
+                        "title": f"[{level.upper()}] {title}",
+                        "description": message,
+                        "color": int(color.lstrip("#"), 16),
+                        "fields": discord_fields,
+                        "footer": {"text": f"RingRift AI | {node_id}" if node_id else "RingRift AI"},
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }]
+                }
+                try:
+                    async with session.post(self.discord_webhook, json=discord_payload) as resp:
+                        if resp.status not in (200, 204):
+                            print(f"[Webhook] Discord alert failed: {resp.status}")
+                except Exception as e:
+                    print(f"[Webhook] Discord error: {e}")
+
+        except Exception as e:
+            print(f"[Webhook] Alert send error: {e}")
+
+    async def close(self):
+        if self._session and not self._session.closed:
+            await self._session.close()
+
+
 class P2POrchestrator:
     """Main P2P orchestrator class that runs on each node."""
 
@@ -1008,6 +1134,9 @@ class P2POrchestrator:
                 print(f"[P2P] Failed to initialize ImprovementCycleManager: {e}")
         self.last_improvement_cycle_check: float = 0.0
         self.improvement_cycle_check_interval: float = 600.0  # Check every 10 minutes
+
+        # Webhook notifications for alerts
+        self.notifier = WebhookNotifier()
 
         # Diversity tracking metrics
         self.diversity_metrics = {
@@ -7821,6 +7950,19 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     print(f"[P2P] WARNING: GPU selfplay validation rate {validation_rate:.1f}% is below 95%")
                     print(f"[P2P]   This indicates potential GPU/CPU rule divergence")
                     print(f"[P2P]   Skipping auto-import to canonical database")
+                    # Alert on low validation rate
+                    asyncio.create_task(self.notifier.send(
+                        title="Low GPU Validation Rate",
+                        message=f"GPU selfplay validation rate {validation_rate:.1f}% is below 95% threshold",
+                        level="warning",
+                        fields={
+                            "Config": f"{board_type}_{num_players}p",
+                            "Valid": str(imported),
+                            "Invalid": str(failed),
+                            "Rate": f"{validation_rate:.1f}%",
+                        },
+                        node_id=self.node_id,
+                    ))
 
             else:
                 print(f"[P2P] GPU selfplay {job_id} CPU validation failed:")
@@ -8054,9 +8196,36 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             # 5. Boost selfplay for this config if promoted (more data for next iteration)
             if promoted:
                 asyncio.create_task(self._boost_selfplay_for_config(board_type, num_players))
+                # Alert on successful promotion
+                asyncio.create_task(self.notifier.send(
+                    title="Model Promoted",
+                    message=f"New model promoted for {board_type}_{num_players}p with {win_rate*100:.1f}% win rate",
+                    level="info",
+                    fields={"Model": new_model, "Win Rate": f"{win_rate*100:.1f}%"},
+                    node_id=self.node_id,
+                ))
+            elif win_rate < 0.5:
+                # Alert on failed promotion (new model lost)
+                asyncio.create_task(self.notifier.send(
+                    title="Model Promotion Failed",
+                    message=f"New model failed tournament for {board_type}_{num_players}p with only {win_rate*100:.1f}% win rate",
+                    level="warning",
+                    fields={
+                        "Model": new_model,
+                        "Win Rate": f"{win_rate*100:.1f}%",
+                        "Baseline": baseline_model,
+                    },
+                    node_id=self.node_id,
+                ))
 
         except Exception as e:
             print(f"[P2P] Tournament completion handler error: {e}")
+            asyncio.create_task(self.notifier.send(
+                title="Tournament Handler Error",
+                message=str(e),
+                level="error",
+                node_id=self.node_id,
+            ))
 
     async def _boost_selfplay_for_config(self, board_type: str, num_players: int):
         """Temporarily boost selfplay for a configuration after model promotion.
@@ -8378,6 +8547,135 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "success": True,
                     **summary,
                 })
+
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)})
+
+    async def handle_metrics_prometheus(self, request: web.Request) -> web.Response:
+        """GET /metrics/prometheus - Prometheus-compatible metrics export.
+
+        Returns metrics in Prometheus text exposition format for scraping.
+        """
+        try:
+            lines = []
+            now = time.time()
+
+            # Cluster metrics
+            with self.peers_lock:
+                alive_peers = len([p for p in self.peers.values() if p.is_alive()])
+                total_peers = len(self.peers)
+
+            lines.append("# HELP ringrift_cluster_peers_total Total number of known peers")
+            lines.append("# TYPE ringrift_cluster_peers_total gauge")
+            lines.append(f"ringrift_cluster_peers_total {total_peers}")
+
+            lines.append("# HELP ringrift_cluster_peers_alive Number of alive peers")
+            lines.append("# TYPE ringrift_cluster_peers_alive gauge")
+            lines.append(f"ringrift_cluster_peers_alive {alive_peers}")
+
+            lines.append("# HELP ringrift_is_leader Whether this node is the leader")
+            lines.append("# TYPE ringrift_is_leader gauge")
+            lines.append(f"ringrift_is_leader {1 if self.role == NodeRole.LEADER else 0}")
+
+            # Job counts
+            with self.jobs_lock:
+                selfplay_jobs = len([j for j in self.local_jobs.values()
+                                    if j.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY)
+                                    and j.status == "running"])
+                training_jobs = len([j for j in self.local_jobs.values()
+                                    if j.job_type == JobType.TRAINING and j.status == "running"])
+
+            lines.append("# HELP ringrift_selfplay_jobs_running Number of running selfplay jobs")
+            lines.append("# TYPE ringrift_selfplay_jobs_running gauge")
+            lines.append(f"ringrift_selfplay_jobs_running {selfplay_jobs}")
+
+            lines.append("# HELP ringrift_training_jobs_running Number of running training jobs")
+            lines.append("# TYPE ringrift_training_jobs_running gauge")
+            lines.append(f"ringrift_training_jobs_running {training_jobs}")
+
+            # Resource utilization
+            lines.append("# HELP ringrift_cpu_percent CPU utilization percentage")
+            lines.append("# TYPE ringrift_cpu_percent gauge")
+            lines.append(f"ringrift_cpu_percent {getattr(self.self_info, 'cpu_percent', 0)}")
+
+            lines.append("# HELP ringrift_memory_percent Memory utilization percentage")
+            lines.append("# TYPE ringrift_memory_percent gauge")
+            lines.append(f"ringrift_memory_percent {getattr(self.self_info, 'memory_percent', 0)}")
+
+            lines.append("# HELP ringrift_disk_percent Disk utilization percentage")
+            lines.append("# TYPE ringrift_disk_percent gauge")
+            lines.append(f"ringrift_disk_percent {getattr(self.self_info, 'disk_percent', 0)}")
+
+            if self.self_info.has_gpu:
+                lines.append("# HELP ringrift_gpu_percent GPU utilization percentage")
+                lines.append("# TYPE ringrift_gpu_percent gauge")
+                lines.append(f"ringrift_gpu_percent {getattr(self.self_info, 'gpu_percent', 0)}")
+
+                lines.append("# HELP ringrift_gpu_memory_percent GPU memory utilization percentage")
+                lines.append("# TYPE ringrift_gpu_memory_percent gauge")
+                lines.append(f"ringrift_gpu_memory_percent {getattr(self.self_info, 'gpu_memory_percent', 0)}")
+
+            # Diversity metrics
+            if hasattr(self, 'diversity_metrics'):
+                dm = self.diversity_metrics
+                lines.append("# HELP ringrift_tournament_runs_total Total tournament runs")
+                lines.append("# TYPE ringrift_tournament_runs_total counter")
+                lines.append(f"ringrift_tournament_runs_total {dm.get('tournament_runs', 0)}")
+
+                lines.append("# HELP ringrift_promotions_total Total model promotions")
+                lines.append("# TYPE ringrift_promotions_total counter")
+                lines.append(f"ringrift_promotions_total {dm.get('promotions', 0)}")
+
+                lines.append("# HELP ringrift_rollbacks_total Total model rollbacks")
+                lines.append("# TYPE ringrift_rollbacks_total counter")
+                lines.append(f"ringrift_rollbacks_total {dm.get('rollbacks', 0)}")
+
+                # GPU validation stats
+                gpu_stats = dm.get('gpu_validation_stats', {})
+                if gpu_stats:
+                    lines.append("# HELP ringrift_gpu_games_validated_total Total GPU games validated")
+                    lines.append("# TYPE ringrift_gpu_games_validated_total counter")
+                    lines.append(f"ringrift_gpu_games_validated_total {gpu_stats.get('total_validated', 0)}")
+
+                    lines.append("# HELP ringrift_gpu_games_failed_total Total GPU games failed validation")
+                    lines.append("# TYPE ringrift_gpu_games_failed_total counter")
+                    lines.append(f"ringrift_gpu_games_failed_total {gpu_stats.get('total_failed', 0)}")
+
+            # Recent metrics from database (last hour averages)
+            try:
+                summary = self.get_metrics_summary(hours=1)
+                metrics_data = summary.get("metrics", {})
+
+                for metric_name, metric_info in metrics_data.items():
+                    safe_name = metric_name.replace("-", "_").replace(".", "_")
+                    if metric_info.get("latest") is not None:
+                        lines.append(f"# HELP ringrift_{safe_name} Latest {metric_name} value")
+                        lines.append(f"# TYPE ringrift_{safe_name} gauge")
+                        lines.append(f"ringrift_{safe_name} {metric_info['latest']}")
+            except Exception:
+                pass
+
+            # Data manifest totals
+            if hasattr(self, 'cluster_data_manifest') and self.cluster_data_manifest:
+                for config_key, config_data in self.cluster_data_manifest.by_board_type.items():
+                    total_games = config_data.get("total_games", 0)
+                    parts = config_key.split("_")
+                    if len(parts) >= 2:
+                        board_type = parts[0]
+                        num_players = parts[1].replace("p", "")
+                        lines.append(f'ringrift_games_total{{board_type="{board_type}",num_players="{num_players}"}} {total_games}')
+
+            # Add header for games total
+            if hasattr(self, 'cluster_data_manifest') and self.cluster_data_manifest:
+                lines.insert(-len(self.cluster_data_manifest.by_board_type),
+                           "# HELP ringrift_games_total Total games per board configuration")
+                lines.insert(-len(self.cluster_data_manifest.by_board_type),
+                           "# TYPE ringrift_games_total gauge")
+
+            return web.Response(
+                text="\n".join(lines) + "\n",
+                content_type="text/plain; version=0.0.4; charset=utf-8",
+            )
 
         except Exception as e:
             return web.json_response({"success": False, "error": str(e)})
@@ -12943,6 +13241,7 @@ print(json.dumps({{
 
         # Metrics observability routes
         app.router.add_get('/metrics', self.handle_metrics)
+        app.router.add_get('/metrics/prometheus', self.handle_metrics_prometheus)
 
         # Canonical pipeline routes (for pipeline_orchestrator.py integration)
         app.router.add_post('/pipeline/start', self.handle_pipeline_start)
