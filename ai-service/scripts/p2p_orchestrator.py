@@ -10446,12 +10446,17 @@ print(json.dumps({{
 
             # Scale with CPU cores for hybrid workloads (CPU rules + GPU eval).
             # GH200 nodes have 64 cores and 480GB memory - use them more aggressively.
+            # Vast nodes have 384-512 cores and should run 100+ jobs.
             if cpu_count >= 48:
-                # High-core machines: allow 1 job per 2 cores, capped by memory
+                # High-core machines: allow 1 job per 2-4 cores depending on scale
                 # GH200 (64 cores, 480GB): target ~32 jobs
+                # Vast (384 cores, 500GB): target ~96 jobs
+                # Vast (512 cores, 755GB): target ~128 jobs
                 cpu_based_target = cpu_count // 2
                 mem_cap = memory_gb // 4 if memory_gb > 0 else 64
-                target_selfplay = max(target_selfplay, min(cpu_based_target, mem_cap, 48))
+                # Dynamic cap: 48 for <128 cores, scale up for larger machines
+                core_cap = 48 if cpu_count < 128 else min(192, cpu_count // 4)
+                target_selfplay = max(target_selfplay, min(cpu_based_target, mem_cap, core_cap))
             elif cpu_count > 0:
                 cpu_bonus = max(0, min(8, cpu_count // 8))
                 target_selfplay = min(24, target_selfplay + cpu_bonus)
@@ -10470,9 +10475,12 @@ print(json.dumps({{
             # CPU-only nodes: scale with CPU cores
             if cpu_count >= 32:
                 # High-core CPU nodes: 1 job per 2 cores, capped by memory
+                # Standard (32-64 cores): target ~16-32 jobs
+                # High-core (128+ cores): target 32-128 jobs
                 cpu_target = cpu_count // 2
                 mem_cap = memory_gb // 4 if memory_gb > 0 else 32
-                target_selfplay = max(target_selfplay, min(cpu_target, mem_cap, 32))
+                core_cap = 32 if cpu_count < 128 else min(128, cpu_count // 4)
+                target_selfplay = max(target_selfplay, min(cpu_target, mem_cap, core_cap))
             elif cpu_count > 0:
                 cpu_target = max(2, min(24, cpu_count // 2))
                 target_selfplay = max(target_selfplay, cpu_target)
