@@ -23,6 +23,7 @@ from app.config.ladder_config import (
     LadderTierConfig,
     get_ladder_tier_config,
 )
+from app.game_engine import GameEngine
 from app.main import (
     DifficultyProfile,
     _create_ai_instance,
