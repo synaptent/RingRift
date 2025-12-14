@@ -13,7 +13,7 @@ import argparse
 import json
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -67,6 +67,24 @@ REGRESSION_TESTS = [
         opponent_config={"difficulty": 6, "depth": 4},
         min_win_rate=0.40,
         games=30,
+    ),
+]
+
+# Quick tests for fast sanity checks (fewer games, relaxed thresholds)
+QUICK_REGRESSION_TESTS = [
+    RegressionTest(
+        name="vs_random_quick",
+        opponent_type="random",
+        opponent_config={},
+        min_win_rate=0.80,  # Relaxed for small sample
+        games=5,
+    ),
+    RegressionTest(
+        name="vs_d2_heuristic_quick",
+        opponent_type="heuristic",
+        opponent_config={"difficulty": 2},
+        min_win_rate=0.60,  # Relaxed for small sample
+        games=5,
     ),
 ]
 
@@ -367,14 +385,20 @@ def main():
     parser = argparse.ArgumentParser(description="Model regression tests")
     parser.add_argument("--model", help="Model path to test")
     parser.add_argument("--all", action="store_true", help="Test all best models")
+    parser.add_argument("--quick", action="store_true", help="Run quick tests (fewer games)")
     parser.add_argument("--threshold", type=float, help="Override min win rate threshold")
     parser.add_argument("--games", type=int, help="Override games per test")
     parser.add_argument("--output", help="Output JSON file")
 
     args = parser.parse_args()
 
+    # Select test suite
+    if args.quick:
+        tests = [RegressionTest(**asdict(t)) for t in QUICK_REGRESSION_TESTS]
+    else:
+        tests = [RegressionTest(**asdict(t)) for t in REGRESSION_TESTS]
+
     # Modify tests if threshold/games overridden
-    tests = REGRESSION_TESTS.copy()
     if args.threshold:
         for test in tests:
             test.min_win_rate = args.threshold

@@ -1924,7 +1924,9 @@ export const SandboxGameHost: React.FC = () => {
                 <p className="text-xs uppercase tracking-wide text-slate-400">Quick Start</p>
                 <h2 className="text-lg font-semibold text-white">Choose a preset</h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Click a preset to launch a local sandbox game immediately.
+                  {user
+                    ? 'Click a preset to start a game immediately (backend first, then local fallback).'
+                    : 'Click a preset to launch a local sandbox game immediately.'}
                 </p>
               </div>
               {isFirstTimePlayer && (

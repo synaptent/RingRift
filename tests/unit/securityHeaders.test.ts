@@ -14,23 +14,42 @@
 import express, { Express } from 'express';
 import request from 'supertest';
 
-// Need to set up test environment before importing server modules
-process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
-process.env.REDIS_URL = 'redis://localhost:6379';
-process.env.JWT_SECRET = 'test-jwt-secret';
-process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret';
-process.env.ALLOWED_ORIGINS = 'http://localhost:3000,http://localhost:5173';
-
-import { securityMiddleware } from '../../src/server/middleware/securityHeaders';
-
 describe('Security Headers Middleware', () => {
   let app: Express;
+  let securityMiddleware: typeof import('../../src/server/middleware/securityHeaders').securityMiddleware;
+  let originalEnv: Partial<NodeJS.ProcessEnv>;
 
   beforeEach(() => {
     // Defensive: some suites use fake timers; ensure this integration-style
     // supertest flow always runs on real timers to avoid socket hangups.
     jest.useRealTimers();
+
+    // Need a stable environment before loading server/config-derived middleware.
+    const keys = [
+      'NODE_ENV',
+      'DATABASE_URL',
+      'REDIS_URL',
+      'JWT_SECRET',
+      'JWT_REFRESH_SECRET',
+      'ALLOWED_ORIGINS',
+    ] as const;
+
+    originalEnv = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+
+    process.env.NODE_ENV = 'test';
+    process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret';
+    process.env.ALLOWED_ORIGINS = 'http://localhost:3000,http://localhost:5173';
+
+    // Load in an isolated registry so cached config from other test files
+    // cannot change middleware behavior in this suite.
+    jest.isolateModules(() => {
+      const mod =
+        require('../../src/server/middleware/securityHeaders') as typeof import('../../src/server/middleware/securityHeaders');
+      securityMiddleware = mod.securityMiddleware;
+    });
 
     app = express();
     // Apply security middleware
@@ -45,6 +64,18 @@ describe('Security Headers Middleware', () => {
     app.post('/test-post', (_req, res) => {
       res.json({ message: 'posted' });
     });
+  });
+
+  afterEach(() => {
+    const keys = Object.keys(originalEnv) as Array<keyof typeof originalEnv>;
+    for (const key of keys) {
+      const value = originalEnv[key];
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
   });
 
   describe('Content Security Policy', () => {

@@ -1,12 +1,59 @@
 import express from 'express';
 import request from 'supertest';
 import crypto from 'crypto';
-import authRoutes, { __testResetLoginLockoutState } from '../../src/server/routes/auth';
-import { errorHandler, createError } from '../../src/server/middleware/errorHandler';
-import * as authModule from '../../src/server/middleware/auth';
 import { mockDb, prismaStub, resetPrismaMockDb } from '../utils/prismaTestUtils';
-import { config } from '../../src/server/config';
-import { logger } from '../../src/server/utils/logger';
+
+let authRoutes: any;
+let __testResetLoginLockoutState: (() => void) | null = null;
+let errorHandler: any;
+let createError: typeof import('../../src/server/middleware/errorHandler').createError;
+let authModule: typeof import('../../src/server/middleware/auth');
+let mockedAuth: jest.Mocked<typeof import('../../src/server/middleware/auth')>;
+let config: typeof import('../../src/server/config').config;
+let logger: typeof import('../../src/server/utils/logger').logger;
+
+const loadAuthRouteTestDeps = () => {
+  let deps:
+    | {
+        authRoutes: any;
+        __testResetLoginLockoutState: () => void;
+        errorHandler: any;
+        createError: typeof import('../../src/server/middleware/errorHandler').createError;
+        authModule: typeof import('../../src/server/middleware/auth');
+        config: typeof import('../../src/server/config').config;
+        logger: typeof import('../../src/server/utils/logger').logger;
+      }
+    | undefined;
+
+  jest.isolateModules(() => {
+    const routesMod =
+      require('../../src/server/routes/auth') as typeof import('../../src/server/routes/auth');
+    const errorMod =
+      require('../../src/server/middleware/errorHandler') as typeof import('../../src/server/middleware/errorHandler');
+    const authMod =
+      require('../../src/server/middleware/auth') as typeof import('../../src/server/middleware/auth');
+    const configMod =
+      require('../../src/server/config') as typeof import('../../src/server/config');
+    const loggerMod =
+      require('../../src/server/utils/logger') as typeof import('../../src/server/utils/logger');
+
+    deps = {
+      authRoutes: routesMod.default,
+      __testResetLoginLockoutState: routesMod.__testResetLoginLockoutState,
+      errorHandler: errorMod.errorHandler,
+      createError: errorMod.createError,
+      authModule: authMod,
+      config: configMod.config,
+      logger: loggerMod.logger,
+    };
+  });
+
+  if (!deps) {
+    throw new Error('Failed to load auth route test dependencies');
+  }
+
+  return deps;
+};
 
 // --- Mocks --------------------------------------------------------------
 
@@ -113,18 +160,26 @@ function createTestApp() {
 
 // --- Helpers ------------------------------------------------------------
 
-const mockedAuth = authModule as jest.Mocked<typeof authModule>;
-
 // --- Tests --------------------------------------------------------------
 
 describe('Auth HTTP routes', () => {
   beforeEach(() => {
+    const deps = loadAuthRouteTestDeps();
+    authRoutes = deps.authRoutes;
+    __testResetLoginLockoutState = deps.__testResetLoginLockoutState;
+    errorHandler = deps.errorHandler;
+    createError = deps.createError;
+    authModule = deps.authModule;
+    config = deps.config;
+    logger = deps.logger;
+    mockedAuth = authModule as jest.Mocked<typeof authModule>;
+
     // Defensive: ensure any fake timers enabled by other suites do not leak
     // into these supertest-driven HTTP route tests.
     jest.useRealTimers();
 
     resetPrismaMockDb();
-    __testResetLoginLockoutState();
+    __testResetLoginLockoutState?.();
     mockDatabaseClient = prismaStub;
 
     // Reset verifyRefreshToken to its default stubbed behaviour for each test.

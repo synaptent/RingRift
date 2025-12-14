@@ -12,7 +12,6 @@ import type {
 } from '../../../src/shared/types/game';
 import type { LocalConfig, LocalPlayerType } from '../../../src/client/contexts/SandboxContext';
 import type { LoadableScenario } from '../../../src/client/sandbox/scenarioTypes';
-import { SandboxGameHost } from '../../../src/client/pages/SandboxGameHost';
 import { gameApi } from '../../../src/client/services/api';
 import { serializeGameState } from '../../../src/shared/engine/contracts/serialization';
 
@@ -26,6 +25,7 @@ jest.mock('../../../src/client/hooks/useIsMobile', () => ({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const mockNavigate = jest.fn();
+let mockAuthUser: { id: string; username: string } | null = { id: 'user-1', username: 'Alice' };
 const mockStoreGameLocally = jest.fn();
 const mockGetPendingCount = jest.fn();
 
@@ -59,14 +59,16 @@ jest.mock('../../../src/client/components/BoardView', () => {
 
 jest.mock('react-router-dom', () => ({
   // Reuse actual exports where possible, but override useNavigate
+  __esModule: true,
   ...jest.requireActual('react-router-dom'),
   useNavigate: () => mockNavigate,
   useSearchParams: () => [new URLSearchParams(), jest.fn()],
 }));
 
-jest.mock('@/client/contexts/AuthContext', () => ({
+jest.mock('../../../src/client/contexts/AuthContext', () => ({
+  __esModule: true,
   useAuth: () => ({
-    user: { id: 'user-1', username: 'Alice' },
+    user: mockAuthUser,
   }),
 }));
 
@@ -180,6 +182,12 @@ jest.mock('../../../src/client/hooks/useSandboxInteractions', () => ({
     };
   },
 }));
+
+// Load the component under test only after all jest.mock() declarations above
+// have executed, so the module sees consistent mocked dependencies even when
+// Jest reuses a single Node process across multiple test files.
+const { SandboxGameHost } =
+  require('../../../src/client/pages/SandboxGameHost') as typeof import('../../../src/client/pages/SandboxGameHost');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -362,6 +370,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     jest.clearAllMocks();
     localStorage.clear();
     localStorage.setItem('ringrift_sandbox_sidebar_show_advanced', 'true');
+    mockAuthUser = { id: 'user-1', username: 'Alice' };
     lastBoardViewProps = null;
     mockSandboxValue = createMockSandboxContext();
     mockMaybeRunSandboxAiIfNeeded.mockReset();

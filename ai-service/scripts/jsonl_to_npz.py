@@ -118,12 +118,43 @@ def _get_phase_str(state: GameState) -> str:
     return str(phase)
 
 
-def _complete_remaining_phases(state: GameState, target_player: int) -> GameState:
-    """Apply no-action moves to advance through phases until it's target_player's ring_placement.
+def _complete_remaining_phases(
+    state: GameState,
+    target_player: int,
+    target_move_type: Optional[MoveType] = None,
+) -> GameState:
+    """Apply no-action moves to advance through phases until we can apply the target move.
 
     This handles GPU selfplay format where only place_ring/move_stack moves are recorded,
     skipping the phase transition moves (no_movement_action, no_line_action, no_territory_action).
+
+    Args:
+        state: Current game state
+        target_player: Player who will make the next move
+        target_move_type: The type of move we're trying to apply (to determine target phase)
     """
+    # Map move types to phases where they're valid (use actual GamePhase.value strings)
+    MOVE_VALID_PHASES: Dict[MoveType, List[str]] = {
+        MoveType.PLACE_RING: ["ring_placement"],
+        MoveType.NO_PLACEMENT_ACTION: ["ring_placement"],
+        MoveType.MOVE_STACK: ["movement"],
+        MoveType.MOVE_RING: ["movement"],
+        MoveType.BUILD_STACK: ["movement"],
+        MoveType.RECOVERY_SLIDE: ["movement"],
+        MoveType.NO_MOVEMENT_ACTION: ["movement"],
+        MoveType.PROCESS_LINE: ["line_processing"],
+        MoveType.CHOOSE_LINE_REWARD: ["line_processing"],
+        MoveType.NO_LINE_ACTION: ["line_processing"],
+        MoveType.PROCESS_TERRITORY_REGION: ["territory_processing"],
+        MoveType.SKIP_TERRITORY_PROCESSING: ["territory_processing"],
+        MoveType.NO_TERRITORY_ACTION: ["territory_processing"],
+        MoveType.OVERTAKING_CAPTURE: ["capture"],
+        MoveType.SKIP_CAPTURE: ["capture"],
+        MoveType.CONTINUE_CAPTURE_SEGMENT: ["chain_capture"],
+    }
+
+    target_phases = MOVE_VALID_PHASES.get(target_move_type, []) if target_move_type else []
+
     max_iterations = 20  # Prevent infinite loops
     iterations = 0
 
@@ -131,13 +162,18 @@ def _complete_remaining_phases(state: GameState, target_player: int) -> GameStat
         phase_str = _get_phase_str(state)
         current_player = state.current_player
 
-        # If we're at ring_placement for the target player, we're done
-        if phase_str == "ring_placement" and current_player == target_player:
-            return state
+        # If target move type is specified, check if we're already in the right phase for it
+        if target_move_type and target_phases:
+            if phase_str in target_phases and current_player == target_player:
+                return state
 
-        # If we're at ring_placement for wrong player, something is wrong
+        # Fallback for no target_move_type: stop at ring_placement for target player
+        if not target_move_type:
+            if phase_str == "ring_placement" and current_player == target_player:
+                return state
+
+        # If we're at ring_placement for wrong player, apply no_placement
         if phase_str == "ring_placement" and current_player != target_player:
-            # The target player may not be next - apply no_placement and continue
             no_place_move = Move(
                 id="auto_no_placement",
                 type=MoveType.NO_PLACEMENT_ACTION,
@@ -153,6 +189,14 @@ def _complete_remaining_phases(state: GameState, target_player: int) -> GameStat
                 return state
             iterations += 1
             continue
+
+        # If we're at ring_placement for target player but need a different phase,
+        # we can't skip ring placement - return as-is
+        if phase_str == "ring_placement" and current_player == target_player:
+            if target_move_type and target_phases and "ring_placement" not in target_phases:
+                # This shouldn't happen - we need ring_placement but target wants different phase
+                # Return as-is and let caller handle
+                return state
 
         # Check if we can apply a no-action move for the current phase
         if phase_str in NO_ACTION_MOVES:
@@ -171,7 +215,7 @@ def _complete_remaining_phases(state: GameState, target_player: int) -> GameStat
                 # Can't apply - might have mandatory moves
                 return state
         else:
-            # Unknown phase, return as-is
+            # Unknown phase or can't advance, return as-is
             return state
 
         iterations += 1
@@ -271,6 +315,9 @@ def _process_gpu_selfplay_record(
     positions_extracted = 0
 
     for move_idx, move in enumerate(moves):
+        # Get move type (handle string or enum)
+        move_type = move.type if isinstance(move.type, MoveType) else _move_type_from_str(str(move.type))
+
         # Sample every N moves
         if sample_every > 1 and (move_idx % sample_every) != 0:
             # Still need to apply move and update history
@@ -280,7 +327,7 @@ def _process_gpu_selfplay_record(
                 if len(history_frames) > history_length + 1:
                     history_frames.pop(0)
                 # Complete phase transitions before applying recorded move
-                current_state = _complete_remaining_phases(current_state, move.player)
+                current_state = _complete_remaining_phases(current_state, move.player, move_type)
                 current_state = GameEngine.apply_move(current_state, move)
             except Exception:
                 break  # Stop on error
@@ -288,7 +335,7 @@ def _process_gpu_selfplay_record(
 
         try:
             # Complete phase transitions to get to the right player/phase
-            current_state = _complete_remaining_phases(current_state, move.player)
+            current_state = _complete_remaining_phases(current_state, move.player, move_type)
 
             # Encode state with history BEFORE applying the move
             stacked, globals_vec = encode_state_with_history(
@@ -794,7 +841,8 @@ def process_jsonl_file(
                         # Handle GPU selfplay simplified format:
                         # Complete phase transitions before applying the recorded move
                         if gpu_selfplay_mode:
-                            final_state = _complete_remaining_phases(final_state, move.player)
+                            move_type = move.type if isinstance(move.type, MoveType) else _move_type_from_str(str(move.type))
+                            final_state = _complete_remaining_phases(final_state, move.player, move_type)
                         final_state = GameEngine.apply_move(final_state, move)
                         moves_succeeded += 1
                     except Exception:
@@ -813,6 +861,9 @@ def process_jsonl_file(
 
                 # Only process up to moves_succeeded moves
                 for move_idx, move in enumerate(moves[:moves_succeeded]):
+                    # Get move type for phase completion
+                    move_type_for_phase = move.type if isinstance(move.type, MoveType) else _move_type_from_str(str(move.type))
+
                     # Sample every N moves
                     if sample_every > 1 and (move_idx % sample_every) != 0:
                         # Still need to apply move and update history
@@ -822,7 +873,7 @@ def process_jsonl_file(
                             history_frames.pop(0)
                         # Handle GPU selfplay simplified format
                         if gpu_selfplay_mode:
-                            current_state = _complete_remaining_phases(current_state, move.player)
+                            current_state = _complete_remaining_phases(current_state, move.player, move_type_for_phase)
                         current_state = GameEngine.apply_move(current_state, move)
                         continue
 
@@ -873,7 +924,7 @@ def process_jsonl_file(
                     # Apply move for next iteration
                     # Handle GPU selfplay simplified format
                     if gpu_selfplay_mode:
-                        current_state = _complete_remaining_phases(current_state, move.player)
+                        current_state = _complete_remaining_phases(current_state, move.player, move_type_for_phase)
                     current_state = GameEngine.apply_move(current_state, move)
 
                 games_in_file += 1
