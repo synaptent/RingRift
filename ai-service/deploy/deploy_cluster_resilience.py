@@ -259,7 +259,7 @@ def main() -> None:
                 remote_setup = (
                     f"set -euo pipefail\n"
                     f"RINGRIFT_DIR={ringrift_dir_rhs}\n"
-                    f"RINGRIFT_ROOT=\"$(cd \"$(dirname \"$RINGRIFT_DIR\")\" && pwd)\"\n"
+                    f"RINGRIFT_ROOT=\"$(dirname \"$RINGRIFT_DIR\")\"\n"
                     f"cd \"$RINGRIFT_ROOT\"\n"
                     f"git pull origin main\n"
                     f"chmod +x \"$RINGRIFT_DIR/deploy/setup_node_resilience_macos.sh\"\n"
@@ -273,7 +273,7 @@ def main() -> None:
                 remote_setup = (
                     f"set -euo pipefail\n"
                     f"RINGRIFT_DIR={ringrift_dir_rhs}\n"
-                    f"RINGRIFT_ROOT=\"$(cd \"$(dirname \"$RINGRIFT_DIR\")\" && pwd)\"\n"
+                    f"RINGRIFT_ROOT=\"$(dirname \"$RINGRIFT_DIR\")\"\n"
                     f"mkdir -p \"$RINGRIFT_ROOT\"\n"
                     f"if [ ! -d \"$RINGRIFT_ROOT/.git\" ]; then\n"
                     f"  if [ -n \"$(ls -A \"$RINGRIFT_ROOT\" 2>/dev/null || true)\" ]; then\n"
