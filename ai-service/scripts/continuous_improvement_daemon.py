@@ -70,6 +70,20 @@ except ImportError:
     HAS_IMPROVEMENT_MANAGER = False
     ImprovementCycleManager = None
 
+# Import league training system for tiered competition
+try:
+    from scripts.league_training import (
+        init_league_db,
+        sync_from_elo_db,
+        apply_promotions_demotions,
+        get_league_standings,
+        LEAGUE_ORDER,
+        LEAGUES,
+    )
+    HAS_LEAGUE_SYSTEM = True
+except ImportError:
+    HAS_LEAGUE_SYSTEM = False
+
 # Global improvement cycle manager instance
 _improvement_manager = None
 
@@ -98,8 +112,22 @@ def get_improvement_manager():
 # - Shared Elo leaderboard
 
 P2P_ORCHESTRATOR_URL = os.environ.get("P2P_ORCHESTRATOR_URL", "http://localhost:8770")
-P2P_AUTH_TOKEN = os.environ.get("RINGRIFT_CLUSTER_AUTH_TOKEN", "")
+P2P_AUTH_TOKEN = (os.environ.get("RINGRIFT_CLUSTER_AUTH_TOKEN", "") or "").strip()
+if not P2P_AUTH_TOKEN:
+    token_file = (os.environ.get("RINGRIFT_CLUSTER_AUTH_TOKEN_FILE", "") or "").strip()
+    if token_file:
+        try:
+            P2P_AUTH_TOKEN = Path(token_file).read_text(encoding="utf-8").strip()
+        except Exception:
+            P2P_AUTH_TOKEN = ""
 USE_P2P_ORCHESTRATOR = os.environ.get("USE_P2P_ORCHESTRATOR", "").lower() in ("1", "true", "yes")
+IMPROVEMENT_LEADER_ONLY = os.environ.get("RINGRIFT_IMPROVEMENT_LEADER_ONLY", "1").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+IMPROVEMENT_LEADER_POLL_SECONDS = float(os.environ.get("RINGRIFT_IMPROVEMENT_LEADER_POLL_SECONDS", "15") or 15)
 
 # Optional: sync promoted artifacts to a staging deployment.
 SYNC_STAGING = os.environ.get("RINGRIFT_SYNC_STAGING", "").lower() in ("1", "true", "yes", "on")
@@ -199,6 +227,39 @@ def report_local_cluster_metrics() -> None:
         )
     except Exception as e:
         print(f"[Daemon] Cluster metrics reporting failed: {e}")
+
+
+async def is_local_p2p_leader() -> bool:
+    """Return True if the local P2P orchestrator reports this node as the effective leader."""
+    if not USE_P2P_ORCHESTRATOR:
+        return True
+
+    try:
+        import aiohttp
+    except Exception:
+        # Best-effort: if aiohttp is unavailable, assume we're allowed to run
+        # (daemon can still function in non-P2P mode).
+        return True
+
+    url = f"{P2P_ORCHESTRATOR_URL.rstrip('/')}/status"
+    headers: Dict[str, str] = {}
+    if P2P_AUTH_TOKEN:
+        headers["Authorization"] = f"Bearer {P2P_AUTH_TOKEN}"
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    return False
+                data = await resp.json()
+    except Exception:
+        return False
+
+    node_id = data.get("node_id")
+    role = data.get("role")
+    effective_leader_id = data.get("effective_leader_id")
+    return bool(node_id and role == "leader" and effective_leader_id == node_id)
 
 # =============================================================================
 # Curriculum Learning Configuration
@@ -2139,6 +2200,85 @@ async def run_auto_promotion(state: DaemonState) -> int:
 
 
 # =============================================================================
+# League Training Integration
+# =============================================================================
+
+async def run_league_updates(state: DaemonState) -> Dict[str, int]:
+    """Run league system updates - sync models, apply promotions/demotions.
+
+    Returns dict with counts of synced, promoted, and demoted models.
+    """
+    if not HAS_LEAGUE_SYSTEM:
+        return {"synced": 0, "promoted": 0, "demoted": 0}
+
+    result = {"synced": 0, "promoted": 0, "demoted": 0}
+
+    print("[Daemon] Running league system updates...")
+
+    # Initialize league database if needed
+    try:
+        init_league_db()
+    except Exception as e:
+        print(f"[Daemon] Failed to initialize league DB: {e}")
+        return result
+
+    # Sync models from Elo database to league system
+    for config in BOARD_CONFIGS[:3]:  # Focus on main configs
+        board_type = config["board"]
+        num_players = config["players"]
+
+        try:
+            synced = sync_from_elo_db(board_type, num_players)
+            result["synced"] += synced
+            if synced > 0:
+                print(f"[Daemon] Synced {synced} models to league for {board_type}_{num_players}p")
+        except Exception as e:
+            print(f"[Daemon] Failed to sync {board_type}_{num_players}p: {e}")
+
+        # Apply promotions and demotions
+        try:
+            pd_result = apply_promotions_demotions(board_type, num_players, dry_run=False)
+            result["promoted"] += len(pd_result.get("promotions", []))
+            result["demoted"] += len(pd_result.get("demotions", []))
+
+            for p in pd_result.get("promotions", []):
+                print(f"[Daemon] League PROMOTION: {p['model_id'][:30]} "
+                      f"{p['from_league']} -> {p['to_league']} (Elo: {p['elo']:.0f})")
+
+            for d in pd_result.get("demotions", []):
+                print(f"[Daemon] League DEMOTION: {d['model_id'][:30]} "
+                      f"{d['from_league']} -> {d['to_league']} (Elo: {d['elo']:.0f})")
+
+        except Exception as e:
+            print(f"[Daemon] Failed to apply promotions for {board_type}_{num_players}p: {e}")
+
+    return result
+
+
+def print_league_status() -> None:
+    """Print current league standings summary."""
+    if not HAS_LEAGUE_SYSTEM:
+        return
+
+    for config in BOARD_CONFIGS[:1]:  # Just show primary config
+        board_type = config["board"]
+        num_players = config["players"]
+
+        standings = get_league_standings(board_type, num_players)
+        if not standings:
+            continue
+
+        print(f"\n[League] {board_type}_{num_players}p standings:")
+        for league_id in reversed(LEAGUE_ORDER):  # Show highest first
+            league_models = [s for s in standings if s["league"] == league_id]
+            if league_models:
+                config = LEAGUES[league_id]
+                top_model = league_models[0]
+                print(f"  {config.name}: {len(league_models)} models, "
+                      f"top={top_model['model_id'][:25]} (Elo: {top_model['elo']:.0f})")
+
+
+# =============================================================================
 # Main Daemon Loop
 # =============================================================================
 
@@ -2197,6 +2337,15 @@ async def daemon_cycle(state: DaemonState) -> bool:
         promotions = await run_auto_promotion(state)
         if promotions > 0:
             maybe_sync_staging("auto_promotion")
+
+        # Phase 5b: League system updates (every 3 cycles)
+        if state.total_cycles % 3 == 0:
+            print("[Daemon] Phase 5b: Running league system updates...")
+            league_result = await run_league_updates(state)
+            if league_result["synced"] > 0 or league_result["promoted"] > 0 or league_result["demoted"] > 0:
+                print(f"[Daemon] League updates: {league_result['synced']} synced, "
+                      f"{league_result['promoted']} promoted, {league_result['demoted']} demoted")
+            print_league_status()
 
         # Phase 6a: NNUE (value) retraining (when enough new games accumulated)
         if state.total_cycles % 5 == 0:
@@ -2282,7 +2431,23 @@ async def run_daemon(foreground: bool = False) -> None:
     signal.signal(signal.SIGTERM, signal_handler)
 
     # Main loop
+    last_leader_ok: Optional[bool] = None
     while not shutdown_event.is_set():
+        if USE_P2P_ORCHESTRATOR and IMPROVEMENT_LEADER_ONLY:
+            leader_ok = await is_local_p2p_leader()
+            if last_leader_ok is None or leader_ok != last_leader_ok:
+                if leader_ok:
+                    print("[Daemon] Leadership gate: active (local node is effective cluster leader)")
+                else:
+                    print("[Daemon] Leadership gate: paused (local node is not effective cluster leader)")
+                last_leader_ok = leader_ok
+            if not leader_ok:
+                try:
+                    await asyncio.wait_for(shutdown_event.wait(), timeout=IMPROVEMENT_LEADER_POLL_SECONDS)
+                except asyncio.TimeoutError:
+                    pass
+                continue
+
         success = await daemon_cycle(state)
 
         if not success:

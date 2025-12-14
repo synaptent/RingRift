@@ -3572,12 +3572,27 @@ class P2POrchestrator:
         """Handle heartbeat from peer node."""
         try:
             data = await request.json()
+            incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
+            if incoming_voters:
+                voters_list: List[str] = []
+                if isinstance(incoming_voters, list):
+                    voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
+                elif isinstance(incoming_voters, str):
+                    voters_list = [t.strip() for t in incoming_voters.split(",") if t.strip()]
+                if voters_list:
+                    self._maybe_adopt_voter_node_ids(voters_list, source="learned")
             peer_info = NodeInfo.from_dict(data)
             # Ignore self-heartbeats so NAT detection + leader election aren't
             # distorted when COORDINATOR_URL includes this node's own endpoint(s).
             if peer_info.node_id == self.node_id:
                 self._update_self_info()
-                return web.json_response(self.self_info.to_dict())
+                payload = self.self_info.to_dict()
+                voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
+                if voter_node_ids:
+                    payload["voter_node_ids"] = voter_node_ids
+                    payload["voter_quorum_size"] = int(getattr(self, "voter_quorum_size", 0) or 0)
+                    payload["voter_config_source"] = str(getattr(self, "voter_config_source", "") or "")
+                return web.json_response(payload)
             # Receiving any inbound heartbeat implies we're reachable inbound.
             self.last_inbound_heartbeat = time.time()
             # Preserve the node's self-reported endpoint for multi-path retries.
@@ -3610,7 +3625,13 @@ class P2POrchestrator:
 
             # Return our info
             self._update_self_info()
-            return web.json_response(self.self_info.to_dict())
+            payload = self.self_info.to_dict()
+            voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
+            if voter_node_ids:
+                payload["voter_node_ids"] = voter_node_ids
+                payload["voter_quorum_size"] = int(getattr(self, "voter_quorum_size", 0) or 0)
+                payload["voter_config_source"] = str(getattr(self, "voter_config_source", "") or "")
+            return web.json_response(payload)
         except Exception as e:
             return web.json_response({"error": str(e)}, status=400)
 
@@ -3835,10 +3856,16 @@ class P2POrchestrator:
                 if voters_list:
                     self._maybe_adopt_voter_node_ids(voters_list, source="learned")
 
+            voters = list(getattr(self, "voter_node_ids", []) or [])
+            if voters and new_leader not in voters:
+                return web.json_response(
+                    {"accepted": False, "reason": "leader_not_voter", "voters": voters},
+                    status=403,
+                )
+
             # Voter-side safety: if we've granted a still-valid lease to a different leader,
             # do not accept a conflicting coordinator announcement. This prevents a voter
             # from "following" a non-quorum leader during transient partitions.
-            voters = list(getattr(self, "voter_node_ids", []) or [])
             if voters and self.node_id in voters:
                 grant_leader = str(getattr(self, "voter_grant_leader_id", "") or "")
                 grant_expires = float(getattr(self, "voter_grant_expires", 0.0) or 0.0)
@@ -9221,14 +9248,29 @@ print(json.dumps({{
         """Send heartbeat to a peer and return their info."""
         try:
             self._update_self_info()
+            payload = self.self_info.to_dict()
+            voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
+            if voter_node_ids:
+                payload["voter_node_ids"] = voter_node_ids
+                payload["voter_quorum_size"] = int(getattr(self, "voter_quorum_size", 0) or 0)
+                payload["voter_config_source"] = str(getattr(self, "voter_config_source", "") or "")
 
             timeout = ClientTimeout(total=10)
             async with ClientSession(timeout=timeout) as session:
                 scheme = (scheme or "http").lower()
                 url = f"{scheme}://{peer_host}:{peer_port}/heartbeat"
-                async with session.post(url, json=self.self_info.to_dict(), headers=self._auth_headers()) as resp:
+                async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
                     if resp.status == 200:
                         data = await resp.json()
+                        incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
+                        if incoming_voters:
+                            voters_list: List[str] = []
+                            if isinstance(incoming_voters, list):
+                                voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
+                            elif isinstance(incoming_voters, str):
+                                voters_list = [t.strip() for t in incoming_voters.split(",") if t.strip()]
+                            if voters_list:
+                                self._maybe_adopt_voter_node_ids(voters_list, source="learned")
                         info = NodeInfo.from_dict(data)
                         if not info.reported_host:
                             info.reported_host = info.host

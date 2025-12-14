@@ -34,6 +34,17 @@ DISK_CRITICAL_THRESHOLD_OVERRIDE="${RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD:-}"
 MEMORY_WARNING_THRESHOLD_OVERRIDE="${RINGRIFT_P2P_MEMORY_WARNING_THRESHOLD:-}"
 MEMORY_CRITICAL_THRESHOLD_OVERRIDE="${RINGRIFT_P2P_MEMORY_CRITICAL_THRESHOLD:-}"
 LOAD_MAX_FOR_NEW_JOBS_OVERRIDE="${RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS:-}"
+P2P_AUTO_UPDATE="${RINGRIFT_P2P_AUTO_UPDATE:-1}"
+P2P_GIT_UPDATE_CHECK_INTERVAL="${RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL:-}"
+ENABLE_IMPROVEMENT_DAEMON_RAW="${RINGRIFT_ENABLE_IMPROVEMENT_DAEMON:-}"
+
+is_truthy() {
+    local v="$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')"
+    case "$v" in
+        1|true|yes|y|on) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 is_port_available() {
     local port="$1"
@@ -191,6 +202,8 @@ append_env_if_int "RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD" "$DISK_CRITICAL_THRESHO
 append_env_if_int "RINGRIFT_P2P_MEMORY_WARNING_THRESHOLD" "$MEMORY_WARNING_THRESHOLD_OVERRIDE"
 append_env_if_int "RINGRIFT_P2P_MEMORY_CRITICAL_THRESHOLD" "$MEMORY_CRITICAL_THRESHOLD_OVERRIDE"
 append_env_if_int "RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS" "$LOAD_MAX_FOR_NEW_JOBS_OVERRIDE"
+append_env_if_int "RINGRIFT_P2P_AUTO_UPDATE" "$P2P_AUTO_UPDATE"
+append_env_if_int "RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL" "$P2P_GIT_UPDATE_CHECK_INTERVAL"
 
 # Persist an explicit advertised P2P port for port-mapped environments (Vast.ai)
 # so the orchestrator can report a reachable endpoint even in minimal
@@ -230,6 +243,9 @@ if [ "$HAS_USABLE_SYSTEMD" = "1" ]; then
     # Copy service files
     cp "$RINGRIFT_DIR/deploy/systemd/ringrift-p2p.service" /etc/systemd/system/
     cp "$RINGRIFT_DIR/deploy/systemd/ringrift-resilience.service" /etc/systemd/system/
+    if [ -f "$RINGRIFT_DIR/deploy/systemd/ringrift-improvement.service" ]; then
+        cp "$RINGRIFT_DIR/deploy/systemd/ringrift-improvement.service" /etc/systemd/system/
+    fi
 
     # Rewrite hard-coded paths for non-root installations.
     if [ "$RINGRIFT_DIR" != "/root/ringrift/ai-service" ]; then
@@ -241,6 +257,13 @@ if [ "$HAS_USABLE_SYSTEMD" = "1" ]; then
     systemctl daemon-reload
     systemctl enable ringrift-p2p.service
     systemctl enable ringrift-resilience.service
+    if [ -f /etc/systemd/system/ringrift-improvement.service ] && is_truthy "$ENABLE_IMPROVEMENT_DAEMON_RAW"; then
+        systemctl enable ringrift-improvement.service
+        systemctl start ringrift-improvement.service || true
+        echo "Enabled ringrift-improvement.service (continuous improvement daemon)"
+    else
+        echo "Continuous improvement daemon disabled (set RINGRIFT_ENABLE_IMPROVEMENT_DAEMON=1 to enable)"
+    fi
 
     echo "Systemd services installed and enabled"
 else

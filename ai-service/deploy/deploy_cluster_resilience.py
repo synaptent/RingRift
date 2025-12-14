@@ -437,6 +437,7 @@ def main() -> None:
     # Optional resilience tuning values are forwarded via env so the setup
     # scripts can persist them into node.conf / launchd.
     tuning_keys = [
+        "RINGRIFT_ENABLE_IMPROVEMENT_DAEMON",
         "RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS",
         "RINGRIFT_P2P_RETRY_RETIRED_NODE_INTERVAL",
         "RINGRIFT_P2P_DISK_WARNING_THRESHOLD",
@@ -445,6 +446,8 @@ def main() -> None:
         "RINGRIFT_P2P_MEMORY_WARNING_THRESHOLD",
         "RINGRIFT_P2P_MEMORY_CRITICAL_THRESHOLD",
         "RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS",
+        "RINGRIFT_P2P_AUTO_UPDATE",
+        "RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL",
     ]
     tuning_prefix_parts: List[str] = []
     for key in tuning_keys:

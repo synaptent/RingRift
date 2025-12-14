@@ -22,6 +22,16 @@ RINGRIFT_ROOT="${RINGRIFT_ROOT:-$HOME/Development/RingRift}"
 P2P_PORT="${P2P_PORT:-8770}"
 P2P_VOTERS="${RINGRIFT_P2P_VOTERS:-}"
 P2P_VOTERS="${P2P_VOTERS//[[:space:]]/}"
+ENABLE_IMPROVEMENT_DAEMON_RAW="${RINGRIFT_ENABLE_IMPROVEMENT_DAEMON:-}"
+
+is_truthy() {
+  local v
+  v="$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in
+    1|true|yes|y|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 sanitize_int_or_empty() {
   local val="${1:-}"
@@ -48,6 +58,12 @@ LOAD_MAX_FOR_NEW_JOBS_OVERRIDE="$(sanitize_int_or_empty "${RINGRIFT_P2P_LOAD_MAX
 ADVERTISE_HOST="${RINGRIFT_ADVERTISE_HOST:-}"
 ADVERTISE_PORT="${RINGRIFT_ADVERTISE_PORT:-$P2P_PORT}"
 LAUNCHD_PATH="${RINGRIFT_LAUNCHD_PATH:-/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin}"
+P2P_AUTO_UPDATE_RAW="${RINGRIFT_P2P_AUTO_UPDATE:-1}"
+P2P_AUTO_UPDATE="$(sanitize_int_or_empty "${P2P_AUTO_UPDATE_RAW}")"
+if [ -z "$P2P_AUTO_UPDATE" ]; then
+  P2P_AUTO_UPDATE="1"
+fi
+P2P_GIT_UPDATE_CHECK_INTERVAL_OVERRIDE="$(sanitize_int_or_empty "${RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL:-}")"
 
 AI_SERVICE_DIR="${RINGRIFT_ROOT}/ai-service"
 if [ ! -d "$AI_SERVICE_DIR" ]; then
@@ -81,6 +97,7 @@ fi
 
 P2P_PLIST="${PLIST_DIR}/com.ringrift.p2p.plist"
 RES_PLIST="${PLIST_DIR}/com.ringrift.resilience.plist"
+IMP_PLIST="${PLIST_DIR}/com.ringrift.improvement.plist"
 
 cat > "$P2P_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -123,6 +140,10 @@ cat > "$P2P_PLIST" <<EOF
     <string>${MEMORY_CRITICAL_THRESHOLD_OVERRIDE}</string>
     <key>RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS</key>
     <string>${LOAD_MAX_FOR_NEW_JOBS_OVERRIDE}</string>
+    <key>RINGRIFT_P2P_AUTO_UPDATE</key>
+    <string>${P2P_AUTO_UPDATE}</string>
+    <key>RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL</key>
+    <string>${P2P_GIT_UPDATE_CHECK_INTERVAL_OVERRIDE}</string>
     <key>RINGRIFT_CLUSTER_AUTH_TOKEN_FILE</key>
     <string>${TOKEN_FILE}</string>
   </dict>
@@ -188,6 +209,10 @@ cat > "$RES_PLIST" <<EOF
     <string>${MEMORY_CRITICAL_THRESHOLD_OVERRIDE}</string>
     <key>RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS</key>
     <string>${LOAD_MAX_FOR_NEW_JOBS_OVERRIDE}</string>
+    <key>RINGRIFT_P2P_AUTO_UPDATE</key>
+    <string>${P2P_AUTO_UPDATE}</string>
+    <key>RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL</key>
+    <string>${P2P_GIT_UPDATE_CHECK_INTERVAL_OVERRIDE}</string>
     <key>RINGRIFT_CLUSTER_AUTH_TOKEN_FILE</key>
     <string>${TOKEN_FILE}</string>
   </dict>
@@ -212,15 +237,70 @@ cat > "$RES_PLIST" <<EOF
 </plist>
 EOF
 
+if is_truthy "$ENABLE_IMPROVEMENT_DAEMON_RAW"; then
+cat > "$IMP_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ringrift.improvement</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>WorkingDirectory</key>
+  <string>${AI_SERVICE_DIR}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${LAUNCHD_PATH}</string>
+    <key>PYTHONPATH</key>
+    <string>${AI_SERVICE_DIR}</string>
+    <key>USE_P2P_ORCHESTRATOR</key>
+    <string>true</string>
+    <key>P2P_ORCHESTRATOR_URL</key>
+    <string>http://localhost:${P2P_PORT}</string>
+    <key>RINGRIFT_IMPROVEMENT_LEADER_ONLY</key>
+    <string>1</string>
+    <key>RINGRIFT_CLUSTER_AUTH_TOKEN_FILE</key>
+    <string>${TOKEN_FILE}</string>
+  </dict>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${PYTHON}</string>
+    <string>${AI_SERVICE_DIR}/scripts/continuous_improvement_daemon.py</string>
+    <string>--foreground</string>
+  </array>
+  <key>StandardOutPath</key>
+  <string>${LOG_DIR}/improvement.log</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG_DIR}/improvement.log</string>
+</dict>
+</plist>
+EOF
+else
+  rm -f "$IMP_PLIST" 2>/dev/null || true
+fi
+
 echo "Wrote:"
 echo "  $P2P_PLIST"
 echo "  $RES_PLIST"
+if is_truthy "$ENABLE_IMPROVEMENT_DAEMON_RAW"; then
+  echo "  $IMP_PLIST"
+fi
 echo ""
 echo "Loading LaunchAgents..."
 launchctl unload "$P2P_PLIST" >/dev/null 2>&1 || true
 launchctl unload "$RES_PLIST" >/dev/null 2>&1 || true
+launchctl unload "$IMP_PLIST" >/dev/null 2>&1 || true
 launchctl load "$P2P_PLIST"
 launchctl load "$RES_PLIST"
+if is_truthy "$ENABLE_IMPROVEMENT_DAEMON_RAW"; then
+  launchctl load "$IMP_PLIST"
+else
+  echo "Continuous improvement daemon disabled (set RINGRIFT_ENABLE_IMPROVEMENT_DAEMON=1 to enable)"
+fi
 echo ""
 echo "Done."
 echo ""
