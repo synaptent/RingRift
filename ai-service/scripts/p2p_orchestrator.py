@@ -126,10 +126,10 @@ GPU_IDLE_RESTART_TIMEOUT = 300  # Restart jobs after 5 min of GPU at 0%
 GPU_IDLE_THRESHOLD = 2          # Consider GPU idle if utilization < 2%
 
 # Git auto-update settings
-GIT_UPDATE_CHECK_INTERVAL = 300  # Check for updates every 5 minutes
+GIT_UPDATE_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL", "300") or 300)  # seconds
 GIT_REMOTE_NAME = "origin"       # Git remote to check
 GIT_BRANCH_NAME = "main"         # Branch to track
-AUTO_UPDATE_ENABLED = True       # Enable automatic updates
+AUTO_UPDATE_ENABLED = (os.environ.get("RINGRIFT_P2P_AUTO_UPDATE", "false").strip().lower() in {"1", "true", "yes"})
 GRACEFUL_SHUTDOWN_BEFORE_UPDATE = True  # Stop jobs before updating
 
 # Shared auth token (optional but strongly recommended if any node is public)
