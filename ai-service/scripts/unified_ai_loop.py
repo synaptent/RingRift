@@ -1435,7 +1435,6 @@ def main():
     if args.stop:
         pid_path = AI_SERVICE_ROOT / config.log_dir / "unified_loop.pid"
         if pid_path.exists():
-            import signal
             pid = int(pid_path.read_text().strip())
             try:
                 os.kill(pid, signal.SIGTERM)
