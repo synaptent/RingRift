@@ -976,7 +976,8 @@ class MinimaxAI(HeuristicAI):
         # Use NNUE evaluation when available
         if self.use_nnue and self.nnue_evaluator is not None:
             try:
-                # NNUE already provides zero-sum evaluation
+                # NNUE evaluator now applies zero-sum transformation internally
+                # when RINGRIFT_NNUE_ZERO_SUM_EVAL=true (default)
                 return self.nnue_evaluator.evaluate_mutable(state)
             except Exception as e:
                 # Fallback to heuristic on NNUE error

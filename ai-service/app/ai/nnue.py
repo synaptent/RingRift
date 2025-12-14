@@ -214,16 +214,38 @@ def _pos_to_index(pos: Position, board_size: int, board_type: BoardType) -> int:
         return pos.y * board_size + pos.x
 
 
+def _rotate_player_perspective(owner: int, player_number: int, num_players: int = 4) -> int:
+    """Rotate player number so that player_number becomes player 1.
+
+    This ensures the current player's features are always in plane 0,
+    making the evaluation symmetric/perspective-aware.
+
+    Example with player_number=2:
+        owner=2 -> 1 (current player)
+        owner=1 -> 4 (opponent, wraps around)
+        owner=3 -> 2 (other opponent)
+        owner=4 -> 3 (other opponent)
+    """
+    if owner == 0 or owner == player_number:
+        return 1 if owner == player_number else owner
+    # Rotate: map owner to (owner - player_number + 1) mod num_players, keeping 1-indexed
+    rotated = ((owner - player_number) % num_players) + 1
+    return rotated
+
+
 def extract_features_from_gamestate(
     state: GameState,
     player_number: int,
 ) -> np.ndarray:
     """Extract NNUE features from immutable GameState.
 
-    Feature planes (12 total):
-    - Planes 0-3: Ring presence for players 1-4
-    - Planes 4-7: Stack presence for players 1-4
-    - Planes 8-11: Territory ownership for players 1-4
+    Feature planes (12 total) - PERSPECTIVE ROTATED:
+    - Planes 0-3: Ring presence (plane 0 = current player, 1-3 = opponents)
+    - Planes 4-7: Stack presence (plane 4 = current player, 5-7 = opponents)
+    - Planes 8-11: Territory ownership (plane 8 = current player, 9-11 = opponents)
+
+    The perspective rotation ensures that Eval(state, P1) can differ from
+    Eval(state, P2), which is required for proper minimax evaluation.
 
     Args:
         state: The game state to extract features from
@@ -236,6 +258,7 @@ def extract_features_from_gamestate(
     board_type = board.type
     board_size = get_board_size(board_type)
     num_positions = board_size * board_size
+    num_players = len(state.players) if hasattr(state, 'players') else 2
 
     # Initialize feature planes
     features = np.zeros(num_positions * FEATURE_PLANES, dtype=np.float32)
@@ -251,32 +274,41 @@ def extract_features_from_gamestate(
                 idx = _pos_to_index(pos, board_size, board_type)
 
                 if 0 <= idx < num_positions:
-                    # Ring features (planes 0-3) - mark presence for each player's rings
+                    # Ring features (planes 0-3) - ROTATED perspective
                     rings = getattr(ring_stack, 'rings', [])
                     for ring_owner in rings:
                         if 1 <= ring_owner <= 4:
-                            plane_idx = (ring_owner - 1) * num_positions
+                            # Rotate so current player is always plane 0
+                            rotated = _rotate_player_perspective(
+                                ring_owner, player_number, num_players
+                            )
+                            plane_idx = (rotated - 1) * num_positions
                             features[plane_idx + idx] = 1.0
 
-                    # Stack features (planes 4-7) - use controlling player and height
+                    # Stack features (planes 4-7) - ROTATED perspective
                     owner = getattr(ring_stack, 'controlling_player', 0)
                     height = getattr(ring_stack, 'stack_height', 0)
                     if 1 <= owner <= 4 and height > 0:
-                        plane_idx = (4 + owner - 1) * num_positions
-                        # Normalize height to [0, 1]
+                        rotated = _rotate_player_perspective(
+                            owner, player_number, num_players
+                        )
+                        plane_idx = (4 + rotated - 1) * num_positions
                         features[plane_idx + idx] = min(height / 5.0, 1.0)
         except (ValueError, AttributeError):
             continue
 
-    # Extract territory features (planes 8-11) from board.territories
+    # Extract territory features (planes 8-11) - ROTATED perspective
     for territory_key, territory in (board.territories or {}).items():
         try:
             pnum = getattr(territory, 'player', 0)
             if 1 <= pnum <= 4:
+                rotated = _rotate_player_perspective(
+                    pnum, player_number, num_players
+                )
                 for pos in (getattr(territory, 'spaces', None) or []):
                     idx = _pos_to_index(pos, board_size, board_type)
                     if 0 <= idx < num_positions:
-                        plane_idx = (8 + pnum - 1) * num_positions
+                        plane_idx = (8 + rotated - 1) * num_positions
                         features[plane_idx + idx] = 1.0
         except (ValueError, AttributeError):
             continue
@@ -293,6 +325,11 @@ def extract_features_from_mutable(
     Optimized feature extraction that works directly with MutableGameState
     to avoid conversion overhead during search.
 
+    Feature planes (12 total) - PERSPECTIVE ROTATED:
+    - Planes 0-3: Ring presence (plane 0 = current player, 1-3 = opponents)
+    - Planes 4-7: Stack presence (plane 4 = current player, 5-7 = opponents)
+    - Planes 8-11: Territory ownership (plane 8 = current player, 9-11 = opponents)
+
     Args:
         state: The mutable game state
         player_number: The player perspective (1-4)
@@ -303,6 +340,7 @@ def extract_features_from_mutable(
     board_type = state.board_type
     board_size = get_board_size(board_type)
     num_positions = board_size * board_size
+    num_players = getattr(state, 'num_players', 2)
 
     # Initialize feature planes
     features = np.zeros(num_positions * FEATURE_PLANES, dtype=np.float32)
@@ -318,17 +356,21 @@ def extract_features_from_mutable(
         immutable = state.to_immutable()
         return extract_features_from_gamestate(immutable, player_number)
 
-    # Extract ring features from internal arrays
+    # Extract ring features from internal arrays - ROTATED perspective
     if rings is not None:
         for y in range(board_size):
             for x in range(board_size):
                 idx = y * board_size + x
                 owner = int(rings[y, x]) if rings.ndim >= 2 else 0
                 if 1 <= owner <= 4:
-                    plane_idx = (owner - 1) * num_positions
+                    # Rotate so current player is always plane 0
+                    rotated = _rotate_player_perspective(
+                        owner, player_number, num_players
+                    )
+                    plane_idx = (rotated - 1) * num_positions
                     features[plane_idx + idx] = 1.0
 
-    # Extract stack features
+    # Extract stack features - ROTATED perspective
     if stacks is not None:
         for y in range(board_size):
             for x in range(board_size):
@@ -341,17 +383,23 @@ def extract_features_from_mutable(
                     owner = int(stacks[y, x]) if stacks.ndim >= 2 else 0
                     height = 1
                 if 1 <= owner <= 4 and height > 0:
-                    plane_idx = (4 + owner - 1) * num_positions
+                    rotated = _rotate_player_perspective(
+                        owner, player_number, num_players
+                    )
+                    plane_idx = (4 + rotated - 1) * num_positions
                     features[plane_idx + idx] = min(height / 5.0, 1.0)
 
-    # Extract territory features
+    # Extract territory features - ROTATED perspective
     if territories is not None:
         for y in range(board_size):
             for x in range(board_size):
                 idx = y * board_size + x
                 owner = int(territories[y, x]) if territories.ndim >= 2 else 0
                 if 1 <= owner <= 4:
-                    plane_idx = (8 + owner - 1) * num_positions
+                    rotated = _rotate_player_perspective(
+                        owner, player_number, num_players
+                    )
+                    plane_idx = (8 + rotated - 1) * num_positions
                     features[plane_idx + idx] = 1.0
 
     return features
@@ -502,6 +550,17 @@ class NNUEEvaluator:
     - Model loading with fallback to heuristic
     - Feature extraction from both immutable and mutable states
     - Score scaling to centipawn-like values
+    - Zero-sum evaluation for correct minimax behavior
+
+    Zero-Sum Evaluation:
+    For correct alpha-beta behavior, evaluation must satisfy:
+        Eval(state, P1) = -Eval(state, P2)
+
+    This is achieved by computing:
+        zero_sum_score = (my_eval - max_opponent_eval) / 2
+
+    This doubles evaluation cost but ensures correct minimax behavior.
+    Controlled via RINGRIFT_NNUE_ZERO_SUM_EVAL environment variable.
     """
 
     # Scale factor to convert [-1, 1] to centipawn-like score
@@ -515,6 +574,7 @@ class NNUEEvaluator:
         model_id: Optional[str] = None,
         allow_fresh: bool = True,
     ):
+        import os
         self.board_type = board_type
         self.player_number = player_number
         self.num_players = num_players
@@ -526,38 +586,84 @@ class NNUEEvaluator:
         )
         self.available = self.model is not None
 
+        # Zero-sum evaluation for minimax (enabled by default)
+        self.use_zero_sum = os.getenv(
+            'RINGRIFT_NNUE_ZERO_SUM_EVAL', 'true'
+        ).lower() in ('true', '1', 'yes')
+
+    def _raw_evaluate_mutable(
+        self, state: MutableGameState, player_number: int
+    ) -> float:
+        """Raw NNUE evaluation for a specific player (NOT zero-sum)."""
+        features = extract_features_from_mutable(state, player_number)
+        value = self.model.forward_single(features)
+        return value * self.SCORE_SCALE
+
+    def _raw_evaluate_gamestate(
+        self, state: GameState, player_number: int
+    ) -> float:
+        """Raw NNUE evaluation for a specific player (NOT zero-sum)."""
+        features = extract_features_from_gamestate(state, player_number)
+        value = self.model.forward_single(features)
+        return value * self.SCORE_SCALE
+
     def evaluate_mutable(self, state: MutableGameState) -> float:
-        """Evaluate a mutable game state.
+        """Evaluate a mutable game state with zero-sum normalization.
 
         Args:
             state: MutableGameState to evaluate
 
         Returns:
-            Score in centipawn-like scale (positive = good for player)
+            Score in centipawn-like scale (positive = good for player).
+            When zero-sum is enabled, returns (my_eval - max_opp_eval) / 2.
         """
         if not self.available or self.model is None:
             raise RuntimeError("NNUE model not available")
 
-        features = extract_features_from_mutable(state, self.player_number)
-        value = self.model.forward_single(features)
+        my_eval = self._raw_evaluate_mutable(state, self.player_number)
 
-        # Scale to centipawn-like score
-        return value * self.SCORE_SCALE
+        if not self.use_zero_sum:
+            return my_eval
+
+        # Compute zero-sum: (my_eval - max_opponent_eval) / 2
+        # This ensures Eval(P1) = -Eval(P2)
+        max_opponent_eval = float('-inf')
+        for p in range(1, self.num_players + 1):
+            if p != self.player_number:
+                opp_eval = self._raw_evaluate_mutable(state, p)
+                max_opponent_eval = max(max_opponent_eval, opp_eval)
+
+        if max_opponent_eval == float('-inf'):
+            return my_eval
+
+        return (my_eval - max_opponent_eval) / 2.0
 
     def evaluate_gamestate(self, state: GameState) -> float:
-        """Evaluate an immutable game state.
+        """Evaluate an immutable game state with zero-sum normalization.
 
         Args:
             state: GameState to evaluate
 
         Returns:
-            Score in centipawn-like scale (positive = good for player)
+            Score in centipawn-like scale (positive = good for player).
+            When zero-sum is enabled, returns (my_eval - max_opp_eval) / 2.
         """
         if not self.available or self.model is None:
             raise RuntimeError("NNUE model not available")
 
-        features = extract_features_from_gamestate(state, self.player_number)
-        value = self.model.forward_single(features)
+        my_eval = self._raw_evaluate_gamestate(state, self.player_number)
 
-        # Scale to centipawn-like score
-        return value * self.SCORE_SCALE
+        if not self.use_zero_sum:
+            return my_eval
+
+        # Compute zero-sum: (my_eval - max_opponent_eval) / 2
+        max_opponent_eval = float('-inf')
+        for p in range(1, self.num_players + 1):
+            if p != self.player_number:
+                opp_eval = self._raw_evaluate_gamestate(state, p)
+                max_opponent_eval = max(max_opponent_eval, opp_eval)
+
+        if max_opponent_eval == float('-inf'):
+            return my_eval
+
+        return (my_eval - max_opponent_eval) / 2.0
