@@ -29,6 +29,14 @@ from .zobrist import ZobristHash
 from ..models import GameState, Move, MoveType, AIConfig, GamePhase
 from ..rules.mutable_state import MutableGameState
 
+# Environment variable to enable zero-sum evaluation for minimax.
+# When enabled, evaluation computes (my_eval - opponent_eval) / 2 which
+# ensures Eval(P1) = -Eval(P2), required for correct alpha-beta behavior.
+# This doubles evaluation cost but fixes the non-zero-sum evaluation bug.
+MINIMAX_ZERO_SUM_EVAL = os.getenv(
+    'RINGRIFT_MINIMAX_ZERO_SUM_EVAL', 'true'
+).lower() in ('true', '1', 'yes')
+
 logger = logging.getLogger(__name__)
 
 # Interactive phases where player actions (and thus quiescence search) are valid.
@@ -123,6 +131,70 @@ class MinimaxAI(HeuristicAI):
                 f"MinimaxAI(player={player_number}, difficulty={config.difficulty}): "
                 "using heuristic evaluation"
             )
+
+    def evaluate_position(self, game_state: GameState) -> float:
+        """
+        Zero-sum evaluation for minimax search.
+
+        For correct alpha-beta behavior, evaluation must satisfy:
+            Eval(state, P1) = -Eval(state, P2)
+
+        The base HeuristicAI evaluation is NOT zero-sum because many features
+        only consider "my" perspective (e.g., my_rings_in_hand, my_markers).
+        This causes minimax to make suboptimal decisions at depth because
+        opponent maximizing THEIR score != minimizing MY score.
+
+        This override computes:
+            zero_sum_eval = (my_eval - opponent_eval) / 2
+
+        This doubles evaluation cost but ensures correct minimax behavior.
+        Can be disabled via RINGRIFT_MINIMAX_ZERO_SUM_EVAL=false for testing.
+        """
+        # Check for game over first (these are always zero-sum)
+        if game_state.game_status == "completed":
+            if game_state.winner == self.player_number:
+                return 100000.0
+            elif game_state.winner is not None:
+                return -100000.0
+            else:
+                return 0.0
+
+        if not MINIMAX_ZERO_SUM_EVAL:
+            # Use base evaluation (for A/B testing)
+            return super().evaluate_position(game_state)
+
+        # Compute raw eval from my perspective
+        my_eval = super().evaluate_position(game_state)
+
+        # Compute raw eval from opponent's perspective
+        # For 2-player games, simply switch player number
+        # For 3-4 player paranoid search, we take max of all opponents
+        original_player = self.player_number
+
+        # Determine all opponent player numbers
+        opponent_players = [
+            p.player_number
+            for p in game_state.players
+            if p.player_number != self.player_number
+        ]
+
+        if not opponent_players:
+            return my_eval
+
+        # In paranoid search, all opponents form a coalition against us.
+        # We use the MAX of opponent evaluations (worst case for us).
+        max_opponent_eval = float('-inf')
+        for opp_num in opponent_players:
+            self.player_number = opp_num
+            opp_eval = super().evaluate_position(game_state)
+            max_opponent_eval = max(max_opponent_eval, opp_eval)
+
+        # Restore original player
+        self.player_number = original_player
+
+        # Zero-sum: my advantage = my eval - opponent's best eval
+        # Divided by 2 to keep values in similar range
+        return (my_eval - max_opponent_eval) / 2.0
 
     def select_move(self, game_state: GameState) -> Optional[Move]:
         """Select the best move using minimax search.
@@ -885,6 +957,8 @@ class MinimaxAI(HeuristicAI):
         network evaluation for stronger positional assessment. Falls back
         to heuristic evaluation when NNUE is unavailable.
 
+        Uses zero-sum evaluation when MINIMAX_ZERO_SUM_EVAL is enabled.
+
         Note: For heuristic fallback, this converts to immutable state which
         adds some overhead, but is still faster than cloning state at every
         tree node.
@@ -902,12 +976,14 @@ class MinimaxAI(HeuristicAI):
         # Use NNUE evaluation when available
         if self.use_nnue and self.nnue_evaluator is not None:
             try:
+                # NNUE already provides zero-sum evaluation
                 return self.nnue_evaluator.evaluate_mutable(state)
             except Exception as e:
                 # Fallback to heuristic on NNUE error
                 logger.warning(f"NNUE evaluation failed, falling back to heuristic: {e}")
 
         # Convert to immutable for heuristic evaluation
+        # evaluate_position already applies zero-sum transformation
         immutable = state.to_immutable()
         return self.evaluate_position(immutable)
 

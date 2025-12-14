@@ -21,7 +21,7 @@ import time
 
 import torch
 
-from .minimax_ai import MinimaxAI
+from .minimax_ai import MinimaxAI, MINIMAX_ZERO_SUM_EVAL
 from .heuristic_weights import BASE_V1_BALANCED_WEIGHTS, get_weights
 from ..models import GameState, Move, MoveType, AIConfig, BoardType
 from ..rules.mutable_state import MutableGameState
@@ -143,6 +143,50 @@ class GPUMinimaxAI(MinimaxAI):
             else:
                 self._heuristic_weights = dict(BASE_V1_BALANCED_WEIGHTS)
         return self._heuristic_weights
+
+    def _to_zero_sum_scores(
+        self,
+        scores_tensor: torch.Tensor,
+    ) -> torch.Tensor:
+        """Convert GPU batch scores to zero-sum format.
+
+        For correct alpha-beta behavior, minimax requires:
+            Eval(state, P1) = -Eval(state, P2)
+
+        The raw GPU evaluation gives per-player scores. This method converts
+        them to zero-sum by computing:
+            zero_sum_score = (my_score - max_opponent_score) / 2
+
+        Args:
+            scores_tensor: Shape [batch_size, num_players+1] with per-player scores
+                           Index 0 is unused, players are 1-indexed
+
+        Returns:
+            Tensor of shape [batch_size] with zero-sum scores for our player
+        """
+        if not MINIMAX_ZERO_SUM_EVAL:
+            # Just return our player's score
+            return scores_tensor[:, self.player_number]
+
+        num_players = self._num_players or 2
+
+        # Get our score
+        my_scores = scores_tensor[:, self.player_number]
+
+        # Get max opponent score (for paranoid assumption)
+        opponent_mask = torch.ones(num_players + 1, dtype=torch.bool, device=scores_tensor.device)
+        opponent_mask[0] = False  # Index 0 is unused
+        opponent_mask[self.player_number] = False  # Exclude ourselves
+
+        # Only keep opponent columns
+        opponent_scores = scores_tensor[:, opponent_mask]
+        if opponent_scores.size(1) > 0:
+            max_opponent_scores = opponent_scores.max(dim=1).values
+        else:
+            max_opponent_scores = torch.zeros_like(my_scores)
+
+        # Zero-sum: advantage = (my - opponent) / 2
+        return (my_scores - max_opponent_scores) / 2.0
 
     def select_move(self, game_state: GameState) -> Optional[Move]:
         """Select the best move using GPU-accelerated minimax search.
@@ -278,8 +322,8 @@ class GPUMinimaxAI(MinimaxAI):
             batch = self._create_batch_from_states(child_states)
             scores_tensor = evaluate_positions_batch(batch, self._get_weights())
 
-            # Extract scores for our player
-            scores = scores_tensor[:, self.player_number].cpu().numpy()
+            # Convert to zero-sum scores for minimax
+            scores = self._to_zero_sum_scores(scores_tensor).cpu().numpy()
 
             # Add move-type priority bonuses (same as CPU version)
             scored_moves: List[Tuple[float, Move]] = []
@@ -525,8 +569,8 @@ class GPUMinimaxAI(MinimaxAI):
             batch = self._create_batch_from_states(states)
             scores_tensor = evaluate_positions_batch(batch, self._get_weights())
 
-            # Extract scores for our player and store results
-            scores = scores_tensor[:, self.player_number].cpu().numpy()
+            # Convert to zero-sum scores and store results
+            scores = self._to_zero_sum_scores(scores_tensor).cpu().numpy()
 
             for i, state_hash in enumerate(hashes):
                 score = float(scores[i])
