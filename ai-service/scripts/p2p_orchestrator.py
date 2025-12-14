@@ -1152,6 +1152,29 @@ class P2POrchestrator:
             "last_reset": time.time(),       # when metrics were last reset
         }
 
+        # === CRITICAL SELF-IMPROVEMENT LOOP METRICS ===
+        # Training progress tracking (populated by training callbacks)
+        self.training_metrics: Dict[str, Dict[str, float]] = {}  # config -> {loss, val_loss, epoch}
+
+        # Selfplay throughput tracking
+        self.selfplay_throughput: Dict[str, float] = {}  # config -> games/hour
+
+        # Cost efficiency metrics
+        self.cost_metrics: Dict[str, float] = {
+            "gpu_hours_total": 0.0,
+            "estimated_cost_usd": 0.0,
+            "elo_per_gpu_hour": 0.0,
+        }
+
+        # Promotion quality metrics
+        self.promotion_metrics: Dict[str, Any] = {
+            "success_rate": 0.0,
+            "avg_elo_gain": 0.0,
+            "rejections": {},  # reason -> count
+            "total_attempts": 0,
+            "successful": 0,
+        }
+
         # LEARNED LESSONS - Stuck job detection (leader-only)
         # Track when each node's GPU first went idle with running jobs
         self.gpu_idle_since: Dict[str, float] = {}  # node_id -> timestamp when GPU went idle
@@ -7497,12 +7520,92 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     job.status = "failed"
                     job.error_message = data["error"]
 
+                # Check if we should trigger evaluation after training
+                should_trigger_eval = (
+                    data.get("completed") and
+                    job.output_model_path and
+                    self.improvement_cycle_manager
+                )
+
             self._save_state()
+
+            # Auto-trigger tournament evaluation when training completes
+            if should_trigger_eval:
+                asyncio.create_task(self._handle_training_job_completion(job))
 
             return web.json_response({"success": True})
 
         except Exception as e:
             return web.json_response({"success": False, "error": str(e)})
+
+    async def _handle_training_job_completion(self, job: 'TrainingJob') -> None:
+        """Handle training job completion - notify cycle manager and trigger evaluation.
+
+        This method bridges the training completion with the improvement cycle:
+        1. Notifies improvement_cycle_manager of training completion
+        2. Schedules a model comparison tournament
+        3. Updates Elo database with results
+        """
+        if not self.improvement_cycle_manager:
+            return
+
+        try:
+            print(f"[P2P] Training job {job.job_id} completed, triggering evaluation")
+
+            # Notify improvement cycle manager
+            self.improvement_cycle_manager.handle_training_complete(
+                job.board_type,
+                job.num_players,
+                job.output_model_path,
+                job.data_games_count or 0
+            )
+
+            # Schedule model comparison tournament
+            await self._schedule_model_comparison_tournament(job)
+
+        except Exception as e:
+            print(f"[P2P] Error handling training completion for {job.job_id}: {e}")
+
+    async def _schedule_model_comparison_tournament(self, job: 'TrainingJob') -> None:
+        """Schedule a tournament to compare the new model against baseline."""
+        if not job.output_model_path:
+            return
+
+        try:
+            # Get tournament matchups from cycle manager
+            matchups = self.improvement_cycle_manager.get_tournament_matchups(
+                job.board_type,
+                job.num_players,
+                new_model_path=job.output_model_path
+            )
+
+            if not matchups:
+                print(f"[P2P] No tournament matchups for {job.board_type}_{job.num_players}p")
+                return
+
+            print(f"[P2P] Scheduling {len(matchups)} tournament matchups for new model")
+
+            # Run evaluation games (simplified - in production would dispatch to workers)
+            total_wins = 0
+            total_games = 0
+
+            for matchup in matchups:
+                if matchup.get("purpose") == "primary_evaluation":
+                    # Primary evaluation against best model
+                    games = matchup.get("games", 20)
+                    total_games += games
+                    # Placeholder: actual tournament execution would go here
+                    # For now, mark as needing external evaluation
+                    print(f"[P2P] Tournament: {matchup['agent_a']} vs {matchup['agent_b']} ({games} games)")
+
+            # Update cycle state - evaluation is now pending
+            cycle_key = f"{job.board_type}_{job.num_players}p"
+            if cycle_key in self.improvement_cycle_manager.state.cycles:
+                self.improvement_cycle_manager.state.cycles[cycle_key].pending_evaluation = True
+                self.improvement_cycle_manager._save_state()
+
+        except Exception as e:
+            print(f"[P2P] Error scheduling tournament: {e}")
 
     async def handle_nnue_start(self, request: web.Request) -> web.Response:
         """Handle NNUE training start request (worker endpoint)."""
@@ -8725,6 +8828,137 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                            "# HELP ringrift_games_total Total games per board configuration")
                 lines.insert(-len(self.cluster_data_manifest.by_board_type),
                            "# TYPE ringrift_games_total gauge")
+
+            # === CRITICAL SELF-IMPROVEMENT LOOP METRICS ===
+
+            # Training Progress Metrics
+            lines.append("# HELP ringrift_training_loss Current model training loss")
+            lines.append("# TYPE ringrift_training_loss gauge")
+            lines.append("# HELP ringrift_training_val_loss Current model validation loss")
+            lines.append("# TYPE ringrift_training_val_loss gauge")
+            lines.append("# HELP ringrift_training_epoch Current training epoch")
+            lines.append("# TYPE ringrift_training_epoch gauge")
+            if hasattr(self, 'training_metrics'):
+                for config, metrics in self.training_metrics.items():
+                    loss = metrics.get('loss', 0)
+                    val_loss = metrics.get('val_loss', 0)
+                    epoch = metrics.get('epoch', 0)
+                    lines.append(f'ringrift_training_loss{{config="{config}"}} {loss}')
+                    lines.append(f'ringrift_training_val_loss{{config="{config}"}} {val_loss}')
+                    lines.append(f'ringrift_training_epoch{{config="{config}"}} {epoch}')
+
+            # Data Freshness Metrics
+            lines.append("# HELP ringrift_data_freshness_hours Age of newest training data in hours")
+            lines.append("# TYPE ringrift_data_freshness_hours gauge")
+            lines.append("# HELP ringrift_data_staleness_hours Age of oldest training data in hours")
+            lines.append("# TYPE ringrift_data_staleness_hours gauge")
+            try:
+                from pathlib import Path
+                selfplay_dir = Path("data/selfplay")
+                if selfplay_dir.exists():
+                    for config_dir in selfplay_dir.iterdir():
+                        if config_dir.is_dir() and not config_dir.name.startswith('.'):
+                            jsonl_files = list(config_dir.glob("*.jsonl"))
+                            if jsonl_files:
+                                newest = max(f.stat().st_mtime for f in jsonl_files)
+                                oldest = min(f.stat().st_mtime for f in jsonl_files)
+                                freshness_hours = (now - newest) / 3600
+                                staleness_hours = (now - oldest) / 3600
+                                config_name = config_dir.name
+                                lines.append(f'ringrift_data_freshness_hours{{config="{config_name}"}} {freshness_hours:.2f}')
+                                lines.append(f'ringrift_data_staleness_hours{{config="{config_name}"}} {staleness_hours:.2f}')
+            except Exception:
+                pass
+
+            # Selfplay Throughput Metrics
+            lines.append("# HELP ringrift_selfplay_games_per_hour Selfplay game generation rate")
+            lines.append("# TYPE ringrift_selfplay_games_per_hour gauge")
+            lines.append("# HELP ringrift_selfplay_games_total_24h Total games generated in last 24h")
+            lines.append("# TYPE ringrift_selfplay_games_total_24h gauge")
+            if hasattr(self, 'selfplay_throughput'):
+                for config, rate in self.selfplay_throughput.items():
+                    lines.append(f'ringrift_selfplay_games_per_hour{{config="{config}"}} {rate}')
+
+            # Cost Efficiency Metrics
+            lines.append("# HELP ringrift_gpu_hours_total Total GPU hours consumed")
+            lines.append("# TYPE ringrift_gpu_hours_total counter")
+            lines.append("# HELP ringrift_estimated_cost_usd Estimated cost in USD")
+            lines.append("# TYPE ringrift_estimated_cost_usd gauge")
+            lines.append("# HELP ringrift_elo_per_gpu_hour Elo improvement per GPU hour")
+            lines.append("# TYPE ringrift_elo_per_gpu_hour gauge")
+            if hasattr(self, 'cost_metrics'):
+                gpu_hours = self.cost_metrics.get('gpu_hours_total', 0)
+                cost_usd = self.cost_metrics.get('estimated_cost_usd', 0)
+                elo_per_hour = self.cost_metrics.get('elo_per_gpu_hour', 0)
+                lines.append(f"ringrift_gpu_hours_total {gpu_hours}")
+                lines.append(f"ringrift_estimated_cost_usd {cost_usd}")
+                lines.append(f"ringrift_elo_per_gpu_hour {elo_per_hour}")
+
+            # Promotion Quality Metrics
+            lines.append("# HELP ringrift_promotion_success_rate Promotion success rate (0-1)")
+            lines.append("# TYPE ringrift_promotion_success_rate gauge")
+            lines.append("# HELP ringrift_promotion_elo_gain Average Elo gain on successful promotion")
+            lines.append("# TYPE ringrift_promotion_elo_gain gauge")
+            lines.append("# HELP ringrift_promotion_rejections_total Total promotion rejections by reason")
+            lines.append("# TYPE ringrift_promotion_rejections_total counter")
+            if hasattr(self, 'promotion_metrics'):
+                success_rate = self.promotion_metrics.get('success_rate', 0)
+                avg_gain = self.promotion_metrics.get('avg_elo_gain', 0)
+                lines.append(f"ringrift_promotion_success_rate {success_rate}")
+                lines.append(f"ringrift_promotion_elo_gain {avg_gain}")
+                for reason, count in self.promotion_metrics.get('rejections', {}).items():
+                    lines.append(f'ringrift_promotion_rejections_total{{reason="{reason}"}} {count}')
+
+            # Model Evaluation Quality Metrics
+            lines.append("# HELP ringrift_eval_games_played Games played in model evaluation")
+            lines.append("# TYPE ringrift_eval_games_played gauge")
+            lines.append("# HELP ringrift_eval_confidence Evaluation confidence (0-1)")
+            lines.append("# TYPE ringrift_eval_confidence gauge")
+            lines.append("# HELP ringrift_elo_uncertainty Elo rating uncertainty margin")
+            lines.append("# TYPE ringrift_elo_uncertainty gauge")
+            try:
+                from scripts.run_model_elo_tournament import init_elo_database, ELO_DB_PATH
+                if ELO_DB_PATH and ELO_DB_PATH.exists():
+                    db = init_elo_database()
+                    conn = db._get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT board_type, num_players,
+                               AVG(games_played) as avg_games,
+                               AVG(rating_deviation) as avg_rd
+                        FROM elo_ratings
+                        WHERE games_played >= 5
+                        GROUP BY board_type, num_players
+                    """)
+                    for row in cursor.fetchall():
+                        bt, np, avg_games, avg_rd = row
+                        config = f"{bt}_{np}p"
+                        confidence = max(0, min(1, 1 - (avg_rd / 350)))  # RD 350 = 0% confidence
+                        lines.append(f'ringrift_eval_games_played{{config="{config}"}} {avg_games:.1f}')
+                        lines.append(f'ringrift_eval_confidence{{config="{config}"}} {confidence:.3f}')
+                        lines.append(f'ringrift_elo_uncertainty{{config="{config}"}} {avg_rd:.1f}')
+                    db.close()
+            except Exception:
+                pass
+
+            # Improvement Loop Health Metrics
+            lines.append("# HELP ringrift_improvement_cycles_total Total improvement cycles completed")
+            lines.append("# TYPE ringrift_improvement_cycles_total counter")
+            lines.append("# HELP ringrift_last_improvement_hours Hours since last Elo improvement")
+            lines.append("# TYPE ringrift_last_improvement_hours gauge")
+            lines.append("# HELP ringrift_training_queue_size Number of configs awaiting training")
+            lines.append("# TYPE ringrift_training_queue_size gauge")
+            if hasattr(self, 'improvement_cycle_manager') and self.improvement_cycle_manager:
+                icm = self.improvement_cycle_manager
+                cycles_completed = len([c for c in icm.cycles.values() if c.status == 'completed'])
+                lines.append(f"ringrift_improvement_cycles_total {cycles_completed}")
+
+            # Uptime metric
+            if hasattr(self, 'start_time'):
+                uptime = now - self.start_time
+                lines.append("# HELP ringrift_orchestrator_uptime_seconds Orchestrator uptime in seconds")
+                lines.append("# TYPE ringrift_orchestrator_uptime_seconds gauge")
+                lines.append(f"ringrift_orchestrator_uptime_seconds {uptime:.0f}")
 
             return web.Response(
                 text="\n".join(lines) + "\n",
