@@ -9363,11 +9363,12 @@ print(json.dumps({{
         # coordinator makes clusters brittle. Also bootstrap from any
         # previously-seen directly-reachable peers so nodes can re-join after
         # restarts even if the original seed goes offline.
-        seed_peers: List[str] = []
-        seed_peers.extend([p for p in (self.known_peers or []) if p])
+        known_seed_peers: List[str] = [p for p in (self.known_peers or []) if p]
+        discovered_seed_peers: List[str] = []
 
         with self.peers_lock:
             peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
+        peers_snapshot.sort(key=lambda p: str(getattr(p, "node_id", "") or ""))
 
         for peer in peers_snapshot:
             if getattr(peer, "nat_blocked", False):
@@ -9383,7 +9384,7 @@ print(json.dumps({{
             except Exception:
                 port = DEFAULT_PORT
             if host:
-                seed_peers.append(f"{scheme}://{host}:{port}")
+                discovered_seed_peers.append(f"{scheme}://{host}:{port}")
 
             rh = str(getattr(peer, "reported_host", "") or "").strip()
             try:
@@ -9391,10 +9392,25 @@ print(json.dumps({{
             except Exception:
                 rp = 0
             if rh and rp:
-                seed_peers.append(f"{scheme}://{rh}:{rp}")
+                discovered_seed_peers.append(f"{scheme}://{rh}:{rp}")
 
         seen: Set[str] = set()
-        seed_peers = [p for p in seed_peers if not (p in seen or seen.add(p))]
+        seed_peers: List[str] = []
+        ki = 0
+        di = 0
+        while ki < len(known_seed_peers) or di < len(discovered_seed_peers):
+            if ki < len(known_seed_peers):
+                candidate = known_seed_peers[ki]
+                ki += 1
+                if candidate and candidate not in seen:
+                    seen.add(candidate)
+                    seed_peers.append(candidate)
+            if di < len(discovered_seed_peers):
+                candidate = discovered_seed_peers[di]
+                di += 1
+                if candidate and candidate not in seen:
+                    seen.add(candidate)
+                    seed_peers.append(candidate)
         if not seed_peers:
             return False
 
