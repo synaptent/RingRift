@@ -10899,11 +10899,24 @@ print(json.dumps({{
                 # Start jobs (max 2 at a time to avoid overwhelming)
                 for i in range(min(needed, 2)):
                     # LEARNED LESSONS - Smart CPU/GPU task routing:
-                    # - Accelerator nodes (CUDA/MPS) get HYBRID_SELFPLAY (CPU rules + GPU eval)
+                    # - High-end GPUs (H100/H200/A100/5090/4090) get GPU_SELFPLAY for max throughput
+                    #   with automatic CPU validation to ensure data quality
+                    # - Mid-tier GPUs get HYBRID_SELFPLAY (CPU rules + GPU eval)
                     # - CPU-only nodes get regular SELFPLAY
                     # This ensures expensive GPU resources are utilized properly
                     # while CPU instances handle CPU-bound tasks efficiently
-                    if node.has_gpu:
+                    gpu_name = (node.gpu_name or "").upper()
+                    is_high_end_gpu = any(tag in gpu_name for tag in ("H100", "H200", "GH200", "A100", "5090", "4090"))
+                    is_apple_gpu = "MPS" in gpu_name or "APPLE" in gpu_name
+
+                    if node.has_gpu and is_high_end_gpu and not is_apple_gpu:
+                        # High-end CUDA GPUs: Use pure GPU selfplay with CPU validation
+                        # This maximizes GPU parallel throughput (10-100x speedup)
+                        # CPU validation runs automatically after completion
+                        job_type = JobType.GPU_SELFPLAY
+                        task_type_str = "GPU-parallel (validated)"
+                    elif node.has_gpu and not is_apple_gpu:
+                        # Mid-tier GPUs: Use hybrid (CPU rules + GPU eval)
                         job_type = JobType.HYBRID_SELFPLAY
                         task_type_str = "HYBRID (accel)"
                     else:
