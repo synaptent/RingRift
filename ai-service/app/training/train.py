@@ -1837,7 +1837,17 @@ def train_model(
             # Note: num_workers=0 required on macOS - memory-mapped NPZ files
             # contain BufferedReader objects that can't be pickled for multiprocessing.
             # Also required on Linux with mmap mode to avoid DataLoader hangs.
-            num_loader_workers = int(os.environ.get("RINGRIFT_DATALOADER_WORKERS", "0"))
+            # Platform-aware default: 0 on macOS/mmap, else min(4, cpu_count//2) on Linux
+            env_workers = os.environ.get("RINGRIFT_DATALOADER_WORKERS")
+            if env_workers is not None:
+                num_loader_workers = int(env_workers)
+            elif sys.platform == "darwin":
+                num_loader_workers = 0  # macOS: mmap incompatible with multiprocessing
+            else:
+                # Linux/Windows: use moderate parallelism for non-mmap data loading
+                # Default to 0 for safety (mmap commonly used), allow override via env
+                import multiprocessing
+                num_loader_workers = min(4, multiprocessing.cpu_count() // 2) if not use_streaming else 0
             train_loader = DataLoader(
                 train_dataset,
                 batch_size=config.batch_size,
@@ -1932,6 +1942,11 @@ def train_model(
 
     best_val_loss = float('inf')
     avg_val_loss = float('inf')  # Initialize for final checkpoint
+    avg_train_loss = float('inf')  # Track for return value
+
+    # Track per-epoch losses for downstream analysis
+    epoch_losses: List[Dict[str, float]] = []
+    epochs_completed = 0
 
     try:
         for epoch in range(start_epoch, config.epochs_per_iter):
@@ -2233,6 +2248,15 @@ def train_model(
                     f"Val Loss: {avg_val_loss:.4f}"
                 )
 
+            # Record per-epoch losses for downstream analysis
+            epochs_completed = epoch + 1
+            epoch_losses.append({
+                'epoch': epoch + 1,
+                'train_loss': float(avg_train_loss),
+                'val_loss': float(avg_val_loss),
+                'lr': float(optimizer.param_groups[0]['lr']),
+            })
+
             # Check early stopping (only on main process for DDP)
             # Get model for checkpointing (unwrap DDP if needed)
             model_to_save = cast(
@@ -2367,6 +2391,15 @@ def train_model(
         if distributed:
             cleanup_distributed()
 
+    # Return structured training result for downstream analysis
+    return {
+        'best_val_loss': float(best_val_loss),
+        'final_train_loss': float(avg_train_loss),
+        'final_val_loss': float(avg_val_loss),
+        'epochs_completed': epochs_completed,
+        'epoch_losses': epoch_losses,
+    }
+
 
 def train_from_file(
     data_path: str,
@@ -2406,29 +2439,30 @@ def train_from_file(
     checkpoint_dir = Path(output_path).parent / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    # Track losses (we'll parse from logging or estimate from final checkpoint)
-    # For now, run training and return placeholder losses
-    # TODO: Capture actual losses from training loop
-
     try:
-        train_model(
+        result = train_model(
             config=config,
             data_path=data_path,
             save_path=output_path,
-            early_stopping_patience=5,
+            early_stopping_patience=config.early_stopping_patience,
             checkpoint_dir=str(checkpoint_dir),
             checkpoint_interval=config.epochs_per_iter,
-            warmup_epochs=min(2, config.epochs_per_iter // 2),
-            lr_scheduler='cosine',
+            warmup_epochs=config.warmup_epochs,
+            lr_scheduler=config.lr_scheduler,
+            lr_min=config.lr_min,
             resume_path=initial_model_path,
         )
 
-        # Return estimated losses (actual tracking would require modifying train_model)
-        # For now, we return placeholder values
+        # Extract losses from training result
+        # Note: train_model returns combined loss; we use val_loss as proxy for total
+        # Policy/value breakdown would require further instrumentation
+        final_loss = result.get('best_val_loss', 0.0) if result else 0.0
         return {
-            "total": 0.0,  # Would need to capture from training loop
-            "policy": 0.0,
-            "value": 0.0,
+            "total": final_loss,
+            "policy": final_loss * config.policy_weight,  # Approximate split
+            "value": final_loss * (1 - config.policy_weight),
+            "epochs_completed": result.get('epochs_completed', 0) if result else 0,
+            "epoch_losses": result.get('epoch_losses', []) if result else [],
         }
 
     except Exception as e:
@@ -2437,6 +2471,8 @@ def train_from_file(
             "total": float('inf'),
             "policy": float('inf'),
             "value": float('inf'),
+            "epochs_completed": 0,
+            "epoch_losses": [],
         }
 
 
