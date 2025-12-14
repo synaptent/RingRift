@@ -49,7 +49,7 @@ class TrainConfig:
     # When enabled, uses ParallelGameRunner for 5-10x faster data generation
     # None = auto-detect (True if CUDA available), False = disabled, True = forced
     use_gpu_parallel_datagen: Optional[bool] = None
-    gpu_batch_size: int = 20  # Number of games to run in parallel on GPU
+    gpu_batch_size: int = 50  # Number of games to run in parallel on GPU
 
     # Paths (initialised to repository-root-relative defaults in __post_init__)
     # When instantiated, these will be rewritten as absolute paths anchored at
