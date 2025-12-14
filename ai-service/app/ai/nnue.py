@@ -435,6 +435,8 @@ def load_nnue_model(
     model_path = get_nnue_model_path(board_type, num_players, model_id)
 
     model = RingRiftNNUE(board_type=board_type)
+    loaded_checkpoint_path: Optional[str] = None
+    used_fresh_weights: bool = False
 
     if model_path.exists():
         try:
@@ -443,17 +445,27 @@ def load_nnue_model(
                 model.load_state_dict(checkpoint["model_state_dict"])
             else:
                 model.load_state_dict(checkpoint)
+            loaded_checkpoint_path = str(model_path)
             logger.info(f"Loaded NNUE model from {model_path}")
         except Exception as e:
             logger.warning(f"Failed to load NNUE model from {model_path}: {e}")
             if not allow_fresh:
                 return None
+            used_fresh_weights = True
             logger.info("Using fresh NNUE weights")
     else:
         if not allow_fresh:
             logger.debug(f"NNUE model not found at {model_path}")
             return None
+        used_fresh_weights = True
         logger.info(f"NNUE model not found at {model_path}, using fresh weights")
+
+    # Attach lightweight observability metadata for API consumers.
+    try:
+        setattr(model, "loaded_checkpoint_path", loaded_checkpoint_path)
+        setattr(model, "used_fresh_weights", used_fresh_weights)
+    except Exception:
+        pass
 
     model = model.to(device)
     model.eval()
