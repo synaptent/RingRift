@@ -125,6 +125,12 @@ MEMORY_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_MEMORY_CRITICAL_THR
 MEMORY_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_MEMORY_WARNING_THRESHOLD", "85") or 85)    # Reduce jobs
 LOAD_MAX_FOR_NEW_JOBS = int(os.environ.get("RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS", "85") or 85)          # Stop starting
 
+# GPU utilization targeting for efficient resource usage
+TARGET_GPU_UTIL_MIN = int(os.environ.get("RINGRIFT_P2P_TARGET_GPU_UTIL_MIN", "60") or 60)  # Scale up below this
+TARGET_GPU_UTIL_MAX = int(os.environ.get("RINGRIFT_P2P_TARGET_GPU_UTIL_MAX", "90") or 90)  # Don't add jobs above this
+GH200_MIN_SELFPLAY = int(os.environ.get("RINGRIFT_P2P_GH200_MIN_SELFPLAY", "20") or 20)    # Min selfplay for GH200
+GH200_MAX_SELFPLAY = int(os.environ.get("RINGRIFT_P2P_GH200_MAX_SELFPLAY", "100") or 100)  # Max selfplay for GH200
+
 # LEARNED LESSONS - Connection robustness
 HTTP_CONNECT_TIMEOUT = 10     # Fast timeout for connection phase
 HTTP_TOTAL_TIMEOUT = 30       # Total request timeout

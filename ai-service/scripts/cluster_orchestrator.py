@@ -53,6 +53,13 @@ UNDERUTILIZED_CPU_THRESHOLD = 30  # CPU usage below this % is considered underut
 UNDERUTILIZED_PYTHON_JOBS = 10  # Fewer than this many python jobs is considered underutilized
 SCALE_UP_GAMES_PER_HOST = 50  # Number of games to start on underutilized host
 
+# GPU utilization targeting for better resource efficiency
+TARGET_GPU_UTILIZATION_MIN = 60  # Start more jobs if GPU below this %
+TARGET_GPU_UTILIZATION_MAX = 90  # Don't start more jobs if GPU above this %
+TARGET_CPU_UTILIZATION_MAX = 85  # Don't start more jobs if CPU above this %
+GH200_MIN_SELFPLAY_JOBS = 20  # Higher baseline for GH200 hosts
+GH200_MAX_SELFPLAY_JOBS = 100  # Upper limit for GH200 hosts
+
 
 @dataclass
 class HostConfig:
@@ -288,7 +295,11 @@ def check_host_status(host: HostConfig) -> HostStatus:
 
 
 def should_start_selfplay(host: HostConfig, status: HostStatus) -> int:
-    """Determine how many selfplay jobs to start based on resources."""
+    """Determine how many selfplay jobs to start based on resources.
+
+    For GH200 hosts, targets 60-90% GPU utilization by scaling up jobs
+    when utilization is below target.
+    """
     if not status.reachable:
         return 0
 
@@ -301,11 +312,34 @@ def should_start_selfplay(host: HostConfig, status: HostStatus) -> int:
         log(f"{host.name}: Memory usage high ({status.memory_percent}%), reducing jobs", "WARN")
         return max(0, host.min_selfplay_jobs - status.selfplay_jobs - 1)
 
-    # Calculate jobs needed
-    jobs_needed = max(0, host.min_selfplay_jobs - status.selfplay_jobs)
+    # Determine if this is a GH200 host
+    is_gh200 = "gh200" in host.name.lower() or "GH200" in host.gpu_name
+
+    if is_gh200:
+        # Use higher baseline and utilization targeting for GH200s
+        min_jobs = GH200_MIN_SELFPLAY_JOBS
+        max_jobs = GH200_MAX_SELFPLAY_JOBS
+
+        # Scale based on GPU and CPU utilization
+        if status.gpu_percent < TARGET_GPU_UTILIZATION_MIN and status.cpu_percent < TARGET_CPU_UTILIZATION_MAX:
+            # GPU underutilized - scale up more aggressively
+            utilization_gap = TARGET_GPU_UTILIZATION_MIN - status.gpu_percent
+            scale_factor = max(1, int(utilization_gap / 10))  # Add more jobs for bigger gaps
+            jobs_needed = min(scale_factor * 5, max_jobs - status.selfplay_jobs)
+            if jobs_needed > 0:
+                log(f"{host.name}: GPU at {status.gpu_percent:.0f}%, scaling up by {jobs_needed} jobs")
+        elif status.gpu_percent >= TARGET_GPU_UTILIZATION_MAX:
+            # GPU well utilized - don't add more
+            jobs_needed = 0
+        else:
+            # In target range - just maintain baseline
+            jobs_needed = max(0, min_jobs - status.selfplay_jobs)
+    else:
+        # Original logic for non-GH200 hosts
+        jobs_needed = max(0, host.min_selfplay_jobs - status.selfplay_jobs)
 
     # Adjust based on CPU headroom
-    if status.cpu_percent > 80:
+    if status.cpu_percent > TARGET_CPU_UTILIZATION_MAX:
         jobs_needed = min(jobs_needed, 1)
 
     return jobs_needed
