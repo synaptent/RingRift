@@ -15,6 +15,7 @@ import {
   GameListingQuerySchema,
   UserSearchQuerySchema,
   LeaderboardQuerySchema,
+  UUIDSchema,
 } from '../../shared/validation/schemas';
 import { RatingService } from '../services/RatingService';
 import type { WebSocketServer } from '../websocket/server';
@@ -1074,13 +1075,20 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { userId } = req.params;
 
-    if (!userId) {
-      throw createError('User ID is required', 400, 'INVALID_USER_ID');
+    // Validate userId format to prevent enumeration with invalid IDs
+    const userIdResult = UUIDSchema.safeParse(userId);
+    if (!userIdResult.success) {
+      throw createError('Invalid user ID format', 400, 'INVALID_USER_ID');
     }
 
     try {
-      const ratingInfo = await RatingService.getPlayerRating(userId);
+      const ratingResult = await withQueryTimeoutStrict(RatingService.getPlayerRating(userId));
 
+      if (!ratingResult.success) {
+        throw createError('Database query timed out', 504, ErrorCodes.SERVER_GATEWAY_TIMEOUT);
+      }
+
+      const ratingInfo = ratingResult.data;
       if (!ratingInfo) {
         throw createError('User not found', 404, 'USER_NOT_FOUND');
       }

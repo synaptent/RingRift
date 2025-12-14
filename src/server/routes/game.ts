@@ -16,6 +16,7 @@ import {
   GameIdParamSchema,
   GameListingQuerySchema,
   MoveSchema,
+  UUIDSchema,
   type MoveInput,
 } from '../../shared/validation/schemas';
 import { RatingService, RatingUpdateResult } from '../services/RatingService';
@@ -1992,6 +1993,12 @@ router.get(
   '/user/:userId',
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { userId } = req.params;
+
+    // Validate userId format to prevent enumeration with invalid IDs
+    const userIdResult = UUIDSchema.safeParse(userId);
+    if (!userIdResult.success) {
+      throw createError('Invalid user ID format', 400, 'INVALID_USER_ID');
+    }
 
     // Parse query parameters
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 100);
