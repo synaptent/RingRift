@@ -39,6 +39,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -50,6 +51,116 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.training.significance import wilson_score_interval
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _atomic_copy(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_suffix(dst.suffix + f".tmp_{int(time.time() * 1e6)}")
+    shutil.copy2(src, tmp)
+    os.replace(tmp, dst)
+
+
+def _write_json_atomic(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + f".tmp_{int(time.time() * 1e6)}")
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    os.replace(tmp, path)
+
+
+def _alias_token_for_board(board: str) -> str:
+    board = str(board).strip().lower()
+    if board == "square8":
+        return "sq8"
+    if board == "square19":
+        return "sq19"
+    if board == "hexagonal":
+        return "hex"
+    raise ValueError(f"Unsupported board for alias: {board!r}")
+
+
+def publish_ringrift_best_alias(
+    *,
+    board: str,
+    num_players: int,
+    best_model_path: Path,
+    promotion_summary: Optional[dict] = None,
+) -> Path:
+    """Publish a ringrift_best_* alias so the canonical ladder can consume the model."""
+    token = _alias_token_for_board(board)
+    alias_id = f"ringrift_best_{token}_{int(num_players)}p"
+
+    models_dir = AI_SERVICE_ROOT / "models"
+    cpu_dst = models_dir / f"{alias_id}.pth"
+    mps_dst = models_dir / f"{alias_id}_mps.pth"
+    meta_dst = models_dir / f"{alias_id}.meta.json"
+
+    _atomic_copy(best_model_path, cpu_dst)
+    # Best-effort: if no MPS-specific checkpoint exists, reuse the CPU weights.
+    _atomic_copy(best_model_path, mps_dst)
+
+    summary = promotion_summary if isinstance(promotion_summary, dict) else {}
+    _write_json_atomic(
+        meta_dst,
+        {
+            "alias_id": alias_id,
+            "board_type": str(board),
+            "num_players": int(num_players),
+            "source_model_id": best_model_path.stem,
+            "source_checkpoint": str(best_model_path),
+            "source_checkpoint_mps": str(best_model_path),
+            "elo_rating": 0.0,
+            "games_played": int(summary.get("games", 0) or 0),
+            "published_at": datetime.utcnow().isoformat() + "Z",
+            "promotion_method": "improvement_loop",
+            "promotion_summary": summary,
+        },
+    )
+
+    return cpu_dst
+
+
+def maybe_sync_staging(
+    *,
+    enabled: bool,
+    restart: bool,
+    validate_health: bool,
+    fail_on_missing: bool,
+    dry_run: bool,
+    reason: str,
+) -> bool:
+    """Best-effort: push promoted artifacts to staging via SSH."""
+    if not enabled:
+        return False
+    if dry_run:
+        print(f"[DRY-RUN] Would sync staging artifacts ({reason})")
+        return True
+
+    if not os.environ.get("RINGRIFT_STAGING_SSH_HOST") or not os.environ.get("RINGRIFT_STAGING_ROOT"):
+        print(
+            f"[staging_sync] Requested ({reason}) but missing "
+            "RINGRIFT_STAGING_SSH_HOST / RINGRIFT_STAGING_ROOT"
+        )
+        return False
+
+    cmd = [sys.executable, "scripts/sync_staging_ai_artifacts.py"]
+    if restart:
+        cmd.append("--restart")
+    if validate_health:
+        cmd.append("--validate-health")
+    if fail_on_missing:
+        cmd.append("--fail-on-missing")
+
+    code, stdout, stderr = run_command(
+        cmd,
+        dry_run=False,
+        capture=True,
+        timeout=900,
+        cwd=AI_SERVICE_ROOT,
+    )
+    output = stdout or stderr
+    if output:
+        print(output)
+    return code == 0
 
 
 def _resolve_ai_service_path(raw: str) -> Path:
@@ -835,6 +946,25 @@ def promote_model(
         # Promote new model
         shutil.copy2(iter_model, best_model)
         print(f"Promoted {iter_model.name} to {best_model.name}")
+
+        if bool(config.get("publish_ringrift_best_alias")):
+            alias_path = publish_ringrift_best_alias(
+                board=board,
+                num_players=int(players),
+                best_model_path=best_model,
+                promotion_summary=config.get("last_eval_summary"),
+            )
+            print(f"Published ladder alias: {alias_path.name}")
+
+            maybe_sync_staging(
+                enabled=bool(config.get("sync_staging")),
+                restart=bool(config.get("sync_staging_restart", True)),
+                validate_health=bool(config.get("sync_staging_validate_health", False)),
+                fail_on_missing=bool(config.get("sync_staging_fail_on_missing", False)),
+                dry_run=dry_run,
+                reason=f"promotion_{board}_{players}p",
+            )
+
         return True
     except Exception as e:
         print(f"Promotion failed: {e}")
@@ -917,6 +1047,9 @@ def run_improvement_iteration(
     )
     if not success:
         return False, 0.0, games
+
+    # Thread evaluation summary into config so promotion hooks can attach metadata.
+    config["last_eval_summary"] = eval_summary
 
     # Step 6: Promote if improved
     print(f"\n--- Step 6: Promotion Decision ---")
