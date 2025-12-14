@@ -2,49 +2,102 @@
   "board_type": "square8",
   "num_players": 2,
   "description": "Canonical square8 2-player tier training pipeline settings used by run_tier_training_pipeline.py and run_full_tier_gating.py.",
+  "cmaes_preferences": {
+    "description": "CMAES training preference hierarchy. Prefers GPU-accelerated distributed iterative over CPU, distributed over non-distributed, iterative over single-stage.",
+    "preference_order": [
+      "gpu_distributed_iterative",
+      "distributed_iterative",
+      "iterative",
+      "single_stage"
+    ],
+    "scripts": {
+      "gpu_distributed_iterative": "run_distributed_gpu_cmaes.py",
+      "distributed_iterative": "run_iterative_cmaes.py --distributed",
+      "iterative": "run_iterative_cmaes.py",
+      "single_stage": "run_cmaes_optimization.py"
+    },
+    "auto_detect": {
+      "gpu": true,
+      "distributed": true,
+      "fallback_on_error": true
+    },
+    "default_params": {
+      "gpu_distributed_iterative": {
+        "generations_per_iter": 15,
+        "max_iterations": 10,
+        "improvement_threshold": 0.55,
+        "plateau_generations": 5
+      },
+      "distributed_iterative": {
+        "generations_per_iter": 15,
+        "max_iterations": 10,
+        "improvement_threshold": 0.55,
+        "plateau_generations": 5
+      },
+      "iterative": {
+        "generations_per_iter": 15,
+        "max_iterations": 10,
+        "improvement_threshold": 0.55,
+        "plateau_generations": 5
+      },
+      "single_stage": {
+        "generations": 50,
+        "population_size": 20,
+        "games_per_eval": 10
+      }
+    }
+  },
   "tiers": {
     "D2": {
       "training": {
-        "mode": "heuristic_stub_demo",
+        "mode": "heuristic_cmaes",
+        "cmaes_mode": "auto",
         "seed": 123
       },
       "gating": {
         "enabled": true,
         "seed": 1,
-        "num_games_override": 4
+        "num_games": 50,
+        "win_rate_threshold": 0.6
       }
     },
     "D4": {
       "training": {
-        "mode": "search_persona_demo",
+        "mode": "search_persona",
+        "cmaes_mode": "auto",
         "seed": 123
       },
       "gating": {
         "enabled": true,
         "seed": 1,
-        "num_games_override": 4
+        "num_games": 50,
+        "win_rate_threshold": 0.6
       }
     },
     "D6": {
       "training": {
-        "mode": "neural_demo",
+        "mode": "neural",
+        "cmaes_mode": "auto",
         "seed": 123
       },
       "gating": {
         "enabled": true,
         "seed": 1,
-        "num_games_override": 4
+        "num_games": 50,
+        "win_rate_threshold": 0.6
       }
     },
     "D8": {
       "training": {
-        "mode": "neural_demo",
+        "mode": "neural",
+        "cmaes_mode": "auto",
         "seed": 123
       },
       "gating": {
         "enabled": true,
         "seed": 1,
-        "num_games_override": 4
+        "num_games": 50,
+        "win_rate_threshold": 0.6
       }
     }
   }

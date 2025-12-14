@@ -422,6 +422,62 @@ def _resolve_default_nn_model_id(
     return None
 
 
+def _scan_recent_nn_pool_model_ids(
+    *,
+    board_type: BoardType,
+    num_players: int,
+    pool_dir: Optional[str],
+    pool_size: int,
+    exclude_ids: Optional[set[str]] = None,
+) -> List[str]:
+    """Best-effort scan for recent NN checkpoints usable as a diversity pool."""
+    if pool_size <= 0:
+        return []
+
+    exclude_ids = exclude_ids or set()
+    base_dir = Path(pool_dir).expanduser().resolve() if pool_dir else (Path(ROOT) / "models").resolve()
+    if not base_dir.exists() or not base_dir.is_dir():
+        return []
+
+    board_tokens: List[str]
+    if board_type == BoardType.SQUARE8:
+        board_tokens = ["sq8", "square8"]
+    elif board_type == BoardType.SQUARE19:
+        board_tokens = ["sq19", "square19", "19x19"]
+    else:  # HEXAGONAL
+        board_tokens = ["hex", "hexagonal"]
+
+    candidates: List[Path] = []
+    for path in base_dir.glob("*.pth"):
+        name = path.name.lower()
+        if name.endswith("_mps.pth"):
+            continue
+        if name.startswith("ringrift_best_"):
+            continue
+        if f"{num_players}p" not in name:
+            continue
+        if not any(token in name for token in board_tokens):
+            continue
+        try:
+            if path.stat().st_size <= 0:
+                continue
+        except OSError:
+            continue
+        candidates.append(path)
+
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    pool: List[str] = []
+    for path in candidates:
+        model_id = path.stem
+        if model_id in exclude_ids:
+            continue
+        pool.append(model_id)
+        if len(pool) >= pool_size:
+            break
+
+    return pool
+
+
 def _build_mixed_ai_pool(
     game_index: int,
     player_numbers: List[int],
@@ -430,6 +486,8 @@ def _build_mixed_ai_pool(
     board_type: BoardType,
     difficulty_band: str = "canonical",
     heuristic_weights: Optional[Dict[str, float]] = None,
+    nn_pool_size: int = 0,
+    nn_pool_dir: Optional[str] = None,
 ) -> Tuple[Dict[int, Any], Dict[str, Any]]:
     """Construct per-player AI instances for a single game.
 
@@ -593,11 +651,66 @@ def _build_mixed_ai_pool(
             ai_metadata[f"player_{pnum}_difficulty"] = 10
         return ai_by_player, ai_metadata
 
+    if engine_mode == "best-vs-pool":
+        # Best model vs a pool of recent checkpoints (evaluation-diverse self-play).
+        from app.ai.descent_ai import DescentAI  # type: ignore
+
+        best_model_id = _resolve_default_nn_model_id(board_type, len(player_numbers))
+        if best_model_id is None:
+            logger.warning(
+                "best-vs-pool mode requested but no NN checkpoint is available for "
+                "board=%s players=%s; falling back to heuristic-only Descent.",
+                board_type.value,
+                len(player_numbers),
+            )
+
+        pool_ids = _scan_recent_nn_pool_model_ids(
+            board_type=board_type,
+            num_players=len(player_numbers),
+            pool_dir=nn_pool_dir,
+            pool_size=int(nn_pool_size or 0),
+            exclude_ids={best_model_id} if best_model_id else None,
+        )
+        if best_model_id is not None and not pool_ids:
+            pool_ids = [best_model_id]
+
+        best_seat = player_numbers[game_index % len(player_numbers)] if player_numbers else 1
+
+        for pnum in player_numbers:
+            if best_model_id is None:
+                use_nn = False
+                nn_model_id = None
+            else:
+                use_nn = True
+                if int(pnum) == int(best_seat):
+                    nn_model_id = best_model_id
+                else:
+                    nn_model_id = random.choice(pool_ids) if pool_ids else best_model_id
+
+            cfg = AIConfig(
+                difficulty=10,
+                think_time=soak_think_time_ms,
+                randomness=0.05,
+                rngSeed=(base_seed or 0) + pnum + game_index,
+                use_neural_net=use_nn,
+                nn_model_id=nn_model_id,
+                allow_fresh_weights=False,
+            )
+            ai_by_player[pnum] = DescentAI(pnum, cfg)
+            ai_metadata[f"player_{pnum}_ai_type"] = "descent_best_vs_pool"
+            ai_metadata[f"player_{pnum}_difficulty"] = 10
+            if nn_model_id:
+                ai_metadata[f"player_{pnum}_nn_model_id"] = nn_model_id
+            if int(pnum) == int(best_seat) and best_model_id:
+                ai_metadata[f"player_{pnum}_is_best"] = True
+
+        return ai_by_player, ai_metadata
+
     # mixed mode
     if engine_mode != "mixed":
         raise SystemExit(
             "engine_mode must be one of: descent-only, mixed, random-only, "
-            "heuristic-only, minimax-only, mcts-only, nn-only; "
+            "heuristic-only, minimax-only, mcts-only, nn-only, best-vs-pool; "
             f"got {engine_mode!r}"
         )
 
@@ -739,6 +852,8 @@ def run_self_play_soak(
     engine_mode = args.engine_mode
     base_seed = args.seed
     difficulty_band = getattr(args, "difficulty_band", "canonical")
+    nn_pool_size = int(getattr(args, "nn_pool_size", 0) or 0)
+    nn_pool_dir = getattr(args, "nn_pool_dir", None)
 
     # Load heuristic weights from CLI args if specified
     heuristic_weights: Optional[Dict[str, float]] = None
@@ -1016,6 +1131,8 @@ def run_self_play_soak(
                 board_type,
                 difficulty_band=difficulty_band,
                 heuristic_weights=heuristic_weights,
+                nn_pool_size=nn_pool_size,
+                nn_pool_dir=nn_pool_dir,
             )
             if profile_timing:
                 timing_totals["ai_build"] += time.time() - t_ai_start
@@ -2391,6 +2508,7 @@ def _parse_args() -> argparse.Namespace:
             "minimax-only",
             "mcts-only",
             "nn-only",
+            "best-vs-pool",
         ],
         default="mixed",
         help=(
@@ -2400,8 +2518,27 @@ def _parse_args() -> argparse.Namespace:
             "'heuristic-only' for pure HeuristicAI, "
             "'minimax-only' for pure MinimaxAI, "
             "'mcts-only' for pure MCTS, "
-            "'nn-only' for neural-net enabled Descent+MCTS+NNUE Minimax. "
+            "'nn-only' for neural-net enabled Descent+MCTS+NNUE Minimax, "
+            "'best-vs-pool' for best NN vs recent checkpoint pool (DescentAI). "
             "Default: mixed."
+        ),
+    )
+    parser.add_argument(
+        "--nn-pool-size",
+        type=int,
+        default=0,
+        help=(
+            "When engine_mode='best-vs-pool', include up to N recent NN checkpoints "
+            "as opponents (excluding the chosen best model). Default: 0 (best vs best)."
+        ),
+    )
+    parser.add_argument(
+        "--nn-pool-dir",
+        type=str,
+        default=None,
+        help=(
+            "When engine_mode='best-vs-pool', scan this directory for *.pth checkpoints "
+            "(defaults to ai-service/models/ when unset)."
         ),
     )
     parser.add_argument(
