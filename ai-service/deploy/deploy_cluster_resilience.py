@@ -301,21 +301,31 @@ def main() -> None:
                     f"SSH_PORT={int(target.ssh_port)} "
                     f"bash \"$RINGRIFT_DIR/deploy/setup_node_resilience.sh\" "
                     f"{shlex.quote(node_id)} {shlex.quote(args.coordinator_url)}\n"
-                    # Best-effort restart (systemd may not exist in containers).
-                    f"{sudo}systemctl restart ringrift-p2p ringrift-resilience 2>/dev/null || true\n"
-                    f"{sudo}systemctl status ringrift-p2p --no-pager -n 0 2>/dev/null || true\n"
-                    # Non-systemd hosts (e.g. Vast.ai) still need an explicit restart
-                    # to pick up new code; watchdog will relaunch if /health fails.
-                    f"{sudo}pkill -f '[p]2p_orchestrator.py' 2>/dev/null || true\n"
-                    f"{sudo}pkill -f '[n]ode_resilience.py' 2>/dev/null || true\n"
-                    f"{sudo}/usr/local/bin/ringrift-watchdog 2>/dev/null || true\n"
-                    f"if [ -f /etc/ringrift/node.conf ]; then\n"
-                    f"  source /etc/ringrift/node.conf\n"
-                    f"  cd \"$RINGRIFT_DIR\" 2>/dev/null || exit 0\n"
-                    f"  PYTHONPATH=\"$RINGRIFT_DIR\" nohup python3 scripts/node_resilience.py "
+                    # Best-effort restart.
+                    # - On systemd hosts: rely on systemd units (avoid duplicate daemons).
+                    # - On non-systemd hosts (e.g. Vast.ai): kill + watchdog + nohup daemon.
+                    f"HAS_SYSTEMD=0\n"
+                    f"if command -v systemctl >/dev/null 2>&1 && [ -d /etc/systemd/system ]; then\n"
+                    f"  STATE=\"$(systemctl is-system-running 2>/dev/null || true)\"\n"
+                    f"  if [ \"$STATE\" = \"running\" ] || [ \"$STATE\" = \"degraded\" ]; then\n"
+                    f"    HAS_SYSTEMD=1\n"
+                    f"  fi\n"
+                    f"fi\n"
+                    f"if [ \"$HAS_SYSTEMD\" = \"1\" ]; then\n"
+                    f"  {sudo}systemctl restart ringrift-p2p ringrift-resilience 2>/dev/null || true\n"
+                    f"  {sudo}systemctl status ringrift-p2p --no-pager -n 0 2>/dev/null || true\n"
+                    f"else\n"
+                    f"  {sudo}pkill -f '[p]2p_orchestrator.py' 2>/dev/null || true\n"
+                    f"  {sudo}pkill -f '[n]ode_resilience.py' 2>/dev/null || true\n"
+                    f"  {sudo}/usr/local/bin/ringrift-watchdog 2>/dev/null || true\n"
+                    f"  if [ -f /etc/ringrift/node.conf ]; then\n"
+                    f"    source /etc/ringrift/node.conf\n"
+                    f"    cd \"$RINGRIFT_DIR\" 2>/dev/null || exit 0\n"
+                    f"    {sudo}PYTHONPATH=\"$RINGRIFT_DIR\" nohup python3 scripts/node_resilience.py "
                     f"--node-id \"$NODE_ID\" --coordinator \"$COORDINATOR_URL\" "
                     f"--ai-service-dir \"$RINGRIFT_DIR\" --p2p-port \"$P2P_PORT\" "
                     f">> /var/log/ringrift/resilience.log 2>&1 &\n"
+                    f"  fi\n"
                     f"fi\n"
                 )
 
