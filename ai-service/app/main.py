@@ -653,7 +653,7 @@ async def get_ai_move(request: MoveRequest):
             labels_difficulty,
         ).observe(duration_seconds)
         logger.error("Error generating AI move: %s", str(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
 
 
 @app.post("/ai/evaluate", response_model=EvaluationResponse)
@@ -689,7 +689,7 @@ async def evaluate_position(request: EvaluationRequest):
 
     except Exception as e:
         logger.error(f"Error evaluating position: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
 
 
 def _select_effective_eval_seed(
@@ -826,7 +826,7 @@ async def evaluate_position_multi(request: PositionEvaluationRequest):
             str(e),
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
 
 
 @app.post("/rules/evaluate_move", response_model=RulesEvalResponse)
@@ -883,7 +883,7 @@ async def evaluate_move(request: RulesEvalRequest):
             str(e),
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
 
 
 @app.post(
@@ -922,7 +922,7 @@ async def choose_line_reward_option(request: LineRewardChoiceRequest):
             f"Error selecting line reward option: {str(e)}",
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
 
 
 @app.post(
@@ -979,7 +979,7 @@ async def choose_ring_elimination_option(
             f"Error selecting ring elimination option: {str(e)}",
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
 
 
 @app.post(
@@ -1078,7 +1078,7 @@ async def choose_region_order_option(request: RegionOrderChoiceRequest):
             f"Error selecting region order option: {str(e)}",
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
 
 
 @app.post(
@@ -1127,7 +1127,7 @@ async def choose_line_order_option(request: LineOrderChoiceRequest):
             str(e),
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
 
 
 @app.post(
@@ -1201,7 +1201,7 @@ async def choose_capture_direction_option(
             str(e),
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=sanitize_error_detail(e))
 
 
 @app.delete("/ai/cache", dependencies=[Depends(verify_admin_api_key)])
