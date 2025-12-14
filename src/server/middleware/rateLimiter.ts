@@ -249,6 +249,14 @@ export const getRateLimitConfigs = (): Record<string, RateLimitConfig> => ({
     duration: getEnvNumber('RATE_LIMIT_USER_RATING_DURATION', 60), // per minute
     blockDuration: getEnvNumber('RATE_LIMIT_USER_RATING_BLOCK_DURATION', 120), // 2 min block
   },
+
+  // User search - prevent enumeration and database load
+  userSearch: {
+    keyPrefix: 'user_search_limit',
+    points: getEnvNumber('RATE_LIMIT_USER_SEARCH_POINTS', 20), // requests
+    duration: getEnvNumber('RATE_LIMIT_USER_SEARCH_DURATION', 60), // per minute
+    blockDuration: getEnvNumber('RATE_LIMIT_USER_SEARCH_BLOCK_DURATION', 120), // 2 min block
+  },
 });
 
 // Cache the configs to avoid re-parsing env vars on every request
@@ -563,6 +571,7 @@ export const alertWebhookRateLimiter = createRateLimiter('alertWebhook');
 
 // User data rate limiters
 export const userRatingRateLimiter = createRateLimiter('userRating');
+export const userSearchRateLimiter = createRateLimiter('userSearch');
 
 /**
  * Rate limiter that differentiates between authenticated and anonymous users.
