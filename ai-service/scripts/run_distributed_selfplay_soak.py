@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -440,18 +441,125 @@ def detect_all_host_memory(hosts: List[str]) -> Tuple[Dict[str, int], Dict[str, 
     return totals, details
 
 
+@dataclass
+class HostDiskInfo:
+    """Disk information for a host."""
+
+    total_gb: int
+    available_gb: int
+
+    def __str__(self) -> str:
+        return f"{self.total_gb}GB total, {self.available_gb}GB available"
+
+
+# Cached host disk info (keyed by host name)
+HOST_DISK_INFO_CACHE: Dict[str, HostDiskInfo] = {}
+
+
+def get_local_disk_gb(path: str) -> Tuple[int, int]:
+    """Get total and available disk on the filesystem backing `path` in GB."""
+    try:
+        usage = shutil.disk_usage(path)
+        total_gb = usage.total // (1024**3)
+        available_gb = usage.free // (1024**3)
+        return int(total_gb), int(available_gb)
+    except Exception as e:
+        print(f"Warning: Could not detect local disk for {path}: {e}")
+        return 0, 0
+
+
+def get_remote_disk_gb(host_name: str, host_config: Dict) -> Tuple[int, int]:
+    """Get total and available disk on the filesystem backing the remote ai-service dir in GB."""
+    ssh_host = host_config["ssh_host"]
+    ssh_user = host_config.get("ssh_user")
+    ssh_port = host_config.get("ssh_port")
+    ssh_key = host_config.get("ssh_key")
+    ssh_target = f"{ssh_user}@{ssh_host}" if ssh_user else ssh_host
+    ai_service_dir = _remote_ai_service_dir(host_config)
+
+    ssh_cmd_base = ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
+    if ssh_port:
+        ssh_cmd_base.extend(["-p", str(ssh_port)])
+    if ssh_key:
+        ssh_cmd_base.extend(["-i", os.path.expanduser(ssh_key)])
+
+    try:
+        df_script = (
+            "set -euo pipefail; "
+            f"cd {_quote_remote_path(ai_service_dir)}; "
+            "df -Pk . | tail -n 1 | awk '{print $2\" \"$4}'"
+        )
+        ssh_cmd = ssh_cmd_base + [ssh_target, f"bash -lc {shlex.quote(df_script)}"]
+        result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
+        if result.returncode == 0 and result.stdout.strip():
+            nums = re.findall(r"\\d+", result.stdout)
+            if len(nums) >= 2:
+                total_kb = int(nums[-2])
+                available_kb = int(nums[-1])
+                total_gb = total_kb // 1048576
+                available_gb = available_kb // 1048576
+                return int(total_gb), int(available_gb)
+
+        raise ValueError(f"Unexpected df output: {result.stdout.strip()!r} {result.stderr.strip()!r}".strip())
+    except Exception as e:
+        print(f"Warning: Could not detect disk for {host_name}: {e}")
+        return 0, 0
+
+
+def detect_all_host_disk(
+    hosts: List[str],
+    ringrift_ai_dir: str,
+) -> Tuple[Dict[str, int], Dict[str, HostDiskInfo]]:
+    """Detect disk for all specified hosts.
+
+    Returns:
+        Tuple of:
+        - Dict[host_name, available_disk_gb]
+        - Dict[host_name, HostDiskInfo] for detailed reporting
+    """
+    global HOST_DISK_INFO_CACHE
+
+    available = {}
+    details = {}
+
+    for host in hosts:
+        if host in HOST_DISK_INFO_CACHE:
+            info = HOST_DISK_INFO_CACHE[host]
+        else:
+            if host == "local":
+                total_gb, available_gb = get_local_disk_gb(ringrift_ai_dir)
+            elif host in REMOTE_HOSTS:
+                total_gb, available_gb = get_remote_disk_gb(host, REMOTE_HOSTS[host])
+            else:
+                total_gb, available_gb = 0, 0
+
+            info = HostDiskInfo(total_gb=total_gb, available_gb=available_gb)
+            HOST_DISK_INFO_CACHE[host] = info
+
+        available[host] = info.available_gb
+        details[host] = info
+
+    return available, details
+
+
 def get_eligible_hosts_for_board(
     board_type: str,
     hosts: List[str],
     host_memory: Dict[str, int],
+    *,
+    host_disk_available: Optional[Dict[str, int]] = None,
+    min_disk_gb: int = 0,
 ) -> List[str]:
-    """Return list of hosts that have enough memory for the given board type."""
+    """Return list of hosts that have enough memory and disk for the given board type."""
     required_memory = BOARD_MEMORY_REQUIREMENTS.get(board_type, 8)
     eligible = []
 
     for host in hosts:
         host_mem = host_memory.get(host, 8)
         if host_mem >= required_memory:
+            if host != "local" and min_disk_gb > 0 and host_disk_available is not None:
+                if host_disk_available.get(host, 0) < min_disk_gb:
+                    continue
             eligible.append(host)
 
     return eligible
@@ -480,6 +588,8 @@ def generate_job_configs(
     base_seed: int = 42,
     difficulty_band: str = "light",
     host_memory: Optional[Dict[str, int]] = None,
+    host_disk_available: Optional[Dict[str, int]] = None,
+    min_remote_free_disk_gb: int = 0,
     allowed_board_types: Optional[List[str]] = None,
     allowed_num_players: Optional[List[int]] = None,
 ) -> List[JobConfig]:
@@ -500,10 +610,19 @@ def generate_job_configs(
             continue
         # Get hosts eligible for this board type based on memory
         if host_memory:
-            eligible_hosts = get_eligible_hosts_for_board(board_type, hosts, host_memory)
+            eligible_hosts = get_eligible_hosts_for_board(
+                board_type,
+                hosts,
+                host_memory,
+                host_disk_available=host_disk_available,
+                min_disk_gb=min_remote_free_disk_gb,
+            )
             if not eligible_hosts:
                 required = BOARD_MEMORY_REQUIREMENTS.get(board_type, 8)
-                print(f"Warning: No hosts have enough memory ({required}GB) for {board_type}")
+                disk_note = ""
+                if min_remote_free_disk_gb > 0:
+                    disk_note = f" and at least {min_remote_free_disk_gb}GB free disk"
+                print(f"Warning: No hosts have enough memory ({required}GB){disk_note} for {board_type}")
                 print(f"  Skipping {board_type} configurations")
                 continue
         else:
@@ -712,12 +831,78 @@ def run_job(job: JobConfig, ringrift_ai_dir: str, *, timeout_seconds: int) -> Tu
         return job.job_id, False, f"Unknown host: {job.host}"
 
 
+def cleanup_remote_job_artifacts(
+    job: JobConfig,
+    host_config: Dict,
+    *,
+    cleanup_jsonl: bool,
+    timeout_seconds: int,
+) -> bool:
+    """Delete per-job artifacts on the remote host to conserve disk space."""
+    ssh_host = host_config["ssh_host"]
+    ssh_user = host_config.get("ssh_user")
+    ssh_port = host_config.get("ssh_port")
+    ssh_key = host_config.get("ssh_key")
+    ai_service_dir = _remote_ai_service_dir(host_config)
+
+    ssh_target = f"{ssh_user}@{ssh_host}" if ssh_user else ssh_host
+
+    rm_paths = [
+        job.output_db,
+        f"{job.output_db}-wal",
+        f"{job.output_db}-shm",
+    ]
+    if cleanup_jsonl:
+        rm_paths.append(job.log_jsonl)
+
+    rm_arg = " ".join(shlex.quote(p) for p in rm_paths)
+    remote_dir = os.path.dirname(job.output_db) or "."
+
+    remote_parts = [
+        "set -euo pipefail",
+        f"cd {_quote_remote_path(ai_service_dir)}",
+        f"rm -f {rm_arg}",
+        f"rmdir {shlex.quote(remote_dir)} 2>/dev/null || true",
+    ]
+    remote_script = "; ".join(remote_parts)
+    remote_cmd = f"bash -lc {shlex.quote(remote_script)}"
+
+    ssh_cmd = [
+        "ssh",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "ServerAliveInterval=60",
+        "-o",
+        "BatchMode=yes",
+    ]
+    if ssh_port:
+        ssh_cmd.extend(["-p", str(ssh_port)])
+    if ssh_key:
+        ssh_cmd.extend(["-i", os.path.expanduser(ssh_key)])
+    ssh_cmd.extend([ssh_target, remote_cmd])
+
+    try:
+        subprocess.run(
+            ssh_cmd,
+            check=True,
+            capture_output=True,
+            timeout=int(timeout_seconds) if timeout_seconds and timeout_seconds > 0 else None,
+            text=True,
+        )
+        return True
+    except Exception as e:
+        print(f"  -> Remote cleanup failed for {job.job_id} ({ssh_host}): {e}")
+        return False
+
+
 def fetch_remote_results(
     jobs: List[JobConfig],
     output_dir: str,
     *,
     fetch_jsonl: bool,
     fetch_timeout_seconds: int,
+    cleanup_remote: bool,
 ) -> List[str]:
     """Fetch database files from remote hosts.
 
@@ -743,6 +928,9 @@ def fetch_remote_results(
 
             print(f"Fetching {remote_db} from {ssh_target}...")
 
+            db_fetched = False
+            jsonl_fetched = False
+
             scp_cmd = ["scp"]
             if ssh_key:
                 scp_cmd.extend(["-i", os.path.expanduser(ssh_key)])
@@ -759,6 +947,7 @@ def fetch_remote_results(
                 )
                 print(f"  -> Saved to {local_db}")
                 fetched_dbs.append(local_db)
+                db_fetched = True
             except subprocess.CalledProcessError as e:
                 print(f"  -> Failed to fetch: {e}")
             except subprocess.TimeoutExpired:
@@ -784,10 +973,23 @@ def fetch_remote_results(
                         timeout=int(fetch_timeout_seconds) if fetch_timeout_seconds and fetch_timeout_seconds > 0 else None,
                     )
                     print(f"  -> Saved to {local_jsonl}")
+                    jsonl_fetched = True
                 except subprocess.CalledProcessError as e:
                     print(f"  -> Failed to fetch JSONL: {e}")
                 except subprocess.TimeoutExpired:
                     print(f"  -> JSONL fetch timed out")
+            else:
+                jsonl_fetched = True
+
+            if cleanup_remote and db_fetched and jsonl_fetched:
+                print(f"Cleaning up remote artifacts for {job.job_id} on {ssh_target}...")
+                if cleanup_remote_job_artifacts(
+                    job,
+                    host_config,
+                    cleanup_jsonl=fetch_jsonl,
+                    timeout_seconds=max(30, int(fetch_timeout_seconds) if fetch_timeout_seconds else 60),
+                ):
+                    print(f"  -> Remote cleanup complete")
         elif job.host == "local":
             # Local jobs already have their DB in the output dir
             local_db = os.path.join(output_dir, os.path.basename(job.output_db))
@@ -946,6 +1148,23 @@ def main():
         help="Also fetch per-job JSONL logs from remote hosts.",
     )
     parser.add_argument(
+        "--cleanup-remote",
+        action="store_true",
+        help=(
+            "After successfully fetching a remote job's DB (and JSONL, if enabled), "
+            "delete those remote artifacts to conserve disk space."
+        ),
+    )
+    parser.add_argument(
+        "--min-remote-free-disk-gb",
+        type=int,
+        default=2,
+        help=(
+            "Minimum free disk (GB) required on remote hosts to schedule jobs (default: 2). "
+            "Use 0 to disable this preflight."
+        ),
+    )
+    parser.add_argument(
         "--run-parity",
         action="store_true",
         help="Run parity checks on all databases after fetching",
@@ -1001,6 +1220,14 @@ def main():
         )
     print()
 
+    # Detect disk on all hosts (ai-service filesystem)
+    print("Detecting host disk free space...")
+    host_disk_available, host_disk_details = detect_all_host_disk(hosts, ringrift_ai_dir)
+    print("Host disk configuration (ai-service mount):")
+    for host, info in sorted(host_disk_details.items(), key=lambda x: -x[1].available_gb):
+        print(f"  {host}: {info.total_gb}GB total, {info.available_gb}GB available")
+    print()
+
     # Parse filters
     allowed_board_types = None
     if args.board_types:
@@ -1017,6 +1244,8 @@ def main():
         base_seed=args.base_seed,
         difficulty_band=args.difficulty_band,
         host_memory=host_memory,
+        host_disk_available=host_disk_available,
+        min_remote_free_disk_gb=int(args.min_remote_free_disk_gb) if args.min_remote_free_disk_gb else 0,
         allowed_board_types=allowed_board_types,
         allowed_num_players=allowed_num_players,
     )
@@ -1117,6 +1346,7 @@ def main():
             output_dir,
             fetch_jsonl=bool(args.fetch_jsonl),
             fetch_timeout_seconds=args.fetch_timeout_seconds,
+            cleanup_remote=bool(args.cleanup_remote),
         )
         print(f"Fetched {len(fetched_dbs)} database(s) to {output_dir}")
 
