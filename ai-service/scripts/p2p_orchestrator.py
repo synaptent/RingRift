@@ -9478,6 +9478,20 @@ print(json.dumps({{
                                 info = NodeInfo.from_dict(peer_dict)
                             except Exception:
                                 continue
+                            existing = self.peers.get(info.node_id)
+                            if existing:
+                                # Preserve relay/NAT routing and retirement state when merging peer snapshots.
+                                if getattr(existing, "nat_blocked", False) and not getattr(info, "nat_blocked", False):
+                                    info.nat_blocked = True
+                                if (getattr(existing, "relay_via", "") or "") and not (getattr(info, "relay_via", "") or ""):
+                                    info.relay_via = str(getattr(existing, "relay_via", "") or "")
+                                if getattr(existing, "retired", False):
+                                    info.retired = True
+                                    info.retired_at = float(getattr(existing, "retired_at", 0.0) or 0.0)
+                                # Preserve local reachability diagnostics.
+                                info.consecutive_failures = int(getattr(existing, "consecutive_failures", 0) or 0)
+                                info.last_failure_time = float(getattr(existing, "last_failure_time", 0.0) or 0.0)
+
                             self.peers[info.node_id] = info
                         after = len(self.peers)
 
@@ -9554,6 +9568,17 @@ print(json.dumps({{
                         for node_id, peer_dict in peers_data.items():
                             if node_id != self.node_id:
                                 peer_info = NodeInfo.from_dict(peer_dict)
+                                existing = self.peers.get(node_id)
+                                if existing:
+                                    if getattr(existing, "nat_blocked", False) and not getattr(peer_info, "nat_blocked", False):
+                                        peer_info.nat_blocked = True
+                                    if (getattr(existing, "relay_via", "") or "") and not (getattr(peer_info, "relay_via", "") or ""):
+                                        peer_info.relay_via = str(getattr(existing, "relay_via", "") or "")
+                                    if getattr(existing, "retired", False):
+                                        peer_info.retired = True
+                                        peer_info.retired_at = float(getattr(existing, "retired_at", 0.0) or 0.0)
+                                    peer_info.consecutive_failures = int(getattr(existing, "consecutive_failures", 0) or 0)
+                                    peer_info.last_failure_time = float(getattr(existing, "last_failure_time", 0.0) or 0.0)
                                 self.peers[node_id] = peer_info
 
                     # Execute any queued commands addressed to us.
