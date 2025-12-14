@@ -309,7 +309,7 @@ describe('Origin Validation Middleware - Production Mode', () => {
     jest.doMock('../../src/server/config', () => ({
       config: {
         logging: {
-          level: 'info',
+          level: 'error',
         },
         isDevelopment: false,
         isProduction: true,
@@ -344,7 +344,7 @@ describe('Origin Validation Middleware - Production Mode', () => {
     jest.doMock('../../src/server/config', () => ({
       config: {
         logging: {
-          level: 'info',
+          level: 'error',
         },
         isDevelopment: false,
         isProduction: true,
@@ -376,7 +376,7 @@ describe('Origin Validation Middleware - Production Mode', () => {
     jest.doMock('../../src/server/config', () => ({
       config: {
         logging: {
-          level: 'info',
+          level: 'error',
         },
         isDevelopment: false,
         isProduction: true,
@@ -406,7 +406,7 @@ describe('Origin Validation Middleware - Production Mode', () => {
     jest.doMock('../../src/server/config', () => ({
       config: {
         logging: {
-          level: 'info',
+          level: 'error',
         },
         isDevelopment: false,
         isProduction: true,
@@ -439,7 +439,7 @@ describe('Origin Validation Middleware - Production Mode', () => {
     jest.doMock('../../src/server/config', () => ({
       config: {
         logging: {
-          level: 'info',
+          level: 'error',
         },
         isDevelopment: false,
         isProduction: true,
@@ -471,7 +471,7 @@ describe('Origin Validation Middleware - Production Mode', () => {
     jest.doMock('../../src/server/config', () => ({
       config: {
         logging: {
-          level: 'info',
+          level: 'error',
         },
         isDevelopment: false,
         isProduction: true,
@@ -513,7 +513,7 @@ describe('HSTS Configuration - Production Mode', () => {
     jest.doMock('../../src/server/config', () => ({
       config: {
         logging: {
-          level: 'info',
+          level: 'error',
         },
         isDevelopment: false,
         isProduction: true,
@@ -570,7 +570,7 @@ describe('CORS Regex Origin Matching', () => {
     jest.doMock('../../src/server/config', () => ({
       config: {
         logging: {
-          level: 'info',
+          level: 'error',
         },
         isDevelopment: true,
         isProduction: false,
@@ -601,7 +601,7 @@ describe('CORS Regex Origin Matching', () => {
       config: {
         nodeEnv: 'development',
         logging: {
-          level: 'info',
+          level: 'error',
         },
         isDevelopment: true,
         isProduction: false,
@@ -642,7 +642,7 @@ describe('CORS Console Warning', () => {
       config: {
         nodeEnv: 'development',
         logging: {
-          level: 'info',
+          level: 'error',
         },
         isDevelopment: true,
         isProduction: false,

@@ -545,5 +545,192 @@ describe('SpectatorHUD', () => {
       const player1Elements = screen.getAllByText('Player 1');
       expect(player1Elements.length).toBeGreaterThanOrEqual(1);
     });
+
+    it('handles unknown phase gracefully (line 53)', () => {
+      // Cast to GamePhase to test fallback handling of unknown phases
+      const unknownPhase = 'unknown_phase_xyz' as GamePhase;
+
+      render(<SpectatorHUD {...defaultProps} phase={unknownPhase} />);
+
+      // Should fall back to displaying the phase string as-is
+      expect(screen.getByText(/unknown_phase_xyz/)).toBeInTheDocument();
+    });
+  });
+
+  describe('Move Annotation Coverage', () => {
+    // Helper to create move with specific type
+    const createMoveWithType = (type: Move['type'], playerNumber: number, moveNum: number): Move =>
+      ({
+        id: `move-${moveNum}`,
+        type,
+        player: playerNumber,
+        playerNumber,
+        to: { x: 3, y: 3 },
+        timestamp: new Date(),
+        moveNumber: moveNum,
+        thinkTime: 1000,
+        phase: 'movement',
+      }) as Move;
+
+    it('displays skip_placement annotation', () => {
+      const moveHistory = [createMoveWithType('skip_placement', 1, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P1 skipped placement/)).toBeInTheDocument();
+    });
+
+    it('displays move_stack annotation', () => {
+      const moveHistory = [createMoveWithType('move_stack', 1, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P1 moved a stack/)).toBeInTheDocument();
+    });
+
+    it('displays overtaking_capture annotation', () => {
+      const moveHistory = [createMoveWithType('overtaking_capture', 1, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P1 captured/)).toBeInTheDocument();
+    });
+
+    it('displays continue_capture_segment annotation', () => {
+      const moveHistory = [createMoveWithType('continue_capture_segment', 2, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P2 captured/)).toBeInTheDocument();
+    });
+
+    it('displays skip_capture annotation', () => {
+      const moveHistory = [createMoveWithType('skip_capture', 1, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P1 skipped capture/)).toBeInTheDocument();
+    });
+
+    it('displays process_line annotation', () => {
+      const moveHistory = [createMoveWithType('process_line', 1, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P1 claimed line bonus/)).toBeInTheDocument();
+    });
+
+    it('displays process_territory_region annotation', () => {
+      const moveHistory = [createMoveWithType('process_territory_region', 1, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P1 processed territory/)).toBeInTheDocument();
+    });
+
+    it('displays forced_elimination annotation', () => {
+      const moveHistory = [createMoveWithType('forced_elimination', 1, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P1 forced to eliminate/)).toBeInTheDocument();
+    });
+
+    it('displays swap_sides annotation', () => {
+      const moveHistory = [createMoveWithType('swap_sides', 1, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P1 swapped sides/)).toBeInTheDocument();
+    });
+
+    it('displays line_formation annotation', () => {
+      const moveHistory = [createMoveWithType('line_formation', 2, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P2 formed a line/)).toBeInTheDocument();
+    });
+
+    it('displays territory_claim annotation', () => {
+      const moveHistory = [createMoveWithType('territory_claim', 1, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P1 claimed territory/)).toBeInTheDocument();
+    });
+
+    it('displays recovery_slide annotation', () => {
+      const moveHistory = [createMoveWithType('recovery_slide', 1, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P1 performed recovery/)).toBeInTheDocument();
+    });
+
+    it('displays skip_recovery annotation', () => {
+      const moveHistory = [createMoveWithType('skip_recovery', 2, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P2 skipped recovery/)).toBeInTheDocument();
+    });
+
+    it('displays default annotation for unknown move type', () => {
+      // Cast to unknown type to test default case
+      const moveHistory = [createMoveWithType('some_unknown_type' as Move['type'], 1, 1)];
+
+      render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
+
+      expect(screen.getByText(/P1 made a move/)).toBeInTheDocument();
+    });
+  });
+
+  describe('Previous Evaluation Lookup (line 177)', () => {
+    it('shows previous evaluation when selectedMoveIndex > 0', () => {
+      const moveHistory = [
+        createMockMove('ring_placement', 1),
+        createMockMove('ring_placement', 2),
+        createMockMove('movement', 1),
+      ];
+      const evaluationHistory = [
+        createEvaluationData(1),
+        createEvaluationData(2),
+        createEvaluationData(3),
+      ];
+
+      render(
+        <SpectatorHUD
+          {...defaultProps}
+          moveHistory={moveHistory}
+          evaluationHistory={evaluationHistory}
+          selectedMoveIndex={2}
+        />
+      );
+
+      // Should show analysis panel with selected move (move 3)
+      expect(screen.getByTestId('move-analysis-panel')).toBeInTheDocument();
+    });
+
+    it('provides previous evaluation to MoveAnalysisPanel when available', () => {
+      const moveHistory = [
+        createMockMove('ring_placement', 1),
+        createMockMove('ring_placement', 2),
+      ];
+      const evaluationHistory = [createEvaluationData(1), createEvaluationData(2)];
+
+      render(
+        <SpectatorHUD
+          {...defaultProps}
+          moveHistory={moveHistory}
+          evaluationHistory={evaluationHistory}
+          selectedMoveIndex={1}
+        />
+      );
+
+      // With index=1, prev evaluation should be looked up (moveNumber=1)
+      // This covers line 177: selectedMoveIndex > 0
+      expect(screen.getByTestId('move-analysis-panel')).toBeInTheDocument();
+    });
   });
 });

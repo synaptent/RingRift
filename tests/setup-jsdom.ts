@@ -3,6 +3,13 @@
  * Runs BEFORE test framework is installed
  */
 
+// Silence dotenv v17+ noisy startup logs in Jest runs.
+process.env.DOTENV_CONFIG_QUIET = 'true';
+
+// Default test env + quiet logging unless a test overrides explicitly.
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'error';
+
 import { MessageChannel as NodeMessageChannel } from 'worker_threads';
 
 // ═══════════════════════════════════════════════════════════════════════════
