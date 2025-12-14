@@ -33,8 +33,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.ai.mcts_ai import MCTSAI
 from app.models import AIConfig, BoardType, GameStatus
-from app.game_engine import GameEngine
-from app.training.generate_data import create_initial_state
+from app.training.env import RingRiftEnv
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,8 +53,16 @@ def play_mcts_game(
 
     Returns game record dict with moves, winner, and metadata.
     """
-    # Create initial state (no seed parameter supported)
-    game_state = create_initial_state(board_type, num_players)
+    # Create environment with proper phase handling
+    env = RingRiftEnv(
+        board_type=board_type,
+        num_players=num_players,
+        max_moves=max_moves,
+        reward_on="terminal",
+    )
+
+    # Reset to get initial state
+    state = env.reset(seed=seed)
 
     # Create MCTS AI for each player
     ais = {}
@@ -70,43 +77,47 @@ def play_mcts_game(
         # Configure MCTS iterations
         ais[p].num_iterations = mcts_iterations
 
-    moves = []
+    moves_record = []
     move_count = 0
     start_time = time.time()
+    done = False
 
-    while game_state.game_status == GameStatus.ACTIVE and move_count < max_moves:
-        current_player = game_state.current_player
+    while not done and move_count < max_moves:
+        current_player = state.current_player
         ai = ais[current_player]
 
-        # Get legal moves using static method
-        legal_moves = GameEngine.get_valid_moves(game_state, current_player)
+        # Get legal moves (handles all phases including bookkeeping)
+        legal_moves = env.legal_moves()
         if not legal_moves:
+            # No moves available - game should end
             break
 
-        # Get AI move using select_move method
-        move = ai.select_move(game_state)
+        # Get AI move
+        move = ai.select_move(state)
         if move is None:
-            break
+            # AI couldn't select a move - pick first legal
+            move = legal_moves[0]
 
         # Record move
-        moves.append({
+        moves_record.append({
             "player": current_player,
             "type": move.type.value if hasattr(move.type, 'value') else str(move.type),
             "from": {"x": move.from_pos.x, "y": move.from_pos.y} if move.from_pos else None,
             "to": {"x": move.to.x, "y": move.to.y} if move.to else None,
         })
 
-        # Apply move using static method
-        game_state = GameEngine.apply_move(game_state, move)
+        # Apply move using env.step (handles phase transitions properly)
+        state, reward, done, info = env.step(move)
         move_count += 1
 
     elapsed = time.time() - start_time
 
-    # Determine winner
-    winner = None
+    # Determine winner from final state or info
+    winner = state.winner
     victory_type = "unknown"
-    if game_state.game_status == GameStatus.COMPLETED:
-        winner = game_state.winner
+    if done and 'victory_reason' in info:
+        victory_type = info['victory_reason']
+    elif state.game_status == GameStatus.COMPLETED:
         victory_type = "completed"
     elif move_count >= max_moves:
         victory_type = "timeout"
@@ -116,7 +127,7 @@ def play_mcts_game(
         "num_players": num_players,
         "winner": winner,
         "victory_type": victory_type,
-        "moves": moves,
+        "moves": moves_record,
         "move_count": move_count,
         "elapsed_seconds": elapsed,
         "mcts_iterations": mcts_iterations,
@@ -179,10 +190,12 @@ def run_selfplay(
                 # Progress
                 if (i + 1) % 10 == 0 or i == 0:
                     rate = stats["total_games"] / stats["total_time"] if stats["total_time"] > 0 else 0
-                    logger.info(f"  Game {i+1}/{num_games} - {rate:.2f} games/sec")
+                    logger.info(f"  Game {i+1}/{num_games} - {rate:.2f} games/sec - winner: {game['winner']}")
 
             except Exception as e:
                 logger.error(f"Game {i+1} failed: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
 
     # Calculate win rates
@@ -259,6 +272,7 @@ def main():
         print(f"  Games: {stats['total_games']}")
         print(f"  Win rates: {stats.get('win_rates', {})}")
         print(f"  Avg moves: {stats.get('avg_moves_per_game', 0):.1f}")
+        print(f"  Victory types: {stats.get('victory_types', {})}")
 
 
 if __name__ == "__main__":

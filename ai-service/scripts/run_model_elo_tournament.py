@@ -92,14 +92,19 @@ def create_ai_from_model(
         return MCTSAI(player_number, config)
 
     else:
-        # Neural network model
+        # Neural network model - use MCTS with neural net guidance
+        # Extract model_id from model_path (strip .pth extension)
+        model_id = Path(model_path).stem if model_path else None
+        mcts_iters = model_def.get("mcts_iterations", 800)
         config = AIConfig(
-            ai_type=AIType.NEURAL_NET,
+            ai_type=AIType.MCTS,
             board_type=board_type,
-            difficulty=10,
-            model_path=model_path,
+            difficulty=8,
+            use_neural_net=True,
+            model_id=model_id,
+            mcts_iterations=mcts_iters,
         )
-        return NeuralNetAI(player_number, config)
+        return MCTSAI(player_number, config)
 
 
 def play_model_vs_model_game(
