@@ -810,7 +810,7 @@ class HexStateEncoderV3:
                     continue
                 q = cx - self.radius
                 r = cy - self.radius
-                pos = Position(q, r)
+                pos = Position(x=q, y=r)
 
                 neighbors = BoardGeometry.get_adjacent_positions(
                     pos, board.type, board.size
@@ -850,7 +850,7 @@ class HexStateEncoderV3:
                     continue
                 q = cx - self.radius
                 r = cy - self.radius
-                pos = Position(q, r)
+                pos = Position(x=q, y=r)
 
                 neighbors = BoardGeometry.get_adjacent_positions(
                     pos, board.type, board.size
@@ -884,7 +884,7 @@ class HexStateEncoderV3:
                     continue
                 q = cx - self.radius
                 r = cy - self.radius
-                pos = Position(q, r)
+                pos = Position(x=q, y=r)
                 pos_key = pos.to_key()
 
                 # Cell is valid for ring placement if:

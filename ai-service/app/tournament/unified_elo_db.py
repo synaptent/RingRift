@@ -39,9 +39,9 @@ from .elo import EloCalculator
 
 logger = logging.getLogger(__name__)
 
-# Database location
+# Database location - canonical Elo database for all trained models
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "unified_elo.db"
+DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "elo_leaderboard.db"
 
 # Global singleton
 _elo_db_instance: Optional["EloDatabase"] = None

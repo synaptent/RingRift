@@ -510,11 +510,11 @@
           "root_selector": "",
           "source": "url",
           "type": "json",
-          "url": "http://${orchestrator_host}:8770/elo/table",
+          "url": "http://${orchestrator_host}:8770/elo/table?source=trained",
           "url_options": { "method": "GET" }
         }
       ],
-      "title": "Model Elo Leaderboard",
+      "title": "Trained NN Model Elo Leaderboard",
       "type": "table"
     },
     {
@@ -621,8 +621,75 @@
       "type": "bargauge"
     },
     {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "ringrift-elo-api" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Elo Rating",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 34 },
+      "id": 32,
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max", "min", "mean"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "columns": [
+            { "selector": "time", "text": "", "type": "timestamp" },
+            { "selector": "model", "text": "", "type": "string" },
+            { "selector": "elo", "text": "", "type": "number" }
+          ],
+          "filters": [],
+          "format": "timeseries",
+          "global_query_id": "",
+          "refId": "A",
+          "root_selector": "",
+          "source": "url",
+          "type": "json",
+          "url": "http://${orchestrator_host}:8770/elo/history?nn_only=true&hours=168&limit=5000",
+          "url_options": { "method": "GET" }
+        }
+      ],
+      "title": "NN Model Elo Progression (7 days)",
+      "description": "Historical Elo ratings for neural network models. Shows improvement over training iterations.",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 44 },
       "id": 104,
       "panels": [],
       "title": "Resource Utilization",

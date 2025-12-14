@@ -15,10 +15,10 @@
 global:
   # How frequently to scrape targets
   scrape_interval: 15s
-  
+
   # How frequently to evaluate rules
   evaluation_interval: 15s
-  
+
   # Attach these labels to any time series or alerts when communicating with
   # external systems (federation, remote storage, Alertmanager)
   external_labels:
@@ -87,6 +87,19 @@ scrape_configs:
     scrape_timeout: 10s
 
   # ---------------------------------------------------------------------------
+  # RingRift Elo Metrics Exporter (for model improvement tracking)
+  # ---------------------------------------------------------------------------
+  - job_name: 'ringrift-elo-metrics'
+    static_configs:
+      - targets: ['localhost:9092']
+        labels:
+          service: 'ringrift'
+          component: 'elo-metrics'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 15s
+
+  # ---------------------------------------------------------------------------
   # Redis (if using redis_exporter)
   # Uncomment when redis_exporter is deployed
   # ---------------------------------------------------------------------------
@@ -141,7 +154,7 @@ scrape_configs:
 # =============================================================================
 # Storage Configuration (optional, for advanced setups)
 # =============================================================================
-# 
+#
 # Remote write/read configuration for long-term storage or federation
 # Uncomment and configure for your storage backend
 #

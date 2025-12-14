@@ -63,6 +63,7 @@ logger = logging.getLogger(__name__)
 from app.db import GameReplayDB
 from app.models import AIConfig, BoardType, GameState, Move
 from app.ai.neural_net import NeuralNetAI, INVALID_MOVE_INDEX, encode_move_for_board
+from app.training.encoding import HexStateEncoder, HexStateEncoderV3, get_encoder_for_board_type
 
 
 BOARD_TYPE_MAP: Dict[str, BoardType] = {
@@ -72,12 +73,17 @@ BOARD_TYPE_MAP: Dict[str, BoardType] = {
 }
 
 
-def build_encoder(board_type: BoardType) -> NeuralNetAI:
+def build_encoder(board_type: BoardType, encoder_version: str = "default") -> NeuralNetAI:
     """
     Construct a NeuralNetAI instance for feature and policy encoding.
 
     This uses a lightweight AIConfig and treats player_number=1 purely as a
     placeholder; we never call select_move(), only the encoding helpers.
+
+    For hexagonal boards, encoder_version can be:
+      - "default": Use NeuralNetAI._extract_features (14 channels)
+      - "v2": Use HexStateEncoder (10 channels) for HexNeuralNet_v2
+      - "v3": Use HexStateEncoderV3 (16 channels) for HexNeuralNet_v3
     """
     # Prefer CPU by default to avoid accidental MPS/OMP issues; callers can
     # override via env (e.g. RINGRIFT_FORCE_CPU=0) if they want GPU.
@@ -100,6 +106,12 @@ def build_encoder(board_type: BoardType) -> NeuralNetAI:
         BoardType.SQUARE19: 19,
         BoardType.HEXAGONAL: 25,
     }.get(board_type, 8)
+
+    # For hex boards, attach a specialized encoder if requested
+    if board_type == BoardType.HEXAGONAL and encoder_version in ("v2", "v3"):
+        encoder._hex_encoder = get_encoder_for_board_type(board_type, encoder_version)
+        encoder._hex_encoder_version = encoder_version
+
     return encoder
 
 
@@ -115,9 +127,18 @@ def encode_state_with_history(
     This mirrors the stacking logic in NeuralNetAI.evaluate_batch /
     encode_state_for_model: current features followed by up to history_length
     previous feature frames, newest-first, padded with zeros as needed.
+
+    For hex boards with attached _hex_encoder, uses the specialized encoder
+    (HexStateEncoder or HexStateEncoderV3) for proper channel count.
     """
-    # Use the internal feature extractor; this is stable tooling code.
-    features, globals_vec = encoder._extract_features(state)  # type: ignore[attr-defined]
+    # Check if we have a specialized hex encoder attached
+    hex_encoder = getattr(encoder, "_hex_encoder", None)
+    if hex_encoder is not None:
+        # Use the hex-specific encoder
+        features, globals_vec = hex_encoder.encode_state(state)
+    else:
+        # Use the internal feature extractor; this is stable tooling code.
+        features, globals_vec = encoder._extract_features(state)  # type: ignore[attr-defined]
 
     hist = history_frames[::-1][:history_length]
     while len(hist) < history_length:
@@ -296,6 +317,7 @@ def export_replay_dataset(
     exclude_recovery: bool = False,
     use_board_aware_encoding: bool = False,
     append: bool = False,
+    encoder_version: str = "default",
 ) -> None:
     """
     Export training samples from a single GameReplayDB into an NPZ dataset.
@@ -318,9 +340,12 @@ def export_replay_dataset(
             encoding (~55000 actions). Default: False for backward compat.
         append: If True, append to an existing output NPZ (legacy behavior).
             If False (default), archive any existing output and rebuild from scratch.
+        encoder_version: For hex boards, 'v2' uses HexStateEncoder (10 channels),
+            'v3' uses HexStateEncoderV3 (16 channels). Default: 'default' uses
+            NeuralNetAI encoder (14 channels).
     """
     db = GameReplayDB(db_path)
-    encoder = build_encoder(board_type)
+    encoder = build_encoder(board_type, encoder_version)
 
     features_list: List[np.ndarray] = []
     globals_list: List[np.ndarray] = []
@@ -790,6 +815,19 @@ def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
             "for all square boards."
         ),
     )
+    parser.add_argument(
+        "--encoder-version",
+        type=str,
+        choices=["default", "v2", "v3"],
+        default="default",
+        help=(
+            "Encoder version for hex boards. "
+            "'default' uses NeuralNetAI (14 channels), "
+            "'v2' uses HexStateEncoder (10 channels for HexNeuralNet_v2), "
+            "'v3' uses HexStateEncoderV3 (16 channels for HexNeuralNet_v3). "
+            "Ignored for non-hex boards."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -818,6 +856,7 @@ def main(argv: List[str] | None = None) -> int:
         exclude_recovery=args.exclude_recovery,
         use_board_aware_encoding=args.board_aware_encoding,
         append=bool(args.append),
+        encoder_version=args.encoder_version,
     )
     return 0
 

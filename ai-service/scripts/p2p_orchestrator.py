@@ -9981,87 +9981,165 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     async def handle_elo_table(self, request: web.Request) -> web.Response:
         """GET /elo/table - Elo leaderboard in flat table format for Grafana Infinity.
 
+        Query params:
+            - source: "tournament" (default) or "trained" (actual trained NN models)
+            - limit: Max entries (default 50)
+            - board_type: Filter by board type
+            - num_players: Filter by player count
+            - nn_only: If "true", filter to NN models only (for tournament source)
+
         Returns a simple JSON array of model entries with rank, suitable for table display.
         """
+        import sqlite3
+
         try:
-            from scripts.run_model_elo_tournament import (
-                init_elo_database,
-                ELO_DB_PATH,
-            )
-
-            if not ELO_DB_PATH or not ELO_DB_PATH.exists():
-                return web.json_response([])
-
+            source = request.query.get("source", "tournament")
             limit = int(request.query.get("limit", "50"))
             board_type_filter = request.query.get("board_type")
             num_players_filter = request.query.get("num_players")
+            nn_only = request.query.get("nn_only", "").lower() == "true"
 
-            db = init_elo_database()
-            conn = db._get_connection()
-            cursor = conn.cursor()
+            ai_root = Path(self.ringrift_path) / "ai-service"
 
-            # Build query with optional filters
-            query = """
-                SELECT
-                    participant_id,
-                    board_type,
-                    num_players,
-                    rating,
-                    games_played,
-                    wins,
-                    losses,
-                    draws,
-                    last_update
-                FROM elo_ratings
-                WHERE games_played >= 5
-            """
-            params = []
+            if source == "trained":
+                # Use elo_leaderboard.db - actual trained NN models
+                db_path = ai_root / "data" / "elo_leaderboard.db"
+                if not db_path.exists():
+                    return web.json_response([])
 
-            if board_type_filter:
-                query += " AND board_type = ?"
-                params.append(board_type_filter)
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
 
-            if num_players_filter:
-                query += " AND num_players = ?"
-                params.append(int(num_players_filter))
+                # elo_leaderboard.db has different schema (model_id instead of participant_id)
+                query = """
+                    SELECT model_id, rating, games_played, wins, losses
+                    FROM elo_ratings
+                    WHERE games_played >= 10
+                """
+                params = []
 
-            query += " ORDER BY rating DESC LIMIT ?"
-            params.append(limit)
+                if nn_only:
+                    query += " AND (model_id LIKE '%nn%' OR model_id LIKE '%NN%' OR model_id LIKE '%baseline%')"
 
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            db.close()
+                query += " ORDER BY rating DESC LIMIT ?"
+                params.append(limit)
 
-            # Build flat table response
-            table_data = []
-            for rank, row in enumerate(rows, 1):
-                participant_id, board_type, num_players, rating, games, wins, losses, draws, last_update = row
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                conn.close()
 
-                # Extract model name from participant_id
-                model_name = participant_id
-                if participant_id.startswith("nn:"):
-                    model_name = Path(participant_id[3:]).stem
+                # Build flat table response
+                table_data = []
+                for rank, row in enumerate(rows, 1):
+                    model_id, rating, games, wins, losses = row
 
-                # Calculate win rate
-                total_decided = wins + losses
-                win_rate = wins / total_decided if total_decided > 0 else 0.5
+                    # Extract config from model name
+                    if "sq8" in model_id.lower() or "square8" in model_id.lower():
+                        config = "square8_2p"
+                    elif "sq19" in model_id.lower() or "square19" in model_id.lower():
+                        config = "square19_2p"
+                    elif "hex" in model_id.lower():
+                        config = "hexagonal_2p"
+                    else:
+                        config = "unknown"
 
-                # Format config
-                config = f"{board_type}_{num_players}p"
+                    # Calculate win rate
+                    total_decided = wins + losses
+                    win_rate = wins / total_decided if total_decided > 0 else 0.5
 
-                table_data.append({
-                    "Rank": rank,
-                    "Model": model_name,
-                    "Elo": round(rating, 1),
-                    "WinRate": round(win_rate * 100, 1),
-                    "Games": games,
-                    "Wins": wins,
-                    "Losses": losses,
-                    "Draws": draws,
-                    "Config": config,
-                })
+                    table_data.append({
+                        "Rank": rank,
+                        "Model": model_id,
+                        "Elo": round(rating, 1),
+                        "WinRate": round(win_rate * 100, 1),
+                        "Games": games,
+                        "Wins": wins,
+                        "Losses": losses,
+                        "Draws": 0,
+                        "Config": config,
+                    })
 
-            return web.json_response(table_data)
+                return web.json_response(table_data)
+
+            else:
+                # Default: tournament participants from unified_elo.db
+                from scripts.run_model_elo_tournament import (
+                    init_elo_database,
+                    ELO_DB_PATH,
+                )
+
+                if not ELO_DB_PATH or not ELO_DB_PATH.exists():
+                    return web.json_response([])
+
+                db = init_elo_database()
+                conn = db._get_connection()
+                cursor = conn.cursor()
+
+                # Build query with optional filters
+                query = """
+                    SELECT
+                        participant_id,
+                        board_type,
+                        num_players,
+                        rating,
+                        games_played,
+                        wins,
+                        losses,
+                        draws,
+                        last_update
+                    FROM elo_ratings
+                    WHERE games_played >= 5
+                """
+                params = []
+
+                if board_type_filter:
+                    query += " AND board_type = ?"
+                    params.append(board_type_filter)
+
+                if num_players_filter:
+                    query += " AND num_players = ?"
+                    params.append(int(num_players_filter))
+
+                if nn_only:
+                    query += " AND (participant_id LIKE '%NN%' OR participant_id LIKE '%nn%')"
+
+                query += " ORDER BY rating DESC LIMIT ?"
+                params.append(limit)
+
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                db.close()
+
+                # Build flat table response
+                table_data = []
+                for rank, row in enumerate(rows, 1):
+                    participant_id, board_type, num_players, rating, games, wins, losses, draws, last_update = row
+
+                    # Extract model name from participant_id
+                    model_name = participant_id
+                    if participant_id.startswith("nn:"):
+                        model_name = Path(participant_id[3:]).stem
+
+                    # Calculate win rate
+                    total_decided = wins + losses
+                    win_rate = wins / total_decided if total_decided > 0 else 0.5
+
+                    # Format config
+                    config = f"{board_type}_{num_players}p"
+
+                    table_data.append({
+                        "Rank": rank,
+                        "Model": model_name,
+                        "Elo": round(rating, 1),
+                        "WinRate": round(win_rate * 100, 1),
+                        "Games": games,
+                        "Wins": wins,
+                        "Losses": losses,
+                        "Draws": draws,
+                        "Config": config,
+                    })
+
+                return web.json_response(table_data)
 
         except ImportError:
             return web.json_response([{"error": "Elo database module not available"}])
@@ -10576,63 +10654,122 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         Query params:
             - config: Filter by config (e.g., square8_2p)
-            - model: Filter by model/participant_id
+            - model: Filter by model/participant_id (supports partial match)
+            - nn_only: If "true", filter to NN models only
             - hours: Hours of history (default 168 = 1 week)
+            - limit: Max entries to return (default 5000)
         """
         import sqlite3
 
         try:
             config_filter = request.query.get("config")
             model_filter = request.query.get("model")
+            nn_only = request.query.get("nn_only", "").lower() == "true"
             hours = int(request.query.get("hours", "168"))
+            limit = int(request.query.get("limit", "5000"))
 
             ai_root = Path(self.ringrift_path) / "ai-service"
-            db_path = ai_root / "data" / "unified_elo.db"
 
-            if not db_path.exists():
-                return web.json_response([])
+            # Canonical Elo database for trained models
+            db_paths = [
+                ai_root / "data" / "elo_leaderboard.db",
+            ]
 
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-
+            data = []
             cutoff = time.time() - (hours * 3600)
 
-            query = """
-                SELECT participant_id, board_type, num_players, rating, games_played, timestamp
-                FROM rating_history
-                WHERE timestamp > ?
-            """
-            params = [cutoff]
+            for db_path in db_paths:
+                if not db_path.exists():
+                    continue
 
-            if config_filter:
-                parts = config_filter.replace("_", " ").split()
-                if len(parts) >= 2:
-                    board_type = parts[0]
-                    num_players = int(parts[1].replace("p", ""))
-                    query += " AND board_type = ? AND num_players = ?"
-                    params.extend([board_type, num_players])
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
 
-            if model_filter:
-                query += " AND participant_id LIKE ?"
-                params.append(f"%{model_filter}%")
+                    # Check if this DB has data
+                    cursor.execute("SELECT COUNT(*) FROM rating_history WHERE timestamp > ?", (cutoff,))
+                    count = cursor.fetchone()[0]
+                    if count == 0:
+                        conn.close()
+                        continue
 
-            query += " ORDER BY timestamp ASC"
+                    # Build query - elo_leaderboard.db has different schema (no board_type/num_players)
+                    cursor.execute("PRAGMA table_info(rating_history)")
+                    columns = {col[1] for col in cursor.fetchall()}
 
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            conn.close()
+                    if "board_type" in columns:
+                        # unified_elo.db schema
+                        query = """
+                            SELECT participant_id, board_type, num_players, rating, games_played, timestamp
+                            FROM rating_history
+                            WHERE timestamp > ?
+                        """
+                        params = [cutoff]
 
-            # Format for Grafana time series
-            data = []
-            for row in rows:
-                participant_id, board_type, num_players, rating, games_played, ts = row
-                data.append({
-                    "time": int(ts * 1000),  # Grafana expects ms
-                    "model": participant_id,
-                    "config": f"{board_type}_{num_players}p",
-                    "elo": round(rating, 1),
-                    "games": games_played,
-                })
+                        if config_filter:
+                            parts = config_filter.replace("_", " ").split()
+                            if len(parts) >= 2:
+                                board_type = parts[0]
+                                num_players = int(parts[1].replace("p", ""))
+                                query += " AND board_type = ? AND num_players = ?"
+                                params.extend([board_type, num_players])
+                    else:
+                        # elo_leaderboard.db schema (model_id instead of participant_id)
+                        query = """
+                            SELECT model_id, rating, games_played, timestamp
+                            FROM rating_history
+                            WHERE timestamp > ?
+                        """
+                        params = [cutoff]
+
+                    if model_filter:
+                        col = "participant_id" if "participant_id" in columns else "model_id"
+                        query += f" AND {col} LIKE ?"
+                        params.append(f"%{model_filter}%")
+
+                    if nn_only:
+                        col = "participant_id" if "participant_id" in columns else "model_id"
+                        query += f" AND ({col} LIKE '%nn%' OR {col} LIKE '%NN%')"
+
+                    query += f" ORDER BY timestamp DESC LIMIT {limit}"
+
+                    cursor.execute(query, params)
+                    rows = cursor.fetchall()
+                    conn.close()
+
+                    # Format for Grafana time series
+                    for row in rows:
+                        if "board_type" in columns:
+                            participant_id, board_type, num_players, rating, games_played, ts = row
+                            config = f"{board_type}_{num_players}p"
+                        else:
+                            model_id, rating, games_played, ts = row
+                            participant_id = model_id
+                            # Extract config from model name (e.g., sq8_2p_nn_baseline -> square8_2p)
+                            if "sq8" in model_id.lower() or "square8" in model_id.lower():
+                                config = "square8_2p"
+                            elif "sq19" in model_id.lower() or "square19" in model_id.lower():
+                                config = "square19_2p"
+                            else:
+                                config = "unknown"
+
+                        data.append({
+                            "time": int(ts * 1000),  # Grafana expects ms
+                            "model": participant_id,
+                            "config": config,
+                            "elo": round(rating, 1),
+                            "games": games_played,
+                        })
+
+                    # If we got data from this DB, don't check others
+                    if data:
+                        break
+
+                except sqlite3.Error:
+                    continue
+
+            # Sort by time ascending for time series
+            data.sort(key=lambda x: x["time"])
 
             return web.json_response(data)
 

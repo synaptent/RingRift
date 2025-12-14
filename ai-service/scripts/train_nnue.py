@@ -518,7 +518,7 @@ def train_nnue(
             val_loss=val_loss,
             val_accuracy=val_accuracy,
             epoch=epoch + 1,
-            model_path=str(output_path) if output_path else "",
+            model_path=str(save_path) if save_path else "",
         )
 
         # Check for improvement

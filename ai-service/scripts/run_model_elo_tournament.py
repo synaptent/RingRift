@@ -590,9 +590,9 @@ def run_model_matchup(
 # Persistent Elo Database
 # ============================================
 
-# Default to unified Elo database for cross-script consistency
-ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
-LEGACY_ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"
+# Canonical Elo database - tracks trained model ratings and history
+ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"
+LEGACY_ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "archive" / "unified_elo.db"  # Archived
 
 # Import unified Elo database module
 from app.tournament.unified_elo_db import (

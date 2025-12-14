@@ -343,7 +343,7 @@ class UnifiedLoopConfig:
     hosts_config_path: str = "config/remote_hosts.yaml"
 
     # Database paths
-    unified_elo_db: str = "data/unified_elo.db"
+    elo_db: str = "data/elo_leaderboard.db"  # Canonical Elo database
     data_manifest_db: str = "data/data_manifest.db"
 
     # Logging
@@ -393,7 +393,7 @@ class UnifiedLoopConfig:
                 if hasattr(config.curriculum, k):
                     setattr(config.curriculum, k, v)
 
-        for key in ["hosts_config_path", "unified_elo_db", "data_manifest_db", "log_dir",
+        for key in ["hosts_config_path", "elo_db", "data_manifest_db", "log_dir",
                     "verbose", "metrics_port", "metrics_enabled", "dry_run"]:
             if key in data:
                 setattr(config, key, data[key])
