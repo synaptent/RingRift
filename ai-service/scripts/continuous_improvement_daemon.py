@@ -148,6 +148,10 @@ IMPROVEMENT_LEADER_POLL_SECONDS = float(os.environ.get("RINGRIFT_IMPROVEMENT_LEA
 
 # Optional: sync promoted artifacts to a staging deployment.
 SYNC_STAGING = os.environ.get("RINGRIFT_SYNC_STAGING", "").lower() in ("1", "true", "yes", "on")
+
+# Disable local compute tasks (selfplay, training, tournaments) on this machine.
+# Use this on low-memory dev machines to avoid OOM while still running coordination.
+DISABLE_LOCAL_TASKS = os.environ.get("RINGRIFT_DISABLE_LOCAL_TASKS", "").lower() in ("1", "true", "yes", "on")
 SYNC_STAGING_RESTART = os.environ.get("RINGRIFT_SYNC_STAGING_RESTART", "1").lower() in (
     "1",
     "true",
@@ -1155,6 +1159,11 @@ async def run_balanced_selfplay(state: DaemonState, duration_minutes: int = 10) 
     Incorporates P2P cluster data manifest if available for smarter balancing.
     Now supports parallel execution for faster data generation.
     """
+    # Skip local selfplay if disabled (low-memory machines)
+    if DISABLE_LOCAL_TASKS:
+        print("[Daemon] Skipping local selfplay (RINGRIFT_DISABLE_LOCAL_TASKS=true)")
+        return 0
+
     total_games = 0
 
     # Get improvement manager for diverse config selection
@@ -1355,6 +1364,10 @@ async def run_gpu_policy_selfplay(state: DaemonState, games_per_config: int = 50
 
 async def check_and_run_training(state: DaemonState) -> List[str]:
     """Check if any board type needs training and run it."""
+    # Skip local training if disabled (low-memory machines)
+    if DISABLE_LOCAL_TASKS:
+        return []
+
     trained_models = []
     current_time = time.time()
 
@@ -1616,6 +1629,10 @@ async def run_cross_model_tournament(state: DaemonState, top_n: int = 10, games_
 
     Returns number of games played.
     """
+    # Skip local tournament if disabled (low-memory machines)
+    if DISABLE_LOCAL_TASKS:
+        return 0
+
     if not HAS_PERSISTENT_ELO:
         print("[Daemon] Cross-model tournament requires persistent Elo database")
         return 0
@@ -1908,6 +1925,10 @@ async def check_and_run_nnue_training(state: DaemonState) -> List[str]:
     Trains multiple model sizes (small, medium, large) and promotes the best one.
     Returns list of board config keys that were trained.
     """
+    # Skip local training if disabled (low-memory machines)
+    if DISABLE_LOCAL_TASKS:
+        return []
+
     trained = []
     current_time = time.time()
 
@@ -2122,6 +2143,10 @@ async def check_and_run_nnue_policy_training(state: DaemonState) -> List[str]:
 
     Returns list of board config keys that were trained.
     """
+    # Skip local training if disabled (low-memory machines)
+    if DISABLE_LOCAL_TASKS:
+        return []
+
     trained = []
     current_time = time.time()
 
