@@ -8951,8 +8951,20 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             lines.append("# TYPE ringrift_training_queue_size gauge")
             if hasattr(self, 'improvement_cycle_manager') and self.improvement_cycle_manager:
                 icm = self.improvement_cycle_manager
-                cycles_completed = len([c for c in icm.cycles.values() if c.status == 'completed'])
+                cycles_completed = len([c for c in icm.state.cycles.values() if c.status == 'completed'])
                 lines.append(f"ringrift_improvement_cycles_total {cycles_completed}")
+
+            # Victory Type Metrics by board config
+            lines.append("# HELP ringrift_victory_type_total Games won by victory type")
+            lines.append("# TYPE ringrift_victory_type_total counter")
+            try:
+                victory_stats = await self._get_victory_type_stats()
+                for (board_type, num_players, victory_type), count in victory_stats.items():
+                    lines.append(
+                        f'ringrift_victory_type_total{{board_type="{board_type}",num_players="{num_players}",victory_type="{victory_type}"}} {count}'
+                    )
+            except Exception:
+                pass
 
             # Uptime metric
             if hasattr(self, 'start_time'):
@@ -9026,7 +9038,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         if not self.improvement_cycle_manager:
             return
         try:
-            cycle = self.improvement_cycle_manager.cycles.get(cycle_id)
+            cycle = self.improvement_cycle_manager.state.cycles.get(cycle_id)
             if not cycle:
                 return
 

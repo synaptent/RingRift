@@ -191,6 +191,48 @@ if HAS_PROMETHEUS:
         []
     )
 
+    # Training progress metrics (for training dashboard compatibility)
+    TOTAL_MODELS = Gauge(
+        'ringrift_total_models',
+        'Total number of model files across all configs',
+        []
+    )
+    MAX_MODEL_VERSION = Gauge(
+        'ringrift_max_model_version',
+        'Maximum model version number',
+        []
+    )
+    MAX_ITERATION = Gauge(
+        'ringrift_max_iteration',
+        'Maximum training iteration by config',
+        ['config']
+    )
+    MODEL_PROMOTIONS = Gauge(
+        'ringrift_model_promotions_total',
+        'Total model promotions (gauge for dashboard)',
+        []
+    )
+    MODEL_ELO = Gauge(
+        'ringrift_model_elo',
+        'Model Elo rating by config and model',
+        ['config', 'model']
+    )
+    MODEL_WIN_RATE = Gauge(
+        'ringrift_model_win_rate',
+        'Model win rate by config',
+        ['config']
+    )
+    MODELS_BY_VERSION = Gauge(
+        'ringrift_models_by_version',
+        'Number of models by version',
+        ['version']
+    )
+    MODELS_SIZE_GB = Gauge(
+        'ringrift_models_size_gb',
+        'Total size of models in GB',
+        []
+    )
+
 
 class MetricsHandler(BaseHTTPRequestHandler):
     """HTTP handler for Prometheus metrics endpoint."""
@@ -1146,6 +1188,97 @@ class UnifiedAILoop:
         else:
             for config_key in self.state.configs:
                 TRAINING_IN_PROGRESS.labels(config=config_key).set(0)
+
+        # Update training progress metrics (for dashboard compatibility)
+        self._update_training_progress_metrics()
+
+    def _update_training_progress_metrics(self):
+        """Update metrics for the training progress dashboard."""
+        try:
+            models_dir = AI_SERVICE_ROOT / "models"
+
+            # Count model files and calculate sizes
+            total_models = 0
+            total_size_bytes = 0
+            versions_count: Dict[str, int] = {}
+            max_version = 0
+
+            if models_dir.exists():
+                for model_file in models_dir.rglob("*.pt"):
+                    total_models += 1
+                    total_size_bytes += model_file.stat().st_size
+
+                    # Extract version from path (e.g., models/square8_2p/v3/best.pt)
+                    parts = model_file.parts
+                    for part in parts:
+                        if part.startswith("v") and part[1:].isdigit():
+                            version_num = int(part[1:])
+                            max_version = max(max_version, version_num)
+                            versions_count[part] = versions_count.get(part, 0) + 1
+
+            TOTAL_MODELS.set(total_models)
+            MAX_MODEL_VERSION.set(max_version)
+            MODELS_SIZE_GB.set(total_size_bytes / (1024 ** 3))
+
+            for version, count in versions_count.items():
+                MODELS_BY_VERSION.labels(version=version).set(count)
+
+            # Update model promotions gauge from state counter
+            MODEL_PROMOTIONS.set(self.state.total_promotions)
+
+            # Update Elo and win rates from Elo database
+            elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
+            if elo_db_path.exists():
+                conn = sqlite3.connect(elo_db_path)
+                cursor = conn.cursor()
+
+                # Get best Elo for each config
+                cursor.execute("""
+                    SELECT board_type, num_players, participant_id, rating, games_played
+                    FROM elo_ratings
+                    WHERE participant_id LIKE 'ringrift_%'
+                    ORDER BY board_type, num_players, rating DESC
+                """)
+
+                rows = cursor.fetchall()
+                seen_configs: Set[str] = set()
+
+                for row in rows:
+                    config_key = f"{row[0]}_{row[1]}p"
+                    if config_key not in seen_configs:
+                        seen_configs.add(config_key)
+                        MODEL_ELO.labels(config=config_key, model="best").set(row[3])
+
+                        # Estimate win rate from Elo (simplified)
+                        # Win rate ≈ 1 / (1 + 10^((1500 - elo) / 400))
+                        elo = row[3]
+                        estimated_win_rate = 1.0 / (1.0 + 10 ** ((1500 - elo) / 400))
+                        MODEL_WIN_RATE.labels(config=config_key).set(estimated_win_rate)
+
+                conn.close()
+
+            # Update max iteration from training runs directory
+            runs_dir = AI_SERVICE_ROOT / "runs"
+            if runs_dir.exists():
+                for config_key in self.state.configs:
+                    max_iter = 0
+                    # Look for iteration numbers in run directories
+                    config_runs = list(runs_dir.glob(f"*{config_key}*"))
+                    for run_dir in config_runs:
+                        # Extract iteration from training_report.json if exists
+                        report_path = run_dir / "training_report.json"
+                        if report_path.exists():
+                            try:
+                                with open(report_path) as f:
+                                    report = json.load(f)
+                                    iter_num = report.get("iteration", 0)
+                                    max_iter = max(max_iter, iter_num)
+                            except Exception:
+                                pass
+                    MAX_ITERATION.labels(config=config_key).set(max_iter)
+
+        except Exception as e:
+            print(f"[Metrics] Error updating training progress metrics: {e}")
 
     def _load_state(self):
         """Load state from checkpoint file."""
