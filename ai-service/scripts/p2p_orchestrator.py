@@ -3957,6 +3957,26 @@ class P2POrchestrator:
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
 
+    async def handle_reduce_selfplay(self, request: web.Request) -> web.Response:
+        """Stop excess selfplay jobs on this node (load shedding).
+
+        Used by leaders when a node is under memory/disk pressure so the node
+        can recover without requiring manual intervention.
+        """
+        try:
+            data = await request.json()
+            target_raw = data.get("target_selfplay_jobs", data.get("target", 0))
+            reason = str(data.get("reason") or "remote_request")
+            try:
+                target = int(target_raw)
+            except Exception:
+                target = 0
+
+            result = await self._reduce_local_selfplay_jobs(target, reason=reason)
+            return web.json_response({"success": True, **result})
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=400)
+
     async def handle_cleanup_files(self, request: web.Request) -> web.Response:
         """Delete specific files from this node (for post-sync cleanup).
 
@@ -9417,6 +9437,15 @@ print(json.dumps({{
                 elif cmd_type == "restart_stuck_jobs":
                     asyncio.create_task(self._restart_local_stuck_jobs())
                     ok = True
+                elif cmd_type == "reduce_selfplay":
+                    target = payload.get("target_selfplay_jobs", payload.get("target", 0))
+                    reason = str(payload.get("reason") or "relay")
+                    try:
+                        target_jobs = int(target)
+                    except Exception:
+                        target_jobs = 0
+                    await self._reduce_local_selfplay_jobs(target_jobs, reason=reason)
+                    ok = True
                 elif cmd_type == "cleanup_files":
                     files = payload.get("files", []) or []
                     reason = str(payload.get("reason") or "relay")
@@ -10304,10 +10333,29 @@ print(json.dumps({{
                     await self._request_remote_cleanup(node)
                 continue  # Skip job creation this cycle
 
-            # LEARNED LESSONS - Memory warning - reduce jobs
+            # Load shedding: when a node is under memory/disk pressure, ask it to
+            # stop excess selfplay jobs so it can recover (prevents OOM + disk-full).
+            pressure_reasons: List[str] = []
             if node.memory_percent >= MEMORY_WARNING_THRESHOLD:
-                print(f"[P2P] {node.node_id}: Memory at {node.memory_percent:.0f}% - reducing jobs")
-                # Don't start new jobs, let existing ones complete
+                pressure_reasons.append("memory")
+            if node.disk_percent >= DISK_WARNING_THRESHOLD:
+                pressure_reasons.append("disk")
+
+            if pressure_reasons:
+                desired = self._target_selfplay_jobs_for_node(node)
+                if node.memory_percent >= MEMORY_CRITICAL_THRESHOLD or node.disk_percent >= DISK_CRITICAL_THRESHOLD:
+                    desired = 0
+
+                if node.selfplay_jobs > desired:
+                    reason = "+".join(pressure_reasons)
+                    print(
+                        f"[P2P] {node.node_id}: Load shedding (reason={reason}) "
+                        f"{node.selfplay_jobs}->{desired} selfplay jobs"
+                    )
+                    if node.node_id == self.node_id:
+                        await self._reduce_local_selfplay_jobs(desired, reason=reason)
+                    else:
+                        await self._request_reduce_selfplay(node, desired, reason=reason)
 
         # Phase 1.5: LEARNED LESSONS - Detect stuck jobs (GPU idle with running processes)
         # This addresses the vast-5090-quad issue where 582 processes ran at 0% GPU
@@ -10563,6 +10611,93 @@ print(json.dumps({{
                     print(f"[P2P] Cleanup request failed on {node.node_id}: {last_err}")
         except Exception as e:
             print(f"[P2P] Failed to request cleanup from {node.node_id}: {e}")
+
+    async def _reduce_local_selfplay_jobs(self, target_selfplay_jobs: int, *, reason: str) -> Dict[str, Any]:
+        """Best-effort: stop excess selfplay jobs on this node (load shedding).
+
+        Used when disk/memory pressure is high: we want the node to recover and
+        avoid OOM/disk-full scenarios, even if it means reducing throughput.
+        """
+        try:
+            target = max(0, int(target_selfplay_jobs))
+        except Exception:
+            target = 0
+
+        with self.jobs_lock:
+            running: List[Tuple[str, ClusterJob]] = [
+                (job_id, job)
+                for job_id, job in self.local_jobs.items()
+                if job.status == "running"
+                and job.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY)
+            ]
+
+        running_before = len(running)
+        if running_before <= target:
+            return {
+                "running_before": running_before,
+                "running_after": running_before,
+                "stopped": 0,
+                "target": target,
+                "reason": reason,
+            }
+
+        # Stop newest-first to avoid killing long-running jobs near completion.
+        running.sort(key=lambda pair: float(getattr(pair[1], "started_at", 0.0) or 0.0), reverse=True)
+        to_stop = running[target:]
+
+        stopped = 0
+        with self.jobs_lock:
+            for job_id, job in to_stop:
+                try:
+                    if job.pid:
+                        os.kill(int(job.pid), signal.SIGTERM)
+                    job.status = "stopped"
+                    stopped += 1
+                except Exception:
+                    continue
+
+        if stopped:
+            self._save_state()
+        return {
+            "running_before": running_before,
+            "running_after": max(0, running_before - stopped),
+            "stopped": stopped,
+            "target": target,
+            "reason": reason,
+        }
+
+    async def _request_reduce_selfplay(self, node: NodeInfo, target_selfplay_jobs: int, *, reason: str) -> None:
+        """Ask a node to shed excess selfplay (used for memory/disk pressure)."""
+        try:
+            target = max(0, int(target_selfplay_jobs))
+        except Exception:
+            target = 0
+
+        if getattr(node, "nat_blocked", False):
+            payload = {"target_selfplay_jobs": target, "reason": reason}
+            cmd_id = self._enqueue_relay_command(node.node_id, "reduce_selfplay", payload)
+            if cmd_id:
+                print(f"[P2P] Enqueued relay reduce_selfplay for {node.node_id} (target={target}, reason={reason})")
+            else:
+                print(f"[P2P] Relay queue full for {node.node_id}; skipping reduce_selfplay enqueue")
+            return
+
+        timeout = ClientTimeout(total=HTTP_TOTAL_TIMEOUT)
+        async with ClientSession(timeout=timeout) as session:
+            last_err: Optional[str] = None
+            payload = {"target_selfplay_jobs": target, "reason": reason}
+            for url in self._urls_for_peer(node, "/reduce_selfplay"):
+                try:
+                    async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
+                        if resp.status == 200:
+                            print(f"[P2P] Requested load shedding on {node.node_id} (target={target}, reason={reason})")
+                            return
+                        last_err = f"http_{resp.status}"
+                except Exception as e:
+                    last_err = str(e)
+                    continue
+            if last_err:
+                print(f"[P2P] reduce_selfplay request failed on {node.node_id}: {last_err}")
 
     async def _restart_local_stuck_jobs(self):
         """Kill stuck selfplay processes and let job management restart them.
@@ -11165,6 +11300,7 @@ print(json.dumps({{
         app.router.add_post('/stop_job', self.handle_stop_job)
         app.router.add_post('/cleanup', self.handle_cleanup)
         app.router.add_post('/restart_stuck_jobs', self.handle_restart_stuck_jobs)
+        app.router.add_post('/reduce_selfplay', self.handle_reduce_selfplay)
         app.router.add_get('/health', self.handle_health)
         app.router.add_get('/git/status', self.handle_git_status)
         app.router.add_post('/git/update', self.handle_git_update)
