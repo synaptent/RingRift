@@ -31,6 +31,9 @@ describe('RatingService - Database Integration', () => {
         update: jest.fn(),
         count: jest.fn(),
       },
+      ratingHistory: {
+        create: jest.fn(),
+      },
       $transaction: jest.fn(),
     };
 

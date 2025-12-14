@@ -89,6 +89,8 @@ ai-service/data/selfplay/
 ai-service/data/selfplay/**/*.jsonl
 ai-service/data/selfplay/**/*.json
 ai-service/data/synced_selfplay/
+# Tournament game logs (large jsonl files)
+ai-service/data/tournaments/**/*.jsonl
 ai-service/**/*.pth
 ai-service/**/*.pth.bak
 ai-service/**/*.npz

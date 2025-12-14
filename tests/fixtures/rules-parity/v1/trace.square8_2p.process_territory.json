@@ -114,11 +114,11 @@
       },
       "expected": {
         "tsValid": true,
-        "tsStateHash": "1:territory_processing:waiting#1:18:0:0|2:18:0:0#7,7:1:1:1##",
-        "tsS": 0
+        "tsStateHash": "1:territory_processing:waiting#1:18:0:1|2:18:0:0#7,7:1:1:1##0,0:1",
+        "tsS": 1
       },
-      "stateHash": "1:territory_processing:waiting#1:18:0:0|2:18:0:0#7,7:1:1:1##",
-      "sInvariant": 0
+      "stateHash": "1:territory_processing:waiting#1:18:0:1|2:18:0:0#7,7:1:1:1##0,0:1",
+      "sInvariant": 1
     }
   ]
 }
