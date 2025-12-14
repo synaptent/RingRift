@@ -20,6 +20,8 @@ COORDINATOR_URL="${2:?Usage: $0 <node-id> <coordinator-url>}"
 
 RINGRIFT_ROOT="${RINGRIFT_ROOT:-$HOME/Development/RingRift}"
 P2P_PORT="${P2P_PORT:-8770}"
+P2P_VOTERS="${RINGRIFT_P2P_VOTERS:-}"
+P2P_VOTERS="${P2P_VOTERS//[[:space:]]/}"
 
 AI_SERVICE_DIR="${RINGRIFT_ROOT}/ai-service"
 if [ ! -d "$AI_SERVICE_DIR" ]; then
@@ -71,6 +73,8 @@ cat > "$P2P_PLIST" <<EOF
   <dict>
     <key>PYTHONPATH</key>
     <string>${AI_SERVICE_DIR}</string>
+    <key>RINGRIFT_P2P_VOTERS</key>
+    <string>${P2P_VOTERS}</string>
     <key>RINGRIFT_CLUSTER_AUTH_TOKEN_FILE</key>
     <string>${TOKEN_FILE}</string>
   </dict>
@@ -112,6 +116,8 @@ cat > "$RES_PLIST" <<EOF
   <dict>
     <key>PYTHONPATH</key>
     <string>${AI_SERVICE_DIR}</string>
+    <key>RINGRIFT_P2P_VOTERS</key>
+    <string>${P2P_VOTERS}</string>
     <key>RINGRIFT_CLUSTER_AUTH_TOKEN_FILE</key>
     <string>${TOKEN_FILE}</string>
   </dict>

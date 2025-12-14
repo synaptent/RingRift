@@ -24,6 +24,8 @@ if [ -z "$P2P_PORT" ]; then
     P2P_PORT="8770"
 fi
 SSH_PORT="${SSH_PORT:-}"
+P2P_VOTERS="${RINGRIFT_P2P_VOTERS:-}"
+P2P_VOTERS="${P2P_VOTERS//[[:space:]]/}"
 
 is_port_available() {
     local port="$1"
@@ -149,6 +151,13 @@ P2P_PORT=$P2P_PORT
 SSH_PORT=$SSH_PORT
 EOF
 
+# Quorum voter set for split-brain resistance. This must be consistent across
+# the cluster. Prefer passing it via deploy tooling (env), which writes it to
+# node.conf so systemd units and watchdog restarts inherit it.
+if [ -n "$P2P_VOTERS" ]; then
+    echo "RINGRIFT_P2P_VOTERS=$P2P_VOTERS" >> /etc/ringrift/node.conf
+fi
+
 # Persist an explicit advertised P2P port for port-mapped environments (Vast.ai)
 # so the orchestrator can report a reachable endpoint even in minimal
 # environments where VAST_* vars may not be propagated to daemons.
@@ -214,6 +223,7 @@ PYTHONPATH=$RINGRIFT_DIR
 P2P_PORT=$P2P_PORT
 SSH_PORT=$SSH_PORT
 RINGRIFT_CLUSTER_AUTH_TOKEN_FILE=/etc/ringrift/cluster_auth_token
+RINGRIFT_P2P_VOTERS=$P2P_VOTERS
 
 # Health check and reconnection every 5 minutes
 */5 * * * * root python3 $RINGRIFT_DIR/scripts/node_resilience.py --node-id $NODE_ID --coordinator $COORDINATOR_URL --ai-service-dir $RINGRIFT_DIR --p2p-port $P2P_PORT --once >> $LOG_DIR/cron.log 2>&1
@@ -232,7 +242,9 @@ echo "Cron jobs installed at $CRON_FILE"
 cat > /usr/local/bin/ringrift-watchdog << 'EOF'
 #!/bin/bash
 # Quick watchdog to restart services if they crash
+set -a
 source /etc/ringrift/node.conf
+set +a
 
 # Check P2P health
 if ! curl -s --connect-timeout 5 "http://localhost:${P2P_PORT}/health" > /dev/null 2>&1; then
@@ -283,7 +295,9 @@ if [ "$HAS_USABLE_SYSTEMD" != "1" ]; then
 (
   set -euo pipefail
   if [ -f /etc/ringrift/node.conf ]; then
+    set -a
     source /etc/ringrift/node.conf
+    set +a
   fi
 
   mkdir -p /var/log/ringrift || true

@@ -100,6 +100,42 @@ def _default_p2p_port_for_node(node_id: str) -> int:
     return 8770
 
 
+def _derive_p2p_voters(config_path: Path) -> List[str]:
+    """Derive the stable voter set from distributed_hosts.yaml.
+
+    This avoids depending on the config file being present on remote nodes. The
+    deploy step propagates the voter set via RINGRIFT_P2P_VOTERS into node.conf.
+    """
+    try:
+        import yaml  # type: ignore
+    except Exception:
+        return []
+
+    if not config_path.exists():
+        return []
+
+    try:
+        data = yaml.safe_load(config_path.read_text()) or {}
+    except Exception:
+        return []
+
+    hosts = data.get("hosts", {}) or {}
+    voters: List[str] = []
+    for node_id, cfg in hosts.items():
+        if not isinstance(cfg, dict):
+            continue
+        raw = cfg.get("p2p_voter", False)
+        if raw is True:
+            voters.append(str(node_id))
+            continue
+        if isinstance(raw, (int, float)) and int(raw) == 1:
+            voters.append(str(node_id))
+            continue
+        if isinstance(raw, str) and raw.strip().lower() in {"1", "true", "yes", "y"}:
+            voters.append(str(node_id))
+    return sorted(set(voters))
+
+
 def _remote_path_assignment(path: str) -> str:
     """Return a POSIX-shell assignment RHS that expands ~ on the remote."""
     p = (path or "").strip()
@@ -200,6 +236,12 @@ def main() -> None:
         help="Optional local token file to push to /etc/ringrift/cluster_auth_token (stdin → sudo tee)",
     )
     parser.add_argument(
+        "--p2p-voters",
+        type=str,
+        default="",
+        help="Optional comma-separated voter node_ids to propagate as RINGRIFT_P2P_VOTERS (default: derive from config p2p_voter: true).",
+    )
+    parser.add_argument(
         "--include-macos",
         action="store_true",
         help="Include macOS nodes (runs setup_node_resilience_macos.sh). Default skips mac-studio/mbp-* entries.",
@@ -231,6 +273,14 @@ def main() -> None:
     token_path = (args.cluster_auth_token_file or "").strip()
     if token_path:
         token_bytes = Path(token_path).expanduser().read_text(encoding="utf-8").strip().encode("utf-8")
+
+    explicit_voters = (args.p2p_voters or "").strip()
+    if explicit_voters:
+        voter_list = [t.strip() for t in explicit_voters.split(",") if t.strip()]
+        voter_env = ",".join(sorted(set(voter_list)))
+    else:
+        voter_env = ",".join(_derive_p2p_voters(config_path))
+    voter_prefix = f"RINGRIFT_P2P_VOTERS={shlex.quote(voter_env)} " if voter_env else ""
 
     failures: List[str] = []
 
@@ -278,6 +328,7 @@ def main() -> None:
                     f"git pull origin main\n"
                     f"chmod +x \"$RINGRIFT_DIR/deploy/setup_node_resilience_macos.sh\"\n"
                     f"P2P_PORT={int(p2p_port)} RINGRIFT_ROOT=\"$RINGRIFT_ROOT\" "
+                    f"{voter_prefix}"
                     f"bash \"$RINGRIFT_DIR/deploy/setup_node_resilience_macos.sh\" "
                     f"{shlex.quote(node_id)} {shlex.quote(args.coordinator_url)}\n"
                 )
@@ -313,6 +364,7 @@ def main() -> None:
                     f"{sudo}RINGRIFT_DIR=\"$RINGRIFT_DIR\" "
                     f"P2P_PORT={int(p2p_port)} "
                     f"SSH_PORT={int(target.ssh_port)} "
+                    f"{voter_prefix}"
                     f"bash \"$RINGRIFT_DIR/deploy/setup_node_resilience.sh\" "
                     f"{shlex.quote(node_id)} {shlex.quote(args.coordinator_url)}\n"
                     # Best-effort restart.
@@ -333,7 +385,9 @@ def main() -> None:
                     f"  {sudo}pkill -f '[n]ode_resilience.py' 2>/dev/null || true\n"
                     f"  {sudo}/usr/local/bin/ringrift-watchdog 2>/dev/null || true\n"
                     f"  if [ -f /etc/ringrift/node.conf ]; then\n"
+                    f"    set -a\n"
                     f"    source /etc/ringrift/node.conf\n"
+                    f"    set +a\n"
                     f"    cd \"$RINGRIFT_DIR\" 2>/dev/null || exit 0\n"
                     f"    {sudo}PYTHONPATH=\"$RINGRIFT_DIR\" nohup python3 scripts/node_resilience.py "
                     f"--node-id \"$NODE_ID\" --coordinator \"$COORDINATOR_URL\" "
@@ -343,7 +397,40 @@ def main() -> None:
                     f"fi\n"
                 )
 
-            _run_ssh(target, remote_setup, dry_run=not args.apply)
+            try:
+                _run_ssh(target, remote_setup, dry_run=not args.apply)
+            except subprocess.CalledProcessError as exc:
+                # Vast.ai sometimes executes the remote command but drops the
+                # connection mid-flight, yielding ssh's generic 255 failure code.
+                # Treat this as a soft failure iff the local health endpoint is
+                # reachable after the deploy.
+                if (
+                    exc.returncode == 255
+                    and args.apply
+                    and node_id.lower().startswith("vast-")
+                ):
+                    print(f"[WARN] {node_id}: ssh returned 255; verifying via localhost /health...")
+                    health_check = (
+                        f"curl -s --connect-timeout 5 "
+                        f"\"http://localhost:{int(p2p_port)}/health\" | "
+                        f"grep -q '\"node_id\"'"
+                    )
+                    try:
+                        _run_ssh(
+                            target,
+                            health_check,
+                            dry_run=False,
+                            login_shell=False,
+                            wrap_in_bash=True,
+                        )
+                        print(f"[WARN] {node_id}: /health OK; continuing despite ssh 255")
+                    except Exception:
+                        failures.append(node_id)
+                        print(f"[ERROR] {node_id}: deploy may not have applied (ssh 255, /health check failed)")
+                    continue
+                failures.append(node_id)
+                print(f"[ERROR] {node_id}: command failed with exit code {exc.returncode}")
+                continue
         except subprocess.CalledProcessError as exc:
             failures.append(node_id)
             print(f"[ERROR] {node_id}: command failed with exit code {exc.returncode}")

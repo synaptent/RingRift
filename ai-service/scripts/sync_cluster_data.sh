@@ -162,7 +162,7 @@ test_ssh_connection() {
     [[ -n "$ssh_key" ]] && ssh_opts="$ssh_opts -i $ssh_key"
     [[ "$ssh_port" != "22" ]] && ssh_opts="$ssh_opts -p $ssh_port"
 
-    if ssh $ssh_opts "$ssh_user@$ssh_host" "echo ok" >/dev/null 2>&1; then
+    if ssh -n $ssh_opts "$ssh_user@$ssh_host" "echo ok" >/dev/null 2>&1; then
         return 0
     fi
     return 1
@@ -351,10 +351,11 @@ log_info "Found $HOST_COUNT hosts in configuration"
 
 log_section "Syncing from all hosts"
 
-# Execute sync commands (|| true prevents set -e from exiting on failed hosts)
-while IFS= read -r cmd; do
+# Execute sync commands
+# Note: Use fd 3 to avoid SSH/rsync consuming stdin and breaking the loop
+while IFS= read -r cmd <&3; do
     [[ -n "$cmd" ]] && eval "$cmd" || true
-done <<< "$SYNC_COMMANDS"
+done 3<<< "$SYNC_COMMANDS"
 
 # ============================================
 # SUMMARY

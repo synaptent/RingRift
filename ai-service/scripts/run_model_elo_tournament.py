@@ -72,25 +72,32 @@ def create_ai_from_model(
     model_path = model_def.get("model_path", "")
     ai_type = model_def.get("ai_type", "neural_net")
 
-    config = AIConfig(
-        ai_type=AIType.NEURAL_NET,
-        board_type=board_type,
-    )
-
     if model_path == "__BASELINE_RANDOM__" or ai_type == "random":
+        config = AIConfig(ai_type=AIType.RANDOM, board_type=board_type, difficulty=1)
         return RandomAI(player_number, config)
 
     elif model_path == "__BASELINE_HEURISTIC__" or ai_type == "heuristic":
+        config = AIConfig(ai_type=AIType.HEURISTIC, board_type=board_type, difficulty=5)
         return HeuristicAI(player_number, config)
 
     elif model_path.startswith("__BASELINE_MCTS") or ai_type == "mcts":
         mcts_sims = model_def.get("mcts_simulations", 100)
-        config.mcts_iterations = mcts_sims
+        config = AIConfig(
+            ai_type=AIType.MCTS,
+            board_type=board_type,
+            difficulty=7,
+            mcts_iterations=mcts_sims,
+        )
         return MCTSAI(player_number, config)
 
     else:
         # Neural network model
-        config.model_path = model_path
+        config = AIConfig(
+            ai_type=AIType.NEURAL_NET,
+            board_type=board_type,
+            difficulty=10,
+            model_path=model_path,
+        )
         return NeuralNetAI(player_number, config)
 
 
@@ -122,29 +129,24 @@ def play_model_vs_model_game(
     ai_b = create_ai_from_model(model_b, 2, board_type)
 
     move_count = 0
-    while state.status == GameStatus.IN_PROGRESS and move_count < max_moves:
+    while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_player = state.current_player
         ai = ai_a if current_player == 1 else ai_b
 
-        # Get valid actions
-        valid_actions = engine.get_valid_actions(state)
-        if not valid_actions:
+        # Select move (BaseAI.select_move handles getting valid moves internally)
+        move = ai.select_move(state)
+        if move is None:
             break
 
-        # Select action
-        action = ai.select_action(state, valid_actions)
-        if action is None:
-            break
-
-        # Apply action
-        state = engine.apply_action(state, action)
+        # Apply move
+        state = engine.apply_move(state, move)
         move_count += 1
 
     duration = time.time() - start_time
 
     # Determine winner
     winner = "draw"
-    if state.status == GameStatus.COMPLETED:
+    if state.game_status == GameStatus.COMPLETED:
         if state.winner == 1:
             winner = "model_a"
         elif state.winner == 2:
@@ -155,7 +157,7 @@ def play_model_vs_model_game(
         "game_length": move_count,
         "duration_sec": duration,
         "game_id": game_id,
-        "final_status": state.status.value if hasattr(state.status, "value") else str(state.status),
+        "final_status": state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status),
     }
 
 
@@ -1307,7 +1309,9 @@ def main():
             print(f"  Progress: {games_completed}/{total_games} games ({rate:.1f} games/sec)")
 
         except Exception as e:
+            import traceback
             print(f"  Error in matchup: {e}")
+            traceback.print_exc()
             continue
 
     # Show final leaderboard

@@ -968,6 +968,22 @@ class P2POrchestrator:
     def _is_leader(self) -> bool:
         """Check if this node is the current cluster leader with valid lease."""
         if self.leader_id != self.node_id:
+            # Consistency: we should never claim role=leader while leader_id points elsewhere (or is None).
+            if self.role == NodeRole.LEADER:
+                print("[P2P] Inconsistent leadership state (role=leader but leader_id!=self); stepping down")
+                self.role = NodeRole.FOLLOWER
+                self.last_lease_renewal = 0.0
+                if not self.leader_id:
+                    self.leader_lease_id = ""
+                    self.leader_lease_expires = 0.0
+                self._save_state()
+                # Only force an election when we have no known leader; otherwise we
+                # may already be following a healthy leader and shouldn't flap.
+                if not self.leader_id:
+                    try:
+                        asyncio.get_running_loop().create_task(self._start_election())
+                    except RuntimeError:
+                        pass
             return False
         # Consistency: we should never claim leader_id=self while being a follower/candidate.
         if self.role != NodeRole.LEADER:
@@ -8787,6 +8803,20 @@ print(json.dumps({{
                             info.last_heartbeat = time.time()
                             self.peers[info.node_id] = info
                         if info.role == NodeRole.LEADER and info.node_id != self.node_id:
+                            with self.peers_lock:
+                                peers_snapshot = list(self.peers.values())
+                            conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+                            if not self._is_leader_eligible(info, conflict_keys, require_alive=False):
+                                continue
+                            if self.role == NodeRole.LEADER and info.node_id <= self.node_id:
+                                continue
+                            if (
+                                self.leader_id
+                                and self.leader_id != info.node_id
+                                and self._is_leader_lease_valid()
+                                and info.node_id <= self.leader_id
+                            ):
+                                continue
                             if self.leader_id != info.node_id or self.role != NodeRole.FOLLOWER:
                                 print(f"[P2P] Following configured leader from heartbeat: {info.node_id}")
                             prev_leader = self.leader_id
@@ -8838,6 +8868,15 @@ print(json.dumps({{
                                 info.last_heartbeat = time.time()
                                 self.peers[info.node_id] = info
                             if info.role == NodeRole.LEADER and self.role != NodeRole.LEADER:
+                                if not self._is_leader_eligible(info, conflict_keys, require_alive=False):
+                                    continue
+                                if (
+                                    self.leader_id
+                                    and self.leader_id != info.node_id
+                                    and self._is_leader_lease_valid()
+                                    and info.node_id <= self.leader_id
+                                ):
+                                    continue
                                 if self.leader_id != info.node_id:
                                     print(f"[P2P] Adopted leader from heartbeat: {info.node_id}")
                                 prev_leader = self.leader_id
@@ -9042,8 +9081,8 @@ print(json.dumps({{
             self.leader_id = None
             self.leader_lease_id = ""
             self.leader_lease_expires = 0.0
-            if self.role != NodeRole.LEADER:
-                self.role = NodeRole.FOLLOWER
+            self.last_lease_renewal = 0.0
+            self.role = NodeRole.FOLLOWER
             asyncio.create_task(self._start_election())
 
         # If leader is dead, start election
@@ -9060,8 +9099,8 @@ print(json.dumps({{
                     self.leader_id = None
                     self.leader_lease_id = ""
                     self.leader_lease_expires = 0.0
-                    if self.role != NodeRole.LEADER:
-                        self.role = NodeRole.FOLLOWER
+                    self.last_lease_renewal = 0.0
+                    self.role = NodeRole.FOLLOWER
                     asyncio.create_task(self._start_election())
 
     async def _start_election(self):
