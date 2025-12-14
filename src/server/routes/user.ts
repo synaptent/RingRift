@@ -332,44 +332,59 @@ router.get(
       throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        rating: true,
-        gamesPlayed: true,
-        gamesWon: true,
-      },
-    });
+    const userResult = await withQueryTimeoutStrict(
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          rating: true,
+          gamesPlayed: true,
+          gamesWon: true,
+        },
+      })
+    );
 
+    if (!userResult.success) {
+      throw createError('Database query timed out', 504, ErrorCodes.SERVER_GATEWAY_TIMEOUT);
+    }
+
+    const user = userResult.data;
     if (!user) {
       throw createError('User not found', 404, 'USER_NOT_FOUND');
     }
 
     // Get recent games
-    const recentGames = await prisma.game.findMany({
-      where: {
-        OR: [
-          { player1Id: userId },
-          { player2Id: userId },
-          { player3Id: userId },
-          { player4Id: userId },
-        ],
-        status: PrismaGameStatus.completed,
-      },
-      orderBy: { endedAt: 'desc' },
-      take: 10,
-      select: {
-        id: true,
-        boardType: true,
-        status: true,
-        winnerId: true,
-        endedAt: true,
-        player1Id: true,
-        player2Id: true,
-        player3Id: true,
-        player4Id: true,
-      },
-    });
+    const recentGamesResult = await withQueryTimeoutStrict(
+      prisma.game.findMany({
+        where: {
+          OR: [
+            { player1Id: userId },
+            { player2Id: userId },
+            { player3Id: userId },
+            { player4Id: userId },
+          ],
+          status: PrismaGameStatus.completed,
+        },
+        orderBy: { endedAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          boardType: true,
+          status: true,
+          winnerId: true,
+          endedAt: true,
+          player1Id: true,
+          player2Id: true,
+          player3Id: true,
+          player4Id: true,
+        },
+      })
+    );
+
+    if (!recentGamesResult.success) {
+      throw createError('Database query timed out', 504, ErrorCodes.SERVER_GATEWAY_TIMEOUT);
+    }
+
+    const recentGames = recentGamesResult.data;
 
     // Calculate win rate
     const winRate = user.gamesPlayed > 0 ? (user.gamesWon / user.gamesPlayed) * 100 : 0;
@@ -506,20 +521,34 @@ router.get(
       whereClause.status = status;
     }
 
-    const games = await prisma.game.findMany({
-      where: whereClause,
-      include: {
-        player1: { select: { id: true, username: true, rating: true } },
-        player2: { select: { id: true, username: true, rating: true } },
-        player3: { select: { id: true, username: true, rating: true } },
-        player4: { select: { id: true, username: true, rating: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      skip: offset,
-    });
+    const gamesResult = await withQueryTimeoutStrict(
+      prisma.game.findMany({
+        where: whereClause,
+        include: {
+          player1: { select: { id: true, username: true, rating: true } },
+          player2: { select: { id: true, username: true, rating: true } },
+          player3: { select: { id: true, username: true, rating: true } },
+          player4: { select: { id: true, username: true, rating: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      })
+    );
 
-    const total = await prisma.game.count({ where: whereClause });
+    if (!gamesResult.success) {
+      throw createError('Database query timed out', 504, ErrorCodes.SERVER_GATEWAY_TIMEOUT);
+    }
+
+    const games = gamesResult.data;
+
+    const totalResult = await withQueryTimeoutStrict(prisma.game.count({ where: whereClause }));
+
+    if (!totalResult.success) {
+      throw createError('Database query timed out', 504, ErrorCodes.SERVER_GATEWAY_TIMEOUT);
+    }
+
+    const total = totalResult.data;
 
     res.json({
       success: true,
