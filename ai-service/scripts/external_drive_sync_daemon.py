@@ -886,6 +886,130 @@ class ExternalDriveSyncDaemon:
         self._running = False
         self._shutdown_event.set()
 
+    async def distribute_to_high_capacity_hosts(
+        self,
+        min_storage_gb: int = 2000,
+        target_hosts: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Distribute collected training data to high-capacity hosts.
+
+        Args:
+            min_storage_gb: Minimum storage threshold (default 2TB)
+            target_hosts: Specific hosts to distribute to, or None for auto-selection
+        """
+        self._log("Distributing data to high-capacity training hosts...")
+
+        # High-capacity hosts (Lambda GPU instances have large NVMe drives)
+        HIGH_CAPACITY_HOSTS = [
+            "lambda-h100",
+            "lambda-2xh100",
+            "lambda-a10",
+            "lambda-gh200-a",
+            "lambda-gh200-b",
+            "lambda-gh200-c",
+            "lambda-gh200-d",
+            "lambda-gh200-e",
+            "lambda-gh200-f",
+            "lambda-gh200-g",
+            "lambda-gh200-h",
+        ]
+
+        if target_hosts:
+            hosts_to_sync = [h for h in self.hosts.values() if h.name in target_hosts]
+        else:
+            hosts_to_sync = [h for h in self.hosts.values() if h.name in HIGH_CAPACITY_HOSTS]
+
+        if not hosts_to_sync:
+            self._log("No high-capacity hosts available for distribution", "WARN")
+            return {"hosts_synced": 0}
+
+        results = {}
+
+        for host in hosts_to_sync:
+            # Test connection
+            connected, effective_host = await self._test_ssh_connection(host)
+            if not connected:
+                self._log(f"{host.name}: unreachable for distribution", "WARN")
+                results[host.name] = {"success": False, "error": "unreachable"}
+                continue
+
+            self._log(f"Distributing to {host.name}...")
+
+            if self.dry_run:
+                self._log(f"  [DRY RUN] would sync to {host.name}")
+                results[host.name] = {"success": True, "dry_run": True}
+                continue
+
+            # Build SSH options
+            ssh_opts = "-o ConnectTimeout=15 -o StrictHostKeyChecking=no"
+            if host.ssh_key:
+                ssh_opts += f" -i {host.ssh_key}"
+
+            # Sync merged database to host's training_pool directory
+            merged_db = self.merged_dir / "selfplay_merged.db"
+            if merged_db.exists():
+                db_cmd = (
+                    f'rsync -avz --progress -e "ssh {ssh_opts}" '
+                    f'{merged_db} '
+                    f'{host.ssh_user}@{effective_host}:{host.remote_path}/data/games/training_pool/ '
+                    f'2>/dev/null'
+                )
+
+                try:
+                    process = await asyncio.create_subprocess_shell(
+                        db_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    await asyncio.wait_for(process.communicate(), timeout=600)
+
+                    if process.returncode == 0:
+                        self._log(f"  {host.name}: synced merged DB")
+
+                except Exception as e:
+                    self._log(f"  {host.name}: DB sync error: {e}", "WARN")
+
+            # Sync JSONL files to host's training_pool/jsonl directory
+            jsonl_source = self.raw_dir
+            jsonl_cmd = (
+                f'rsync -avz --progress '
+                f'--include="*/" --include="*.jsonl" --exclude="*" '
+                f'-e "ssh {ssh_opts}" '
+                f'{jsonl_source}/ '
+                f'{host.ssh_user}@{effective_host}:{host.remote_path}/data/games/training_pool/synced_jsonl/ '
+                f'2>/dev/null'
+            )
+
+            try:
+                process = await asyncio.create_subprocess_shell(
+                    jsonl_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(process.communicate(), timeout=1800)  # 30 min for large JSONL sync
+
+                if process.returncode == 0:
+                    self._log(f"  {host.name}: synced JSONL files")
+                    results[host.name] = {"success": True}
+                else:
+                    results[host.name] = {"success": False, "error": "rsync failed"}
+
+            except asyncio.TimeoutError:
+                self._log(f"  {host.name}: JSONL sync timeout", "WARN")
+                results[host.name] = {"success": False, "error": "timeout"}
+            except Exception as e:
+                self._log(f"  {host.name}: JSONL sync error: {e}", "WARN")
+                results[host.name] = {"success": False, "error": str(e)}
+
+        successful = sum(1 for r in results.values() if r.get("success"))
+        self._log(f"Distribution complete: {successful}/{len(results)} hosts synced")
+
+        return {
+            "hosts_synced": successful,
+            "total_hosts": len(results),
+            "results": results,
+        }
+
 
 def load_hosts_from_yaml(config_path: Path) -> List[HostConfig]:
     """Load host configurations from YAML."""
@@ -945,6 +1069,17 @@ def main():
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--no-models", action="store_true", help="Skip model sync")
     parser.add_argument("--no-analysis", action="store_true", help="Skip data quality analysis")
+    parser.add_argument(
+        "--distribute",
+        action="store_true",
+        help="Distribute collected data to high-capacity training hosts (>2TB storage)"
+    )
+    parser.add_argument(
+        "--distribute-to",
+        type=str,
+        nargs="+",
+        help="Specific hosts to distribute to (e.g., lambda-h100 lambda-2xh100)"
+    )
 
     args = parser.parse_args()
 
@@ -1018,7 +1153,11 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
 
     # Run
-    if args.once:
+    if args.distribute or args.distribute_to:
+        # Distribution mode - push data to high-capacity hosts
+        target_hosts = args.distribute_to if args.distribute_to else None
+        asyncio.run(daemon.distribute_to_high_capacity_hosts(target_hosts=target_hosts))
+    elif args.once:
         asyncio.run(daemon.run_sync_cycle())
     elif args.start or args.foreground:
         target_dir.mkdir(parents=True, exist_ok=True)

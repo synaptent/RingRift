@@ -1204,17 +1204,30 @@ class UnifiedAILoop:
             max_version = 0
 
             if models_dir.exists():
+                import re
+                version_pattern = re.compile(r'_v(\d+)|^v(\d+)_')
+
                 for model_file in models_dir.rglob("*.pt"):
                     total_models += 1
                     total_size_bytes += model_file.stat().st_size
 
-                    # Extract version from path (e.g., models/square8_2p/v3/best.pt)
-                    parts = model_file.parts
-                    for part in parts:
-                        if part.startswith("v") and part[1:].isdigit():
-                            version_num = int(part[1:])
-                            max_version = max(max_version, version_num)
-                            versions_count[part] = versions_count.get(part, 0) + 1
+                    # Extract version from filename (e.g., square8_2p_v2.pt, v3_square8_valueonly.pt)
+                    filename = model_file.name
+                    match = version_pattern.search(filename)
+                    if match:
+                        version_num = int(match.group(1) or match.group(2))
+                        max_version = max(max_version, version_num)
+                        version_key = f"v{version_num}"
+                        versions_count[version_key] = versions_count.get(version_key, 0) + 1
+                    else:
+                        # Also check path parts for directory-based versioning
+                        parts = model_file.parts
+                        for part in parts:
+                            if part.startswith("v") and len(part) > 1 and part[1:].isdigit():
+                                version_num = int(part[1:])
+                                max_version = max(max_version, version_num)
+                                versions_count[part] = versions_count.get(part, 0) + 1
+                                break
 
             TOTAL_MODELS.set(total_models)
             MAX_MODEL_VERSION.set(max_version)

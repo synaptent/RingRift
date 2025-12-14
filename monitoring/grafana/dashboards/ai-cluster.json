@@ -1060,13 +1060,13 @@
         "type": "datasource"
       },
       {
-        "current": { "selected": false, "text": "209.20.157.81", "value": "209.20.157.81" },
-        "description": "Orchestrator host for API calls (lambda_h100)",
+        "current": { "selected": false, "text": "100.78.101.123", "value": "100.78.101.123" },
+        "description": "Orchestrator host for API calls (lambda_h100 Tailscale IP)",
         "hide": 0,
         "label": "Orchestrator Host",
         "name": "orchestrator_host",
-        "options": [{ "selected": true, "text": "209.20.157.81", "value": "209.20.157.81" }],
-        "query": "209.20.157.81",
+        "options": [{ "selected": true, "text": "100.78.101.123", "value": "100.78.101.123" }],
+        "query": "100.78.101.123",
         "skipUrlSync": false,
         "type": "textbox"
       }
