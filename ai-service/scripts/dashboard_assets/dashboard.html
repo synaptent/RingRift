@@ -732,10 +732,8 @@
 		        const online = peers.filter((p) => p.status === "online").length;
 		        const offline = peers.length - online;
 		        const uptime = Number(cluster.uptime_seconds || 0);
-		        const leaders = peers.filter((p) => p.role === "leader" && p.status === "online").map((p) => p.node_id);
-		        const leaderCell = leaders.length
-		          ? `<span class="mono">${leaders[0]}</span>`
-		          : `${pill("none", "bad")} <span class="mono">${cluster.leader_id || "?"}</span>`;
+		        const leaderId = cluster.effective_leader_id || cluster.leader_id || "";
+		        const leaderCell = leaderId ? `<span class="mono">${leaderId}</span>` : pill("none", "bad");
 
 		        const manifestAge = fmtAge(Number(selfplayStats.manifest_collected_at || 0));
 		        const totalGames = Number(selfplayStats.total_selfplay_games || 0);
@@ -808,9 +806,16 @@
           const versionTitle = isSkew ? `title="Target: ${targetVersion}"` : "";
           const jobs = `${Number(n.selfplay_jobs || 0)} sp / ${Number(n.training_jobs || 0)} tr`;
           const gpuText = n.has_gpu ? `${fmtPct(n.gpu_percent)} / ${fmtPct(n.gpu_memory_percent)}` : "-";
+          const eHost = n.effective_host || n.host || "";
+          const ePort = n.effective_port || n.port || "";
+          const endpoint = eHost ? `${eHost}${ePort ? ":" + ePort : ""}` : "";
+          const endpointTitleParts = [];
+          if (n.host && n.port) endpointTitleParts.push(`observed ${n.host}:${n.port}`);
+          if (n.reported_host && n.reported_port) endpointTitleParts.push(`reported ${n.reported_host}:${n.reported_port}`);
+          const endpointTitle = endpointTitleParts.join(" · ");
           rows.push(`
             <tr>
-              <td>${isSelf ? pill("self", "good") + " " : ""}<span class="mono">${n.node_id || "?"}</span><div class="mono" style="color:rgba(255,255,255,0.55)">${n.host || ""}${n.port ? ":" + n.port : ""}</div></td>
+              <td>${isSelf ? pill("self", "good") + " " : ""}<span class="mono">${n.node_id || "?"}</span><div class="mono" style="color:rgba(255,255,255,0.55)" title="${endpointTitle}">${endpoint}</div></td>
               <td><span class="mono" ${versionStyle} ${versionTitle}>${version}</span></td>
               <td><span class="mono">${role || "-"}</span></td>
               <td>${statusPill}</td>

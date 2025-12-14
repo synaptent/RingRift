@@ -1260,7 +1260,28 @@ class P2POrchestrator:
 
     def _url_for_peer(self, peer: NodeInfo, path: str) -> str:
         scheme = (getattr(peer, "scheme", None) or "http").lower()
-        return f"{scheme}://{peer.host}:{peer.port}{path}"
+        host = str(getattr(peer, "host", "") or "").strip()
+        try:
+            port = int(getattr(peer, "port", DEFAULT_PORT) or DEFAULT_PORT)
+        except Exception:
+            port = DEFAULT_PORT
+
+        rh = (getattr(peer, "reported_host", "") or "").strip()
+        try:
+            rp = int(getattr(peer, "reported_port", 0) or 0)
+        except Exception:
+            rp = 0
+
+        if rh and rp:
+            # Prefer reported endpoints when the observed endpoint is loopback
+            # (proxy/relay artifacts).
+            if host in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
+                host, port = rh, rp
+            # Prefer mesh endpoints (Tailscale) when we also have a mesh address.
+            elif self._local_has_tailscale() and self._is_tailscale_host(rh):
+                host, port = rh, rp
+
+        return f"{scheme}://{host}:{port}{path}"
 
     def _urls_for_peer(self, peer: NodeInfo, path: str) -> List[str]:
         """Return candidate URLs for reaching a peer.
@@ -1285,14 +1306,28 @@ class P2POrchestrator:
             if url not in urls:
                 urls.append(url)
 
-        _add(getattr(peer, "host", ""), getattr(peer, "port", 0))
-
         rh = (getattr(peer, "reported_host", "") or "").strip()
         try:
             rp = int(getattr(peer, "reported_port", 0) or 0)
         except Exception:
             rp = 0
-        if rh and rp and (rh != str(getattr(peer, "host", "")).strip() or rp != int(getattr(peer, "port", 0) or 0)):
+
+        host = str(getattr(peer, "host", "") or "").strip()
+        try:
+            port = int(getattr(peer, "port", 0) or 0)
+        except Exception:
+            port = 0
+
+        # Prefer Tailscale endpoints first when available locally; otherwise try
+        # the observed endpoint first.
+        reported_preferred = False
+        if rh and rp and self._local_has_tailscale() and self._is_tailscale_host(rh):
+            _add(rh, rp)
+            reported_preferred = True
+
+        _add(host, port)
+
+        if rh and rp and (not reported_preferred) and (rh != host or rp != port):
             _add(rh, rp)
 
         return urls
@@ -1707,6 +1742,33 @@ class P2POrchestrator:
             return ""
         except Exception:
             return ""
+
+    def _is_tailscale_host(self, host: str) -> bool:
+        """Return True when `host` looks like a Tailscale mesh endpoint."""
+        h = (host or "").strip()
+        if not h:
+            return False
+        if h.endswith(".ts.net"):
+            return True
+        try:
+            ip = ipaddress.ip_address(h)
+        except ValueError:
+            return False
+        if not isinstance(ip, ipaddress.IPv4Address):
+            return False
+        return ip in TAILSCALE_CGNAT_NETWORK
+
+    def _local_has_tailscale(self) -> bool:
+        """Best-effort: True when this node appears to have a Tailscale address."""
+        try:
+            info = getattr(self, "self_info", None)
+            if not info:
+                return False
+            host = str(getattr(info, "host", "") or "").strip()
+            reported_host = str(getattr(info, "reported_host", "") or "").strip()
+            return self._is_tailscale_host(host) or self._is_tailscale_host(reported_host)
+        except Exception:
+            return False
 
     def _get_resource_usage(self) -> Dict[str, float]:
         """Get current resource usage."""
@@ -3441,6 +3503,15 @@ class P2POrchestrator:
             lease_id = data.get("lease_id", "")
             lease_expires = data.get("lease_expires", 0)
             is_renewal = data.get("lease_renewal", False)
+            incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
+            if incoming_voters:
+                voters_list: List[str] = []
+                if isinstance(incoming_voters, list):
+                    voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
+                elif isinstance(incoming_voters, str):
+                    voters_list = [t.strip() for t in incoming_voters.split(",") if t.strip()]
+                if voters_list:
+                    self._maybe_adopt_voter_node_ids(voters_list, source="learned")
 
             # LEARNED LESSONS - Verify the announced leader has higher priority than us
             # (Bully algorithm: higher node_id wins)
@@ -7259,18 +7330,35 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             except Exception:
                 pass
 
+            is_leader = self._is_leader()
+            effective_leader = self._get_leader_peer()
+            effective_leader_id = effective_leader.node_id if effective_leader else None
+            last_known_leader_id = self.leader_id
+            leader_id = effective_leader_id or last_known_leader_id
+
             # Collect peer info (dashboard-oriented shape)
             peers_info: List[Dict[str, Any]] = []
             with self.peers_lock:
                 peers_snapshot = dict(self.peers)
             for peer_id, peer in peers_snapshot.items():
                 status = "offline" if not peer.is_alive() else "online"
+                key = self._endpoint_key(peer)
+                effective_scheme, effective_host, effective_port = (None, None, None)
+                if key:
+                    effective_scheme, effective_host, effective_port = key
                 peers_info.append(
                     {
                         "node_id": peer_id,
                         "host": peer.host,
                         "port": peer.port,
                         "scheme": getattr(peer, "scheme", "http"),
+                        "reported_host": getattr(peer, "reported_host", ""),
+                        "reported_port": getattr(peer, "reported_port", 0),
+                        "effective_scheme": effective_scheme,
+                        "effective_host": effective_host,
+                        "effective_port": effective_port,
+                        "nat_blocked": bool(getattr(peer, "nat_blocked", False)),
+                        "relay_via": getattr(peer, "relay_via", ""),
                         "role": peer.role.value if hasattr(peer.role, "value") else str(peer.role),
                         "version": getattr(peer, "version", ""),
                         "status": status,
@@ -7355,13 +7443,44 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "last_updated": local_manifest.collected_at,
                 }
 
+            voter_ids = list(getattr(self, "voter_node_ids", []) or [])
+            voters_alive = 0
+            if voter_ids:
+                with self.peers_lock:
+                    peers_by_id = dict(self.peers)
+                for vid in voter_ids:
+                    if vid == self.node_id:
+                        voters_alive += 1
+                        continue
+                    p = peers_by_id.get(vid)
+                    if p and p.is_alive():
+                        voters_alive += 1
+
+            self_payload = self.self_info.to_dict() if hasattr(self.self_info, "to_dict") else asdict(self.self_info)
+            self_key = self._endpoint_key(self.self_info)
+            if self_key:
+                self_payload.update(
+                    {
+                        "effective_scheme": self_key[0],
+                        "effective_host": self_key[1],
+                        "effective_port": self_key[2],
+                    }
+                )
+
             return web.json_response({
                 "success": True,
                 "node_id": self.node_id,
                 "role": self.role.value if hasattr(self.role, 'value') else str(self.role),
-                "leader_id": self.leader_id,
-                "is_leader": self.role == NodeRole.LEADER,
-                "self": self.self_info.to_dict() if hasattr(self.self_info, "to_dict") else asdict(self.self_info),
+                "leader_id": leader_id,
+                "effective_leader_id": effective_leader_id,
+                "last_known_leader_id": last_known_leader_id,
+                "is_leader": is_leader,
+                "voter_node_ids": voter_ids,
+                "voter_quorum_size": int(getattr(self, "voter_quorum_size", 0) or 0),
+                "voters_alive": voters_alive,
+                "voter_quorum_ok": self._has_voter_quorum(),
+                "voter_config_source": str(getattr(self, "voter_config_source", "") or ""),
+                "self": self_payload,
                 "uptime_seconds": time.time() - self.start_time,
                 "peers": peers_info,
                 "peer_count": len(self.peers),
@@ -9064,19 +9183,23 @@ print(json.dumps({{
             port = int(getattr(info, "port", DEFAULT_PORT) or DEFAULT_PORT)
         except Exception:
             port = DEFAULT_PORT
-        # Reverse proxies / relays can cause inbound peer requests to appear as loopback.
-        # Prefer the peer's self-reported advertised endpoint in that case so:
-        # - endpoint conflict detection remains meaningful, and
-        # - eligible leaders don't get filtered out as "conflicted".
-        if host in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
-            reported_host = str(getattr(info, "reported_host", "") or "").strip()
-            try:
-                reported_port = int(getattr(info, "reported_port", 0) or 0)
-            except Exception:
-                reported_port = 0
-            if reported_host and reported_port > 0:
-                host = reported_host
-                port = reported_port
+        reported_host = str(getattr(info, "reported_host", "") or "").strip()
+        try:
+            reported_port = int(getattr(info, "reported_port", 0) or 0)
+        except Exception:
+            reported_port = 0
+
+        if reported_host and reported_port > 0:
+            # Reverse proxies / relays can cause inbound peer requests to appear as loopback.
+            # Prefer the peer's self-reported advertised endpoint in that case so:
+            # - endpoint conflict detection remains meaningful, and
+            # - eligible leaders don't get filtered out as "conflicted".
+            if host in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
+                host, port = reported_host, reported_port
+            # Prefer mesh endpoints (Tailscale) for conflict detection so multiple
+            # nodes behind the same public NAT don't collide on the same host:port.
+            elif self._is_tailscale_host(reported_host):
+                host, port = reported_host, reported_port
         return (scheme, host, port)
 
     def _endpoint_conflict_keys(self, peers: List[NodeInfo]) -> Set[Tuple[str, str, int]]:
@@ -9312,6 +9435,7 @@ print(json.dumps({{
                             "leader_id": self.node_id,
                             "lease_id": self.leader_lease_id,
                             "lease_expires": self.leader_lease_expires,
+                            "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
                         }, headers=self._auth_headers())
                     except:
                         pass
@@ -9355,6 +9479,7 @@ print(json.dumps({{
                                 "lease_id": self.leader_lease_id,
                                 "lease_expires": self.leader_lease_expires,
                                 "lease_renewal": True,
+                                "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
                             }, headers=self._auth_headers())
                         except:
                             pass
@@ -9435,6 +9560,7 @@ print(json.dumps({{
                             "leader_id": self.node_id,
                             "lease_id": self.leader_lease_id,
                             "lease_expires": self.leader_lease_expires,
+                            "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
                         },
                         headers=self._auth_headers(),
                     )

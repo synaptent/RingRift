@@ -706,6 +706,14 @@ def build_soak_command(job: JobConfig, is_remote: bool = False) -> str:
         "OMP_NUM_THREADS=1",
         "MKL_NUM_THREADS=1",
     ]
+    # Large-board heuristic evaluation can auto-enable multiprocessing and will
+    # otherwise spawn `cpu_count()` worker processes (catastrophic on huge-core
+    # hosts like Vast, and often slower due to overhead). Default to a safe cap
+    # unless the caller explicitly configures `RINGRIFT_PARALLEL_WORKERS`.
+    if job.board_type in ("square19", "hexagonal"):
+        raw_parallel_workers = os.getenv("RINGRIFT_PARALLEL_WORKERS")
+        if not (raw_parallel_workers or "").strip():
+            cmd_parts.append("RINGRIFT_PARALLEL_WORKERS=8")
     # Propagate recovery-stack-strike flag across hosts when explicitly set.
     #
     # Canonical default is enabled; setting this to 0 is a non-canonical ablation
