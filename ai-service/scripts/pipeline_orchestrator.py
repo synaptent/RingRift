@@ -24,6 +24,7 @@ Available Phases:
     cmaes             - CMA-ES heuristic optimization
     profile-sync      - Sync trained heuristic profiles across workers
     evaluation        - Run evaluation tournaments
+    elo-calibration   - Run diverse tournaments for Elo calibration (all configs)
     tier-gating       - Check for model tier promotions
     resources         - Log resource usage across workers
     refresh-workers   - Dynamically discover Vast.ai instances
@@ -123,6 +124,21 @@ try:
 except ImportError:
     HAS_PERSISTENT_ELO = False
     ELO_DB_PATH = None
+
+# Diverse tournament orchestrator integration (for Elo calibration across all configs)
+try:
+    from scripts.run_diverse_tournaments import (
+        run_tournament_round_distributed,
+        run_tournament_round_local,
+        load_cluster_hosts,
+        filter_available_hosts,
+        TournamentConfig,
+        TournamentResult,
+        DEFAULT_GAMES_PER_CONFIG,
+    )
+    HAS_DIVERSE_TOURNAMENTS = True
+except ImportError:
+    HAS_DIVERSE_TOURNAMENTS = False
 
 
 @dataclass
@@ -2171,6 +2187,110 @@ python scripts/run_ai_tournament.py \\
         self.log(f"Tournament {matchup_key}: {win_rate:.1%} P1 win rate", "OK")
         return matchup_key, True, win_rate
 
+    async def run_elo_calibration_phase(
+        self,
+        iteration: int,
+        distributed: bool = True,
+        games_per_config: Optional[int] = None,
+        board_types: Optional[List[str]] = None,
+        player_counts: Optional[List[int]] = None,
+    ) -> Dict[str, Any]:
+        """Run diverse tournaments across all board/player configurations for Elo calibration.
+
+        This phase runs the diverse tournament orchestrator which:
+        - Tests all AI types (random, heuristic, minimax, MCTS, neural descent)
+        - Uses all available neural network model versions
+        - Runs across all board types and player counts
+        - Provides richer Elo calibration than head-to-head evaluation
+
+        Args:
+            iteration: Current pipeline iteration
+            distributed: Whether to run distributed across cluster hosts (parallel)
+            games_per_config: Games per board/player configuration (default: from config)
+            board_types: Board types to include (default: all)
+            player_counts: Player counts to include (default: all)
+
+        Returns:
+            Dictionary with tournament results summary
+        """
+        self.state.phase = "elo-calibration"
+        self.log(f"\n--- Phase: Elo Calibration (Diverse Tournaments) ---")
+
+        if not HAS_DIVERSE_TOURNAMENTS:
+            self.log("Diverse tournament module not available, skipping elo-calibration", "WARN")
+            return {"skipped": True, "reason": "module_not_available"}
+
+        if self.dry_run:
+            self.log("[DRY-RUN] Would run diverse tournaments for Elo calibration")
+            return {"dry_run": True}
+
+        # Default configuration
+        board_types = board_types or ["square8", "square19", "hexagonal"]
+        player_counts = player_counts or [2, 3, 4]
+        output_base = str((Path(__file__).resolve().parent.parent / "data" / "tournaments" / f"iter{iteration}").resolve())
+
+        # Build tournament configs
+        from scripts.run_diverse_tournaments import build_tournament_configs
+        configs = build_tournament_configs(
+            board_types=board_types,
+            player_counts=player_counts,
+            games_per_config=games_per_config,
+            output_base=output_base,
+            seed=iteration * 10000,
+        )
+
+        self.log(f"Tournament configurations: {len(configs)}")
+        for config in configs:
+            self.log(f"  {config.board_type} {config.num_players}p: {config.num_games} games")
+
+        results: List[TournamentResult] = []
+
+        if distributed:
+            # Load and filter available hosts
+            hosts = load_cluster_hosts()
+            available_hosts = await filter_available_hosts(hosts)
+
+            if not available_hosts:
+                self.log("No cluster hosts available for distributed tournaments", "WARN")
+                self.log("Falling back to local execution")
+                distributed = False
+
+        if distributed:
+            self.log(f"Running distributed across {len(available_hosts)} hosts")
+            results = await run_tournament_round_distributed(configs, available_hosts)
+        else:
+            self.log("Running locally (sequential)")
+            results = run_tournament_round_local(configs)
+
+        # Aggregate results
+        total_games = sum(r.games_completed for r in results)
+        total_samples = sum(r.samples_generated for r in results)
+        successful = sum(1 for r in results if r.success)
+
+        summary = {
+            "iteration": iteration,
+            "configurations": len(configs),
+            "successful": successful,
+            "total_games": total_games,
+            "total_samples": total_samples,
+            "distributed": distributed,
+            "hosts_used": len(set(r.host for r in results)),
+            "results": [
+                {
+                    "config": f"{r.config.board_type}_{r.config.num_players}p",
+                    "host": r.host,
+                    "games": r.games_completed,
+                    "samples": r.samples_generated,
+                    "success": r.success,
+                }
+                for r in results
+            ],
+        }
+
+        self.log(f"Elo calibration complete: {successful}/{len(configs)} configs, {total_games} games")
+
+        return summary
+
     async def run_full_iteration(self, iteration: int) -> bool:
         """Run a complete pipeline iteration with checkpointing and smart polling.
 
@@ -2181,8 +2301,9 @@ python scripts/run_ai_tournament.py \\
         4. NN Training: Train neural network on new data + register models
         5. Profile Sync: Pull trained heuristics, merge, push to all workers
         6. Evaluation: Tournament + Elo updates
-        7. Tier Gating: Check for model promotions
-        8. Resource Monitoring: Log worker utilization
+        7. Elo Calibration: Diverse tournaments across all board/player configs
+        8. Tier Gating: Check for model promotions
+        9. Resource Monitoring: Log worker utilization
         """
         self.log(f"\n{'='*60}")
         self.log(f"=== Pipeline Iteration {iteration} ===")
@@ -2294,10 +2415,19 @@ python scripts/run_ai_tournament.py \\
             self.log("Evaluation phase already completed, skipping...")
             eval_results = {}
 
-        # Phase 7: Tier gating checks
+        # Phase 7: Elo Calibration via diverse tournaments (all board/player configs)
+        elo_calibration_results = {}
+        if not self.state.phase_completed.get("elo-calibration"):
+            elo_calibration_results = await self.run_elo_calibration_phase(iteration)
+            self.state.phase_completed["elo-calibration"] = True
+            self._save_state()
+        else:
+            self.log("Elo calibration phase already completed, skipping...")
+
+        # Phase 8: Tier gating checks
         tier_promotions = await self.run_tier_gating_phase()
 
-        # Phase 8: Resource monitoring
+        # Phase 9: Resource monitoring
         await self.log_resource_usage()
 
         # Print Elo leaderboard
@@ -2315,6 +2445,7 @@ python scripts/run_ai_tournament.py \\
         self.log(f"CMA-ES:      {cmaes_results}")
         self.log(f"Training:    {training_results}")
         self.log(f"Eval:        {eval_results}")
+        self.log(f"Elo Calib:   {elo_calibration_results.get('total_games', 0)} games across {elo_calibration_results.get('configurations', 0)} configs")
         self.log(f"Promotions:  {tier_promotions}")
         self.log(f"{'='*60}\n")
 
@@ -2392,6 +2523,8 @@ python scripts/run_ai_tournament.py \\
                 await self.sync_heuristic_profiles()
             elif phase == "evaluation":
                 await self.run_evaluation_phase(iteration)
+            elif phase == "elo-calibration":
+                await self.run_elo_calibration_phase(iteration)
             elif phase == "tier-gating":
                 await self.run_tier_gating_phase()
             elif phase == "resources":
@@ -2438,7 +2571,7 @@ def main():
         choices=[
             "selfplay", "canonical-selfplay", "sync", "parity-validation",
             "npz-export", "training", "cmaes", "profile-sync", "evaluation",
-            "tier-gating", "resources", "refresh-workers"
+            "elo-calibration", "tier-gating", "resources", "refresh-workers"
         ],
         help="Run only a specific phase",
     )
