@@ -113,9 +113,13 @@ def _ssh_base_cmd(target: HostTarget) -> List[str]:
     cmd = [
         "ssh",
         "-o",
+        "BatchMode=yes",
+        "-o",
         "ConnectTimeout=15",
         "-o",
         "ServerAliveInterval=30",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
     ]
     if target.ssh_key:
         cmd.extend(["-o", "IdentitiesOnly=yes"])
