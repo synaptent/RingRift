@@ -116,8 +116,10 @@ def _run_ssh(
     *,
     stdin_bytes: Optional[bytes] = None,
     dry_run: bool = True,
+    login_shell: bool = True,
 ) -> None:
-    cmd = _ssh_base_cmd(target) + ["bash", "-lc", script]
+    shell_args = ["bash", "-lc" if login_shell else "-c", script]
+    cmd = _ssh_base_cmd(target) + shell_args
     printable = " ".join(shlex.quote(p) for p in cmd)
     if dry_run:
         print(f"[DRY-RUN] {printable}")
@@ -210,7 +212,15 @@ def main() -> None:
                     f"{sudo}tee /etc/ringrift/cluster_auth_token >/dev/null && "
                     f"{sudo}chmod 600 /etc/ringrift/cluster_auth_token"
                 )
-            _run_ssh(target, token_cmd, stdin_bytes=token_bytes, dry_run=not args.apply)
+            # Avoid login-shell initialization when piping stdin; some systems'
+            # profile scripts can emit noise or fail non-interactively.
+            _run_ssh(
+                target,
+                token_cmd,
+                stdin_bytes=token_bytes,
+                dry_run=not args.apply,
+                login_shell=False,
+            )
 
         if is_macos:
             remote_setup = (
