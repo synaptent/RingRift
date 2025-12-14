@@ -254,11 +254,29 @@ if ! curl -s --connect-timeout 5 "http://localhost:${P2P_PORT}/health" > /dev/nu
     pkill -f '[p]2p_orchestrator.py' 2>/dev/null || true
     sleep 2
 
-# Start fresh
+    # Start fresh
     cd "$RINGRIFT_DIR"
-    PY="$RINGRIFT_DIR/venv/bin/python"
-    if [ ! -x "$PY" ]; then
-        PY="$(command -v python3)"
+    PY_SYS="$(command -v python3 || true)"
+    PY_VENV="$RINGRIFT_DIR/venv/bin/python"
+    PY=""
+    if [ -n "$PY_SYS" ] && "$PY_SYS" -c 'import aiohttp' >/dev/null 2>&1; then
+        PY="$PY_SYS"
+    elif [ -x "$PY_VENV" ] && "$PY_VENV" -c 'import aiohttp' >/dev/null 2>&1; then
+        PY="$PY_VENV"
+    else
+        PY="${PY_SYS:-$PY_VENV}"
+        if [ -n "$PY" ]; then
+            "$PY" -m pip install -q "aiohttp>=3.9.0" 2>/dev/null || true
+        fi
+        if [ -n "$PY_SYS" ] && "$PY_SYS" -c 'import aiohttp' >/dev/null 2>&1; then
+            PY="$PY_SYS"
+        elif [ -x "$PY_VENV" ] && "$PY_VENV" -c 'import aiohttp' >/dev/null 2>&1; then
+            PY="$PY_VENV"
+        fi
+    fi
+    if [ -z "$PY" ]; then
+        echo "$(date): No python found for p2p_orchestrator" >&2
+        exit 0
     fi
     PYTHONPATH="$RINGRIFT_DIR" nohup "$PY" scripts/p2p_orchestrator.py --node-id "$NODE_ID" --port "$P2P_PORT" --peers "$COORDINATOR_URL" --ringrift-path "$RINGRIFT_DIR/.." >> /var/log/ringrift/p2p.log 2>&1 &
     echo "$(date): P2P orchestrator restarted (PID $!)"
@@ -307,16 +325,31 @@ if [ "$HAS_USABLE_SYSTEMD" != "1" ]; then
   mkdir -p /var/log/ringrift || true
   export PYTHONPATH="${RINGRIFT_DIR:-/root/ringrift/ai-service}"
   export RINGRIFT_CLUSTER_AUTH_TOKEN_FILE="/etc/ringrift/cluster_auth_token"
-  PY="${RINGRIFT_DIR:-/root/ringrift/ai-service}/venv/bin/python"
-  if [ ! -x "$PY" ]; then
-    PY="$(command -v python3)"
+  PY_SYS="$(command -v python3 || true)"
+  PY_VENV="${RINGRIFT_DIR:-/root/ringrift/ai-service}/venv/bin/python"
+  PY_P2P=""
+  if [ -n "$PY_SYS" ] && "$PY_SYS" -c 'import aiohttp' >/dev/null 2>&1; then
+    PY_P2P="$PY_SYS"
+  elif [ -x "$PY_VENV" ] && "$PY_VENV" -c 'import aiohttp' >/dev/null 2>&1; then
+    PY_P2P="$PY_VENV"
+  else
+    PY_P2P="${PY_SYS:-$PY_VENV}"
+    if [ -n "$PY_P2P" ]; then
+      "$PY_P2P" -m pip install -q "aiohttp>=3.9.0" 2>/dev/null || true
+    fi
+    if [ -n "$PY_SYS" ] && "$PY_SYS" -c 'import aiohttp' >/dev/null 2>&1; then
+      PY_P2P="$PY_SYS"
+    elif [ -x "$PY_VENV" ] && "$PY_VENV" -c 'import aiohttp' >/dev/null 2>&1; then
+      PY_P2P="$PY_VENV"
+    fi
   fi
+  PY_RES="${PY_SYS:-$PY_P2P}"
 
   # Start P2P orchestrator if not healthy.
   if ! curl -s --connect-timeout 5 "http://localhost:${P2P_PORT:-8770}/health" >/dev/null 2>&1; then
     pkill -f '[p]2p_orchestrator.py' 2>/dev/null || true
     cd "${RINGRIFT_DIR:-/root/ringrift/ai-service}"
-    nohup "$PY" scripts/p2p_orchestrator.py \
+    nohup "$PY_P2P" scripts/p2p_orchestrator.py \
       --node-id "${NODE_ID:-unknown}" \
       --port "${P2P_PORT:-8770}" \
       --peers "${COORDINATOR_URL:-}" \
@@ -326,7 +359,7 @@ if [ "$HAS_USABLE_SYSTEMD" != "1" ]; then
 
   # Ensure node_resilience is running (uses a singleton lock).
   cd "${RINGRIFT_DIR:-/root/ringrift/ai-service}"
-  nohup "$PY" scripts/node_resilience.py \
+  nohup "$PY_RES" scripts/node_resilience.py \
     --node-id "${NODE_ID:-unknown}" \
     --coordinator "${COORDINATOR_URL:-}" \
     --ai-service-dir "${RINGRIFT_DIR:-/root/ringrift/ai-service}" \
