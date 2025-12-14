@@ -179,6 +179,7 @@ def main():
             )
 
             f.write(json.dumps(game) + '\n')
+            f.flush()  # Minimize data loss on abnormal termination
 
             # Track stats
             if game['recovery_opportunities'] > 0:

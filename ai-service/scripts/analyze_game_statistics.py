@@ -164,6 +164,8 @@ QUARANTINE_MALFORMED = "malformed"
 QUARANTINE_TIMEOUT = "timeout"
 QUARANTINE_UNKNOWN_BOARD = "unknown_board"
 QUARANTINE_NO_WINNER = "no_winner"
+QUARANTINE_ZERO_MOVES = "zero_moves"
+QUARANTINE_ERROR_STATUS = "error_status"
 
 
 def infer_ai_type(game: dict[str, Any], file_path: str = "") -> str:
@@ -296,7 +298,16 @@ def normalize_game(game: dict[str, Any], file_path: str = "") -> dict[str, Any]:
 
     # --- Determine quarantine reason (if any) ---
     quarantine_reason = None
-    if normalized.get("board_type") == "unknown":
+    status = game.get("status") or game.get("game_status", "")
+    move_count = game.get("move_count") or game.get("length") or len(game.get("moves", []))
+
+    # Check for error statuses (e.g., error_reset from crashed selfplay)
+    if status.startswith("error"):
+        quarantine_reason = QUARANTINE_ERROR_STATUS
+    # Check for zero-move games (except legitimate draws at initial state, which are impossible)
+    elif move_count == 0:
+        quarantine_reason = QUARANTINE_ZERO_MOVES
+    elif normalized.get("board_type") == "unknown":
         quarantine_reason = QUARANTINE_UNKNOWN_BOARD
     elif victory_type == "timeout":
         quarantine_reason = QUARANTINE_TIMEOUT
@@ -866,22 +877,33 @@ def clean_jsonl_file(
                 # Check quarantine conditions
                 quarantine_reason: str | None = None
 
+                # Check for error status (e.g., error_reset from crashed selfplay)
+                status = game.get("status") or game.get("game_status", "")
+                if isinstance(status, str) and status.startswith("error"):
+                    quarantine_reason = "error_status"
+
+                # Check for zero-move games
+                move_count = game.get("move_count") or game.get("length") or 0
+                moves = game.get("moves") or game.get("move_history") or []
+                if quarantine_reason is None and move_count == 0 and len(moves) == 0:
+                    quarantine_reason = "zero_moves"
+
                 # Check for unknown board type
                 board_type = game.get("board_type")
-                if board_type is None or board_type == "unknown":
+                if quarantine_reason is None and (board_type is None or board_type == "unknown"):
                     quarantine_reason = "unknown_board"
 
                 # Check for timeout/no winner
                 termination = game.get("termination_reason") or game.get("termination")
-                if termination == "timeout":
-                    quarantine_reason = "timeout"
-                elif termination in ("no_winner", "draw"):
-                    quarantine_reason = "no_winner"
+                if quarantine_reason is None:
+                    if termination == "timeout":
+                        quarantine_reason = "timeout"
+                    elif termination in ("no_winner", "draw"):
+                        quarantine_reason = "no_winner"
 
                 # Check for missing winner (for completed games)
                 if quarantine_reason is None:
                     winner = game.get("winner")
-                    moves = game.get("moves") or game.get("move_history") or []
                     if winner is None and len(moves) > 0:
                         quarantine_reason = "no_winner"
 

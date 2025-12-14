@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -123,11 +124,27 @@ def _scp_base_args(args: argparse.Namespace) -> list[str]:
     return scp_cmd
 
 
+_SAFE_TILDE_PATH_RE = re.compile(r"^~[a-zA-Z0-9_.-]*(/[a-zA-Z0-9_.-]+)*$")  # ~, ~/foo, ~user/foo
+
+
+def _shell_quote_path(raw: str) -> str:
+    """Shell-quote a path, allowing safe ~ expansion when possible."""
+    value = str(raw or "").strip()
+    if not value:
+        return "''"
+    if any(ch in value for ch in ("\0", "\n", "\r")):
+        raise ValueError("Path contains control characters")
+    # Allow tilde expansion for simple, injection-safe paths (no spaces, no metacharacters).
+    if value.startswith("~") and _SAFE_TILDE_PATH_RE.match(value):
+        return value
+    return shlex.quote(value)
+
+
 def _docker_compose_file(remote_root: str, compose_file: str) -> str:
     # Allow passing an absolute compose file, otherwise treat as remote_root-relative.
     if os.path.isabs(compose_file):
         return compose_file
-    return str(Path(remote_root) / compose_file)
+    return compose_file
 
 
 def _validate_remote_ladder_health(
@@ -160,7 +177,7 @@ def _validate_remote_ladder_health(
     )
 
     remote_cmd = (
-        f"cd {shlex.quote(remote_root)} && "
+        f"cd {_shell_quote_path(remote_root)} && "
         f"docker compose -f {shlex.quote(compose_file)} exec -T ai-service "
         f"python -c {shlex.quote(python_code)}"
     )
@@ -251,8 +268,8 @@ def main(argv: list[str]) -> int:
             return result.returncode
 
         extract_cmd = (
-            f"mkdir -p {shlex.quote(remote_root)} && "
-            f"tar -xzf {shlex.quote(remote_tar)} -C {shlex.quote(remote_root)} && "
+            f"mkdir -p {_shell_quote_path(remote_root)} && "
+            f"tar -xzf {shlex.quote(remote_tar)} -C {_shell_quote_path(remote_root)} && "
             f"rm -f {shlex.quote(remote_tar)}"
         )
         ssh_cmd = _ssh_base_args(args) + [extract_cmd]
@@ -266,7 +283,7 @@ def main(argv: list[str]) -> int:
             if services:
                 compose_file = _docker_compose_file(remote_root, str(args.compose_file))
                 restart_cmd = (
-                    f"cd {shlex.quote(remote_root)} && "
+                    f"cd {_shell_quote_path(remote_root)} && "
                     f"docker compose -f {shlex.quote(compose_file)} up -d --force-recreate "
                     + " ".join(shlex.quote(s) for s in services)
                 )

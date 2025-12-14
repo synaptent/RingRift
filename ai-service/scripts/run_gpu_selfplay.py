@@ -622,6 +622,7 @@ class GPUSelfPlayGenerator:
 
                     if file_handle:
                         file_handle.write(json.dumps(record) + "\n")
+                        file_handle.flush()  # Minimize data loss on abnormal termination
 
                     # NOTE: DB storage disabled for GPU games.
                     # GPU selfplay uses simplified move semantics that don't map 1:1 to

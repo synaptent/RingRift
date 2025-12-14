@@ -443,6 +443,8 @@ def run_hybrid_selfplay(
             }
             game_records.append(record)
             f.write(json.dumps(record) + "\n")
+            # Flush immediately to minimize data loss on abnormal termination
+            f.flush()
 
             # Progress logging
             if (game_idx + 1) % 10 == 0:
