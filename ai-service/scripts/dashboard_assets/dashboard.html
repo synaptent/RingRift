@@ -439,9 +439,9 @@
         </div>
       </div>
 
-      <div class="card span-12">
-        <h2>Canonical Gate (generate_canonical_selfplay.py)</h2>
-        <div class="form-grid" style="margin-bottom: 12px">
+	      <div class="card span-12">
+	        <h2>Canonical Gate (generate_canonical_selfplay.py)</h2>
+	        <div class="form-grid" style="margin-bottom: 12px">
           <div class="field">
             <label for="canonBoard">Board</label>
             <select id="canonBoard">
@@ -481,17 +481,25 @@
               <option value="canonical">canonical</option>
             </select>
           </div>
-          <div class="field">
-            <label for="canonReset">Reset DB</label>
-            <select id="canonReset">
-              <option value="false" selected>false (merge)</option>
-              <option value="true">true (archive + reset)</option>
-            </select>
-          </div>
-          <div class="field span-12">
-            <button id="canonStartBtn">Start canonical gate</button>
-          </div>
-        </div>
+	          <div class="field">
+	            <label for="canonReset">Reset DB</label>
+	            <select id="canonReset">
+	              <option value="false" selected>false (merge)</option>
+	              <option value="true">true (archive + reset)</option>
+	            </select>
+	          </div>
+	          <div class="field span-12">
+	            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+	              <button class="secondary" id="canonSuggestHostsBtn" type="button">Suggest hosts</button>
+	              <button class="secondary" id="canonSet1000Btn" type="button">Set games=1000</button>
+	              <button id="canonStartBtn" type="button">Start canonical gate</button>
+	            </div>
+	            <div style="margin-top:6px; color: var(--muted); font-size: 12px;">
+	              Suggestion filters online nodes with <span class="mono">selfplay</span> + <span class="mono">large_boards</span>,
+	              disk &lt; 80%, mem &lt; 85%, and excludes <span class="mono">mbp*</span>/<span class="mono">mac*</span>.
+	            </div>
+	          </div>
+	        </div>
 
         <div class="grid" style="margin: 0">
           <div class="card span-6" style="padding: 12px">
@@ -715,16 +723,20 @@
         return rates;
       }
 
-      function renderOverview(cluster, selfplayStats, syncStatus, pipelineStatus) {
-        const peers = Array.isArray(cluster.peers) ? cluster.peers : [];
-        const online = peers.filter((p) => p.status === "online").length;
-        const offline = peers.length - online;
-        const uptime = Number(cluster.uptime_seconds || 0);
+	      function renderOverview(cluster, selfplayStats, syncStatus, pipelineStatus) {
+	        const peers = Array.isArray(cluster.peers) ? cluster.peers : [];
+	        const online = peers.filter((p) => p.status === "online").length;
+	        const offline = peers.length - online;
+	        const uptime = Number(cluster.uptime_seconds || 0);
+	        const leaders = peers.filter((p) => p.role === "leader" && p.status === "online").map((p) => p.node_id);
+	        const leaderCell = leaders.length
+	          ? `<span class="mono">${leaders[0]}</span>`
+	          : `${pill("none", "bad")} <span class="mono">${cluster.leader_id || "?"}</span>`;
 
-        const manifestAge = fmtAge(Number(selfplayStats.manifest_collected_at || 0));
-        const totalGames = Number(selfplayStats.total_selfplay_games || 0);
+	        const manifestAge = fmtAge(Number(selfplayStats.manifest_collected_at || 0));
+	        const totalGames = Number(selfplayStats.total_selfplay_games || 0);
 
-        $("subtitle").innerHTML = `Node <span class="mono">${cluster.node_id || "?"}</span> · role <span class="mono">${cluster.role || "?"}</span> · leader <span class="mono">${cluster.leader_id || "?"}</span> · refreshed <span class="mono">${new Date().toLocaleTimeString()}</span>`;
+	        $("subtitle").innerHTML = `Node <span class="mono">${cluster.node_id || "?"}</span> · role <span class="mono">${cluster.role || "?"}</span> · leader ${leaderCell} · refreshed <span class="mono">${new Date().toLocaleTimeString()}</span>`;
 
         $("overview").innerHTML = `
           <div class="kv"><div class="k">Peers</div><div class="v">${peers.length} (${online} online, ${offline} offline)</div></div>
@@ -1186,7 +1198,7 @@
         localStorage.setItem(TOKEN_KEY, state.token);
       }
 
-      async function startCanonicalGate() {
+	      async function startCanonicalGate() {
         try {
           const board_type = $("canonBoard").value;
           const num_players = Number($("canonPlayers").value);
@@ -1214,9 +1226,56 @@
         } catch (e) {
           setError(e.message);
         }
-      }
+	      }
 
-      async function submitJob() {
+	      async function suggestCanonHosts() {
+	        try {
+	          const cluster = await apiGet("/api/cluster/status?local=1");
+	          const peers = Array.isArray(cluster.peers) ? cluster.peers : [];
+
+	          const candidates = peers
+	            .filter((n) => n && n.status === "online")
+	            .filter((n) => {
+	              const nodeId = String(n.node_id || "");
+	              if (!nodeId) return false;
+	              if (nodeId.startsWith("mbp") || nodeId.startsWith("mac")) return false;
+	              const caps = Array.isArray(n.capabilities) ? n.capabilities : [];
+	              if (!caps.includes("selfplay") || !caps.includes("large_boards")) return false;
+	              const disk = Number(n.disk_percent);
+	              const mem = Number(n.memory_percent);
+	              if (Number.isFinite(disk) && disk >= 80) return false;
+	              if (Number.isFinite(mem) && mem >= 85) return false;
+	              return true;
+	            })
+	            .sort((a, b) => {
+	              const aGpu = a.has_gpu ? 0 : 1;
+	              const bGpu = b.has_gpu ? 0 : 1;
+	              if (aGpu !== bGpu) return aGpu - bGpu;
+	              const aJobs = Number(a.selfplay_jobs || 0);
+	              const bJobs = Number(b.selfplay_jobs || 0);
+	              if (aJobs !== bJobs) return aJobs - bJobs;
+	              const aDisk = Number(a.disk_percent || 0);
+	              const bDisk = Number(b.disk_percent || 0);
+	              if (aDisk !== bDisk) return aDisk - bDisk;
+	              const aMem = Number(a.memory_percent || 0);
+	              const bMem = Number(b.memory_percent || 0);
+	              if (aMem !== bMem) return aMem - bMem;
+	              return String(a.node_id || "").localeCompare(String(b.node_id || ""));
+	            });
+
+	          const suggested = candidates.map((n) => String(n.node_id || "")).filter(Boolean).slice(0, 8);
+	          $("canonHosts").value = suggested.join(",");
+	          if (!suggested.length) setError("No suitable hosts found (try relaxing disk/memory filters or include Macs manually).");
+	        } catch (e) {
+	          setError(e.message);
+	        }
+	      }
+
+	      function setCanonGames1000() {
+	        $("canonGames").value = "1000";
+	      }
+
+	      async function submitJob() {
         try {
           const job_type = $("jobType").value;
           const board_type = $("jobBoard").value;
@@ -1241,13 +1300,15 @@
         }
       }
 
-      // Wire up events
-      $("authToken").value = state.token;
-      $("saveTokenBtn").addEventListener("click", saveToken);
-      $("refreshBtn").addEventListener("click", () => refreshAll(true));
-      $("canonStartBtn").addEventListener("click", startCanonicalGate);
-      $("jobSubmitBtn").addEventListener("click", submitJob);
-      $("syncStartBtn").addEventListener("click", startSync);
+	      // Wire up events
+	      $("authToken").value = state.token;
+	      $("saveTokenBtn").addEventListener("click", saveToken);
+	      $("refreshBtn").addEventListener("click", () => refreshAll(true));
+	      $("canonSuggestHostsBtn").addEventListener("click", suggestCanonHosts);
+	      $("canonSet1000Btn").addEventListener("click", setCanonGames1000);
+	      $("canonStartBtn").addEventListener("click", startCanonicalGate);
+	      $("jobSubmitBtn").addEventListener("click", submitJob);
+	      $("syncStartBtn").addEventListener("click", startSync);
 
       refreshAll(true);
       setInterval(() => refreshAll(false), 10000);
