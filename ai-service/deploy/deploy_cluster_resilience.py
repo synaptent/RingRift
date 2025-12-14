@@ -325,7 +325,11 @@ def main() -> None:
                     f"RINGRIFT_DIR={ringrift_dir_rhs}\n"
                     f"RINGRIFT_ROOT=\"$(dirname \"$RINGRIFT_DIR\")\"\n"
                     f"cd \"$RINGRIFT_ROOT\"\n"
-                    f"git pull origin main\n"
+                    # Deployment nodes should match origin/main exactly; avoid
+                    # leaving them in an unmerged/conflicted state.
+                    f"git fetch origin main\n"
+                    f"git checkout -f main\n"
+                    f"git reset --hard origin/main\n"
                     f"chmod +x \"$RINGRIFT_DIR/deploy/setup_node_resilience_macos.sh\"\n"
                     f"P2P_PORT={int(p2p_port)} RINGRIFT_ROOT=\"$RINGRIFT_ROOT\" "
                     f"{voter_prefix}"
@@ -349,7 +353,11 @@ def main() -> None:
                     f"fi\n"
                     f"{sudo}chown -R \"$(id -un)\":\"$(id -gn)\" \"$RINGRIFT_ROOT/.git\" 2>/dev/null || true\n"
                     f"cd \"$RINGRIFT_ROOT\"\n"
-                    f"git pull origin main\n"
+                    # Deployment nodes should match origin/main exactly; avoid
+                    # leaving them in an unmerged/conflicted state.
+                    f"git fetch origin main\n"
+                    f"git checkout -f main\n"
+                    f"git reset --hard origin/main\n"
                     f"if [ ! -x \"$RINGRIFT_DIR/venv/bin/python\" ] && [ -x \"$RINGRIFT_DIR/setup.sh\" ] && [ ! -f /.launch ] && [ -z \"${{VAST_CONTAINERLABEL:-}}\" ]; then\n"
                     f"  if command -v apt-get >/dev/null 2>&1; then\n"
                     f"    {sudo}apt-get update -y\n"
@@ -411,9 +419,22 @@ def main() -> None:
                 ):
                     print(f"[WARN] {node_id}: ssh returned 255; verifying via localhost /health...")
                     health_check = (
-                        f"curl -s --connect-timeout 5 "
-                        f"\"http://localhost:{int(p2p_port)}/health\" | "
-                        f"grep -q '\"node_id\"'"
+                        f"set -euo pipefail\n"
+                        f"PORT=8770\n"
+                        f"if [ -f /etc/ringrift/node.conf ]; then\n"
+                        f"  set -a\n"
+                        f"  source /etc/ringrift/node.conf\n"
+                        f"  set +a\n"
+                        f"  PORT=\"${{P2P_PORT:-8770}}\"\n"
+                        f"fi\n"
+                        f"/usr/local/bin/ringrift-watchdog >/dev/null 2>&1 || true\n"
+                        f"for i in 1 2 3 4 5 6 7 8 9 10; do\n"
+                        f"  if curl -s --connect-timeout 5 \"http://localhost:${{PORT}}/health\" | grep -q '\"node_id\"'; then\n"
+                        f"    exit 0\n"
+                        f"  fi\n"
+                        f"  sleep 2\n"
+                        f"done\n"
+                        f"exit 1\n"
                     )
                     try:
                         _run_ssh(
