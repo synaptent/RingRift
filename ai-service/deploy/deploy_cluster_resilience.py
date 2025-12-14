@@ -13,18 +13,23 @@ Usage (dry-run by default):
   python3 ai-service/deploy/deploy_cluster_resilience.py \\
     --coordinator-url "http://192.222.53.22:8770,http://54.198.219.106:8770"
 
-Apply:
+Recommended: Use --use-tailscale to auto-build coordinator URLs from config:
+  python3 ai-service/deploy/deploy_cluster_resilience.py --apply --use-tailscale
+
+  This reads tailscale_ip from distributed_hosts.yaml for each voter node and:
+  - Builds COORDINATOR_URL using Tailscale IPs (cross-network connectivity)
+  - Sets RINGRIFT_ADVERTISE_HOST for each node based on its tailscale_ip
+
+Apply with explicit coordinator URL:
   python3 ai-service/deploy/deploy_cluster_resilience.py --apply \\
     --coordinator-url "http://192.222.53.22:8770,http://54.198.219.106:8770"
 
 Force-sync code (overwrites local changes) for broken/dirty workers:
-  python3 ai-service/deploy/deploy_cluster_resilience.py --apply --force-sync \\
-    --coordinator-url "http://192.222.53.22:8770,http://54.198.219.106:8770"
+  python3 ai-service/deploy/deploy_cluster_resilience.py --apply --force-sync --use-tailscale
 
 Optionally distribute the cluster auth token securely (stdin → sudo tee):
-  python3 ai-service/deploy/deploy_cluster_resilience.py --apply \\
-    --cluster-auth-token-file /path/to/token \\
-    --coordinator-url "http://192.222.53.22:8770,http://54.198.219.106:8770"
+  python3 ai-service/deploy/deploy_cluster_resilience.py --apply --use-tailscale \\
+    --cluster-auth-token-file /path/to/token
 """
 
 from __future__ import annotations
@@ -48,6 +53,7 @@ class HostTarget:
     ssh_key: Optional[str]
     ringrift_path: str
     p2p_port: Optional[int] = None
+    tailscale_ip: Optional[str] = None
 
     def ssh_target(self) -> str:
         if "@" in self.ssh_host:
@@ -88,6 +94,9 @@ def _load_hosts(config_path: Path) -> Dict[str, HostTarget]:
                 p2p_port = int(p2p_port_raw)
             except Exception:
                 p2p_port = None
+        tailscale_ip = cfg.get("tailscale_ip")
+        if tailscale_ip:
+            tailscale_ip = str(tailscale_ip).strip() or None
         targets[node_id] = HostTarget(
             node_id=node_id,
             ssh_host=ssh_host,
@@ -96,6 +105,7 @@ def _load_hosts(config_path: Path) -> Dict[str, HostTarget]:
             ssh_key=ssh_key,
             ringrift_path=ringrift_path,
             p2p_port=p2p_port,
+            tailscale_ip=tailscale_ip,
         )
     return targets
 
@@ -138,6 +148,54 @@ def _derive_p2p_voters(config_path: Path) -> List[str]:
         if isinstance(raw, str) and raw.strip().lower() in {"1", "true", "yes", "y"}:
             voters.append(str(node_id))
     return sorted(set(voters))
+
+
+def _build_tailscale_coordinator_urls(config_path: Path, voter_ids: List[str], p2p_port: int = 8770) -> str:
+    """Build coordinator URLs using Tailscale IPs for voter nodes.
+
+    This function builds a comma-separated list of coordinator URLs using
+    the Tailscale IPs from distributed_hosts.yaml. This ensures that nodes
+    in different networks (AWS, Lambda, local) can reach each other via the
+    Tailscale mesh network.
+
+    Args:
+        config_path: Path to distributed_hosts.yaml
+        voter_ids: List of voter node IDs
+        p2p_port: P2P port to use (default 8770)
+
+    Returns:
+        Comma-separated coordinator URLs using Tailscale IPs
+    """
+    try:
+        import yaml  # type: ignore
+    except Exception:
+        return ""
+
+    if not config_path.exists():
+        return ""
+
+    try:
+        data = yaml.safe_load(config_path.read_text()) or {}
+    except Exception:
+        return ""
+
+    hosts = data.get("hosts", {}) or {}
+    urls: List[str] = []
+
+    for voter_id in voter_ids:
+        cfg = hosts.get(voter_id)
+        if not isinstance(cfg, dict):
+            continue
+        tailscale_ip = cfg.get("tailscale_ip")
+        if tailscale_ip:
+            urls.append(f"http://{tailscale_ip}:{p2p_port}")
+        else:
+            # Fall back to ssh_host if no Tailscale IP
+            ssh_host = cfg.get("ssh_host")
+            if ssh_host:
+                urls.append(f"http://{ssh_host}:{p2p_port}")
+
+    return ",".join(urls)
 
 
 def _remote_path_assignment(path: str) -> str:
@@ -218,8 +276,8 @@ def main() -> None:
     parser.add_argument(
         "--coordinator-url",
         type=str,
-        required=True,
-        help="Comma-separated seed peers for --peers / node.conf COORDINATOR_URL",
+        default="",
+        help="Comma-separated seed peers for --peers / node.conf COORDINATOR_URL (optional if --use-tailscale)",
     )
     parser.add_argument(
         "--include",
@@ -255,6 +313,11 @@ def main() -> None:
         action="store_true",
         help="Force `git checkout -f main && git reset --hard origin/main` on targets (overwrites local changes).",
     )
+    parser.add_argument(
+        "--use-tailscale",
+        action="store_true",
+        help="Auto-build coordinator URLs using Tailscale IPs from config and set ADVERTISE_HOST for each node.",
+    )
     parser.add_argument("--apply", action="store_true", help="Actually run commands (default: dry-run)")
     args = parser.parse_args()
 
@@ -286,10 +349,27 @@ def main() -> None:
     explicit_voters = (args.p2p_voters or "").strip()
     if explicit_voters:
         voter_list = [t.strip() for t in explicit_voters.split(",") if t.strip()]
-        voter_env = ",".join(sorted(set(voter_list)))
+        voter_ids = sorted(set(voter_list))
     else:
-        voter_env = ",".join(_derive_p2p_voters(config_path))
+        voter_ids = _derive_p2p_voters(config_path)
+    voter_env = ",".join(voter_ids)
     voter_prefix = f"RINGRIFT_P2P_VOTERS={shlex.quote(voter_env)} " if voter_env else ""
+
+    # Determine coordinator URL
+    coordinator_url = (args.coordinator_url or "").strip()
+    if args.use_tailscale:
+        tailscale_urls = _build_tailscale_coordinator_urls(config_path, voter_ids)
+        if tailscale_urls:
+            coordinator_url = tailscale_urls
+            print(f"[INFO] Using Tailscale coordinator URLs: {coordinator_url}")
+        elif not coordinator_url:
+            raise RuntimeError(
+                "No Tailscale IPs found for voter nodes and no --coordinator-url provided"
+            )
+    if not coordinator_url:
+        raise RuntimeError(
+            "Either --coordinator-url or --use-tailscale must be provided"
+        )
 
     failures: List[str] = []
 
@@ -347,6 +427,11 @@ def main() -> None:
                     "  git merge --ff-only origin/main 2>/dev/null || echo \"[WARN] non-fast-forward; skipping git sync (use --force-sync)\" >&2\n"
                     "fi\n"
                 )
+            # Build ADVERTISE_HOST env var if using Tailscale and the target has a Tailscale IP
+            advertise_host_prefix = ""
+            if args.use_tailscale and target.tailscale_ip:
+                advertise_host_prefix = f"RINGRIFT_ADVERTISE_HOST={shlex.quote(target.tailscale_ip)} "
+
             if is_macos:
                 remote_setup = (
                     f"set -euo pipefail\n"
@@ -356,9 +441,10 @@ def main() -> None:
                     f"{git_sync}"
                     f"chmod +x \"$RINGRIFT_DIR/deploy/setup_node_resilience_macos.sh\"\n"
                     f"P2P_PORT={int(p2p_port)} RINGRIFT_ROOT=\"$RINGRIFT_ROOT\" "
+                    f"{advertise_host_prefix}"
                     f"{voter_prefix}"
                     f"bash \"$RINGRIFT_DIR/deploy/setup_node_resilience_macos.sh\" "
-                    f"{shlex.quote(node_id)} {shlex.quote(args.coordinator_url)}\n"
+                    f"{shlex.quote(node_id)} {shlex.quote(coordinator_url)}\n"
                 )
             else:
                 # Ensure the SSH user can update the repo even if root-owned git
@@ -392,9 +478,10 @@ def main() -> None:
                     f"{sudo}RINGRIFT_DIR=\"$RINGRIFT_DIR\" "
                     f"P2P_PORT={int(p2p_port)} "
                     f"SSH_PORT={int(target.ssh_port)} "
+                    f"{advertise_host_prefix}"
                     f"{voter_prefix}"
                     f"bash \"$RINGRIFT_DIR/deploy/setup_node_resilience.sh\" "
-                    f"{shlex.quote(node_id)} {shlex.quote(args.coordinator_url)}\n"
+                    f"{shlex.quote(node_id)} {shlex.quote(coordinator_url)}\n"
                     # Best-effort restart.
                     # - On systemd hosts: rely on systemd units (avoid duplicate daemons).
                     # - On non-systemd hosts (e.g. Vast.ai): kill + watchdog + nohup daemon.

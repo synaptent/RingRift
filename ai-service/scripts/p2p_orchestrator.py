@@ -3475,8 +3475,12 @@ class P2POrchestrator:
                 peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
             conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
             eligible = self._is_leader_eligible(self.self_info, conflict_keys, require_alive=False)
-            if eligible and getattr(self, "voter_node_ids", []):
-                eligible = self._has_voter_quorum()
+            voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
+            if eligible and voter_node_ids:
+                # When quorum gating is enabled, only configured voters can participate
+                # in bully elections. Non-voters responding "ALIVE" would stall the
+                # election because their own `_start_election()` returns early.
+                eligible = (self.node_id in voter_node_ids) and self._has_voter_quorum()
 
             # If our ID is higher, we respond with "ALIVE" (Bully algorithm)
             if self.node_id > candidate_id and eligible:
@@ -9372,6 +9376,9 @@ print(json.dumps({{
                         and self._is_leader_eligible(p, conflict_keys)
                     )
                 ]
+                voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
+                if voter_node_ids:
+                    higher_nodes = [p for p in higher_nodes if p.node_id in voter_node_ids]
 
             got_response = False
 
