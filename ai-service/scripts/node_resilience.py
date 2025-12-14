@@ -147,6 +147,24 @@ class NodeResilience:
                 continue
         return None
 
+    def get_tailscale_ip(self) -> Optional[str]:
+        """Get this machine's Tailscale IPv4 (100.x) if available."""
+        try:
+            result = subprocess.run(
+                ["tailscale", "ip", "-4"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return None
+            ip = (result.stdout or "").strip().splitlines()[0].strip()
+            return ip or None
+        except FileNotFoundError:
+            return None
+        except Exception:
+            return None
+
     def check_p2p_health(self) -> bool:
         """Check if P2P orchestrator is running and connected."""
         try:
@@ -201,9 +219,11 @@ class NodeResilience:
 
     def register_with_coordinator(self) -> bool:
         """Register this node with the coordinator."""
-        ip = self.get_public_ip()
+        public_ip = self.get_public_ip()
+        tailscale_ip = self.get_tailscale_ip()
+        ip = public_ip or tailscale_ip
         if not ip:
-            logger.warning("Failed to get public IP for registration")
+            logger.warning("Failed to get IP for registration")
             return False
 
         payload = {
@@ -211,6 +231,8 @@ class NodeResilience:
             "host": ip,
             "port": self._get_ssh_port(),
         }
+        if tailscale_ip:
+            payload["tailscale_ip"] = tailscale_ip
         data = json.dumps(payload).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         token = _load_cluster_auth_token()

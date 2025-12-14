@@ -20,6 +20,7 @@ import {
   SandboxProvider,
   useSandbox,
   LocalPlayerType,
+  DEFAULT_AI_DIFFICULTY,
 } from '../../src/client/contexts/SandboxContext';
 import type { GameState, BoardType, Position, PlayerChoice } from '../../src/shared/types/game';
 
@@ -58,7 +59,9 @@ describe('SandboxContext', () => {
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     jest.useRealTimers();
   });
 
@@ -95,6 +98,12 @@ describe('SandboxContext', () => {
         numPlayers: 2,
         boardType: 'square8',
         playerTypes: ['human', 'human', 'ai', 'ai'],
+        aiDifficulties: [
+          DEFAULT_AI_DIFFICULTY,
+          DEFAULT_AI_DIFFICULTY,
+          DEFAULT_AI_DIFFICULTY,
+          DEFAULT_AI_DIFFICULTY,
+        ],
       });
       expect(result.current.sandboxPendingChoice).toBeNull();
       expect(result.current.sandboxCaptureChoice).toBeNull();
@@ -273,6 +282,12 @@ describe('SandboxContext', () => {
           numPlayers: 4,
           boardType: 'hexagonal',
           playerTypes: ['ai', 'ai', 'ai', 'ai'],
+          aiDifficulties: [
+            DEFAULT_AI_DIFFICULTY,
+            DEFAULT_AI_DIFFICULTY,
+            DEFAULT_AI_DIFFICULTY,
+            DEFAULT_AI_DIFFICULTY,
+          ],
         });
       });
 
@@ -281,11 +296,23 @@ describe('SandboxContext', () => {
         numPlayers: 2,
         boardType: 'square8',
         playerTypes: ['human', 'human', 'ai', 'ai'],
+        aiDifficulties: [
+          DEFAULT_AI_DIFFICULTY,
+          DEFAULT_AI_DIFFICULTY,
+          DEFAULT_AI_DIFFICULTY,
+          DEFAULT_AI_DIFFICULTY,
+        ],
       });
       expect(result.current.config).toEqual({
         numPlayers: 4,
         boardType: 'hexagonal',
         playerTypes: ['ai', 'ai', 'ai', 'ai'],
+        aiDifficulties: [
+          DEFAULT_AI_DIFFICULTY,
+          DEFAULT_AI_DIFFICULTY,
+          DEFAULT_AI_DIFFICULTY,
+          DEFAULT_AI_DIFFICULTY,
+        ],
       });
     });
 
@@ -320,6 +347,7 @@ describe('SandboxContext', () => {
           numPlayers: 2,
           boardType: 'square8',
           playerTypes: ['human', 'ai'],
+          aiDifficulties: [DEFAULT_AI_DIFFICULTY, DEFAULT_AI_DIFFICULTY],
         });
       });
 
@@ -527,6 +555,7 @@ describe('SandboxContext', () => {
           numPlayers: 0, // Invalid
           boardType: 'square8',
           playerTypes: [],
+          aiDifficulties: [],
         });
       });
 

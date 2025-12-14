@@ -51,6 +51,7 @@ OFFLINE_THRESHOLD = 5           # Failures before offline
 RECOVERY_CHECKS = 2             # Successful checks to go from degraded to online
 VAST_API_CHECK_INTERVAL = 300   # Check Vast API every 5 minutes
 AWS_API_CHECK_INTERVAL = 300    # Check AWS (CLI) every 5 minutes
+TAILSCALE_CHECK_INTERVAL = 120  # Check Tailscale status every 2 minutes
 STATE_FILE = "logs/p2p_orchestrator/dynamic_registry.json"
 
 
@@ -72,6 +73,7 @@ class DynamicNodeInfo:
     failure_reason: Optional[str] = None
     vast_instance_id: Optional[str] = None   # For Vast.ai API queries
     aws_instance_id: Optional[str] = None    # For AWS CLI queries (ec2 instance id)
+    tailscale_ip: Optional[str] = None       # Discovered mesh IP (100.x) when available
 
     @property
     def effective_host(self) -> str:
@@ -96,6 +98,7 @@ class DynamicHostRegistry:
         self._vast_api_key: Optional[str] = os.environ.get("VAST_API_KEY")
         self._last_vast_check = 0.0
         self._last_aws_check = 0.0
+        self._last_tailscale_check = 0.0
 
         # Load static config
         self._load_static_config()
@@ -124,6 +127,8 @@ class DynamicHostRegistry:
                             self._nodes[name].vast_instance_id = props["vast_instance_id"]
                         if "aws_instance_id" in props:
                             self._nodes[name].aws_instance_id = props["aws_instance_id"]
+                        if "tailscale_ip" in props:
+                            self._nodes[name].tailscale_ip = props["tailscale_ip"]
                         elif name.startswith("vast-"):
                             # Try to extract from comments in YAML
                             for key, val in props.items():
@@ -157,6 +162,7 @@ class DynamicHostRegistry:
                             node.dynamic_port = node_data.get("dynamic_port")
                             node.vast_instance_id = node_data.get("vast_instance_id")
                             node.aws_instance_id = node_data.get("aws_instance_id")
+                            node.tailscale_ip = node_data.get("tailscale_ip")
                             # Don't restore state - re-check on startup
                             node.state = NodeState.UNKNOWN
                             node.consecutive_failures = 0
@@ -178,6 +184,7 @@ class DynamicHostRegistry:
                             "dynamic_port": node.dynamic_port,
                             "vast_instance_id": node.vast_instance_id,
                             "aws_instance_id": node.aws_instance_id,
+                            "tailscale_ip": node.tailscale_ip,
                             "state": node.state.value,
                             "last_success_time": node.last_success_time,
                         }
@@ -196,6 +203,7 @@ class DynamicHostRegistry:
         host: str,
         port: int,
         vast_instance_id: Optional[str] = None,
+        tailscale_ip: Optional[str] = None,
     ) -> bool:
         """Register or update a node's dynamic address.
 
@@ -229,6 +237,8 @@ class DynamicHostRegistry:
 
             if vast_instance_id:
                 node.vast_instance_id = vast_instance_id
+            if tailscale_ip:
+                node.tailscale_ip = tailscale_ip
 
             # If IP changed, reset failure counters
             if host != old_host or port != old_port:
@@ -539,6 +549,97 @@ class DynamicHostRegistry:
                         node.consecutive_failures = 0
                         node.state = NodeState.UNKNOWN
                         updated += 1
+
+        if updated:
+            self._save_state()
+        return updated
+
+    async def update_tailscale_ips(self) -> int:
+        """Discover and record Tailscale IPs for nodes via `tailscale status --json`.
+
+        This is best-effort and safe: it only fills/updates `tailscale_ip` fields
+        and does not overwrite `dynamic_host` (which may be a public SSH address).
+
+        Returns:
+            Number of nodes whose tailscale_ip changed.
+        """
+        if time.time() - self._last_tailscale_check < TAILSCALE_CHECK_INTERVAL:
+            return 0
+        self._last_tailscale_check = time.time()
+
+        try:
+            import asyncio
+
+            def _run() -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    ["tailscale", "status", "--json"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+
+            result = await asyncio.to_thread(_run)
+            if result.returncode != 0:
+                return 0
+
+            payload = json.loads(result.stdout or "{}")
+        except FileNotFoundError:
+            return 0
+        except Exception:
+            return 0
+
+        def _normalize_name(name: str) -> str:
+            name = (name or "").strip().lower()
+            if not name:
+                return ""
+            if "." in name:
+                name = name.split(".", 1)[0]
+            return name
+
+        def _first_ipv4(ips: Any) -> Optional[str]:
+            if not isinstance(ips, list):
+                return None
+            for ip in ips:
+                if isinstance(ip, str) and ip and ":" not in ip:
+                    return ip.strip()
+            return None
+
+        name_to_ip: Dict[str, str] = {}
+
+        try:
+            self_entry = payload.get("Self") or {}
+            self_ip = _first_ipv4(self_entry.get("TailscaleIPs"))
+            self_name = _normalize_name(self_entry.get("HostName") or self_entry.get("DNSName") or "")
+            if self_ip and self_name:
+                name_to_ip[self_name] = self_ip
+        except Exception:
+            pass
+
+        peers = payload.get("Peer") or {}
+        if isinstance(peers, dict):
+            for peer in peers.values():
+                if not isinstance(peer, dict):
+                    continue
+                ip = _first_ipv4(peer.get("TailscaleIPs"))
+                if not ip:
+                    continue
+                host = _normalize_name(peer.get("HostName") or "")
+                dns = _normalize_name(peer.get("DNSName") or "")
+                if host:
+                    name_to_ip[host] = ip
+                if dns:
+                    name_to_ip[dns] = ip
+
+        updated = 0
+        with self._lock:
+            for node_id, node in self._nodes.items():
+                key = _normalize_name(node_id)
+                ip = name_to_ip.get(key)
+                if not ip:
+                    continue
+                if ip != node.tailscale_ip:
+                    node.tailscale_ip = ip
+                    updated += 1
 
         if updated:
             self._save_state()

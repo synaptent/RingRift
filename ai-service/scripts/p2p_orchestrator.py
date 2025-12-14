@@ -1180,7 +1180,9 @@ class P2POrchestrator:
         if request.method not in ("GET", "HEAD", "OPTIONS"):
             body = await request.read()
 
-        timeout = ClientTimeout(total=60)
+        # Keep leader-proxy responsive: unreachable "leaders" (often NAT/firewall)
+        # should fail fast so the dashboard doesn't hang for a full minute.
+        timeout = ClientTimeout(total=10)
         try:
             async with ClientSession(timeout=timeout) as session:
                 async with session.request(
@@ -1393,7 +1395,7 @@ class P2POrchestrator:
         if memory_gb >= 64:
             capabilities.append("large_boards")
 
-        return NodeInfo(
+        info = NodeInfo(
             node_id=self.node_id,
             host=self.advertise_host,
             port=self.advertise_port,
@@ -1406,6 +1408,17 @@ class P2POrchestrator:
             capabilities=capabilities,
             version=self.build_version,
         )
+        # Advertise an alternate mesh endpoint (Tailscale) for NAT traversal and
+        # multi-path retries. Peers persist the observed reachable endpoint in
+        # `host`/`port` but keep our `reported_host`/`reported_port` as an
+        # additional candidate (see `_heartbeat_loop` multi-path retry).
+        ts_ip = self._get_tailscale_ip()
+        if ts_ip and ts_ip != info.host:
+            info.reported_host = ts_ip
+            # Use the actual listening port for mesh endpoints (port-mapped
+            # advertise ports may not be reachable inside overlays).
+            info.reported_port = int(self.port)
+        return info
 
     def _detect_gpu(self) -> Tuple[bool, str]:
         """Detect if GPU is available and its name."""
@@ -1462,6 +1475,24 @@ class P2POrchestrator:
             return ip
         except:
             return "127.0.0.1"
+
+    def _get_tailscale_ip(self) -> str:
+        """Return this node's Tailscale IPv4 (100.x) when available."""
+        try:
+            result = subprocess.run(
+                ["tailscale", "ip", "-4"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return ""
+            ip = (result.stdout or "").strip().splitlines()[0].strip()
+            return ip
+        except FileNotFoundError:
+            return ""
+        except Exception:
+            return ""
 
     def _get_resource_usage(self) -> Dict[str, float]:
         """Get current resource usage."""
@@ -2985,7 +3016,14 @@ class P2POrchestrator:
             elif request.remote:
                 peer_info.host = request.remote
 
+            # Preserve local reachability diagnostics: a peer can be "alive" (it can
+            # send us heartbeats) while still being unreachable for inbound HTTP
+            # (e.g. NAT/firewall). Our outbound heartbeat failures track that.
             with self.peers_lock:
+                existing = self.peers.get(peer_info.node_id)
+                if existing:
+                    peer_info.consecutive_failures = int(getattr(existing, "consecutive_failures", 0) or 0)
+                    peer_info.last_failure_time = float(getattr(existing, "last_failure_time", 0.0) or 0.0)
                 self.peers[peer_info.node_id] = peer_info
 
             # Return our info
@@ -3489,6 +3527,7 @@ class P2POrchestrator:
             host = data.get("host")
             port = data.get("port", 22)
             vast_instance_id = data.get("vast_instance_id")
+            tailscale_ip = data.get("tailscale_ip")
 
             if not node_id or not host:
                 return web.json_response({
@@ -3496,7 +3535,7 @@ class P2POrchestrator:
                 }, status=400)
 
             registry = get_registry()
-            success = registry.register_node(node_id, host, port, vast_instance_id)
+            success = registry.register_node(node_id, host, port, vast_instance_id, tailscale_ip=tailscale_ip)
 
             if success:
                 print(f"[P2P] Node registered: {node_id} at {host}:{port}")
@@ -3576,6 +3615,22 @@ class P2POrchestrator:
         try:
             registry = get_registry()
             updated = await registry.update_aws_ips()
+            return web.json_response({"success": True, "nodes_updated": updated})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_registry_update_tailscale(self, request: web.Request) -> web.Response:
+        """POST /registry/update_tailscale - Discover Tailscale IPs in the dynamic registry.
+
+        Uses `tailscale status --json` when available. No-op if `tailscale` is
+        not installed or the node is not part of a Tailscale network.
+        """
+        if not HAS_DYNAMIC_REGISTRY:
+            return web.json_response({"error": "Dynamic registry not available"}, status=501)
+
+        try:
+            registry = get_registry()
+            updated = await registry.update_tailscale_ips()
             return web.json_response({"success": True, "nodes_updated": updated})
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
@@ -8117,7 +8172,7 @@ print(json.dumps({{
         # while (but we do know about other peers), assume we're not reachable
         # inbound and must poll a relay for commands.
         now = time.time()
-        if self.role != NodeRole.LEADER and (self.known_peers or self.peers):
+        if self.known_peers or self.peers:
             last_inbound = self.last_inbound_heartbeat or self.start_time
             self.self_info.nat_blocked = (now - last_inbound) >= NAT_INBOUND_HEARTBEAT_STALE_SECONDS
         else:
@@ -8620,6 +8675,8 @@ print(json.dumps({{
     ) -> bool:
         """Heuristic: leaders must be directly reachable and uniquely addressable."""
         if require_alive and not peer.is_alive():
+            return False
+        if int(getattr(peer, "consecutive_failures", 0) or 0) >= MAX_CONSECUTIVE_FAILURES:
             return False
         if getattr(peer, "nat_blocked", False):
             return False
@@ -9803,6 +9860,7 @@ print(json.dumps({{
         app.router.add_get('/registry/status', self.handle_registry_status)
         app.router.add_post('/registry/update_vast', self.handle_registry_update_vast)
         app.router.add_post('/registry/update_aws', self.handle_registry_update_aws)
+        app.router.add_post('/registry/update_tailscale', self.handle_registry_update_tailscale)
         app.router.add_post('/registry/save_yaml', self.handle_registry_save_yaml)
 
         # Relay/Hub routes for NAT-blocked nodes
