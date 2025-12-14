@@ -16,17 +16,48 @@ DEFAULT_RINGRIFT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 RINGRIFT_DIR="${RINGRIFT_DIR:-$DEFAULT_RINGRIFT_DIR}"
 LOG_DIR="/var/log/ringrift"
 P2P_PORT="${P2P_PORT:-}"
-# Vast.ai instances typically expose a public port-mapping for container 8080
-# (VAST_TCP_PORT_8080). Default the P2P listening port to 8080 there so the
-# orchestrator is reachable externally.
+# Default P2P listening port. Prefer 8770 everywhere; it avoids common Vast.ai
+# collisions with Jupyter binding to 8080. If you need an externally-exposed
+# port-mapped listener, explicitly set P2P_PORT (and optionally
+# RINGRIFT_ADVERTISE_*).
 if [ -z "$P2P_PORT" ]; then
-    if [ -n "${VAST_TCP_PORT_8080:-}" ]; then
-        P2P_PORT="8080"
-    else
-        P2P_PORT="8770"
-    fi
+    P2P_PORT="8770"
 fi
 SSH_PORT="${SSH_PORT:-}"
+
+is_port_available() {
+    local port="$1"
+    python3 - "$port" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    s.bind(("0.0.0.0", port))
+except OSError:
+    sys.exit(1)
+finally:
+    try:
+        s.close()
+    except Exception:
+        pass
+sys.exit(0)
+PY
+}
+
+# If the chosen port is already in use (e.g. Jupyter on Vast.ai), fall back to
+# a known-safe port.
+if ! is_port_available "$P2P_PORT"; then
+    echo "Warning: P2P_PORT=$P2P_PORT already in use; selecting fallback port"
+    for candidate in 8770 8772 8773 8774 8780 8781; do
+        if is_port_available "$candidate"; then
+            P2P_PORT="$candidate"
+            echo "Using fallback P2P_PORT=$P2P_PORT"
+            break
+        fi
+    done
+fi
 
 echo "Setting up node resilience for $NODE_ID"
 echo "Coordinator: $COORDINATOR_URL"
@@ -201,7 +232,7 @@ if ! curl -s --connect-timeout 5 "http://localhost:${P2P_PORT}/health" > /dev/nu
     echo "$(date): P2P orchestrator not responding, attempting restart"
 
     # Kill any zombie processes
-    pkill -f "p2p_orchestrator.py" 2>/dev/null || true
+    pkill -f '[p]2p_orchestrator.py' 2>/dev/null || true
     sleep 2
 
     # Start fresh

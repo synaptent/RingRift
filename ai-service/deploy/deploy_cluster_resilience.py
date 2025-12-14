@@ -42,6 +42,7 @@ class HostTarget:
     ssh_port: int
     ssh_key: Optional[str]
     ringrift_path: str
+    p2p_port: Optional[int] = None
 
     def ssh_target(self) -> str:
         if "@" in self.ssh_host:
@@ -75,6 +76,13 @@ def _load_hosts(config_path: Path) -> Dict[str, HostTarget]:
         ssh_port = int(cfg.get("ssh_port", 22) or 22)
         ssh_key = cfg.get("ssh_key")
         ringrift_path = str(cfg.get("ringrift_path", "") or "").strip() or "~/ringrift/ai-service"
+        p2p_port_raw = cfg.get("p2p_port", None)
+        p2p_port: Optional[int] = None
+        if p2p_port_raw is not None and str(p2p_port_raw).strip():
+            try:
+                p2p_port = int(p2p_port_raw)
+            except Exception:
+                p2p_port = None
         targets[node_id] = HostTarget(
             node_id=node_id,
             ssh_host=ssh_host,
@@ -82,14 +90,12 @@ def _load_hosts(config_path: Path) -> Dict[str, HostTarget]:
             ssh_port=ssh_port,
             ssh_key=ssh_key,
             ringrift_path=ringrift_path,
+            p2p_port=p2p_port,
         )
     return targets
 
 
 def _default_p2p_port_for_node(node_id: str) -> int:
-    # Vast.ai containers typically expose 8080 externally.
-    if node_id.startswith("vast-"):
-        return 8080
     return 8770
 
 
@@ -209,7 +215,7 @@ def main() -> None:
 
     for node_id, target in sorted(targets.items(), key=lambda kv: kv[0]):
         is_macos = node_id == "mac-studio" or node_id.startswith("mbp-") or node_id.startswith("mac-")
-        p2p_port = _default_p2p_port_for_node(node_id)
+        p2p_port = int(target.p2p_port or _default_p2p_port_for_node(node_id))
         is_root = target.ssh_user == "root" or target.ssh_target().startswith("root@")
         sudo = "" if is_root else "sudo "
 
