@@ -151,7 +151,8 @@ describe('ClientSandboxEngine branch coverage', () => {
       });
       const state = engine.getGameState();
       expect(state.players[0].type).toBe('ai');
-      expect(state.players[0].aiDifficulty).toBe(5);
+      // Default AI difficulty is 4 when not specified
+      expect(state.players[0].aiDifficulty).toBe(4);
     });
 
     it('creates engine with mixed players', () => {

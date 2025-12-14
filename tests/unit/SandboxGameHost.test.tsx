@@ -72,6 +72,7 @@ describe('SandboxGameHost', () => {
         numPlayers: 2,
         boardType: 'square8',
         playerTypes: ['human', 'ai', 'ai', 'ai'],
+        aiDifficulties: [5, 5, 5, 5],
       },
       setConfig: jest.fn(),
       isConfigured: false,

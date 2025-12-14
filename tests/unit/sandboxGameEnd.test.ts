@@ -268,6 +268,15 @@ describe('sandboxGameEnd', () => {
       const board = createTestBoard('square8');
       board.stacks.clear();
 
+      // Add collapsed spaces to board for territory count (victory check uses board.collapsedSpaces)
+      // Player 1 controls 5 spaces, Player 2 controls 3 spaces
+      for (let i = 0; i < 5; i++) {
+        board.collapsedSpaces.set(`${i},0`, 1);
+      }
+      for (let i = 0; i < 3; i++) {
+        board.collapsedSpaces.set(`${i},1`, 2);
+      }
+
       const state = createTestGameState({
         gameStatus: 'active',
         board,
