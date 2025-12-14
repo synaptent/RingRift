@@ -1,0 +1,193 @@
+# RingRift AI Self-Improvement Loop Alerting Rules
+# These rules monitor the health and progress of the AI training pipeline
+#
+# Usage: Import this into Prometheus Alertmanager or Grafana Alerting
+# prometheus.yml scrape config should include the p2p_orchestrator metrics endpoint
+
+groups:
+  - name: ringrift_self_improvement
+    interval: 1m
+    rules:
+      # ============================================================
+      # CRITICAL ALERTS - Require immediate attention
+      # ============================================================
+
+      - alert: RingRiftNoEloImprovement
+        expr: |
+          (max(ringrift_best_elo) - max(ringrift_best_elo offset 6h)) <= 0
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'No Elo improvement in 6 hours'
+          description: 'The best Elo rating has not improved in the last 6 hours. Check if training is stalled or if models are not being evaluated.'
+          runbook_url: 'https://docs.ringrift.ai/alerts/no-elo-improvement'
+
+      - alert: RingRiftTrainingStalled
+        expr: |
+          ringrift_training_jobs_running == 0
+          and
+          sum(ringrift_games_total) > 10000
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Training pipeline stalled'
+          description: 'No training jobs are running despite having sufficient training data (>10k games). Check training thresholds and node availability.'
+
+      - alert: RingRiftDataStaleness
+        expr: ringrift_data_freshness_hours > 24
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Training data is stale (>24h old)'
+          description: 'Configuration {{ $labels.config }} has not received new training data in over 24 hours. Check selfplay generation.'
+
+      - alert: RingRiftHighPromotionRejectionRate
+        expr: |
+          (
+            increase(ringrift_promotion_rejections_total[24h])
+            /
+            (increase(ringrift_promotions_total[24h]) + increase(ringrift_promotion_rejections_total[24h]) + 0.001)
+          ) > 0.7
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'High promotion rejection rate (>70%)'
+          description: 'Most model promotions are being rejected. This may indicate training is not producing improvements or evaluation is too strict.'
+
+      # ============================================================
+      # RESOURCE & COST ALERTS
+      # ============================================================
+
+      - alert: RingRiftGPUCostRunaway
+        expr: increase(ringrift_estimated_cost_usd[1h]) > 50
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'GPU cost spike detected ($50+/hour)'
+          description: 'Estimated GPU costs are running high. Current rate: ${{ $value | humanize }}/hour. Review cluster utilization.'
+
+      - alert: RingRiftLowGPUEfficiency
+        expr: ringrift_elo_per_gpu_hour < 2
+        for: 4h
+        labels:
+          severity: info
+        annotations:
+          summary: 'Low Elo gain per GPU hour'
+          description: 'GPU resources are not producing efficient Elo improvements. Consider adjusting training parameters or curriculum.'
+
+      # ============================================================
+      # CLUSTER HEALTH ALERTS
+      # ============================================================
+
+      - alert: RingRiftNoAliveNodes
+        expr: ringrift_cluster_peers_alive == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'No cluster nodes are alive'
+          description: 'The P2P orchestrator cannot reach any cluster nodes. Check network connectivity and node health.'
+
+      - alert: RingRiftMajorityNodesDown
+        expr: |
+          (ringrift_cluster_peers_total - ringrift_cluster_peers_alive)
+          /
+          ringrift_cluster_peers_total > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Majority of cluster nodes are down'
+          description: '{{ $value | humanizePercentage }} of cluster nodes are unreachable. This may impact training throughput.'
+
+      - alert: RingRiftLeadershipLost
+        expr: ringrift_is_leader == 0 and ringrift_is_leader offset 5m == 1
+        for: 2m
+        labels:
+          severity: info
+        annotations:
+          summary: 'Node lost leadership'
+          description: 'This node was previously the leader but has lost leadership. A new leader should be elected.'
+
+      - alert: RingRiftOrchestratorDown
+        expr: up{job="ringrift-p2p-orchestrator"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'P2P Orchestrator is down'
+          description: 'The RingRift P2P orchestrator is not responding. Check the process and restart if necessary.'
+
+      # ============================================================
+      # EVALUATION QUALITY ALERTS
+      # ============================================================
+
+      - alert: RingRiftLowEvaluationConfidence
+        expr: ringrift_eval_confidence < 0.3
+        for: 2h
+        labels:
+          severity: info
+        annotations:
+          summary: 'Low evaluation confidence for {{ $labels.config }}'
+          description: 'Model evaluations have low statistical confidence. More tournament games are needed.'
+
+      - alert: RingRiftHighEloUncertainty
+        expr: ringrift_elo_uncertainty > 200
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: 'High Elo uncertainty for {{ $labels.config }}'
+          description: 'Elo ratings have high uncertainty (RD > 200). Run more tournament games to improve precision.'
+
+      # ============================================================
+      # SELFPLAY ALERTS
+      # ============================================================
+
+      - alert: RingRiftLowSelfplayThroughput
+        expr: ringrift_selfplay_games_per_hour < 10
+        for: 2h
+        labels:
+          severity: info
+        annotations:
+          summary: 'Low selfplay throughput for {{ $labels.config }}'
+          description: 'Selfplay generation rate is low ({{ $value }} games/hour). Check GPU availability and job scheduling.'
+
+      - alert: RingRiftNoSelfplayJobs
+        expr: ringrift_selfplay_jobs_running == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'No selfplay jobs running'
+          description: 'No selfplay jobs are currently running. Check daemon status and job scheduling.'
+
+      # ============================================================
+      # TRAINING PROGRESS ALERTS
+      # ============================================================
+
+      - alert: RingRiftTrainingLossNotDecreasing
+        expr: |
+          (ringrift_training_loss - ringrift_training_loss offset 1h) >= 0
+          and
+          ringrift_training_epoch > 5
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: 'Training loss not decreasing for {{ $labels.config }}'
+          description: 'Training loss has not decreased in the last hour after epoch 5. Check for convergence issues.'
+
+      - alert: RingRiftHighValidationLoss
+        expr: ringrift_training_val_loss > 10
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: 'High validation loss for {{ $labels.config }}'
+          description: 'Validation loss is unusually high ({{ $value }}). Check training data quality and model architecture.'

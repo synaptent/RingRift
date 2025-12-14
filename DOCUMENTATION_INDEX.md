@@ -28,10 +28,10 @@ This index catalogs all project documentation organized by topic and location. F
 ### Project Status & Planning
 
 - [CURRENT_STATE_ASSESSMENT.md](CURRENT_STATE_ASSESSMENT.md) - Implementation status snapshot relative to the goals in PROJECT_GOALS; does not define new goals
-- [STRATEGIC_ROADMAP.md](STRATEGIC_ROADMAP.md) - Phased roadmap & SLOs that operationalise the goals in PROJECT_GOALS
+- [STRATEGIC_ROADMAP.md](docs/planning/STRATEGIC_ROADMAP.md) - Phased roadmap & SLOs that operationalise the goals in PROJECT_GOALS
 - [PROJECT_GOALS.md](PROJECT_GOALS.md) - Canonical project goals, v1.0 success criteria, and scope boundaries (authoritative source for goals/scope)
-- [WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md](WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md) - Canonical weakest-aspect & hardest-problem assessment snapshot (answer artifact for original assessment)
-- [NEXT_WAVE_REMEDIATION_PLAN.md](NEXT_WAVE_REMEDIATION_PLAN.md) - Next-wave remediation plan derived from weakest-aspect / hardest-problem assessment
+- [WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md](docs/archive/assessments/WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md) - Canonical weakest-aspect & hardest-problem assessment snapshot (archived)
+- [NEXT_WAVE_REMEDIATION_PLAN.md](docs/archive/plans/NEXT_WAVE_REMEDIATION_PLAN.md) - Next-wave remediation plan derived from weakest-aspect / hardest-problem assessment (archived)
 
 ### Rules & Game Design
 
@@ -322,6 +322,7 @@ Key docs and tools for TS↔Python parity, replay analysis, and replay DB health
 | [ai-service/docs/AI_TRAINING_PLAN.md](ai-service/docs/AI_TRAINING_PLAN.md)                   | **Primary training guide**: CMA-ES, NN, NPZ pipeline |
 | [ai-service/docs/AI_TRAINING_PIPELINE_PLAN.md](ai-service/docs/AI_TRAINING_PIPELINE_PLAN.md) | Detailed training pipeline architecture              |
 | [ai-service/docs/PIPELINE_ORCHESTRATOR.md](ai-service/docs/PIPELINE_ORCHESTRATOR.md)         | Training pipeline orchestration and automation       |
+| [ai-service/docs/UNIFIED_AI_LOOP.md](ai-service/docs/UNIFIED_AI_LOOP.md)                     | **Unified AI self-improvement daemon** (Dec 2025)    |
 | [ai-service/docs/DISTRIBUTED_SELFPLAY.md](ai-service/docs/DISTRIBUTED_SELFPLAY.md)           | Distributed selfplay across GPU clusters             |
 | [docs/ai/AI_TRAINING_AND_DATASETS.md](docs/ai/AI_TRAINING_AND_DATASETS.md)                   | Training datasets and GameRecord JSONL exports       |
 
@@ -358,6 +359,7 @@ Key docs and tools for TS↔Python parity, replay analysis, and replay DB health
 RingRift supports multiple deployment and test environments:
 
 - **Local development** – Node.js dev server and optional AI service running on a developer workstation. See [QUICKSTART.md](QUICKSTART.md).
+- **Deployment scripts** – Systemd services and Grafana dashboards for production deployment. See [ai-service/deploy/README.md](ai-service/deploy/README.md).
 - **Docker-based staging on localhost** – Full stack composed via Docker Compose on a single host (for example `http://localhost:3000` for HTTP and `ws://localhost:3001` for WebSockets), suitable for capacity and SLO runs.
 - **Cloud-hosted staging and load-testing environments (optional)** – Operators may provision remote instances on AWS EC2/ECS or another cloud provider to run:
   - The RingRift backend/API and WebSocket endpoints for staging (for example `https://staging.example.com`, `wss://staging.example.com`).

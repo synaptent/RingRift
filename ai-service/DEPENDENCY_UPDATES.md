@@ -1,6 +1,6 @@
 # AI Service Dependency Updates
 
-> **Doc Status (2025-11-29): Active (AI service dependency audit, non-semantics)**
+> **Doc Status (2025-12-14): Active (AI service dependency audit, non-semantics)**
 >
 > - Role: records the dependency stack and compatibility decisions for the Python AI microservice (NumPy/PyTorch/ Gymnasium, etc.) and outlines an aspirational RL roadmap. It guides environment setup and ML stack evolution, not game semantics.
 > - Not a semantics or lifecycle SSoT: for rules semantics and lifecycle / API contracts, defer to the shared TypeScript rules engine under `src/shared/engine/**`, the engine contracts under `src/shared/engine/contracts/**`, the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`, [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`ringrift_complete_rules.md`](../ringrift_complete_rules.md), [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/CANONICAL_ENGINE_API.md).
@@ -101,35 +101,34 @@ All commands and versions in this document assume this shared repo‑root `.venv
 - Native support without additional dependencies
 - Can be added later when numba supports Python 3.13
 
-## Future RL Implementation Plan
+## RL Implementation Status (2025-12-14)
 
-Since we removed stable-baselines3, we'll implement custom RL algorithms using PyTorch:
+The custom RL implementation using PyTorch is **complete**:
 
-### Phase 1: Basic RL (Current)
+### Implemented AI Tiers
 
-- Random AI (difficulty 1-2) ✅
-- Heuristic AI (difficulty 3-5) ✅
+- **Random AI** (D1): Random valid moves ✅
+- **Heuristic AI** (D2): 45+ CMA-ES optimized evaluation factors ✅
+- **Minimax AI** (D3-4): Alpha-beta with NNUE neural evaluation ✅
+- **MCTS AI** (D5-8): Monte Carlo Tree Search with neural value/policy heads ✅
+- **Descent AI** (D9-10): AlphaZero-style UBFM search ✅
 
-### Phase 2: Neural Network AI (Next)
+### Implemented Training Infrastructure
 
-- Deep Q-Network (DQN) for difficulty 6-7
-- Minimax with neural network evaluation for difficulty 7-8
-- Monte Carlo Tree Search (MCTS) for difficulty 8-10
+- **Self-play pipeline**: Distributed across Mac cluster + cloud (AWS, Lambda Labs, Vast.ai) ✅
+- **CMA-ES optimization**: Per-board heuristic weight tuning ✅
+- **Neural network training**: ResNet CNN with policy/value heads ✅
+- **NNUE training**: Efficiently updatable neural network evaluator ✅
+- **Model versioning**: Checkpoint management with Elo-based promotion ✅
+- **Curriculum learning**: Adaptive training focus based on Elo ✅
 
-### Phase 3: Advanced RL
+### Advantages Realized
 
-- Policy Gradient methods (REINFORCE, A3C)
-- Actor-Critic methods (A2C, PPO)
-- Self-play training
-- Experience replay with priority sampling
-
-### Advantages of Custom Implementation
-
-1. **RingRift-specific optimizations**: Can encode game knowledge directly
-2. **Multi-board support**: Train different models for square8, square19, hexagonal
-3. **Adaptive difficulty**: Fine-tune difficulty levels more granularly
-4. **No version conflicts**: Full control over dependencies
-5. **Better debugging**: Understand every component of the RL pipeline
+1. **RingRift-specific optimizations**: Custom encoding, board-specific policy heads
+2. **Multi-board support**: Separate models for square8, square19, hexagonal
+3. **10-level difficulty ladder**: Fine-grained control from random to grandmaster
+4. **Production-ready**: Unified AI loop for continuous self-improvement
+5. **Full observability**: Prometheus metrics, Grafana dashboards, Elo tracking
 
 ## Testing
 
@@ -1053,6 +1052,7 @@ and local `python-core` behaviour, with explicit TODOs for completing the
 pip‑audit/Docker portions once the corresponding tooling constraints are resolved.
 
 Subsequent Wave 3‑E hygiene updates (2025‑11‑29) include:
+
 - Tuning the heavy CMA‑ES fitness guardrail test
   (`tests/test_heuristic_training_evaluation.py::test_evaluate_fitness_zero_profile_is_strictly_worse_than_baseline`)
   by keeping an explicit `@pytest.mark.timeout(180)` and reducing its `games_per_eval`
@@ -1094,9 +1094,12 @@ sync with those orchestrator‑level goals.
 
 ---
 
+## Implementation Checklist (2025-12-14)
+
 1. ✅ Install dependencies
 2. ✅ Verify imports
-3. 🔄 Test AI service startup
-4. ⏳ Implement neural network AI (Phase 2)
-5. ⏳ Add self-play training pipeline
-6. ⏳ Create model checkpointing and versioning
+3. ✅ Test AI service startup
+4. ✅ Implement neural network AI (ResNet CNN with policy/value heads)
+5. ✅ Add self-play training pipeline (distributed across cluster)
+6. ✅ Create model checkpointing and versioning (Elo-based promotion)
+7. ✅ Unified AI self-improvement loop (see `docs/UNIFIED_AI_LOOP.md`)

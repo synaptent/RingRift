@@ -47,7 +47,7 @@ This is the canonical high-level task/backlog tracker. For rules semantics, defe
 ## Immediate Handoffs (Jan 2026)
 
 - **Rules coverage to 80%:** Extend the scenario matrix with chain→line→territory multi-choice turns on all boards, add tests that assert `GameEndExplanation` payloads for those sequences, then tighten coverage thresholds; update `RULES_SCENARIO_MATRIX.md` and clear the matching entry in `KNOWN_ISSUES.md` when landed.
-- **AI ladder (Square-8 2p):** Run `ai-service/scripts/run_tier_training_pipeline.py` and `ai-service/scripts/run_full_tier_gating.py` on canonical data; refresh `ai-service/config/tier_candidate_registry.square8_2p.json`; regenerate canonical self-play via `ai-service/scripts/generate_canonical_selfplay.py` with parity/history validation and update `TRAINING_DATA_REGISTRY.md`.
+- **AI ladder (Square-8 2p):** Run `ai-service/scripts/run_tier_training_pipeline.py` and `ai-service/scripts/run_full_tier_gating.py` on canonical data; refresh `ai-service/config/tier_training_pipeline.square8_2p.json`; regenerate canonical self-play via `ai-service/scripts/generate_canonical_selfplay.py` with parity/history validation and update `ai-service/TRAINING_DATA_REGISTRY.md`.
 - **Load/ops alignment:** Execute staging runs for baseline, target-scale, and AI-heavy harnesses; verify via `tests/load/scripts/verify-slos.js`; record paths in `docs/BASELINE_CAPACITY.md`; rerun secrets rotation + backup/restore drills and update `docs/GO_NO_GO_CHECKLIST.md`.
 
 ---
@@ -168,6 +168,13 @@ Operational drills completed:
 - AI telemetry and fallback monitoring
 - Training data registry and canonical parity gate
 - Model versioning infrastructure
+- **Unified AI self-improvement loop** (`ai-service/scripts/unified_ai_loop.py`) coordinating:
+  - Streaming data collection (60s incremental sync from distributed hosts)
+  - Shadow tournament service (15-min lightweight evaluation)
+  - Threshold-based training scheduler
+  - Elo-based model promotion
+  - Adaptive curriculum rebalancing
+  - See `ai-service/docs/UNIFIED_AI_LOOP.md` for details
 
 ### 1.7 Game Records & Training Data (Wave 10) ✅
 
@@ -177,7 +184,7 @@ Operational drills completed:
 - `GameRecordRepository` for CRUD operations
 - Self-play recording with rich metadata
 - Canonical parity gate (`run_canonical_selfplay_parity_gate.py`)
-- Training data registry (`TRAINING_DATA_REGISTRY.md`)
+- Training data registry (`ai-service/TRAINING_DATA_REGISTRY.md`)
 - Training dataset exporter with rank-aware values
 - Self-play browser UI in sandbox
 
@@ -633,6 +640,7 @@ SandboxGameHost integration requires mapping existing state to hooks:
 | Difficulty ladder             | P1       | ✅ Complete |
 | Heuristic weight optimization | P2       | In Progress |
 | MinimaxAI production wiring   | P2       | ✅ Complete |
+| Unified AI self-improvement   | P1       | ✅ Complete |
 
 #### Ruleset Optimization Findings (Dec 2025)
 
@@ -673,14 +681,14 @@ Results in `ai-service/logs/lps_ablation/lps_ablation_*.json`
 ### 4.1 Keep Updated
 
 - [ ] `CURRENT_STATE_ASSESSMENT.md` – Implementation status
-- [ ] `STRATEGIC_ROADMAP.md` – Phased roadmap
+- [ ] `docs/planning/STRATEGIC_ROADMAP.md` – Phased roadmap
 - [ ] `KNOWN_ISSUES.md` – P0/P1 issues
 - [ ] `tests/README.md` – Test categories
 - [ ] `docs/UX_RULES_EXPLANATION_MODEL_SPEC.md` – Structured end-explanation model
-- [ ] `docs/UX_RULES_CONCEPTS_INDEX.md` – Rules concepts index and cross-links
+- [ ] `docs/ux/UX_RULES_CONCEPTS_INDEX.md` – Rules concepts index and cross-links
 - [ ] `docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0002.md` – Telemetry-driven rules UX iteration spec
 - [ ] `ai-service/TRAINING_DATA_REGISTRY.md` – Canonical vs legacy DB status after new gates
-- [ ] `docs/architecture/FSM_EXTENSION_STRATEGY.md` – FSM extension plan and roadmap (new)
+- [ ] `docs/architecture/FSM_EXTENSION_STRATEGY.md` – FSM extension plan and roadmap
 
 ### 4.2 CI/CD
 
@@ -705,11 +713,13 @@ Detailed historical information for completed waves is preserved in:
 
 ## Related Documentation
 
-| Document                      | Purpose                        |
-| ----------------------------- | ------------------------------ |
-| `CURRENT_STATE_ASSESSMENT.md` | Implementation status snapshot |
-| `STRATEGIC_ROADMAP.md`        | Phased roadmap to MVP          |
-| `KNOWN_ISSUES.md`             | P0/P1 issues and gaps          |
-| `RULES_CANONICAL_SPEC.md`     | Rules semantics SSoT           |
-| `docs/TEST_CATEGORIES.md`     | Test organization guide        |
-| `DOCUMENTATION_INDEX.md`      | Full docs map                  |
+| Document                             | Purpose                                 |
+| ------------------------------------ | --------------------------------------- |
+| `CURRENT_STATE_ASSESSMENT.md`        | Implementation status snapshot          |
+| `docs/planning/STRATEGIC_ROADMAP.md` | Phased roadmap to MVP                   |
+| `KNOWN_ISSUES.md`                    | P0/P1 issues and gaps                   |
+| `RULES_CANONICAL_SPEC.md`            | Rules semantics SSoT                    |
+| `docs/testing/TEST_CATEGORIES.md`    | Test organization guide                 |
+| `DOCUMENTATION_INDEX.md`             | Full docs map                           |
+| `ai-service/docs/UNIFIED_AI_LOOP.md` | Unified AI self-improvement loop        |
+| `ai-service/deploy/README.md`        | Deployment scripts and systemd services |
