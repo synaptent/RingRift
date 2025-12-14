@@ -756,18 +756,41 @@ async def check_and_run_training(state: DaemonState) -> List[str]:
             print(f"[Daemon] Export failed for {key}: {output[:200]}")
             continue
 
-        # Train model
+        # Train neural model (NN policy/value) from the exported NPZ dataset.
+        #
+        # NOTE: This daemon previously invoked a legacy `scripts/train_neural_net.py`
+        # entrypoint which has been superseded by the unified training stack
+        # (`app.training.train`) and the small CLI wrapper
+        # `scripts/run_nn_training_baseline.py`.
         iteration = bs.current_iteration + 1
         model_id = f"{key}_iter{iteration}"
         model_path = AI_SERVICE_ROOT / "models" / f"{model_id}.pth"
+        data_path = AI_SERVICE_ROOT / "data" / "training" / f"daemon_{key}.npz"
+
+        run_dir = (
+            AI_SERVICE_ROOT
+            / "logs"
+            / "nn_training"
+            / f"{key}_iter{iteration}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
 
         train_cmd = [
-            sys.executable, "scripts/train_neural_net.py",
-            "--data", str(AI_SERVICE_ROOT / "data" / "training" / f"daemon_{key}.npz"),
-            "--output", str(model_path),
-            "--board-type", config["board"],
+            sys.executable,
+            "scripts/run_nn_training_baseline.py",
+            "--board",
+            config["board"],
+            "--num-players",
+            str(config["players"]),
+            "--run-dir",
+            str(run_dir),
+            "--model-id",
+            model_id,
+            "--data-path",
+            str(data_path),
             "--epochs", "50",
-            "--early-stopping-patience", "10",
+            "--model-version",
+            "v2",
         ]
 
         print(f"[Daemon] Training {model_id}...")

@@ -83,6 +83,10 @@ const mockedAuth = authModule as jest.Mocked<typeof authModule>;
 
 describe('Auth HTTP routes', () => {
   beforeEach(() => {
+    // Defensive: ensure any fake timers enabled by other suites do not leak
+    // into these supertest-driven HTTP route tests.
+    jest.useRealTimers();
+
     resetPrismaMockDb();
     __testResetLoginLockoutState();
     mockDatabaseClient = prismaStub;
@@ -364,13 +368,12 @@ describe('Auth HTTP routes', () => {
       const email = 'lockout-expiry@example.com';
       const maxAttempts = config.auth.maxFailedLoginAttempts;
       const originalLockoutDuration = config.auth.lockoutDurationSeconds;
+      let dateNowSpy: jest.SpyInstance<number, []> | null = null;
 
       try {
         config.auth.lockoutDurationSeconds = 1;
-
-        jest.useFakeTimers();
-        const baseTime = new Date('2020-01-01T00:00:00.000Z');
-        jest.setSystemTime(baseTime);
+        const baseTimeMs = new Date('2020-01-01T00:00:00.000Z').getTime();
+        dateNowSpy = jest.spyOn(Date, 'now').mockImplementation(() => baseTimeMs);
 
         for (let i = 0; i < maxAttempts; i++) {
           const res = await request(app)
@@ -388,10 +391,8 @@ describe('Auth HTTP routes', () => {
 
         expect(lockedRes.body.error.code).toBe('AUTH_LOGIN_LOCKED_OUT');
 
-        const afterLockoutTime = new Date(
-          baseTime.getTime() + (config.auth.lockoutDurationSeconds + 1) * 1000
-        );
-        jest.setSystemTime(afterLockoutTime);
+        const afterLockoutMs = baseTimeMs + (config.auth.lockoutDurationSeconds + 1) * 1000;
+        dateNowSpy.mockImplementation(() => afterLockoutMs);
 
         const resAfter = await request(app)
           .post('/api/auth/login')
@@ -401,7 +402,7 @@ describe('Auth HTTP routes', () => {
         expect(resAfter.body.error.code).toBe('AUTH_INVALID_CREDENTIALS');
       } finally {
         config.auth.lockoutDurationSeconds = originalLockoutDuration;
-        jest.useRealTimers();
+        dateNowSpy?.mockRestore();
       }
     });
 

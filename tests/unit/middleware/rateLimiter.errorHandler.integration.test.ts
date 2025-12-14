@@ -31,11 +31,10 @@ jest.mock('../../../src/server/services/MetricsService', () => ({
 }));
 
 describe('Rate limiter + errorHandler integration', () => {
-  beforeAll(() => {
-    initializeMemoryRateLimiters();
-  });
-
   beforeEach(() => {
+    // Defensive: other suites may initialize Redis-backed limiters in the same
+    // worker. Re-initialize memory limiters here so this test remains isolated.
+    initializeMemoryRateLimiters();
     __testResetRateLimiters();
   });
 

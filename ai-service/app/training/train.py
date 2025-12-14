@@ -922,13 +922,25 @@ class RingRiftDataset(Dataset):
             dummy_count = 100
             # Use board-appropriate policy size instead of hardcoded value
             dummy_policy_size = get_policy_size_for_board(self.board_type)
-            # Model expects 14 base channels × 4 frames = 56 input channels
-            dummy_input_channels = 56
+            # Keep demo dummy data structurally compatible with the default
+            # model constructors in train_model():
+            # - Square boards: 14 base channels × (history_length+1=4) = 56
+            # - Hex boards:    10 base channels × (history_length+1=4) = 40
+            dummy_input_channels = 40 if self.board_type == BoardType.HEXAGONAL else 56
             # Model expects 20 global features (see neural_net.py global_features default)
             dummy_global_features = 20
+            if self.board_type == BoardType.SQUARE19:
+                dummy_h = 19
+                dummy_w = 19
+            elif self.board_type == BoardType.HEXAGONAL:
+                dummy_h = HEX_BOARD_SIZE
+                dummy_w = HEX_BOARD_SIZE
+            else:
+                dummy_h = 8
+                dummy_w = 8
             self.data = {
                 'features': np.random.rand(
-                    dummy_count, dummy_input_channels, 8, 8
+                    dummy_count, dummy_input_channels, dummy_h, dummy_w
                 ).astype(np.float32),
                 'globals': np.random.rand(dummy_count, dummy_global_features).astype(np.float32),
                 'values': np.random.choice(
@@ -948,7 +960,7 @@ class RingRiftDataset(Dataset):
             self.policy_size = dummy_policy_size
             self.valid_indices = list(range(dummy_count))
             self.length = dummy_count
-            self.spatial_shape = (8, 8)
+            self.spatial_shape = (dummy_h, dummy_w)
 
     def __len__(self):
         return self.length

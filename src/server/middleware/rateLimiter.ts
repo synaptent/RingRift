@@ -27,6 +27,19 @@ interface RateLimiterRejection {
 let redisClient: RedisClientType | null = null;
 
 /**
+ * Normalize IP strings so that equivalent loopback / IPv4-mapped variants do not
+ * accidentally receive independent quotas (and so tests behave deterministically).
+ */
+const normalizeIpKey = (ip: string | undefined | null): string => {
+  const raw = (ip ?? '').trim();
+  if (!raw) return 'unknown';
+  const lower = raw.toLowerCase();
+  if (lower === '::1') return '127.0.0.1';
+  if (lower.startsWith('::ffff:')) return raw.slice('::ffff:'.length);
+  return raw;
+};
+
+/**
  * Load test bypass configuration.
  *
  * When RATE_LIMIT_BYPASS_ENABLED=true, requests from load test users
@@ -72,7 +85,7 @@ export const shouldBypassRateLimit = (req: Request): boolean => {
 
   // Check IP whitelist
   const bypassIPs = getBypassIPs();
-  if (req.ip && bypassIPs.has(req.ip)) {
+  if (bypassIPs.has(normalizeIpKey(req.ip))) {
     return true;
   }
 
@@ -486,7 +499,7 @@ const createRateLimiter = (
 
     try {
       // Generate key - default to IP, but can be customized
-      const key = options.keyGenerator ? options.keyGenerator(req) : req.ip || 'unknown';
+      const key = options.keyGenerator ? options.keyGenerator(req) : normalizeIpKey(req.ip);
       const rateLimiterRes = await limiter.consume(key);
 
       // Set rate limit headers on successful consumption
@@ -608,7 +621,7 @@ export const adaptiveRateLimiter = (
 
     try {
       // Use user ID for authenticated, IP for anonymous
-      const key = isAuthenticated ? getAuthUserId(authReq) : req.ip || 'unknown';
+      const key = isAuthenticated ? getAuthUserId(authReq) : normalizeIpKey(req.ip);
       const rateLimiterRes = await limiter.consume(key);
 
       // Set rate limit headers
@@ -791,7 +804,7 @@ export const fallbackRateLimiter = (() => {
   const MAX_REQUESTS = getEnvNumber('RATE_LIMIT_FALLBACK_MAX_REQUESTS', 100);
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const key = req.ip || 'unknown';
+    const key = normalizeIpKey(req.ip);
     const now = Date.now();
     const windowStart = now - WINDOW_SIZE;
 

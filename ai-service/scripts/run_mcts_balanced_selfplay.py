@@ -54,9 +54,8 @@ def play_mcts_game(
 
     Returns game record dict with moves, winner, and metadata.
     """
-    # Create initial state
-    game_state = create_initial_state(board_type, num_players, seed=seed)
-    engine = GameEngine()
+    # Create initial state (no seed parameter supported)
+    game_state = create_initial_state(board_type, num_players)
 
     # Create MCTS AI for each player
     ais = {}
@@ -75,17 +74,17 @@ def play_mcts_game(
     move_count = 0
     start_time = time.time()
 
-    while game_state.status == GameStatus.IN_PROGRESS and move_count < max_moves:
+    while game_state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_player = game_state.current_player
         ai = ais[current_player]
 
-        # Get legal moves
-        legal_moves = engine.generate_all_valid_moves(game_state)
+        # Get legal moves using static method
+        legal_moves = GameEngine.get_valid_moves(game_state, current_player)
         if not legal_moves:
             break
 
-        # Get AI move
-        move = ai.get_move(game_state, legal_moves)
+        # Get AI move using select_move method
+        move = ai.select_move(game_state)
         if move is None:
             break
 
@@ -94,11 +93,11 @@ def play_mcts_game(
             "player": current_player,
             "type": move.type.value if hasattr(move.type, 'value') else str(move.type),
             "from": {"x": move.from_pos.x, "y": move.from_pos.y} if move.from_pos else None,
-            "to": {"x": move.to_pos.x, "y": move.to_pos.y} if move.to_pos else None,
+            "to": {"x": move.to.x, "y": move.to.y} if move.to else None,
         })
 
-        # Apply move
-        game_state = engine.apply_move(game_state, move)
+        # Apply move using static method
+        game_state = GameEngine.apply_move(game_state, move)
         move_count += 1
 
     elapsed = time.time() - start_time
@@ -106,9 +105,9 @@ def play_mcts_game(
     # Determine winner
     winner = None
     victory_type = "unknown"
-    if game_state.status == GameStatus.FINISHED:
+    if game_state.game_status == GameStatus.COMPLETED:
         winner = game_state.winner
-        victory_type = game_state.victory_type.value if game_state.victory_type else "unknown"
+        victory_type = "completed"
     elif move_count >= max_moves:
         victory_type = "timeout"
 

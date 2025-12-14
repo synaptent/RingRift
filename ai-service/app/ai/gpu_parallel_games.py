@@ -1312,6 +1312,10 @@ class BatchGameState:
             if move_type_code < 0:  # -1 indicates unused slot
                 break
 
+            # Skip NO_ACTION moves - they don't represent real game moves
+            if move_type_code == MoveType.NO_ACTION:
+                continue
+
             move_dict = {
                 "type": move_type_names.get(move_type_code, f"unknown_{move_type_code}"),
                 "player": int(player),

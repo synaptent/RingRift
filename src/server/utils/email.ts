@@ -22,8 +22,11 @@ export const sendEmail = async (options: EmailOptions): Promise<boolean> => {
     html: options.html ? `${options.html.substring(0, 100)}...` : undefined,
   });
 
-  // Simulate network delay
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  // Simulate network delay outside of Jest tests so unit tests stay fast and
+  // aren't sensitive to fake-timer leakage.
+  if (!config.isTest) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 
   return true;
 };

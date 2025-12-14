@@ -28,6 +28,10 @@ describe('Security Headers Middleware', () => {
   let app: Express;
 
   beforeEach(() => {
+    // Defensive: some suites use fake timers; ensure this integration-style
+    // supertest flow always runs on real timers to avoid socket hangups.
+    jest.useRealTimers();
+
     app = express();
     // Apply security middleware
     app.use(securityMiddleware.headers);

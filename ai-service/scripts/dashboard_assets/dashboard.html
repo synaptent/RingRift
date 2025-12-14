@@ -321,6 +321,9 @@
         <div>
           <label for="authToken">Auth token (Bearer)</label>
           <input id="authToken" type="password" placeholder="Optional (required for POST actions)" />
+          <div class="mono" style="color: var(--muted); font-size: 11px; margin-top: 6px;">
+            Needed for POST actions. Token file on cluster nodes: <span class="mono">/etc/ringrift/cluster_auth_token</span>
+          </div>
         </div>
         <button class="secondary" id="saveTokenBtn">Save</button>
         <button id="refreshBtn">Refresh</button>
@@ -546,6 +549,16 @@
             <h2 style="margin-bottom: 8px">Selected Job Log</h2>
             <div class="log" id="canonLog">(select a job)</div>
           </div>
+          <div class="card span-12" style="padding: 12px">
+            <h2 style="margin-bottom: 8px">Local Canonical Gate Logs (nohup/manual)</h2>
+            <div class="row" style="margin-bottom: 10px; gap: 8px;">
+              <select id="canonLogFileSelect" style="padding: 8px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text);">
+                <option value="">(select a log file)</option>
+              </select>
+              <button class="secondary" id="canonLogFileRefreshBtn" type="button">Refresh logs</button>
+            </div>
+            <div class="log" id="canonLogFile">(select a log file)</div>
+          </div>
         </div>
       </div>
 
@@ -621,9 +634,11 @@
 
     <script>
       const TOKEN_KEY = "ringrift_dashboard_token";
+      const CANON_LOG_FILE_KEY = "ringrift_dashboard_canon_log_file";
       const state = {
         token: localStorage.getItem(TOKEN_KEY) || "",
         selectedCanonJobId: "",
+        selectedCanonLogFile: localStorage.getItem(CANON_LOG_FILE_KEY) || "",
         lastData: {},
       };
 
@@ -1017,6 +1032,51 @@
         }
       }
 
+      function renderCanonicalLogFiles(logsResp) {
+        const select = $("canonLogFileSelect");
+        const box = $("canonLogFile");
+        if (!select || !box) return;
+
+        if (!logsResp || logsResp.success === false) {
+          const msg = logsResp?.error || logsResp?.message || "canonical logs unavailable";
+          select.innerHTML = `<option value="">${msg}</option>`;
+          box.textContent = msg;
+          return;
+        }
+
+        const logs = Array.isArray(logsResp.logs) ? logsResp.logs : [];
+        const current = state.selectedCanonLogFile || select.value || "";
+
+        const options = [`<option value="">(select a log file)</option>`];
+        for (const l of logs.slice(0, 150)) {
+          const name = String(l.name || "");
+          if (!name) continue;
+          const label = `${name} · ${fmtAge(l.modified_time)} · ${fmtBytes(l.size_bytes)}`;
+          options.push(`<option value="${name}">${label}</option>`);
+        }
+        select.innerHTML = options.join("");
+
+        if (current && logs.some((l) => String(l.name || "") === current)) {
+          select.value = current;
+        }
+        state.selectedCanonLogFile = select.value || "";
+        localStorage.setItem(CANON_LOG_FILE_KEY, state.selectedCanonLogFile);
+      }
+
+      async function refreshCanonLogFile() {
+        const name = state.selectedCanonLogFile || $("canonLogFileSelect")?.value || "";
+        if (!name) {
+          $("canonLogFile").textContent = "(select a log file)";
+          return;
+        }
+        try {
+          const resp = await apiGet(`/api/canonical/logs/${encodeURIComponent(name)}/tail?tail=250&local=1`);
+          $("canonLogFile").textContent = resp.log_tail || "";
+        } catch (e) {
+          $("canonLogFile").textContent = `log error: ${e.message}`;
+        }
+      }
+
       async function cancelCanonJob(jobId) {
         if (!confirm(`Cancel canonical gate job ${jobId}?`)) return;
         try {
@@ -1180,13 +1240,14 @@
         const refreshBtn = $("refreshBtn");
         if (showBusy) refreshBtn.disabled = true;
         try {
-          const [cluster, selfplay, sync, pipeline, canonHealth, canonJobs, jobs, git, elo, training] = await Promise.all([
+          const [cluster, selfplay, sync, pipeline, canonHealth, canonJobs, canonLogs, jobs, git, elo, training] = await Promise.all([
             safeGet("/api/cluster/status"),
             safeGet("/api/selfplay/stats"),
             safeGet("/sync/status"),
             safeGet("/pipeline/status"),
             safeGet("/api/canonical/health"),
             safeGet("/api/canonical/jobs"),
+            safeGet("/api/canonical/logs?local=1"),
             safeGet("/api/jobs?limit=50"),
             safeGet("/git/status"),
             safeGet("/api/elo/leaderboard"),
@@ -1202,6 +1263,7 @@
             ["pipeline/status", pipeline],
             ["canonical/health", canonHealth],
             ["canonical/jobs", canonJobs],
+            ["canonical/logs", canonLogs],
             ["jobs", jobs],
             ["git/status", git],
             ["elo/leaderboard", elo],
@@ -1219,10 +1281,12 @@
           renderTrainingStatus(training);
           renderCanonicalHealth(canonHealth);
           renderCanonicalJobs(canonJobs);
+          renderCanonicalLogFiles(canonLogs);
           renderJobs(jobs);
           renderGit(git);
 
           await refreshCanonLog();
+          await refreshCanonLogFile();
           if (softErrors.length) setError(softErrors.join(" · "));
         } catch (e) {
           setError(e.message);
@@ -1262,6 +1326,11 @@
           state.selectedCanonJobId = resp.job?.job_id || "";
           await refreshAll(true);
         } catch (e) {
+          if ((e.message || "").toLowerCase().includes("unauthorized")) {
+            $("authToken").focus();
+            setError("unauthorized: paste the cluster auth token (Bearer) to enable POST actions");
+            return;
+          }
           setError(e.message);
         }
 	      }
@@ -1345,12 +1414,19 @@
 	      $("canonSuggestHostsBtn").addEventListener("click", suggestCanonHosts);
 	      $("canonSet1000Btn").addEventListener("click", setCanonGames1000);
 	      $("canonStartBtn").addEventListener("click", startCanonicalGate);
+        $("canonLogFileSelect").addEventListener("change", (e) => {
+          state.selectedCanonLogFile = e.target.value || "";
+          localStorage.setItem(CANON_LOG_FILE_KEY, state.selectedCanonLogFile);
+          refreshCanonLogFile();
+        });
+        $("canonLogFileRefreshBtn").addEventListener("click", () => refreshAll(true));
 	      $("jobSubmitBtn").addEventListener("click", submitJob);
 	      $("syncStartBtn").addEventListener("click", startSync);
 
       refreshAll(true);
       setInterval(() => refreshAll(false), 10000);
       setInterval(() => refreshCanonLog(), 4000);
+      setInterval(() => refreshCanonLogFile(), 4000);
     </script>
   </body>
 </html>

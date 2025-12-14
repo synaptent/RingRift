@@ -22,6 +22,9 @@ RINGRIFT_ROOT="${RINGRIFT_ROOT:-$HOME/Development/RingRift}"
 P2P_PORT="${P2P_PORT:-8770}"
 P2P_VOTERS="${RINGRIFT_P2P_VOTERS:-}"
 P2P_VOTERS="${P2P_VOTERS//[[:space:]]/}"
+ADVERTISE_HOST="${RINGRIFT_ADVERTISE_HOST:-}"
+ADVERTISE_PORT="${RINGRIFT_ADVERTISE_PORT:-$P2P_PORT}"
+LAUNCHD_PATH="${RINGRIFT_LAUNCHD_PATH:-/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin}"
 
 AI_SERVICE_DIR="${RINGRIFT_ROOT}/ai-service"
 if [ ! -d "$AI_SERVICE_DIR" ]; then
@@ -71,8 +74,14 @@ cat > "$P2P_PLIST" <<EOF
   <string>${AI_SERVICE_DIR}</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>PATH</key>
+    <string>${LAUNCHD_PATH}</string>
     <key>PYTHONPATH</key>
     <string>${AI_SERVICE_DIR}</string>
+    <key>RINGRIFT_ADVERTISE_HOST</key>
+    <string>${ADVERTISE_HOST}</string>
+    <key>RINGRIFT_ADVERTISE_PORT</key>
+    <string>${ADVERTISE_PORT}</string>
     <key>RINGRIFT_P2P_VOTERS</key>
     <string>${P2P_VOTERS}</string>
     <key>RINGRIFT_CLUSTER_AUTH_TOKEN_FILE</key>
@@ -114,8 +123,14 @@ cat > "$RES_PLIST" <<EOF
   <string>${AI_SERVICE_DIR}</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>PATH</key>
+    <string>${LAUNCHD_PATH}</string>
     <key>PYTHONPATH</key>
     <string>${AI_SERVICE_DIR}</string>
+    <key>RINGRIFT_ADVERTISE_HOST</key>
+    <string>${ADVERTISE_HOST}</string>
+    <key>RINGRIFT_ADVERTISE_PORT</key>
+    <string>${ADVERTISE_PORT}</string>
     <key>RINGRIFT_P2P_VOTERS</key>
     <string>${P2P_VOTERS}</string>
     <key>RINGRIFT_CLUSTER_AUTH_TOKEN_FILE</key>

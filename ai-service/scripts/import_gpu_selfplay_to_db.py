@@ -40,11 +40,18 @@ def parse_position(pos_dict: Dict[str, Any]) -> Position:
     )
 
 
-def parse_move(move_dict: Dict[str, Any], move_number: int, timestamp: str) -> Move:
-    """Parse a move dict into a Move object."""
+def parse_move(move_dict: Dict[str, Any], move_number: int, timestamp: str) -> Optional[Move]:
+    """Parse a move dict into a Move object.
+
+    Returns None for unknown or bookkeeping-only move types (e.g. unknown_6/NO_ACTION).
+    """
     move_type_str = str(move_dict.get("type") or "").strip()
     if not move_type_str:
         raise ValueError("GPU move is missing required 'type' field")
+
+    # Skip unknown_* move types (internal GPU bookkeeping, e.g. NO_ACTION=6)
+    if move_type_str.startswith("unknown_"):
+        return None
 
     # GPU JSONLs may contain both canonical move types and legacy/internal
     # bookkeeping types (e.g. line_formation / territory_claim). We parse them
@@ -355,7 +362,8 @@ def import_game(
     for i, move_dict in enumerate(moves_data):
         try:
             move = parse_move(move_dict, i + 1, timestamp)
-            moves.append(move)
+            if move is not None:  # Skip unknown/bookkeeping move types
+                moves.append(move)
         except Exception as e:
             print(f"  Warning: Failed to parse move {i} in {game_id}: {e}")
             return False

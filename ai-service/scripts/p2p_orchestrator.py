@@ -132,9 +132,8 @@ GPU_IDLE_THRESHOLD = 2          # Consider GPU idle if utilization < 2%
 # indicates job tracking was lost and stale processes are accumulating (which
 # can brick nodes via disk/memory pressure). Treat this as a runaway condition
 # and trigger a restart_stuck_jobs sweep.
-RUNAWAY_SELFPLAY_PROCESS_THRESHOLD = int(
-    os.environ.get("RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD", "128")
-)
+_runaway_threshold_env = (os.environ.get("RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD") or "").strip()
+RUNAWAY_SELFPLAY_PROCESS_THRESHOLD = int(_runaway_threshold_env) if _runaway_threshold_env else 0
 
 # Git auto-update settings
 GIT_UPDATE_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL", "300") or 300)  # seconds
@@ -3854,6 +3853,12 @@ class P2POrchestrator:
                 "effective_leader_id": effective_leader_id,
                 "last_known_leader_id": self.leader_id,
                 "relay_node": self.node_id,
+                # Propagate the stable voter set so nodes that boot without local
+                # config still enable quorum gating and avoid split-brain.
+                "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
+                "voter_quorum_size": int(getattr(self, "voter_quorum_size", 0) or 0),
+                "voter_quorum_ok": self._has_voter_quorum(),
+                "voter_config_source": str(getattr(self, "voter_config_source", "") or ""),
                 "commands": commands_to_send,
             })
 
@@ -3884,6 +3889,10 @@ class P2POrchestrator:
                 "total_peers": len(all_peers),
                 "direct_peers": len(direct),
                 "nat_blocked_peers": len(nat_blocked),
+                "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
+                "voter_quorum_size": int(getattr(self, "voter_quorum_size", 0) or 0),
+                "voter_quorum_ok": self._has_voter_quorum(),
+                "voter_config_source": str(getattr(self, "voter_config_source", "") or ""),
                 "peers": all_peers,
             })
 
@@ -7696,7 +7705,11 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     pass
 
             # Load auto-promotion log
-            promotion_log_path = ai_root / "data" / "auto_promotion_log.json"
+            promotion_log_path = (
+                ai_root / "runs" / "promotion" / "model_promotion_history.json"
+                if (ai_root / "runs" / "promotion" / "model_promotion_history.json").exists()
+                else (ai_root / "data" / "auto_promotion_log.json")
+            )
             promotion_log = []
             if promotion_log_path.exists():
                 try:
@@ -7915,6 +7928,86 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             log_path = Path(str(job.get("log_path") or ""))
             text = self._tail_text_file(log_path, max_lines=tail_lines)
             return web.json_response({"success": True, "job_id": job_id, "log_tail": text})
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    def _canonical_gate_log_dir(self) -> Path:
+        return (Path(self.ringrift_path) / "ai-service" / "logs" / "canonical_gate").resolve()
+
+    async def handle_api_canonical_logs_list(self, request: web.Request) -> web.Response:
+        """List canonical gate log files on this node (use ?local=1 to avoid proxying to the leader)."""
+        try:
+            if not self._is_leader() and request.query.get("local") != "1":
+                return await self._proxy_to_leader(request)
+
+            logs_dir = self._canonical_gate_log_dir()
+            entries: List[Dict[str, Any]] = []
+            if logs_dir.exists():
+                paths = sorted(
+                    logs_dir.glob("*.log"),
+                    key=lambda p: float(p.stat().st_mtime),
+                    reverse=True,
+                )
+                for path in paths[:200]:
+                    try:
+                        st = path.stat()
+                        entries.append(
+                            {
+                                "name": path.name,
+                                "path": str(path),
+                                "size_bytes": int(st.st_size),
+                                "modified_time": float(st.st_mtime),
+                            }
+                        )
+                    except Exception:
+                        continue
+
+            return web.json_response(
+                {
+                    "success": True,
+                    "node_id": self.node_id,
+                    "is_leader": self._is_leader(),
+                    "log_dir": str(logs_dir),
+                    "logs": entries,
+                    "timestamp": time.time(),
+                }
+            )
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    async def handle_api_canonical_log_tail(self, request: web.Request) -> web.Response:
+        """Tail a specific canonical gate log file by name."""
+        try:
+            if not self._is_leader() and request.query.get("local") != "1":
+                return await self._proxy_to_leader(request)
+
+            log_name = (request.match_info.get("log_name") or "").strip()
+            if not log_name:
+                return web.json_response({"success": False, "error": "log_name is required"}, status=400)
+            if any(token in log_name for token in ("..", "/", "\\")):
+                return web.json_response({"success": False, "error": "Invalid log_name"}, status=400)
+
+            tail_lines = int(request.query.get("tail", 200))
+            tail_lines = max(10, min(tail_lines, 2000))
+
+            logs_dir = self._canonical_gate_log_dir()
+            log_path = (logs_dir / log_name).resolve()
+            if log_path.parent != logs_dir:
+                return web.json_response({"success": False, "error": "Invalid log_name"}, status=400)
+            if not log_path.exists() or not log_path.is_file():
+                return web.json_response({"success": False, "error": f"Log {log_name} not found"}, status=404)
+
+            text = self._tail_text_file(log_path, max_lines=tail_lines)
+            return web.json_response(
+                {
+                    "success": True,
+                    "node_id": self.node_id,
+                    "is_leader": self._is_leader(),
+                    "log_name": log_name,
+                    "log_tail": text,
+                    "timestamp": time.time(),
+                }
+            )
         except Exception as e:
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
@@ -8756,6 +8849,16 @@ print(json.dumps({{
                     if not isinstance(data, dict) or not data.get("success"):
                         continue
 
+                    incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
+                    if incoming_voters:
+                        voters_list: List[str] = []
+                        if isinstance(incoming_voters, list):
+                            voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
+                        elif isinstance(incoming_voters, str):
+                            voters_list = [t.strip() for t in incoming_voters.split(",") if t.strip()]
+                        if voters_list:
+                            self._maybe_adopt_voter_node_ids(voters_list, source="learned")
+
                     peers_data = data.get("peers") or {}
                     if not isinstance(peers_data, dict):
                         continue
@@ -8819,42 +8922,54 @@ print(json.dumps({{
                 if self.pending_relay_results:
                     payload["relay_results"] = list(self.pending_relay_results)
                 async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if data.get("success"):
-                            # Clear pending acks/results only after a successful round-trip.
-                            self.pending_relay_acks.clear()
-                            self.pending_relay_results.clear()
+                    if resp.status != 200:
+                        return {"success": False, "error": f"HTTP {resp.status}"}
 
-                            # Update our peer list with all peers from relay
-                            peers_data = data.get("peers", {})
-                            with self.peers_lock:
-                                for node_id, peer_dict in peers_data.items():
-                                    if node_id != self.node_id:
-                                        peer_info = NodeInfo.from_dict(peer_dict)
-                                        self.peers[node_id] = peer_info
-
-                            # Execute any queued commands addressed to us.
-                            commands = data.get("commands") or []
-                            if isinstance(commands, list) and commands:
-                                await self._execute_relay_commands(commands)
-
-                            # Update leader if provided
-                            leader_id = data.get("leader_id")
-                            if leader_id and leader_id != self.node_id:
-                                if self.leader_id != leader_id:
-                                    print(f"[P2P] Adopted leader from relay: {leader_id}")
-                                self.leader_id = leader_id
-                                self.role = NodeRole.FOLLOWER
-
-                            return {
-                                "success": True,
-                                "peers_received": len(peers_data),
-                                "leader_id": leader_id,
-                                "commands_received": len(commands) if isinstance(commands, list) else 0,
-                            }
+                    data = await resp.json()
+                    if not data.get("success"):
                         return {"success": False, "error": data.get("error", "Unknown error")}
-                    return {"success": False, "error": f"HTTP {resp.status}"}
+
+                    incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
+                    if incoming_voters:
+                        voters_list: List[str] = []
+                        if isinstance(incoming_voters, list):
+                            voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
+                        elif isinstance(incoming_voters, str):
+                            voters_list = [t.strip() for t in incoming_voters.split(",") if t.strip()]
+                        if voters_list:
+                            self._maybe_adopt_voter_node_ids(voters_list, source="learned")
+
+                    # Clear pending acks/results only after a successful round-trip.
+                    self.pending_relay_acks.clear()
+                    self.pending_relay_results.clear()
+
+                    # Update our peer list with all peers from relay
+                    peers_data = data.get("peers", {})
+                    with self.peers_lock:
+                        for node_id, peer_dict in peers_data.items():
+                            if node_id != self.node_id:
+                                peer_info = NodeInfo.from_dict(peer_dict)
+                                self.peers[node_id] = peer_info
+
+                    # Execute any queued commands addressed to us.
+                    commands = data.get("commands") or []
+                    if isinstance(commands, list) and commands:
+                        await self._execute_relay_commands(commands)
+
+                    # Update leader if provided
+                    leader_id = data.get("leader_id")
+                    if leader_id and leader_id != self.node_id:
+                        if self.leader_id != leader_id:
+                            print(f"[P2P] Adopted leader from relay: {leader_id}")
+                        self.leader_id = leader_id
+                        self.role = NodeRole.FOLLOWER
+
+                    return {
+                        "success": True,
+                        "peers_received": len(peers_data) if isinstance(peers_data, dict) else 0,
+                        "leader_id": leader_id,
+                        "commands_received": len(commands) if isinstance(commands, list) else 0,
+                    }
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -9615,6 +9730,38 @@ print(json.dumps({{
 
             await asyncio.sleep(JOB_CHECK_INTERVAL)
 
+    def _target_selfplay_jobs_for_node(self, node: NodeInfo) -> int:
+        """Return the desired selfplay concurrency for a node.
+
+        This keeps job scheduling, runaway detection, and load shedding aligned.
+        """
+        target_selfplay = 2
+        has_gpu = bool(getattr(node, "has_gpu", False))
+        memory_gb = int(getattr(node, "memory_gb", 0) or 0)
+        if has_gpu:
+            if memory_gb >= 64:
+                target_selfplay = 4
+            if "5090" in (getattr(node, "gpu_name", "") or "").lower():
+                target_selfplay = 8
+        else:
+            cpu_count = int(getattr(node, "cpu_count", 0) or 0)
+            if cpu_count > 0:
+                cpu_target = max(2, min(16, cpu_count // 4))
+                target_selfplay = max(target_selfplay, cpu_target)
+            elif memory_gb >= 64:
+                target_selfplay = 4
+
+            if memory_gb > 0:
+                mem_target = max(2, min(16, memory_gb // 8))
+                target_selfplay = min(target_selfplay, mem_target)
+
+        if float(getattr(node, "disk_percent", 0.0) or 0.0) >= DISK_WARNING_THRESHOLD:
+            target_selfplay = min(target_selfplay, 2)
+        if float(getattr(node, "memory_percent", 0.0) or 0.0) >= MEMORY_WARNING_THRESHOLD:
+            target_selfplay = min(target_selfplay, 1)
+
+        return int(target_selfplay)
+
     async def _manage_cluster_jobs(self):
         """Manage jobs across the cluster (leader only).
 
@@ -9690,14 +9837,21 @@ print(json.dumps({{
         # restart sweep to kill untracked jobs and recover capacity.
         for node in all_nodes:
             try:
-                if int(getattr(node, "selfplay_jobs", 0) or 0) < RUNAWAY_SELFPLAY_PROCESS_THRESHOLD:
+                target_selfplay = self._target_selfplay_jobs_for_node(node)
+                dynamic_threshold = max(32, target_selfplay * 3)
+                runaway_threshold = (
+                    int(RUNAWAY_SELFPLAY_PROCESS_THRESHOLD)
+                    if int(RUNAWAY_SELFPLAY_PROCESS_THRESHOLD) > 0
+                    else int(dynamic_threshold)
+                )
+                if int(getattr(node, "selfplay_jobs", 0) or 0) < runaway_threshold:
                     continue
             except Exception:
                 continue
 
             print(
                 f"[P2P] {node.node_id}: RUNAWAY selfplay count ({node.selfplay_jobs}) "
-                f">= {RUNAWAY_SELFPLAY_PROCESS_THRESHOLD} — requesting restart sweep"
+                f">= {runaway_threshold} — requesting restart sweep"
             )
             if node.node_id == self.node_id:
                 await self._restart_local_stuck_jobs()
@@ -9727,30 +9881,7 @@ print(json.dumps({{
             # Base targets:
             # - GPU nodes: fixed concurrency tuned for GPU throughput.
             # - CPU-only nodes: scale with CPU cores (and cap by memory).
-            target_selfplay = 2
-            if node.has_gpu:
-                if node.memory_gb >= 64:
-                    target_selfplay = 4
-                if "5090" in (node.gpu_name or "").lower():
-                    target_selfplay = 8  # More for powerful GPUs
-            else:
-                cpu_count = int(getattr(node, "cpu_count", 0) or 0)
-                if cpu_count > 0:
-                    cpu_target = max(2, min(16, cpu_count // 4))
-                    target_selfplay = max(target_selfplay, cpu_target)
-                elif node.memory_gb >= 64:
-                    target_selfplay = 4
-
-                # Conservative memory cap: avoid overcommitting on low-memory CPU nodes.
-                if node.memory_gb > 0:
-                    mem_target = max(2, min(16, int(node.memory_gb) // 8))
-                    target_selfplay = min(target_selfplay, mem_target)
-
-            # LEARNED LESSONS - Reduce target if resources are under pressure
-            if node.disk_percent >= DISK_WARNING_THRESHOLD:
-                target_selfplay = min(target_selfplay, 2)
-            if node.memory_percent >= MEMORY_WARNING_THRESHOLD:
-                target_selfplay = min(target_selfplay, 1)
+            target_selfplay = self._target_selfplay_jobs_for_node(node)
 
             # Check if node needs more jobs
             if node.selfplay_jobs < target_selfplay:
@@ -10567,6 +10698,8 @@ print(json.dumps({{
         app.router.add_get('/api/canonical/jobs', self.handle_api_canonical_jobs_list)
         app.router.add_get('/api/canonical/jobs/{job_id}', self.handle_api_canonical_job_get)
         app.router.add_get('/api/canonical/jobs/{job_id}/log', self.handle_api_canonical_job_log)
+        app.router.add_get('/api/canonical/logs', self.handle_api_canonical_logs_list)
+        app.router.add_get('/api/canonical/logs/{log_name}/tail', self.handle_api_canonical_log_tail)
         app.router.add_post('/api/canonical/generate', self.handle_api_canonical_generate)
         app.router.add_post('/api/canonical/jobs/{job_id}/cancel', self.handle_api_canonical_job_cancel)
         app.router.add_get('/api/jobs', self.handle_api_jobs_list)
