@@ -40,6 +40,7 @@ import { getChoiceViewModel, getChoiceViewModelForType } from './choiceViewModel
 import type { ChoiceKind } from './choiceViewModels';
 import { getWeirdStateBanner, type WeirdStateBanner } from '../utils/gameStateWeirdness';
 import type { GameEndExplanation } from '../../shared/engine/gameEndExplanation';
+import { DEFAULT_PLAYER_THEME, getPlayerTheme, type ColorVisionMode } from '../utils/playerTheme';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HUD View Model
@@ -428,52 +429,18 @@ export interface VictoryViewModel {
  * Player color palette for consistent theming
  */
 export const PLAYER_COLORS = {
-  1: {
-    ring: 'bg-emerald-400',
-    ringBorder: 'border-emerald-200',
-    marker: 'border-emerald-400',
-    territory: 'bg-emerald-700/85',
-    card: 'bg-emerald-500',
-    hex: '#10b981',
-  },
-  2: {
-    ring: 'bg-sky-600',
-    ringBorder: 'border-sky-300',
-    marker: 'border-sky-500',
-    territory: 'bg-sky-700/85',
-    card: 'bg-sky-500',
-    hex: '#3b82f6',
-  },
-  3: {
-    ring: 'bg-amber-400',
-    ringBorder: 'border-amber-200',
-    marker: 'border-amber-400',
-    territory: 'bg-amber-600/85',
-    card: 'bg-amber-500',
-    hex: '#f59e0b',
-  },
-  4: {
-    ring: 'bg-fuchsia-400',
-    ringBorder: 'border-fuchsia-200',
-    marker: 'border-fuchsia-400',
-    territory: 'bg-fuchsia-700/85',
-    card: 'bg-fuchsia-500',
-    hex: '#d946ef',
-  },
+  1: getPlayerTheme(1, 'normal'),
+  2: getPlayerTheme(2, 'normal'),
+  3: getPlayerTheme(3, 'normal'),
+  4: getPlayerTheme(4, 'normal'),
 } as const;
 
-const DEFAULT_PLAYER_COLORS = {
-  ring: 'bg-slate-300',
-  ringBorder: 'border-slate-100',
-  marker: 'border-slate-300',
-  territory: 'bg-slate-800/70',
-  card: 'bg-slate-500',
-  hex: '#64748b',
-};
-
-export function getPlayerColors(playerNumber?: number) {
-  if (!playerNumber) return DEFAULT_PLAYER_COLORS;
-  return PLAYER_COLORS[playerNumber as keyof typeof PLAYER_COLORS] || DEFAULT_PLAYER_COLORS;
+export function getPlayerColors(
+  playerNumber?: number,
+  colorVisionMode: ColorVisionMode = 'normal'
+) {
+  if (!playerNumber) return DEFAULT_PLAYER_THEME;
+  return getPlayerTheme(playerNumber, colorVisionMode);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -646,9 +613,10 @@ function calculateRingStats(player: Player, gameState: GameState): PlayerRingSta
 function toPlayerViewModel(
   player: Player,
   gameState: GameState,
-  currentUserId?: string
+  currentUserId?: string,
+  colorVisionMode: ColorVisionMode = 'normal'
 ): PlayerViewModel {
-  const colors = getPlayerColors(player.playerNumber);
+  const colors = getPlayerColors(player.playerNumber, colorVisionMode);
   return {
     id: player.id,
     playerNumber: player.playerNumber,
@@ -673,6 +641,7 @@ export interface ToHUDViewModelOptions {
   lastHeartbeatAt: number | null;
   isSpectator: boolean;
   currentUserId?: string | undefined;
+  colorVisionMode?: ColorVisionMode | undefined;
   /** Optional pending choice used to derive decision-phase HUD messaging. */
   pendingChoice?: PlayerChoice | null | undefined;
   /** Optional absolute deadline timestamp in ms for the pending choice. */
@@ -725,6 +694,7 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
     lastHeartbeatAt,
     isSpectator,
     currentUserId,
+    colorVisionMode = 'normal',
     pendingChoice,
     choiceDeadline,
     choiceTimeRemainingMs,
@@ -742,7 +712,9 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
     connectionStatus === 'connected';
 
   let phase = toPhaseViewModel(gameState.currentPhase);
-  const players = gameState.players.map((p) => toPlayerViewModel(p, gameState, currentUserId));
+  const players = gameState.players.map((p) =>
+    toPlayerViewModel(p, gameState, currentUserId, colorVisionMode)
+  );
 
   // Precompute choice view model (if any) so we can reuse it for both HUD phase
   // styling and decision-phase metadata without duplicating mapping logic.
@@ -1456,6 +1428,7 @@ export function toEventLogViewModel(
 export interface ToBoardViewModelOptions {
   selectedPosition?: Position | undefined;
   validTargets?: Position[] | undefined;
+  colorVisionMode?: ColorVisionMode | undefined;
   /** Optional decision-phase highlights derived from a pending PlayerChoice. */
   decisionHighlights?: BoardDecisionHighlightsViewModel | undefined;
 }
@@ -1467,7 +1440,7 @@ export function toBoardViewModel(
   board: BoardState,
   options: ToBoardViewModelOptions = {}
 ): BoardViewModel {
-  const { selectedPosition, validTargets = [] } = options;
+  const { selectedPosition, validTargets = [], colorVisionMode = 'normal' } = options;
 
   const cells: CellViewModel[] = [];
 
@@ -1477,7 +1450,13 @@ export function toBoardViewModel(
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         const pos: Position = { x, y };
-        const cell = createCellViewModel(pos, board, selectedPosition, validTargets);
+        const cell = createCellViewModel(
+          pos,
+          board,
+          selectedPosition,
+          validTargets,
+          colorVisionMode
+        );
         cells.push(cell);
       }
     }
@@ -1494,7 +1473,7 @@ export function toBoardViewModel(
         parts.length === 3
           ? { x: parts[0], y: parts[1], z: parts[2] }
           : { x: parts[0], y: parts[1] };
-      const cell = createCellViewModel(pos, board, selectedPosition, validTargets);
+      const cell = createCellViewModel(pos, board, selectedPosition, validTargets, colorVisionMode);
       cells.push(cell);
     }
   }
@@ -1527,7 +1506,8 @@ function createCellViewModel(
   pos: Position,
   board: BoardState,
   selectedPosition?: Position,
-  validTargets: Position[] = []
+  validTargets: Position[] = [],
+  colorVisionMode: ColorVisionMode = 'normal'
 ): CellViewModel {
   const key = positionToString(pos);
   const stack = board.stacks.get(key);
@@ -1548,12 +1528,12 @@ function createCellViewModel(
 
   let stackViewModel: StackViewModel | undefined;
   if (stack) {
-    stackViewModel = toStackViewModel(stack, pos);
+    stackViewModel = toStackViewModel(stack, pos, colorVisionMode);
   }
 
   let markerViewModel: MarkerViewModel | undefined;
   if (!stack && marker && marker.type === 'regular') {
-    const colors = getPlayerColors(marker.player);
+    const colors = getPlayerColors(marker.player, colorVisionMode);
     markerViewModel = {
       position: pos,
       positionKey: key,
@@ -1564,7 +1544,7 @@ function createCellViewModel(
 
   let collapsedSpaceViewModel: CollapsedSpaceViewModel | undefined;
   if (collapsedOwner !== undefined) {
-    const colors = getPlayerColors(collapsedOwner);
+    const colors = getPlayerColors(collapsedOwner, colorVisionMode);
     collapsedSpaceViewModel = {
       position: pos,
       positionKey: key,
@@ -1586,7 +1566,11 @@ function createCellViewModel(
   };
 }
 
-function toStackViewModel(stack: RingStack, pos: Position): StackViewModel {
+function toStackViewModel(
+  stack: RingStack,
+  pos: Position,
+  colorVisionMode: ColorVisionMode = 'normal'
+): StackViewModel {
   const key = positionToString(pos);
   const rings: RingViewModel[] = [];
 
@@ -1595,7 +1579,7 @@ function toStackViewModel(stack: RingStack, pos: Position): StackViewModel {
 
   for (let i = 0; i < stack.rings.length; i++) {
     const playerNumber = stack.rings[i];
-    const colors = getPlayerColors(playerNumber);
+    const colors = getPlayerColors(playerNumber, colorVisionMode);
     rings.push({
       playerNumber,
       colorClass: colors.ring,
@@ -1637,6 +1621,7 @@ function countPlayerMoves(playerNumber: number, gameState: GameState): number {
 export interface ToVictoryViewModelOptions {
   currentUserId?: string | undefined;
   isDismissed?: boolean | undefined;
+  colorVisionMode?: ColorVisionMode | undefined;
   /**
    * Optional canonical GameEndExplanation used to refine the title/description
    * copy. When provided, the adapter may select more specific wording based on
@@ -1656,7 +1641,12 @@ export function toVictoryViewModel(
   gameState: GameState | undefined,
   options: ToVictoryViewModelOptions = {}
 ): VictoryViewModel | null {
-  const { currentUserId, isDismissed = false, gameEndExplanation } = options;
+  const {
+    currentUserId,
+    isDismissed = false,
+    gameEndExplanation,
+    colorVisionMode = 'normal',
+  } = options;
 
   if (!gameResult || isDismissed) {
     return null;
@@ -1668,7 +1658,9 @@ export function toVictoryViewModel(
       : undefined;
 
   const winnerViewModel =
-    winner && gameState ? toPlayerViewModel(winner, gameState, currentUserId) : undefined;
+    winner && gameState
+      ? toPlayerViewModel(winner, gameState, currentUserId, colorVisionMode)
+      : undefined;
 
   const userWon = !!(currentUserId && winner && winner.id === currentUserId);
   const userLost = !!(
@@ -1692,14 +1684,14 @@ export function toVictoryViewModel(
   // Build final stats
   const finalStats: PlayerFinalStatsViewModel[] = players.map((player) => {
     const playerVM = gameState
-      ? toPlayerViewModel(player, gameState, currentUserId)
+      ? toPlayerViewModel(player, gameState, currentUserId, colorVisionMode)
       : {
           id: player.id,
           playerNumber: player.playerNumber,
           username: player.username || `Player ${player.playerNumber}`,
           isCurrentPlayer: false,
           isUserPlayer: player.id === currentUserId,
-          colorClass: getPlayerColors(player.playerNumber).card,
+          colorClass: getPlayerColors(player.playerNumber, colorVisionMode).card,
           ringStats: { inHand: 0, onBoard: 0, eliminated: 0, total: 0 },
           territorySpaces: 0,
           aiInfo: toAIInfoViewModel(player),

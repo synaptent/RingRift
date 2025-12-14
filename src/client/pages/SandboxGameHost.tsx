@@ -2995,30 +2995,35 @@ export const SandboxGameHost: React.FC = () => {
                         </p>
                       ) : (
                         (() => {
-                          const anyHealth = aiLadderHealth as any;
-                          const summary = (anyHealth?.summary ?? {}) as Record<string, unknown>;
-                          const tiers = Array.isArray(anyHealth?.tiers)
-                            ? (anyHealth.tiers as any[])
-                            : [];
+                          const asRecord = (value: unknown): Record<string, unknown> | null => {
+                            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                              return null;
+                            }
+                            return value as Record<string, unknown>;
+                          };
+
+                          const summary = asRecord(aiLadderHealth['summary']) ?? {};
+                          const tiersRaw = aiLadderHealth['tiers'];
+                          const tiers: unknown[] = Array.isArray(tiersRaw) ? tiersRaw : [];
 
                           return (
                             <div className="space-y-3">
                               <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
                                 <span className="text-slate-400">Missing heuristic profiles</span>
                                 <span className="text-slate-200">
-                                  {String(summary.missing_heuristic_profiles ?? '—')}
+                                  {String(summary['missing_heuristic_profiles'] ?? '—')}
                                 </span>
                                 <span className="text-slate-400">Missing NNUE checkpoints</span>
                                 <span className="text-slate-200">
-                                  {String(summary.missing_nnue_checkpoints ?? '—')}
+                                  {String(summary['missing_nnue_checkpoints'] ?? '—')}
                                 </span>
                                 <span className="text-slate-400">Missing NN checkpoints</span>
                                 <span className="text-slate-200">
-                                  {String(summary.missing_neural_checkpoints ?? '—')}
+                                  {String(summary['missing_neural_checkpoints'] ?? '—')}
                                 </span>
                                 <span className="text-slate-400">Overridden tiers</span>
                                 <span className="text-slate-200">
-                                  {String(summary.overridden_tiers ?? '—')}
+                                  {String(summary['overridden_tiers'] ?? '—')}
                                 </span>
                               </div>
 
@@ -3039,16 +3044,54 @@ export const SandboxGameHost: React.FC = () => {
                                     </tr>
                                   </thead>
                                   <tbody className="text-slate-200">
-                                    {tiers.map((tier) => {
-                                      const difficulty = tier?.difficulty;
-                                      const aiType = tier?.ai_type;
-                                      const useNeuralNet = tier?.use_neural_net;
-                                      const heuristicProfile = tier?.heuristic_profile_id;
-                                      const modelId = tier?.model_id;
-                                      const artifacts = tier?.artifacts ?? {};
-                                      const heuristicOk = artifacts?.heuristic_profile?.available;
-                                      const nnueOk = artifacts?.nnue?.file?.exists;
-                                      const nnOk = artifacts?.neural_net?.chosen?.exists;
+                                    {tiers.map((tierRaw, index) => {
+                                      const tier = asRecord(tierRaw) ?? {};
+
+                                      const difficulty =
+                                        typeof tier['difficulty'] === 'number'
+                                          ? tier['difficulty']
+                                          : undefined;
+                                      const aiType =
+                                        typeof tier['ai_type'] === 'string'
+                                          ? tier['ai_type']
+                                          : undefined;
+                                      const useNeuralNet =
+                                        typeof tier['use_neural_net'] === 'boolean'
+                                          ? tier['use_neural_net']
+                                          : undefined;
+                                      const heuristicProfile =
+                                        typeof tier['heuristic_profile_id'] === 'string'
+                                          ? tier['heuristic_profile_id']
+                                          : undefined;
+                                      const modelId =
+                                        typeof tier['model_id'] === 'string'
+                                          ? tier['model_id']
+                                          : undefined;
+
+                                      const artifacts = asRecord(tier['artifacts']) ?? {};
+
+                                      const heuristicProfileArtifact =
+                                        asRecord(artifacts['heuristic_profile']) ?? {};
+                                      const heuristicOk =
+                                        typeof heuristicProfileArtifact['available'] === 'boolean'
+                                          ? heuristicProfileArtifact['available']
+                                          : undefined;
+
+                                      const nnueArtifact = asRecord(artifacts['nnue']) ?? {};
+                                      const nnueFileArtifact = asRecord(nnueArtifact['file']) ?? {};
+                                      const nnueOk =
+                                        typeof nnueFileArtifact['exists'] === 'boolean'
+                                          ? nnueFileArtifact['exists']
+                                          : undefined;
+
+                                      const neuralNetArtifact =
+                                        asRecord(artifacts['neural_net']) ?? {};
+                                      const neuralNetChosen =
+                                        asRecord(neuralNetArtifact['chosen']) ?? {};
+                                      const nnOk =
+                                        typeof neuralNetChosen['exists'] === 'boolean'
+                                          ? neuralNetChosen['exists']
+                                          : undefined;
 
                                       const artifactLabelParts: string[] = [];
                                       if (typeof heuristicOk === 'boolean') {
@@ -3067,7 +3110,7 @@ export const SandboxGameHost: React.FC = () => {
 
                                       return (
                                         <tr
-                                          key={String(difficulty)}
+                                          key={`${String(difficulty ?? 'unknown')}_${index}`}
                                           className="border-b border-slate-900/60"
                                         >
                                           <td className="px-2 py-1">{difficulty}</td>
