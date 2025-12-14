@@ -1326,14 +1326,14 @@ class P2POrchestrator:
         duration = max(10, min(int(duration), int(LEADER_LEASE_DURATION * 2)))
 
         acks = 0
-        expiries: List[float] = []
+        lease_ttls: List[float] = []
 
         # Self-grant (as a voter).
         if self.node_id in voter_ids:
             self.voter_grant_leader_id = self.node_id
             self.voter_grant_lease_id = lease_id
             self.voter_grant_expires = now + float(duration)
-            expiries.append(self.voter_grant_expires)
+            lease_ttls.append(float(duration))
             acks += 1
 
         with self.peers_lock:
@@ -1364,12 +1364,19 @@ class P2POrchestrator:
                             data = await resp.json()
                             if not data.get("granted"):
                                 break
-                            try:
-                                expires = float(data.get("lease_expires") or 0.0)
-                            except Exception:
-                                expires = 0.0
-                            if expires > 0:
-                                expiries.append(expires)
+                            ttl_raw = data.get("lease_ttl_seconds")
+                            if ttl_raw is None:
+                                ttl_raw = data.get("ttl_seconds")
+                            ttl_val: Optional[float] = None
+                            if ttl_raw is not None:
+                                try:
+                                    ttl_val = float(ttl_raw)
+                                except Exception:
+                                    ttl_val = None
+                            if ttl_val is not None and ttl_val > 0:
+                                lease_ttls.append(ttl_val)
+                            else:
+                                lease_ttls.append(float(duration))
                             acks += 1
                             break
                     except Exception:
@@ -1377,9 +1384,11 @@ class P2POrchestrator:
 
         if acks < quorum:
             return None
-        if expiries:
-            return min(expiries)
-        return now + float(duration)
+        # Use a relative TTL (computed by each voter on its own clock) to avoid
+        # leader lease flapping under clock skew. Convert back to a local expiry.
+        effective_ttl = min(lease_ttls) if lease_ttls else float(duration)
+        effective_ttl = max(10.0, min(float(duration), float(effective_ttl)))
+        return now + float(effective_ttl)
 
     async def _determine_leased_leader_from_voters(self) -> Optional[str]:
         """Return the current lease-holder as reported by a quorum of voters.
@@ -1428,9 +1437,27 @@ class P2POrchestrator:
                         leader_id = str((data or {}).get("leader_id") or "")
                         if not leader_id:
                             break
-                        expires = float((data or {}).get("lease_expires") or 0.0)
-                        if expires <= now:
-                            break
+                        ttl_raw = (data or {}).get("lease_ttl_seconds")
+                        if ttl_raw is None:
+                            ttl_raw = (data or {}).get("ttl_seconds")
+                        ttl_val: Optional[float] = None
+                        if ttl_raw is not None:
+                            try:
+                                ttl_val = float(ttl_raw)
+                            except Exception:
+                                ttl_val = None
+
+                        if ttl_val is not None:
+                            if ttl_val <= 0:
+                                break
+                        else:
+                            # Back-compat: use absolute expiry as best-effort, with
+                            # a generous skew tolerance (1× lease duration).
+                            expires = float((data or {}).get("lease_expires") or 0.0)
+                            if expires <= 0:
+                                break
+                            if expires + float(LEADER_LEASE_DURATION) < now:
+                                break
                         counts[leader_id] = counts.get(leader_id, 0) + 1
                         break
                     except Exception:
@@ -3830,12 +3857,16 @@ class P2POrchestrator:
             self.voter_grant_expires = now + float(duration)
             self._save_state()
 
+            lease_ttl_seconds = max(0.0, float(self.voter_grant_expires) - time.time())
             return web.json_response(
                 {
                     "granted": True,
                     "leader_id": leader_id,
                     "lease_id": lease_id,
                     "lease_expires": self.voter_grant_expires,
+                    # Use a relative TTL for robustness under clock skew (absolute
+                    # timestamps from different machines are not directly comparable).
+                    "lease_ttl_seconds": lease_ttl_seconds,
                     "voter_id": self.node_id,
                 }
             )
@@ -3852,13 +3883,15 @@ class P2POrchestrator:
             if self.auth_token and not self._is_request_authorized(request):
                 return web.json_response({"error": "unauthorized"}, status=401)
             now = time.time()
+            expires = float(getattr(self, "voter_grant_expires", 0.0) or 0.0)
             return web.json_response(
                 {
                     "voter_id": self.node_id,
                     "now": now,
                     "leader_id": str(getattr(self, "voter_grant_leader_id", "") or ""),
                     "lease_id": str(getattr(self, "voter_grant_lease_id", "") or ""),
-                    "lease_expires": float(getattr(self, "voter_grant_expires", 0.0) or 0.0),
+                    "lease_expires": expires,
+                    "lease_ttl_seconds": max(0.0, expires - now),
                 }
             )
         except Exception as e:

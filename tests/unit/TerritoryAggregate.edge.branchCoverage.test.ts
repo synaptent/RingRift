@@ -103,7 +103,7 @@ describe('TerritoryAggregate - Branch Coverage (Edge Cases)', () => {
       expect(moves).toEqual([]);
     });
 
-    it('returns empty when not in territory_processing phase', () => {
+    it('enumerates moves when not in territory_processing phase', () => {
       const state = createTestGameState();
       state.currentPhase = 'movement';
       state.board.stacks.clear();
@@ -119,7 +119,8 @@ describe('TerritoryAggregate - Branch Coverage (Edge Cases)', () => {
       });
 
       const moves = enumerateTerritoryEliminationMoves(state, 1);
-      expect(moves).toEqual([]);
+      expect(moves.length).toBeGreaterThan(0);
+      expect(moves[0].type).toBe('eliminate_rings_from_stack');
     });
   });
 

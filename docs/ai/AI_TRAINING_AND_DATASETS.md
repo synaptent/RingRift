@@ -12,7 +12,7 @@
 
 **Scope:** Python AI service training pipelines, self-play generators, and territory/combined-margin datasets.
 
-This document is the canonical reference for the current **offline training and dataset generation** flows in the Python AI service. It complements the high-level overview in [`AI_ARCHITECTURE.md`](../architecture/AI_ARCHITECTURE.md) and the rules-engine mapping in [`RULES_ENGINE_ARCHITECTURE.md`](../architecture/RULES_ENGINE_ARCHITECTURE.md).
+This document is the canonical reference for the current **offline training and dataset generation** flows in the Python AI service. It complements the high-level overview in [`AI_ARCHITECTURE.md`](../../AI_ARCHITECTURE.md) and the rules-engine mapping in [`RULES_ENGINE_ARCHITECTURE.md`](../../RULES_ENGINE_ARCHITECTURE.md).
 
 ---
 
@@ -31,7 +31,7 @@ All training entrypoints reuse the same Python rules stack as the live AI servic
 - The Python engine and mutators above are treated as a **host/adapter implementation** that must match the TS SSoT; they are validated by:
 - - Contract-vector runners (`tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`).
 - - Parity/plateau/territory suites under `tests/unit/*Parity*` and `ai-service/tests/parity/`.
-- - Mutator shadow contracts and divergence guards described in [`RULES_ENGINE_ARCHITECTURE.md`](../architecture/RULES_ENGINE_ARCHITECTURE.md) and [`INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](../incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md).
+- - Mutator shadow contracts and divergence guards described in [`RULES_ENGINE_ARCHITECTURE.md`](../../RULES_ENGINE_ARCHITECTURE.md) and [`INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](../incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md).
 
 Because training jobs and the live AI/rules service share this stack, **any divergence between Python and the canonical TS rules engine** will affect both online play and offline datasets. The parity suites and mutator contracts listed above are therefore critical safeguards.
 
@@ -129,6 +129,8 @@ generate_dataset(
 ```
 
 The older hard-coded `if __name__ == "__main__": generate_dataset(num_games=2)` path has been replaced by this CLI, so you no longer need to edit the file to change `num_games`, `board_type`, or the output location.
+
+Canonical training runs must draw their replay data from databases that have passed the unified canonical self-play gate (`canonical_ok == true` and, for supported board types, `fe_territory_fixtures_ok == true`) and are listed as `canonical` in [`TRAINING_DATA_REGISTRY.md`](../ai-service/TRAINING_DATA_REGISTRY.md); the gate and its FE/territory fixtures are driven by [`generate_canonical_selfplay.py`](../ai-service/scripts/generate_canonical_selfplay.py).
 
 ---
 
@@ -495,7 +497,7 @@ The territory generator is deliberately wired to the **same canonical rules logi
 - The rules façade [`DefaultRulesEngine`](../ai-service/app/rules/default_engine.py) and [`TerritoryMutator`](../ai-service/app/rules/mutators/territory.py) enforce **shadow contracts** against [`GameEngine.apply_move()`](../ai-service/app/game_engine.py) for territory moves, with a targeted escape hatch when host-level forced elimination for the next player occurs (see [`docs/incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](../incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md)).
 - The CLI smoke test [`test_generate_territory_dataset_mixed_smoke`](../ai-service/tests/test_generate_territory_dataset_smoke.py) is the end-to-end guard that exercises the module in `engine_mode="mixed"`, asserts no `TerritoryMutator diverged from GameEngine.apply_move` messages appear on stderr, and verifies that a non-empty JSONL file is produced.
 
-For a deeper discussion of how TS and Python engines are kept in sync (trace parity, mutator equivalence tests, and shadow modes), see [`RULES_ENGINE_ARCHITECTURE.md`](../architecture/RULES_ENGINE_ARCHITECTURE.md) and the incident report in [`docs/incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](../incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md).
+For a deeper discussion of how TS and Python engines are kept in sync (trace parity, mutator equivalence tests, and shadow modes), see [`RULES_ENGINE_ARCHITECTURE.md`](../../RULES_ENGINE_ARCHITECTURE.md) and the incident report in [`docs/incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](../incidents/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md).
 
 ---
 
@@ -524,22 +526,19 @@ A 30-game `mixed` engine-mode soak on `square8` (2-player, seed 42, light diffic
 | swap_sides_total_moves        | 0     |
 | avg_swap_sides_moves_per_game | 0.0   |
 
-**Key Observation (legacy baseline):** Earlier self-play runs showed 0% swap (pie-rule) usage even with swap enabled by default for 2-player games. This reflected that:
+**Key Observation:** Current AI implementations (Random, Heuristic, Minimax, MCTS, Descent) do not utilise the swap (pie) rule at all in self-play, despite it being enabled by default for 2-player games via `RingRiftEnv.create_initial_state()`. This 0% baseline usage rate reflects that:
 
 1. The swap rule is **legally available** (P2 can invoke after P1's first non-swap move, at most once per game, only during `ACTIVE` status).
-2. Search AIs did not model the identity swap inside their generic trees, so
-   swap was systematically undervalued.
+2. No AI policy currently assigns meaningful value to the swap action, which is expected given:
+   - Heuristic/material evaluators don't explicitly model first-move advantage.
+   - Tree search AIs (Minimax, MCTS, Descent) don't observe enough strategic value to prefer swapping over other legal moves.
 
 ### 8.2 Future Exploration
 
 To increase pie-rule adoption in training data, potential directions include:
 
-1. **Explicit swap-rule bonus (implemented):** Search AIs now handle `swap_sides`
-   explicitly using the Opening Position Classifier (see
-   `ai-service/app/ai/base.py`), so new 2P soaks should show non‑zero swap usage.
+1. **Explicit swap-rule bonus:** Add a heuristic term that rewards swapping when P1's opening position is strong.
 2. **Opening book injection:** Pre-seed P2's early-game policy with swap probability.
 3. **Self-play curriculum:** Train an auxiliary classifier on human-labelled "strong openings" and use it to guide swap decisions.
 
-Re-run the 2P canonical self-play soak to refresh the swap baseline now that
-swap support is in place. Metrics remain captured in `summary.json` for
-monitoring over time.
+For now, the 0% baseline is documented for comparison against future experiments. Swap metrics are captured in `summary.json` for all soak runs and can be monitored over time.

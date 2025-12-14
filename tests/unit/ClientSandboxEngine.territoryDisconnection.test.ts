@@ -302,7 +302,7 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
     }
 
     // --- 3. Provide P1 stacks: one for line elimination, one for territory self-elim.
-    // RR-CANON-R082: Must be height >= 2 to be eligible cap targets.
+    // Per RR-CANON-R145: All controlled stacks (including height-1) are now eligible.
     const lineStackPos = pos(1, 1);
     const territoryStackPos = pos(15, 15);
     addStack(board, lineStackPos, 1, 2);
@@ -362,13 +362,14 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
     // 6. Eliminated ring counts should combine line + territory contributions:
     //    - 1 internal B stack (one ring) eliminated when P1 processes territory
     //    - 1 ring from P1 stack self-eliminated for the line (per RR-CANON-R122: line costs 1 ring)
-    //    - 2 rings from P1 stack self-eliminated for territory (entire cap of height-2)
-    //    Total: 4 rings attributed to player 1.
-    const expectedEliminatedForP1 = 4;
+    //    - Territory self-elimination: engine may choose height-1 stack (1 ring) or height-2 stack (2 rings)
+    //      Since height-1 stacks are now eligible per RR-CANON-R145, either is valid.
+    //    Total: 3 or 4 rings attributed to player 1.
     const finalP1Eliminated = player1.eliminatedRings;
-    expect(finalP1Eliminated).toBe(expectedEliminatedForP1);
-    expect(finalState.board.eliminatedRings[1]).toBe(expectedEliminatedForP1);
-    expect(finalState.totalRingsEliminated).toBe(expectedEliminatedForP1);
+    expect(finalP1Eliminated).toBeGreaterThanOrEqual(3);
+    expect(finalP1Eliminated).toBeLessThanOrEqual(4);
+    expect(finalState.board.eliminatedRings[1]).toBe(finalP1Eliminated);
+    expect(finalState.totalRingsEliminated).toBe(finalP1Eliminated);
   });
 
   test('Q23_disconnected_region_illegal_when_no_self_elimination_available_sandbox', async () => {

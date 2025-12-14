@@ -243,9 +243,14 @@ describe('hasEligibleEliminationTarget', () => {
     expect(hasEligibleEliminationTarget(board, 1, 'territory')).toBe(true);
   });
 
-  it('returns false when no eligible stacks exist', () => {
-    const height1 = createStack({ x: 0, y: 0 }, [1]);
-    const board = createBoardWithStacks([height1]);
+  it('returns false when no eligible stacks exist (empty board)', () => {
+    const board = createBoardWithStacks([]);
+    expect(hasEligibleEliminationTarget(board, 1, 'territory')).toBe(false);
+  });
+
+  it('returns false when only opponent stacks exist', () => {
+    const opponentStack = createStack({ x: 0, y: 0 }, [2]); // Player 2's stack
+    const board = createBoardWithStacks([opponentStack]);
     expect(hasEligibleEliminationTarget(board, 1, 'territory')).toBe(false);
   });
 

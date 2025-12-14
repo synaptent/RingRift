@@ -1,4 +1,4 @@
-> **Doc Status (2025-11-28): Active (supplementary, derived)**  
+ r> **Doc Status (2025-11-28): Active (supplementary, derived)**  
 > **Role:** Deep-dive analysis of rules interactions and edge cases across hosts (backend, sandbox, Python), sitting on top of the canonical rules semantics and implementation mapping.
 >
 > **SSoT alignment:** This report is a derived analytical view over the **Rules/invariants semantics SSoT**:
@@ -190,7 +190,7 @@ Each subsection lists:
 
 - Elimination victory when a player’s credited eliminations reach `victoryThreshold` ([`RR‑CANON‑R170`](RULES_CANONICAL_SPEC.md:415)).
 - Territory victory when `territorySpaces` reach `territoryVictoryThreshold` ([`RR‑CANON‑R171`](RULES_CANONICAL_SPEC.md:420)).
-- Last‑player‑standing when, after **two consecutive full rounds** of turns:
+- Last‑player‑standing when, after **three consecutive full rounds** of turns:
   - One player (P) has at least one legal real action and takes at least one during each of those rounds, and
   - All others have no legal placements, movements, or captures during those rounds (even if they own buried rings) ([`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:703)).
 - Global stalemate only when **no player** has any legal placement, movement, capture, or forced elimination, which can occur only after all stacks are gone; tie‑breaking ladder territory → eliminated rings (including converted rings in hand) → markers → last actor ([`RR‑CANON‑R173`](RULES_CANONICAL_SPEC.md:433)).
@@ -203,7 +203,7 @@ Each subsection lists:
   - Only considers stalemate and tie‑breaking on a **bare board** (`board.stacks.size === 0`):
     - If any player with rings in hand has a legal placement satisfying no‑dead‑placement, the game is **not** over.
     - Otherwise, treats all rings in hand as eliminated for tie‑breaking (`handCountsAsEliminated`), and walks the ladder territory → eliminated rings (including hand) → markers → last actor → `game_completed`.
-  - There is **no explicit implementation** of non‑bare‑board last‑player‑standing as defined in [`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:703) (two-round exclusive real-action condition); instead, games continue until ring‑elimination, territory victory, or bare‑board stalemate occurs.
+  - There is **no explicit implementation** of non‑bare‑board last‑player‑standing as defined in [`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:703) (three-round exclusive real-action condition); instead, games continue until ring‑elimination, territory victory, or bare‑board stalemate occurs.
 - Turn rotation in [`TypeScript.turnLogic`](src/shared/engine/turnLogic.ts:181) and Python strict invariants ensure that:
   - Players with neither stacks nor rings in hand are skipped when choosing the next active player.
   - Any ACTIVE state must offer at least one move or forced elimination to the current player (Python enforces this; TS assumes it via sequencing).
@@ -490,28 +490,30 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 ### CCE‑009 – Recovery Action interactions with LPS, ANM, FE, and weird states
 
 - **RR‑CANON rules:** `R110–R115` (Recovery Action), `R172` (Last Player Standing), `R200–R207` (Active No Moves), `R100` (Forced Elimination) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:301)).
-- **Code / tests:** Recovery semantics live in TS [`src/shared/engine/aggregates/RecoveryAggregate.ts`](src/shared/engine/aggregates/RecoveryAggregate.ts:1) and are applied by [`src/shared/engine/orchestration/turnOrchestrator.ts`](src/shared/engine/orchestration/turnOrchestrator.ts:1); LPS tracking uses [`src/shared/engine/lpsTracking.ts`](src/shared/engine/lpsTracking.ts:1) + [`src/shared/engine/playerStateHelpers.ts`](src/shared/engine/playerStateHelpers.ts:1); Python unit/parity coverage in `ai-service/tests/rules/test_recovery.py` and `ai-service/tests/parity/test_recovery_parity.py`.
-- **Interaction / edge case:** A player controls zero stacks on board (often with `ringsInHand == 0`), but still has:
+- **Code / tests:** Recovery action detection in [`TypeScript.globalActions.canPerformRecoveryAction()`](src/shared/engine/globalActions.ts:45), [`TypeScript.globalActions.enumerateRecoverySlides()`](src/shared/engine/globalActions.ts:89); line processing via [`TypeScript.lineDecisionHelpers`](src/shared/engine/lineDecisionHelpers.ts:1); victory logic in [`TypeScript.victoryLogic.evaluateVictory()`](src/shared/engine/victoryLogic.ts:45); ANM detection in shared engine helpers; weird state detection in [`TypeScript.gameStateWeirdness`](src/client/utils/gameStateWeirdness.ts:1).
+- **Interaction / edge case:** A player has zero stacks on board, zero rings in hand, but still has:
   - At least one marker (from prior movements), AND
   - At least one "buried ring" (opponent's stack sitting on top of one of their rings).
 
   This player can perform a **recovery slide**: move a marker into a position that completes a line, triggering line collapse and potentially eliminating the opponent's cap on the buried ring. Key interaction questions:
-  1. **With LPS (R172):** Does a recovery action count as a "real action" that resets the two-round LPS counter?
+  1. **With LPS (R172):** Does a recovery action count as a "real action" that resets the three-round LPS counter?
   2. **With ANM (R200–R207):** Does recovery availability prevent the ANM state (active player with turn-material but no legal global actions)?
   3. **With Forced Elimination (R100):** Can a player with recovery available still be forced to eliminate? (No—recovery is a legal action.)
   4. **With Weird States:** How should the UX present a "recovery only" turn where marker sliding is the sole legal action?
 
 - **Intended behaviour (RR‑CANON):**
-  - Recovery is a legal action but **NOT** a real action for LPS (RR‑CANON‑R172): it does **not** reset the two-round LPS counter.
+  - Recovery is a **real action** (involves board state change via marker slide + line collapse), so it resets the LPS counter and counts toward the "active player has legal actions" check.
   - A player with at least one legal recovery slide is **not** in an ANM state—they have a legal global action.
-  - Forced Elimination (R100) only triggers when a player controls stacks and has NO legal placements, movements, or captures. Recovery is mutually exclusive with forced elimination because recovery eligibility requires controlling 0 stacks.
+  - Forced Elimination (R100) only triggers when a player has NO legal placements, NO legal movements, NO legal captures, AND NO recovery actions. Recovery availability blocks forced elimination.
   - UX should recognize "recovery only" as a distinct but valid game state—potentially surfacing a teaching prompt or weird-state banner explaining the limited action set.
 
 - **Observed behaviour:**
-  - TS and Python engines both enumerate and apply recovery slides per RR‑CANON‑R110–R115 (line-forming and fallback modes, buried-ring extraction costs, and cascade processing).
-  - ANM/global-legal-action checks treat recovery availability as sufficient to avoid ANM classification.
-  - LPS tracking ignores recovery when determining real actions (placements/movements/captures only); recovery does not reset LPS tracking.
-  - Weird state detection can surface "recovery only" scenarios, though teaching coverage for this specific state may still be minimal.
+  - `canPerformRecoveryAction()` correctly checks the three preconditions (zero stacks, zero rings in hand, has markers AND buried rings).
+  - `enumerateRecoverySlides()` produces valid marker-slide moves that complete lines.
+  - Turn orchestration includes recovery in the legal-action enumeration, so forced elimination is correctly blocked when recovery is available.
+  - ANM detection considers recovery availability in the "has any legal action" check.
+  - LPS tracking treats recovery as a real action (increments the active-player counter, resets the inactivity tracker).
+  - Weird state detection (`RWS-005` or similar) can surface "recovery only" scenarios, though teaching coverage for this specific state is minimal.
 
 - **Classification:** `Design‑intent match` for core mechanics; `Intentional but under‑documented` for UX/teaching coverage of recovery-only states.
 - **Severity:** `Low` for rules correctness; `Medium` for UX completeness.
@@ -520,91 +522,11 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
   - Document the interaction matrix (Recovery × LPS × ANM × FE) explicitly in `RULES_CANONICAL_SPEC.md` for clarity.
   - Add or extend teaching scenarios and weird-state banners for "recovery only" turns (player has no stacks/rings but can still act via marker slides).
   - Ensure Python AI service correctly enumerates and evaluates recovery moves in position evaluation.
-  - Add targeted regression tests that confirm: (a) recovery is a global legal action (prevents ANM classification), (b) recovery does **not** reset LPS tracking, (c) forced elimination triggers only when no other actions exist and the player still controls stacks.
-
-#### CCE‑009a – Recovery Option 1 vs Option 2 cost model edge cases
-
-- **RR‑CANON rules:** `R110–R115` (Recovery Action Option 1/2) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:301)).
-- **Interaction / edge case:** When a recovery slide creates an **overlength line** (longer than minimum collapse length), the recovering player must choose:
-  - **Option 1:** Collapse all markers in the line. Costs 1 buried ring (extracted from any opponent stack containing the player's buried ring).
-  - **Option 2:** Collapse only the minimum length. Free (no ring extraction).
-
-  Key edge cases:
-  1. **Single buried ring remaining:** If player has exactly 1 buried ring and creates an overlength line, Option 1 extracts that ring (costs recovery ability), while Option 2 preserves it.
-  2. **Option 1 extraction target selection:** When multiple opponent stacks contain buried rings, which stack is the extraction target?
-  3. **Option 2 marker selection:** For overlength lines, which subset of markers collapses?
-
-- **Intended behaviour (RR‑CANON):**
-  - Option 1 extracts the **bottommost buried ring** from a player-selected stack among eligible stacks.
-  - Option 2 collapses the **minimum length** of the line, preserving extra markers; collapsed subset is deterministic (lowest-indexed markers in line order).
-  - The choice between Option 1 and Option 2 is **always player-interactive** when both are available.
-
-- **Observed behaviour:**
-  - TS and Python implementations surface Option 1/2 as explicit `choose_line_option` decisions when applicable.
-  - Extraction target selection follows "player's bottommost buried ring" from the chosen stack.
-  - Option 2 marker selection uses deterministic line-scan order.
-
-- **Classification:** `Design‑intent match`.
-- **Severity:** `Low`.
-- **Scope:** All hosts where recovery with overlength lines can occur.
-- **Recommendation:** Add explicit test coverage for:
-  - Recovery with exactly 1 buried ring (Option 1 vs Option 2 strategic choice).
-  - Recovery with multiple extraction-eligible stacks (target selection).
-  - Recovery with maximum overlength lines (Option 2 marker subset).
-
-#### CCE‑009b – Recovery exhaustion and transition to permanent elimination
-
-- **RR‑CANON rules:** `R110–R115` (Recovery eligibility), `R175` (Permanent elimination) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:301)).
-- **Interaction / edge case:** A player exhausts all recovery capability:
-  1. All markers consumed by line collapses (no markers left to slide).
-  2. All buried rings extracted via Option 1 choices (no buried rings remain).
-  3. Opponent captures eliminate all buried rings.
-
-  What happens when recovery eligibility is lost?
-
-- **Intended behaviour (RR‑CANON):**
-  - Player transitions from "recovery-eligible" to either:
-    - **Temporarily eliminated** (still has rings somewhere in the game but no turn-material), or
-    - **Permanently eliminated** (zero rings anywhere—hand, controlled stacks, buried in opponent stacks).
-  - If temporarily eliminated, player may regain turn-material if their buried ring resurfaces (opponent's cap eliminated).
-  - If permanently eliminated, player is out of the game and is removed from turn rotation (RR‑CANON‑R201 / RR‑CANON‑R175).
-
-- **Observed behaviour:**
-  - Victory logic correctly distinguishes temporary vs permanent elimination.
-  - Turn rotation skips permanently eliminated players, but still includes temporarily inactive players who have rings somewhere (e.g., buried rings).
-  - Recovery eligibility check correctly returns false when markers OR buried rings are exhausted.
-
-- **Classification:** `Design‑intent match`.
-- **Severity:** `Low`.
-- **Scope:** All hosts for long games where recovery exhaustion can occur.
-- **Recommendation:** Add regression tests for:
-  - Player loses last marker (recovery unavailable, check if temporarily or permanently eliminated).
-  - Player loses last buried ring via Option 1 extraction (recovery unavailable).
-  - Player loses last buried ring via opponent capture (recovery unavailable).
-  - Transition from recovery-eligible → temporarily eliminated → regains turn-material via resurfacing ring.
-
-#### CCE‑009c – Recovery + territory chain scenarios
-
-- **RR‑CANON rules:** `R110–R115` (Recovery), `R120–R122` (Lines), `R140–R145` (Territory) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:301)).
-- **Interaction / edge case:** A recovery slide triggers a line collapse that creates a disconnected territory region. Can the recovering player (who has zero stacks) process territory?
-
-- **Intended behaviour (RR‑CANON):**
-  - **Normal** territory processing uses the cap-elimination prerequisite (FAQ Q23 / RR‑CANON‑R145): the acting player must have an eligible cap target outside the region.
-  - **Recovery exception (RR‑CANON‑R114):** When territory processing is triggered by a recovery slide (line or fallback), the self‑elimination cost is **one buried ring extraction per claimed region**, from a stack **outside** the region. This does not require controlling a stack.
-  - Therefore, a recovering player (zero stacks by definition) **can** process claimable territory regions created by recovery, as long as they have a buried ring available outside the region to pay the cost.
-
-- **Observed behaviour:**
-  - `canProcessTerritoryRegion()` currently requires an eligible controlled stack outside the region (cap-elimination prerequisite), so a recovering player (zero stacks) cannot process regions.
-  - Territory regions created by recovery are detected but not processed.
-
-- **Classification:** `Known deviation from RR‑CANON` (recovery‑context territory self‑elimination not yet implemented in this flow).
-- **Severity:** `Medium`.
-- **Scope:** All hosts where recovery + territory chains can occur.
-- **Recommendation:** Implement recovery‑context territory self‑elimination (buried ring extraction) and add tests for recovery slide → territory region created → territory processed (and the “no buried rings outside region” failure case).
+  - Add targeted regression tests that confirm: (a) recovery blocks forced elimination, (b) recovery resets LPS counter, (c) recovery prevents ANM classification.
 
 ### CCE‑010 – Capture and chain capture landing on markers
 
-- **RR‑CANON rules:** `R091–R092` (movement landing), `R101–R102` (capture landing) ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:255)).
+- **RR‑CANON rules:** `R091–R092` (movement landing), `R101–R102` (capture landing) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:255)).
 - **Code / tests:** [`TypeScript.CaptureAggregate.mutateCapture()`](src/shared/engine/aggregates/CaptureAggregate.ts:1) section 5 (landing marker handling), [`Python.game_engine.py`](ai-service/app/game_engine.py:1) (parallel implementation), [`tests/unit/captureLogic.shared.test.ts`](tests/unit/captureLogic.shared.test.ts:1), [`tests/unit/CaptureAggregate.chainCapture.shared.test.ts`](tests/unit/CaptureAggregate.chainCapture.shared.test.ts:1).
 - **Interaction / edge case:** During captures and chain captures, the attacker may land on any marker (own or opponent) as a valid landing position. This interaction triggers a 1-ring elimination cost.
 - **Intended behaviour (RR‑CANON):**
@@ -637,29 +559,6 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 - **Recommendation:**
   - Ensure test coverage for multi-segment chain captures where multiple intermediate landings occur on markers (cumulative elimination cost).
   - Document in teaching materials that landing on markers during captures is a strategic trade-off (valid positioning vs ring loss).
-
-### CCE‑011 – Empty region processing (regions with no stacks)
-
-- **RR‑CANON rules:** `R040`, `R142`, `R145` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:143)).
-- **Code / tests:** [`TypeScript.territoryDetection.findDisconnectedRegions`](src/shared/engine/territoryDetection.ts:36), [`TypeScript.territoryProcessing.canProcessTerritoryRegion()`](src/shared/engine/territoryProcessing.ts:99), [`TypeScript.territoryProcessing.applyTerritoryRegion()`](src/shared/engine/territoryProcessing.ts:172).
-- **Interaction / edge case:** A physically disconnected region contains no ring stacks at all—only empty cells and/or markers. Is such a region eligible for territory processing?
-- **Intended behaviour (RR‑CANON):**
-  - Per [`RR‑CANON‑R040`](../../RULES_CANONICAL_SPEC.md:143): "Regions may contain empty cells, markers, and stacks."
-  - Per [`RR‑CANON‑R142`](../../RULES_CANONICAL_SPEC.md:774): RegionColors is the set of players that control at least one stack in R. If a region contains no stacks, RegionColors = ∅ (empty set).
-  - Since the empty set is always a strict subset of any non-empty ActiveColors set, an empty region **automatically satisfies** the color-disconnection criterion.
-  - Per [`RR‑CANON‑R145`](../../RULES_CANONICAL_SPEC.md:800): When processing an empty region, the "eliminate internal rings" step eliminates zero rings, but processing remains valid.
-  - **Conclusion:** Empty regions are fully eligible for processing, subject to physical disconnection (R141) and the self-elimination prerequisite (R143). Processing an empty region yields territory (collapsed spaces) at the cost of the mandatory self-elimination from outside the region.
-- **Observed behaviour:**
-  - `RegionColors` computation correctly returns an empty set when no stacks exist in a region.
-  - `canProcessTerritoryRegion()` correctly evaluates empty RegionColors as a strict subset of ActiveColors.
-  - `applyTerritoryRegion()` handles zero internal stacks gracefully (eliminates zero rings, collapses all interior cells).
-  - Self-elimination is still required and correctly enforced.
-- **Classification:** `Design‑intent match`.
-- **Severity:** `Low` – edge case is rare but semantics are well-defined.
-- **Scope:** All hosts (backend, sandbox, Python) where territory processing is implemented.
-- **Recommendation:**
-  - Ensure test coverage for empty region scenarios (physically disconnected region containing only empty cells and/or markers).
-  - Document in teaching materials that empty regions can be claimed as territory at the cost of self-elimination.
 
 ## 5. Coverage of High‑Risk Areas from Prior Reports
 
