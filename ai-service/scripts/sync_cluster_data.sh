@@ -351,9 +351,9 @@ log_info "Found $HOST_COUNT hosts in configuration"
 
 log_section "Syncing from all hosts"
 
-# Execute sync commands
+# Execute sync commands (|| true prevents set -e from exiting on failed hosts)
 while IFS= read -r cmd; do
-    [[ -n "$cmd" ]] && eval "$cmd"
+    [[ -n "$cmd" ]] && eval "$cmd" || true
 done <<< "$SYNC_COMMANDS"
 
 # ============================================
