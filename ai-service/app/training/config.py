@@ -51,6 +51,12 @@ class TrainConfig:
     use_gpu_parallel_datagen: Optional[bool] = None
     gpu_batch_size: int = 50  # Number of games to run in parallel on GPU
 
+    # Data loading prefetch settings for improved GPU utilization
+    # Prefetching loads batches in a background thread while GPU is computing
+    use_prefetch: bool = True  # Enable/disable prefetching
+    prefetch_count: int = 2  # Number of batches to prefetch
+    pin_memory: bool = True  # Pin memory for faster CPU->GPU transfers (CUDA only)
+
     # Paths (initialised to repository-root-relative defaults in __post_init__)
     # When instantiated, these will be rewritten as absolute paths anchored at
     # the ai-service repo root so that training artefacts do not depend on the

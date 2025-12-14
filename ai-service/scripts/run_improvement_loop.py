@@ -842,9 +842,9 @@ def train_model(
         str(iter_model),
     ]
 
-    # Resume from best model if it exists
+    # Resume from best model if it exists (warm-start fine-tuning)
     if best_model.exists():
-        cmd.extend(["--resume-from", str(best_model)])
+        cmd.extend(["--resume", str(best_model)])
         print(f"Fine-tuning from {best_model}...")
     else:
         print("Training new model from scratch...")
@@ -963,6 +963,127 @@ def evaluate_model(
         threshold=float(config.get("promotion_threshold", 0.55)),
         confidence=float(config.get("promotion_confidence", 0.95)),
     )
+
+    # Optional pool gate: require the candidate to be non-regressing vs a
+    # recent pool of opponents (best-effort, defaults to "newest checkpoints").
+    pool_size = int(config.get("promotion_pool_size", 0) or 0)
+    pool_games = int(config.get("promotion_pool_games_per_opponent", 20) or 20)
+    pool_threshold = float(config.get("promotion_pool_threshold", 0.5) or 0.5)
+
+    pool_eval: dict | None = None
+    if pool_size > 0:
+        opponents = _select_promotion_pool_opponents(
+            board=board,
+            players=int(players),
+            models_dir=(AI_SERVICE_ROOT / "models"),
+            iter_model=iter_model,
+            best_model=best_model if best_model.exists() else None,
+            pool_size=pool_size,
+        )
+        if opponents:
+            agg_wins = 0
+            agg_losses = 0
+            agg_draws = 0
+            per_opponent: list[dict] = []
+
+            for idx, opp in enumerate(opponents):
+                out_path = log_dir / f"eval_iter{iteration}_{board}_{players}p_pool{idx+1}.json"
+                opp_seed = seed + 10_000 * (idx + 1)
+                cmd = [
+                    sys.executable,
+                    "scripts/evaluate_ai_models.py",
+                    "--player1",
+                    "neural_network",
+                    "--player2",
+                    "neural_network",
+                    "--checkpoint",
+                    str(iter_model),
+                    "--checkpoint2",
+                    str(opp),
+                    "--board",
+                    board,
+                    "--games",
+                    str(pool_games),
+                    "--max-moves",
+                    str(max_moves),
+                    "--seed",
+                    str(opp_seed),
+                    "--output",
+                    str(out_path),
+                    "--quiet",
+                ]
+
+                code, _, stderr = run_command(
+                    cmd,
+                    dry_run=dry_run,
+                    capture=False,
+                    timeout=7200,
+                    cwd=AI_SERVICE_ROOT,
+                )
+                if code != 0:
+                    print(f"[pool-eval] failed vs {opp.name}: {stderr[:200]}", file=sys.stderr)
+                    return False, {}
+
+                if dry_run:
+                    opp_payload = {
+                        "results": {
+                            "player1_wins": int(pool_games * 0.55),
+                            "player2_wins": int(pool_games * 0.45),
+                            "draws": 0,
+                        }
+                    }
+                else:
+                    if not out_path.exists():
+                        print(f"[pool-eval] missing output file: {out_path}", file=sys.stderr)
+                        return False, {}
+                    opp_payload = json.loads(out_path.read_text())
+
+                opp_res = opp_payload.get("results", {}) if isinstance(opp_payload, dict) else {}
+                opp_wins = int(opp_res.get("player1_wins", 0))
+                opp_losses = int(opp_res.get("player2_wins", 0))
+                opp_draws = int(opp_res.get("draws", 0))
+
+                agg_wins += opp_wins
+                agg_losses += opp_losses
+                agg_draws += opp_draws
+                per_opponent.append(
+                    {
+                        "opponent_checkpoint": str(opp),
+                        "games": pool_games,
+                        "wins": opp_wins,
+                        "losses": opp_losses,
+                        "draws": opp_draws,
+                    }
+                )
+
+            pool_gate = _promotion_gate(
+                wins=agg_wins,
+                losses=agg_losses,
+                draws=agg_draws,
+                threshold=pool_threshold,
+                confidence=float(config.get("promotion_confidence", 0.95)),
+            )
+            pool_eval = {
+                "pool_size": len(opponents),
+                "games_per_opponent": pool_games,
+                "aggregate": pool_gate,
+                "opponents": per_opponent,
+            }
+
+            # Tighten the overall promotion decision with the pool gate.
+            summary["promote"] = bool(summary.get("promote")) and bool(pool_gate.get("promote"))
+            summary["pool_gate"] = pool_gate
+            summary["pool_eval"] = pool_eval
+        else:
+            pool_eval = {
+                "pool_size": 0,
+                "games_per_opponent": pool_games,
+                "aggregate": None,
+                "opponents": [],
+                "note": "no_pool_opponents_found",
+            }
+            summary["pool_eval"] = pool_eval
+
     print(
         f"Win rate: {summary['win_rate']:.1%} "
         f"(CI_low={summary['win_rate_ci_low']:.1%} "
@@ -978,6 +1099,79 @@ def evaluate_model(
     )
 
     return True, summary
+
+
+def _select_promotion_pool_opponents(
+    *,
+    board: str,
+    players: int,
+    models_dir: Path,
+    iter_model: Path,
+    best_model: Optional[Path],
+    pool_size: int,
+) -> List[Path]:
+    """Select a best-effort pool of opponent checkpoints for promotion gating."""
+    if pool_size <= 0:
+        return []
+
+    board = str(board).strip().lower()
+    players = int(players)
+
+    board_tokens: list[str]
+    if board == "square8":
+        board_tokens = ["sq8", "square8"]
+    elif board == "square19":
+        board_tokens = ["sq19", "square19", "19x19"]
+    elif board == "hexagonal":
+        board_tokens = ["hex", "hexagonal"]
+    else:
+        board_tokens = [board]
+
+    def _is_candidate(path: Path) -> bool:
+        try:
+            if not path.is_file() or path.stat().st_size <= 0:
+                return False
+        except OSError:
+            return False
+        name = path.name.lower()
+        if name.endswith("_mps.pth"):
+            return False
+        if name.startswith("ringrift_best_"):
+            return False
+        if f"{players}p" not in name:
+            return False
+        return any(token in name for token in board_tokens)
+
+    exclude: set[Path] = {iter_model.resolve()}
+    if best_model is not None:
+        exclude.add(best_model.resolve())
+
+    backup = models_dir / f"{board}_{players}p_prev_best.pth"
+    pool: list[Path] = []
+    if backup.exists():
+        try:
+            resolved = backup.resolve()
+        except Exception:
+            resolved = backup
+        if resolved not in exclude and backup.stat().st_size > 0:
+            pool.append(backup)
+
+    candidates = [p for p in models_dir.glob("*.pth") if _is_candidate(p)]
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    for path in candidates:
+        if len(pool) >= pool_size:
+            break
+        try:
+            resolved = path.resolve()
+        except Exception:
+            resolved = path
+        if resolved in exclude:
+            continue
+        if any((path.samefile(existing) for existing in pool)):  # type: ignore[arg-type]
+            continue
+        pool.append(path)
+
+    return pool[:pool_size]
 
 
 def promote_model(
@@ -1206,6 +1400,16 @@ def run_improvement_iteration(
     # Step 6: Promote if improved
     print(f"\n--- Step 6: Promotion Decision ---")
     threshold = config.get("promotion_threshold", 0.55)
+    pool_gate = eval_summary.get("pool_gate") if isinstance(eval_summary, dict) else None
+    pool_gate_text = ""
+    if isinstance(pool_gate, dict):
+        pool_wr = pool_gate.get("win_rate")
+        pool_ci_low = pool_gate.get("win_rate_ci_low")
+        pool_thr = pool_gate.get("threshold")
+        if isinstance(pool_wr, float) and isinstance(pool_ci_low, float) and isinstance(pool_thr, float):
+            pool_gate_text = (
+                f" | pool win={pool_wr:.1%} (CI_low={pool_ci_low:.1%} >= {pool_thr:.1%})"
+            )
     if eval_summary.get("promote", False):
         if promote_model(config, iter_model, dry_run):
             winrate = float(eval_summary.get("win_rate") or 0.0)
@@ -1215,6 +1419,7 @@ def run_improvement_iteration(
                 "Model promoted! "
                 f"Win rate {winrate:.1%} "
                 f"(CI_low={ci_text}) >= {threshold:.1%}"
+                f"{pool_gate_text}"
             )
             return True, winrate, games
         else:
@@ -1226,6 +1431,7 @@ def run_improvement_iteration(
         print(
             "No improvement: "
             f"win={winrate:.1%}, CI_low={ci_text} < {threshold:.1%}"
+            f"{pool_gate_text}"
         )
         return False, winrate, games
 
@@ -1341,6 +1547,30 @@ def main():
         type=float,
         default=0.95,
         help="Wilson CI confidence level for promotion gate (default: 0.95).",
+    )
+    parser.add_argument(
+        "--promotion-pool-size",
+        type=int,
+        default=5,
+        help=(
+            "Number of additional pool opponents to evaluate against before promoting. "
+            "Set to 0 to disable the pool gate (default: 5)."
+        ),
+    )
+    parser.add_argument(
+        "--promotion-pool-games-per-opponent",
+        type=int,
+        default=20,
+        help="Games per pool opponent when --promotion-pool-size > 0 (default: 20).",
+    )
+    parser.add_argument(
+        "--promotion-pool-threshold",
+        type=float,
+        default=0.5,
+        help=(
+            "Win-rate threshold (Wilson CI lower bound) for the aggregated pool gate. "
+            "Default: 0.5 (non-regression)."
+        ),
     )
     parser.add_argument(
         "--publish-ringrift-best-alias",
@@ -1542,6 +1772,9 @@ def main():
         "max_moves": int(args.max_moves),
         "promotion_threshold": args.promotion_threshold,
         "promotion_confidence": args.promotion_confidence,
+        "promotion_pool_size": int(args.promotion_pool_size),
+        "promotion_pool_games_per_opponent": int(args.promotion_pool_games_per_opponent),
+        "promotion_pool_threshold": float(args.promotion_pool_threshold),
         "publish_ringrift_best_alias": bool(args.publish_ringrift_best_alias),
         "sync_staging": bool(args.sync_staging),
         "sync_staging_restart": not bool(args.sync_staging_no_restart),
@@ -1615,6 +1848,15 @@ def main():
     print(f"Eval games per iteration: {args.eval_games}")
     print(f"Promotion threshold: {args.promotion_threshold:.0%}")
     print(f"Promotion confidence: {args.promotion_confidence:.0%}")
+    if int(args.promotion_pool_size or 0) > 0:
+        print(
+            "Promotion pool gate: "
+            f"size={int(args.promotion_pool_size)} "
+            f"games_per_opp={int(args.promotion_pool_games_per_opponent)} "
+            f"threshold={float(args.promotion_pool_threshold):.0%}"
+        )
+    else:
+        print("Promotion pool gate: disabled")
     if args.publish_ringrift_best_alias:
         print("Publish ringrift_best aliases: enabled")
         if args.sync_staging:

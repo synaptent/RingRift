@@ -62,6 +62,7 @@ from app.training.data_loader import (  # noqa: E402
     StreamingDataLoader,
     WeightedStreamingDataLoader,
     get_sample_count,
+    prefetch_loader,
 )
 from app.training.model_versioning import (  # noqa: E402
     ModelVersionManager,
@@ -1969,9 +1970,22 @@ def train_model(
             # Select appropriate data source
             # For multi-player mode with streaming, use iter_with_mp() to get
             # per-sample num_players from the batch.
+            use_mp_iter = use_multi_player_loss and use_streaming and train_streaming_loader.has_multi_player_values
             if use_streaming:
                 assert train_streaming_loader is not None
-                if use_multi_player_loss and train_streaming_loader.has_multi_player_values:
+                # Use prefetch_loader for background prefetching if enabled
+                use_prefetch = getattr(config, 'use_prefetch', True)
+                pin_memory = getattr(config, 'pin_memory', True) and device.type == 'cuda'
+                prefetch_count = getattr(config, 'prefetch_count', 2)
+
+                if use_prefetch:
+                    train_data_iter = prefetch_loader(
+                        train_streaming_loader,
+                        prefetch_count=prefetch_count,
+                        pin_memory=pin_memory,
+                        use_mp=use_mp_iter,
+                    )
+                elif use_mp_iter:
                     train_data_iter = train_streaming_loader.iter_with_mp()
                 else:
                     train_data_iter = iter(train_streaming_loader)
@@ -2121,9 +2135,18 @@ def train_model(
 
             # Select appropriate validation data source
             # For multi-player mode with streaming, use iter_with_mp()
+            use_val_mp_iter = use_multi_player_loss and use_streaming and val_streaming_loader.has_multi_player_values
             if use_streaming:
                 assert val_streaming_loader is not None
-                if use_multi_player_loss and val_streaming_loader.has_multi_player_values:
+                # Use prefetch_loader for background prefetching if enabled
+                if use_prefetch:
+                    val_data_iter = prefetch_loader(
+                        val_streaming_loader,
+                        prefetch_count=prefetch_count,
+                        pin_memory=pin_memory,
+                        use_mp=use_val_mp_iter,
+                    )
+                elif use_val_mp_iter:
                     val_data_iter = val_streaming_loader.iter_with_mp()
                 else:
                     val_data_iter = iter(val_streaming_loader)
