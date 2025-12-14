@@ -254,9 +254,13 @@ if ! curl -s --connect-timeout 5 "http://localhost:${P2P_PORT}/health" > /dev/nu
     pkill -f '[p]2p_orchestrator.py' 2>/dev/null || true
     sleep 2
 
-    # Start fresh
+# Start fresh
     cd "$RINGRIFT_DIR"
-    PYTHONPATH="$RINGRIFT_DIR" nohup python3 scripts/p2p_orchestrator.py --node-id "$NODE_ID" --port "$P2P_PORT" --peers "$COORDINATOR_URL" --ringrift-path "$RINGRIFT_DIR/.." >> /var/log/ringrift/p2p.log 2>&1 &
+    PY="$RINGRIFT_DIR/venv/bin/python"
+    if [ ! -x "$PY" ]; then
+        PY="$(command -v python3)"
+    fi
+    PYTHONPATH="$RINGRIFT_DIR" nohup "$PY" scripts/p2p_orchestrator.py --node-id "$NODE_ID" --port "$P2P_PORT" --peers "$COORDINATOR_URL" --ringrift-path "$RINGRIFT_DIR/.." >> /var/log/ringrift/p2p.log 2>&1 &
     echo "$(date): P2P orchestrator restarted (PID $!)"
 fi
 EOF
@@ -303,12 +307,16 @@ if [ "$HAS_USABLE_SYSTEMD" != "1" ]; then
   mkdir -p /var/log/ringrift || true
   export PYTHONPATH="${RINGRIFT_DIR:-/root/ringrift/ai-service}"
   export RINGRIFT_CLUSTER_AUTH_TOKEN_FILE="/etc/ringrift/cluster_auth_token"
+  PY="${RINGRIFT_DIR:-/root/ringrift/ai-service}/venv/bin/python"
+  if [ ! -x "$PY" ]; then
+    PY="$(command -v python3)"
+  fi
 
   # Start P2P orchestrator if not healthy.
   if ! curl -s --connect-timeout 5 "http://localhost:${P2P_PORT:-8770}/health" >/dev/null 2>&1; then
     pkill -f '[p]2p_orchestrator.py' 2>/dev/null || true
     cd "${RINGRIFT_DIR:-/root/ringrift/ai-service}"
-    nohup python3 scripts/p2p_orchestrator.py \
+    nohup "$PY" scripts/p2p_orchestrator.py \
       --node-id "${NODE_ID:-unknown}" \
       --port "${P2P_PORT:-8770}" \
       --peers "${COORDINATOR_URL:-}" \
@@ -318,7 +326,7 @@ if [ "$HAS_USABLE_SYSTEMD" != "1" ]; then
 
   # Ensure node_resilience is running (uses a singleton lock).
   cd "${RINGRIFT_DIR:-/root/ringrift/ai-service}"
-  nohup python3 scripts/node_resilience.py \
+  nohup "$PY" scripts/node_resilience.py \
     --node-id "${NODE_ID:-unknown}" \
     --coordinator "${COORDINATOR_URL:-}" \
     --ai-service-dir "${RINGRIFT_DIR:-/root/ringrift/ai-service}" \

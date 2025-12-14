@@ -321,6 +321,20 @@ class NodeResilience:
         """Infer RingRift repo root from ai-service dir."""
         return str(Path(self.config.ai_service_dir).resolve().parent)
 
+    def _python_executable(self) -> str:
+        """Prefer the ai-service venv python when present.
+
+        This matters on cron/non-systemd nodes where `python3` may not include
+        required deps (e.g. aiohttp for p2p_orchestrator).
+        """
+        venv_py = Path(self.config.ai_service_dir) / "venv" / "bin" / "python"
+        try:
+            if venv_py.exists() and os.access(venv_py, os.X_OK):
+                return str(venv_py)
+        except Exception:
+            pass
+        return sys.executable or "python3"
+
     def start_p2p_orchestrator(self) -> bool:
         """Start the P2P orchestrator if not running."""
         if self.check_p2p_health():
@@ -342,7 +356,7 @@ class NodeResilience:
             try:
                 proc = subprocess.Popen(
                     [
-                        sys.executable,
+                        self._python_executable(),
                         os.path.join(self.config.ai_service_dir, "scripts/p2p_orchestrator.py"),
                         "--node-id", self.config.node_id,
                         "--port", str(self.config.p2p_port),
@@ -394,7 +408,7 @@ class NodeResilience:
                 cmd: List[str]
                 if script_path.endswith("run_gpu_selfplay.py"):
                     cmd = [
-                        sys.executable,
+                        self._python_executable(),
                         script_path,
                         "--board", self.config.fallback_board,
                         "--num-players", str(self.config.fallback_num_players),
@@ -407,7 +421,7 @@ class NodeResilience:
                 else:
                     # Default: hybrid selfplay (CPU rules + GPU eval).
                     cmd = [
-                        sys.executable,
+                        self._python_executable(),
                         script_path,
                         "--board-type", self.config.fallback_board,
                         "--num-players", str(self.config.fallback_num_players),
@@ -452,7 +466,7 @@ class NodeResilience:
 
                 proc = subprocess.Popen(
                     [
-                        sys.executable,
+                        self._python_executable(),
                         os.path.join(self.config.ai_service_dir, "scripts/run_self_play_soak.py"),
                         "--num-games", str(self.config.fallback_num_games_cpu),
                         "--board-type", self.config.fallback_board,
@@ -537,7 +551,7 @@ class NodeResilience:
                 if os.path.exists(disk_monitor):
                     logger.info("Running disk cleanup...")
                     cmd = [
-                        sys.executable,
+                        self._python_executable(),
                         disk_monitor,
                         "--threshold",
                         str(self.config.disk_threshold),
