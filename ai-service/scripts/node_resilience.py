@@ -222,6 +222,45 @@ class NodeResilience:
         except Exception:
             return False
 
+    def _systemd_usable(self) -> bool:
+        """Return True when systemd appears to be the active init system.
+
+        NodeResilience runs on a mix of environments (full VMs vs containers).
+        Only use `systemctl` when systemd is actually running; otherwise fall
+        back to direct process supervision.
+        """
+        try:
+            if not Path("/etc/systemd/system").exists():
+                return False
+            result = subprocess.run(
+                ["systemctl", "is-system-running"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            state = (result.stdout or "").strip().lower()
+            # "degraded" is still usable for our purposes.
+            return state in {"running", "degraded"}
+        except FileNotFoundError:
+            return False
+        except Exception:
+            return False
+
+    def _systemd_unit_exists(self, unit: str) -> bool:
+        try:
+            result = subprocess.run(
+                ["systemctl", "show", "-p", "LoadState", "--value", unit],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if result.returncode != 0:
+                return False
+            load_state = (result.stdout or "").strip().lower()
+            return bool(load_state) and load_state != "not-found"
+        except Exception:
+            return False
+
     def _local_orchestrator_url(self, path: str) -> str:
         path = path if path.startswith("/") else f"/{path}"
         return f"http://localhost:{self.config.p2p_port}{path}"
@@ -450,6 +489,25 @@ class NodeResilience:
 
         logger.info("Starting P2P orchestrator...")
         try:
+            # Prefer systemd on full VM hosts to avoid split-brain between
+            # systemd units and a directly-spawned process (which can lead to
+            # bind failures and "ghost" orchestrators after restarts).
+            if self._systemd_usable() and self._systemd_unit_exists("ringrift-p2p.service"):
+                logger.info("Starting P2P orchestrator via systemd (ringrift-p2p.service)")
+                subprocess.run(
+                    ["systemctl", "start", "ringrift-p2p.service"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                deadline = time.time() + 20
+                while time.time() < deadline:
+                    if self.check_p2p_health():
+                        return True
+                    time.sleep(1)
+                logger.warning("systemd start issued but /health did not become ready in time")
+                return False
+
             env = os.environ.copy()
             env["PYTHONPATH"] = self.config.ai_service_dir
 
