@@ -8967,6 +8967,70 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             except Exception:
                 pass
 
+            # Game Analytics Metrics
+            lines.append("# HELP ringrift_game_length_avg Average game length by config")
+            lines.append("# TYPE ringrift_game_length_avg gauge")
+            lines.append("# HELP ringrift_games_per_hour Game generation throughput")
+            lines.append("# TYPE ringrift_games_per_hour gauge")
+            lines.append("# HELP ringrift_opening_diversity Unique opening moves seen")
+            lines.append("# TYPE ringrift_opening_diversity gauge")
+            try:
+                # Use cached analytics if available
+                analytics = await self._get_game_analytics_cached()
+                for config, stats in analytics.get("configs", {}).items():
+                    parts = config.rsplit("_", 1)
+                    if len(parts) == 2:
+                        board_type = parts[0]
+                        num_players = parts[1].replace("p", "")
+                        lines.append(f'ringrift_game_length_avg{{board_type="{board_type}",num_players="{num_players}"}} {stats.get("avg_length", 0)}')
+                        lines.append(f'ringrift_games_per_hour{{board_type="{board_type}",num_players="{num_players}"}} {stats.get("throughput_per_hour", 0)}')
+                        lines.append(f'ringrift_opening_diversity{{board_type="{board_type}",num_players="{num_players}"}} {stats.get("opening_diversity", 0)}')
+            except Exception:
+                pass
+
+            # Best Elo by Config
+            lines.append("# HELP ringrift_best_elo Best Elo rating by config")
+            lines.append("# TYPE ringrift_best_elo gauge")
+            lines.append("# HELP ringrift_elo_games_played Games played by best model")
+            lines.append("# TYPE ringrift_elo_games_played gauge")
+            try:
+                import sqlite3
+                ai_root = Path(self.ringrift_path) / "ai-service"
+                db_path = ai_root / "data" / "unified_elo.db"
+                if db_path.exists():
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT board_type, num_players, MAX(rating), participant_id, games_played
+                        FROM elo_ratings
+                        WHERE games_played >= 10
+                        GROUP BY board_type, num_players
+                    """)
+                    for row in cursor.fetchall():
+                        bt, np, rating, model, games = row
+                        lines.append(f'ringrift_best_elo{{board_type="{bt}",num_players="{np}",model="{model}"}} {rating:.1f}')
+                        lines.append(f'ringrift_elo_games_played{{board_type="{bt}",num_players="{np}",model="{model}"}} {games}')
+                    conn.close()
+            except Exception:
+                pass
+
+            # Training Loss Metrics (from latest training)
+            lines.append("# HELP ringrift_training_loss Latest training loss")
+            lines.append("# TYPE ringrift_training_loss gauge")
+            lines.append("# HELP ringrift_training_epoch Current training epoch")
+            lines.append("# TYPE ringrift_training_epoch gauge")
+            try:
+                training_metrics = await self._get_training_metrics_cached()
+                for config, data in training_metrics.get("configs", {}).items():
+                    parts = config.rsplit("_", 1)
+                    if len(parts) == 2 and data.get("latest_loss"):
+                        board_type = parts[0]
+                        num_players = parts[1].replace("p", "")
+                        lines.append(f'ringrift_training_loss{{board_type="{board_type}",num_players="{num_players}"}} {data["latest_loss"]}')
+                        lines.append(f'ringrift_training_epoch{{board_type="{board_type}",num_players="{num_players}"}} {data.get("latest_epoch", 0)}')
+            except Exception:
+                pass
+
             # Uptime metric
             if hasattr(self, 'start_time'):
                 uptime = now - self.start_time
@@ -10063,6 +10127,131 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         return dict(stats)
 
+    async def _get_game_analytics_cached(self) -> Dict[str, Any]:
+        """Get game analytics with caching (5 min TTL)."""
+        import json
+        from collections import defaultdict
+
+        cache_key = "_game_analytics_cache"
+        cache_time_key = "_game_analytics_cache_time"
+        cache_ttl = 300
+
+        now = time.time()
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
+            if now - getattr(self, cache_time_key) < cache_ttl:
+                return getattr(self, cache_key)
+
+        hours = 24
+        cutoff = now - (hours * 3600)
+
+        ai_root = Path(self.ringrift_path) / "ai-service"
+        data_dirs = [
+            ai_root / "data" / "games" / "daemon_sync",
+            ai_root / "data" / "selfplay",
+        ]
+
+        game_lengths: Dict[str, List[int]] = defaultdict(list)
+        games_by_hour: Dict[str, Dict[int, int]] = defaultdict(lambda: defaultdict(int))
+        opening_moves: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+        for data_dir in data_dirs:
+            if not data_dir.exists():
+                continue
+            for jsonl_path in data_dir.rglob("*.jsonl"):
+                try:
+                    if jsonl_path.stat().st_mtime < cutoff:
+                        continue
+                    with open(jsonl_path, "r") as f:
+                        for line in f:
+                            try:
+                                game = json.loads(line)
+                                board_type = game.get("board_type", "unknown")
+                                num_players = game.get("num_players", 0)
+                                config = f"{board_type}_{num_players}p"
+
+                                length = game.get("length", 0)
+                                if length > 0:
+                                    game_lengths[config].append(length)
+
+                                hour_bucket = int(jsonl_path.stat().st_mtime // 3600)
+                                games_by_hour[config][hour_bucket] += 1
+
+                                moves = game.get("moves", [])
+                                if moves and len(moves) >= 1:
+                                    first_move = str(moves[0].get("action", ""))[:20]
+                                    if first_move:
+                                        opening_moves[config][first_move] += 1
+                            except json.JSONDecodeError:
+                                continue
+                except Exception:
+                    continue
+
+        analytics = {"configs": {}}
+        for config in set(list(game_lengths.keys()) + list(games_by_hour.keys())):
+            lengths = game_lengths.get(config, [])
+            hourly = games_by_hour.get(config, {})
+            openings = opening_moves.get(config, {})
+            throughput = sum(hourly.values()) / max(len(hourly), 1) if hourly else 0
+
+            analytics["configs"][config] = {
+                "avg_length": round(sum(lengths) / len(lengths), 1) if lengths else 0,
+                "throughput_per_hour": round(throughput, 1),
+                "opening_diversity": len(openings),
+            }
+
+        setattr(self, cache_key, analytics)
+        setattr(self, cache_time_key, now)
+        return analytics
+
+    async def _get_training_metrics_cached(self) -> Dict[str, Any]:
+        """Get training metrics with caching (2 min TTL)."""
+        import re
+
+        cache_key = "_training_metrics_cache"
+        cache_time_key = "_training_metrics_cache_time"
+        cache_ttl = 120
+
+        now = time.time()
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
+            if now - getattr(self, cache_time_key) < cache_ttl:
+                return getattr(self, cache_key)
+
+        ai_root = Path(self.ringrift_path) / "ai-service"
+        logs_dir = ai_root / "logs" / "training"
+
+        metrics = {"configs": {}}
+
+        if logs_dir.exists():
+            log_files = sorted(logs_dir.glob("*.log"), key=lambda f: f.stat().st_mtime, reverse=True)[:10]
+
+            for log_file in log_files:
+                try:
+                    content = log_file.read_text()
+                    config_match = re.search(r"(square\d+|hexagonal|hex)_(\d+)p", log_file.name)
+                    if not config_match:
+                        continue
+                    config = f"{config_match.group(1)}_{config_match.group(2)}p"
+
+                    loss_pattern = re.compile(r"[Ee]poch\s+(\d+).*?loss[=:]\s*([\d.]+)")
+                    epochs = []
+                    for match in loss_pattern.finditer(content):
+                        epochs.append({
+                            "epoch": int(match.group(1)),
+                            "loss": float(match.group(2)),
+                        })
+
+                    if epochs:
+                        metrics["configs"][config] = {
+                            "latest_loss": epochs[-1]["loss"],
+                            "latest_epoch": epochs[-1]["epoch"],
+                        }
+                except Exception:
+                    continue
+
+        setattr(self, cache_key, metrics)
+        setattr(self, cache_time_key, now)
+        return metrics
+
     async def handle_victory_table(self, request: web.Request) -> web.Response:
         """GET /victory/table - Victory type breakdown for Grafana Infinity.
 
@@ -10124,6 +10313,254 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         except Exception as e:
             return web.json_response([{"error": str(e)}])
+
+    async def handle_elo_history(self, request: web.Request) -> web.Response:
+        """GET /elo/history - Historical Elo ratings for time series visualization.
+
+        Query params:
+            - config: Filter by config (e.g., square8_2p)
+            - model: Filter by model/participant_id
+            - hours: Hours of history (default 168 = 1 week)
+        """
+        import sqlite3
+
+        try:
+            config_filter = request.query.get("config")
+            model_filter = request.query.get("model")
+            hours = int(request.query.get("hours", "168"))
+
+            ai_root = Path(self.ringrift_path) / "ai-service"
+            db_path = ai_root / "data" / "unified_elo.db"
+
+            if not db_path.exists():
+                return web.json_response([])
+
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            cutoff = time.time() - (hours * 3600)
+
+            query = """
+                SELECT participant_id, board_type, num_players, rating, games_played, timestamp
+                FROM rating_history
+                WHERE timestamp > ?
+            """
+            params = [cutoff]
+
+            if config_filter:
+                parts = config_filter.replace("_", " ").split()
+                if len(parts) >= 2:
+                    board_type = parts[0]
+                    num_players = int(parts[1].replace("p", ""))
+                    query += " AND board_type = ? AND num_players = ?"
+                    params.extend([board_type, num_players])
+
+            if model_filter:
+                query += " AND participant_id LIKE ?"
+                params.append(f"%{model_filter}%")
+
+            query += " ORDER BY timestamp ASC"
+
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            conn.close()
+
+            # Format for Grafana time series
+            data = []
+            for row in rows:
+                participant_id, board_type, num_players, rating, games_played, ts = row
+                data.append({
+                    "time": int(ts * 1000),  # Grafana expects ms
+                    "model": participant_id,
+                    "config": f"{board_type}_{num_players}p",
+                    "elo": round(rating, 1),
+                    "games": games_played,
+                })
+
+            return web.json_response(data)
+
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
+
+    async def handle_games_analytics(self, request: web.Request) -> web.Response:
+        """GET /games/analytics - Game statistics for dashboards.
+
+        Returns aggregated game analytics including:
+        - Average game length by config
+        - Victory type distribution
+        - Games per hour throughput
+        - Opening move diversity
+        """
+        import json
+        from collections import defaultdict
+
+        try:
+            hours = int(request.query.get("hours", "24"))
+            cutoff = time.time() - (hours * 3600)
+
+            ai_root = Path(self.ringrift_path) / "ai-service"
+            data_dirs = [
+                ai_root / "data" / "games" / "daemon_sync",
+                ai_root / "data" / "selfplay",
+            ]
+
+            # Aggregation containers
+            game_lengths: Dict[str, List[int]] = defaultdict(list)
+            victory_types: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+            games_by_hour: Dict[str, Dict[int, int]] = defaultdict(lambda: defaultdict(int))
+            opening_moves: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+            total_games = 0
+
+            for data_dir in data_dirs:
+                if not data_dir.exists():
+                    continue
+                for jsonl_path in data_dir.rglob("*.jsonl"):
+                    try:
+                        if jsonl_path.stat().st_mtime < cutoff:
+                            continue
+                        with open(jsonl_path, "r") as f:
+                            for line in f:
+                                try:
+                                    game = json.loads(line)
+                                    board_type = game.get("board_type", "unknown")
+                                    num_players = game.get("num_players", 0)
+                                    config = f"{board_type}_{num_players}p"
+
+                                    # Game length
+                                    length = game.get("length", 0)
+                                    if length > 0:
+                                        game_lengths[config].append(length)
+
+                                    # Victory type
+                                    vt = game.get("victory_type", "unknown")
+                                    if vt:
+                                        victory_types[config][vt] += 1
+
+                                    # Games by hour (for throughput)
+                                    moves = game.get("moves", [])
+                                    if moves and len(moves) > 0:
+                                        # Use first move timestamp or file mtime
+                                        hour_bucket = int(jsonl_path.stat().st_mtime // 3600)
+                                        games_by_hour[config][hour_bucket] += 1
+
+                                    # Opening moves (first 3 moves)
+                                    if moves and len(moves) >= 1:
+                                        first_move = str(moves[0].get("action", ""))[:20]
+                                        if first_move:
+                                            opening_moves[config][first_move] += 1
+
+                                    total_games += 1
+                                except json.JSONDecodeError:
+                                    continue
+                    except Exception:
+                        continue
+
+            # Build response
+            analytics = {
+                "period_hours": hours,
+                "total_games": total_games,
+                "configs": {}
+            }
+
+            for config in set(list(game_lengths.keys()) + list(victory_types.keys())):
+                lengths = game_lengths.get(config, [])
+                vt = dict(victory_types.get(config, {}))
+                openings = dict(opening_moves.get(config, {}))
+
+                # Calculate throughput (games/hour)
+                hourly = games_by_hour.get(config, {})
+                throughput = sum(hourly.values()) / max(len(hourly), 1) if hourly else 0
+
+                analytics["configs"][config] = {
+                    "games": len(lengths),
+                    "avg_length": round(sum(lengths) / len(lengths), 1) if lengths else 0,
+                    "min_length": min(lengths) if lengths else 0,
+                    "max_length": max(lengths) if lengths else 0,
+                    "victory_types": vt,
+                    "throughput_per_hour": round(throughput, 1),
+                    "opening_diversity": len(openings),
+                    "top_openings": dict(sorted(openings.items(), key=lambda x: -x[1])[:5]),
+                }
+
+            return web.json_response(analytics)
+
+        except Exception as e:
+            return web.json_response({"error": str(e)})
+
+    async def handle_training_metrics(self, request: web.Request) -> web.Response:
+        """GET /training/metrics - Training loss and accuracy metrics.
+
+        Returns recent training metrics from log files.
+        """
+        import re
+
+        try:
+            ai_root = Path(self.ringrift_path) / "ai-service"
+            logs_dir = ai_root / "logs" / "training"
+
+            metrics = {
+                "configs": {},
+                "latest_training": None,
+            }
+
+            if not logs_dir.exists():
+                return web.json_response(metrics)
+
+            # Find recent training logs
+            log_files = sorted(logs_dir.glob("*.log"), key=lambda f: f.stat().st_mtime, reverse=True)[:10]
+
+            for log_file in log_files:
+                try:
+                    content = log_file.read_text()
+
+                    # Extract config from filename (e.g., train_square8_2p_20251214.log)
+                    config_match = re.search(r"(square\d+|hexagonal|hex)_(\d+)p", log_file.name)
+                    if not config_match:
+                        continue
+                    config = f"{config_match.group(1)}_{config_match.group(2)}p"
+
+                    # Parse training metrics from log
+                    # Look for patterns like: "Epoch 5: loss=0.423, policy_loss=0.312, value_loss=0.111"
+                    loss_pattern = re.compile(
+                        r"[Ee]poch\s+(\d+).*?loss[=:]\s*([\d.]+).*?"
+                        r"(?:policy[_\s]?loss[=:]\s*([\d.]+))?.*?"
+                        r"(?:value[_\s]?loss[=:]\s*([\d.]+))?"
+                    )
+
+                    epochs = []
+                    for match in loss_pattern.finditer(content):
+                        epoch = int(match.group(1))
+                        total_loss = float(match.group(2))
+                        policy_loss = float(match.group(3)) if match.group(3) else None
+                        value_loss = float(match.group(4)) if match.group(4) else None
+                        epochs.append({
+                            "epoch": epoch,
+                            "loss": total_loss,
+                            "policy_loss": policy_loss,
+                            "value_loss": value_loss,
+                        })
+
+                    if epochs:
+                        metrics["configs"][config] = {
+                            "log_file": log_file.name,
+                            "epochs": epochs[-20:],  # Last 20 epochs
+                            "latest_loss": epochs[-1]["loss"] if epochs else None,
+                            "latest_epoch": epochs[-1]["epoch"] if epochs else None,
+                        }
+                        if not metrics["latest_training"]:
+                            metrics["latest_training"] = {
+                                "config": config,
+                                "file": log_file.name,
+                                "mtime": log_file.stat().st_mtime,
+                            }
+
+                except Exception:
+                    continue
+
+            return web.json_response(metrics)
+
+        except Exception as e:
+            return web.json_response({"error": str(e)})
 
     async def handle_api_training_status(self, request: web.Request) -> web.Response:
         """Get training pipeline status including NNUE, CMAES, and auto-promotion state.
@@ -13835,8 +14272,11 @@ print(json.dumps({{
         app.router.add_get('/api/selfplay/stats', self.handle_api_selfplay_stats)
         app.router.add_get('/api/elo/leaderboard', self.handle_api_elo_leaderboard)
         app.router.add_get('/elo/table', self.handle_elo_table)
+        app.router.add_get('/elo/history', self.handle_elo_history)
         app.router.add_get('/nodes/table', self.handle_nodes_table)
         app.router.add_get('/victory/table', self.handle_victory_table)
+        app.router.add_get('/games/analytics', self.handle_games_analytics)
+        app.router.add_get('/training/metrics', self.handle_training_metrics)
         app.router.add_get('/api/training/status', self.handle_api_training_status)
         app.router.add_get('/api/canonical/health', self.handle_api_canonical_health)
         app.router.add_get('/api/canonical/jobs', self.handle_api_canonical_jobs_list)

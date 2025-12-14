@@ -263,7 +263,8 @@ def play_nn_vs_nn_game(
     game_state.id = str(uuid.uuid4())
 
     # Capture initial state snapshot for NPZ export (required for training data)
-    initial_state_snapshot = game_state.model_dump(mode="json") if save_game_history else None
+    # Use .dict() for pydantic v1 compatibility
+    initial_state_snapshot = game_state.dict() if save_game_history else None
 
     # Create AI instances - alternate between model A and model B
     # Player 1 -> model_a, Player 2 -> model_b

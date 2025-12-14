@@ -1,0 +1,125 @@
+groups:
+  - name: ringrift-ai-alerts
+    rules:
+      # Elo Regression Alert
+      - alert: EloRegression
+        expr: |
+          (
+            max_over_time(ringrift_best_elo[1h]) - ringrift_best_elo
+          ) > 50
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Elo regression detected for {{ $labels.board_type }}_{{ $labels.num_players }}p'
+          description: 'Best Elo dropped by more than 50 points in the last hour. Current: {{ $value | printf "%.1f" }}'
+
+      # Training Stalled
+      - alert: TrainingStalled
+        expr: |
+          time() - ringrift_last_training_time > 7200
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Training stalled for {{ $labels.board_type }}_{{ $labels.num_players }}p'
+          description: 'No training completed in the last 2 hours'
+
+      # Low Game Generation
+      - alert: LowGameGeneration
+        expr: |
+          ringrift_games_per_hour < 10
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Low game generation for {{ $labels.board_type }}_{{ $labels.num_players }}p'
+          description: 'Game generation rate dropped below 10 games/hour: {{ $value | printf "%.1f" }}'
+
+      # High Training Loss
+      - alert: HighTrainingLoss
+        expr: |
+          ringrift_training_loss > 2.0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'High training loss for {{ $labels.board_type }}_{{ $labels.num_players }}p'
+          description: 'Training loss is unusually high: {{ $value | printf "%.3f" }}'
+
+      # Node Down
+      - alert: NodeDown
+        expr: |
+          ringrift_node_alive == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Cluster node {{ $labels.node }} is down'
+          description: 'Node has been unreachable for 5 minutes'
+
+      # High Memory Usage
+      - alert: HighMemoryUsage
+        expr: |
+          ringrift_memory_percent > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'High memory usage on {{ $labels.node }}'
+          description: 'Memory usage is {{ $value | printf "%.1f" }}%'
+
+      # GPU Memory Full
+      - alert: GPUMemoryFull
+        expr: |
+          ringrift_gpu_memory_percent > 95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'GPU memory nearly full on {{ $labels.node }}'
+          description: 'GPU memory usage is {{ $value | printf "%.1f" }}%'
+
+      # Stale Training Data
+      - alert: StaleTrainingData
+        expr: |
+          ringrift_data_freshness_hours > 6
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Training data is stale for {{ $labels.config }}'
+          description: 'Newest training data is {{ $value | printf "%.1f" }} hours old'
+
+      # Improvement Loop Stuck
+      - alert: ImprovementLoopStuck
+        expr: |
+          increase(ringrift_improvement_cycles_total[6h]) == 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Improvement loop appears stuck'
+          description: 'No improvement cycles completed in the last 6 hours'
+
+      # Promotion Failures
+      - alert: HighPromotionFailures
+        expr: |
+          ringrift_promotion_success_rate < 0.2
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'High promotion failure rate'
+          description: 'Model promotion success rate is only {{ $value | printf "%.1f" }}%'
+
+      # Opening Diversity Drop
+      - alert: LowOpeningDiversity
+        expr: |
+          ringrift_opening_diversity < 10
+        for: 2h
+        labels:
+          severity: info
+        annotations:
+          summary: 'Low opening diversity for {{ $labels.board_type }}_{{ $labels.num_players }}p'
+          description: 'Only {{ $value }} unique openings seen - may indicate collapsed search'

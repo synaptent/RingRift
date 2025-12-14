@@ -64,6 +64,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 RINGRIFT_ROOT = AI_SERVICE_ROOT.parent
 
+# Memory and local task configuration
+MIN_MEMORY_GB = 64  # Minimum RAM to run the unified loop
+DISABLE_LOCAL_TASKS = os.environ.get("RINGRIFT_DISABLE_LOCAL_TASKS", "").lower() in ("1", "true", "yes", "on")
+
 
 # =============================================================================
 # Prometheus Metrics
@@ -692,6 +696,10 @@ class ShadowTournamentService:
 
     async def run_shadow_tournament(self, config_key: str) -> Dict[str, Any]:
         """Run a quick shadow tournament for a configuration."""
+        # Skip local evaluation if disabled
+        if DISABLE_LOCAL_TASKS:
+            return {"skipped": True, "reason": "RINGRIFT_DISABLE_LOCAL_TASKS"}
+
         parts = config_key.rsplit("_", 1)
         board_type = parts[0]
         num_players = int(parts[1].replace("p", ""))
@@ -746,6 +754,10 @@ class ShadowTournamentService:
 
     async def run_full_tournament(self) -> Dict[str, Any]:
         """Run a full tournament across all configurations."""
+        # Skip local evaluation if disabled
+        if DISABLE_LOCAL_TASKS:
+            return {"skipped": True, "reason": "RINGRIFT_DISABLE_LOCAL_TASKS"}
+
         await self.event_bus.publish(DataEvent(
             event_type=DataEventType.EVALUATION_STARTED,
             payload={"type": "full"}
@@ -1671,6 +1683,19 @@ def main():
         return
 
     if args.start or args.foreground:
+        # Check system memory - skip on low-memory machines to avoid OOM
+        try:
+            import psutil
+            system_memory_gb = psutil.virtual_memory().total / (1024**3)
+            if system_memory_gb < MIN_MEMORY_GB:
+                print(f"[UnifiedLoop] ERROR: System has only {system_memory_gb:.1f}GB RAM, minimum {MIN_MEMORY_GB}GB required")
+                print("[UnifiedLoop] Exiting to avoid OOM on low-memory machine")
+                print("[UnifiedLoop] Set RINGRIFT_DISABLE_LOCAL_TASKS=true to run in coordination-only mode")
+                return
+        except ImportError:
+            print("[UnifiedLoop] Warning: psutil not installed, cannot check memory")
+        except Exception as e:
+            print(f"[UnifiedLoop] Warning: Could not check system memory: {e}")
         if config.dry_run:
             print("[UnifiedLoop] DRY RUN MODE - no actual operations will be performed")
 
