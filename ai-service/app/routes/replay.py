@@ -180,15 +180,15 @@ router = APIRouter(prefix="/api/replay", tags=["replay"])
 
 @router.get("/games", response_model=GameListResponse)
 async def list_games(
-    board_type: Optional[str] = Query(None, description="Filter by board type"),
+    board_type: Optional[str] = Query(None, max_length=50, description="Filter by board type"),
     num_players: Optional[int] = Query(None, ge=2, le=4, description="Filter by player count"),
-    winner: Optional[int] = Query(None, description="Filter by winning player"),
-    termination_reason: Optional[str] = Query(None, description="Filter by termination reason"),
-    source: Optional[str] = Query(None, description="Filter by game source"),
-    min_moves: Optional[int] = Query(None, ge=0, description="Minimum move count"),
-    max_moves: Optional[int] = Query(None, ge=0, description="Maximum move count"),
+    winner: Optional[int] = Query(None, ge=1, le=4, description="Filter by winning player"),
+    termination_reason: Optional[str] = Query(None, max_length=50, description="Filter by termination reason"),
+    source: Optional[str] = Query(None, max_length=100, description="Filter by game source"),
+    min_moves: Optional[int] = Query(None, ge=0, le=100000, description="Minimum move count"),
+    max_moves: Optional[int] = Query(None, ge=0, le=100000, description="Maximum move count"),
     limit: int = Query(20, ge=1, le=100, description="Max results to return"),
-    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    offset: int = Query(0, ge=0, le=1000000, description="Offset for pagination"),
 ):
     """List games with optional filters.
 
@@ -493,12 +493,12 @@ async def get_stats():
 class StoreGameRequest(BaseModel):
     """Request to store a game from sandbox."""
 
-    gameId: Optional[str] = Field(None, description="Optional game ID (generated if not provided)")
-    initialState: Dict[str, Any]
-    finalState: Dict[str, Any]
-    moves: List[Dict[str, Any]]
-    choices: Optional[List[Dict[str, Any]]] = None
-    metadata: Optional[Dict[str, Any]] = None
+    gameId: Optional[str] = Field(None, max_length=100, description="Optional game ID (generated if not provided)")
+    initialState: Dict[str, Any] = Field(..., description="Initial game state")
+    finalState: Dict[str, Any] = Field(..., description="Final game state")
+    moves: List[Dict[str, Any]] = Field(..., max_length=10000, description="List of moves (max 10000)")
+    choices: Optional[List[Dict[str, Any]]] = Field(None, max_length=1000, description="List of choices (max 1000)")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Optional metadata")
 
 
 class StoreGameResponse(BaseModel):
