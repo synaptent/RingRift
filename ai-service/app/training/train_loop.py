@@ -3,7 +3,7 @@ import shutil
 import json
 from typing import Optional
 
-from app.training.generate_data import generate_dataset  # noqa: E402
+from app.training.generate_data import generate_dataset, generate_dataset_gpu_parallel  # noqa: E402
 from app.training.train import train_model  # noqa: E402
 from app.models import AIConfig, BoardType  # noqa: E402
 from app.ai.descent_ai import DescentAI  # noqa: E402
@@ -69,43 +69,57 @@ def run_training_loop(config: Optional[TrainConfig] = None):
     for i in range(num_loops):
         print(f"\n=== Iteration {i+1}/{num_loops} ===")
 
-        # 1. Self-Play (Descent vs Descent)
-        print("Generating self-play data...")
+        # 1. Self-Play Data Generation
+        # Choose between GPU parallel (fast, heuristic-based) or CPU sequential
+        # (slower but uses tree search via DescentAI for higher quality)
+        if config.use_gpu_parallel_datagen:
+            print("Generating self-play data (GPU parallel mode)...")
+            generate_dataset_gpu_parallel(
+                num_games=config.episodes_per_iter,
+                output_file=data_file,
+                board_type=config.board_type,
+                seed=config.seed + i,  # Vary seed per iteration
+                max_moves=config.max_moves_per_game,
+                num_players=2,
+                gpu_batch_size=config.gpu_batch_size,
+            )
+        else:
+            print("Generating self-play data (CPU sequential mode)...")
 
-        # Initialize Descent AIs
-        # They will use the current neural net (if available) for evaluation.
-        # Use rngSeed so that DescentAI/BaseAI derive a deterministic
-        # per-instance RNG for self-play games in the training loop.
-        ai1 = DescentAI(
-            1,
-            AIConfig(
-                difficulty=5,
-                think_time=500,
-                randomness=0.1,
-                rngSeed=config.seed,
-            ),
-        )
-        ai2 = DescentAI(
-            2,
-            AIConfig(
-                difficulty=5,
-                think_time=500,
-                randomness=0.1,
-                # Use a different per-instance seed from player 1 to avoid
-                # correlated exploration in self-play.
-                rngSeed=(config.seed + 1),
-            ),
-        )
+            # Initialize Descent AIs
+            # They will use the current neural net (if available) for evaluation.
+            # Use rngSeed so that DescentAI/BaseAI derive a deterministic
+            # per-instance RNG for self-play games in the training loop.
+            ai1 = DescentAI(
+                1,
+                AIConfig(
+                    difficulty=5,
+                    think_time=500,
+                    randomness=0.1,
+                    rngSeed=config.seed,
+                ),
+            )
+            ai2 = DescentAI(
+                2,
+                AIConfig(
+                    difficulty=5,
+                    think_time=500,
+                    randomness=0.1,
+                    # Use a different per-instance seed from player 1 to avoid
+                    # correlated exploration in self-play.
+                    rngSeed=(config.seed + 1),
+                ),
+            )
 
-        # Generate data
-        generate_dataset(
-            num_games=config.episodes_per_iter,
-            output_file=data_file,
-            ai1=ai1,
-            ai2=ai2,
-            board_type=config.board_type,
-            seed=config.seed,
-        )
+            # Generate data
+            generate_dataset(
+                num_games=config.episodes_per_iter,
+                output_file=data_file,
+                ai1=ai1,
+                ai2=ai2,
+                board_type=config.board_type,
+                seed=config.seed,
+            )
 
         # 2. Train Neural Net
         print("Training neural network...")

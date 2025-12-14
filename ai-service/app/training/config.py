@@ -39,6 +39,11 @@ class TrainConfig:
     num_filters: Optional[int] = None
     policy_size: Optional[int] = None
 
+    # GPU parallel data generation settings
+    # When enabled, uses ParallelGameRunner for 5-10x faster data generation
+    use_gpu_parallel_datagen: bool = False
+    gpu_batch_size: int = 20  # Number of games to run in parallel on GPU
+
     # Paths (initialised to repository-root-relative defaults in __post_init__)
     # When instantiated, these will be rewritten as absolute paths anchored at
     # the ai-service repo root so that training artefacts do not depend on the

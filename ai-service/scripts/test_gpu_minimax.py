@@ -35,7 +35,7 @@ from app.ai.minimax_ai import MinimaxAI
 from app.ai.heuristic_ai import HeuristicAI
 from app.models import AIConfig, BoardType, GameState, GameStatus, Move
 from app.training.generate_data import create_initial_state
-from app.rules.interfaces import RulesEngine
+from app.rules.default_engine import DefaultRulesEngine
 
 
 @dataclass
@@ -54,7 +54,7 @@ class GPUMinimaxTester:
     def __init__(self, verbose: bool = True):
         self.verbose = verbose
         self.results: List[TestResult] = []
-        self.rules_engine = RulesEngine()
+        self.rules_engine = DefaultRulesEngine()
 
         # Detect GPU
         self.device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
