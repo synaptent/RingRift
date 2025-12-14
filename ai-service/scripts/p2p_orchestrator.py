@@ -292,9 +292,11 @@ class NodeInfo:
         if getattr(self, "retired", False):
             return False
         # LEARNED LESSONS - Don't start jobs on resource-constrained nodes
-        if self.disk_percent >= DISK_CRITICAL_THRESHOLD:
+        if self.disk_percent >= DISK_WARNING_THRESHOLD:
             return False
-        if self.memory_percent >= MEMORY_CRITICAL_THRESHOLD:
+        if self.memory_percent >= MEMORY_WARNING_THRESHOLD:
+            return False
+        if self.get_load_score() >= LOAD_MAX_FOR_NEW_JOBS:
             return False
         return True
 
@@ -6624,14 +6626,16 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             # Find GPU worker for training
             gpu_worker = None
+            candidates: List[NodeInfo] = []
             with self.peers_lock:
-                for peer in self.peers.values():
-                    if peer.has_gpu and peer.is_healthy():
-                        gpu_worker = peer
-                        break
-
-            if not gpu_worker and self.self_info.has_gpu:
-                gpu_worker = self.self_info
+                candidates.extend([p for p in self.peers.values() if p.is_gpu_node() and p.is_healthy()])
+            if self.self_info.is_gpu_node() and self.self_info.is_healthy():
+                candidates.append(self.self_info)
+            if candidates:
+                candidates.sort(
+                    key=lambda p: (-p.gpu_power_score(), p.get_load_score(), str(p.node_id))
+                )
+                gpu_worker = candidates[0]
 
             if not gpu_worker:
                 print(f"[P2P] ImprovementCycle {cycle_id}: No GPU worker available, deferring")
