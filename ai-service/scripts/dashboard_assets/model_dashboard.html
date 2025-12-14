@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RingRift Model Performance Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #00d4ff;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        .header .subtitle {
+            color: #888;
+            font-size: 1rem;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+        .card {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        .card h2 {
+            color: #00d4ff;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-box {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-box .value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        .stat-box .label {
+            color: #888;
+            font-size: 0.85rem;
+            margin-top: 5px;
+        }
+        .leaderboard {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .leaderboard table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .leaderboard th, .leaderboard td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #333;
+        }
+        .leaderboard th {
+            color: #00d4ff;
+            font-weight: 600;
+        }
+        .leaderboard tr:hover {
+            background: #1f3b6e;
+        }
+        .rank-1 { color: #ffd700; }
+        .rank-2 { color: #c0c0c0; }
+        .rank-3 { color: #cd7f32; }
+        .ci-bar {
+            display: inline-block;
+            height: 8px;
+            background: linear-gradient(90deg, #0f3460 0%, #00d4ff 50%, #0f3460 100%);
+            border-radius: 4px;
+            min-width: 60px;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+        .refresh-btn {
+            background: #00d4ff;
+            color: #1a1a2e;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-left: 20px;
+        }
+        .refresh-btn:hover {
+            background: #00b8e6;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-online { background: #00ff88; }
+        .status-offline { background: #ff4444; }
+        .cost-highlight {
+            color: #00ff88;
+        }
+        @media (max-width: 768px) {
+            .stat-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>RingRift AI Dashboard</h1>
+        <p class="subtitle">
+            Model Performance & Training Metrics
+            <button class="refresh-btn" onclick="refreshData()">Refresh</button>
+        </p>
+    </div>
+
+    <div class="stat-grid">
+        <div class="stat-box">
+            <div class="value" id="total-models">--</div>
+            <div class="label">Total Models</div>
+        </div>
+        <div class="stat-box">
+            <div class="value" id="games-today">--</div>
+            <div class="label">Games Today</div>
+        </div>
+        <div class="stat-box">
+            <div class="value" id="active-nodes">--</div>
+            <div class="label">Active Nodes</div>
+        </div>
+        <div class="stat-box">
+            <div class="value cost-highlight" id="cost-today">--</div>
+            <div class="label">Cost Today ($)</div>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>Elo Leaderboard (Square8 2P)</h2>
+            <div class="leaderboard">
+                <table id="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Model</th>
+                            <th>Elo</th>
+                            <th>95% CI</th>
+                            <th>Games</th>
+                            <th>Win Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-body">
+                        <tr><td colspan="6">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Elo Rating History</h2>
+            <div class="chart-container">
+                <canvas id="elo-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Training Progress</h2>
+            <div class="chart-container">
+                <canvas id="training-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Cluster Status</h2>
+            <div class="leaderboard">
+                <table id="cluster-table">
+                    <thead>
+                        <tr>
+                            <th>Node</th>
+                            <th>GPU</th>
+                            <th>Utilization</th>
+                            <th>Cost/hr</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cluster-body">
+                        <tr><td colspan="5">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Games per Dollar Efficiency</h2>
+            <div class="chart-container">
+                <canvas id="efficiency-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Recent Promotions</h2>
+            <div class="leaderboard" id="promotions-list">
+                <p style="color: #888; padding: 20px;">Loading promotion history...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Charts
+        let eloChart, trainingChart, efficiencyChart;
+
+        function initCharts() {
+            const chartOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: '#eee' }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#888' },
+                        grid: { color: '#333' }
+                    },
+                    y: {
+                        ticks: { color: '#888' },
+                        grid: { color: '#333' }
+                    }
+                }
+            };
+
+            // Elo history chart
+            const eloCtx = document.getElementById('elo-chart').getContext('2d');
+            eloChart = new Chart(eloCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Best Model Elo',
+                        data: [],
+                        borderColor: '#00d4ff',
+                        backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: chartOptions
+            });
+
+            // Training progress chart
+            const trainingCtx = document.getElementById('training-chart').getContext('2d');
+            trainingChart = new Chart(trainingCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Square8 2P', 'Square8 3P', 'Square19 2P', 'Hex 2P'],
+                    datasets: [{
+                        label: 'Games Generated',
+                        data: [0, 0, 0, 0],
+                        backgroundColor: '#00d4ff'
+                    }]
+                },
+                options: chartOptions
+            });
+
+            // Efficiency chart
+            const effCtx = document.getElementById('efficiency-chart').getContext('2d');
+            efficiencyChart = new Chart(effCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Games per Dollar',
+                        data: [],
+                        borderColor: '#00ff88',
+                        backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: chartOptions
+            });
+        }
+
+        function updateLeaderboard(data) {
+            const tbody = document.getElementById('leaderboard-body');
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6">No models found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map((model, idx) => {
+                const rankClass = idx < 3 ? `rank-${idx + 1}` : '';
+                const ciWidth = (model.ci_upper - model.ci_lower) || 100;
+                return `
+                    <tr>
+                        <td class="${rankClass}">${idx + 1}</td>
+                        <td>${model.model_id || model.agent_id}</td>
+                        <td>${Math.round(model.rating || model.elo)}</td>
+                        <td>
+                            <span class="ci-bar" style="width: ${Math.min(ciWidth / 2, 100)}px"></span>
+                            ±${Math.round(model.rating_deviation || 50)}
+                        </td>
+                        <td>${model.games_played || 0}</td>
+                        <td>${((model.win_rate || 0) * 100).toFixed(1)}%</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function updateClusterStatus(data) {
+            const tbody = document.getElementById('cluster-body');
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5">No nodes reporting</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(node => {
+                const statusClass = node.is_up ? 'status-online' : 'status-offline';
+                const utilPct = ((node.gpu_utilization || 0) * 100).toFixed(0);
+                return `
+                    <tr>
+                        <td>${node.node}</td>
+                        <td>${node.gpu_type}</td>
+                        <td>${utilPct}%</td>
+                        <td>$${(node.cost_per_hour || 0).toFixed(2)}</td>
+                        <td><span class="status-indicator ${statusClass}"></span>${node.is_up ? 'Online' : 'Offline'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function updateStats(data) {
+            document.getElementById('total-models').textContent = data.total_models || '--';
+            document.getElementById('games-today').textContent = data.games_today?.toLocaleString() || '--';
+            document.getElementById('active-nodes').textContent = data.active_nodes || '--';
+            document.getElementById('cost-today').textContent = data.cost_today?.toFixed(2) || '--';
+        }
+
+        async function refreshData() {
+            try {
+                // Fetch from local API endpoints
+                const [leaderboard, cluster, stats] = await Promise.all([
+                    fetch('/api/leaderboard?board=square8&players=2').then(r => r.ok ? r.json() : []).catch(() => []),
+                    fetch('/api/cluster/status').then(r => r.ok ? r.json() : []).catch(() => []),
+                    fetch('/api/stats').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+                ]);
+
+                updateLeaderboard(leaderboard);
+                updateClusterStatus(cluster);
+                updateStats(stats);
+
+                // Update charts with mock data for demo
+                const now = new Date();
+                const labels = Array.from({length: 24}, (_, i) => {
+                    const d = new Date(now - (23-i) * 3600000);
+                    return d.getHours() + ':00';
+                });
+
+                // Simulate Elo trend
+                const eloData = Array.from({length: 24}, () => 1500 + Math.random() * 200);
+                eloChart.data.labels = labels;
+                eloChart.data.datasets[0].data = eloData;
+                eloChart.update();
+
+                // Simulate efficiency
+                const effData = Array.from({length: 24}, () => 50 + Math.random() * 100);
+                efficiencyChart.data.labels = labels;
+                efficiencyChart.data.datasets[0].data = effData;
+                efficiencyChart.update();
+
+            } catch (err) {
+                console.error('Failed to refresh data:', err);
+            }
+        }
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            refreshData();
+
+            // Auto-refresh every 30 seconds
+            setInterval(refreshData, 30000);
+        });
+    </script>
+</body>
+</html>

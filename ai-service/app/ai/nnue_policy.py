@@ -482,6 +482,7 @@ class NNUEPolicySample:
     player_number: int
     game_id: str
     move_number: int
+    sample_weight: float = 1.0  # Weight for weighted loss (for distillation)
 
 
 @dataclass
@@ -627,14 +628,18 @@ class NNUEPolicyDataset(Dataset):
                     current_player = state.current_player or 1
 
                     # Calculate value
-                    if winner == current_player:
+                    is_winner = winner == current_player
+                    if is_winner:
                         value = 1.0
                     elif winner is None or winner == 0:
                         value = 0.0
                     else:
                         value = -1.0
 
-                    if value == 0.0 and not self.config.include_draws:
+                    # Distillation filtering: only include winning players' positions
+                    if self.config.distill_from_winners and not is_winner:
+                        pass  # Skip non-winner positions but continue replay
+                    elif value == 0.0 and not self.config.include_draws:
                         pass  # Skip draws but continue replay
                     else:
                         # Get legal moves at this position
@@ -661,6 +666,11 @@ class NNUEPolicyDataset(Dataset):
                                         legal_moves
                                     )
 
+                                    # Calculate sample weight for distillation
+                                    sample_weight = 1.0
+                                    if is_winner and self.config.winner_weight_boost > 1.0:
+                                        sample_weight = self.config.winner_weight_boost
+
                                     sample = NNUEPolicySample(
                                         features=features,
                                         value=value,
@@ -671,6 +681,7 @@ class NNUEPolicyDataset(Dataset):
                                         player_number=current_player,
                                         game_id=game_id,
                                         move_number=move_number,
+                                        sample_weight=sample_weight,
                                     )
                                     samples.append(sample)
                         except Exception as e:
@@ -771,7 +782,7 @@ class NNUEPolicyDataset(Dataset):
         """Get a single sample as tensors.
 
         Returns:
-            Tuple of (features, value, from_indices, to_indices, move_mask, target_idx)
+            Tuple of (features, value, from_indices, to_indices, move_mask, target_idx, sample_weight)
         """
         sample = self.samples[idx]
         return (
@@ -781,4 +792,5 @@ class NNUEPolicyDataset(Dataset):
             torch.from_numpy(sample.to_indices).long(),
             torch.from_numpy(sample.move_mask).bool(),
             torch.tensor(sample.target_move_idx, dtype=torch.long),
+            torch.tensor(sample.sample_weight, dtype=torch.float32),
         )

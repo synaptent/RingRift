@@ -306,7 +306,8 @@ def collate_policy_batch(batch):
     to_indices = torch.stack([b[3] for b in batch])
     move_mask = torch.stack([b[4] for b in batch])
     target_idx = torch.stack([b[5] for b in batch])
-    return features, values, from_indices, to_indices, move_mask, target_idx
+    sample_weights = torch.stack([b[6] for b in batch])
+    return features, values, from_indices, to_indices, move_mask, target_idx, sample_weights
 
 
 def train_nnue_policy(
@@ -336,18 +337,25 @@ def train_nnue_policy(
     temperature_end: float = 0.5,
     temperature_schedule: str = "cosine",
     label_smoothing: float = 0.1,
+    distill_from_winners: bool = False,
+    winner_weight_boost: float = 1.0,
 ) -> Dict[str, Any]:
     """Train NNUE policy model and return training report."""
     seed_all(seed)
 
-    # Create dataset
+    # Create dataset with distillation options
     config = NNUEPolicyDatasetConfig(
         board_type=board_type,
         num_players=num_players,
         sample_every_n_moves=sample_every_n,
         min_game_length=min_game_length,
         max_moves_per_position=max_moves_per_position,
+        distill_from_winners=distill_from_winners,
+        winner_weight_boost=winner_weight_boost,
     )
+
+    if distill_from_winners:
+        logger.info(f"Distillation mode: training on winners only (weight boost: {winner_weight_boost}x)")
     dataset = NNUEPolicyDataset(
         db_paths=db_paths,
         config=config,
@@ -693,6 +701,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         temperature_end=args.temperature_end,
         temperature_schedule=args.temperature_schedule,
         label_smoothing=args.label_smoothing,
+        distill_from_winners=args.distill_from_winners,
+        winner_weight_boost=args.winner_weight_boost,
     )
 
     # Add metadata to report
