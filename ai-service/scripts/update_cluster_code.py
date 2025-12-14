@@ -139,7 +139,9 @@ async def run_ssh_command(ssh_cmd: list[str], remote_cmd: str, timeout: int = 60
             stderr=asyncio.subprocess.STDOUT,
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        output = stdout.decode("utf-8", errors="replace").strip()
+        # Preserve leading whitespace for commands like `git status --porcelain`,
+        # which encode unstaged changes with a leading space (e.g. " M file").
+        output = stdout.decode("utf-8", errors="replace").rstrip()
         return proc.returncode == 0, output
     except asyncio.TimeoutError:
         return False, "SSH timeout"
