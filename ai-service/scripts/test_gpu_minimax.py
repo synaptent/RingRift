@@ -35,7 +35,7 @@ from app.ai.minimax_ai import MinimaxAI
 from app.ai.heuristic_ai import HeuristicAI
 from app.models import AIConfig, BoardType, GameState, GameStatus, Move
 from app.training.generate_data import create_initial_state
-from app.rules.engine import RulesEngine
+from app.rules.interfaces import RulesEngine
 
 
 @dataclass
