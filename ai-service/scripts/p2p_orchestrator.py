@@ -571,13 +571,13 @@ class TrainingJob:
 class TrainingThresholds:
     """Configuration for automatic training triggers."""
     # Minimum games required to trigger training
-    min_games_nnue: int = 10000         # NNUE needs lots of data
+    min_games_nnue: int = 2000          # Start sooner; improves as more data arrives
     min_games_cmaes: int = 1000         # CMA-ES can work with fewer games
     # Incremental thresholds (trigger re-training when new data >= threshold)
-    incremental_games_nnue: int = 5000  # Re-train every 5k new games
+    incremental_games_nnue: int = 1000  # Re-train every 1k new games
     incremental_games_cmaes: int = 500  # Re-optimize every 500 new games
     # Cooldown between training runs (seconds)
-    cooldown_seconds: float = 3600.0    # 1 hour
+    cooldown_seconds: float = 1800.0    # 30 minutes
     # Auto-training enabled flags
     auto_nnue_enabled: bool = True
     auto_cmaes_enabled: bool = True
@@ -6247,6 +6247,28 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         current_time = time.time()
         thresholds = self.training_thresholds
 
+        def _cooldown_ok(job_type: str, config_key: str) -> bool:
+            cooldown = float(getattr(thresholds, "cooldown_seconds", 0.0) or 0.0)
+            if cooldown <= 0:
+                return True
+            last_seen = 0.0
+            with self.training_lock:
+                for job in self.training_jobs.values():
+                    if str(getattr(job, "job_type", "")) != job_type:
+                        continue
+                    job_key = f"{job.board_type}_{job.num_players}p"
+                    if job_key != config_key:
+                        continue
+                    last_seen = max(
+                        last_seen,
+                        float(getattr(job, "completed_at", 0.0) or 0.0),
+                        float(getattr(job, "started_at", 0.0) or 0.0),
+                        float(getattr(job, "created_at", 0.0) or 0.0),
+                    )
+            if last_seen <= 0:
+                return True
+            return (current_time - last_seen) >= cooldown
+
         # Check each board type / player count combination
         for config_key, config_data in self.cluster_data_manifest.by_board_type.items():
             parts = config_key.split("_")
@@ -6263,6 +6285,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     new_games = total_games - last_nnue_games
                     if new_games >= thresholds.incremental_games_nnue or last_nnue_games == 0:
                         # Check cooldown
+                        if not _cooldown_ok("nnue", config_key):
+                            continue
                         existing_job = self._find_running_training_job("nnue", config_key)
                         if not existing_job:
                             jobs_to_start.append({
@@ -6279,6 +6303,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 if total_games >= thresholds.min_games_cmaes:
                     new_games = total_games - last_cmaes_games
                     if new_games >= thresholds.incremental_games_cmaes or last_cmaes_games == 0:
+                        if not _cooldown_ok("cmaes", config_key):
+                            continue
                         existing_job = self._find_running_training_job("cmaes", config_key)
                         if not existing_job:
                             jobs_to_start.append({
@@ -6678,21 +6704,65 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             num_players = data.get("num_players", 2)
             epochs = data.get("epochs", 100)
             batch_size = data.get("batch_size", 2048)
+            learning_rate = data.get("learning_rate", None)
 
             # Start NNUE training subprocess
             output_path = os.path.join(
                 self.ringrift_path, "ai-service", "models", "nnue",
                 f"{board_type}_{num_players}p_auto.pt"
             )
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            # Collect local selfplay databases. The NNUE trainer requires at
+            # least one DB (it can replay moves when snapshots are absent).
+            data_dir = self.get_data_directory()
+            board_tokens = [str(board_type).lower()]
+            if "hex" in board_tokens[0]:
+                board_tokens = ["hexagonal", "hex"]
+            players_token = f"_{int(num_players)}p"
+
+            candidate_dbs: List[Path] = []
+            for pattern in ("selfplay/**/*.db", "games/**/*.db"):
+                for db_path in data_dir.glob(pattern):
+                    if not db_path.is_file():
+                        continue
+                    path_lower = str(db_path).lower()
+                    if players_token not in path_lower:
+                        continue
+                    if not any(tok in path_lower for tok in board_tokens):
+                        continue
+                    candidate_dbs.append(db_path)
+
+            # Fallback: if naming conventions differ, use any selfplay DBs.
+            if not candidate_dbs:
+                candidate_dbs = [p for p in data_dir.glob("selfplay/**/*.db") if p.is_file()]
+
+            # De-dupe + prefer newest DBs (avoid overlong argv on large clusters).
+            unique_dbs = list({p.resolve() for p in candidate_dbs})
+            unique_dbs.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
+            max_dbs = 64
+            unique_dbs = unique_dbs[:max_dbs]
+
+            if not unique_dbs:
+                return web.json_response(
+                    {
+                        "success": False,
+                        "error": f"No selfplay DBs found under {data_dir} for {board_type} {num_players}p",
+                    },
+                    status=400,
+                )
 
             cmd = [
                 sys.executable, "-m", "scripts.train_nnue",
+                "--db", *[str(p) for p in unique_dbs],
                 "--board-type", board_type,
                 "--num-players", str(num_players),
                 "--epochs", str(epochs),
                 "--batch-size", str(batch_size),
                 "--save-path", output_path,
             ]
+            if learning_rate is not None:
+                cmd.extend(["--learning-rate", str(learning_rate)])
 
             env = os.environ.copy()
             env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
@@ -6702,6 +6772,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
+                cwd=os.path.join(self.ringrift_path, "ai-service"),
             )
 
             print(f"[P2P] Started NNUE training subprocess (PID {proc.pid}) for job {job_id}")
@@ -9965,14 +10036,41 @@ print(json.dumps({{
         """
         target_selfplay = 2
         has_gpu = bool(getattr(node, "has_gpu", False))
+        cpu_count = int(getattr(node, "cpu_count", 0) or 0)
         memory_gb = int(getattr(node, "memory_gb", 0) or 0)
+        cpu_percent = float(getattr(node, "cpu_percent", 0.0) or 0.0)
+        mem_percent = float(getattr(node, "memory_percent", 0.0) or 0.0)
+        disk_percent = float(getattr(node, "disk_percent", 0.0) or 0.0)
+        gpu_percent = float(getattr(node, "gpu_percent", 0.0) or 0.0)
+        gpu_mem_percent = float(getattr(node, "gpu_memory_percent", 0.0) or 0.0)
+
         if has_gpu:
-            if memory_gb >= 64:
-                target_selfplay = 4
-            if "5090" in (getattr(node, "gpu_name", "") or "").lower():
+            gpu_name = (getattr(node, "gpu_name", "") or "").lower()
+            # Baseline concurrency by accelerator tier.
+            if any(tag in gpu_name for tag in ("h100", "h200", "gh200", "5090")):
                 target_selfplay = 8
+            elif any(tag in gpu_name for tag in ("a100", "4090")):
+                target_selfplay = 6
+            elif any(tag in gpu_name for tag in ("3090", "a10")):
+                target_selfplay = 4
+            elif memory_gb >= 64:
+                target_selfplay = 4
+
+            # Scale slightly with CPU cores for hybrid workloads (CPU rules + GPU eval).
+            if cpu_count > 0:
+                cpu_bonus = max(0, min(4, cpu_count // 48))
+                target_selfplay = min(16, target_selfplay + cpu_bonus)
+
+            # Utilization-aware tuning.
+            if gpu_percent > 90 or gpu_mem_percent > 90:
+                target_selfplay = max(1, target_selfplay - 2)
+            if cpu_percent > 95:
+                target_selfplay = min(target_selfplay, 2)
+            elif cpu_percent > 85:
+                target_selfplay = min(target_selfplay, max(1, target_selfplay - 1))
+            elif gpu_percent < 10 and cpu_percent < 70 and mem_percent < 80:
+                target_selfplay = min(16, target_selfplay + 1)
         else:
-            cpu_count = int(getattr(node, "cpu_count", 0) or 0)
             if cpu_count > 0:
                 cpu_target = max(2, min(16, cpu_count // 4))
                 target_selfplay = max(target_selfplay, cpu_target)
@@ -9983,12 +10081,20 @@ print(json.dumps({{
                 mem_target = max(2, min(16, memory_gb // 8))
                 target_selfplay = min(target_selfplay, mem_target)
 
-        if float(getattr(node, "disk_percent", 0.0) or 0.0) >= DISK_WARNING_THRESHOLD:
+            # Utilization-aware scaling.
+            if cpu_percent > 95:
+                target_selfplay = max(1, target_selfplay // 2)
+            elif cpu_percent > 85:
+                target_selfplay = max(1, target_selfplay - 1)
+            elif cpu_percent < 25 and mem_percent < 75:
+                target_selfplay = min(16, target_selfplay + 1)
+
+        if disk_percent >= DISK_WARNING_THRESHOLD:
             target_selfplay = min(target_selfplay, 2)
-        if float(getattr(node, "memory_percent", 0.0) or 0.0) >= MEMORY_WARNING_THRESHOLD:
+        if mem_percent >= MEMORY_WARNING_THRESHOLD:
             target_selfplay = min(target_selfplay, 1)
 
-        return int(target_selfplay)
+        return int(max(1, target_selfplay))
 
     async def _manage_cluster_jobs(self):
         """Manage jobs across the cluster (leader only).
@@ -10066,7 +10172,7 @@ print(json.dumps({{
         for node in all_nodes:
             try:
                 target_selfplay = self._target_selfplay_jobs_for_node(node)
-                dynamic_threshold = max(32, target_selfplay * 3)
+                dynamic_threshold = max(16, target_selfplay * 3)
                 runaway_threshold = (
                     int(RUNAWAY_SELFPLAY_PROCESS_THRESHOLD)
                     if int(RUNAWAY_SELFPLAY_PROCESS_THRESHOLD) > 0
@@ -10637,6 +10743,8 @@ print(json.dumps({{
                     "--num-players", str(num_players),
                     "--num-games", str(num_games),
                     "--output-dir", str(output_dir),
+                    "--record-db", str(output_dir / "games.db"),
+                    "--lean-db",
                     "--engine-mode", engine_mode_norm,
                     "--seed", str(int(time.time() * 1000) % 2**31),
                 ]

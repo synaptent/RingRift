@@ -37,7 +37,7 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -156,6 +156,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import shared victory type module (must be after path setup)
 from app.utils.victory_type import derive_victory_type
+from app.db import (
+    get_or_create_db,
+    record_completed_game_with_parity_check,
+    ParityValidationError,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -176,6 +181,10 @@ def run_hybrid_selfplay(
     engine_mode: str = "heuristic-only",
     weights: Optional[Dict[str, float]] = None,
     mix_ratio: float = 0.8,
+    record_db: Optional[str] = None,
+    lean_db: bool = False,
+    enforce_canonical_history: bool = True,
+    parity_mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run hybrid GPU-accelerated self-play.
 
@@ -251,6 +260,17 @@ def run_hybrid_selfplay(
         prefer_gpu=True,
     )
 
+    # Optional recording to GameReplayDB for downstream training/parity tooling.
+    replay_db = get_or_create_db(
+        record_db,
+        enforce_canonical_history=bool(enforce_canonical_history),
+        respect_env_disable=True,
+    ) if record_db else None
+    store_history_entries = not bool(lean_db)
+
+    games_recorded = 0
+    record_failures = 0
+
     # Statistics
     total_games = 0
     total_moves = 0
@@ -291,10 +311,12 @@ def run_hybrid_selfplay(
                 board_type=board_type_enum,
                 num_players=num_players,
             )
+            initial_state_for_db = game_state
             # Capture initial state for training data export (required for NPZ conversion)
             initial_state_snapshot = game_state.model_dump(mode="json")
 
             moves_played = []
+            moves_for_db = []
             move_count = 0
 
             while game_state.game_status == "active" and move_count < max_moves:
@@ -364,29 +386,40 @@ def run_hybrid_selfplay(
                         else:
                             best_move = valid_moves[0]
 
+                move_timestamp = datetime.now(timezone.utc)
+                stamped_move = best_move.model_copy(
+                    update={
+                        "id": f"move-{move_count + 1}",
+                        "timestamp": move_timestamp,
+                        "think_time": 0,
+                        "move_number": move_count + 1,
+                    }
+                )
+
                 # Apply move (CPU - full rules)
-                game_state = GameEngine.apply_move(game_state, best_move)
+                game_state = GameEngine.apply_move(game_state, stamped_move)
+                moves_for_db.append(stamped_move)
 
                 # Record full move data for training
                 move_record = {
-                    "type": best_move.type.value if hasattr(best_move.type, 'value') else str(best_move.type),
-                    "player": best_move.player,
+                    "type": stamped_move.type.value if hasattr(stamped_move.type, 'value') else str(stamped_move.type),
+                    "player": stamped_move.player,
                 }
                 # Add position data if available
-                if hasattr(best_move, 'to') and best_move.to is not None:
-                    move_record["to"] = {"x": best_move.to.x, "y": best_move.to.y}
-                if hasattr(best_move, 'from_pos') and best_move.from_pos is not None:
-                    move_record["from"] = {"x": best_move.from_pos.x, "y": best_move.from_pos.y}
-                if hasattr(best_move, 'capture_target') and best_move.capture_target is not None:
-                    move_record["capture_target"] = {"x": best_move.capture_target.x, "y": best_move.capture_target.y}
+                if hasattr(stamped_move, 'to') and stamped_move.to is not None:
+                    move_record["to"] = {"x": stamped_move.to.x, "y": stamped_move.to.y}
+                if hasattr(stamped_move, 'from_pos') and stamped_move.from_pos is not None:
+                    move_record["from"] = {"x": stamped_move.from_pos.x, "y": stamped_move.from_pos.y}
+                if hasattr(stamped_move, 'capture_target') and stamped_move.capture_target is not None:
+                    move_record["capture_target"] = {"x": stamped_move.capture_target.x, "y": stamped_move.capture_target.y}
                 # Add capture chain for multi-captures
-                if hasattr(best_move, 'capture_chain') and best_move.capture_chain:
-                    move_record["capture_chain"] = [{"x": p.x, "y": p.y} for p in best_move.capture_chain]
+                if hasattr(stamped_move, 'capture_chain') and stamped_move.capture_chain:
+                    move_record["capture_chain"] = [{"x": p.x, "y": p.y} for p in stamped_move.capture_chain]
                 # Add line/territory data if present
-                if hasattr(best_move, 'formed_lines') and best_move.formed_lines:
-                    move_record["formed_lines"] = len(best_move.formed_lines)
-                if hasattr(best_move, 'claimed_territory') and best_move.claimed_territory:
-                    move_record["claimed_territory"] = len(best_move.claimed_territory)
+                if hasattr(stamped_move, 'formed_lines') and stamped_move.formed_lines:
+                    move_record["formed_lines"] = len(stamped_move.formed_lines)
+                if hasattr(stamped_move, 'claimed_territory') and stamped_move.claimed_territory:
+                    move_record["claimed_territory"] = len(stamped_move.claimed_territory)
 
                 moves_played.append(move_record)
                 move_count += 1
@@ -446,6 +479,32 @@ def run_hybrid_selfplay(
             # Flush immediately to minimize data loss on abnormal termination
             f.flush()
 
+            if replay_db is not None:
+                try:
+                    meta = {
+                        "source": "run_hybrid_selfplay.py",
+                        "engine_mode": engine_mode,
+                        "mix_ratio": mix_ratio if engine_mode == "mixed" else None,
+                        "device": str(device),
+                    }
+                    _ = record_completed_game_with_parity_check(
+                        db=replay_db,
+                        initial_state=initial_state_for_db,
+                        final_state=game_state,
+                        moves=moves_for_db,
+                        metadata=meta,
+                        game_id=str(record.get("game_id") or ""),
+                        parity_mode=parity_mode,
+                        store_history_entries=store_history_entries,
+                    )
+                    games_recorded += 1
+                except ParityValidationError as exc:
+                    record_failures += 1
+                    logger.warning(f"[record-db] Parity divergence; skipping game {game_idx}: {exc}")
+                except Exception as exc:
+                    record_failures += 1
+                    logger.warning(f"[record-db] Failed to record game {game_idx}: {type(exc).__name__}: {exc}")
+
             # Progress logging
             if (game_idx + 1) % 10 == 0:
                 elapsed = time.time() - start_time
@@ -482,6 +541,9 @@ def run_hybrid_selfplay(
         "timestamp": datetime.now().isoformat(),
         "seed": seed,
         "game_lengths": game_lengths,  # Individual game lengths for detailed analysis
+        "record_db_path": record_db,
+        "games_recorded": games_recorded,
+        "record_failures": record_failures,
     }
 
     # Add win rates
@@ -664,6 +726,34 @@ def main():
         help="Output directory",
     )
     parser.add_argument(
+        "--record-db",
+        type=str,
+        default="",
+        help="Optional path to a GameReplayDB SQLite file to record games for training/parity tooling.",
+    )
+    parser.add_argument(
+        "--no-record-db",
+        action="store_true",
+        help="Disable DB recording even if --record-db is set.",
+    )
+    parser.add_argument(
+        "--lean-db",
+        action="store_true",
+        help="Store a lean DB (no per-move history snapshots) to reduce disk usage.",
+    )
+    parser.add_argument(
+        "--no-enforce-canonical-history",
+        action="store_true",
+        help="Allow recording non-canonical move types to DB (not recommended).",
+    )
+    parser.add_argument(
+        "--parity-mode",
+        type=str,
+        default=None,
+        choices=["off", "warn", "strict"],
+        help="Override parity validation mode for recorded games (default: env-driven).",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -732,6 +822,10 @@ def main():
             engine_mode=args.engine_mode,
             weights=weights,
             mix_ratio=args.mix_ratio,
+            record_db=None if args.no_record_db else (args.record_db or None),
+            lean_db=bool(args.lean_db),
+            enforce_canonical_history=not bool(args.no_enforce_canonical_history),
+            parity_mode=args.parity_mode,
         )
 
 
