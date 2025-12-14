@@ -91,8 +91,8 @@ describe('SpectatorHUD', () => {
     it('displays current phase', () => {
       render(<SpectatorHUD {...defaultProps} phase="movement" />);
 
-      // Phase is rendered with icon like "⚡ Movement Phase"
-      expect(screen.getByText(/Movement Phase/)).toBeInTheDocument();
+      // Phase is rendered with icon and beginner-friendly label
+      expect(screen.getByText(/Your Move/)).toBeInTheDocument();
     });
 
     it('displays turn and move numbers', () => {
@@ -318,40 +318,41 @@ describe('SpectatorHUD', () => {
   });
 
   describe('Phase Display', () => {
+    // Beginner-friendly phase labels from PHASE_INFO in gameViewModels.ts
     it('shows correct phase for ring_placement', () => {
       render(<SpectatorHUD {...defaultProps} phase="ring_placement" />);
 
-      expect(screen.getByText(/Ring Placement/)).toBeInTheDocument();
+      expect(screen.getByText(/Place Rings/)).toBeInTheDocument();
     });
 
     it('shows correct phase for movement', () => {
       render(<SpectatorHUD {...defaultProps} phase="movement" />);
 
-      expect(screen.getByText(/Movement Phase/)).toBeInTheDocument();
+      expect(screen.getByText(/Your Move/)).toBeInTheDocument();
     });
 
     it('shows correct phase for chain_capture', () => {
       render(<SpectatorHUD {...defaultProps} phase="chain_capture" />);
 
-      expect(screen.getByText(/Chain Capture/)).toBeInTheDocument();
+      expect(screen.getByText(/Keep Capturing!/)).toBeInTheDocument();
     });
 
     it('shows correct phase for line_processing', () => {
       render(<SpectatorHUD {...defaultProps} phase="line_processing" />);
 
-      expect(screen.getByText(/Line Processing/)).toBeInTheDocument();
+      expect(screen.getByText(/Line Scored!/)).toBeInTheDocument();
     });
 
     it('shows correct phase for territory_processing', () => {
       render(<SpectatorHUD {...defaultProps} phase="territory_processing" />);
 
-      expect(screen.getByText(/Territory Processing/)).toBeInTheDocument();
+      expect(screen.getByText(/Territory!/)).toBeInTheDocument();
     });
 
     it('shows correct phase for forced_elimination', () => {
       render(<SpectatorHUD {...defaultProps} phase="forced_elimination" />);
 
-      expect(screen.getByText(/Forced Elim/)).toBeInTheDocument();
+      expect(screen.getByText(/Blocked!/)).toBeInTheDocument();
     });
   });
 
@@ -380,7 +381,7 @@ describe('SpectatorHUD', () => {
 
       // The phase info should include spectator hints
       // Spectator hint text should be visible
-      const phaseSection = screen.getByText(/Movement Phase/).closest('div');
+      const phaseSection = screen.getByText(/Your Move/).closest('div');
       expect(phaseSection).toBeInTheDocument();
     });
 
@@ -388,7 +389,8 @@ describe('SpectatorHUD', () => {
       render(<SpectatorHUD {...defaultProps} phase="game_over" />);
 
       expect(screen.getByText(/Game Over/)).toBeInTheDocument();
-      expect(screen.getByText(/The game has concluded/)).toBeInTheDocument();
+      // SpectatorHUD renders spectatorHint, not description
+      expect(screen.getByText(/Game finished/)).toBeInTheDocument();
     });
   });
 

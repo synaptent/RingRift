@@ -997,7 +997,7 @@ describe('ChoiceDialog', () => {
       // shortLabel from mapping
       expect(screen.getByText('Line order')).toBeInTheDocument();
       // title from mapping
-      expect(screen.getByText(/choose line order/i)).toBeInTheDocument();
+      expect(screen.getByText(/multiple lines formed/i)).toBeInTheDocument();
     });
 
     it('falls back to prompt-only content when mapping header is absent', () => {

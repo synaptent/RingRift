@@ -845,15 +845,27 @@ function RingStatsFromVM({ stats }: { stats: PlayerRingStatsViewModel }) {
     <div className="grid grid-cols-3 gap-2 text-xs mt-2">
       <div className="text-center">
         <div className="font-bold text-slate-200">{stats.inHand}</div>
-        <div className="text-slate-400">In Hand</div>
+        <Tooltip content="Rings not yet placed on the board. Place these during the ring placement phase to build your stacks.">
+          <span className="text-slate-400 cursor-help border-b border-dotted border-slate-500">
+            In Hand
+          </span>
+        </Tooltip>
       </div>
       <div className="text-center">
         <div className="font-bold text-slate-200">{stats.onBoard}</div>
-        <div className="text-slate-400">On Board</div>
+        <Tooltip content="Rings currently in your stacks on the board. These can be moved, captured, or eliminated.">
+          <span className="text-slate-400 cursor-help border-b border-dotted border-slate-500">
+            On Board
+          </span>
+        </Tooltip>
       </div>
       <div className="text-center">
         <div className="font-bold text-red-400">{stats.eliminated}</div>
-        <div className="text-slate-400">Rings Eliminated</div>
+        <Tooltip content="Rings permanently removed from play. Each elimination counts toward Ring Elimination victory!">
+          <span className="text-slate-400 cursor-help border-b border-dotted border-slate-500">
+            Eliminated
+          </span>
+        </Tooltip>
       </div>
     </div>
   );
@@ -1179,12 +1191,10 @@ export function VictoryConditionsPanel({ className = '' }: { className?: string 
           <span className="mt-0.5">•</span>
           <div className="flex-1">
             <div className="flex items-center gap-1">
-              <span>
-                Ring Elimination – Win by eliminating enough rings to reach the victory threshold.
-              </span>
+              <span>Ring Elimination – Eliminate enough rings to win!</span>
               <Tooltip
                 content={
-                  'You win Ring Elimination when your eliminated rings reach or exceed the victory threshold.\nThe threshold depends on player count: in 2-player games it equals your starting ring supply; in 3–4 player games it is higher (two thirds of your starting rings plus one third of your opponents’ combined starting rings).\nOnly eliminated rings count – captured rings you carry in stacks still remain in play.\nEliminations can come from movement onto markers, line rewards, territory processing, or forced elimination.'
+                  'How to eliminate rings:\n• Move onto a marker to remove it as a ring\n• Choose "full bonus" when you score a line\n• Claim territory (costs the cap from an eligible stack)\n• Forced elimination when you have no moves\n\nThe number of rings you need depends on player count. Check your progress in the Score Summary above!'
                 }
               >
                 <span
@@ -1203,13 +1213,10 @@ export function VictoryConditionsPanel({ className = '' }: { className?: string 
           <span className="mt-0.5">•</span>
           <div className="flex-1">
             <div className="flex items-center gap-1">
-              <span>
-                Territory Control – Win by controlling more than half of all board spaces as
-                territory.
-              </span>
+              <span>Territory Control – Own more than half the board as territory!</span>
               <Tooltip
                 content={
-                  'Territory spaces are collapsed cells you permanently own.\nIf your territory spaces exceed 50% of all board spaces during territory processing, you win immediately.\nClaiming a region requires eliminating the entire cap from an eligible stack outside that region (multicolor stacks or single-color stacks height > 1; standalone rings are NOT eligible).'
+                  'Territory = spaces you permanently control.\n\nTo claim a region:\n1. Isolate a group of spaces by surrounding them\n2. Spend the cap from an eligible stack outside the region\n   (multicolor stacks or stacks taller than 1 ring)\n\nWhen you own more than 50% of all spaces, you win instantly!'
                 }
               >
                 <span
@@ -1228,13 +1235,10 @@ export function VictoryConditionsPanel({ className = '' }: { className?: string 
           <span className="mt-0.5">•</span>
           <div className="flex-1">
             <div className="flex items-center gap-1">
-              <span>
-                Last Player Standing – win when, for three full rounds, you are the only player with
-                any real moves (placements, movements, or captures).
-              </span>
+              <span>Last Player Standing – Dominate the board for 3 rounds!</span>
               <Tooltip
                 content={
-                  'Real moves are placements, movements, and captures – forced elimination and automatic line/territory processing do not count.\nLast Player Standing requires three consecutive full rounds where you have and take at least one real action while all other players have none.\nIf any other player regains a real move before all three rounds complete, the LPS condition resets and victory is not declared.'
+                  'If you are the only player who can actually move for 3 rounds in a row, you win!\n\nWhat counts as a "real move":\n• Placing rings\n• Moving stacks\n• Capturing opponents\n\nIf opponents are stuck and can only do forced eliminations, that doesn\'t count as a real move for them.'
                 }
               >
                 <span

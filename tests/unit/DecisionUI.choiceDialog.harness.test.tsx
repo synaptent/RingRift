@@ -165,8 +165,8 @@ describe('DecisionUI harness → ChoiceDialog integration', () => {
   it('renders pending capture_direction choice and routes selection through respondToChoice', async () => {
     render(<DecisionUIHarness />);
 
-    const options = await screen.findAllByText(/Choose capture direction/i);
-    expect(options.length).toBeGreaterThan(0);
+    expect(await screen.findByText(/chain capture.*keep jumping/i)).toBeInTheDocument();
+    expect(await screen.findByText(/choose capture direction/i)).toBeInTheDocument();
     const option = screen.getByText(/Direction 1/);
     fireEvent.click(option);
 
@@ -199,7 +199,8 @@ describe('DecisionUI harness → ChoiceDialog integration', () => {
 
     render(<DecisionUIHarness />);
 
-    expect(await screen.findAllByText(/Choose line reward/i)).toHaveLength(2);
+    expect(await screen.findByText(/line scored.*choose your reward/i)).toBeInTheDocument();
+    expect(await screen.findAllByText(/Choose line reward/i)).toHaveLength(1);
     fireEvent.click(screen.getByText(/Full Collapse/i));
 
     expect(respondToChoice).toHaveBeenCalledTimes(1);
@@ -218,7 +219,8 @@ describe('DecisionUI harness → ChoiceDialog integration', () => {
 
     render(<DecisionUIHarness />);
 
-    expect(await screen.findByText(/Choose region order/i)).toBeInTheDocument();
+    expect(await screen.findByText(/territory captured/i)).toBeInTheDocument();
+    expect(await screen.findByText(/choose region order/i)).toBeInTheDocument();
     const skipButton = screen.getByText(/Skip territory processing for this turn/i);
     fireEvent.click(skipButton);
 

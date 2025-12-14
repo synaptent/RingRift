@@ -73,59 +73,58 @@ const CHOICE_VIEW_MODEL_MAP: Record<PlayerChoiceType, ChoiceViewModelConfig> = {
   line_order: {
     kind: 'line_order',
     copy: {
-      title: 'Choose Line Order',
-      description: 'Select which completed line you want to process first.',
+      title: 'Multiple Lines Formed!',
+      description: 'You created more than one scoring line. Pick which one to score first.',
       shortLabel: 'Line order',
       spectatorLabel: ({ actingPlayerName }) =>
-        `Waiting for ${actingPlayerName} to choose which line to process`,
+        `${actingPlayerName} is choosing which line to score first`,
     },
     timeout: DEFAULT_TIMEOUT_BEHAVIOR,
   },
   line_reward_option: {
     kind: 'line_reward',
     copy: {
-      title: 'Choose Line Reward',
+      title: 'Line Scored! Choose Your Reward',
       description:
-        'Your markers formed a scoring line. Choose to collapse them into territory or, on some boards, take an elimination bonus; with overlength lines you can collapse a minimal scoring segment and skip elimination, or collapse the full line and pay the ring cost.',
+        'Your markers formed a line of 5 or more. Pick your reward: take the full bonus and remove one of your rings (gets you closer to winning!), or take a smaller reward and keep all your rings.',
       shortLabel: 'Line reward',
-      spectatorLabel: ({ actingPlayerName }) =>
-        `Waiting for ${actingPlayerName} to choose a line reward option`,
+      spectatorLabel: ({ actingPlayerName }) => `${actingPlayerName} is choosing their line reward`,
     },
     timeout: DEFAULT_TIMEOUT_BEHAVIOR,
   },
   ring_elimination: {
     kind: 'ring_elimination',
     copy: {
-      title: 'Choose Elimination Stack',
+      title: 'Remove a Ring',
       description:
-        'You must sacrifice a ring from one of your stacks. This cost is typically required after choosing a line reward with elimination bonus, or when processing territory. Eliminated rings are permanently removed and count toward Ring Elimination victory.',
+        'Choose which of your stacks to remove a ring from. Removing rings gets you closer to winning by Ring Elimination!',
       shortLabel: 'Ring elimination',
       spectatorLabel: ({ actingPlayerName }) =>
-        `Waiting for ${actingPlayerName} to choose a stack for ring elimination`,
+        `${actingPlayerName} is choosing which ring to remove`,
     },
     timeout: DEFAULT_TIMEOUT_BEHAVIOR,
   },
   region_order: {
     kind: 'territory_region_order',
     copy: {
-      title: 'Choose Territory Region',
+      title: 'Territory Captured!',
       description:
-        'Pick which disconnected region you control to resolve next: its spaces will collapse into Territory and rings in the region will be eliminated, often at the cost of a ring from one of your other stacks.',
+        'You isolated one or more regions. Choose which region to claim first—the spaces become your territory, bringing you closer to a Territory victory!',
       shortLabel: 'Territory region',
       spectatorLabel: ({ actingPlayerName }) =>
-        `Waiting for ${actingPlayerName} to choose a territory region to process`,
+        `${actingPlayerName} is choosing which territory to claim`,
     },
     timeout: DEFAULT_TIMEOUT_BEHAVIOR,
   },
   capture_direction: {
     kind: 'capture_direction',
     copy: {
-      title: 'Choose Capture Direction',
+      title: 'Chain Capture! Keep Jumping',
       description:
-        'You are in a chain capture: once the chain begins you must keep capturing as long as any capture is available, choosing which target to jump over each time.',
+        'You started a capture chain. Choose your next jump—you must keep capturing while jumps are available.',
       shortLabel: 'Capture direction',
       spectatorLabel: ({ actingPlayerName }) =>
-        `Waiting for ${actingPlayerName} to choose a capture direction`,
+        `${actingPlayerName} is choosing their next capture`,
     },
     timeout: DEFAULT_TIMEOUT_BEHAVIOR,
   },

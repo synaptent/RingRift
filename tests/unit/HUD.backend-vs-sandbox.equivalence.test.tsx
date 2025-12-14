@@ -407,8 +407,9 @@ describe('HUD backend vs sandbox equivalence', () => {
     // copy that mentions the acting player's name.
     expect(backendDecision?.isLocalActor).toBe(false);
     expect(sandboxDecision?.isLocalActor).toBe(false);
-    expect(backendDecision?.label).toBe('Waiting for Alice to choose a line reward option');
-    expect(sandboxDecision?.label).toBe('Waiting for Alice to choose a line reward option');
+    // Beginner-friendly spectator copy from choiceViewModels
+    expect(backendDecision?.label).toBe('Alice is choosing their line reward');
+    expect(sandboxDecision?.label).toBe('Alice is choosing their line reward');
     expect(backendDecision?.spectatorLabel).toBe(sandboxDecision?.spectatorLabel);
   });
 });
@@ -431,11 +432,11 @@ describe('HUD equivalence – movement phase (no decision)', () => {
       createSandboxHUDOptions({ currentUserId: 'user-1' })
     );
 
-    // Phase semantics should match
+    // Phase semantics should match (beginner-friendly labels from gameViewModels)
     expect(backendHud.phase.phaseKey).toBe('movement');
     expect(sandboxHud.phase.phaseKey).toBe('movement');
-    expect(backendHud.phase.label).toBe('Movement Phase');
-    expect(sandboxHud.phase.label).toBe('Movement Phase');
+    expect(backendHud.phase.label).toBe('Your Move');
+    expect(sandboxHud.phase.label).toBe('Your Move');
     expect(backendHud.phase.description).toBe(sandboxHud.phase.description);
     expect(backendHud.phase.actionHint).toBe(sandboxHud.phase.actionHint);
     expect(backendHud.phase.spectatorHint).toBe(sandboxHud.phase.spectatorHint);

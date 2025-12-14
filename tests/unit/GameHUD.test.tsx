@@ -346,9 +346,15 @@ describe('GameHUD', () => {
 
     const helper = screen.getByTestId('victory-conditions-help');
     expect(helper).toBeInTheDocument();
-    expect(screen.getByText(/Ring Elimination – Win by eliminating/)).toBeInTheDocument();
-    expect(screen.getByText(/Territory Control – Win by controlling/)).toBeInTheDocument();
-    expect(screen.getByText(/Last Player Standing/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Ring Elimination – Eliminate enough rings to win/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Territory Control – Own more than half the board as territory/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Last Player Standing – Dominate the board for 3 rounds/i)
+    ).toBeInTheDocument();
   });
 
   it('renders legacy sub-phase detail copy for line and territory processing', () => {
@@ -394,25 +400,26 @@ describe('GameHUD', () => {
     // Elimination tooltip
     fireEvent.mouseEnter(eliminationTrigger);
     let tooltip = screen.getByRole('tooltip');
-    expect(tooltip).toHaveTextContent(
-      /You win Ring Elimination when your eliminated rings reach or exceed the victory threshold/
-    );
+    expect(tooltip).toHaveTextContent(/How to eliminate rings/i);
+    expect(tooltip).toHaveTextContent(/Move onto a marker/i);
+    expect(tooltip).toHaveTextContent(/Forced elimination/i);
     fireEvent.mouseLeave(eliminationTrigger);
     expect(screen.queryByRole('tooltip')).toBeNull();
 
     // Territory tooltip
     fireEvent.mouseEnter(territoryTrigger);
     tooltip = screen.getByRole('tooltip');
-    expect(tooltip).toHaveTextContent('Territory spaces are collapsed cells you permanently own.');
+    expect(tooltip).toHaveTextContent(/Territory = spaces you permanently control/i);
+    expect(tooltip).toHaveTextContent(/own more than 50%/i);
     fireEvent.mouseLeave(territoryTrigger);
     expect(screen.queryByRole('tooltip')).toBeNull();
 
     // Last Player Standing tooltip
     fireEvent.mouseEnter(lastPlayerTrigger);
     tooltip = screen.getByRole('tooltip');
-    expect(tooltip).toHaveTextContent(
-      'Last Player Standing requires three consecutive full rounds'
-    );
+    expect(tooltip).toHaveTextContent(/only player who can actually move for 3 rounds/i);
+    expect(tooltip).toHaveTextContent(/placing rings/i);
+    expect(tooltip).toHaveTextContent(/forced eliminations/i);
     fireEvent.mouseLeave(lastPlayerTrigger);
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
@@ -461,8 +468,8 @@ describe('GameHUD', () => {
       fireEvent.mouseEnter(trigger);
 
       const tooltip = screen.getByRole('tooltip');
-      expect(tooltip).toHaveTextContent('Place your rings on the board to build stacks');
-      expect(tooltip).toHaveTextContent('Spectators: Player is placing rings on the board');
+      expect(tooltip).toHaveTextContent('Add rings to the board to build your stacks');
+      expect(tooltip).toHaveTextContent('Spectators: Placing rings');
     });
 
     it('renders spectator count chip with accessible label for non-spectator viewers', () => {
@@ -516,8 +523,8 @@ describe('GameHUD', () => {
 
       const banner = screen.getByTestId('decision-phase-banner');
       expect(banner).toBeInTheDocument();
-      expect(banner).toHaveTextContent('Your decision:');
-      expect(banner).toHaveTextContent('Choose Line Reward');
+      // Beginner-friendly title from choiceViewModels
+      expect(banner).toHaveTextContent('Line Scored! Choose Your Reward');
 
       // Countdown label should be visible with low-time warning styling.
       const timerLabel = screen.getByText('0:04');
@@ -861,8 +868,8 @@ describe('GameHUD', () => {
 
       const banner = screen.getByTestId('decision-phase-banner');
       expect(banner).toBeInTheDocument();
-      expect(banner).toHaveTextContent('Waiting for');
-      expect(banner).toHaveTextContent('to choose a line reward option');
+      // Beginner-friendly spectator copy from choiceViewModels
+      expect(banner).toHaveTextContent('is choosing their line reward');
       // No countdown label when timeRemainingMs is null.
       expect(screen.queryByLabelText('Decision timer')).toBeNull();
     });
@@ -912,8 +919,8 @@ describe('GameHUD', () => {
 
       const banner = screen.getByTestId('decision-phase-banner');
       expect(banner).toBeInTheDocument();
-      expect(banner).toHaveTextContent('Your decision:');
-      expect(banner).toHaveTextContent('Choose Territory Region');
+      // Beginner-friendly title from choiceViewModels
+      expect(banner).toHaveTextContent('Territory Captured!');
     });
 
     it('surfaces skip hint and territory help during territory_processing decisions', () => {
@@ -1007,10 +1014,9 @@ describe('GameHUD', () => {
       fireEvent.mouseEnter(trigger);
 
       const tooltip = screen.getByRole('tooltip');
-      expect(tooltip).toHaveTextContent('Move a stack or initiate a capture');
-      expect(tooltip).toHaveTextContent(
-        'On your turn: Select your stack, then click a destination'
-      );
+      // Beginner-friendly copy from gameViewModels
+      expect(tooltip).toHaveTextContent('Move one of your stacks or jump to capture');
+      expect(tooltip).toHaveTextContent('On your turn: Tap your stack, then tap where to move it');
     });
 
     it('renders structural-stalemate weird-state banner using explanation-driven copy', () => {
@@ -1046,12 +1052,11 @@ describe('GameHUD', () => {
 
       render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
 
-      // Component renders "Structural stalemate" in both title and summary elements
-      const stalemateElements = screen.getAllByText(/Structural stalemate/i);
-      expect(stalemateElements.length).toBeGreaterThan(0);
+      // Component renders stalemate banner with beginner-friendly copy
+      expect(screen.getByText(/Game Ended: Stalemate/i)).toBeInTheDocument();
       expect(
         screen.getByText(
-          /No legal placements, movements, captures, or forced eliminations remain for any player/i
+          /Nobody can make any more moves\. The winner is decided by who has more territory and eliminated rings/i
         )
       ).toBeInTheDocument();
       expect(screen.getByTestId('hud-weird-state-help')).toBeInTheDocument();

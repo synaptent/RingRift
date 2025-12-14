@@ -1,4 +1,7 @@
-import { getChoiceViewModelForType, getChoiceViewModel } from '../../../src/client/adapters/choiceViewModels';
+import {
+  getChoiceViewModelForType,
+  getChoiceViewModel,
+} from '../../../src/client/adapters/choiceViewModels';
 import type { PlayerChoiceType } from '../../../src/shared/types/game';
 
 describe('choiceViewModels adapter', () => {
@@ -26,27 +29,27 @@ describe('choiceViewModels adapter', () => {
     const expectations: Array<{ type: PlayerChoiceType; title: RegExp; shortLabel: RegExp }> = [
       {
         type: 'line_order',
-        title: /choose line order/i,
+        title: /multiple lines formed/i,
         shortLabel: /line order/i,
       },
       {
         type: 'line_reward_option',
-        title: /choose line reward/i,
+        title: /line scored.*choose your reward/i,
         shortLabel: /line reward/i,
       },
       {
         type: 'ring_elimination',
-        title: /choose elimination stack/i,
+        title: /remove a ring/i,
         shortLabel: /ring elimination/i,
       },
       {
         type: 'region_order',
-        title: /choose territory region/i,
+        title: /territory captured/i,
         shortLabel: /territory region/i,
       },
       {
         type: 'capture_direction',
-        title: /choose capture direction/i,
+        title: /chain capture.*keep jumping/i,
         shortLabel: /capture direction/i,
       },
     ];

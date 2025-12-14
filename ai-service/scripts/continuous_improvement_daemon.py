@@ -1078,65 +1078,55 @@ NNUE_MIN_NEW_GAMES = 10000
 NNUE_MIN_INTERVAL = 4 * 60 * 60
 # NNUE training epochs
 NNUE_EPOCHS = 30
-# NNUE gating parameters
-NNUE_GATE_GAMES = 20
-NNUE_GATE_WIN_THRESHOLD = 0.52  # New model must win 52%+ to be promoted
+# NNUE gating parameters (lightweight, report-driven)
+# We gate NNUE promotion on validation loss improvements produced by
+# scripts/train_nnue.py. Full head-to-head gating can be layered on later,
+# but this keeps the continuous daemon deterministic and fast by default.
+NNUE_GATE_MIN_REL_IMPROVEMENT = 0.0  # 0.0 => require strictly lower val loss
 
 
-async def gate_nnue_model(
-    new_model_path: Path,
-    old_model_path: Path,
-    board_type: str,
-    num_players: int,
+def _nnue_model_id(board: str, num_players: int) -> str:
+    # Canonical NNUE ids: nnue_<board>_<numPlayers>p (matches ladder_config.py)
+    return f"nnue_{board}_{num_players}p"
+
+
+def _atomic_copy(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_suffix(dst.suffix + f".tmp_{int(time.time())}")
+    shutil.copy2(src, tmp)
+    os.replace(tmp, dst)
+
+
+def _gate_nnue_report(
+    *,
+    candidate_report: Dict[str, Any],
+    baseline_best_val_loss: Optional[float],
 ) -> Dict[str, Any]:
-    """Run evaluation games between new and old NNUE models.
-
-    Returns dict with 'promote' (bool) and 'win_rate' (float).
-    """
-    # Run evaluation using minimax with each NNUE
-    eval_cmd = [
-        sys.executable, "scripts/run_ai_tournament.py",
-        "--player1", f"minimax:nnue={new_model_path}",
-        "--player2", f"minimax:nnue={old_model_path}",
-        "--board", board_type,
-        "--num-players", str(num_players),
-        "--games", str(NNUE_GATE_GAMES),
-        "--output-format", "json",
-    ]
-
-    success, output = run_command(eval_cmd, timeout=600)
-
-    if not success:
-        print(f"[Daemon] NNUE gating failed: {output[:200]}")
-        # If gating fails, don't promote (conservative)
-        return {"promote": False, "win_rate": 0.5, "error": output[:200]}
-
-    # Parse results
+    """Decide whether to promote a candidate NNUE based on training report metrics."""
+    cand_loss_raw = candidate_report.get("best_val_loss")
+    cand_loss: Optional[float] = None
     try:
-        import re
-        # Look for "P1: X/Y" pattern
-        match = re.search(r"P1[:\s]+(\d+)/(\d+)", output)
-        if match:
-            wins = int(match.group(1))
-            total = int(match.group(2))
-            win_rate = wins / total if total > 0 else 0.5
-        else:
-            # Try JSON format
-            import json
-            for line in output.split("\n"):
-                if line.strip().startswith("{"):
-                    result = json.loads(line)
-                    win_rate = result.get("player1_win_rate", 0.5)
-                    break
-            else:
-                win_rate = 0.5
+        cand_loss = float(cand_loss_raw) if cand_loss_raw is not None else None
+    except (TypeError, ValueError):
+        cand_loss = None
 
-        promote = win_rate >= NNUE_GATE_WIN_THRESHOLD
-        return {"promote": promote, "win_rate": win_rate}
+    # If we have no baseline metric, promote by default (first model or legacy baseline).
+    if baseline_best_val_loss is None or cand_loss is None:
+        return {
+            "promote": True,
+            "candidate_best_val_loss": cand_loss,
+            "baseline_best_val_loss": baseline_best_val_loss,
+            "reason": "no_baseline_metric" if baseline_best_val_loss is None else "missing_candidate_metric",
+        }
 
-    except Exception as e:
-        print(f"[Daemon] Error parsing NNUE gate results: {e}")
-        return {"promote": False, "win_rate": 0.5, "error": str(e)}
+    # Require strictly lower validation loss (optionally with a relative margin).
+    promote = cand_loss < baseline_best_val_loss * (1.0 - float(NNUE_GATE_MIN_REL_IMPROVEMENT))
+    return {
+        "promote": bool(promote),
+        "candidate_best_val_loss": cand_loss,
+        "baseline_best_val_loss": baseline_best_val_loss,
+        "reason": "improved_val_loss" if promote else "no_val_loss_improvement",
+    }
 
 
 async def check_and_run_nnue_training(state: DaemonState) -> List[str]:
@@ -1185,6 +1175,11 @@ async def check_and_run_nnue_training(state: DaemonState) -> List[str]:
         output_dir = AI_SERVICE_ROOT / "logs" / "nnue_auto" / f"{key}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        nnue_id = _nnue_model_id(config["board"], config["players"])
+        stable_path = AI_SERVICE_ROOT / "models" / "nnue" / f"{nnue_id}.pt"
+        prev_path = AI_SERVICE_ROOT / "models" / "nnue" / f"{nnue_id}_prev.pt"
+        candidate_path = output_dir / f"{nnue_id}_candidate.pt"
+
         nnue_cmd = [
             sys.executable, "scripts/train_nnue.py",
             "--db", *[str(db) for db in dbs[:5]],  # Use up to 5 databases
@@ -1192,50 +1187,67 @@ async def check_and_run_nnue_training(state: DaemonState) -> List[str]:
             "--num-players", str(config["players"]),
             "--epochs", str(NNUE_EPOCHS),
             "--run-dir", str(output_dir),
+            "--model-id", nnue_id,
+            "--save-path", str(candidate_path),
         ]
 
         success, output = run_command(nnue_cmd, timeout=3600)  # 1 hour timeout
 
         if success:
-            # Find the trained model path
-            new_model_path = AI_SERVICE_ROOT / "models" / "nnue" / f"nnue_{config['board']}.pt"
-            old_model_path = AI_SERVICE_ROOT / "models" / "nnue" / f"nnue_{config['board']}_prev.pt"
+            report_path = output_dir / "nnue_training_report.json"
+            report: Dict[str, Any] = {}
+            if report_path.exists():
+                try:
+                    report = json.loads(report_path.read_text())
+                except Exception:
+                    report = {}
 
-            # Gate the new NNUE against the old one
-            if new_model_path.exists():
-                should_promote = True
+            if not candidate_path.exists() or candidate_path.stat().st_size <= 0:
+                print(f"[Daemon] NNUE training reported success but missing candidate checkpoint: {candidate_path}")
+                continue
 
-                # If there's a previous model, run evaluation games
-                if old_model_path.exists():
-                    print(f"[Daemon] Gating new NNUE against previous model...")
-                    gate_result = await gate_nnue_model(
-                        new_model_path, old_model_path,
-                        config["board"], config["players"]
-                    )
-                    should_promote = gate_result.get("promote", False)
-                    win_rate = gate_result.get("win_rate", 0.5)
-                    print(f"[Daemon] NNUE gate result: win_rate={win_rate:.1%}, promote={should_promote}")
+            baseline_best_val_loss: Optional[float] = None
+            baseline_record = state.nnue_state.get(key) or {}
+            try:
+                raw = baseline_record.get("best_val_loss")
+                baseline_best_val_loss = float(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                baseline_best_val_loss = None
 
-                if should_promote:
-                    # Backup current as previous before promoting
-                    if new_model_path.exists() and not old_model_path.exists():
-                        # First training - no backup needed
-                        pass
-                    elif new_model_path.exists():
-                        # Backup current to _prev
-                        import shutil
-                        shutil.copy2(new_model_path, old_model_path)
+            gate = _gate_nnue_report(candidate_report=report, baseline_best_val_loss=baseline_best_val_loss)
+            should_promote = bool(gate.get("promote", False))
 
-                    # Update NNUE state
-                    state.nnue_state[key] = {
-                        "last_train_time": current_time,
-                        "last_train_games": bs.total_games,
-                        "model_path": str(new_model_path),
-                    }
-                    trained.append(key)
-                    print(f"[Daemon] NNUE promoted for {key}")
-                else:
-                    print(f"[Daemon] NNUE not promoted (did not beat previous model)")
+            if should_promote:
+                # Snapshot the prior stable model for rollback (best-effort).
+                if stable_path.exists() and stable_path.stat().st_size > 0:
+                    try:
+                        _atomic_copy(stable_path, prev_path)
+                    except Exception as e:
+                        print(f"[Daemon] Warning: failed to backup NNUE baseline: {e}")
+
+                try:
+                    _atomic_copy(candidate_path, stable_path)
+                except Exception as e:
+                    print(f"[Daemon] NNUE promotion copy failed for {key}: {e}")
+                    continue
+
+                # Update NNUE state (record promotion metrics).
+                state.nnue_state[key] = {
+                    "last_train_time": current_time,
+                    "last_train_games": bs.total_games,
+                    "model_path": str(stable_path),
+                    "best_val_loss": gate.get("candidate_best_val_loss"),
+                    "baseline_best_val_loss": gate.get("baseline_best_val_loss"),
+                    "gate_reason": gate.get("reason"),
+                }
+                trained.append(key)
+                print(f"[Daemon] NNUE promoted for {key} ({gate.get('reason')})")
+            else:
+                print(f"[Daemon] NNUE not promoted for {key} ({gate.get('reason')})")
+                try:
+                    candidate_path.unlink()
+                except Exception:
+                    pass
         else:
             print(f"[Daemon] NNUE training failed for {key}: {output[:200]}")
 
@@ -1306,8 +1318,15 @@ async def check_and_run_cmaes_optimization(state: DaemonState) -> List[str]:
         success, output = run_command(cmaes_cmd, timeout=7200)  # 2 hour timeout
 
         if success:
-            # The profile ID follows the pattern heuristic_v1_{board}_{n}p
-            profile_id = f"heuristic_v1_{config['board']}_{config['players']}p"
+            # Canonical profile ids use board abbreviations:
+            #   heuristic_v1_sq8_2p / heuristic_v1_sq19_3p / heuristic_v1_hex_4p
+            board_abbrev = {
+                "square8": "sq8",
+                "square19": "sq19",
+                "hexagonal": "hex",
+                "hex": "hex",
+            }.get(config["board"], config["board"])
+            profile_id = f"heuristic_v1_{board_abbrev}_{config['players']}p"
 
             # Update CMAES state
             state.cmaes_state[key] = {

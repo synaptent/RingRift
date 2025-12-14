@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import ipaddress
 import json
 import os
 import secrets
@@ -149,6 +150,9 @@ BUILD_VERSION_ENV = "RINGRIFT_BUILD_VERSION"
 # Optional advertised endpoint override (useful behind NAT/port-mapping).
 ADVERTISE_HOST_ENV = "RINGRIFT_ADVERTISE_HOST"
 ADVERTISE_PORT_ENV = "RINGRIFT_ADVERTISE_PORT"
+
+# Tailscale uses CGNAT space (100.64.0.0/10) for node IPs by default.
+TAILSCALE_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 
 # Data manifest collection settings
 MANIFEST_JSONL_LINECOUNT_MAX_BYTES = 64 * 1024 * 1024  # Skip line-counting for huge JSONL files
@@ -817,6 +821,7 @@ class P2POrchestrator:
         # Voters can be configured via:
         # - env: RINGRIFT_P2P_VOTERS="node-a,node-b,..."
         # - ai-service/config/distributed_hosts.yaml: per-host `p2p_voter: true`
+        self.voter_config_source: str = "none"  # env|config|state|learned|none
         self.voter_node_ids: List[str] = self._load_voter_node_ids()
         self.voter_quorum_size: int = (len(self.voter_node_ids) // 2 + 1) if self.voter_node_ids else 0
         if self.voter_node_ids:
@@ -1136,11 +1141,13 @@ class P2POrchestrator:
         """
         env = (os.environ.get("RINGRIFT_P2P_VOTERS") or "").strip()
         if env:
+            self.voter_config_source = "env"
             voters = [t.strip() for t in env.split(",") if t.strip()]
             return sorted(set(voters))
 
         cfg_path = Path(self.ringrift_path) / "ai-service" / "config" / "distributed_hosts.yaml"
         if not cfg_path.exists():
+            self.voter_config_source = "none"
             return []
 
         try:
@@ -1167,7 +1174,37 @@ class P2POrchestrator:
                 continue
             if isinstance(raw, str) and raw.strip().lower() in {"1", "true", "yes", "y"}:
                 voters.append(str(node_id))
-        return sorted(set(voters))
+        voters = sorted(set(voters))
+        self.voter_config_source = "config" if voters else "none"
+        return voters
+
+    def _maybe_adopt_voter_node_ids(self, voter_node_ids: List[str], *, source: str) -> bool:
+        """Adopt/override the voter set when it's not explicitly configured via env.
+
+        This is a convergence mechanism: some nodes may boot without local
+        config (or with stale config), which would disable quorum gating and
+        allow non-voter nodes to become leaders. Leaders propagate the stable
+        voter set via `/coordinator` so the cluster converges.
+        """
+        if (os.environ.get("RINGRIFT_P2P_VOTERS") or "").strip():
+            return False
+
+        normalized = sorted({str(v).strip() for v in (voter_node_ids or []) if str(v).strip()})
+        if not normalized:
+            return False
+
+        current = sorted(set(getattr(self, "voter_node_ids", []) or []))
+        if current == normalized:
+            return False
+
+        self.voter_node_ids = normalized
+        self.voter_quorum_size = len(normalized) // 2 + 1
+        self.voter_config_source = source or "learned"
+        print(
+            f"[P2P] Updated voter set ({self.voter_config_source}): voters={len(normalized)}, "
+            f"quorum={self.voter_quorum_size} ({', '.join(normalized)})"
+        )
+        return True
 
     def _has_voter_quorum(self) -> bool:
         """Return True if we currently see a majority of voter nodes alive."""
@@ -1478,6 +1515,21 @@ class P2POrchestrator:
                 except Exception:
                     pass
 
+            # Optional persisted voter configuration (convergence helper). Only
+            # apply when voters are not explicitly configured via env/config.
+            raw_voters = state_rows.get("voter_node_ids")
+            if raw_voters and not (getattr(self, "voter_node_ids", []) or []):
+                if str(getattr(self, "voter_config_source", "none") or "none") == "none":
+                    voters: List[str] = []
+                    try:
+                        parsed = json.loads(raw_voters)
+                        if isinstance(parsed, list):
+                            voters = [str(v).strip() for v in parsed if str(v).strip()]
+                    except Exception:
+                        voters = [t.strip() for t in str(raw_voters).split(",") if t.strip()]
+                    if voters:
+                        self._maybe_adopt_voter_node_ids(voters, source="state")
+
             # Self-heal inconsistent persisted leader state (can happen after
             # abrupt shutdowns or partial writes): never keep role=leader without
             # a matching leader_id.
@@ -1519,12 +1571,16 @@ class P2POrchestrator:
 
             # Save leader
             role_value = self.role.value if hasattr(self.role, "value") else str(self.role)
+            voter_node_ids_json = json.dumps(sorted(set(getattr(self, "voter_node_ids", []) or [])))
+            voter_config_source = str(getattr(self, "voter_config_source", "") or "")
             state_payload = [
                 ("leader_id", self.leader_id),
                 ("leader_lease_id", self.leader_lease_id or ""),
                 ("leader_lease_expires", str(float(self.leader_lease_expires or 0.0))),
                 ("last_lease_renewal", str(float(self.last_lease_renewal or 0.0))),
                 ("role", role_value),
+                ("voter_node_ids", voter_node_ids_json),
+                ("voter_config_source", voter_config_source),
             ]
             cursor.executemany(
                 "INSERT OR REPLACE INTO state (key, value) VALUES (?, ?)",

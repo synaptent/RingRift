@@ -83,7 +83,7 @@ describe('GameHUD (view model path)', () => {
     render(<GameHUD viewModel={hud} timeControl={gameState.timeControl} />);
 
     expect(screen.getByTestId('game-hud')).toBeInTheDocument();
-    expect(screen.getByText('Movement Phase')).toBeInTheDocument();
+    expect(screen.getByText('Your Move')).toBeInTheDocument();
     expect(screen.getByText(/Connection: Connected/)).toBeInTheDocument();
     expect(screen.getByText('Select a stack to move.')).toBeInTheDocument();
     // Player names appear in both player cards and score summary, so use getAllByText
