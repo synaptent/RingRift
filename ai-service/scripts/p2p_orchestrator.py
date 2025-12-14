@@ -8660,6 +8660,10 @@ print(json.dumps({{
         """Compute endpoint keys that are shared by >1 node (NAT/port collisions)."""
         counts: Dict[Tuple[str, str, int], int] = {}
         for p in peers:
+            # Ignore dead peers: stale node_ids can linger after restarts and would
+            # otherwise permanently mark the live node as "conflicted".
+            if not p.is_alive():
+                continue
             key = self._endpoint_key(p)
             if not key:
                 continue
