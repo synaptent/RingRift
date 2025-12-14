@@ -559,6 +559,44 @@ def run_full_pipeline(
     return True
 
 
+def sync_staging_artifacts(
+    *,
+    restart: bool,
+    validate_health: bool,
+    fail_on_missing: bool,
+    verbose: bool,
+) -> bool:
+    """Best-effort sync of published artifacts to staging via SSH."""
+    host = os.environ.get("RINGRIFT_STAGING_SSH_HOST")
+    remote_root = os.environ.get("RINGRIFT_STAGING_ROOT")
+    if not host or not remote_root:
+        if verbose:
+            print(
+                "[model_promotion] Staging sync requested but missing "
+                "RINGRIFT_STAGING_SSH_HOST / RINGRIFT_STAGING_ROOT"
+            )
+        return False
+
+    cmd = [sys.executable, "scripts/sync_staging_ai_artifacts.py"]
+    if restart:
+        cmd.append("--restart")
+    if validate_health:
+        cmd.append("--validate-health")
+    if fail_on_missing:
+        cmd.append("--fail-on-missing")
+
+    proc = subprocess.run(
+        cmd,
+        cwd=str(AI_SERVICE_ROOT),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    if verbose and proc.stdout:
+        print(proc.stdout)
+    return proc.returncode == 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Model Promotion Manager - Manage promoted model symlinks and deployment",
@@ -603,6 +641,26 @@ def main():
         help="Also write src/shared/config/ai_models.json (opt-in).",
     )
     parser.add_argument(
+        "--sync-staging",
+        action="store_true",
+        help="After publishing aliases, sync the promoted artifacts to staging via scripts/sync_staging_ai_artifacts.py.",
+    )
+    parser.add_argument(
+        "--sync-staging-no-restart",
+        action="store_true",
+        help="When used with --sync-staging, do not restart docker compose services after syncing.",
+    )
+    parser.add_argument(
+        "--sync-staging-validate-health",
+        action="store_true",
+        help="When used with --sync-staging, validate /internal/ladder/health on staging after sync.",
+    )
+    parser.add_argument(
+        "--sync-staging-fail-on-missing",
+        action="store_true",
+        help="When used with --sync-staging-validate-health, exit non-zero if staging reports missing artifacts.",
+    )
+    parser.add_argument(
         "--quiet", "-q",
         action="store_true",
         help="Suppress verbose output",
@@ -611,41 +669,69 @@ def main():
     args = parser.parse_args()
     verbose = not args.quiet
 
+    promoted_models: List[PromotedModel] = []
+    did_publish = False
+
     if args.full_pipeline:
-        run_full_pipeline(
+        promoted_models = update_all_promotions(
             min_games=args.min_games,
-            sync_cluster=True,
-            update_sandbox=bool(args.update_sandbox_config),
-            restart_p2p=bool(args.restart_p2p),
             verbose=verbose,
+            update_sandbox=bool(args.update_sandbox_config),
         )
+        did_publish = bool(promoted_models)
+        if did_publish and verbose:
+            print(f"\n[model_promotion] Promoted {len(promoted_models)} models")
+
+        if did_publish:
+            if verbose:
+                print("\n[model_promotion] Syncing to cluster...")
+            sync_to_cluster_ssh(promoted_models, verbose=verbose, restart_p2p=bool(args.restart_p2p))
+
+            if verbose:
+                print("\n[model_promotion] Pipeline complete!")
     elif args.update_all:
-        update_all_promotions(
+        promoted_models = update_all_promotions(
             min_games=args.min_games,
             verbose=verbose,
             update_sandbox=bool(args.update_sandbox_config),
         )
+        did_publish = bool(promoted_models)
     elif args.sync_cluster:
-        promoted = update_all_promotions(
+        promoted_models = update_all_promotions(
             min_games=args.min_games,
             verbose=False,
             update_sandbox=False,
         )
-        sync_to_cluster_ssh(promoted, verbose=verbose, restart_p2p=bool(args.restart_p2p))
+        did_publish = bool(promoted_models)
+        sync_to_cluster_ssh(promoted_models, verbose=verbose, restart_p2p=bool(args.restart_p2p))
     elif args.update:
         board_type, num_players = args.update
-        # Single config update
-        promoted = update_all_promotions(
+        promoted_models = update_all_promotions(
             min_games=args.min_games,
             verbose=verbose,
             update_sandbox=bool(args.update_sandbox_config),
         )
-        # Filter to just the requested config
-        for p in promoted:
+        did_publish = bool(promoted_models)
+        for p in promoted_models:
             if p.board_type == board_type and p.num_players == int(num_players):
                 print(f"Updated: {p.symlink_name}")
     else:
         parser.print_help()
+
+    if args.sync_staging and did_publish:
+        restart = not bool(args.sync_staging_no_restart)
+        validate = bool(args.sync_staging_validate_health)
+        fail_on_missing = bool(args.sync_staging_fail_on_missing)
+        if fail_on_missing:
+            validate = True
+        ok = sync_staging_artifacts(
+            restart=restart,
+            validate_health=validate,
+            fail_on_missing=fail_on_missing,
+            verbose=verbose,
+        )
+        if not ok:
+            raise SystemExit(3)
 
 
 if __name__ == "__main__":

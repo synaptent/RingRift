@@ -26,6 +26,7 @@ Configuration is driven by CLI flags or environment variables:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shlex
 import subprocess
@@ -122,6 +123,52 @@ def _scp_base_args(args: argparse.Namespace) -> list[str]:
     return scp_cmd
 
 
+def _docker_compose_file(remote_root: str, compose_file: str) -> str:
+    # Allow passing an absolute compose file, otherwise treat as remote_root-relative.
+    if os.path.isabs(compose_file):
+        return compose_file
+    return str(Path(remote_root) / compose_file)
+
+
+def _validate_remote_ladder_health(
+    *,
+    args: argparse.Namespace,
+    remote_root: str,
+) -> tuple[bool, str]:
+    """Run a ladder/artifact health check inside the staging ai-service container."""
+    compose_file = _docker_compose_file(remote_root, str(args.compose_file))
+    url = str(args.validate_health_url or "http://localhost:8001/internal/ladder/health")
+    timeout = float(args.validate_health_timeout_seconds or 8)
+    fail_on_missing = bool(args.fail_on_missing)
+
+    python_code = (
+        "import json, sys\n"
+        "import httpx\n"
+        f"url={json.dumps(url)}\n"
+        f"timeout={timeout}\n"
+        "resp=httpx.get(url, timeout=timeout)\n"
+        "resp.raise_for_status()\n"
+        "payload=resp.json() if resp.content else {}\n"
+        "summary=payload.get('summary') or {}\n"
+        "print(json.dumps(summary, indent=2, sort_keys=True))\n"
+        "missing=(\n"
+        "  int(summary.get('missing_heuristic_profiles') or 0)\n"
+        "  + int(summary.get('missing_nnue_checkpoints') or 0)\n"
+        "  + int(summary.get('missing_neural_checkpoints') or 0)\n"
+        ")\n"
+        f"sys.exit(2 if ({'True' if fail_on_missing else 'False'} and missing>0) else 0)\n"
+    )
+
+    remote_cmd = (
+        f"cd {shlex.quote(remote_root)} && "
+        f"docker compose -f {shlex.quote(compose_file)} exec -T ai-service "
+        f"python -c {shlex.quote(python_code)}"
+    )
+    result = _run(_ssh_base_args(args) + [remote_cmd], check=False)
+    ok = result.returncode == 0
+    return ok, result.stdout
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default=os.getenv("RINGRIFT_STAGING_SSH_HOST"))
@@ -138,6 +185,27 @@ def main(argv: list[str]) -> int:
         "--restart-services",
         default=os.getenv("RINGRIFT_STAGING_RESTART_SERVICES", "ai-service"),
         help="Comma-separated compose service names (default: ai-service).",
+    )
+    parser.add_argument(
+        "--validate-health",
+        action="store_true",
+        help="After syncing (and optional restart), query /internal/ladder/health inside the ai-service container.",
+    )
+    parser.add_argument(
+        "--validate-health-url",
+        default=os.getenv("RINGRIFT_STAGING_LADDER_HEALTH_URL"),
+        help="Override the URL used for ladder health validation (default: http://localhost:8001/internal/ladder/health).",
+    )
+    parser.add_argument(
+        "--validate-health-timeout-seconds",
+        type=float,
+        default=float(os.getenv("RINGRIFT_STAGING_LADDER_HEALTH_TIMEOUT_SECONDS", "8")),
+        help="Timeout (seconds) for ladder health validation (default: 8).",
+    )
+    parser.add_argument(
+        "--fail-on-missing",
+        action="store_true",
+        help="When used with --validate-health, exit non-zero if any missing artifact counts are reported.",
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--verbose", action="store_true")
@@ -196,7 +264,7 @@ def main(argv: list[str]) -> int:
         if args.restart:
             services = [s.strip() for s in str(args.restart_services or "").split(",") if s.strip()]
             if services:
-                compose_file = str(Path(remote_root) / str(args.compose_file))
+                compose_file = _docker_compose_file(remote_root, str(args.compose_file))
                 restart_cmd = (
                     f"cd {shlex.quote(remote_root)} && "
                     f"docker compose -f {shlex.quote(compose_file)} up -d --force-recreate "
@@ -207,6 +275,14 @@ def main(argv: list[str]) -> int:
                 if result.returncode != 0:
                     print(result.stdout, file=sys.stderr)
                     return result.returncode
+
+        if args.validate_health:
+            ok, output = _validate_remote_ladder_health(args=args, remote_root=remote_root)
+            if args.verbose:
+                print(output)
+            if not ok:
+                print(output, file=sys.stderr)
+                return 3
 
     return 0
 

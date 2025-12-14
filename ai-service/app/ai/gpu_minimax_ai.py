@@ -69,7 +69,7 @@ class GPUMinimaxAI(MinimaxAI):
         self._gpu_available: Optional[bool] = None
 
         # Leaf buffer for batched evaluation
-        self._leaf_buffer: List[Tuple[MutableGameState, int]] = []
+        self._leaf_buffer: List[Tuple[GameState, int]] = []
         self._leaf_results: Dict[int, float] = {}
         self._next_callback_id: int = 0
 
@@ -483,8 +483,9 @@ class GPUMinimaxAI(MinimaxAI):
         callback_id = self._next_callback_id
         self._next_callback_id += 1
 
-        # Copy state for deferred evaluation
-        self._leaf_buffer.append((state.copy(), state_hash))
+        # Convert to immutable for deferred evaluation
+        # (MutableGameState doesn't have copy(), but we need immutable for batch anyway)
+        self._leaf_buffer.append((state.to_immutable(), state_hash))
 
         # If buffer is full, flush to GPU
         if len(self._leaf_buffer) >= self.gpu_batch_size:
@@ -516,8 +517,8 @@ class GPUMinimaxAI(MinimaxAI):
         try:
             from .gpu_parallel_games import BatchGameState, evaluate_positions_batch
 
-            # Convert buffered states to immutable for batch creation
-            states = [s.to_immutable() for s, _ in self._leaf_buffer]
+            # States are already immutable (stored as GameState in buffer)
+            states = [s for s, _ in self._leaf_buffer]
             hashes = [h for _, h in self._leaf_buffer]
 
             # Create batch and evaluate
@@ -542,9 +543,10 @@ class GPUMinimaxAI(MinimaxAI):
 
         except Exception as e:
             logger.warning(f"GPU batch flush failed: {e}")
-            # Fall back: evaluate each state individually with CPU
+            # Fall back: evaluate each state individually with CPU heuristic
             for state, state_hash in self._leaf_buffer:
-                score = self._evaluate_mutable(state)
+                # States are immutable GameState, use parent's evaluate method
+                score = self._evaluate_position(state)
                 self._leaf_results[state_hash] = score
                 self.transposition_table.put(state_hash, {
                     'score': score,
