@@ -10313,10 +10313,17 @@ print(json.dumps({{
             elif memory_gb >= 64:
                 target_selfplay = 4
 
-            # Scale slightly with CPU cores for hybrid workloads (CPU rules + GPU eval).
-            if cpu_count > 0:
-                cpu_bonus = max(0, min(4, cpu_count // 48))
-                target_selfplay = min(16, target_selfplay + cpu_bonus)
+            # Scale with CPU cores for hybrid workloads (CPU rules + GPU eval).
+            # GH200 nodes have 64 cores and 480GB memory - use them more aggressively.
+            if cpu_count >= 48:
+                # High-core machines: allow 1 job per 2 cores, capped by memory
+                # GH200 (64 cores, 480GB): target ~32 jobs
+                cpu_based_target = cpu_count // 2
+                mem_cap = memory_gb // 4 if memory_gb > 0 else 64
+                target_selfplay = max(target_selfplay, min(cpu_based_target, mem_cap, 48))
+            elif cpu_count > 0:
+                cpu_bonus = max(0, min(8, cpu_count // 8))
+                target_selfplay = min(24, target_selfplay + cpu_bonus)
 
             # Utilization-aware tuning.
             if gpu_percent > 90 or gpu_mem_percent > 90:
@@ -10326,16 +10333,24 @@ print(json.dumps({{
             elif cpu_percent > 85:
                 target_selfplay = min(target_selfplay, max(1, target_selfplay - 1))
             elif gpu_percent < 10 and cpu_percent < 70 and mem_percent < 80:
-                target_selfplay = min(16, target_selfplay + 1)
+                # Resources underutilized - allow scaling up
+                target_selfplay = min(48, target_selfplay + 2)
         else:
-            if cpu_count > 0:
-                cpu_target = max(2, min(16, cpu_count // 4))
+            # CPU-only nodes: scale with CPU cores
+            if cpu_count >= 32:
+                # High-core CPU nodes: 1 job per 2 cores, capped by memory
+                cpu_target = cpu_count // 2
+                mem_cap = memory_gb // 4 if memory_gb > 0 else 32
+                target_selfplay = max(target_selfplay, min(cpu_target, mem_cap, 32))
+            elif cpu_count > 0:
+                cpu_target = max(2, min(24, cpu_count // 2))
                 target_selfplay = max(target_selfplay, cpu_target)
             elif memory_gb >= 64:
                 target_selfplay = 4
 
-            if memory_gb > 0:
-                mem_target = max(2, min(16, memory_gb // 8))
+            if memory_gb > 0 and memory_gb < 32:
+                # Only cap for low-memory machines
+                mem_target = max(2, min(16, memory_gb // 4))
                 target_selfplay = min(target_selfplay, mem_target)
 
             # Utilization-aware scaling.
@@ -10344,7 +10359,7 @@ print(json.dumps({{
             elif cpu_percent > 85:
                 target_selfplay = max(1, target_selfplay - 1)
             elif cpu_percent < 25 and mem_percent < 75:
-                target_selfplay = min(16, target_selfplay + 1)
+                target_selfplay = min(32, target_selfplay + 2)
 
         if disk_percent >= DISK_WARNING_THRESHOLD:
             target_selfplay = min(target_selfplay, 2)
