@@ -9031,6 +9031,72 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             except Exception:
                 pass
 
+            # === HOLDOUT VALIDATION METRICS ===
+            lines.append("# HELP ringrift_holdout_games Number of games in holdout set")
+            lines.append("# TYPE ringrift_holdout_games gauge")
+            lines.append("# HELP ringrift_holdout_positions Number of positions in holdout set")
+            lines.append("# TYPE ringrift_holdout_positions gauge")
+            lines.append("# HELP ringrift_holdout_loss Model loss on holdout validation set")
+            lines.append("# TYPE ringrift_holdout_loss gauge")
+            lines.append("# HELP ringrift_holdout_accuracy Model accuracy on holdout validation set")
+            lines.append("# TYPE ringrift_holdout_accuracy gauge")
+            lines.append("# HELP ringrift_overfit_gap Gap between holdout and training loss (positive = overfitting)")
+            lines.append("# TYPE ringrift_overfit_gap gauge")
+            try:
+                holdout_metrics = await self._get_holdout_metrics_cached()
+                for config, data in holdout_metrics.get("configs", {}).items():
+                    parts = config.rsplit("_", 1)
+                    if len(parts) == 2:
+                        board_type = parts[0]
+                        num_players = parts[1].replace("p", "")
+                        lines.append(f'ringrift_holdout_games{{board_type="{board_type}",num_players="{num_players}"}} {data.get("holdout_games", 0)}')
+                        lines.append(f'ringrift_holdout_positions{{board_type="{board_type}",num_players="{num_players}"}} {data.get("holdout_positions", 0)}')
+                        if data.get("holdout_loss") is not None:
+                            lines.append(f'ringrift_holdout_loss{{board_type="{board_type}",num_players="{num_players}"}} {data["holdout_loss"]}')
+                        if data.get("holdout_accuracy") is not None:
+                            lines.append(f'ringrift_holdout_accuracy{{board_type="{board_type}",num_players="{num_players}"}} {data["holdout_accuracy"]}')
+                        if data.get("overfit_gap") is not None:
+                            lines.append(f'ringrift_overfit_gap{{board_type="{board_type}",num_players="{num_players}"}} {data["overfit_gap"]}')
+            except Exception:
+                pass
+
+            # === MCTS SEARCH STATISTICS ===
+            lines.append("# HELP ringrift_mcts_avg_nodes Average MCTS nodes visited per move")
+            lines.append("# TYPE ringrift_mcts_avg_nodes gauge")
+            lines.append("# HELP ringrift_mcts_max_nodes Maximum MCTS nodes visited in a move")
+            lines.append("# TYPE ringrift_mcts_max_nodes gauge")
+            lines.append("# HELP ringrift_mcts_avg_depth Average MCTS search depth")
+            lines.append("# TYPE ringrift_mcts_avg_depth gauge")
+            lines.append("# HELP ringrift_mcts_max_depth Maximum MCTS search depth")
+            lines.append("# TYPE ringrift_mcts_max_depth gauge")
+            lines.append("# HELP ringrift_mcts_avg_time Average time per MCTS move (seconds)")
+            lines.append("# TYPE ringrift_mcts_avg_time gauge")
+            try:
+                mcts_stats = await self._get_mcts_stats_cached()
+                summary = mcts_stats.get("summary", {})
+                if summary.get("avg_nodes_per_move"):
+                    lines.append(f'ringrift_mcts_avg_nodes {summary["avg_nodes_per_move"]:.0f}')
+                if summary.get("max_nodes_per_move"):
+                    lines.append(f'ringrift_mcts_max_nodes {summary["max_nodes_per_move"]}')
+                if summary.get("avg_search_depth"):
+                    lines.append(f'ringrift_mcts_avg_depth {summary["avg_search_depth"]:.1f}')
+                if summary.get("max_search_depth"):
+                    lines.append(f'ringrift_mcts_max_depth {summary["max_search_depth"]}')
+                if summary.get("avg_time_per_move"):
+                    lines.append(f'ringrift_mcts_avg_time {summary["avg_time_per_move"]:.3f}')
+                # Per-config MCTS stats
+                for config, data in mcts_stats.get("configs", {}).items():
+                    parts = config.rsplit("_", 1)
+                    if len(parts) == 2:
+                        board_type = parts[0]
+                        num_players = parts[1].replace("p", "")
+                        if data.get("avg_nodes"):
+                            lines.append(f'ringrift_mcts_avg_nodes{{board_type="{board_type}",num_players="{num_players}"}} {data["avg_nodes"]:.0f}')
+                        if data.get("avg_depth"):
+                            lines.append(f'ringrift_mcts_avg_depth{{board_type="{board_type}",num_players="{num_players}"}} {data["avg_depth"]:.1f}')
+            except Exception:
+                pass
+
             # Uptime metric
             if hasattr(self, 'start_time'):
                 uptime = now - self.start_time
@@ -10252,6 +10318,197 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         setattr(self, cache_time_key, now)
         return metrics
 
+    async def _get_holdout_metrics_cached(self) -> Dict[str, Any]:
+        """Get holdout validation metrics with caching (5 min TTL)."""
+        import sqlite3
+
+        cache_key = "_holdout_metrics_cache"
+        cache_time_key = "_holdout_metrics_cache_time"
+        cache_ttl = 300
+
+        now = time.time()
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
+            if now - getattr(self, cache_time_key) < cache_ttl:
+                return getattr(self, cache_key)
+
+        ai_root = Path(self.ringrift_path) / "ai-service"
+        db_path = ai_root / "data" / "holdouts" / "holdout_validation.db"
+
+        metrics = {"configs": {}, "evaluations": [], "summary": {}}
+
+        if not db_path.exists():
+            setattr(self, cache_key, metrics)
+            setattr(self, cache_time_key, now)
+            return metrics
+
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Get holdout game counts by config
+            cursor.execute("""
+                SELECT board_type, num_players, COUNT(*) as game_count, SUM(num_positions) as total_positions
+                FROM holdout_games
+                GROUP BY board_type, num_players
+            """)
+            for row in cursor.fetchall():
+                config = f"{row['board_type']}_{row['num_players']}p"
+                metrics["configs"][config] = {
+                    "holdout_games": row["game_count"],
+                    "holdout_positions": row["total_positions"] or 0,
+                }
+
+            # Get latest evaluations per config
+            cursor.execute("""
+                SELECT model_path, board_type, num_players, holdout_loss, holdout_accuracy,
+                       train_loss, num_samples, evaluated_at, overfit_gap
+                FROM evaluations
+                WHERE id IN (
+                    SELECT MAX(id) FROM evaluations
+                    GROUP BY board_type, num_players
+                )
+                ORDER BY evaluated_at DESC
+            """)
+            for row in cursor.fetchall():
+                config = f"{row['board_type']}_{row['num_players']}p"
+                eval_data = {
+                    "config": config,
+                    "model": row["model_path"],
+                    "holdout_loss": row["holdout_loss"],
+                    "holdout_accuracy": row["holdout_accuracy"],
+                    "train_loss": row["train_loss"],
+                    "overfit_gap": row["overfit_gap"],
+                    "num_samples": row["num_samples"],
+                    "evaluated_at": row["evaluated_at"],
+                }
+                metrics["evaluations"].append(eval_data)
+                # Update config metrics
+                if config in metrics["configs"]:
+                    metrics["configs"][config].update({
+                        "holdout_loss": row["holdout_loss"],
+                        "holdout_accuracy": row["holdout_accuracy"],
+                        "overfit_gap": row["overfit_gap"],
+                    })
+
+            # Get summary stats
+            cursor.execute("SELECT COUNT(*) FROM holdout_games")
+            metrics["summary"]["total_holdout_games"] = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM evaluations")
+            metrics["summary"]["total_evaluations"] = cursor.fetchone()[0]
+
+            conn.close()
+        except Exception:
+            pass
+
+        setattr(self, cache_key, metrics)
+        setattr(self, cache_time_key, now)
+        return metrics
+
+    async def _get_mcts_stats_cached(self) -> Dict[str, Any]:
+        """Get MCTS search statistics with caching (2 min TTL)."""
+        import json
+        import re
+
+        cache_key = "_mcts_stats_cache"
+        cache_time_key = "_mcts_stats_cache_time"
+        cache_ttl = 120
+
+        now = time.time()
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
+            if now - getattr(self, cache_time_key) < cache_ttl:
+                return getattr(self, cache_key)
+
+        ai_root = Path(self.ringrift_path) / "ai-service"
+        stats = {"configs": {}, "summary": {}}
+
+        # Parse selfplay logs for MCTS stats
+        logs_dir = ai_root / "logs" / "selfplay"
+        if logs_dir.exists():
+            log_files = sorted(logs_dir.glob("*.log"), key=lambda f: f.stat().st_mtime, reverse=True)[:20]
+
+            nodes_per_move = []
+            depth_stats = []
+            time_per_move = []
+
+            for log_file in log_files:
+                try:
+                    content = log_file.read_text(errors='ignore')
+                    # Parse MCTS stats patterns (nodes visited, search depth, time)
+                    # Pattern: "nodes: 1234" or "nodes_visited: 1234"
+                    for match in re.finditer(r'nodes[_\s]*(?:visited)?[:\s]*(\d+)', content, re.I):
+                        nodes_per_move.append(int(match.group(1)))
+                    # Pattern: "depth: 12" or "search_depth: 12"
+                    for match in re.finditer(r'(?:search_)?depth[:\s]*(\d+)', content, re.I):
+                        depth_stats.append(int(match.group(1)))
+                    # Pattern: "time: 0.123s" or "move_time: 123ms"
+                    for match in re.finditer(r'(?:move_)?time[:\s]*([\d.]+)\s*(?:s|ms)?', content, re.I):
+                        time_per_move.append(float(match.group(1)))
+                except Exception:
+                    continue
+
+            if nodes_per_move:
+                stats["summary"]["avg_nodes_per_move"] = sum(nodes_per_move) / len(nodes_per_move)
+                stats["summary"]["max_nodes_per_move"] = max(nodes_per_move)
+            if depth_stats:
+                stats["summary"]["avg_search_depth"] = sum(depth_stats) / len(depth_stats)
+                stats["summary"]["max_search_depth"] = max(depth_stats)
+            if time_per_move:
+                stats["summary"]["avg_time_per_move"] = sum(time_per_move) / len(time_per_move)
+
+        # Also check game JSONL files for MCTS metadata
+        data_dirs = [
+            ai_root / "data" / "games" / "daemon_sync",
+            ai_root / "data" / "selfplay",
+        ]
+        cutoff = now - 3600  # Last hour
+
+        for data_dir in data_dirs:
+            if not data_dir.exists():
+                continue
+            for jsonl_path in data_dir.rglob("*.jsonl"):
+                try:
+                    if jsonl_path.stat().st_mtime < cutoff:
+                        continue
+                    with open(jsonl_path, "r") as f:
+                        for line in f:
+                            try:
+                                game = json.loads(line)
+                                board_type = game.get("board_type", "unknown")
+                                num_players = game.get("num_players", 0)
+                                config = f"{board_type}_{num_players}p"
+
+                                # Check for MCTS metadata in game
+                                mcts_data = game.get("mcts_stats", {})
+                                if mcts_data:
+                                    if config not in stats["configs"]:
+                                        stats["configs"][config] = {
+                                            "nodes_samples": [],
+                                            "depth_samples": [],
+                                        }
+                                    if "avg_nodes" in mcts_data:
+                                        stats["configs"][config]["nodes_samples"].append(mcts_data["avg_nodes"])
+                                    if "avg_depth" in mcts_data:
+                                        stats["configs"][config]["depth_samples"].append(mcts_data["avg_depth"])
+                            except json.JSONDecodeError:
+                                continue
+                except Exception:
+                    continue
+
+        # Compute per-config averages
+        for config, data in stats["configs"].items():
+            if data.get("nodes_samples"):
+                data["avg_nodes"] = sum(data["nodes_samples"]) / len(data["nodes_samples"])
+            if data.get("depth_samples"):
+                data["avg_depth"] = sum(data["depth_samples"]) / len(data["depth_samples"])
+            # Clean up sample lists
+            data.pop("nodes_samples", None)
+            data.pop("depth_samples", None)
+
+        setattr(self, cache_key, stats)
+        setattr(self, cache_time_key, now)
+        return stats
+
     async def handle_victory_table(self, request: web.Request) -> web.Response:
         """GET /victory/table - Victory type breakdown for Grafana Infinity.
 
@@ -10561,6 +10818,106 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         except Exception as e:
             return web.json_response({"error": str(e)})
+
+    async def handle_holdout_metrics(self, request: web.Request) -> web.Response:
+        """GET /holdout/metrics - Holdout validation metrics.
+
+        Returns holdout set statistics and evaluation results for overfitting detection.
+        Supports optional query params:
+            - config: Filter by config (e.g., square8_2p)
+        """
+        try:
+            config_filter = request.query.get("config")
+            metrics = await self._get_holdout_metrics_cached()
+
+            if config_filter:
+                # Filter to specific config
+                filtered = {
+                    "configs": {k: v for k, v in metrics.get("configs", {}).items() if k == config_filter},
+                    "evaluations": [e for e in metrics.get("evaluations", []) if e.get("config") == config_filter],
+                    "summary": metrics.get("summary", {}),
+                }
+                return web.json_response(filtered)
+
+            return web.json_response(metrics)
+
+        except Exception as e:
+            return web.json_response({"error": str(e)})
+
+    async def handle_holdout_table(self, request: web.Request) -> web.Response:
+        """GET /holdout/table - Holdout validation data in table format for Grafana Infinity.
+
+        Returns holdout metrics as flat table rows.
+        """
+        try:
+            metrics = await self._get_holdout_metrics_cached()
+
+            table_data = []
+            for config, data in metrics.get("configs", {}).items():
+                row = {
+                    "Config": config,
+                    "HoldoutGames": data.get("holdout_games", 0),
+                    "HoldoutPositions": data.get("holdout_positions", 0),
+                    "HoldoutLoss": round(data.get("holdout_loss", 0), 4) if data.get("holdout_loss") else None,
+                    "HoldoutAccuracy": round(data.get("holdout_accuracy", 0) * 100, 1) if data.get("holdout_accuracy") else None,
+                    "OverfitGap": round(data.get("overfit_gap", 0), 4) if data.get("overfit_gap") else None,
+                    "Status": "OK" if (data.get("overfit_gap") or 0) < 0.15 else "OVERFITTING",
+                }
+                table_data.append(row)
+
+            return web.json_response(table_data)
+
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
+
+    async def handle_mcts_stats(self, request: web.Request) -> web.Response:
+        """GET /mcts/stats - MCTS search statistics.
+
+        Returns MCTS performance metrics including nodes/move, search depth, and timing.
+        """
+        try:
+            stats = await self._get_mcts_stats_cached()
+            return web.json_response(stats)
+
+        except Exception as e:
+            return web.json_response({"error": str(e)})
+
+    async def handle_mcts_table(self, request: web.Request) -> web.Response:
+        """GET /mcts/table - MCTS stats in table format for Grafana Infinity.
+
+        Returns MCTS statistics as flat table rows.
+        """
+        try:
+            stats = await self._get_mcts_stats_cached()
+
+            table_data = []
+            # Add summary row
+            summary = stats.get("summary", {})
+            if summary:
+                table_data.append({
+                    "Config": "CLUSTER AVERAGE",
+                    "AvgNodes": round(summary.get("avg_nodes_per_move", 0), 0),
+                    "MaxNodes": summary.get("max_nodes_per_move", 0),
+                    "AvgDepth": round(summary.get("avg_search_depth", 0), 1),
+                    "MaxDepth": summary.get("max_search_depth", 0),
+                    "AvgTime": round(summary.get("avg_time_per_move", 0), 3) if summary.get("avg_time_per_move") else None,
+                })
+
+            # Add per-config rows
+            for config, data in stats.get("configs", {}).items():
+                table_data.append({
+                    "Config": config,
+                    "AvgNodes": round(data.get("avg_nodes", 0), 0) if data.get("avg_nodes") else None,
+                    "MaxNodes": None,
+                    "AvgDepth": round(data.get("avg_depth", 0), 1) if data.get("avg_depth") else None,
+                    "MaxDepth": None,
+                    "AvgTime": None,
+                })
+
+            return web.json_response(table_data)
+
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
 
     async def handle_api_training_status(self, request: web.Request) -> web.Response:
         """Get training pipeline status including NNUE, CMAES, and auto-promotion state.
@@ -14277,6 +14634,10 @@ print(json.dumps({{
         app.router.add_get('/victory/table', self.handle_victory_table)
         app.router.add_get('/games/analytics', self.handle_games_analytics)
         app.router.add_get('/training/metrics', self.handle_training_metrics)
+        app.router.add_get('/holdout/metrics', self.handle_holdout_metrics)
+        app.router.add_get('/holdout/table', self.handle_holdout_table)
+        app.router.add_get('/mcts/stats', self.handle_mcts_stats)
+        app.router.add_get('/mcts/table', self.handle_mcts_table)
         app.router.add_get('/api/training/status', self.handle_api_training_status)
         app.router.add_get('/api/canonical/health', self.handle_api_canonical_health)
         app.router.add_get('/api/canonical/jobs', self.handle_api_canonical_jobs_list)

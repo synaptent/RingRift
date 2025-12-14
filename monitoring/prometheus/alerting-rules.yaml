@@ -123,3 +123,47 @@ groups:
         annotations:
           summary: 'Low opening diversity for {{ $labels.board_type }}_{{ $labels.num_players }}p'
           description: 'Only {{ $value }} unique openings seen - may indicate collapsed search'
+
+      # Overfitting Detected
+      - alert: OverfitDetected
+        expr: |
+          ringrift_overfit_gap > 0.15
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Overfitting detected for {{ $labels.board_type }}_{{ $labels.num_players }}p'
+          description: 'Holdout loss exceeds training loss by {{ $value | printf "%.3f" }} - model may be overfitting'
+
+      # Low Holdout Accuracy
+      - alert: LowHoldoutAccuracy
+        expr: |
+          ringrift_holdout_accuracy < 0.70
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Low holdout accuracy for {{ $labels.board_type }}_{{ $labels.num_players }}p'
+          description: 'Holdout accuracy is {{ $value | printf "%.1f" }}% - model generalization may be poor'
+
+      # Insufficient Holdout Data
+      - alert: InsufficientHoldoutData
+        expr: |
+          ringrift_holdout_games < 100
+        for: 24h
+        labels:
+          severity: info
+        annotations:
+          summary: 'Insufficient holdout data for {{ $labels.board_type }}_{{ $labels.num_players }}p'
+          description: 'Only {{ $value }} holdout games available - need more data for reliable overfitting detection'
+
+      # MCTS Search Quality
+      - alert: LowMCTSSearchDepth
+        expr: |
+          ringrift_mcts_avg_depth < 3
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: 'Low MCTS search depth detected'
+          description: 'Average search depth is only {{ $value | printf "%.1f" }} - may indicate resource constraints or slow evaluation'
