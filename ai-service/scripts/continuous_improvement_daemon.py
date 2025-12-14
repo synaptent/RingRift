@@ -564,7 +564,7 @@ async def run_asymmetric_selfplay(state: DaemonState, board_type: str, num_playe
     ]
 
     print(f"[Daemon] Running asymmetric selfplay: {p1_type}(D{diff1}) vs {p2_type}(D{diff2}) on {key}")
-    success, output = run_command(cmd, timeout=300)
+    success, output = run_command(cmd, timeout=1800)  # 30 min for 10 games on complex boards
 
     if success:
         total_games = 10  # Tournament runs specified number of games
@@ -1475,7 +1475,7 @@ async def daemon_cycle(state: DaemonState) -> bool:
 
         # Phase 1a: Balanced selfplay (homogeneous engine modes)
         print("[Daemon] Phase 1a: Running balanced selfplay...")
-        games = await run_balanced_selfplay(state, duration_minutes=5)
+        games = await run_balanced_selfplay(state, duration_minutes=30)  # 30 min for ~40 games per config
         print(f"[Daemon] Generated {games} homogeneous selfplay games")
 
         # Phase 1b: Asymmetric selfplay (every 3rd cycle for diversity)
