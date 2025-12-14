@@ -1637,11 +1637,12 @@ class MutableGameState:
             stack = self._stacks.get(key)
             if stack and stack.rings:
                 for ring_owner in stack.rings:
-                    if ring_owner in self._rings_in_hand:
+                    if ring_owner in self._players:
+                        ps = self._players[ring_owner]
                         # Save previous value for undo if not already saved
                         if ring_owner not in undo.prev_rings_in_hand:
-                            undo.prev_rings_in_hand[ring_owner] = self._rings_in_hand[ring_owner]
-                        self._rings_in_hand[ring_owner] += 1
+                            undo.prev_rings_in_hand[ring_owner] = ps.rings_in_hand
+                        ps.rings_in_hand += 1
                 # Remove the stack
                 undo.removed_stacks[key] = stack.copy()
                 del self._stacks[key]
