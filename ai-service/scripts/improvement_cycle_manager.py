@@ -90,9 +90,9 @@ BOARD_CONFIGS = [
     {"board_type": "square8", "num_players": 2, "priority": 1.0, "min_games": 15000},
 ]
 
-# Training thresholds
-MIN_NEW_GAMES_FOR_TRAINING = 2000
-TRAINING_COOLDOWN_SECONDS = 1800  # 30 min between training runs
+# Training thresholds (tunable via environment variables)
+MIN_NEW_GAMES_FOR_TRAINING = int(os.environ.get("RINGRIFT_MIN_GAMES_FOR_TRAINING", "1000"))
+TRAINING_COOLDOWN_SECONDS = int(os.environ.get("RINGRIFT_TRAINING_COOLDOWN_SECONDS", "900"))  # 15 min between training runs
 TOURNAMENT_GAMES_PER_MATCHUP = 20
 PROMOTION_THRESHOLD = 0.55  # 55% win rate for promotion
 
@@ -116,8 +116,11 @@ class CycleState:
     last_cmaes_time: float = 0.0
     current_iteration: int = 0
     best_model_path: Optional[str] = None
+    prev_best_model_path: Optional[str] = None  # For rollback on consecutive failures
     pending_training: bool = False
     pending_evaluation: bool = False
+    consecutive_failures: int = 0  # Track consecutive failed promotions
+    max_consecutive_failures: int = 5  # Rollback after this many failures
 
 
 @dataclass
@@ -231,11 +234,36 @@ class ImprovementCycleManager:
             )
         """)
 
+        # New table for incremental cycle state persistence (crash recovery)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cycle_states (
+                cycle_id TEXT PRIMARY KEY,
+                board_type TEXT NOT NULL,
+                num_players INTEGER NOT NULL,
+                total_games INTEGER DEFAULT 0,
+                games_since_last_training INTEGER DEFAULT 0,
+                last_training_time REAL DEFAULT 0,
+                last_cmaes_time REAL DEFAULT 0,
+                current_iteration INTEGER DEFAULT 0,
+                best_model_path TEXT,
+                best_winrate REAL DEFAULT 0,
+                pending_training INTEGER DEFAULT 0,
+                pending_evaluation INTEGER DEFAULT 0,
+                training_job_id TEXT,
+                last_update REAL DEFAULT 0
+            )
+        """)
+
         conn.commit()
         conn.close()
 
     def _load_state(self) -> ManagerState:
-        """Load state from database."""
+        """Load state from database.
+
+        Loads from both the JSON blob (legacy) and cycle_states table.
+        The cycle_states table takes precedence for cycle data if present,
+        enabling crash recovery.
+        """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
@@ -243,10 +271,11 @@ class ImprovementCycleManager:
         row = cursor.fetchone()
         conn.close()
 
+        state = ManagerState()
+
         if row:
             try:
                 data = json.loads(row[0])
-                state = ManagerState()
                 state.last_update = data.get("last_update", 0.0)
                 state.total_games_scheduled = data.get("total_games_scheduled", 0)
                 state.total_training_triggered = data.get("total_training_triggered", 0)
@@ -258,12 +287,21 @@ class ImprovementCycleManager:
 
                 for agent_id, agent_data in data.get("agents", {}).items():
                     state.agents[agent_id] = AgentVariation(**agent_data)
-
-                return state
             except Exception as e:
-                print(f"[ImprovementManager] Error loading state: {e}")
+                print(f"[ImprovementManager] Error loading state from JSON blob: {e}")
 
-        return ManagerState()
+        # Load from cycle_states table (takes precedence, enables crash recovery)
+        try:
+            db_cycles = self._load_cycle_states_from_db()
+            if db_cycles:
+                # Merge: DB table takes precedence for existing keys
+                for key, cycle in db_cycles.items():
+                    state.cycles[key] = cycle
+                print(f"[ImprovementManager] Loaded {len(db_cycles)} cycles from DB table")
+        except Exception as e:
+            print(f"[ImprovementManager] Error loading cycles from DB table: {e}")
+
+        return state
 
     def _save_state(self):
         """Save state to database."""
@@ -286,8 +324,94 @@ class ImprovementCycleManager:
             ("manager_state", json.dumps(data))
         )
 
+        # Also persist cycle states to dedicated table for crash recovery
+        for key, cycle in self.state.cycles.items():
+            self._save_cycle_state_to_db(cursor, key, cycle)
+
         conn.commit()
         conn.close()
+
+    def _save_cycle_state_to_db(self, cursor, cycle_id: str, cycle: "CycleState"):
+        """Save a single cycle state to the dedicated table."""
+        cursor.execute("""
+            INSERT OR REPLACE INTO cycle_states
+            (cycle_id, board_type, num_players, total_games, games_since_last_training,
+             last_training_time, last_cmaes_time, current_iteration, best_model_path,
+             best_winrate, pending_training, pending_evaluation, training_job_id, last_update)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            cycle_id,
+            cycle.board_type,
+            cycle.num_players,
+            cycle.total_games,
+            cycle.games_since_last_training,
+            cycle.last_training_time,
+            getattr(cycle, 'last_cmaes_time', 0),
+            cycle.current_iteration,
+            cycle.best_model_path,
+            getattr(cycle, 'best_winrate', 0),
+            1 if cycle.pending_training else 0,
+            1 if cycle.pending_evaluation else 0,
+            getattr(cycle, 'training_job_id', None),
+            time.time(),
+        ))
+
+    def _load_cycle_states_from_db(self) -> Dict[str, "CycleState"]:
+        """Load cycle states from dedicated table for crash recovery."""
+        cycles = {}
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT cycle_id, board_type, num_players, total_games, games_since_last_training,
+                       last_training_time, last_cmaes_time, current_iteration, best_model_path,
+                       best_winrate, pending_training, pending_evaluation, training_job_id
+                FROM cycle_states
+            """)
+            for row in cursor.fetchall():
+                (cycle_id, board_type, num_players, total_games, games_since,
+                 last_train, last_cmaes, iteration, best_model, best_wr,
+                 pending_train, pending_eval, job_id) = row
+
+                cycle = CycleState(board_type, num_players)
+                cycle.total_games = total_games or 0
+                cycle.games_since_last_training = games_since or 0
+                cycle.last_training_time = last_train or 0
+                cycle.current_iteration = iteration or 0
+                cycle.best_model_path = best_model
+                cycle.pending_training = bool(pending_train)
+                cycle.pending_evaluation = bool(pending_eval)
+                # Optional fields that may not exist on older CycleState
+                if hasattr(cycle, 'last_cmaes_time'):
+                    cycle.last_cmaes_time = last_cmaes or 0
+                if hasattr(cycle, 'best_winrate'):
+                    cycle.best_winrate = best_wr or 0
+                if hasattr(cycle, 'training_job_id'):
+                    cycle.training_job_id = job_id
+
+                cycles[cycle_id] = cycle
+        except Exception as e:
+            print(f"[ImprovementManager] Error loading cycle states: {e}")
+        finally:
+            conn.close()
+
+        return cycles
+
+    def save_cycle_state(self, board_type: str, num_players: int):
+        """Persist a single cycle state immediately (for critical updates)."""
+        key = self._get_cycle_key(board_type, num_players)
+        cycle = self.state.cycles.get(key)
+        if not cycle:
+            return
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            self._save_cycle_state_to_db(cursor, key, cycle)
+            conn.commit()
+        finally:
+            conn.close()
 
     def _register_builtin_agents(self):
         """Register built-in agent variations for diverse tournaments."""
@@ -719,7 +843,9 @@ class ImprovementCycleManager:
         conn.commit()
         conn.close()
 
+        # Save full state and immediately persist this cycle for crash recovery
         self._save_state()
+        self.save_cycle_state(board_type, num_players)
 
     # =========================================================================
     # Tournament Scheduling
@@ -810,7 +936,10 @@ class ImprovementCycleManager:
         promoted = win_rate >= PROMOTION_THRESHOLD
 
         if promoted:
-            # Backup previous best
+            # Store previous best for rollback
+            cycle.prev_best_model_path = cycle.best_model_path
+
+            # Backup previous best to file
             if cycle.best_model_path and Path(cycle.best_model_path).exists():
                 backup_path = str(cycle.best_model_path).replace("_best.", "_prev_best.")
                 try:
@@ -821,6 +950,7 @@ class ImprovementCycleManager:
 
             # Promote new model
             cycle.best_model_path = model_path
+            cycle.consecutive_failures = 0  # Reset failure counter on success
 
             # Update training history
             conn = sqlite3.connect(self.db_path)
@@ -832,8 +962,36 @@ class ImprovementCycleManager:
             conn.commit()
             conn.close()
 
+            print(f"[ImprovementManager] {board_type}_{num_players}p: Promoted model with {win_rate:.1%} win rate")
+        else:
+            # Track consecutive failures
+            cycle.consecutive_failures += 1
+            print(f"[ImprovementManager] {board_type}_{num_players}p: Model not promoted ({win_rate:.1%} < {PROMOTION_THRESHOLD:.1%}), "
+                  f"consecutive failures: {cycle.consecutive_failures}/{cycle.max_consecutive_failures}")
+
+            # Check if rollback is needed
+            if cycle.consecutive_failures >= cycle.max_consecutive_failures:
+                self._rollback_to_previous_best(cycle)
+
+        # Save full state and immediately persist this cycle for crash recovery
         self._save_state()
+        self.save_cycle_state(board_type, num_players)
         return promoted
+
+    def _rollback_to_previous_best(self, cycle: CycleState):
+        """Rollback to previous best model after consecutive failures."""
+        if not cycle.prev_best_model_path:
+            print(f"[ImprovementManager] {cycle.board_type}_{cycle.num_players}p: No previous model to rollback to")
+            cycle.consecutive_failures = 0  # Reset to avoid infinite loop
+            return
+
+        print(f"[ImprovementManager] {cycle.board_type}_{cycle.num_players}p: ROLLBACK - "
+              f"{cycle.consecutive_failures} consecutive failures, reverting to previous best model")
+
+        # Swap current and previous
+        cycle.best_model_path = cycle.prev_best_model_path
+        cycle.prev_best_model_path = None
+        cycle.consecutive_failures = 0
 
     def update_cycle_phase(self, cycle_id: str, phase: str,
                             training_job_id: Optional[str] = None,

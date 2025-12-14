@@ -33,10 +33,10 @@ import sys
 import tempfile
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # Add project root to path
 SCRIPT_DIR = Path(__file__).parent
@@ -50,6 +50,19 @@ try:
     HAS_LINEAGE = True
 except ImportError:
     HAS_LINEAGE = False
+
+# Import event bus for pipeline integration
+try:
+    from app.distributed.data_events import (
+        DataEventType,
+        DataEvent,
+        get_event_bus,
+        emit_model_promoted,
+        emit_error,
+    )
+    HAS_EVENT_BUS = True
+except ImportError:
+    HAS_EVENT_BUS = False
 
 # Paths
 MODELS_DIR = AI_SERVICE_ROOT / "models"
@@ -97,6 +110,380 @@ class PromotedModel:
     symlink_name: str  # e.g., "square8_2p_best.pth"
     alias_id: str  # e.g., "ringrift_best_sq8_2p"
     alias_paths: List[str]  # absolute file paths under ai-service/models
+
+
+@dataclass
+class AutoPromotionConfig:
+    """Configuration for automatic model promotion."""
+    elo_threshold: float = 20.0  # Must beat current best by this many Elo
+    min_games: int = 50  # Minimum games before promotion eligible
+    significance_level: float = 0.05  # Statistical significance requirement
+    sync_to_cluster: bool = True  # Sync promoted models to all hosts
+    check_interval_seconds: int = 300  # How often to check for candidates (5 min)
+    run_regression: bool = True  # Run regression tests before promotion
+
+
+@dataclass
+class PromotionCandidate:
+    """A model candidate for automatic promotion."""
+    board_type: str
+    num_players: int
+    model_id: str
+    model_path: Path
+    elo_rating: float
+    games_played: int
+    current_best_elo: float
+    elo_gain: float
+    is_significant: bool
+
+
+class AutoPromotionTrigger:
+    """Automatic promotion trigger for the unified AI improvement loop.
+
+    Monitors Elo ratings and automatically promotes models that:
+    1. Beat the current best by a configurable Elo threshold
+    2. Have sufficient games played
+    3. Pass statistical significance tests
+    4. Pass regression tests (optional)
+
+    Usage:
+        trigger = AutoPromotionTrigger(config)
+        candidates = trigger.check_promotion_candidates()
+        for candidate in candidates:
+            trigger.execute_promotion(candidate)
+    """
+
+    def __init__(self, config: AutoPromotionConfig = None):
+        self.config = config or AutoPromotionConfig()
+        self._last_check: Dict[str, float] = {}  # config -> timestamp
+        self._promoted_models: Dict[str, PromotedModel] = {}  # config -> last promoted
+
+    def check_promotion_candidates(
+        self,
+        board_type: str = None,
+        num_players: int = None,
+    ) -> List[PromotionCandidate]:
+        """Check for models that should be promoted.
+
+        Args:
+            board_type: Specific board type to check (None for all)
+            num_players: Specific player count to check (None for all)
+
+        Returns:
+            List of promotion candidates
+        """
+        candidates = []
+
+        # Determine configurations to check
+        if board_type and num_players:
+            configs = [(board_type, num_players)]
+        else:
+            configs = ALL_CONFIGS
+
+        for bt, np in configs:
+            candidate = self._check_config(bt, np)
+            if candidate:
+                candidates.append(candidate)
+
+        return candidates
+
+    def _check_config(self, board_type: str, num_players: int) -> Optional[PromotionCandidate]:
+        """Check a specific configuration for promotion candidates."""
+        config_key = f"{board_type}_{num_players}p"
+
+        # Get current best from promoted models
+        current_best = self._get_current_best(board_type, num_players)
+        current_best_elo = current_best.elo_rating if current_best else 1500.0
+
+        # Get challenger from Elo leaderboard
+        challenger = get_best_model_from_elo(board_type, num_players)
+        if not challenger:
+            return None
+
+        # Check minimum games
+        if challenger["games_played"] < self.config.min_games:
+            return None
+
+        # Check Elo threshold
+        elo_gain = challenger["elo_rating"] - current_best_elo
+        if elo_gain < self.config.elo_threshold:
+            return None
+
+        # Check if this is the same model already promoted
+        if current_best and challenger["model_id"] == current_best.model_id:
+            return None
+
+        # Find model file
+        model_path = find_model_file(challenger["model_id"])
+        if not model_path:
+            return None
+
+        # Check statistical significance
+        is_significant = self._check_significance(
+            challenger["elo_rating"],
+            current_best_elo,
+            challenger["games_played"],
+        )
+
+        if not is_significant and self.config.significance_level < 1.0:
+            return None
+
+        return PromotionCandidate(
+            board_type=board_type,
+            num_players=num_players,
+            model_id=challenger["model_id"],
+            model_path=model_path,
+            elo_rating=challenger["elo_rating"],
+            games_played=challenger["games_played"],
+            current_best_elo=current_best_elo,
+            elo_gain=elo_gain,
+            is_significant=is_significant,
+        )
+
+    def _get_current_best(self, board_type: str, num_players: int) -> Optional[PromotedModel]:
+        """Get the currently promoted model for a configuration."""
+        config_key = f"{board_type}_{num_players}p"
+
+        # Check cached promoted models
+        if config_key in self._promoted_models:
+            return self._promoted_models[config_key]
+
+        # Load from config file
+        try:
+            if PROMOTED_CONFIG_PATH.exists():
+                config_path = PROMOTED_CONFIG_PATH
+            elif PROMOTED_CONFIG_SEED_PATH.exists():
+                config_path = PROMOTED_CONFIG_SEED_PATH
+            else:
+                return None
+
+            with open(config_path) as f:
+                config = json.load(f)
+
+            models = config.get("models", {})
+            if config_key in models:
+                m = models[config_key]
+                return PromotedModel(
+                    board_type=board_type,
+                    num_players=num_players,
+                    model_path=m.get("path", ""),
+                    model_id=m.get("model_id", ""),
+                    elo_rating=m.get("elo_rating", 1500.0),
+                    games_played=m.get("games_played", 0),
+                    promoted_at=m.get("promoted_at", ""),
+                    symlink_name=f"{board_type}_{num_players}p_best.pth",
+                    alias_id=m.get("alias_id", ""),
+                    alias_paths=m.get("alias_paths", []),
+                )
+        except Exception:
+            pass
+
+        return None
+
+    def _check_significance(
+        self,
+        new_elo: float,
+        old_elo: float,
+        games: int,
+    ) -> bool:
+        """Check if Elo difference is statistically significant.
+
+        Uses simplified significance check based on Elo confidence intervals.
+        A typical Elo system has ~200 points = 1 standard deviation for
+        well-played games.
+        """
+        if games < 10:
+            return False
+
+        # Approximate standard error based on number of games
+        # SE decreases with sqrt(games)
+        se = 200.0 / (games ** 0.5)
+
+        # Z-score for significance
+        z_score = (new_elo - old_elo) / se
+
+        # Common significance levels
+        # 0.05 -> z > 1.645
+        # 0.01 -> z > 2.326
+        if self.config.significance_level >= 0.05:
+            return z_score > 1.645
+        elif self.config.significance_level >= 0.01:
+            return z_score > 2.326
+        else:
+            return z_score > 2.576  # 0.005 level
+
+    def execute_promotion(
+        self,
+        candidate: PromotionCandidate,
+        verbose: bool = True,
+    ) -> Optional[PromotedModel]:
+        """Execute promotion for a candidate model.
+
+        Args:
+            candidate: The promotion candidate
+            verbose: Print progress
+
+        Returns:
+            PromotedModel if successful, None otherwise
+        """
+        config_key = f"{candidate.board_type}_{candidate.num_players}p"
+
+        if verbose:
+            print(f"[AutoPromotion] Promoting {candidate.model_id} for {config_key}")
+            print(f"  Elo: {candidate.elo_rating:.0f} (gain: +{candidate.elo_gain:.0f})")
+            print(f"  Games: {candidate.games_played}")
+
+        # Run regression tests if enabled
+        if self.config.run_regression:
+            if not run_regression_gate(
+                candidate.model_path,
+                candidate.board_type,
+                candidate.num_players,
+                verbose,
+            ):
+                if verbose:
+                    print(f"  Regression tests FAILED - skipping promotion")
+                return None
+
+        # Publish alias
+        alias_id = best_alias_id(candidate.board_type, candidate.num_players)
+        alias_paths = publish_best_alias(
+            board_type=candidate.board_type,
+            num_players=candidate.num_players,
+            best_model_path=candidate.model_path,
+            best_model_id=candidate.model_id,
+            elo_rating=candidate.elo_rating,
+            games_played=candidate.games_played,
+            verbose=verbose,
+        )
+
+        # Create symlink
+        symlink_name = f"{candidate.board_type}_{candidate.num_players}p_best.pth"
+        create_symlink(candidate.model_path, symlink_name)
+
+        # Create PromotedModel record
+        promoted = PromotedModel(
+            board_type=candidate.board_type,
+            num_players=candidate.num_players,
+            model_path=str(candidate.model_path.relative_to(MODELS_DIR)),
+            model_id=candidate.model_id,
+            elo_rating=candidate.elo_rating,
+            games_played=candidate.games_played,
+            promoted_at=datetime.utcnow().isoformat() + "Z",
+            symlink_name=symlink_name,
+            alias_id=alias_id,
+            alias_paths=[str(p) for p in alias_paths],
+        )
+
+        # Log promotion
+        log_promotion(promoted)
+
+        # Update cache
+        self._promoted_models[config_key] = promoted
+
+        # Update config file
+        all_promoted = list(self._promoted_models.values())
+        update_promoted_config(all_promoted)
+
+        # Sync to cluster if enabled
+        if self.config.sync_to_cluster:
+            if verbose:
+                print(f"  Syncing to cluster...")
+            sync_to_cluster_ssh([promoted], verbose=verbose)
+
+        # Emit event for pipeline integration
+        if HAS_EVENT_BUS:
+            import asyncio
+            try:
+                asyncio.run(emit_model_promoted(
+                    model_id=candidate.model_id,
+                    config=config_key,
+                    elo=candidate.elo_rating,
+                    elo_gain=candidate.elo_gain,
+                    source="model_promotion_manager.py",
+                ))
+            except Exception as e:
+                if verbose:
+                    print(f"  Failed to emit promotion event: {e}")
+
+        if verbose:
+            print(f"  Promotion complete!")
+
+        return promoted
+
+
+def run_auto_promotion_daemon(config: AutoPromotionConfig = None, verbose: bool = True):
+    """Run automatic promotion as a background daemon.
+
+    Continuously monitors Elo ratings and promotes models automatically.
+    Integrates with the unified AI improvement loop.
+
+    Args:
+        config: Auto-promotion configuration
+        verbose: Print progress
+    """
+    import signal
+
+    config = config or AutoPromotionConfig()
+    trigger = AutoPromotionTrigger(config)
+
+    running = True
+
+    def signal_handler(sig, frame):
+        nonlocal running
+        print("\n[AutoPromotion] Shutdown requested")
+        running = False
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    print(f"[AutoPromotion] Starting auto-promotion daemon")
+    print(f"  Check interval: {config.check_interval_seconds}s")
+    print(f"  Elo threshold: +{config.elo_threshold}")
+    print(f"  Min games: {config.min_games}")
+    print(f"  Sync to cluster: {config.sync_to_cluster}")
+
+    iteration = 0
+    while running:
+        iteration += 1
+
+        if verbose:
+            print(f"\n[AutoPromotion] Check #{iteration} at {datetime.now().isoformat()}")
+
+        try:
+            candidates = trigger.check_promotion_candidates()
+
+            if candidates:
+                print(f"[AutoPromotion] Found {len(candidates)} promotion candidate(s)")
+                for candidate in candidates:
+                    trigger.execute_promotion(candidate, verbose=verbose)
+            elif verbose:
+                print(f"[AutoPromotion] No promotion candidates")
+
+        except Exception as e:
+            print(f"[AutoPromotion] Error: {e}")
+            import traceback
+            traceback.print_exc()
+
+            if HAS_EVENT_BUS:
+                import asyncio
+                try:
+                    asyncio.run(emit_error(
+                        component="auto_promotion",
+                        error=str(e),
+                        source="model_promotion_manager.py",
+                    ))
+                except Exception:
+                    pass
+
+        # Wait for next check
+        if running:
+            try:
+                time.sleep(config.check_interval_seconds)
+            except KeyboardInterrupt:
+                running = False
+
+    print("[AutoPromotion] Stopped")
 
 
 def best_alias_id(board_type: str, num_players: int) -> str:
@@ -509,12 +896,16 @@ def run_regression_gate(model_path: Path, board_type: str, num_players: int, ver
     """Run regression tests on a model before promotion.
 
     Returns True if tests pass or regression tests are disabled.
+    Set RINGRIFT_REGRESSION_HARD_BLOCK=1 to block promotion on test failure.
     """
     # Skip if regression tests are disabled
     if os.environ.get("RINGRIFT_SKIP_REGRESSION_TESTS", "").lower() in ("1", "true", "yes"):
         if verbose:
             print(f"  Regression tests skipped (RINGRIFT_SKIP_REGRESSION_TESTS=1)")
         return True
+
+    # Check if hard blocking is enabled (default: enabled)
+    hard_block = os.environ.get("RINGRIFT_REGRESSION_HARD_BLOCK", "1").lower() in ("1", "true", "yes")
 
     regression_script = AI_SERVICE_ROOT / "scripts" / "model_regression_tests.py"
     if not regression_script.exists():
@@ -544,20 +935,46 @@ def run_regression_gate(model_path: Path, board_type: str, num_players: int, ver
             if passed:
                 print(f"  Regression tests: PASSED")
             else:
-                print(f"  Regression tests: FAILED (continuing anyway for now)")
-                # Log failure but don't block promotion during development
-                # TODO: Make this a hard block once regression tests are stable
+                if hard_block:
+                    print(f"  Regression tests: FAILED - blocking promotion")
+                    _log_regression_failure(model_path, board_type, num_players, result)
+                else:
+                    print(f"  Regression tests: FAILED (set RINGRIFT_REGRESSION_HARD_BLOCK=1 to block)")
 
-        return True  # Don't block promotion yet - tests are still being stabilized
+        # Block promotion if tests failed and hard_block is enabled
+        if not passed and hard_block:
+            return False
+        return True
 
     except subprocess.TimeoutExpired:
         if verbose:
-            print(f"  Regression tests: TIMEOUT (skipping)")
-        return True
+            print(f"  Regression tests: TIMEOUT")
+        # Block on timeout if hard_block is enabled
+        return not hard_block
     except Exception as e:
         if verbose:
             print(f"  Regression tests error: {e}")
         return True
+
+
+def _log_regression_failure(model_path: Path, board_type: str, num_players: int, result) -> None:
+    """Log detailed regression failure for debugging."""
+    from datetime import datetime
+    log_dir = AI_SERVICE_ROOT / "logs" / "regression_failures"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    log_file = log_dir / f"regression_{board_type}_{num_players}p_{timestamp}.log"
+
+    with open(log_file, "w") as f:
+        f.write(f"Model: {model_path}\n")
+        f.write(f"Board: {board_type}, Players: {num_players}\n")
+        f.write(f"Timestamp: {timestamp}\n")
+        f.write(f"Return code: {result.returncode}\n")
+        f.write(f"\n--- stdout ---\n{result.stdout}\n")
+        f.write(f"\n--- stderr ---\n{result.stderr}\n")
+
+    print(f"  Failure details logged to: {log_file}")
 
 
 def update_all_promotions(
@@ -794,9 +1211,75 @@ def main():
         help="Skip regression tests before promotion",
     )
 
+    # Auto-promotion daemon mode (for unified AI loop integration)
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help="Run as auto-promotion daemon (continuous monitoring)",
+    )
+    parser.add_argument(
+        "--check-interval",
+        type=int,
+        default=300,
+        help="Seconds between promotion checks in daemon mode (default: 300)",
+    )
+    parser.add_argument(
+        "--elo-threshold",
+        type=float,
+        default=20.0,
+        help="Elo gain required for auto-promotion (default: 20)",
+    )
+    parser.add_argument(
+        "--check-candidates",
+        action="store_true",
+        help="Check for promotion candidates and exit (one-shot mode)",
+    )
+    parser.add_argument(
+        "--auto-promote",
+        action="store_true",
+        help="Automatically promote any eligible candidates (one-shot mode)",
+    )
+
     args = parser.parse_args()
     verbose = not args.quiet
     run_regression = not args.no_regression
+
+    # Handle daemon mode
+    if args.daemon:
+        config = AutoPromotionConfig(
+            elo_threshold=args.elo_threshold,
+            min_games=args.min_games,
+            check_interval_seconds=args.check_interval,
+            sync_to_cluster=True,
+            run_regression=run_regression,
+        )
+        run_auto_promotion_daemon(config, verbose=verbose)
+        return
+
+    # Handle one-shot candidate check
+    if args.check_candidates or args.auto_promote:
+        config = AutoPromotionConfig(
+            elo_threshold=args.elo_threshold,
+            min_games=args.min_games,
+            run_regression=run_regression,
+        )
+        trigger = AutoPromotionTrigger(config)
+        candidates = trigger.check_promotion_candidates()
+
+        if not candidates:
+            print("[AutoPromotion] No promotion candidates found")
+        else:
+            print(f"[AutoPromotion] Found {len(candidates)} candidate(s):")
+            for c in candidates:
+                print(f"  {c.board_type}_{c.num_players}p: {c.model_id}")
+                print(f"    Elo: {c.elo_rating:.0f} (gain: +{c.elo_gain:.0f})")
+                print(f"    Games: {c.games_played}")
+
+            if args.auto_promote:
+                print("\n[AutoPromotion] Executing promotions...")
+                for candidate in candidates:
+                    trigger.execute_promotion(candidate, verbose=verbose)
+        return
 
     promoted_models: List[PromotedModel] = []
     did_publish = False

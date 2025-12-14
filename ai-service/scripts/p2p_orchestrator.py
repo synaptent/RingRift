@@ -123,6 +123,7 @@ DISK_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_WARNING_THRESHOLD
 DISK_CLEANUP_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CLEANUP_THRESHOLD", "85") or 85)    # Trigger cleanup
 MEMORY_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_MEMORY_CRITICAL_THRESHOLD", "95") or 95)  # Stop jobs
 MEMORY_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_MEMORY_WARNING_THRESHOLD", "85") or 85)    # Reduce jobs
+MIN_MEMORY_GB_FOR_TASKS = int(os.environ.get("RINGRIFT_P2P_MIN_MEMORY_GB", "64") or 64)                # Skip low-memory nodes
 LOAD_MAX_FOR_NEW_JOBS = int(os.environ.get("RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS", "85") or 85)          # Stop starting
 
 # GPU utilization targeting for efficient resource usage
@@ -147,7 +148,7 @@ RETRY_RETIRED_NODE_INTERVAL = int(os.environ.get("RINGRIFT_P2P_RETRY_RETIRED_NOD
 # Nodes that can't receive inbound connections can operate in relay mode:
 # they send heartbeats to a relay (/relay/heartbeat) and poll for commands.
 NAT_INBOUND_HEARTBEAT_STALE_SECONDS = 180  # seconds since last inbound /heartbeat
-RELAY_HEARTBEAT_INTERVAL = 30  # seconds between relay heartbeats when enabled
+RELAY_HEARTBEAT_INTERVAL = 15  # seconds between relay heartbeats when enabled (reduced for faster job delivery)
 RELAY_COMMAND_TTL_SECONDS = 1800  # expire queued commands after 30 minutes
 RELAY_COMMAND_MAX_BATCH = 16
 RELAY_COMMAND_MAX_ATTEMPTS = 3
@@ -195,7 +196,7 @@ MANIFEST_JSONL_LINECOUNT_MAX_BYTES = 64 * 1024 * 1024  # Skip line-counting for 
 MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES = 1024 * 1024
 
 # LEARNED LESSONS - Automatic data management settings
-DATA_MANAGEMENT_INTERVAL = 600  # Check data status every 10 minutes
+DATA_MANAGEMENT_INTERVAL = 300  # Check data status every 5 minutes (reduced for faster training triggers)
 DB_EXPORT_THRESHOLD_MB = 100    # Trigger export when DB exceeds 100MB
 TRAINING_DATA_SYNC_THRESHOLD_MB = 10  # Sync training data when > 10MB new data
 MAX_CONCURRENT_EXPORTS = 2      # Limit concurrent export jobs per node
@@ -615,7 +616,7 @@ class TrainingJob:
 
 @dataclass
 class TrainingThresholds:
-    """Configuration for automatic training triggers."""
+    """Configuration for automatic training triggers with adaptive scaling."""
     # Minimum games required to trigger training
     min_games_nnue: int = 2000          # Start sooner; improves as more data arrives
     min_games_cmaes: int = 1000         # CMA-ES can work with fewer games
@@ -627,6 +628,59 @@ class TrainingThresholds:
     # Auto-training enabled flags
     auto_nnue_enabled: bool = True
     auto_cmaes_enabled: bool = True
+    # Adaptive scaling factors (updated dynamically based on cluster state)
+    cluster_scale_factor: float = 1.0   # Adjusted based on GPU node count
+    data_rate_scale_factor: float = 1.0 # Adjusted based on games/hour
+
+    def get_effective_min_games(self, job_type: str = "nnue") -> int:
+        """Get cluster-scaled minimum games threshold.
+
+        More GPU nodes = can train more frequently with less data per iteration.
+        """
+        base = self.min_games_nnue if job_type == "nnue" else self.min_games_cmaes
+        # Scale inversely with cluster size (more nodes = lower threshold)
+        scaled = int(base * self.cluster_scale_factor)
+        # Never go below minimum viable threshold
+        return max(500 if job_type == "nnue" else 250, scaled)
+
+    def get_effective_incremental(self, job_type: str = "nnue") -> int:
+        """Get cluster-scaled incremental threshold."""
+        base = self.incremental_games_nnue if job_type == "nnue" else self.incremental_games_cmaes
+        scaled = int(base * self.cluster_scale_factor)
+        return max(200 if job_type == "nnue" else 100, scaled)
+
+    def get_effective_cooldown(self) -> float:
+        """Get data-rate-scaled cooldown.
+
+        Faster data generation = shorter cooldowns (train more often).
+        """
+        # Scale inversely with data rate (faster data = shorter cooldown)
+        scaled = self.cooldown_seconds / max(1.0, self.data_rate_scale_factor)
+        # Never go below 5 minutes or above 2 hours
+        return max(300, min(7200, scaled))
+
+    def update_from_cluster_state(self, gpu_node_count: int, games_per_hour: float = 0):
+        """Update adaptive scaling factors based on cluster state.
+
+        Args:
+            gpu_node_count: Number of GPU nodes in cluster
+            games_per_hour: Current data generation rate (0 = unknown)
+        """
+        # Scale factor: more GPUs = lower thresholds (train more often)
+        # 1 GPU = 1.0, 2 GPUs = 0.7, 4 GPUs = 0.5, 8+ GPUs = 0.35
+        if gpu_node_count <= 1:
+            self.cluster_scale_factor = 1.0
+        elif gpu_node_count <= 2:
+            self.cluster_scale_factor = 0.7
+        elif gpu_node_count <= 4:
+            self.cluster_scale_factor = 0.5
+        else:
+            self.cluster_scale_factor = 0.35
+
+        # Data rate factor: faster generation = shorter cooldowns
+        if games_per_hour > 0:
+            # Baseline: 1000 games/hour = factor 1.0
+            self.data_rate_scale_factor = max(0.5, min(4.0, games_per_hour / 1000))
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -1734,6 +1788,27 @@ class P2POrchestrator:
             )
         """)
 
+        # Metrics history table for observability
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS metrics_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp REAL NOT NULL,
+                metric_type TEXT NOT NULL,
+                board_type TEXT,
+                num_players INTEGER,
+                value REAL NOT NULL,
+                metadata TEXT
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_metrics_type_time
+            ON metrics_history(metric_type, timestamp)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_metrics_config
+            ON metrics_history(board_type, num_players, timestamp)
+        """)
+
         conn.commit()
         conn.close()
 
@@ -1897,6 +1972,134 @@ class P2POrchestrator:
             conn.close()
         except Exception as e:
             print(f"[P2P] Failed to save state: {e}")
+
+    def record_metric(
+        self,
+        metric_type: str,
+        value: float,
+        board_type: str = None,
+        num_players: int = None,
+        metadata: Dict[str, Any] = None,
+    ):
+        """Record a metric to the history table for observability.
+
+        Metric types:
+        - training_loss: NNUE training loss
+        - elo_rating: Model Elo rating
+        - gpu_utilization: GPU utilization percentage
+        - selfplay_games_per_hour: Game generation rate
+        - validation_rate: GPU selfplay validation rate
+        - tournament_win_rate: Tournament win rate for new model
+        """
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO metrics_history
+                (timestamp, metric_type, board_type, num_players, value, metadata)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                time.time(),
+                metric_type,
+                board_type,
+                num_players,
+                value,
+                json.dumps(metadata) if metadata else None,
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[P2P] Failed to record metric: {e}")
+
+    def get_metrics_history(
+        self,
+        metric_type: str,
+        board_type: str = None,
+        num_players: int = None,
+        hours: float = 24,
+        limit: int = 1000,
+    ) -> List[Dict[str, Any]]:
+        """Get metrics history for a specific metric type."""
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+
+            since = time.time() - (hours * 3600)
+            query = """
+                SELECT timestamp, value, board_type, num_players, metadata
+                FROM metrics_history
+                WHERE metric_type = ? AND timestamp > ?
+            """
+            params: List[Any] = [metric_type, since]
+
+            if board_type:
+                query += " AND board_type = ?"
+                params.append(board_type)
+            if num_players:
+                query += " AND num_players = ?"
+                params.append(num_players)
+
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+
+            cursor.execute(query, params)
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    "timestamp": row[0],
+                    "value": row[1],
+                    "board_type": row[2],
+                    "num_players": row[3],
+                    "metadata": json.loads(row[4]) if row[4] else None,
+                })
+            conn.close()
+            return results
+        except Exception as e:
+            print(f"[P2P] Failed to get metrics history: {e}")
+            return []
+
+    def get_metrics_summary(self, hours: float = 24) -> Dict[str, Any]:
+        """Get summary of all metrics over the specified time period."""
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+
+            since = time.time() - (hours * 3600)
+
+            cursor.execute("""
+                SELECT metric_type, COUNT(*), AVG(value), MIN(value), MAX(value)
+                FROM metrics_history
+                WHERE timestamp > ?
+                GROUP BY metric_type
+            """, (since,))
+
+            summary: Dict[str, Any] = {}
+            for row in cursor.fetchall():
+                summary[row[0]] = {
+                    "count": row[1],
+                    "avg": row[2],
+                    "min": row[3],
+                    "max": row[4],
+                }
+
+            cursor.execute("""
+                SELECT metric_type, value, timestamp
+                FROM metrics_history m1
+                WHERE timestamp = (
+                    SELECT MAX(timestamp) FROM metrics_history m2
+                    WHERE m2.metric_type = m1.metric_type
+                )
+            """)
+            for row in cursor.fetchall():
+                if row[0] in summary:
+                    summary[row[0]]["latest"] = row[1]
+                    summary[row[0]]["latest_time"] = row[2]
+
+            conn.close()
+            return {"period_hours": hours, "since": since, "metrics": summary}
+        except Exception as e:
+            print(f"[P2P] Failed to get metrics summary: {e}")
+            return {}
 
     def _create_self_info(self) -> NodeInfo:
         """Create NodeInfo for this node."""
@@ -3023,10 +3226,24 @@ class P2POrchestrator:
                 source_node = self.peers.get(source_id)
                 needs_cleanup = source_node and self._should_cleanup_source(source_node)
 
-                # Find selfplay files to sync
+                # Find selfplay files to sync (with mtime comparison for efficiency)
                 files_to_sync = []
                 for file_info in source_manifest.files:
-                    if file_info.file_type == "selfplay" and file_info.path not in target_files:
+                    if file_info.file_type != "selfplay":
+                        continue
+
+                    # Check if target needs this file
+                    target_file_info = target_manifest.files_by_path.get(file_info.path) if target_manifest else None
+
+                    should_sync = False
+                    if file_info.path not in target_files:
+                        # Target doesn't have file at all
+                        should_sync = True
+                    elif target_file_info and file_info.modified_time > target_file_info.modified_time + 60:
+                        # Source is newer (with 60s tolerance to avoid clock skew issues)
+                        should_sync = True
+
+                    if should_sync:
                         files_to_sync.append(file_info.path)
 
                 if files_to_sync:
@@ -4400,6 +4617,54 @@ class P2POrchestrator:
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
 
+    async def handle_relay_status(self, request: web.Request) -> web.Response:
+        """GET /relay/status - Get relay queue status for debugging.
+
+        Shows pending commands per NAT-blocked node including command ages.
+        Useful for diagnosing relay delivery issues.
+        """
+        try:
+            if self.auth_token and not self._is_request_authorized(request):
+                return web.json_response({"error": "unauthorized"}, status=401)
+
+            now = time.time()
+            queue_status = {}
+            total_pending = 0
+
+            for node_id, commands in self.relay_command_queue.items():
+                if not commands:
+                    continue
+                cmd_info = []
+                for cmd in commands:
+                    age_secs = now - cmd.get("ts", now)
+                    cmd_info.append({
+                        "id": cmd.get("id", ""),
+                        "type": cmd.get("cmd", ""),
+                        "age_secs": round(age_secs, 1),
+                        "stale": age_secs > 300,  # >5 min is stale
+                    })
+                queue_status[node_id] = {
+                    "pending_count": len(commands),
+                    "commands": cmd_info,
+                    "oldest_age_secs": round(max((now - c.get("ts", now)) for c in commands), 1) if commands else 0,
+                }
+                total_pending += len(commands)
+
+            # Get NAT-blocked nodes for context
+            with self.peers_lock:
+                nat_blocked_nodes = [nid for nid, p in self.peers.items() if getattr(p, 'nat_blocked', False)]
+
+            return web.json_response({
+                "success": True,
+                "total_pending_commands": total_pending,
+                "nat_blocked_nodes": nat_blocked_nodes,
+                "nodes_with_pending": list(queue_status.keys()),
+                "queues": queue_status,
+            })
+
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
     async def handle_register(self, request: web.Request) -> web.Response:
         """POST /register - Node self-registration for dynamic IP updates.
 
@@ -5039,6 +5304,11 @@ class P2POrchestrator:
                             "timestamp": time.time(),
                         }, f, indent=2)
                     print(f"[P2P] Saved CMA-ES weights to {weights_file}")
+
+                    # Propagate new weights to selfplay jobs
+                    asyncio.create_task(self._propagate_cmaes_weights(
+                        state.board_type, state.num_players, state.best_weights
+                    ))
                 except Exception as e:
                     print(f"[P2P] Failed to register CMA-ES weights: {e}")
 
@@ -6615,8 +6885,14 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         current_time = time.time()
         thresholds = self.training_thresholds
 
+        # Update adaptive thresholds based on current cluster state
+        gpu_node_count = len([p for p in self.peers.values()
+                              if getattr(p, 'has_gpu', False) and getattr(p, 'gpu_name', '')]
+                             ) + (1 if getattr(self.self_info, 'has_gpu', False) else 0)
+        thresholds.update_from_cluster_state(gpu_node_count)
+
         def _cooldown_ok(job_type: str, config_key: str) -> bool:
-            cooldown = float(getattr(thresholds, "cooldown_seconds", 0.0) or 0.0)
+            cooldown = thresholds.get_effective_cooldown()
             if cooldown <= 0:
                 return True
             last_seen = 0.0
@@ -6646,12 +6922,14 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             num_players = int(parts[1].replace("p", ""))
             total_games = config_data.get("total_games", 0)
 
-            # Check NNUE training threshold
+            # Check NNUE training threshold (using adaptive thresholds)
             if thresholds.auto_nnue_enabled:
                 last_nnue_games = self.games_at_last_nnue_train.get(config_key, 0)
-                if total_games >= thresholds.min_games_nnue:
+                min_games = thresholds.get_effective_min_games("nnue")
+                incremental = thresholds.get_effective_incremental("nnue")
+                if total_games >= min_games:
                     new_games = total_games - last_nnue_games
-                    if new_games >= thresholds.incremental_games_nnue or last_nnue_games == 0:
+                    if new_games >= incremental or last_nnue_games == 0:
                         # Check cooldown
                         if not _cooldown_ok("nnue", config_key):
                             continue
@@ -6665,12 +6943,14 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                 "total_games": total_games,
                             })
 
-            # Check CMA-ES optimization threshold
+            # Check CMA-ES optimization threshold (using adaptive thresholds)
             if thresholds.auto_cmaes_enabled:
                 last_cmaes_games = self.games_at_last_cmaes_train.get(config_key, 0)
-                if total_games >= thresholds.min_games_cmaes:
+                min_games = thresholds.get_effective_min_games("cmaes")
+                incremental = thresholds.get_effective_incremental("cmaes")
+                if total_games >= min_games:
                     new_games = total_games - last_cmaes_games
-                    if new_games >= thresholds.incremental_games_cmaes or last_cmaes_games == 0:
+                    if new_games >= incremental or last_cmaes_games == 0:
                         if not _cooldown_ok("cmaes", config_key):
                             continue
                         existing_job = self._find_running_training_job("cmaes", config_key)
@@ -6724,17 +7004,34 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         with self.peers_lock:
             all_nodes = list(self.peers.values())
         all_nodes.append(self.self_info)
-        healthy_nodes = [n for n in all_nodes if n.is_healthy()]
+        # Filter for healthy nodes with sufficient memory
+        healthy_nodes = [
+            n for n in all_nodes
+            if n.is_healthy() and int(getattr(n, "memory_gb", 0) or 0) >= MIN_MEMORY_GB_FOR_TASKS
+        ]
+
+        # Get set of nodes already running training jobs (for parallel training across configs)
+        with self.training_lock:
+            nodes_with_training = {
+                job.worker_node for job in self.training_jobs.values()
+                if job.status in ("pending", "queued", "running") and job.worker_node
+            }
 
         worker_node: Optional[NodeInfo] = None
         if job_type == "nnue":
             # NNUE training prefers accelerator nodes (CUDA/MPS).
-            gpu_nodes = [n for n in healthy_nodes if n.has_gpu]
+            # Exclude nodes already running training to enable parallel training across configs
+            gpu_nodes = [n for n in healthy_nodes if n.has_gpu and n.node_id not in nodes_with_training]
+            if not gpu_nodes:
+                # Fall back to allowing nodes with training if no free GPU nodes
+                gpu_nodes = [n for n in healthy_nodes if n.has_gpu]
             gpu_nodes.sort(key=lambda n: (-n.gpu_power_score(), n.get_load_score()))
             worker_node = gpu_nodes[0] if gpu_nodes else None
         else:
-            # CMA-ES is CPU-heavy. Prefer CPU-only nodes, then fall back to any healthy node.
-            cpu_nodes = [n for n in healthy_nodes if n.is_cpu_only_node()]
+            # CMA-ES is CPU-heavy. Prefer CPU-only nodes without training, then fall back.
+            cpu_nodes = [n for n in healthy_nodes if n.is_cpu_only_node() and n.node_id not in nodes_with_training]
+            if not cpu_nodes:
+                cpu_nodes = [n for n in healthy_nodes if n.is_cpu_only_node()]
             candidates = cpu_nodes if cpu_nodes else healthy_nodes
             candidates.sort(key=lambda n: n.get_load_score())
             worker_node = candidates[0] if candidates else None
@@ -7386,6 +7683,12 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             job.output_model_path = output_path
                             # LEARNED LESSONS - Schedule tournament to compare new model against baseline
                             asyncio.create_task(self._schedule_model_comparison(job, output_path))
+                            # Update improvement cycle manager with training completion
+                            if self.improvement_cycle_manager:
+                                self.improvement_cycle_manager.handle_training_complete(
+                                    job.board_type, job.num_players,
+                                    output_path, job.data_games_count or 0
+                                )
                         else:
                             job.status = "failed"
                             job.error_message = stderr.decode()[:500]
@@ -7496,10 +7799,28 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     self.diversity_metrics["gpu_validation_stats"]["total_validated"] += imported
                     self.diversity_metrics["gpu_validation_stats"]["total_failed"] += failed
 
-                # Log warning if validation rate is low
-                if validation_rate < 95:
+                # Record validation rate metric for observability
+                self.record_metric(
+                    "validation_rate",
+                    validation_rate,
+                    board_type=board_type,
+                    num_players=num_players,
+                    metadata={
+                        "job_id": job_id,
+                        "imported": imported,
+                        "failed": failed,
+                    },
+                )
+
+                # Auto-import to canonical database if validation rate is high enough
+                if validation_rate >= 95 and imported > 0:
+                    asyncio.create_task(self._import_gpu_selfplay_to_canonical(
+                        validated_db, board_type, num_players, imported
+                    ))
+                elif validation_rate < 95:
                     print(f"[P2P] WARNING: GPU selfplay validation rate {validation_rate:.1f}% is below 95%")
                     print(f"[P2P]   This indicates potential GPU/CPU rule divergence")
+                    print(f"[P2P]   Skipping auto-import to canonical database")
 
             else:
                 print(f"[P2P] GPU selfplay {job_id} CPU validation failed:")
@@ -7617,12 +7938,24 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     win_rate = new_model_wins / total_games if total_games > 0 else 0.5
                     print(f"[P2P] Tournament {tournament_id}: new model win rate = {win_rate:.1%}")
 
-                    if win_rate >= 0.55:
+                    promoted = win_rate >= 0.55
+                    if promoted:
                         print(f"[P2P] New model beats baseline! Promoting to best baseline.")
                         await self._promote_to_baseline(
                             config["model_a"], config["board_type"],
                             config["num_players"], "nnue" if "nnue" in config["model_a"].lower() else "cmaes"
                         )
+
+                    # Update improvement cycle manager with tournament result
+                    await self._handle_tournament_completion(
+                        tournament_id,
+                        config["board_type"],
+                        config["num_players"],
+                        config["model_a"],
+                        config["model_b"],
+                        win_rate,
+                        promoted,
+                    )
 
             with self.ssh_tournament_lock:
                 if tournament_id in self.ssh_tournament_runs:
@@ -7654,6 +7987,313 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         except Exception as e:
             print(f"[P2P] Baseline promotion error: {e}")
+
+    async def _handle_tournament_completion(
+        self,
+        tournament_id: str,
+        board_type: str,
+        num_players: int,
+        new_model: str,
+        baseline_model: str,
+        win_rate: float,
+        promoted: bool,
+    ):
+        """Handle tournament completion - update cycle state and trigger next iteration.
+
+        This closes the feedback loop by:
+        1. Updating improvement cycle manager with evaluation result
+        2. Recording result to unified Elo database
+        3. Updating diversity metrics
+        4. Boosting selfplay for this config if model was promoted
+        """
+        try:
+            # 1. Update improvement cycle manager
+            if self.improvement_cycle_manager:
+                self.improvement_cycle_manager.handle_evaluation_complete(
+                    board_type, num_players, win_rate, new_model
+                )
+                print(f"[P2P] Updated improvement cycle for {board_type}_{num_players}p")
+
+            # 2. Record to unified Elo database
+            try:
+                from app.tournament.unified_elo_db import get_elo_database
+                db = get_elo_database()
+                # Rankings: 0 = winner, 1 = loser
+                rankings = [0, 1] if win_rate > 0.5 else [1, 0]
+                db.record_match_and_update(
+                    participant_ids=[new_model, baseline_model],
+                    rankings=rankings,
+                    board_type=board_type,
+                    num_players=num_players,
+                    tournament_id=tournament_id,
+                )
+                print(f"[P2P] Recorded tournament result to unified Elo DB")
+            except Exception as e:
+                print(f"[P2P] Elo database update failed (non-fatal): {e}")
+
+            # 3. Update diversity metrics
+            if hasattr(self, 'diversity_metrics'):
+                self.diversity_metrics["tournament_runs"] = self.diversity_metrics.get("tournament_runs", 0) + 1
+                if promoted:
+                    self.diversity_metrics["promotions"] = self.diversity_metrics.get("promotions", 0) + 1
+
+            # 4. Record metrics for observability
+            self.record_metric(
+                "tournament_win_rate",
+                win_rate,
+                board_type=board_type,
+                num_players=num_players,
+                metadata={
+                    "new_model": new_model,
+                    "baseline_model": baseline_model,
+                    "promoted": promoted,
+                    "tournament_id": tournament_id,
+                },
+            )
+
+            # 5. Boost selfplay for this config if promoted (more data for next iteration)
+            if promoted:
+                asyncio.create_task(self._boost_selfplay_for_config(board_type, num_players))
+
+        except Exception as e:
+            print(f"[P2P] Tournament completion handler error: {e}")
+
+    async def _boost_selfplay_for_config(self, board_type: str, num_players: int):
+        """Temporarily boost selfplay for a configuration after model promotion.
+
+        This accelerates data generation for the next training iteration.
+        """
+        try:
+            config_key = f"{board_type}_{num_players}p"
+            print(f"[P2P] Boosting selfplay for {config_key} after promotion")
+
+            # Schedule additional selfplay jobs for this configuration
+            # This will be picked up by the next job scheduling cycle
+            if hasattr(self, 'selfplay_boost_configs'):
+                self.selfplay_boost_configs[config_key] = {
+                    "boost_until": time.time() + 3600,  # Boost for 1 hour
+                    "multiplier": 1.5,  # 50% more jobs
+                }
+            else:
+                self.selfplay_boost_configs = {
+                    config_key: {
+                        "boost_until": time.time() + 3600,
+                        "multiplier": 1.5,
+                    }
+                }
+
+        except Exception as e:
+            print(f"[P2P] Selfplay boost error: {e}")
+
+    async def _propagate_cmaes_weights(
+        self, board_type: str, num_players: int, weights: Dict[str, float]
+    ):
+        """Propagate new CMA-ES weights to selfplay workers.
+
+        After CMA-ES optimization finds better weights, this:
+        1. Saves weights to shared config file
+        2. Restarts selfplay jobs for this config with new weights
+        """
+        try:
+            config_key = f"{board_type}_{num_players}p"
+            print(f"[P2P] Propagating CMA-ES weights for {config_key}")
+
+            # 1. Save to shared heuristic weights config
+            config_path = Path(self.ringrift_path) / "ai-service" / "config" / "heuristic_weights.json"
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+
+            import json as json_mod
+            existing = {}
+            if config_path.exists():
+                try:
+                    existing = json_mod.loads(config_path.read_text())
+                except Exception:
+                    pass
+
+            existing[config_key] = {
+                "weights": weights,
+                "updated_at": time.time(),
+            }
+            config_path.write_text(json_mod.dumps(existing, indent=2))
+            print(f"[P2P] Updated heuristic_weights.json with {config_key} weights")
+
+            # 2. Track config for weight-aware selfplay scheduling
+            if not hasattr(self, 'cmaes_weight_configs'):
+                self.cmaes_weight_configs = {}
+
+            self.cmaes_weight_configs[config_key] = {
+                "weights": weights,
+                "updated_at": time.time(),
+            }
+
+            # 3. Stop existing selfplay jobs for this config (they'll restart with new weights)
+            jobs_to_stop = []
+            with self.jobs_lock:
+                for job_id, job in self.local_jobs.items():
+                    if (job.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY)
+                        and getattr(job, 'board_type', None) == board_type
+                        and getattr(job, 'num_players', None) == num_players
+                        and job.status == "running"):
+                        jobs_to_stop.append(job_id)
+
+            for job_id in jobs_to_stop:
+                await self._stop_local_job(job_id)
+                print(f"[P2P] Stopped selfplay job {job_id} for weight update")
+
+            # 4. Boost selfplay to generate data with new weights
+            asyncio.create_task(self._boost_selfplay_for_config(board_type, num_players))
+
+            print(f"[P2P] Weight propagation complete for {config_key}")
+
+        except Exception as e:
+            print(f"[P2P] CMA-ES weight propagation error: {e}")
+
+    async def _stop_local_job(self, job_id: str):
+        """Stop a local job by job ID."""
+        try:
+            with self.jobs_lock:
+                job = self.local_jobs.get(job_id)
+                if job and hasattr(job, 'process') and job.process:
+                    job.process.terminate()
+                    job.status = "stopped"
+        except Exception as e:
+            print(f"[P2P] Error stopping job {job_id}: {e}")
+
+    async def _import_gpu_selfplay_to_canonical(
+        self, validated_db: Path, board_type: str, num_players: int, game_count: int
+    ):
+        """Import validated GPU selfplay games to canonical selfplay database.
+
+        After GPU selfplay games pass CPU validation (>=95% validation rate),
+        this merges them into the canonical selfplay database for training.
+        """
+        try:
+            # Determine canonical DB path
+            canonical_db = Path(self.ringrift_path) / "ai-service" / "data" / "games" / "selfplay.db"
+            if not canonical_db.parent.exists():
+                canonical_db.parent.mkdir(parents=True, exist_ok=True)
+
+            print(f"[P2P] Auto-importing {game_count} validated GPU games to canonical DB...")
+
+            # Use sqlite3 to merge games from validated_db to canonical_db
+            import sqlite3
+
+            # Connect to both databases
+            src_conn = sqlite3.connect(str(validated_db))
+            dst_conn = sqlite3.connect(str(canonical_db))
+
+            # Ensure destination tables exist
+            dst_conn.execute("""
+                CREATE TABLE IF NOT EXISTS games (
+                    game_id TEXT PRIMARY KEY,
+                    board_type TEXT NOT NULL,
+                    num_players INTEGER NOT NULL,
+                    winner INTEGER,
+                    move_count INTEGER,
+                    game_time_ms INTEGER,
+                    created_at REAL,
+                    source TEXT DEFAULT 'selfplay'
+                )
+            """)
+            dst_conn.execute("""
+                CREATE TABLE IF NOT EXISTS moves (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    game_id TEXT NOT NULL,
+                    move_number INTEGER NOT NULL,
+                    player INTEGER NOT NULL,
+                    move_type TEXT NOT NULL,
+                    from_pos TEXT,
+                    to_pos TEXT,
+                    direction TEXT,
+                    captured_pos TEXT,
+                    state_before TEXT,
+                    policy_probs TEXT,
+                    value_est REAL,
+                    FOREIGN KEY (game_id) REFERENCES games(game_id)
+                )
+            """)
+            dst_conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_moves_game_id ON moves(game_id)
+            """)
+            dst_conn.commit()
+
+            # Check source schema and copy games
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            src_tables = {row[0] for row in src_cursor.fetchall()}
+
+            imported = 0
+            if "games" in src_tables:
+                # Get existing game IDs in destination to avoid duplicates
+                dst_cursor = dst_conn.cursor()
+                dst_cursor.execute("SELECT game_id FROM games")
+                existing_ids = {row[0] for row in dst_cursor.fetchall()}
+
+                # Copy games that don't already exist
+                src_cursor.execute("SELECT * FROM games")
+                src_columns = [desc[0] for desc in src_cursor.description]
+
+                for row in src_cursor.fetchall():
+                    game_id_idx = src_columns.index("game_id") if "game_id" in src_columns else 0
+                    game_id = row[game_id_idx]
+
+                    if game_id in existing_ids:
+                        continue
+
+                    # Insert game with proper column mapping
+                    placeholders = ", ".join(["?"] * len(row))
+                    columns = ", ".join(src_columns)
+                    try:
+                        dst_conn.execute(
+                            f"INSERT OR IGNORE INTO games ({columns}) VALUES ({placeholders})",
+                            row
+                        )
+                        imported += 1
+                    except Exception:
+                        continue
+
+                # Copy moves for new games
+                if "moves" in src_tables and imported > 0:
+                    src_cursor.execute("SELECT * FROM moves")
+                    move_columns = [desc[0] for desc in src_cursor.description]
+                    move_placeholders = ", ".join(["?"] * len(move_columns))
+                    move_col_str = ", ".join(move_columns)
+
+                    for row in src_cursor.fetchall():
+                        game_id_idx = move_columns.index("game_id") if "game_id" in move_columns else 1
+                        game_id = row[game_id_idx]
+                        if game_id not in existing_ids:
+                            try:
+                                dst_conn.execute(
+                                    f"INSERT OR IGNORE INTO moves ({move_col_str}) VALUES ({move_placeholders})",
+                                    row
+                                )
+                            except Exception:
+                                continue
+
+                dst_conn.commit()
+
+            src_conn.close()
+            dst_conn.close()
+
+            print(f"[P2P] Successfully imported {imported} GPU selfplay games to canonical DB")
+
+            # Update cluster data manifest to reflect new games
+            config_key = f"{board_type}_{num_players}p"
+            if hasattr(self, 'cluster_data_manifest') and self.cluster_data_manifest:
+                if config_key in self.cluster_data_manifest.by_board_type:
+                    self.cluster_data_manifest.by_board_type[config_key]["total_games"] = (
+                        self.cluster_data_manifest.by_board_type[config_key].get("total_games", 0) + imported
+                    )
+
+            # Notify improvement cycle manager of new games
+            if self.improvement_cycle_manager and imported > 0:
+                self.improvement_cycle_manager.record_games(board_type, num_players, imported)
+
+        except Exception as e:
+            print(f"[P2P] GPU selfplay import error: {e}")
+            import traceback
+            traceback.print_exc()
 
     # =========================================================================
 
@@ -7703,6 +8343,41 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 "leaderboard": [e.to_dict() for e in leaderboard],
                 "total_models": len(leaderboard),
             })
+
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)})
+
+    async def handle_metrics(self, request: web.Request) -> web.Response:
+        """GET /metrics - Get metrics summary and history."""
+        try:
+            hours = float(request.query.get("hours", "24"))
+            metric_type = request.query.get("type")
+            board_type = request.query.get("board_type")
+            num_players_str = request.query.get("num_players")
+            num_players = int(num_players_str) if num_players_str else None
+
+            if metric_type:
+                # Get specific metric history
+                history = self.get_metrics_history(
+                    metric_type=metric_type,
+                    board_type=board_type,
+                    num_players=num_players,
+                    hours=hours,
+                )
+                return web.json_response({
+                    "success": True,
+                    "metric_type": metric_type,
+                    "period_hours": hours,
+                    "count": len(history),
+                    "history": history,
+                })
+            else:
+                # Get summary of all metrics
+                summary = self.get_metrics_summary(hours=hours)
+                return web.json_response({
+                    "success": True,
+                    **summary,
+                })
 
         except Exception as e:
             return web.json_response({"success": False, "error": str(e)})
@@ -9956,6 +10631,7 @@ print(json.dumps({{
 
     async def _execute_relay_commands(self, commands: List[Dict[str, Any]]) -> None:
         """Execute relay commands (polling mode for NAT-blocked nodes)."""
+        now = time.time()
         for cmd in commands:
             try:
                 cmd_id = str(cmd.get("id") or "")
@@ -9963,6 +10639,12 @@ print(json.dumps({{
                 payload = cmd.get("payload") or {}
                 if not cmd_id or not cmd_type:
                     continue
+
+                # Check for stale commands (>5 min old indicates relay/polling issues)
+                cmd_ts = cmd.get("ts") or cmd.get("timestamp") or now
+                cmd_age_secs = now - float(cmd_ts)
+                if cmd_age_secs > 300:
+                    print(f"[P2P] WARNING: Relay command {cmd_id} ({cmd_type}) is {cmd_age_secs:.0f}s old - relay delivery may be delayed")
 
                 attempts = int(self.relay_command_attempts.get(cmd_id, 0) or 0) + 1
                 self.relay_command_attempts[cmd_id] = attempts
@@ -10796,6 +11478,8 @@ print(json.dumps({{
                         continue
 
                     await self._manage_cluster_jobs()
+                    # Cluster rebalancing: migrate jobs from weak to powerful nodes
+                    await self._check_cluster_balance()
                     # Phase 3: Check if training should be triggered automatically
                     await self._check_and_trigger_training()
                     # Phase 5: Check improvement cycles for automated training
@@ -10811,10 +11495,15 @@ print(json.dumps({{
         This keeps job scheduling, runaway detection, and load shedding aligned.
         Target: 60% CPU utilization across cluster.
         """
+        # Minimum memory requirement - skip low-memory machines to avoid OOM
+        memory_gb = int(getattr(node, "memory_gb", 0) or 0)
+        if memory_gb > 0 and memory_gb < MIN_MEMORY_GB_FOR_TASKS:
+            # Skip low-memory machines entirely
+            return 0
+
         target_selfplay = 4  # Higher baseline
         has_gpu = bool(getattr(node, "has_gpu", False))
         cpu_count = int(getattr(node, "cpu_count", 0) or 0)
-        memory_gb = int(getattr(node, "memory_gb", 0) or 0)
         cpu_percent = float(getattr(node, "cpu_percent", 0.0) or 0.0)
         mem_percent = float(getattr(node, "memory_percent", 0.0) or 0.0)
         disk_percent = float(getattr(node, "disk_percent", 0.0) or 0.0)
@@ -10891,6 +11580,131 @@ print(json.dumps({{
             target_selfplay = min(target_selfplay, 1)
 
         return int(max(1, target_selfplay))
+
+    async def _check_cluster_balance(self) -> Dict[str, Any]:
+        """Check and rebalance jobs across the cluster.
+
+        This method identifies:
+        1. Powerful nodes that are underutilized (high capacity, low jobs)
+        2. Weak nodes that are overloaded (low capacity, high jobs)
+
+        When imbalance is detected, it reduces jobs on weak nodes so the
+        scheduler can assign them to more powerful nodes.
+
+        Returns dict with rebalancing actions taken.
+        """
+        try:
+            with self.peers_lock:
+                alive_peers = [p for p in self.peers.values() if p.is_alive()]
+
+            all_nodes = alive_peers + [self.self_info]
+            healthy_nodes = [n for n in all_nodes if n.is_healthy()]
+
+            if len(healthy_nodes) < 2:
+                return {"action": "none", "reason": "insufficient_nodes"}
+
+            # Calculate capacity and utilization for each node
+            node_stats = []
+            for node in healthy_nodes:
+                target = self._target_selfplay_jobs_for_node(node)
+                current = int(getattr(node, "selfplay_jobs", 0) or 0)
+                utilization = current / max(1, target)  # How full is this node
+                capacity_score = target  # Higher = more powerful
+
+                node_stats.append({
+                    "node": node,
+                    "target": target,
+                    "current": current,
+                    "utilization": utilization,
+                    "capacity": capacity_score,
+                    "load_score": node.get_load_score(),
+                })
+
+            # Find underutilized powerful nodes (capacity > median, utilization < 50%)
+            sorted_by_capacity = sorted(node_stats, key=lambda x: x["capacity"], reverse=True)
+            median_capacity = sorted_by_capacity[len(sorted_by_capacity) // 2]["capacity"]
+
+            underutilized_powerful = [
+                n for n in node_stats
+                if n["capacity"] > median_capacity and n["utilization"] < 0.5
+            ]
+
+            # Find overloaded weak nodes (capacity < median, utilization > 100%)
+            overloaded_weak = [
+                n for n in node_stats
+                if n["capacity"] < median_capacity and n["utilization"] > 1.0
+            ]
+
+            if not underutilized_powerful or not overloaded_weak:
+                return {"action": "none", "reason": "balanced"}
+
+            # Calculate rebalancing opportunity
+            spare_capacity = sum(
+                max(0, n["target"] - n["current"]) for n in underutilized_powerful
+            )
+            excess_load = sum(
+                max(0, n["current"] - n["target"]) for n in overloaded_weak
+            )
+
+            if spare_capacity < 2 or excess_load < 2:
+                return {"action": "none", "reason": "minimal_imbalance"}
+
+            # Migrate: reduce jobs on weak nodes
+            rebalance_actions = []
+            jobs_to_migrate = min(spare_capacity, excess_load)
+
+            for weak_node in sorted(overloaded_weak, key=lambda x: x["utilization"], reverse=True):
+                if jobs_to_migrate <= 0:
+                    break
+
+                node = weak_node["node"]
+                reduce_by = min(
+                    weak_node["current"] - weak_node["target"],
+                    jobs_to_migrate
+                )
+                new_target = weak_node["current"] - reduce_by
+
+                if reduce_by > 0:
+                    print(
+                        f"[P2P] Cluster rebalance: {node.node_id} overloaded "
+                        f"({weak_node['current']}/{weak_node['target']} jobs, "
+                        f"{weak_node['utilization']*100:.0f}% util) - reducing by {reduce_by}"
+                    )
+
+                    if node.node_id == self.node_id:
+                        await self._reduce_local_selfplay_jobs(new_target, reason="cluster_rebalance")
+                    else:
+                        await self._request_reduce_selfplay(node, new_target, reason="cluster_rebalance")
+
+                    rebalance_actions.append({
+                        "node": node.node_id,
+                        "reduced_by": reduce_by,
+                        "new_target": new_target,
+                    })
+                    jobs_to_migrate -= reduce_by
+
+            # Record rebalancing metric
+            if rebalance_actions:
+                self.record_metric(
+                    "cluster_rebalance",
+                    len(rebalance_actions),
+                    metadata={
+                        "spare_capacity": spare_capacity,
+                        "excess_load": excess_load,
+                        "actions": rebalance_actions,
+                    },
+                )
+
+            return {
+                "action": "rebalanced",
+                "spare_capacity": spare_capacity,
+                "excess_load": excess_load,
+                "actions": rebalance_actions,
+            }
+
+        except Exception as e:
+            print(f"[P2P] Cluster balance check error: {e}")
+            return {"action": "error", "error": str(e)}
 
     async def _manage_cluster_jobs(self):
         """Manage jobs across the cluster (leader only).
@@ -11087,13 +11901,25 @@ print(json.dumps({{
                     is_high_end_gpu = any(tag in gpu_name for tag in ("H100", "H200", "GH200", "A100", "5090", "4090"))
                     is_apple_gpu = "MPS" in gpu_name or "APPLE" in gpu_name
 
-                    if node.has_gpu and is_high_end_gpu and not is_apple_gpu:
+                    # GPU validation: if node claims GPU but utilization is 0% with jobs running,
+                    # GPU may not be available (driver issue, container misconfiguration, etc.)
+                    gpu_percent = getattr(node, "gpu_percent", 0) or 0
+                    gpu_seems_unavailable = (
+                        node.has_gpu
+                        and not is_apple_gpu
+                        and node.selfplay_jobs > 2
+                        and gpu_percent < 1
+                    )
+                    if gpu_seems_unavailable:
+                        print(f"[P2P] WARNING: {node.node_id} has GPU but 0% utilization with {node.selfplay_jobs} jobs - falling back to CPU selfplay")
+
+                    if node.has_gpu and is_high_end_gpu and not is_apple_gpu and not gpu_seems_unavailable:
                         # High-end CUDA GPUs: Use pure GPU selfplay with CPU validation
                         # This maximizes GPU parallel throughput (10-100x speedup)
                         # CPU validation runs automatically after completion
                         job_type = JobType.GPU_SELFPLAY
                         task_type_str = "GPU-parallel (validated)"
-                    elif node.has_gpu and not is_apple_gpu:
+                    elif node.has_gpu and not is_apple_gpu and not gpu_seems_unavailable:
                         # Mid-tier GPUs: Use hybrid (CPU rules + GPU eval)
                         job_type = JobType.HYBRID_SELFPLAY
                         task_type_str = "HYBRID (accel)"
@@ -11101,7 +11927,8 @@ print(json.dumps({{
                         job_type = JobType.SELFPLAY
                         task_type_str = "CPU-only"
 
-                    print(f"[P2P] Assigning {task_type_str} task to {node.node_id} (load={node.get_load_score():.0f}%)")
+                    gpu_info = f"gpu={node.gpu_name or 'none'}, gpu%={getattr(node, 'gpu_percent', 0):.0f}" if node.has_gpu else "no-gpu"
+                    print(f"[P2P] Assigning {task_type_str} task to {node.node_id} ({gpu_info}, load={node.get_load_score():.0f}%)")
 
                     # Weighted config selection based on priority and node capabilities
                     # Use ImprovementCycleManager for dynamic data-aware diverse selection
@@ -12063,6 +12890,7 @@ print(json.dumps({{
         # Relay/Hub routes for NAT-blocked nodes
         app.router.add_post('/relay/heartbeat', self.handle_relay_heartbeat)
         app.router.add_get('/relay/peers', self.handle_relay_peers)
+        app.router.add_get('/relay/status', self.handle_relay_status)
         app.router.add_post('/relay/enqueue', self.handle_relay_enqueue)
 
         # Phase 2: Distributed data manifest routes
@@ -12112,6 +12940,9 @@ print(json.dumps({{
         app.router.add_get('/improvement_cycles/leaderboard', self.handle_improvement_cycles_leaderboard)
         app.router.add_post('/improvement_cycles/training_complete', self.handle_improvement_training_complete)
         app.router.add_post('/improvement_cycles/evaluation_complete', self.handle_improvement_evaluation_complete)
+
+        # Metrics observability routes
+        app.router.add_get('/metrics', self.handle_metrics)
 
         # Canonical pipeline routes (for pipeline_orchestrator.py integration)
         app.router.add_post('/pipeline/start', self.handle_pipeline_start)
