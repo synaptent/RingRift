@@ -242,6 +242,8 @@ class GameRecord:
     initial_state: Optional[Dict[str, Any]] = None
     # Failure diagnostics (populated only for skipped/exception games)
     failure_debug: Optional[Dict[str, Any]] = None
+    # Source tracking for data quality auditing
+    source: str = "run_self_play_soak.py"
 
 
 def _record_invariant_violation(
