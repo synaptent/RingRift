@@ -56,9 +56,35 @@ SCALE_UP_GAMES_PER_HOST = 50  # Number of games to start on underutilized host
 # GPU utilization targeting for better resource efficiency
 TARGET_GPU_UTILIZATION_MIN = 60  # Start more jobs if GPU below this %
 TARGET_GPU_UTILIZATION_MAX = 90  # Don't start more jobs if GPU above this %
+TARGET_CPU_UTILIZATION_MIN = 60  # Start more jobs if CPU below this %
 TARGET_CPU_UTILIZATION_MAX = 85  # Don't start more jobs if CPU above this %
 GH200_MIN_SELFPLAY_JOBS = 20  # Higher baseline for GH200 hosts
 GH200_MAX_SELFPLAY_JOBS = 100  # Upper limit for GH200 hosts
+
+# Tournament scheduling configuration
+TOURNAMENT_INTERVAL = 6  # Run tournaments every 6 iterations (30 minutes at 5-min interval)
+TOURNAMENT_GAMES_PER_MATCHUP = 20  # Games between each pair
+TOURNAMENT_CONFIGS = [
+    # All board types and player counts for comprehensive coverage
+    {"board_type": "square8", "num_players": 2},
+    {"board_type": "square8", "num_players": 3},
+    {"board_type": "square8", "num_players": 4},
+    {"board_type": "square19", "num_players": 2},
+    {"board_type": "square19", "num_players": 3},
+    {"board_type": "square19", "num_players": 4},
+    {"board_type": "hexagonal", "num_players": 2},
+    {"board_type": "hexagonal", "num_players": 3},
+    {"board_type": "hexagonal", "num_players": 4},
+]
+
+# AI types to include in tournaments (baseline calibration)
+TOURNAMENT_AI_TYPES = [
+    {"ai_type": "random", "difficulty": 1},
+    {"ai_type": "heuristic", "difficulty": 5},
+    {"ai_type": "mcts", "difficulty": 7, "mcts_simulations": 100},
+    {"ai_type": "mcts", "difficulty": 8, "mcts_simulations": 500},
+    {"ai_type": "neural_net", "difficulty": 10},  # All active NN models
+]
 
 
 @dataclass
