@@ -184,7 +184,7 @@ def train_model_with_params(
             cmd,
             capture_output=True,
             text=True,
-            timeout=1800,  # 30 min timeout per trial
+            timeout=7200,  # 2 hour timeout per trial
             cwd=str(AI_SERVICE_ROOT),
         )
 
