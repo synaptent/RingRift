@@ -4870,21 +4870,39 @@ class P2POrchestrator:
             try:
                 await asyncio.sleep(DATA_MANAGEMENT_INTERVAL)
 
-                if not self._is_leader():
-                    continue
-
-                print("[P2P] Running data management check...")
-
-                # Check disk usage and trigger cleanup if needed (enforces 70% limit)
+                # ==== LOCAL NODE OPERATIONS (run on ALL nodes) ====
+                # Check disk usage and trigger cleanup if needed
                 has_capacity, disk_pct = check_disk_has_capacity(DISK_WARNING_THRESHOLD)
                 if not has_capacity:
                     print(f"[P2P] Disk at {disk_pct:.1f}% (warning threshold {DISK_WARNING_THRESHOLD}%), triggering cleanup...")
                     await self._cleanup_local_disk()
-                    # Re-check after cleanup
                     has_capacity, disk_pct = check_disk_has_capacity(DISK_CRITICAL_THRESHOLD)
-                    if not has_capacity:
-                        print(f"[P2P] Disk still at {disk_pct:.1f}% after cleanup, skipping data operations")
-                        continue
+
+                # Convert JSONL selfplay files to DB format (runs on ALL nodes)
+                # This enables training to access local selfplay data
+                data_dir = self.get_data_directory()
+                games_dir = data_dir / "games"
+                training_dir = data_dir / "training"
+                games_dir.mkdir(parents=True, exist_ok=True)
+                training_dir.mkdir(parents=True, exist_ok=True)
+
+                try:
+                    converted = await self._convert_jsonl_to_db(data_dir, games_dir)
+                    if converted > 0:
+                        print(f"[P2P] Local JSONL conversion: {converted} games converted")
+                except Exception as conv_err:
+                    print(f"[P2P] JSONL conversion error: {conv_err}")
+
+                # ==== LEADER-ONLY OPERATIONS ====
+                if not self._is_leader():
+                    continue
+
+                print("[P2P] Running data management check (leader)...")
+
+                # Re-check disk after conversion
+                if not has_capacity:
+                    print(f"[P2P] Disk at {disk_pct:.1f}% after cleanup, skipping leader data operations")
+                    continue
 
                 # Check database integrity (every 6th cycle = ~30 min)
                 if not hasattr(self, "_db_integrity_counter"):
@@ -4898,15 +4916,6 @@ class P2POrchestrator:
                                   f"{db_results['corrupted']} corrupted, {db_results['removed']} removed")
                     except Exception as db_err:
                         print(f"[P2P] DB integrity check error: {db_err}")
-
-                # 0. Convert JSONL selfplay files to DB format
-                data_dir = self.get_data_directory()
-                games_dir = data_dir / "games"
-                training_dir = data_dir / "training"
-                games_dir.mkdir(parents=True, exist_ok=True)
-                training_dir.mkdir(parents=True, exist_ok=True)
-
-                await self._convert_jsonl_to_db(data_dir, games_dir)
 
                 # 1. Check local database sizes and trigger exports
                 # Count current exports
