@@ -45,7 +45,7 @@ from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from threading import Lock
+from threading import RLock
 from typing import Any, Callable, Dict, Optional, TypeVar
 
 T = TypeVar("T")
@@ -136,7 +136,7 @@ class CircuitBreaker:
         self._on_state_change = on_state_change
 
         self._circuits: Dict[str, _CircuitData] = {}
-        self._lock = Lock()
+        self._lock = RLock()
 
     def _notify_state_change(self, target: str, old_state: CircuitState, new_state: CircuitState) -> None:
         """Notify callback of a state change."""

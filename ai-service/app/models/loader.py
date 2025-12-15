@@ -76,7 +76,7 @@ class ModelCache:
     """
 
     _instance: Optional["ModelCache"] = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     # Default max cache sizes
     MAX_NNUE_MODELS = 4
