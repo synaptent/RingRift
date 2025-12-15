@@ -70,6 +70,13 @@ ALL_CONFIGS = [
 # Matchup definitions for cross-AI games
 # Format: (player1_difficulties, player2_difficulties, description)
 MATCHUP_TYPES = {
+    # CPU-light: no neural nets, fast games (D1=random, D2=heuristic, D3-4=minimax)
+    "cpu-light": [
+        ([1, 2], [3, 4], "random/heuristic vs minimax"),
+        ([2], [2], "heuristic vs heuristic"),
+        ([3, 4], [3, 4], "minimax vs minimax"),
+        ([1], [3, 4], "random vs minimax"),
+    ],
     # Cross-skill: weak vs strong
     "cross-skill": [
         ([1, 2], [3, 4, 5, 6], "random/heuristic vs minimax/mcts"),
