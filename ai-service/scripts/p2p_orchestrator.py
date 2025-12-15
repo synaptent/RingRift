@@ -533,7 +533,11 @@ ARBITER_URL = os.environ.get("RINGRIFT_ARBITER_URL", "") or COORDINATOR_URL
 DYNAMIC_VOTER_ENABLED = os.environ.get("RINGRIFT_DYNAMIC_VOTERS", "1").lower() in {"1", "true", "yes"}
 DYNAMIC_VOTER_TARGET = int(os.environ.get("RINGRIFT_VOTER_TARGET", "7") or 7)  # Target number of active voters
 DYNAMIC_VOTER_MIN = int(os.environ.get("RINGRIFT_VOTER_MIN", "5") or 5)  # Minimum voters before promoting
-DYNAMIC_VOTER_MAX_QUORUM = int(os.environ.get("RINGRIFT_VOTER_MAX_QUORUM", "4") or 4)  # Cap quorum size
+# SIMPLIFIED QUORUM: Fixed at 3 voters regardless of cluster size
+# This makes leader election more resilient to partial failures while still
+# preventing split-brain (3 voters can't agree on 2 different leaders)
+VOTER_MIN_QUORUM = int(os.environ.get("RINGRIFT_VOTER_MIN_QUORUM", "3") or 3)  # Fixed minimum quorum
+DYNAMIC_VOTER_MAX_QUORUM = int(os.environ.get("RINGRIFT_VOTER_MAX_QUORUM", "3") or 3)  # Cap quorum size at 3
 VOTER_HEALTH_THRESHOLD = float(os.environ.get("RINGRIFT_VOTER_HEALTH_THRESHOLD", "0.7") or 0.7)  # Min response rate
 VOTER_PROMOTION_UPTIME = int(os.environ.get("RINGRIFT_VOTER_PROMOTION_UPTIME", "300") or 300)  # Min uptime for promotion
 VOTER_DEMOTION_FAILURES = int(os.environ.get("RINGRIFT_VOTER_DEMOTION_FAILURES", "5") or 5)  # Consecutive failures before demotion
@@ -1465,7 +1469,8 @@ class P2POrchestrator:
         # - ai-service/config/distributed_hosts.yaml: per-host `p2p_voter: true`
         self.voter_config_source: str = "none"  # env|config|state|learned|none
         self.voter_node_ids: List[str] = self._load_voter_node_ids()
-        self.voter_quorum_size: int = (len(self.voter_node_ids) // 2 + 1) if self.voter_node_ids else 0
+        # SIMPLIFIED QUORUM: Fixed at 3 voters (or less if fewer voters exist)
+        self.voter_quorum_size: int = min(VOTER_MIN_QUORUM, len(self.voter_node_ids)) if self.voter_node_ids else 0
         if self.voter_node_ids:
             print(
                 f"[P2P] Voter quorum enabled: voters={len(self.voter_node_ids)}, "
@@ -2030,7 +2035,8 @@ class P2POrchestrator:
             return False
 
         self.voter_node_ids = normalized
-        self.voter_quorum_size = len(normalized) // 2 + 1
+        # SIMPLIFIED QUORUM: Fixed at 3 voters (or less if fewer voters exist)
+        self.voter_quorum_size = min(VOTER_MIN_QUORUM, len(normalized))
         self.voter_config_source = source or "learned"
         print(
             f"[P2P] Updated voter set ({self.voter_config_source}): voters={len(normalized)}, "
@@ -2039,13 +2045,18 @@ class P2POrchestrator:
         return True
 
     def _has_voter_quorum(self) -> bool:
-        """Return True if we currently see a majority of voter nodes alive."""
+        """Return True if we currently see enough voter nodes alive.
+
+        SIMPLIFIED QUORUM: Uses fixed minimum of 3 voters instead of majority.
+        This makes leader election more resilient - as long as 3 voters agree,
+        leadership can be established regardless of total voter count.
+        """
         voters = list(getattr(self, "voter_node_ids", []) or [])
         if not voters:
             return True
-        quorum = int(getattr(self, "voter_quorum_size", 0) or 0)
-        if quorum <= 0:
-            quorum = len(voters) // 2 + 1
+
+        # Use fixed minimum quorum of 3 (or fewer if we have fewer voters)
+        quorum = min(VOTER_MIN_QUORUM, len(voters))
 
         alive = 0
         with self.peers_lock:
@@ -2104,8 +2115,8 @@ class P2POrchestrator:
             if peer and peer.is_alive():
                 reachable_voters += 1
 
-        # If we have quorum, no need for partition election
-        quorum = (len(voters) // 2 + 1) if voters else 1
+        # If we have quorum (simplified: 3 voters), no need for partition election
+        quorum = min(VOTER_MIN_QUORUM, len(voters)) if voters else 1
         if reachable_voters >= quorum:
             return False
 
@@ -2126,7 +2137,7 @@ class P2POrchestrator:
 
         # Enable partition-local election
         self.voter_node_ids = sorted(local_voters)
-        self.voter_quorum_size = len(local_voters) // 2 + 1
+        self.voter_quorum_size = min(VOTER_MIN_QUORUM, len(local_voters))
         self.voter_config_source = "partition-local"
         print(
             f"[P2P] PARTITION: Enabling local election with {len(local_voters)} nodes: "
@@ -2159,7 +2170,8 @@ class P2POrchestrator:
             if peer and peer.is_alive():
                 # We can reach at least one original voter, restore config
                 self.voter_node_ids = original.copy()
-                self.voter_quorum_size = len(original) // 2 + 1
+                # SIMPLIFIED QUORUM: Fixed at 3 voters (or less if fewer voters exist)
+                self.voter_quorum_size = min(VOTER_MIN_QUORUM, len(original))
                 self.voter_config_source = "restored"
                 delattr(self, "_original_voters")
                 if hasattr(self, "_partition_election_started"):
@@ -2272,8 +2284,8 @@ class P2POrchestrator:
         if changed and new_voters:
             new_voters = sorted(set(new_voters))
             self.voter_node_ids = new_voters
-            # Cap quorum size for resilience
-            self.voter_quorum_size = min(DYNAMIC_VOTER_MAX_QUORUM, len(new_voters) // 2 + 1)
+            # SIMPLIFIED QUORUM: Fixed at 3 voters (or less if fewer voters exist)
+            self.voter_quorum_size = min(VOTER_MIN_QUORUM, len(new_voters))
             self.voter_config_source = "dynamic"
             print(
                 f"[P2P] Dynamic voter set updated: {len(new_voters)} voters, "
@@ -2338,7 +2350,8 @@ class P2POrchestrator:
 
         quorum = int(getattr(self, "voter_quorum_size", 0) or 0)
         if quorum <= 0:
-            quorum = len(voter_ids) // 2 + 1
+            # SIMPLIFIED QUORUM: Fixed at 3 voters (or less if fewer voters exist)
+            quorum = min(VOTER_MIN_QUORUM, len(voter_ids))
 
         now = time.time()
         duration = max(10, min(int(duration), int(LEADER_LEASE_DURATION * 2)))
@@ -2423,7 +2436,8 @@ class P2POrchestrator:
 
         quorum = int(getattr(self, "voter_quorum_size", 0) or 0)
         if quorum <= 0:
-            quorum = len(voter_ids) // 2 + 1
+            # SIMPLIFIED QUORUM: Fixed at 3 voters (or less if fewer voters exist)
+            quorum = min(VOTER_MIN_QUORUM, len(voter_ids))
 
         now = time.time()
         counts: Dict[str, int] = {}
