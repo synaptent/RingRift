@@ -113,7 +113,7 @@ logger = logging.getLogger(__name__)
 try:
     from app.coordination import (
         TaskType,
-        can_spawn,
+        can_spawn_safe,
         register_running_task,
         record_task_completion,
     )
@@ -121,6 +121,7 @@ try:
 except ImportError:
     HAS_COORDINATION = False
     TaskType = None
+    can_spawn_safe = None
 
 
 def _load_gpu_imports() -> bool:
@@ -3282,7 +3283,7 @@ def main() -> None:  # pragma: no cover - CLI entrypoint
         import socket
         node_id = socket.gethostname()
         task_type = TaskType.GPU_SELFPLAY if getattr(args, "gpu", False) else TaskType.SELFPLAY
-        allowed, reason = can_spawn(task_type, node_id)
+        allowed, reason = can_spawn_safe(task_type, node_id)
         if not allowed:
             logger.warning(f"[Coordination] Warning: {reason}")
             logger.info("[Coordination] Proceeding anyway (coordination is advisory)")

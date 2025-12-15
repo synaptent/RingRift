@@ -156,14 +156,15 @@ def can_spawn_safe(
         Tuple of (allowed: bool, reason: str)
         If coordination unavailable, returns (True, "coordination_unavailable")
     """
-    if not _HAS_COORDINATION or _can_spawn is None:
+    if not _HAS_COORDINATION or _get_coordinator is None:
         return (True, "coordination_unavailable")
 
     if node_id is None:
         node_id = socket.gethostname()
 
     try:
-        return _can_spawn(task_type, node_id)
+        coordinator = _get_coordinator()
+        return coordinator.can_spawn_task(task_type, node_id)
     except Exception as e:
         logger.warning(f"can_spawn check failed: {e}")
         return (True, f"check_failed: {e}")
