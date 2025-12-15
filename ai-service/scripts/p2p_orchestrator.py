@@ -2975,7 +2975,7 @@ class P2POrchestrator:
             usage = shutil.disk_usage(self.ringrift_path)
             result["disk_percent"] = 100.0 * usage.used / usage.total
 
-            # GPU (NVIDIA)
+            # GPU (NVIDIA) - handle multi-GPU by averaging
             try:
                 out = subprocess.run(
                     ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
@@ -2983,12 +2983,27 @@ class P2POrchestrator:
                     capture_output=True, text=True, timeout=5
                 )
                 if out.returncode == 0:
-                    parts = out.stdout.strip().split(',')
-                    result["gpu_percent"] = float(parts[0])
-                    mem_used = float(parts[1])
-                    mem_total = float(parts[2])
-                    result["gpu_memory_percent"] = 100.0 * mem_used / mem_total
-            except:
+                    lines = out.stdout.strip().split('\n')
+                    gpu_utils = []
+                    mem_percents = []
+                    for line in lines:
+                        parts = line.strip().split(',')
+                        if len(parts) >= 3:
+                            try:
+                                gpu_utils.append(float(parts[0].strip()))
+                                mem_used = float(parts[1].strip())
+                                mem_total = float(parts[2].strip())
+                                if mem_total > 0:
+                                    mem_percents.append(100.0 * mem_used / mem_total)
+                            except (ValueError, IndexError):
+                                continue
+                    if gpu_utils:
+                        # Use max utilization across GPUs (more representative for parallel workloads)
+                        result["gpu_percent"] = max(gpu_utils)
+                    if mem_percents:
+                        result["gpu_memory_percent"] = max(mem_percents)
+            except Exception as e:
+                # Silently ignore nvidia-smi errors (not all nodes have GPUs)
                 pass
 
         except Exception as e:
@@ -4988,6 +5003,62 @@ class P2POrchestrator:
                     return web.json_response({"success": True})
 
             return web.json_response({"success": False, "error": "Job not found"}, status=404)
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def handle_job_kill(self, request: web.Request) -> web.Response:
+        """Handle request to forcefully kill a stuck job (SIGKILL).
+
+        Used by the leader's self-healing system to kill stuck jobs remotely.
+        Supports killing by job_id or by job_type pattern.
+        """
+        try:
+            data = await request.json()
+            job_id = data.get("job_id")
+            job_type = data.get("job_type")  # "training", "selfplay", etc.
+            reason = data.get("reason", "unknown")
+
+            killed = 0
+
+            # Try to kill by job_id first
+            if job_id:
+                with self.jobs_lock:
+                    if job_id in self.local_jobs:
+                        job = self.local_jobs[job_id]
+                        try:
+                            os.kill(job.pid, signal.SIGKILL)
+                            job.status = "killed"
+                            killed += 1
+                            print(f"[P2P] Killed job {job_id} (pid {job.pid}): {reason}")
+                        except Exception as e:
+                            print(f"[P2P] Failed to kill job {job_id}: {e}")
+
+            # Kill by job_type pattern (for stuck training, etc.)
+            if job_type and killed == 0:
+                import subprocess
+                patterns = {
+                    "training": ["train_nnue", "train.*model"],
+                    "selfplay": ["selfplay", "run_hybrid_selfplay"],
+                }
+                for pattern in patterns.get(job_type, [job_type]):
+                    try:
+                        result = subprocess.run(
+                            ["pkill", "-9", "-f", pattern],
+                            timeout=5,
+                            capture_output=True,
+                        )
+                        if result.returncode == 0:
+                            killed += 1
+                            print(f"[P2P] Killed processes matching '{pattern}': {reason}")
+                    except Exception as e:
+                        print(f"[P2P] pkill error for {pattern}: {e}")
+
+            return web.json_response({
+                "success": killed > 0,
+                "killed": killed,
+                "reason": reason,
+            })
+
         except Exception as e:
             return web.json_response({"error": str(e)}, status=400)
 
@@ -15989,10 +16060,236 @@ print(json.dumps({{
                     await self._check_and_trigger_training()
                     # Phase 5: Check improvement cycles for automated training
                     await self._check_improvement_cycles()
+                    # Self-healing: detect and handle stuck jobs
+                    await self._check_and_kill_stuck_jobs()
+                    # Self-healing: auto-scale GPU utilization toward 60-80% target
+                    await self._auto_scale_gpu_utilization()
             except Exception as e:
                 print(f"[P2P] Job management error: {e}")
 
             await asyncio.sleep(JOB_CHECK_INTERVAL)
+
+    async def _check_and_kill_stuck_jobs(self) -> int:
+        """Detect and terminate stuck training/selfplay jobs.
+
+        A job is considered stuck if:
+        - Training: No log output for 10+ minutes while process still running
+        - Selfplay: No new games generated for 15+ minutes
+
+        Returns:
+            Number of stuck jobs terminated
+        """
+        killed = 0
+        now = time.time()
+        TRAINING_STUCK_THRESHOLD = 600  # 10 minutes
+        SELFPLAY_STUCK_THRESHOLD = 900  # 15 minutes
+
+        # Check training jobs
+        with self.training_lock:
+            training_snapshot = list(self.training_jobs.values())
+
+        for job in training_snapshot:
+            if job.status != "running":
+                continue
+            started = getattr(job, "started_at", 0) or 0
+            last_progress = getattr(job, "last_progress_time", started) or started
+            if now - last_progress > TRAINING_STUCK_THRESHOLD and now - started > TRAINING_STUCK_THRESHOLD:
+                print(f"[P2P] STUCK DETECTED: Training job {job.job_id} on {job.target_node} - no progress for {int((now - last_progress)/60)}min")
+                # Try to kill the process on the target node
+                target_node = job.target_node
+                if target_node and target_node != self.node_id:
+                    await self._remote_kill_stuck_job(target_node, job.job_id, "training")
+                else:
+                    # Local kill
+                    try:
+                        import subprocess
+                        subprocess.run(["pkill", "-9", "-f", f"train.*{job.job_id}"], timeout=5, capture_output=True)
+                    except Exception:
+                        pass
+                job.status = "failed"
+                job.error_message = "Killed: no progress detected"
+                job.completed_at = now
+                killed += 1
+                print(f"[P2P] Killed stuck training job {job.job_id}")
+
+        # Check for GPU nodes with 0% GPU but running GPU jobs
+        with self.peers_lock:
+            peers_snapshot = list(self.peers.values())
+
+        for peer in peers_snapshot:
+            if not peer.is_alive():
+                continue
+            gpu_percent = float(getattr(peer, "gpu_percent", 0) or 0)
+            selfplay_jobs = int(getattr(peer, "selfplay_jobs", 0) or 0)
+            has_gpu = bool(getattr(peer, "has_gpu", False))
+
+            # Check for stuck GPU selfplay (has GPU, jobs running, but 0% GPU util)
+            if has_gpu and selfplay_jobs > 0 and gpu_percent == 0:
+                last_gpu_active = getattr(peer, "_last_gpu_active_time", 0)
+                if last_gpu_active == 0:
+                    peer._last_gpu_active_time = now
+                elif now - last_gpu_active > SELFPLAY_STUCK_THRESHOLD:
+                    print(f"[P2P] STUCK DETECTED: {peer.node_id} has {selfplay_jobs} jobs but 0% GPU for {int((now - last_gpu_active)/60)}min")
+                    # Don't auto-kill selfplay, just log - might be CPU selfplay
+            elif has_gpu and gpu_percent > 5:
+                peer._last_gpu_active_time = now
+
+        if killed > 0:
+            print(f"[P2P] Self-healing: killed {killed} stuck job(s)")
+        return killed
+
+    async def _remote_kill_stuck_job(self, target_node: str, job_id: str, job_type: str) -> bool:
+        """Send kill command to remote node for stuck job."""
+        with self.peers_lock:
+            peer = self.peers.get(target_node)
+        if not peer or not peer.is_alive():
+            return False
+
+        try:
+            timeout = ClientTimeout(total=10)
+            async with get_client_session(timeout) as session:
+                url = self._url_for_peer(peer, "/job/kill")
+                payload = {"job_id": job_id, "job_type": job_type, "reason": "stuck"}
+                async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
+                    return resp.status == 200
+        except Exception as e:
+            print(f"[P2P] Failed to kill stuck job on {target_node}: {e}")
+            return False
+
+    async def _auto_scale_gpu_utilization(self) -> int:
+        """Auto-scale GPU selfplay jobs to reach 60-80% GPU utilization.
+
+        Detects underutilized GPU nodes and starts GPU selfplay jobs to improve
+        cluster throughput.
+
+        Returns:
+            Number of new GPU selfplay jobs started
+        """
+        TARGET_GPU_MIN = 60.0  # Target minimum GPU utilization
+        TARGET_GPU_MAX = 80.0  # Target maximum GPU utilization
+        MIN_IDLE_TIME = 120    # Seconds of low GPU before scaling up
+
+        started = 0
+        now = time.time()
+
+        # Rate limit auto-scaling (once per 2 minutes)
+        last_scale = getattr(self, "_last_gpu_auto_scale", 0)
+        if now - last_scale < 120:
+            return 0
+
+        with self.peers_lock:
+            peers_snapshot = list(self.peers.values())
+
+        underutilized_gpu_nodes = []
+
+        for peer in peers_snapshot:
+            if not peer.is_alive():
+                continue
+            has_gpu = bool(getattr(peer, "has_gpu", False))
+            if not has_gpu:
+                continue
+
+            gpu_percent = float(getattr(peer, "gpu_percent", 0) or 0)
+            gpu_name = (getattr(peer, "gpu_name", "") or "").lower()
+            selfplay_jobs = int(getattr(peer, "selfplay_jobs", 0) or 0)
+            training_jobs = int(getattr(peer, "training_jobs", 0) or 0)
+
+            # Skip if already training
+            if training_jobs > 0:
+                continue
+
+            # Check if underutilized
+            if gpu_percent < TARGET_GPU_MIN:
+                # Track how long it's been underutilized
+                idle_key = f"_gpu_idle_since_{peer.node_id}"
+                idle_since = getattr(self, idle_key, 0)
+                if idle_since == 0:
+                    setattr(self, idle_key, now)
+                elif now - idle_since > MIN_IDLE_TIME:
+                    # Calculate how many more jobs to add
+                    gpu_headroom = TARGET_GPU_MAX - gpu_percent
+                    # Estimate jobs based on GPU tier
+                    if any(tag in gpu_name for tag in ("h100", "h200", "gh200", "5090")):
+                        jobs_per_10_percent = 2
+                    elif any(tag in gpu_name for tag in ("a100", "4090", "3090")):
+                        jobs_per_10_percent = 1.5
+                    else:
+                        jobs_per_10_percent = 1
+
+                    new_jobs = max(1, int(gpu_headroom / 10 * jobs_per_10_percent))
+                    new_jobs = min(new_jobs, 4)  # Cap at 4 new jobs per cycle
+
+                    underutilized_gpu_nodes.append({
+                        "node_id": peer.node_id,
+                        "gpu_percent": gpu_percent,
+                        "gpu_name": gpu_name,
+                        "current_jobs": selfplay_jobs,
+                        "new_jobs": new_jobs,
+                    })
+            else:
+                # GPU is utilized, reset idle timer
+                idle_key = f"_gpu_idle_since_{peer.node_id}"
+                setattr(self, idle_key, 0)
+
+        # Start GPU selfplay on underutilized nodes
+        for node_info in underutilized_gpu_nodes[:3]:  # Max 3 nodes per cycle
+            node_id = node_info["node_id"]
+            new_jobs = node_info["new_jobs"]
+
+            print(
+                f"[P2P] GPU Auto-scale: {node_id} at {node_info['gpu_percent']:.0f}% GPU, "
+                f"starting {new_jobs} GPU selfplay job(s)"
+            )
+
+            for _ in range(new_jobs):
+                try:
+                    # Schedule GPU selfplay job
+                    job = await self._schedule_gpu_selfplay_on_node(node_id)
+                    if job:
+                        started += 1
+                except Exception as e:
+                    print(f"[P2P] Failed to start GPU selfplay on {node_id}: {e}")
+                    break
+
+        if started > 0:
+            self._last_gpu_auto_scale = now
+            print(f"[P2P] GPU Auto-scale: started {started} new GPU selfplay job(s)")
+
+        return started
+
+    async def _schedule_gpu_selfplay_on_node(self, node_id: str) -> Optional[dict]:
+        """Schedule a GPU selfplay job on a specific node."""
+        with self.peers_lock:
+            peer = self.peers.get(node_id)
+        if not peer or not peer.is_alive():
+            return None
+
+        # Default to square8 2p for GPU selfplay
+        board_type = "square8"
+        num_players = 2
+
+        try:
+            timeout = ClientTimeout(total=30)
+            async with get_client_session(timeout) as session:
+                url = self._url_for_peer(peer, "/selfplay/start")
+                payload = {
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "num_games": 500,
+                    "engine_mode": "gpu",
+                    "auto_scaled": True,
+                }
+                async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return data
+                    else:
+                        error = await resp.text()
+                        print(f"[P2P] GPU selfplay start failed on {node_id}: {error}")
+                        return None
+        except Exception as e:
+            print(f"[P2P] Failed to schedule GPU selfplay on {node_id}: {e}")
+            return None
 
     def _target_selfplay_jobs_for_node(self, node: NodeInfo) -> int:
         """Return the desired selfplay concurrency for a node.
@@ -17532,6 +17829,7 @@ print(json.dumps({{
         app.router.add_post('/coordinator', self.handle_coordinator)
         app.router.add_post('/start_job', self.handle_start_job)
         app.router.add_post('/stop_job', self.handle_stop_job)
+        app.router.add_post('/job/kill', self.handle_job_kill)
         app.router.add_post('/cleanup', self.handle_cleanup)
         app.router.add_post('/restart_stuck_jobs', self.handle_restart_stuck_jobs)
         app.router.add_post('/reduce_selfplay', self.handle_reduce_selfplay)

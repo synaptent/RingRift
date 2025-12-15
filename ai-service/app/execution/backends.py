@@ -433,6 +433,19 @@ class SSHBackend(OrchestratorBackend):
             local = LocalBackend()
             return await local.run_selfplay(games, board_type, num_players, model_path, **kwargs)
 
+        # Selfplay is CPU-bound - prioritize hosts with low CPU utilization
+        try:
+            from app.coordination import get_hosts_for_cpu_tasks
+            cpu_hosts = get_hosts_for_cpu_tasks(
+                [w.name for w in available],
+                max_cpu_util=80.0,  # Only use hosts with <80% CPU
+            )
+            if cpu_hosts:
+                # Filter to only use low-CPU hosts for selfplay
+                available = [w for w in available if w.name in cpu_hosts]
+        except ImportError:
+            pass  # Use all available workers
+
         # Distribute games across workers
         games_per_worker = max(1, games // len(available))
         results = []
@@ -515,9 +528,25 @@ class SSHBackend(OrchestratorBackend):
                 agent_ids, board_type, num_players, games_per_pairing, **kwargs
             )
 
-        # Pick best worker (prefer GPU for tournaments)
-        gpu_workers = [w for w in available if w.metadata.get("gpu")]
-        worker = gpu_workers[0] if gpu_workers else available[0]
+        # Pick best worker for tournaments (CPU-bound task)
+        # Prefer non-GPU workers to keep GPUs free for training
+        # Use resource-aware selection if available
+        try:
+            from app.coordination import get_hosts_for_cpu_tasks
+            cpu_hosts = get_hosts_for_cpu_tasks(
+                [w.name for w in available],
+                max_cpu_util=70.0,
+            )
+            if cpu_hosts:
+                worker = next((w for w in available if w.name == cpu_hosts[0]), available[0])
+            else:
+                # Fallback: prefer non-GPU workers
+                non_gpu_workers = [w for w in available if not w.metadata.get("gpu")]
+                worker = non_gpu_workers[0] if non_gpu_workers else available[0]
+        except ImportError:
+            # Fallback: prefer non-GPU workers
+            non_gpu_workers = [w for w in available if not w.metadata.get("gpu")]
+            worker = non_gpu_workers[0] if non_gpu_workers else available[0]
 
         job_id = str(uuid4())[:8]
         start = time.time()
@@ -558,7 +587,7 @@ class SSHBackend(OrchestratorBackend):
         epochs: int = 100,
         **kwargs,
     ) -> JobResult:
-        """Run training on best GPU worker."""
+        """Run training on best GPU worker (lowest GPU utilization)."""
         import time
         from uuid import uuid4
 
@@ -573,7 +602,19 @@ class SSHBackend(OrchestratorBackend):
             local = LocalBackend()
             return await local.run_training(data_path, model_output_path, epochs, **kwargs)
 
-        worker = gpu_workers[0]
+        # Select GPU worker with lowest GPU utilization
+        try:
+            from app.coordination import get_hosts_for_gpu_tasks
+            gpu_hosts = get_hosts_for_gpu_tasks(
+                [w.name for w in gpu_workers],
+                max_gpu_util=85.0,  # Only consider hosts with <85% GPU util
+            )
+            if gpu_hosts:
+                worker = next((w for w in gpu_workers if w.name == gpu_hosts[0]), gpu_workers[0])
+            else:
+                worker = gpu_workers[0]
+        except ImportError:
+            worker = gpu_workers[0]
         job_id = str(uuid4())[:8]
         start = time.time()
 
