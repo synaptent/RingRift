@@ -2511,8 +2511,8 @@ class ShadowTournamentService:
             cmd = [
                 sys.executable,
                 str(AI_SERVICE_ROOT / "scripts" / "run_model_elo_tournament.py"),
-                "--board-type", board_type,
-                "--num-players", str(num_players),
+                "--board", board_type,
+                "--players", str(num_players),
                 "--games", str(self.config.shadow_games_per_config),
                 "--quick",
                 "--include-baselines",
