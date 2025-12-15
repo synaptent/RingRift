@@ -2179,6 +2179,126 @@ def get_max_selfplay_for_node(
     return max(1, max_selfplay)
 
 
+def get_max_cpu_only_selfplay(
+    node_id: str,
+    cpu_count: int = 0,
+    memory_gb: float = 0,
+    gpu_jobs_running: int = 0,
+) -> int:
+    """Get max ADDITIONAL CPU-only selfplay jobs for a node.
+
+    This is for hybrid mode: run GPU-accelerated jobs up to VRAM limit,
+    then run additional CPU-only jobs to utilize remaining CPU capacity.
+
+    For nodes with high CPU counts but limited GPU VRAM (like Vast hosts),
+    this enables much better resource utilization.
+
+    Example:
+        vast-2060s (88 CPUs, 8GB VRAM):
+        - GPU jobs: 4 (limited by VRAM)
+        - CPU-only jobs: ~20 additional
+        - Total: 24 jobs utilizing both GPU and excess CPU
+
+    Args:
+        node_id: Node identifier
+        cpu_count: Number of CPU cores
+        memory_gb: Total system memory in GB
+        gpu_jobs_running: Number of GPU selfplay jobs already running
+
+    Returns:
+        Maximum additional CPU-only selfplay jobs
+    """
+    if cpu_count <= 0:
+        return 0
+
+    # CPU-only jobs are lighter (~0.5 cores per job vs 1 core for GPU jobs)
+    # Reserve cores for GPU jobs (assume ~1.5 cores per GPU job)
+    reserved_for_gpu = int(gpu_jobs_running * 1.5)
+    available_cores = max(0, cpu_count - reserved_for_gpu)
+
+    # Scale CPU-only jobs
+    # - Small machines (<32 cores): 0.3 jobs per core
+    # - Medium machines (32-128 cores): 0.4 jobs per core
+    # - Large machines (128-256 cores): 0.5 jobs per core
+    # - Huge machines (256+ cores): 0.6 jobs per core
+    if available_cores < 32:
+        multiplier = 0.3
+        cap = 8
+    elif available_cores < 128:
+        multiplier = 0.4
+        cap = 32
+    elif available_cores < 256:
+        multiplier = 0.5
+        cap = 64
+    else:
+        multiplier = 0.6
+        cap = 128
+
+    cpu_based = int(available_cores * multiplier)
+
+    # Memory constraint: CPU-only jobs use less memory (~1.5GB vs 2GB)
+    if memory_gb > 0:
+        # Reserve memory for GPU jobs (~2GB each)
+        available_mem = max(0, memory_gb - (gpu_jobs_running * 2))
+        mem_based = int(available_mem / 1.5)
+    else:
+        mem_based = cap
+
+    return min(cpu_based, mem_based, cap)
+
+
+def get_hybrid_selfplay_limits(
+    node_id: str,
+    gpu_count: int = 0,
+    gpu_name: str = "",
+    cpu_count: int = 0,
+    memory_gb: float = 0,
+    has_gpu: bool = False,
+    gpu_vram_gb: float = 0,
+) -> Dict[str, int]:
+    """Get both GPU and CPU-only selfplay limits for hybrid mode.
+
+    Returns separate limits for GPU-accelerated and CPU-only jobs,
+    enabling maximum resource utilization on high-CPU machines.
+
+    Args:
+        node_id: Node identifier
+        gpu_count: Number of GPUs
+        gpu_name: GPU model name
+        cpu_count: Number of CPU cores
+        memory_gb: Total system memory in GB
+        has_gpu: Whether node has GPU capability
+        gpu_vram_gb: Total GPU VRAM in GB
+
+    Returns:
+        Dict with 'gpu_jobs', 'cpu_only_jobs', 'total_jobs'
+    """
+    # Get GPU-accelerated job limit
+    gpu_jobs = get_max_selfplay_for_node(
+        node_id=node_id,
+        gpu_count=gpu_count,
+        gpu_name=gpu_name,
+        cpu_count=cpu_count,
+        memory_gb=memory_gb,
+        has_gpu=has_gpu,
+        gpu_vram_gb=gpu_vram_gb,
+    )
+
+    # Get additional CPU-only job limit
+    cpu_only_jobs = get_max_cpu_only_selfplay(
+        node_id=node_id,
+        cpu_count=cpu_count,
+        memory_gb=memory_gb,
+        gpu_jobs_running=gpu_jobs,
+    )
+
+    return {
+        "gpu_jobs": gpu_jobs,
+        "cpu_only_jobs": cpu_only_jobs,
+        "total_jobs": gpu_jobs + cpu_only_jobs,
+    }
+
+
 def get_node_hardware_info(node_id: str) -> Optional[Dict[str, Any]]:
     """Get hardware info for a node from the coordination DB.
 
