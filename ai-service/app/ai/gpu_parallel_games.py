@@ -5604,14 +5604,20 @@ class ParallelGameRunner:
 
             # === Vectorized Move Scoring ===
             # Score all moves across all games in parallel
+            # Optimized 2025-12-14: Pre-extract numpy arrays to avoid .item() calls in loop
             center = self.board_size // 2
             center_idx = center * self.board_size + center
             num_positions = self.board_size * self.board_size
 
-            for local_idx, g_idx in enumerate(games_with_moves):
-                g = g_idx.item()
-                move_start = moves.move_offsets[g].item()
-                move_count = moves.moves_per_game[g].item()
+            # Pre-extract game indices and move metadata to avoid per-iteration .item() calls
+            game_indices_np = games_with_moves.cpu().numpy()
+            move_offsets_np = moves.move_offsets[games_with_moves].cpu().numpy()
+            moves_per_game_np = moves.moves_per_game[games_with_moves].cpu().numpy()
+
+            for local_idx in range(len(game_indices_np)):
+                g = int(game_indices_np[local_idx])
+                move_start = int(move_offsets_np[local_idx])
+                move_count = int(moves_per_game_np[local_idx])
 
                 if move_count == 0:
                     continue
@@ -5645,9 +5651,9 @@ class ParallelGameRunner:
                 # Compute move scores vectorized
                 move_scores = from_logits[from_idx] + to_logits[to_idx]
 
-                # Sample move with temperature
+                # Sample move with temperature (single .item() per game for result)
                 probs = torch.softmax(move_scores / temperature, dim=0)
-                selected_local = torch.multinomial(probs, 1).item()
+                selected_local = int(torch.multinomial(probs, 1).item())
                 selected[g] = selected_local
 
         except Exception as e:
@@ -5715,9 +5721,11 @@ class ParallelGameRunner:
             # For each game g and position (y,x), we compute:
             #   plane_offset = (owner - current_player[g]) % 4
             # Then set appropriate feature planes
+            # Optimized 2025-12-14: Pre-extract current_player to avoid .item() in loop
+            current_player_np = current_player.cpu().numpy()
 
             for g_local in range(num_games):
-                cp = current_player[g_local].item()
+                cp = int(current_player_np[g_local])
 
                 # Ring and stack features
                 owner_slice = stack_owner[g_local].flatten()  # (H*W,)

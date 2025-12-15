@@ -4,7 +4,7 @@ This package provides abstracted execution backends for running commands
 locally, via SSH, or on cloud workers. All orchestrators should use this
 instead of implementing their own SSH/subprocess logic.
 
-Usage:
+Low-level execution:
     from app.execution import SSHExecutor, LocalExecutor, ExecutionResult
 
     # SSH execution
@@ -15,11 +15,20 @@ Usage:
     executor = LocalExecutor()
     result = await executor.run("python scripts/train.py")
 
-    # Check result
-    if result.success:
-        print(result.stdout)
-    else:
-        print(f"Failed: {result.stderr}")
+High-level orchestrator backends:
+    from app.execution import get_backend, BackendType
+
+    # Get configured backend (auto-detects from config)
+    backend = get_backend()
+
+    # Run selfplay across all available workers
+    results = await backend.run_selfplay(games=100, board_type="square8", num_players=2)
+
+    # Run tournament
+    result = await backend.run_tournament(
+        agent_ids=["random", "heuristic"],
+        games_per_pairing=20,
+    )
 """
 
 from app.execution.executor import (
@@ -33,8 +42,18 @@ from app.execution.executor import (
     run_ssh_command,
     run_ssh_command_async,
 )
+from app.execution.backends import (
+    BackendType,
+    WorkerStatus,
+    JobResult,
+    OrchestratorBackend,
+    LocalBackend,
+    SSHBackend,
+    get_backend,
+)
 
 __all__ = [
+    # Low-level executors
     "ExecutionResult",
     "BaseExecutor",
     "LocalExecutor",
@@ -44,4 +63,12 @@ __all__ = [
     "run_command_async",
     "run_ssh_command",
     "run_ssh_command_async",
+    # High-level backends
+    "BackendType",
+    "WorkerStatus",
+    "JobResult",
+    "OrchestratorBackend",
+    "LocalBackend",
+    "SSHBackend",
+    "get_backend",
 ]

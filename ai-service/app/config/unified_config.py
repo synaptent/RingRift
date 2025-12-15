@@ -168,6 +168,84 @@ class AlertingConfig:
 
 
 @dataclass
+class ClusterConfig:
+    """Cluster orchestration settings (previously hardcoded in cluster_orchestrator.py)."""
+    # Host sync intervals (in iterations, where 1 iteration ~= 5 minutes)
+    sync_interval: int = 6  # Sync every 6 iterations (30 minutes)
+    model_sync_interval: int = 12  # Sync models every 12 iterations (1 hour)
+    model_sync_enabled: bool = True
+
+    # Elo calibration
+    elo_calibration_interval: int = 72  # Every 72 iterations (6 hours)
+    elo_calibration_games: int = 50
+
+    # Elo-driven curriculum learning
+    elo_curriculum_enabled: bool = True
+    elo_match_window: int = 200
+    elo_underserved_threshold: int = 100
+
+    # Auto-scaling
+    auto_scale_interval: int = 12
+    underutilized_cpu_threshold: int = 30
+    underutilized_python_jobs: int = 10
+    scale_up_games_per_host: int = 50
+
+    # Adaptive game count
+    adaptive_games_min: int = 30
+    adaptive_games_max: int = 150
+
+
+@dataclass
+class SSHConfig:
+    """SSH execution settings (shared across all orchestrators)."""
+    max_retries: int = 3
+    base_delay_seconds: float = 2.0
+    max_delay_seconds: float = 30.0
+    connect_timeout_seconds: int = 10
+    command_timeout_seconds: int = 3600  # 1 hour max
+
+
+@dataclass
+class SelfplayConfig:
+    """Selfplay settings (shared across all selfplay scripts)."""
+    # Game generation
+    default_games_per_config: int = 50
+    min_games_for_training: int = 500
+    max_games_per_session: int = 1000
+
+    # Worker management
+    max_concurrent_workers: int = 4
+    worker_timeout_seconds: int = 7200  # 2 hours
+    checkpoint_interval_games: int = 100
+
+    # Quality settings
+    mcts_simulations: int = 200
+    temperature: float = 0.5
+    noise_fraction: float = 0.25
+
+
+@dataclass
+class TournamentConfig:
+    """Tournament settings (shared across all tournament scripts)."""
+    # Default game counts
+    default_games_per_matchup: int = 20
+    shadow_games: int = 15
+    full_tournament_games: int = 50
+
+    # Time limits
+    game_timeout_seconds: int = 300  # 5 minutes
+    tournament_timeout_seconds: int = 7200  # 2 hours
+
+    # Elo calculation
+    k_factor: int = 32
+    initial_elo: int = 1500
+    min_games_for_rating: int = 30
+
+    # Baseline models
+    baseline_models: List[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100", "mcts_500"])
+
+
+@dataclass
 class HealthConfig:
     """Configuration for component health monitoring."""
     enabled: bool = True
@@ -203,6 +281,12 @@ class UnifiedConfig:
     regression: RegressionConfig = field(default_factory=RegressionConfig)
     alerting: AlertingConfig = field(default_factory=AlertingConfig)
     health: HealthConfig = field(default_factory=HealthConfig)
+
+    # New unified sections (previously scattered as hardcoded constants)
+    cluster: ClusterConfig = field(default_factory=ClusterConfig)
+    ssh: SSHConfig = field(default_factory=SSHConfig)
+    selfplay: SelfplayConfig = field(default_factory=SelfplayConfig)
+    tournament: TournamentConfig = field(default_factory=TournamentConfig)
 
     # Paths
     hosts_config_path: str = "config/remote_hosts.yaml"
@@ -329,6 +413,64 @@ class UnifiedConfig:
                 training_timeout_hours=alert_data.get("training_timeout_hours", 4),
                 elo_drop_threshold=alert_data.get("elo_drop_threshold", 50),
                 games_per_hour_min=alert_data.get("games_per_hour_min", 100),
+            )
+
+        # Load new unified sections (previously hardcoded constants)
+        if "cluster" in data:
+            cluster_data = data["cluster"]
+            config.cluster = ClusterConfig(
+                sync_interval=cluster_data.get("sync_interval", 6),
+                model_sync_interval=cluster_data.get("model_sync_interval", 12),
+                model_sync_enabled=cluster_data.get("model_sync_enabled", True),
+                elo_calibration_interval=cluster_data.get("elo_calibration_interval", 72),
+                elo_calibration_games=cluster_data.get("elo_calibration_games", 50),
+                elo_curriculum_enabled=cluster_data.get("elo_curriculum_enabled", True),
+                elo_match_window=cluster_data.get("elo_match_window", 200),
+                elo_underserved_threshold=cluster_data.get("elo_underserved_threshold", 100),
+                auto_scale_interval=cluster_data.get("auto_scale_interval", 12),
+                underutilized_cpu_threshold=cluster_data.get("underutilized_cpu_threshold", 30),
+                underutilized_python_jobs=cluster_data.get("underutilized_python_jobs", 10),
+                scale_up_games_per_host=cluster_data.get("scale_up_games_per_host", 50),
+                adaptive_games_min=cluster_data.get("adaptive_games_min", 30),
+                adaptive_games_max=cluster_data.get("adaptive_games_max", 150),
+            )
+
+        if "ssh" in data:
+            ssh_data = data["ssh"]
+            config.ssh = SSHConfig(
+                max_retries=ssh_data.get("max_retries", 3),
+                base_delay_seconds=ssh_data.get("base_delay_seconds", 2.0),
+                max_delay_seconds=ssh_data.get("max_delay_seconds", 30.0),
+                connect_timeout_seconds=ssh_data.get("connect_timeout_seconds", 10),
+                command_timeout_seconds=ssh_data.get("command_timeout_seconds", 3600),
+            )
+
+        if "selfplay" in data:
+            sp_data = data["selfplay"]
+            config.selfplay = SelfplayConfig(
+                default_games_per_config=sp_data.get("default_games_per_config", 50),
+                min_games_for_training=sp_data.get("min_games_for_training", 500),
+                max_games_per_session=sp_data.get("max_games_per_session", 1000),
+                max_concurrent_workers=sp_data.get("max_concurrent_workers", 4),
+                worker_timeout_seconds=sp_data.get("worker_timeout_seconds", 7200),
+                checkpoint_interval_games=sp_data.get("checkpoint_interval_games", 100),
+                mcts_simulations=sp_data.get("mcts_simulations", 200),
+                temperature=sp_data.get("temperature", 0.5),
+                noise_fraction=sp_data.get("noise_fraction", 0.25),
+            )
+
+        if "tournament" in data:
+            tourn_data = data["tournament"]
+            config.tournament = TournamentConfig(
+                default_games_per_matchup=tourn_data.get("default_games_per_matchup", 20),
+                shadow_games=tourn_data.get("shadow_games", 15),
+                full_tournament_games=tourn_data.get("full_tournament_games", 50),
+                game_timeout_seconds=tourn_data.get("game_timeout_seconds", 300),
+                tournament_timeout_seconds=tourn_data.get("tournament_timeout_seconds", 7200),
+                k_factor=tourn_data.get("k_factor", 32),
+                initial_elo=tourn_data.get("initial_elo", 1500),
+                min_games_for_rating=tourn_data.get("min_games_for_rating", 30),
+                baseline_models=tourn_data.get("baseline_models", ["random", "heuristic", "mcts_100", "mcts_500"]),
             )
 
         # Load paths

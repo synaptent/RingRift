@@ -252,6 +252,17 @@ def main():
     print(f"Total recovery opportunities: {total_recovery}")
     print(f"Results saved to {output_dir}")
 
+    # Record task completion for duration learning
+    if HAS_COORDINATION and task_id:
+        try:
+            import socket
+            node_id = socket.gethostname()
+            config = f"{args.board_type}_{args.num_players}p"
+            record_task_completion("selfplay", config, node_id, coord_start_time, time.time())
+            print(f"[Coordination] Recorded task completion")
+        except Exception as e:
+            print(f"[Coordination] Warning: Failed to record task completion: {e}")
+
 
 if __name__ == "__main__":
     main()

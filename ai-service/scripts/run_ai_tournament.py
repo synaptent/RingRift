@@ -22,6 +22,19 @@ from app.ai.random_ai import RandomAI
 from app.ai.descent_ai import DescentAI
 from app.rules.default_engine import DefaultRulesEngine
 
+# Import coordination for task limits and duration tracking
+try:
+    from app.coordination import (
+        TaskType,
+        can_spawn,
+        register_running_task,
+        record_task_completion,
+    )
+    HAS_COORDINATION = True
+except ImportError:
+    HAS_COORDINATION = False
+    TaskType = None
+
 # Map string names to AI classes
 AI_CLASSES = {"Random": RandomAI, "Heuristic": HeuristicAI, "Minimax": MinimaxAI, "MCTS": MCTSAI, "Descent": DescentAI}
 
@@ -228,6 +241,25 @@ def main():
 
     args = parser.parse_args()
 
+    # Check coordination before spawning
+    task_id = None
+    coord_start_time = time.time()
+    if HAS_COORDINATION:
+        import socket
+        node_id = socket.gethostname()
+        allowed, reason = can_spawn(TaskType.TOURNAMENT, node_id)
+        if not allowed:
+            print(f"[Coordination] Warning: {reason}")
+            print("[Coordination] Proceeding anyway (coordination is advisory)")
+
+        # Register task for tracking
+        task_id = f"tournament_{args.p1}_vs_{args.p2}_{args.board}_{os.getpid()}"
+        try:
+            register_running_task(task_id, "tournament", node_id, os.getpid())
+            print(f"[Coordination] Registered task {task_id}")
+        except Exception as e:
+            print(f"[Coordination] Warning: Failed to register task: {e}")
+
     print(f"Tournament Configuration:")
     print(f"  Player 1: {args.p1} (Difficulty {args.p1_diff})")
     print(f"  Player 2: {args.p2} (Difficulty {args.p2_diff})")
@@ -403,6 +435,17 @@ def main():
                 "timestamp": datetime.now().isoformat(),
             }, f, indent=2)
         print(f"\nGame records saved to: {args.output_dir}")
+
+    # Record task completion for duration learning
+    if HAS_COORDINATION and task_id:
+        try:
+            import socket
+            node_id = socket.gethostname()
+            config = f"{args.p1}_vs_{args.p2}_{args.board}"
+            record_task_completion("tournament", config, node_id, coord_start_time, time.time())
+            print(f"[Coordination] Recorded task completion")
+        except Exception as e:
+            print(f"[Coordination] Warning: Failed to record task completion: {e}")
 
 
 if __name__ == "__main__":

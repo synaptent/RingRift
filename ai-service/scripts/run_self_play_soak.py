@@ -109,6 +109,19 @@ GPUSelfPlayGenerator = None  # Populated on first GPU use
 # configures logging handlers/levels, so we only need a named logger here.
 logger = logging.getLogger(__name__)
 
+# Import coordination for task limits and duration tracking
+try:
+    from app.coordination import (
+        TaskType,
+        can_spawn,
+        register_running_task,
+        record_task_completion,
+    )
+    HAS_COORDINATION = True
+except ImportError:
+    HAS_COORDINATION = False
+    TaskType = None
+
 
 def _load_gpu_imports() -> bool:
     """Lazily load GPU imports to avoid torch import overhead when not using GPU.
@@ -3262,6 +3275,28 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:  # pragma: no cover - CLI entrypoint
     args = _parse_args()
 
+    # Check coordination before spawning
+    task_id = None
+    coord_start_time = time.time()
+    if HAS_COORDINATION:
+        import socket
+        node_id = socket.gethostname()
+        task_type = TaskType.GPU_SELFPLAY if getattr(args, "gpu", False) else TaskType.SELFPLAY
+        allowed, reason = can_spawn(task_type, node_id)
+        if not allowed:
+            logger.warning(f"[Coordination] Warning: {reason}")
+            logger.info("[Coordination] Proceeding anyway (coordination is advisory)")
+
+        # Register task for tracking
+        board_type = getattr(args, "board_type", "square8")
+        num_players = getattr(args, "num_players", 2)
+        task_id = f"selfplay_soak_{board_type}_{num_players}p_{os.getpid()}"
+        try:
+            register_running_task(task_id, "selfplay", node_id, os.getpid())
+            logger.info(f"[Coordination] Registered task {task_id}")
+        except Exception as e:
+            logger.warning(f"[Coordination] Warning: Failed to register task: {e}")
+
     # Check for GPU mode
     if getattr(args, "gpu", False):
         # Validate GPU constraints
@@ -3319,6 +3354,17 @@ def main() -> None:  # pragma: no cover - CLI entrypoint
                     file=sys.stderr,
                 )
                 raise SystemExit(1)
+
+        # Record task completion for duration learning (GPU mode)
+        if HAS_COORDINATION and task_id:
+            try:
+                import socket
+                node_id = socket.gethostname()
+                config = f"gpu_{board_type}_{num_players}p"
+                record_task_completion("selfplay", config, node_id, coord_start_time, time.time())
+                logger.info("[Coordination] Recorded task completion (GPU)")
+            except Exception as e:
+                logger.warning(f"[Coordination] Warning: Failed to record task completion: {e}")
 
         return  # Exit early for GPU mode
 
@@ -3428,6 +3474,19 @@ def main() -> None:  # pragma: no cover - CLI entrypoint
                 file=sys.stderr,
             )
             raise SystemExit(1)
+
+    # Record task completion for duration learning (non-GPU mode)
+    if HAS_COORDINATION and task_id:
+        try:
+            import socket
+            node_id = socket.gethostname()
+            board_type = getattr(args, "board_type", "square8")
+            num_players = getattr(args, "num_players", 2)
+            config = f"{board_type}_{num_players}p"
+            record_task_completion("selfplay", config, node_id, coord_start_time, time.time())
+            logger.info("[Coordination] Recorded task completion")
+        except Exception as e:
+            logger.warning(f"[Coordination] Warning: Failed to record task completion: {e}")
 
 
 if __name__ == "__main__":  # pragma: no cover

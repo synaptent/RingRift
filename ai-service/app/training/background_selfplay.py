@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -27,6 +28,18 @@ from typing import Dict, List, Optional, Tuple
 
 # Get AI_SERVICE_ROOT
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+
+# Import coordination for task limits
+try:
+    from app.coordination import (
+        TaskType,
+        can_spawn,
+        register_running_task,
+    )
+    HAS_COORDINATION = True
+except ImportError:
+    HAS_COORDINATION = False
+    TaskType = None
 
 
 @dataclass
@@ -109,6 +122,17 @@ class BackgroundSelfplayManager:
         players = int(config.get("players", 2))
         games = int(config.get("games_per_iter", 100))
         max_moves = int(config.get("max_moves", 200))
+
+        # Check coordination before spawning (advisory)
+        if HAS_COORDINATION:
+            try:
+                node_id = socket.gethostname()
+                allowed, reason = can_spawn(TaskType.SELFPLAY, node_id)
+                if not allowed:
+                    print(f"[background] Coordination warning: {reason}")
+                    print("[background] Proceeding anyway (coordination is advisory)")
+            except Exception as e:
+                print(f"[background] Coordination check error: {e}")
 
         # Determine staging DB path
         staging_db_dir_raw = config.get("staging_db_dir", "data/games/staging")

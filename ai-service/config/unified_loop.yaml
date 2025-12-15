@@ -140,7 +140,7 @@ safeguards:
 
   # Coordination
   single_orchestrator: true # Only ONE unified_ai_loop runs cluster-wide
-  orchestrator_host: 'lambda-h100' # Master orchestrator host
+  orchestrator_host: 'gpu-master' # Master orchestrator host (set to your primary GPU host)
   kill_orphans_on_start: true # Kill orphaned processes on startup
 
   # Health checks
@@ -176,3 +176,78 @@ alerting:
   training_timeout_hours: 4 # Alert if training exceeds this duration
   elo_drop_threshold: 50 # Alert on significant Elo regression
   games_per_hour_min: 100 # Alert if game collection drops below this
+
+# Cluster orchestration settings (previously hardcoded in cluster_orchestrator.py)
+# These are used when running distributed selfplay across multiple hosts.
+cluster:
+  # Host sync intervals (in iterations, where 1 iteration ~= 5 minutes)
+  sync_interval: 6 # Sync data every 6 iterations (30 minutes)
+  model_sync_interval: 12 # Sync models every 12 iterations (1 hour)
+  model_sync_enabled: true # Enable automatic model syncing
+
+  # Elo calibration
+  elo_calibration_interval: 72 # Run Elo tournament every 72 iterations (6 hours)
+  elo_calibration_games: 50 # Games per config for calibration
+
+  # Elo-driven curriculum learning
+  elo_curriculum_enabled: true # Enable Elo-based opponent selection
+  elo_match_window: 200 # Match opponents within this Elo range
+  elo_underserved_threshold: 100 # Configs with fewer games are "underserved"
+
+  # Auto-scaling for underutilized hosts
+  auto_scale_interval: 12 # Check every 12 iterations (1 hour)
+  underutilized_cpu_threshold: 30 # CPU % below this is underutilized
+  underutilized_python_jobs: 10 # Fewer jobs than this is underutilized
+  scale_up_games_per_host: 50 # Games to start on underutilized host
+
+  # Adaptive game count
+  adaptive_games_min: 30
+  adaptive_games_max: 150
+
+# SSH execution settings (shared across all orchestrators)
+ssh:
+  max_retries: 3
+  base_delay_seconds: 2.0
+  max_delay_seconds: 30.0
+  connect_timeout_seconds: 10
+  command_timeout_seconds: 3600 # 1 hour max for any command
+
+# Selfplay settings (shared across all selfplay scripts)
+selfplay:
+  # Game generation
+  default_games_per_config: 50
+  min_games_for_training: 500
+  max_games_per_session: 1000
+
+  # Worker management
+  max_concurrent_workers: 4
+  worker_timeout_seconds: 7200 # 2 hours max per worker
+  checkpoint_interval_games: 100
+
+  # Quality settings
+  mcts_simulations: 200
+  temperature: 0.5
+  noise_fraction: 0.25
+
+# Tournament settings (shared across all tournament scripts)
+tournament:
+  # Default game counts
+  default_games_per_matchup: 20
+  shadow_games: 15
+  full_tournament_games: 50
+
+  # Time limits
+  game_timeout_seconds: 300 # 5 minutes per game
+  tournament_timeout_seconds: 7200 # 2 hours max per tournament
+
+  # Elo calculation
+  k_factor: 32
+  initial_elo: 1500
+  min_games_for_rating: 30
+
+  # AI configurations for tournaments
+  baseline_models:
+    - random
+    - heuristic
+    - mcts_100
+    - mcts_500

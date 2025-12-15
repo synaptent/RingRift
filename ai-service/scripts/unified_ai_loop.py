@@ -1048,12 +1048,32 @@ class DataEvent:
 
 
 class EventBus:
-    """Simple async event bus for component coordination."""
+    """Simple async event bus for component coordination.
 
-    def __init__(self):
+    Supports optional cross-process event publishing for events that should
+    be visible to other daemons (cluster_orchestrator, data_sync_daemon, etc.)
+    """
+
+    # Event types that should be published to cross-process queue
+    CROSS_PROCESS_EVENT_TYPES = {
+        DataEventType.MODEL_PROMOTED,
+        DataEventType.TRAINING_COMPLETED,
+        DataEventType.EVALUATION_COMPLETED,
+        DataEventType.CURRICULUM_REBALANCED,
+        DataEventType.ELO_SIGNIFICANT_CHANGE,
+        DataEventType.P2P_MODEL_SYNCED,
+        DataEventType.PLATEAU_DETECTED,
+    }
+
+    def __init__(self, cross_process_queue: Optional["CrossProcessEventQueue"] = None):
         self._subscribers: Dict[DataEventType, List[Callable]] = {}
         self._event_history: List[DataEvent] = []
         self._max_history = 1000
+        self._cross_process_queue = cross_process_queue
+
+    def set_cross_process_queue(self, queue: "CrossProcessEventQueue"):
+        """Set the cross-process queue for outbound event publishing."""
+        self._cross_process_queue = queue
 
     def subscribe(self, event_type: DataEventType, callback: Callable):
         """Subscribe to an event type."""
@@ -1062,10 +1082,26 @@ class EventBus:
         self._subscribers[event_type].append(callback)
 
     async def publish(self, event: DataEvent):
-        """Publish an event to all subscribers."""
+        """Publish an event to all subscribers and optionally to cross-process queue."""
         self._event_history.append(event)
         if len(self._event_history) > self._max_history:
             self._event_history = self._event_history[-self._max_history:]
+
+        # Publish to cross-process queue for significant events
+        # Skip if event was already bridged from cross-process (avoid echo)
+        if (
+            self._cross_process_queue is not None
+            and event.event_type in self.CROSS_PROCESS_EVENT_TYPES
+            and "_cross_process_source" not in event.payload
+        ):
+            try:
+                self._cross_process_queue.publish(
+                    event_type=event.event_type.value,
+                    payload=event.payload,
+                    source="unified_ai_loop"
+                )
+            except Exception as e:
+                print(f"[EventBus] Failed to publish to cross-process queue: {e}")
 
         if event.event_type in self._subscribers:
             for callback in self._subscribers[event.event_type]:
@@ -1821,6 +1857,17 @@ class TrainingScheduler:
         if self.is_training_locked_elsewhere():
             return None
 
+        # Duration-aware scheduling: check if training can be scheduled now
+        # This avoids starting training during peak hours or when resources are busy
+        if HAS_COORDINATION:
+            import socket
+            node_id = socket.gethostname()
+            can_schedule, schedule_reason = can_schedule_task("training", node_id)
+            if not can_schedule:
+                if self.verbose:
+                    print(f"[Training] Deferred by duration scheduler: {schedule_reason}")
+                return None
+
         now = time.time()
 
         for config_key, config_state in self.state.configs.items():
@@ -1924,6 +1971,12 @@ class TrainingScheduler:
             self.state.training_in_progress = True
             self.state.training_config = config_key
             self.state.training_started_at = time.time()
+
+            # Estimate training duration and log ETA
+            if HAS_COORDINATION:
+                est_duration = estimate_task_duration("training", config=config_key)
+                eta_time = datetime.fromtimestamp(time.time() + est_duration).strftime("%H:%M:%S")
+                print(f"[Training] Estimated duration: {est_duration/3600:.1f}h (ETA: {eta_time})")
 
             # Use v3 for all board types (best architecture with spatial policy heads)
             model_version = "v3"
@@ -2720,6 +2773,16 @@ class UnifiedAILoop:
         self.config = config
         self.state = UnifiedLoopState()
         self.event_bus = EventBus()
+
+        # Initialize cross-process event queue for bidirectional event bridging
+        self._cross_process_queue: Optional[CrossProcessEventQueue] = None
+        if HAS_CROSS_PROCESS_EVENTS:
+            try:
+                self._cross_process_queue = CrossProcessEventQueue()
+                self.event_bus.set_cross_process_queue(self._cross_process_queue)
+                print("[UnifiedLoop] Cross-process event publishing enabled")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Cross-process queue init failed: {e}")
 
         # Initialize components
         self.data_collector = StreamingDataCollector(

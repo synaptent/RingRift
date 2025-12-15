@@ -80,6 +80,14 @@ import yaml
 # Allow imports from app/
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Import sync_lock for coordinating rsync operations
+try:
+    from app.coordination.sync_mutex import sync_lock
+    HAS_SYNC_LOCK = True
+except ImportError:
+    HAS_SYNC_LOCK = False
+    sync_lock = None  # type: ignore
+
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 # Default external drive path on Mac Studio
@@ -406,61 +414,88 @@ class ExternalDriveSyncDaemon:
         if host.ssh_key:
             ssh_opts += f" -i {host.ssh_key}"
 
-        # Sync .db files
-        db_cmd = f'rsync -avz --progress -e "ssh {ssh_opts}" {host.ssh_user}@{effective_host}:{host.remote_path}/data/games/*.db {host_dir}/ 2>/dev/null'
-
-        files_synced = 0
-        try:
-            process = await asyncio.create_subprocess_shell(
-                db_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=300)
-
-            if process.returncode == 0:
-                # Count synced files
-                files_synced = len(list(host_dir.glob("*.db")))
-
-        except Exception as e:
-            self._log(f"{host.name}: rsync error: {e}", "ERROR")
-
-        # Sync .jsonl files from all data directories (recursive)
-        jsonl_dir = host_dir / "jsonl"
-        jsonl_dir.mkdir(exist_ok=True)
-
-        # Primary: Recursive sync of ALL .jsonl files from the entire data/ directory
-        # Excludes: quarantine, logs, statistics/metrics files, toxic archives
-        jsonl_cmd = (
-            f'rsync -avz --progress '
-            f'--include="*/" '
-            f'--include="*.jsonl" '
-            f'--exclude="quarantine*" '
-            f'--exclude="*quarantine*" '
-            f'--exclude="toxic*" '
-            f'--exclude="*_stats.jsonl" '
-            f'--exclude="*_metrics.jsonl" '
-            f'--exclude="*_analysis.jsonl" '
-            f'--exclude="statistics*" '
-            f'--exclude="eval_pools*" '
-            f'--exclude="critical_positions*" '
-            f'--exclude="holdouts*" '
-            f'--exclude="*" '
-            f'-e "ssh {ssh_opts}" '
-            f'{host.ssh_user}@{effective_host}:{host.remote_path}/data/ '
-            f'{jsonl_dir}/ 2>/dev/null'
-        )
+        # Acquire sync_lock to prevent concurrent rsync to same host
+        sync_lock_acquired = False
+        if HAS_SYNC_LOCK and sync_lock is not None:
+            try:
+                from app.coordination.sync_mutex import acquire_sync_lock, release_sync_lock
+                sync_lock_acquired = acquire_sync_lock(host.name, "rsync-inbound", wait=True, wait_timeout=60.0)
+                if not sync_lock_acquired:
+                    self._log(f"{host.name}: could not acquire sync lock, skipping", "WARN")
+                    return 0, 0
+                if self.verbose:
+                    self._log(f"{host.name}: acquired sync lock")
+            except Exception as e:
+                self._log(f"{host.name}: sync lock error: {e}", "WARN")
+                # Continue without lock
 
         try:
-            process = await asyncio.create_subprocess_shell(
-                jsonl_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            # Sync .db files
+            db_cmd = f'rsync -avz --progress -e "ssh {ssh_opts}" {host.ssh_user}@{effective_host}:{host.remote_path}/data/games/*.db {host_dir}/ 2>/dev/null'
+
+            files_synced = 0
+            try:
+                process = await asyncio.create_subprocess_shell(
+                    db_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await asyncio.wait_for(process.communicate(), timeout=300)
+
+                if process.returncode == 0:
+                    # Count synced files
+                    files_synced = len(list(host_dir.glob("*.db")))
+
+            except Exception as e:
+                self._log(f"{host.name}: rsync error: {e}", "ERROR")
+
+            # Sync .jsonl files from all data directories (recursive)
+            jsonl_dir = host_dir / "jsonl"
+            jsonl_dir.mkdir(exist_ok=True)
+
+            # Primary: Recursive sync of ALL .jsonl files from the entire data/ directory
+            # Excludes: quarantine, logs, statistics/metrics files, toxic archives
+            jsonl_cmd = (
+                f'rsync -avz --progress '
+                f'--include="*/" '
+                f'--include="*.jsonl" '
+                f'--exclude="quarantine*" '
+                f'--exclude="*quarantine*" '
+                f'--exclude="toxic*" '
+                f'--exclude="*_stats.jsonl" '
+                f'--exclude="*_metrics.jsonl" '
+                f'--exclude="*_analysis.jsonl" '
+                f'--exclude="statistics*" '
+                f'--exclude="eval_pools*" '
+                f'--exclude="critical_positions*" '
+                f'--exclude="holdouts*" '
+                f'--exclude="*" '
+                f'-e "ssh {ssh_opts}" '
+                f'{host.ssh_user}@{effective_host}:{host.remote_path}/data/ '
+                f'{jsonl_dir}/ 2>/dev/null'
             )
-            await asyncio.wait_for(process.communicate(), timeout=900)  # 15 min timeout for full recursive sync
-        except Exception as e:
-            if self.verbose:
-                self._log(f"{host.name}: JSONL sync error: {e}", "WARN")
+
+            try:
+                process = await asyncio.create_subprocess_shell(
+                    jsonl_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(process.communicate(), timeout=900)  # 15 min timeout for full recursive sync
+            except Exception as e:
+                if self.verbose:
+                    self._log(f"{host.name}: JSONL sync error: {e}", "WARN")
+
+        finally:
+            # Release sync_lock
+            if sync_lock_acquired and HAS_SYNC_LOCK:
+                try:
+                    from app.coordination.sync_mutex import release_sync_lock
+                    release_sync_lock(host.name)
+                    if self.verbose:
+                        self._log(f"{host.name}: released sync lock")
+                except Exception as e:
+                    self._log(f"{host.name}: sync lock release error: {e}", "WARN")
 
         # Count all synced JSONL files recursively
         jsonl_count = len(list(jsonl_dir.glob("**/*.jsonl")))
@@ -945,61 +980,85 @@ class ExternalDriveSyncDaemon:
             if host.ssh_key:
                 ssh_opts += f" -i {host.ssh_key}"
 
-            # Sync merged database to host's training_pool directory
-            merged_db = self.merged_dir / "selfplay_merged.db"
-            if merged_db.exists():
-                db_cmd = (
-                    f'rsync -avz --progress -e "ssh {ssh_opts}" '
-                    f'{merged_db} '
-                    f'{host.ssh_user}@{effective_host}:{host.remote_path}/data/games/training_pool/ '
+            # Acquire sync_lock to prevent concurrent rsync to same host
+            sync_lock_acquired = False
+            if HAS_SYNC_LOCK and sync_lock is not None:
+                try:
+                    from app.coordination.sync_mutex import acquire_sync_lock, release_sync_lock
+                    sync_lock_acquired = acquire_sync_lock(host.name, "rsync-outbound", wait=True, wait_timeout=60.0)
+                    if not sync_lock_acquired:
+                        self._log(f"  {host.name}: could not acquire sync lock, skipping", "WARN")
+                        results[host.name] = {"success": False, "error": "sync_lock_unavailable"}
+                        continue
+                except Exception as e:
+                    self._log(f"  {host.name}: sync lock error: {e}", "WARN")
+                    # Continue without lock
+
+            try:
+                # Sync merged database to host's training_pool directory
+                merged_db = self.merged_dir / "selfplay_merged.db"
+                if merged_db.exists():
+                    db_cmd = (
+                        f'rsync -avz --progress -e "ssh {ssh_opts}" '
+                        f'{merged_db} '
+                        f'{host.ssh_user}@{effective_host}:{host.remote_path}/data/games/training_pool/ '
+                        f'2>/dev/null'
+                    )
+
+                    try:
+                        process = await asyncio.create_subprocess_shell(
+                            db_cmd,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                        )
+                        await asyncio.wait_for(process.communicate(), timeout=600)
+
+                        if process.returncode == 0:
+                            self._log(f"  {host.name}: synced merged DB")
+
+                    except Exception as e:
+                        self._log(f"  {host.name}: DB sync error: {e}", "WARN")
+
+                # Sync JSONL files to host's training_pool/jsonl directory
+                jsonl_source = self.raw_dir
+                jsonl_cmd = (
+                    f'rsync -avz --progress '
+                    f'--include="*/" --include="*.jsonl" --exclude="*" '
+                    f'-e "ssh {ssh_opts}" '
+                    f'{jsonl_source}/ '
+                    f'{host.ssh_user}@{effective_host}:{host.remote_path}/data/games/training_pool/synced_jsonl/ '
                     f'2>/dev/null'
                 )
 
                 try:
                     process = await asyncio.create_subprocess_shell(
-                        db_cmd,
+                        jsonl_cmd,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     )
-                    await asyncio.wait_for(process.communicate(), timeout=600)
+                    await asyncio.wait_for(process.communicate(), timeout=1800)  # 30 min for large JSONL sync
 
                     if process.returncode == 0:
-                        self._log(f"  {host.name}: synced merged DB")
+                        self._log(f"  {host.name}: synced JSONL files")
+                        results[host.name] = {"success": True}
+                    else:
+                        results[host.name] = {"success": False, "error": "rsync failed"}
 
+                except asyncio.TimeoutError:
+                    self._log(f"  {host.name}: JSONL sync timeout", "WARN")
+                    results[host.name] = {"success": False, "error": "timeout"}
                 except Exception as e:
-                    self._log(f"  {host.name}: DB sync error: {e}", "WARN")
+                    self._log(f"  {host.name}: JSONL sync error: {e}", "WARN")
+                    results[host.name] = {"success": False, "error": str(e)}
 
-            # Sync JSONL files to host's training_pool/jsonl directory
-            jsonl_source = self.raw_dir
-            jsonl_cmd = (
-                f'rsync -avz --progress '
-                f'--include="*/" --include="*.jsonl" --exclude="*" '
-                f'-e "ssh {ssh_opts}" '
-                f'{jsonl_source}/ '
-                f'{host.ssh_user}@{effective_host}:{host.remote_path}/data/games/training_pool/synced_jsonl/ '
-                f'2>/dev/null'
-            )
-
-            try:
-                process = await asyncio.create_subprocess_shell(
-                    jsonl_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                await asyncio.wait_for(process.communicate(), timeout=1800)  # 30 min for large JSONL sync
-
-                if process.returncode == 0:
-                    self._log(f"  {host.name}: synced JSONL files")
-                    results[host.name] = {"success": True}
-                else:
-                    results[host.name] = {"success": False, "error": "rsync failed"}
-
-            except asyncio.TimeoutError:
-                self._log(f"  {host.name}: JSONL sync timeout", "WARN")
-                results[host.name] = {"success": False, "error": "timeout"}
-            except Exception as e:
-                self._log(f"  {host.name}: JSONL sync error: {e}", "WARN")
-                results[host.name] = {"success": False, "error": str(e)}
+            finally:
+                # Release sync_lock
+                if sync_lock_acquired and HAS_SYNC_LOCK:
+                    try:
+                        from app.coordination.sync_mutex import release_sync_lock
+                        release_sync_lock(host.name)
+                    except Exception as e:
+                        self._log(f"  {host.name}: sync lock release error: {e}", "WARN")
 
         successful = sum(1 for r in results.values() if r.get("success"))
         self._log(f"Distribution complete: {successful}/{len(results)} hosts synced")

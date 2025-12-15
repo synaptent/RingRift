@@ -58,6 +58,13 @@ try:
 except ImportError:
     HAS_EVENT_BUS = False
 
+# Try to import sync_lock for coordinating rsync operations
+try:
+    from app.coordination.sync_mutex import acquire_sync_lock, release_sync_lock
+    HAS_SYNC_LOCK = True
+except ImportError:
+    HAS_SYNC_LOCK = False
+
 
 @dataclass
 class HostConfig:
@@ -585,18 +592,39 @@ class StreamingDataCollector:
         # Add checksum for rsync integrity
         rsync_cmd = f'rsync -avz --checksum --progress -e "ssh {ssh_args}" {host.ssh_user}@{host.ssh_host}:{host.remote_db_path}/*.db {local_dir}/'
 
-        process = await asyncio.create_subprocess_shell(
-            rsync_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(),
-            timeout=self.config.rsync_timeout
-        )
+        # Acquire sync_lock to prevent concurrent rsync to same host
+        sync_lock_acquired = False
+        if HAS_SYNC_LOCK:
+            try:
+                sync_lock_acquired = acquire_sync_lock(host.name, "rsync-inbound", wait=True, wait_timeout=60.0)
+                if not sync_lock_acquired:
+                    print(f"[Collector] {host.name}: could not acquire sync lock, skipping")
+                    return 0
+            except Exception as e:
+                print(f"[Collector] {host.name}: sync lock error: {e}")
+                # Continue without lock
 
-        if process.returncode != 0:
-            raise RuntimeError(f"rsync failed: {stderr.decode()}")
+        try:
+            process = await asyncio.create_subprocess_shell(
+                rsync_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=self.config.rsync_timeout
+            )
+
+            if process.returncode != 0:
+                raise RuntimeError(f"rsync failed: {stderr.decode()}")
+
+        finally:
+            # Release sync_lock
+            if sync_lock_acquired and HAS_SYNC_LOCK:
+                try:
+                    release_sync_lock(host.name)
+                except Exception as e:
+                    print(f"[Collector] {host.name}: sync lock release error: {e}")
 
         # Count and validate games in synced DBs
         total = 0
