@@ -297,6 +297,11 @@ def expand_gpu_jsonl_moves_to_canonical(
                 f"from={gpu_move.from_pos} to={gpu_move.to} phase={state.current_phase.value}"
             )
 
+        # If the matched move has no from_pos but the GPU move does, copy it over.
+        # This handles the case where CPU generates moves with implicit from (after placement).
+        if matched.from_pos is None and gpu_move.from_pos is not None:
+            matched = matched.model_copy(update={"from_pos": gpu_move.from_pos})
+
         apply(matched, ts)
 
     # Flush any remaining decision/bookkeeping phases after the last GPU move.

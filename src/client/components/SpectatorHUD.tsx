@@ -1,11 +1,18 @@
-import { useState } from 'react';
-import type { GamePhase, Move, Player } from '../../shared/types/game';
+import { useState, useCallback, useMemo } from 'react';
+import type { BoardType, GamePhase, Move, Player } from '../../shared/types/game';
 import type { PositionEvaluationPayload } from '../../shared/types/websocket';
 import { getPlayerColors, PHASE_INFO } from '../adapters/gameViewModels';
 import { useAccessibility } from '../contexts/AccessibilityContext';
 import { EvaluationGraph } from './EvaluationGraph';
 import { MoveAnalysisPanel, type MoveAnalysis } from './MoveAnalysisPanel';
 import { getPlayerIndicatorPatternClass } from '../utils/playerTheme';
+import {
+  TeachingOverlay,
+  TeachingTopicButtons,
+  useTeachingOverlay,
+  type TeachingTopic,
+} from './TeachingOverlay';
+import { VictoryConditionsPanel } from './GameHUD';
 
 export interface SpectatorHUDProps {
   /** Current game phase */
@@ -42,6 +49,10 @@ export interface SpectatorHUDProps {
     username: string;
     disconnectedAt: number;
   }>;
+  /** Board type for teaching overlay context */
+  boardType?: BoardType;
+  /** Show victory conditions panel for educational value */
+  showVictoryConditions?: boolean;
   /** Additional CSS classes */
   className?: string;
 }
@@ -141,6 +152,7 @@ function getChoiceDisplay(choiceType: string): { label: string; description: str
 /**
  * Dedicated HUD for spectators watching a game.
  * Shows enhanced game state, move annotations, and integrated analysis.
+ * Includes teaching overlays for educational value.
  */
 export function SpectatorHUD({
   phase,
@@ -156,10 +168,21 @@ export function SpectatorHUD({
   connectionStatus = 'connected',
   activeChoice,
   disconnectedPlayers = [],
+  boardType = 'square8',
+  showVictoryConditions = true,
   className = '',
 }: SpectatorHUDProps) {
   const [showAnalysis, setShowAnalysis] = useState(true);
   const { colorVisionMode } = useAccessibility();
+
+  // Teaching overlay for educational spectator experience
+  const teaching = useTeachingOverlay();
+  const handleTeachingTopic = useCallback(
+    (topic: TeachingTopic) => {
+      teaching.showTopic(topic);
+    },
+    [teaching]
+  );
   const patternClassesForPlayer = (playerNumber: number) =>
     colorVisionMode === 'normal'
       ? ''
@@ -290,8 +313,13 @@ export function SpectatorHUD({
         </div>
       )}
 
-      {/* Spectator Mode Header */}
-      <div className="border border-purple-500/40 rounded-lg bg-purple-900/30 p-3">
+      {/* Spectator Mode Header - Always visible indicator for spectators */}
+      <div
+        className="border border-purple-500/40 rounded-lg bg-purple-900/30 p-3"
+        role="banner"
+        aria-label="Spectator Mode - You are watching this game"
+        data-testid="spectator-mode-banner"
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {/* Live indicator dot */}
@@ -319,12 +347,19 @@ export function SpectatorHUD({
           </div>
           <div className="flex items-center gap-3">
             {spectatorCount > 0 && (
-              <span className="text-xs text-purple-200/70">
+              <span
+                className="text-xs text-purple-200/70"
+                aria-label={`${spectatorCount} ${spectatorCount === 1 ? 'viewer' : 'viewers'} watching`}
+              >
                 {spectatorCount} {spectatorCount === 1 ? 'viewer' : 'viewers'}
               </span>
             )}
           </div>
         </div>
+        <p className="text-xs text-purple-200/60 mt-2">
+          Moves are disabled while spectating. Use the teaching topics below to learn game
+          mechanics.
+        </p>
       </div>
 
       {/* Game Status */}

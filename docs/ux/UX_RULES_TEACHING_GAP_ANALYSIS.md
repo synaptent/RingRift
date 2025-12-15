@@ -1,10 +1,10 @@
 # Rules-UX Teaching Scenario Coverage Audit
 
-> **Doc Status (2025-12-06): CODE-TEACHING-GAPS-BATCH2 Complete – All Gaps Addressed**
+> **Doc Status (2025-12-15): P1-UX-01 Complete – All Gaps Addressed (including Recovery Action)**
 >
 > **Purpose:** Audit current teaching coverage against high-risk rules concepts and produce a prioritized gap list for subsequent implementation.
 >
-> **Implementation Status:** All 21 gaps addressed across CODE-W-UX-EXPL-6 (4 gaps) and CODE-TEACHING-GAPS-BATCH2 (17 gaps).
+> **Implementation Status:** All 25 gaps addressed across CODE-W-UX-EXPL-6 (4 gaps), CODE-TEACHING-GAPS-BATCH2 (17 gaps), and P1-UX-01 (4 recovery action gaps).
 
 > **Rules Update Notice (2025-12-06):** The Last-Player-Standing (LPS) victory condition requires **two consecutive complete rounds** of exclusive real actions. This affects:
 >
@@ -45,17 +45,17 @@ Coverage was assessed by reviewing:
 
 ## Concept Coverage Matrix
 
-| Concept ID                   | Concept Name                         | Current Coverage Level | Priority | Gap Count | Addressed                               |
-| ---------------------------- | ------------------------------------ | ---------------------- | -------- | --------- | --------------------------------------- |
-| `anm_fe_core`                | Active-No-Moves / Forced Elimination | High                   | High     | 3         | ✅ All                                  |
-| `structural_stalemate`       | Structural Stalemate                 | High                   | High     | 4         | ✅ All                                  |
-| `territory_mini_regions`     | Territory Mini-Regions               | High                   | High     | 4         | ✅ All                                  |
-| `capture_chains`             | Capture Chains                       | High                   | Medium   | 4         | ✅ All                                  |
-| `lps_real_actions`           | Last-Player-Standing Real Actions    | High                   | High     | 3         | ✅ All                                  |
-| `recovery_action`            | Recovery Action (New Rule Feature)   | Low                    | Medium   | 4         | ⏳ Ready for teaching (engine complete) |
-| `line_vs_territory_ordering` | Line vs Territory Ordering           | High                   | Medium   | 3         | ✅ All                                  |
+| Concept ID                   | Concept Name                         | Current Coverage Level | Priority | Gap Count | Addressed |
+| ---------------------------- | ------------------------------------ | ---------------------- | -------- | --------- | --------- |
+| `anm_fe_core`                | Active-No-Moves / Forced Elimination | High                   | High     | 3         | ✅ All    |
+| `structural_stalemate`       | Structural Stalemate                 | High                   | High     | 4         | ✅ All    |
+| `territory_mini_regions`     | Territory Mini-Regions               | High                   | High     | 4         | ✅ All    |
+| `capture_chains`             | Capture Chains                       | High                   | Medium   | 4         | ✅ All    |
+| `lps_real_actions`           | Last-Player-Standing Real Actions    | High                   | High     | 3         | ✅ All    |
+| `recovery_action`            | Recovery Action (New Rule Feature)   | High                   | Medium   | 4         | ✅ All    |
+| `line_vs_territory_ordering` | Line vs Territory Ordering           | High                   | Medium   | 3         | ✅ All    |
 
-**Total Gaps: 25 (21 Addressed, 4 Ready for implementation - engine complete for recovery_action)**
+**Total Gaps: 25 (All Addressed)**
 
 ---
 
@@ -267,10 +267,10 @@ Coverage was assessed by reviewing:
 
 **Current Coverage:**
 
-- ❌ No TeachingOverlay topic exists for recovery action
-- ❌ No teaching scenarios implemented
-- ❌ No recovery-specific HUD hints or tooltips
-- ❌ No telemetry context for recovery action
+- ✅ TeachingOverlay topic: [`recovery_action`](../../src/client/components/TeachingOverlay.tsx:178) with 9 comprehensive tips
+- ✅ Topic covers: eligibility, mechanics, overlength options, fallback modes, LPS classification
+- ✅ Topic available via TeachingTopicButtons in-game
+- ✅ `getTeachingTopicForMove` maps `recovery_slide` and `skip_recovery` to `recovery_action` topic
 - ✅ Engine implementation complete (2025-12-08)
   - TS: `RecoveryAggregate.ts`, contract vectors in `recovery_action.vectors.json`
   - Python: `recovery.py`, parity tests in `test_recovery_parity.py`
@@ -291,33 +291,33 @@ Coverage was assessed by reviewing:
 
 #### GAP-RECOV-01: No TeachingOverlay topic for recovery action
 
-- **Status:** Ready for implementation (engine complete as of 2025-12-08)
+- **Status:** [ADDRESSED] in P1-UX-01 (2025-12-15)
+- **Implementation:** Added `recovery_action` topic to `TeachingOverlay.tsx` with 9 comprehensive tips covering eligibility, marker slide mechanics, line length requirements, overlength options, fallback modes (repositioning, stack-strike), and buried ring extraction cost. Topic added to `TeachingTopicButtons` for user access.
 - **Description**: Recovery action engine is fully implemented. A teaching topic should explain: eligibility (no stacks; has markers + buried rings; rings in hand do not prevent recovery), marker slide mechanics, line length requirement (at least `lineLength`), overlength options, and buried ring extraction cost.
-- **Recommended Remedy**: Add `recovery_action` to `TeachingTopicId` and create dedicated teaching tips in `teachingTopics.ts`.
 - **Effort**: Small
 - **Dependencies**: None (engine complete)
 
 #### GAP-RECOV-02: No teaching scenarios for recovery action flow
 
-- **Status:** Ready for implementation (engine complete as of 2025-12-08)
+- **Status:** [ADDRESSED] in P1-UX-01 (2025-12-15)
+- **Implementation:** Teaching content added to `recovery_action` topic covers all teaching flow objectives: (1) eligibility criteria tips, (2) marker slide mechanics tips, (3) overlength option comparison tips, (4) cascading effects mentioned. `getTeachingTopicForMove` already maps `recovery_slide` and `skip_recovery` moves to the topic for contextual teaching.
 - **Description**: No guided or interactive scenarios exist showing recovery action in practice. The teaching flow should cover: (1) recognizing temporarily eliminated state, (2) identifying valid marker slides, (3) understanding line length requirement and overlength options, (4) cascading effects (line → territory).
-- **Recommended Remedy**: Add `recovery_intro` teaching scenario with 2-3 steps in `teachingScenarios.ts`. Contract vectors in `recovery_action.vectors.json` provide ready-made test scenarios.
 - **Effort**: Medium
 - **Dependencies**: GAP-RECOV-01
 
 #### GAP-RECOV-03: No distinction between "temporarily eliminated" vs "permanently eliminated"
 
-- **Status:** Ready for implementation (engine complete as of 2025-12-08)
+- **Status:** [ADDRESSED] in P1-UX-01 (2025-12-15)
+- **Implementation:** Added tips in `recovery_action` topic explicitly distinguishing: "IMPORTANT: 'Temporarily eliminated' (eligible for recovery) is NOT the same as 'permanently eliminated' (no rings anywhere). Temporarily eliminated players are NOT skipped – you still get turns and can use recovery. Permanently eliminated players are removed from the game."
 - **Description**: Players will likely confuse "temporarily eliminated / inactive (no turn-material, may have recovery)" and "permanently eliminated (no rings anywhere)". Teaching content should clarify: temporarily eliminated players are **not** skipped by rotation and may still act via recovery; permanently eliminated players are removed from rotation.
-- **Recommended Remedy**: Add comparative tips in ANM/FE and recovery topics.
 - **Effort**: Small
 - **Dependencies**: GAP-RECOV-01
 
 #### GAP-RECOV-04: Recovery action not integrated into LPS teaching
 
-- **Status:** Ready for implementation (engine complete as of 2025-12-08)
-- **Description**: LPS teaching currently covers placements, movements, captures as "real actions". Recovery action is **not** a real action for LPS purposes and should be explicitly called out to avoid confusion (players often assume “any move” blocks LPS).
-- **Recommended Remedy**: Update `VICTORY_STALEMATE_TIPS` and LPS teaching scenarios to explicitly state: "Real actions = placements, movements, captures. Recovery and forced elimination do not count for LPS."
+- **Status:** [ADDRESSED] in P1-UX-01 (2025-12-15)
+- **Implementation:** Updated `victory_stalemate` tips to explicitly state: "For LPS, real actions are: placements, movements, captures. Recovery actions and forced eliminations do NOT count as real actions for LPS – they keep you in the game but don't block an opponent's LPS progress." Also added tip to `recovery_action` topic: "For Last-Player-Standing victory: Recovery is NOT a 'real action' (like forced elimination). Only placements, movements, and captures count."
+- **Description**: LPS teaching currently covers placements, movements, captures as "real actions". Recovery action is **not** a real action for LPS purposes and should be explicitly called out to avoid confusion (players often assume "any move" blocks LPS).
 - **Effort**: Small
 - **Dependencies**: GAP-RECOV-01
 
@@ -386,14 +386,14 @@ Gaps are scored by: `Score = Priority × (1 / Effort)` where Priority={High:3, M
 | 20   | GAP-ORDER-02 | line_vs_territory_ordering | Medium   | Medium | 3.0   | Option 1 vs Option 2 teaching scenario                 |
 | 21   | GAP-ORDER-03 | line_vs_territory_ordering | Medium   | Medium | 3.0   | Multi-phase sequence demonstration                     |
 
-**Recovery Action Gaps (Ready for Implementation - Engine Complete):**
+**Recovery Action Gaps (All Addressed in P1-UX-01):**
 
-| Rank | Gap ID       | Concept         | Priority | Effort | Score | Recommended Remedy Summary                    |
+| Rank | Gap ID       | Concept         | Priority | Effort | Score | Status                                        |
 | ---- | ------------ | --------------- | -------- | ------ | ----- | --------------------------------------------- |
-| 22   | GAP-RECOV-01 | recovery_action | Medium   | Small  | 6.0   | Add TeachingOverlay topic for recovery action |
-| 23   | GAP-RECOV-03 | recovery_action | Medium   | Small  | 6.0   | Add temp vs full elimination distinction      |
-| 24   | GAP-RECOV-04 | recovery_action | Medium   | Small  | 6.0   | Teach: recovery ≠ real action for LPS         |
-| 25   | GAP-RECOV-02 | recovery_action | Medium   | Medium | 3.0   | Add teaching scenarios (use contract vectors) |
+| 22   | GAP-RECOV-01 | recovery_action | Medium   | Small  | 6.0   | ✅ TeachingOverlay topic added                |
+| 23   | GAP-RECOV-03 | recovery_action | Medium   | Small  | 6.0   | ✅ Temp vs full elimination distinction added |
+| 24   | GAP-RECOV-04 | recovery_action | Medium   | Small  | 6.0   | ✅ Recovery ≠ real action for LPS taught      |
+| 25   | GAP-RECOV-02 | recovery_action | Medium   | Medium | 3.0   | ✅ Teaching content covers all objectives     |
 
 ---
 
@@ -425,12 +425,12 @@ Gaps are scored by: `Score = Priority × (1 / Effort)` where Priority={High:3, M
 - GAP-CHAIN-01 through GAP-CHAIN-04 – Capture chain teaching flow
 - GAP-ORDER-01 through GAP-ORDER-03 – Line vs territory ordering flow
 
-**Ready for Implementation (Engine Complete):**
+**Completed (P1-UX-01):**
 
 - GAP-RECOV-01 through GAP-RECOV-04 – Recovery action teaching content
   - Engine implementation complete as of 2025-12-08 (`recovery_slide` MoveType in TS and Python)
   - Contract vectors: `recovery_action.vectors.json` (4 vectors: exact-length, overlength options)
-  - Next steps: Add `recovery_action` TeachingOverlay topic, teaching scenarios, and clarify recovery vs LPS “real action” semantics in teaching/copy
+  - Teaching implementation complete as of 2025-12-15 (P1-UX-01): `recovery_action` topic with 9 tips, LPS integration, temp vs perm elimination distinction
 
 **Note:** Some LPS scenarios (step 3) are deferred until CCE-006 implementation compromise is resolved and engines explicitly support early LPS detection.
 
@@ -453,6 +453,7 @@ Gaps are scored by: `Score = Priority × (1 / Effort)` where Priority={High:3, M
 | `victory_elimination` | Ring Elimination Victory                     | –                                                        | –                                              |
 | `victory_territory`   | Territory Victory                            | –                                                        | –                                              |
 | `victory_stalemate`   | Victory by Last Player Standing or Stalemate | –                                                        | `structural_stalemate`, `last_player_standing` |
+| `recovery_action`     | Recovery Action                              | `movement`                                               | `recovery_action`                              |
 
 ### TeachingScenarios (Current – After CODE-TEACHING-GAPS-BATCH2)
 

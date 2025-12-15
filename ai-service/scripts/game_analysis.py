@@ -922,7 +922,7 @@ def main():
             for rec in report.recommendations:
                 print(f"  - {rec}")
 
-    if not any([args.analyze, args.find_blunders, args.openings, args.report]):
+    if not any([args.analyze, args.find_blunders, args.openings, args.loss_patterns, args.report]):
         parser.print_help()
 
     return 0

@@ -25,6 +25,11 @@ else:
     class BaseModel(_BaseModel):
         """Pydantic v1 BaseModel with v2 method aliases for compatibility."""
 
+        class Config:
+            # Allow using field names (e.g., from_pos) when aliases (e.g., from) are defined
+            # This is equivalent to Pydantic v2's populate_by_name=True
+            allow_population_by_field_name = True
+
         def model_copy(self: T, *, update: Optional[Dict[str, Any]] = None, deep: bool = False) -> T:
             """v2 alias for v1's copy()"""
             return self.copy(update=update, deep=deep)
@@ -43,8 +48,17 @@ else:
             """v2 alias for v1's construct()"""
             return cls.construct(**values)
 
-    # ConfigDict doesn't exist in v1 but is imported - create a no-op
-    ConfigDict = dict
+    # ConfigDict in v2 is a dict with config options; in v1 we ignore it
+    # (config is handled via Config class in each model)
+    def ConfigDict(**kwargs):
+        """No-op ConfigDict for Pydantic v1 compatibility.
+
+        In v1, config is handled via nested Config class.
+        The key options we need to support:
+        - populate_by_name -> allow_population_by_field_name (in Config class)
+        - frozen -> allow_mutation = False (in Config class)
+        """
+        return kwargs  # Return the dict for potential introspection
 
 
 class BoardType(str, Enum):
