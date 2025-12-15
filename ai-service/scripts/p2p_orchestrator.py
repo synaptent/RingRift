@@ -560,10 +560,11 @@ ADVERTISE_PORT_ENV = "RINGRIFT_ADVERTISE_PORT"
 TAILSCALE_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 
 # Data manifest collection settings
-# IMPORTANT: Set to 0 to skip all JSONL line-counting. Reading 700+ JSONL files
-# blocks the event loop even with asyncio.to_thread, causing health check failures.
-MANIFEST_JSONL_LINECOUNT_MAX_BYTES = 0  # Skip ALL line-counting to prevent blocking
+# For files up to this size, count lines directly. For larger files, estimate from sample.
+# This enables automatic training triggers while avoiding blocking on large files.
+MANIFEST_JSONL_LINECOUNT_MAX_BYTES = 50 * 1024 * 1024  # 50MB - direct count for small files
 MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES = 1024 * 1024
+MANIFEST_JSONL_SAMPLE_BYTES = 256 * 1024  # 256KB sample for estimating large files
 
 # Startup grace period: skip ALL JSONL reading for this many seconds after startup
 # to ensure HTTP server becomes responsive before any heavy I/O operations
@@ -3659,10 +3660,31 @@ class P2POrchestrator:
         files: List[DataFileInfo] = []
 
         def _count_jsonl_games(file_path: Path, file_size_bytes: int) -> int:
-            if file_size_bytes > MANIFEST_JSONL_LINECOUNT_MAX_BYTES:
+            """Count or estimate lines in a JSONL file.
+
+            For small files (<=50MB), count lines directly.
+            For large files, sample first 256KB to estimate average bytes/line,
+            then extrapolate to estimate total lines.
+            """
+            if file_size_bytes == 0:
                 return 0
 
             try:
+                # For large files, estimate from sample to avoid blocking
+                if file_size_bytes > MANIFEST_JSONL_LINECOUNT_MAX_BYTES:
+                    with open(file_path, "rb") as f:
+                        sample = f.read(MANIFEST_JSONL_SAMPLE_BYTES)
+                        if not sample:
+                            return 0
+                        sample_lines = sample.count(b"\n")
+                        if sample_lines == 0:
+                            return 0
+                        # Estimate total lines based on sample
+                        avg_bytes_per_line = len(sample) / sample_lines
+                        estimated_lines = int(file_size_bytes / avg_bytes_per_line)
+                        return estimated_lines
+
+                # For small files, count directly
                 with open(file_path, "rb") as f:
                     line_count = 0
                     last_byte = b""
