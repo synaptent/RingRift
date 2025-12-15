@@ -393,3 +393,61 @@ tournament:
     - heuristic
     - mcts_100
     - mcts_500
+
+# P2P Distributed Cluster Configuration
+# Enables decentralized coordination without central orchestrator
+p2p:
+  # Master switch for P2P cluster features
+  enabled: true # P2P distributed coordination ENABLED
+
+  # P2P Orchestrator settings
+  p2p_base_url: 'http://localhost:8770' # URL of local/leader P2P orchestrator
+  auth_token: '' # Optional auth token for P2P API
+
+  # Model synchronization across cluster
+  model_sync_enabled: true # Sync trained models to all nodes
+  model_sync_on_promotion: true # Auto-sync when model is promoted
+
+  # Selfplay coordination
+  target_selfplay_games_per_hour: 1000 # Target games/hour across cluster
+  auto_scale_selfplay: true # Auto-scale selfplay based on utilization
+
+  # Distributed tournament support
+  use_distributed_tournament: true # Run tournaments across multiple nodes
+  tournament_nodes_per_eval: 3 # Number of nodes to use per evaluation
+
+  # Health monitoring
+  health_check_interval: 30 # Seconds between health checks
+  unhealthy_threshold: 3 # Failures before marking node unhealthy
+
+  # Sync intervals
+  sync_interval_seconds: 300 # Data sync interval (5 min)
+
+  # Gossip sync integration (P2P data replication)
+  gossip_sync_enabled: true # Gossip-based data replication ENABLED
+  gossip_port: 8771 # Port for gossip protocol
+
+# P2P Orchestrator Daemon settings (for p2p_orchestrator.py)
+p2p_daemon:
+  # Discovery
+  discovery_method: 'peers' # "broadcast" or "peers"
+  known_peers: [] # List of known peer URLs for bootstrap
+
+  # Leader election
+  leader_election_timeout: 10 # Seconds to wait for election
+  heartbeat_interval: 30 # Seconds between heartbeats
+
+  # Job scheduling
+  max_parallel_selfplay: 4 # Max selfplay jobs per node
+  max_parallel_training: 1 # Max training jobs per node (usually 1)
+  prefer_gpu_for_training: true # Schedule training on GPU nodes
+
+  # Resource thresholds
+  cpu_high_threshold: 80 # Throttle above this CPU %
+  memory_high_threshold: 80 # Throttle above this memory %
+  disk_high_threshold: 90 # Alert above this disk %
+
+  # Auto-restart settings
+  auto_restart_failed_jobs: true
+  max_job_restarts: 3
+  restart_backoff_seconds: 60
