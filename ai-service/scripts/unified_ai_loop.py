@@ -1176,6 +1176,8 @@ class TrainingConfig:
     export_script: str = "scripts/export_replay_dataset.py"
     # Encoder version for hex boards: "v3" uses HexStateEncoderV3 (16 channels)
     hex_encoder_version: str = "v3"
+    # Verbose logging for training scheduler
+    verbose: bool = False
 
 
 @dataclass
