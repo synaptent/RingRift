@@ -3213,16 +3213,21 @@ class TrainingScheduler:
                 export_cmd.extend(["--encoder-version", encoder_version])
 
             print(f"[Training] Exporting data for {config_key} (encoder: {encoder_version})...")
+            # Set PYTHONPATH to AI_SERVICE_ROOT so that 'app' module can be imported
+            export_env = os.environ.copy()
+            export_env["PYTHONPATH"] = str(AI_SERVICE_ROOT)
             export_process = await asyncio.create_subprocess_exec(
                 *export_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=AI_SERVICE_ROOT,
+                env=export_env,
             )
-            await export_process.wait()
+            stdout, stderr = await export_process.communicate()
 
             if export_process.returncode != 0:
-                print(f"[Training] Export failed for {config_key}")
+                error_msg = stderr.decode().strip()[:500] if stderr else "Unknown error"
+                print(f"[Training] Export failed for {config_key}: {error_msg}")
                 self.state.training_in_progress = False
                 self._release_training_lock()
                 return False
