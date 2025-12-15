@@ -594,7 +594,7 @@ class NodeResilience:
                         "--num-games", str(self.config.fallback_num_games_gpu),
                         "--max-moves", "10000",  # Avoid draws due to move limit
                         "--output-dir", output_dir,
-                        "--engine-mode", "mixed",  # Hybrid uses GPU heuristic (fast fallback)
+                        "--engine-mode", "nnue-guided",  # Use neural network for quality training data
                         "--seed", str(int(time.time()) + gpu_id),
                     ]
 
@@ -695,7 +695,7 @@ class NodeResilience:
                 "job_type": job_type,
                 "board_type": self.config.fallback_board,
                 "num_players": int(self.config.fallback_num_players or 2),
-                "engine_mode": "mixed",
+                "engine_mode": "nn-only",  # Use neural network for quality training data
             }
             if cuda_visible_devices is not None:
                 payload["cuda_visible_devices"] = str(cuda_visible_devices)
