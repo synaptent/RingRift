@@ -450,7 +450,10 @@ def export_replay_dataset_multi(
                     games_skipped += 1
                     continue
 
-            total_moves = int(meta.get("total_moves", len(moves)))
+            total_moves = meta.get("total_moves")
+            if total_moves is None:
+                total_moves = len(moves) if moves else 0
+            total_moves = int(total_moves)
             if total_moves <= 0 or not moves:
                 continue
 
