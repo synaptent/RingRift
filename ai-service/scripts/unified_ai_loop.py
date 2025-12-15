@@ -3281,6 +3281,7 @@ class TrainingScheduler:
             if should_consolidate:
                 # Find all selfplay DBs to merge (exclude quarantine, corrupted, etc.)
                 merge_dbs = []
+                skipped_invalid = 0
                 for db_path in game_dbs:
                     db_str = str(db_path)
                     # Skip quarantine, corrupted, backup, and the consolidated DB itself
@@ -3288,10 +3289,52 @@ class TrainingScheduler:
                         continue
                     # Only include selfplay/merged databases
                     if 'selfplay' in db_path.name or 'merged' in db_path.name or 'training' in db_path.name:
-                        merge_dbs.append(db_path)
+                        # Pre-consolidation validation: check DB structure
+                        try:
+                            conn = sqlite3.connect(db_path)
+                            cursor = conn.cursor()
+                            # Check games table exists and has data
+                            cursor.execute("SELECT COUNT(*) FROM games")
+                            count = cursor.fetchone()[0]
+                            # Check game_moves table exists
+                            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'")
+                            has_moves = cursor.fetchone() is not None
+                            conn.close()
+
+                            if count > 0 and has_moves:
+                                merge_dbs.append(db_path)
+                            else:
+                                skipped_invalid += 1
+                        except Exception:
+                            skipped_invalid += 1
+
+                if skipped_invalid > 0:
+                    print(f"[Training] Skipped {skipped_invalid} invalid/empty databases")
+
+                # Elo-based quality filter: get models with sufficient Elo
+                high_elo_models = set()
+                min_model_elo = 1300  # Minimum Elo to include games from this model
+                elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
+                if elo_db_path.exists():
+                    try:
+                        elo_conn = sqlite3.connect(elo_db_path)
+                        elo_cursor = elo_conn.cursor()
+                        elo_cursor.execute("""
+                            SELECT participant_id, rating FROM elo_ratings
+                            WHERE rating >= ? AND games_played >= 5
+                        """, (min_model_elo,))
+                        for row in elo_cursor.fetchall():
+                            high_elo_models.add(row[0])
+                            # Also add without prefix variations
+                            if row[0].startswith("nn:"):
+                                high_elo_models.add(row[0][3:])
+                        elo_conn.close()
+                        print(f"[Training] Elo filter: {len(high_elo_models)} models with Elo >= {min_model_elo}")
+                    except Exception as e:
+                        print(f"[Training] Elo filter skipped: {e}")
 
                 if len(merge_dbs) > 1:
-                    print(f"[Training] Consolidating {len(merge_dbs)} databases...")
+                    print(f"[Training] Consolidating {len(merge_dbs)} validated databases...")
                     merge_cmd = [
                         sys.executable,
                         str(AI_SERVICE_ROOT / "scripts" / "merge_game_dbs.py"),
@@ -3314,6 +3357,33 @@ class TrainingScheduler:
                         )
                         if merge_process.returncode == 0:
                             print(f"[Training] Database consolidation complete")
+
+                            # Generate parity fixtures for the consolidated DB
+                            parity_fixtures_dir = AI_SERVICE_ROOT / "data" / "parity_fixtures"
+                            parity_fixtures_dir.mkdir(parents=True, exist_ok=True)
+                            print(f"[Training] Generating parity fixtures...")
+                            parity_cmd = [
+                                sys.executable,
+                                str(AI_SERVICE_ROOT / "scripts" / "check_ts_python_replay_parity.py"),
+                                "--db", str(consolidated_db),
+                                "--emit-fixtures-dir", str(parity_fixtures_dir),
+                                "--limit-games-per-db", "1000",  # Sample for speed
+                            ]
+                            try:
+                                parity_process = await asyncio.create_subprocess_exec(
+                                    *parity_cmd,
+                                    stdout=asyncio.subprocess.PIPE,
+                                    stderr=asyncio.subprocess.PIPE,
+                                    cwd=AI_SERVICE_ROOT,
+                                )
+                                await asyncio.wait_for(
+                                    parity_process.communicate(),
+                                    timeout=600  # 10 min max for parity check
+                                )
+                                if parity_process.returncode == 0:
+                                    print(f"[Training] Parity fixtures generated")
+                            except Exception as e:
+                                print(f"[Training] Parity fixtures generation skipped: {e}")
                         else:
                             print(f"[Training] Consolidation failed: {stderr.decode()[:500]}")
                     except asyncio.TimeoutError:
@@ -3352,6 +3422,12 @@ class TrainingScheduler:
             ]
             if encoder_version != "default":
                 export_cmd.extend(["--encoder-version", encoder_version])
+
+            # Use parity fixtures to truncate games at safe points (avoid parity divergence)
+            parity_fixtures_dir = AI_SERVICE_ROOT / "data" / "parity_fixtures"
+            if parity_fixtures_dir.exists() and any(parity_fixtures_dir.iterdir()):
+                export_cmd.extend(["--parity-fixtures-dir", str(parity_fixtures_dir)])
+                print(f"[Training] Using parity fixtures from {parity_fixtures_dir}")
 
             print(f"[Training] Exporting data for {config_key} (encoder: {encoder_version})...")
             # Set PYTHONPATH to AI_SERVICE_ROOT so that 'app' module can be imported
