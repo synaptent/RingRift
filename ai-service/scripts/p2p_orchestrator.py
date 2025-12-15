@@ -18398,28 +18398,46 @@ print(json.dumps({{
                 needed = target_selfplay - node.selfplay_jobs
                 print(f"[P2P] {node.node_id} needs {needed} more selfplay jobs")
 
-                # Job configuration diversity - cycle through different board types/players
-                # LEARNED LESSONS - Prioritize underserved configs:
-                # - Hex 3p/4p and 19x19 3p/4p over 2p and 8x8
-                # - Use mixed/mcts-only for GPU nodes to utilize GPU properly
+                # Job configuration diversity - cycle through different AI methods
+                # LEARNED LESSONS - Prioritize varied AI methods for better training:
+                # - nn-only: Neural network evaluation (NNUE + Descent + MCTS)
+                # - best-vs-pool: Tournament-style asymmetric play (best model vs varied pool)
+                # - mcts-only: Pure Monte Carlo Tree Search
+                # - descent-only: Gradient descent based evaluation
+                # - minimax-only: Classic minimax with alpha-beta pruning
+                # - mixed: Heuristic fallback (reduced priority)
                 selfplay_configs = [
-                    # HIGH PRIORITY: Hexagonal multiplayer (most underserved)
-                    {"board_type": "hexagonal", "num_players": 4, "engine_mode": "mcts-only", "priority": 3},
-                    {"board_type": "hexagonal", "num_players": 3, "engine_mode": "mcts-only", "priority": 3},
-                    {"board_type": "hexagonal", "num_players": 4, "engine_mode": "mixed", "priority": 3},
-                    {"board_type": "hexagonal", "num_players": 3, "engine_mode": "mixed", "priority": 3},
-                    # HIGH PRIORITY: Square19 multiplayer
-                    {"board_type": "square19", "num_players": 4, "engine_mode": "mcts-only", "priority": 3},
-                    {"board_type": "square19", "num_players": 3, "engine_mode": "mcts-only", "priority": 3},
-                    {"board_type": "square19", "num_players": 4, "engine_mode": "mixed", "priority": 2},
-                    {"board_type": "square19", "num_players": 3, "engine_mode": "mixed", "priority": 2},
-                    # MEDIUM PRIORITY: Square8 multiplayer
-                    {"board_type": "square8", "num_players": 4, "engine_mode": "mixed", "priority": 2},
-                    {"board_type": "square8", "num_players": 3, "engine_mode": "mixed", "priority": 2},
-                    # LOW PRIORITY: 2-player (already have more data)
-                    {"board_type": "hexagonal", "num_players": 2, "engine_mode": "mixed", "priority": 1},
-                    {"board_type": "square19", "num_players": 2, "engine_mode": "mixed", "priority": 1},
-                    {"board_type": "square8", "num_players": 2, "engine_mode": "mixed", "priority": 1},
+                    # HIGHEST PRIORITY: Neural network based (best quality training data)
+                    {"board_type": "square8", "num_players": 2, "engine_mode": "nn-only", "priority": 5},
+                    {"board_type": "square8", "num_players": 3, "engine_mode": "nn-only", "priority": 5},
+                    {"board_type": "square8", "num_players": 4, "engine_mode": "nn-only", "priority": 4},
+                    {"board_type": "square19", "num_players": 2, "engine_mode": "nn-only", "priority": 4},
+                    {"board_type": "hexagonal", "num_players": 2, "engine_mode": "nn-only", "priority": 4},
+                    # HIGH PRIORITY: Tournament-style asymmetric play (diverse opponents)
+                    {"board_type": "square8", "num_players": 2, "engine_mode": "best-vs-pool", "priority": 4},
+                    {"board_type": "square8", "num_players": 3, "engine_mode": "best-vs-pool", "priority": 4},
+                    {"board_type": "square19", "num_players": 2, "engine_mode": "best-vs-pool", "priority": 3},
+                    {"board_type": "hexagonal", "num_players": 2, "engine_mode": "best-vs-pool", "priority": 3},
+                    # HIGH PRIORITY: MCTS for strategic depth (multiplayer)
+                    {"board_type": "hexagonal", "num_players": 4, "engine_mode": "mcts-only", "priority": 4},
+                    {"board_type": "hexagonal", "num_players": 3, "engine_mode": "mcts-only", "priority": 4},
+                    {"board_type": "square19", "num_players": 4, "engine_mode": "mcts-only", "priority": 4},
+                    {"board_type": "square19", "num_players": 3, "engine_mode": "mcts-only", "priority": 4},
+                    {"board_type": "square8", "num_players": 2, "engine_mode": "mcts-only", "priority": 3},
+                    # MEDIUM PRIORITY: Descent (gradient-based)
+                    {"board_type": "square8", "num_players": 2, "engine_mode": "descent-only", "priority": 3},
+                    {"board_type": "square8", "num_players": 3, "engine_mode": "descent-only", "priority": 3},
+                    {"board_type": "square19", "num_players": 2, "engine_mode": "descent-only", "priority": 2},
+                    {"board_type": "hexagonal", "num_players": 2, "engine_mode": "descent-only", "priority": 2},
+                    # MEDIUM PRIORITY: Minimax (classical approach)
+                    {"board_type": "square8", "num_players": 2, "engine_mode": "minimax-only", "priority": 2},
+                    {"board_type": "square8", "num_players": 3, "engine_mode": "minimax-only", "priority": 2},
+                    {"board_type": "square19", "num_players": 2, "engine_mode": "minimax-only", "priority": 2},
+                    {"board_type": "hexagonal", "num_players": 2, "engine_mode": "minimax-only", "priority": 2},
+                    # LOW PRIORITY: Mixed mode (heuristic fallback) - reduced priority
+                    {"board_type": "square8", "num_players": 4, "engine_mode": "mixed", "priority": 1},
+                    {"board_type": "square19", "num_players": 4, "engine_mode": "mixed", "priority": 1},
+                    {"board_type": "hexagonal", "num_players": 4, "engine_mode": "mixed", "priority": 1},
                 ]
 
                 # LEARNED LESSONS - Weighted selection favoring high priority configs
@@ -18917,6 +18935,10 @@ print(json.dumps({{
 
             if job_type == JobType.SELFPLAY:
                 # Normalize engine_mode to what run_self_play_soak.py supports.
+                # LEARNED LESSONS - Variety of AI methods for better training:
+                # - nn-only: Uses NNUE/neural network evaluation
+                # - best-vs-pool: Tournament-style with varied opponents
+                # - mcts-only/descent-only/minimax-only: Single AI method
                 supported_engine_modes = {
                     "descent-only",
                     "mixed",
@@ -18925,8 +18947,9 @@ print(json.dumps({{
                     "minimax-only",
                     "mcts-only",
                     "nn-only",
+                    "best-vs-pool",
                 }
-                engine_mode_norm = engine_mode if engine_mode in supported_engine_modes else "mixed"
+                engine_mode_norm = engine_mode if engine_mode in supported_engine_modes else "nn-only"
 
                 # Memory-safety defaults for large boards.
                 num_games = 1000
@@ -19012,12 +19035,13 @@ print(json.dumps({{
 
             elif job_type == JobType.CPU_SELFPLAY:
                 # Pure CPU selfplay for high-CPU nodes with limited GPU VRAM
-                # Uses CPU-friendly engine modes (heuristic-only, minimax-only)
+                # Uses CPU-efficient engine modes
                 # This enables utilizing excess CPU capacity on Vast.ai hosts etc.
 
-                # CPU-only engine modes - avoid MCTS/NN which benefit from GPU
-                cpu_engine_modes = {"heuristic-only", "minimax-only", "random-only"}
-                engine_mode_norm = engine_mode if engine_mode in cpu_engine_modes else "heuristic-only"
+                # CPU-friendly engine modes - include descent and mcts (work on CPU)
+                # Prefer descent-only and minimax-only for CPU efficiency
+                cpu_engine_modes = {"descent-only", "minimax-only", "mcts-only", "heuristic-only", "random-only"}
+                engine_mode_norm = engine_mode if engine_mode in cpu_engine_modes else "descent-only"
 
                 # CPU-only jobs can handle more games per batch
                 num_games = 2000

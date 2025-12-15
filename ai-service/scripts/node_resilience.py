@@ -594,7 +594,7 @@ class NodeResilience:
                         "--num-games", str(self.config.fallback_num_games_gpu),
                         "--max-moves", "10000",  # Avoid draws due to move limit
                         "--output-dir", output_dir,
-                        "--engine-mode", "mixed",
+                        "--engine-mode", "mixed",  # Hybrid uses GPU heuristic (fast fallback)
                         "--seed", str(int(time.time()) + gpu_id),
                     ]
 
@@ -637,7 +637,7 @@ class NodeResilience:
                         "--num-games", str(self.config.fallback_num_games_cpu),
                         "--board-type", self.config.fallback_board,
                         "--num-players", str(self.config.fallback_num_players),
-                        "--engine-mode", "mixed",
+                        "--engine-mode", "descent-only",  # Prefer descent for CPU (efficient)
                         "--max-moves", "10000",  # Avoid draws due to move limit
                         "--difficulty-band", "light",
                         "--log-jsonl", log_jsonl,
