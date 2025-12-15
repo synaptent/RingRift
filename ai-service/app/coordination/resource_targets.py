@@ -401,15 +401,18 @@ class ResourceTargetManager:
             )
         else:
             # Fallback to tier-based calculation (when hardware info not available)
-            # These values are consistent with resource_optimizer.get_max_selfplay_for_node_by_id()
+            # Values calibrated from observed workloads (GH200: 48 jobs at 70% GPU util)
             if tier == HostTier.HIGH_END:
-                max_selfplay = 12
+                # GH200/H100 class - very high capacity
+                max_selfplay = 48
             elif tier == HostTier.MID_TIER:
-                max_selfplay = 8
+                # A10/4090 class
+                max_selfplay = 16
             elif tier == HostTier.CPU_ONLY:
-                max_selfplay = 4
+                # CPU-only nodes
+                max_selfplay = 12
             else:
-                max_selfplay = 6  # LOW_TIER default
+                max_selfplay = 8  # LOW_TIER/consumer GPUs
 
         return HostTargets(
             host=host,

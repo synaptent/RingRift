@@ -2016,6 +2016,7 @@ def get_max_selfplay_for_node(
     cpu_count: int = 0,
     memory_gb: float = 0,
     has_gpu: bool = False,
+    gpu_vram_gb: float = 0,
 ) -> int:
     """Get hardware-aware max selfplay jobs for a node.
 
@@ -2024,60 +2025,154 @@ def get_max_selfplay_for_node(
 
     The calculation considers:
     1. GPU type and count (datacenter GPUs can handle more parallelism)
-    2. CPU count (for CPU-bound parts of hybrid selfplay)
-    3. Memory constraints (each job needs ~2GB)
+    2. GPU VRAM (more VRAM = more jobs, ~1.5-2GB per job)
+    3. CPU count (for CPU-bound parts of hybrid selfplay)
+    4. System memory constraints (each job needs ~2GB RAM)
+    5. High-CPU bonus: Machines with many CPUs can run hybrid jobs more efficiently
 
     Args:
         node_id: Node identifier (used for logging/debugging)
         gpu_count: Number of GPUs on node
         gpu_name: GPU model name (e.g., "H100", "RTX 4090")
         cpu_count: Number of CPU cores
-        memory_gb: Total memory in GB
+        memory_gb: Total system memory in GB
         has_gpu: Whether node has GPU capability
+        gpu_vram_gb: Total GPU VRAM in GB (optional, estimated from gpu_name if 0)
 
     Returns:
         Maximum recommended selfplay jobs for this node
     """
-    # Base limits - conservative to prevent process explosion
-    BASE_MAX = 8  # Default max per node
-    HIGH_END_MAX = 12  # For powerful nodes
+    # Limits calibrated from real workloads:
+    # - GH200 with 64 cores runs 40-50 jobs at 60-80% GPU util
+    # - Consumer GPUs need VRAM-aware limits
+    CONSUMER_MAX = 16  # Consumer GPUs (raised from 12 for high-CPU machines)
+    PROSUMER_MAX = 32  # High-end consumer (raised from 24)
+    DATACENTER_MAX = 64  # Datacenter GPUs (H100, GH200, A100)
+    HIGH_CPU_MAX = 128  # For machines with 100+ CPU cores
+
+    # High-CPU bonus: machines with 100+ cores can efficiently run more jobs
+    # because they can handle more CPU-side work per GPU operation
+    high_cpu_multiplier = 1.0
+    if cpu_count >= 256:
+        high_cpu_multiplier = 2.0  # 256+ cores = 2x multiplier
+    elif cpu_count >= 128:
+        high_cpu_multiplier = 1.5  # 128+ cores = 1.5x multiplier
+    elif cpu_count >= 64:
+        high_cpu_multiplier = 1.25  # 64+ cores = 1.25x multiplier
 
     if has_gpu and gpu_count > 0:
-        # GPU nodes: scale with GPU count and type
         gpu_upper = gpu_name.upper() if gpu_name else ""
 
-        # Jobs per GPU based on GPU tier
-        if any(g in gpu_upper for g in ["H100", "H200", "GH200", "A100", "L40"]):
-            jobs_per_gpu = 4  # Datacenter GPUs handle more parallelism
-        elif any(g in gpu_upper for g in ["A10", "4090", "5090", "3090"]):
-            jobs_per_gpu = 3  # High-end consumer/prosumer
-        elif any(g in gpu_upper for g in ["4080", "4070", "3080", "3070"]):
-            jobs_per_gpu = 2  # Mid-range consumer
+        # Estimate VRAM if not provided
+        estimated_vram = gpu_vram_gb
+        if estimated_vram <= 0:
+            # Estimate VRAM from GPU name
+            if any(g in gpu_upper for g in ["GH200"]):
+                estimated_vram = 480 * gpu_count  # 480GB unified memory
+            elif any(g in gpu_upper for g in ["H100", "H200"]):
+                estimated_vram = 80 * gpu_count
+            elif any(g in gpu_upper for g in ["A100"]):
+                estimated_vram = 80 * gpu_count  # Could be 40 or 80GB
+            elif any(g in gpu_upper for g in ["L40"]):
+                estimated_vram = 48 * gpu_count
+            elif any(g in gpu_upper for g in ["5090"]):
+                estimated_vram = 32 * gpu_count
+            elif any(g in gpu_upper for g in ["4090", "3090", "A10"]):
+                estimated_vram = 24 * gpu_count
+            elif any(g in gpu_upper for g in ["4060TI", "4060 TI"]):
+                estimated_vram = 16 * gpu_count  # 4060Ti has 16GB
+            elif any(g in gpu_upper for g in ["4080"]):
+                estimated_vram = 16 * gpu_count
+            elif any(g in gpu_upper for g in ["4070"]):
+                estimated_vram = 12 * gpu_count
+            elif any(g in gpu_upper for g in ["3080"]):
+                estimated_vram = 10 * gpu_count
+            elif any(g in gpu_upper for g in ["3070"]):
+                estimated_vram = 8 * gpu_count
+            elif any(g in gpu_upper for g in ["2060", "3060"]):
+                estimated_vram = 8 * gpu_count  # 2060S has 8GB
+            else:
+                estimated_vram = 8 * gpu_count  # Conservative default
+
+        # VRAM-based limit: ~2GB VRAM per job for inference
+        vram_based = int(estimated_vram / 2) if estimated_vram > 0 else 8
+
+        # Datacenter GPUs: scale with CPU cores (they have massive VRAM)
+        if any(g in gpu_upper for g in ["GH200"]):
+            # GH200 has 480GB unified memory - CPU is the bottleneck
+            cpu_based = int(cpu_count * 0.8) if cpu_count > 0 else 48
+            max_selfplay = min(cpu_based, vram_based, DATACENTER_MAX)
+
+        elif any(g in gpu_upper for g in ["H100", "H200"]):
+            # H100 has 80GB VRAM - can handle ~20-30 jobs per GPU
+            gpu_based = gpu_count * 24
+            cpu_based = int(cpu_count * 0.5) if cpu_count > 0 else 32
+            max_selfplay = min(gpu_based, cpu_based, vram_based, DATACENTER_MAX)
+
+        elif any(g in gpu_upper for g in ["A100", "L40"]):
+            # A100 (40-80GB), L40 (48GB) - moderate parallelism
+            gpu_based = gpu_count * 16
+            cpu_based = int(cpu_count * 0.4) if cpu_count > 0 else 24
+            max_selfplay = min(gpu_based, cpu_based, vram_based, DATACENTER_MAX)
+
+        elif any(g in gpu_upper for g in ["5090"]):
+            # RTX 5090 (32GB VRAM) - very high-end consumer
+            gpu_based = gpu_count * 12
+            cpu_based = int(cpu_count * 0.3 * high_cpu_multiplier) if cpu_count > 0 else 48
+            max_selfplay = min(gpu_based, cpu_based, vram_based, HIGH_CPU_MAX)
+
+        elif any(g in gpu_upper for g in ["A10", "4090", "3090"]):
+            # High-end consumer/prosumer (24GB VRAM)
+            gpu_based = gpu_count * 10  # Raised from 8
+            cpu_based = int(cpu_count * 0.35 * high_cpu_multiplier) if cpu_count > 0 else 16
+            max_selfplay = min(gpu_based, cpu_based, vram_based, PROSUMER_MAX)
+
+        elif any(g in gpu_upper for g in ["4080", "4060TI", "4060 TI"]):
+            # 16GB VRAM cards - can handle more jobs
+            gpu_based = gpu_count * 8  # Raised from 6
+            cpu_based = int(cpu_count * 0.3 * high_cpu_multiplier) if cpu_count > 0 else 12
+            max_selfplay = min(gpu_based, cpu_based, vram_based, PROSUMER_MAX)
+
+        elif any(g in gpu_upper for g in ["4070", "3080", "4060"]):
+            # 10-12GB VRAM cards
+            gpu_based = gpu_count * 6
+            cpu_based = int(cpu_count * 0.25 * high_cpu_multiplier) if cpu_count > 0 else 10
+            max_selfplay = min(gpu_based, cpu_based, vram_based, CONSUMER_MAX)
+
+        elif any(g in gpu_upper for g in ["3070", "3060", "2080", "2070", "2060"]):
+            # 8GB VRAM - more constrained by VRAM
+            # But high-CPU machines can still benefit from more parallelism
+            gpu_based = gpu_count * 4
+            cpu_based = int(cpu_count * 0.2 * high_cpu_multiplier) if cpu_count > 0 else 8
+            # Allow higher limit for high-CPU machines (up to VRAM limit)
+            tier_max = 12 if cpu_count >= 64 else 10
+            max_selfplay = min(gpu_based, cpu_based, vram_based, tier_max)
+
         else:
-            jobs_per_gpu = 2  # Default for unknown GPUs
+            # Unknown GPU - conservative but respect high-CPU
+            gpu_based = gpu_count * 4
+            cpu_based = int(cpu_count * 0.2 * high_cpu_multiplier) if cpu_count > 0 else 8
+            max_selfplay = min(gpu_based, cpu_based, vram_based, CONSUMER_MAX)
 
-        gpu_based_max = gpu_count * jobs_per_gpu
-
-        # Also consider CPU capacity (hybrid selfplay has CPU-bound phases)
-        cpu_based_max = max(4, cpu_count // 4) if cpu_count > 0 else BASE_MAX
-
-        # Memory constraint (~2GB per job)
-        mem_based_max = max(4, int(memory_gb / 2)) if memory_gb > 0 else 32
-
-        # Take the minimum of all constraints, capped at HIGH_END_MAX
-        max_selfplay = min(gpu_based_max, cpu_based_max, mem_based_max, HIGH_END_MAX)
+        # System memory constraint (~2GB RAM per job)
+        if memory_gb > 0:
+            mem_based = int(memory_gb / 2)
+            max_selfplay = min(max_selfplay, mem_based)
 
     else:
         # CPU-only nodes: scale with CPU count
+        # Higher multiplier for very high-CPU machines
         if cpu_count > 0:
-            cpu_based_max = max(2, cpu_count // 4)  # ~1 job per 4 cores
-            mem_based_max = max(2, int(memory_gb / 2)) if memory_gb > 0 else 16
-            max_selfplay = min(cpu_based_max, mem_based_max, BASE_MAX)
+            base_multiplier = 0.3 if cpu_count < 64 else 0.4 if cpu_count < 128 else 0.5
+            cpu_based = int(cpu_count * base_multiplier)
+            mem_based = int(memory_gb / 2) if memory_gb > 0 else 64
+            # Higher cap for high-CPU machines
+            cap = 32 if cpu_count < 64 else 64 if cpu_count < 256 else 128
+            max_selfplay = min(cpu_based, mem_based, cap)
         else:
-            # Unknown CPU count - use conservative default
-            max_selfplay = 4
+            max_selfplay = 8  # Conservative default
 
-    # Apply memory constraint for all nodes
+    # Low memory systems need extra constraints
     if memory_gb > 0 and memory_gb < 16:
         max_selfplay = min(max_selfplay, max(2, int(memory_gb / 2)))
 

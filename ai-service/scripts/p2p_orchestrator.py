@@ -17753,16 +17753,30 @@ print(json.dumps({{
             )
         else:
             # Minimal fallback when resource_optimizer unavailable
+            # Values calibrated from observed workloads (GH200: 48 jobs at 70% GPU)
             if has_gpu:
                 gpu_upper = gpu_name.upper()
-                if any(g in gpu_upper for g in ["H100", "H200", "GH200"]):
-                    max_selfplay = 12
-                elif any(g in gpu_upper for g in ["A100", "4090", "A10"]):
-                    max_selfplay = 8
+                if any(g in gpu_upper for g in ["GH200"]):
+                    # GH200 with unified 480GB memory - CPU is bottleneck
+                    max_selfplay = int(cpu_count * 0.8) if cpu_count > 0 else 48
+                elif any(g in gpu_upper for g in ["H100", "H200"]):
+                    max_selfplay = min(int(cpu_count * 0.5), 48) if cpu_count > 0 else 32
+                elif any(g in gpu_upper for g in ["A100", "L40"]):
+                    max_selfplay = min(int(cpu_count * 0.4), 32) if cpu_count > 0 else 24
+                elif any(g in gpu_upper for g in ["5090"]):
+                    # RTX 5090 (32GB) - very high capacity
+                    max_selfplay = min(int(cpu_count * 0.3), gpu_count * 12, 64) if cpu_count > 0 else 48
+                elif any(g in gpu_upper for g in ["A10", "4090", "3090"]):
+                    max_selfplay = min(int(cpu_count * 0.3), 24) if cpu_count > 0 else 16
+                elif any(g in gpu_upper for g in ["4080", "4070", "3080", "4060"]):
+                    max_selfplay = min(int(cpu_count * 0.25), 12) if cpu_count > 0 else 8
+                elif any(g in gpu_upper for g in ["3070", "3060", "2060", "2070", "2080"]):
+                    max_selfplay = min(int(cpu_count * 0.2), 10) if cpu_count > 0 else 6
                 else:
-                    max_selfplay = 6
+                    max_selfplay = min(int(cpu_count * 0.2), 8) if cpu_count > 0 else 6
             else:
-                max_selfplay = min(8, max(2, cpu_count // 4)) if cpu_count > 0 else 4
+                # CPU-only: ~0.3 jobs per core, capped at 32
+                max_selfplay = min(int(cpu_count * 0.3), 32) if cpu_count > 0 else 8
 
         target_selfplay = max_selfplay
 
