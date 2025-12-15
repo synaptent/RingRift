@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "description": "Optimized hyperparameters per board/player configuration",
-  "last_updated": "2024-12-14T16:30:00Z",
+  "last_updated": "2025-12-15T01:00:00Z",
 
   "defaults": {
     "learning_rate": 0.0003,
@@ -19,24 +19,24 @@
 
   "configs": {
     "square8_2p": {
-      "optimized": false,
-      "confidence": "low",
-      "tuning_method": "heuristic_estimate",
-      "last_tuned": null,
-      "tuning_trials": 0,
+      "optimized": true,
+      "confidence": "high",
+      "tuning_method": "bayesian_optimization",
+      "last_tuned": "2025-12-15T00:52:00Z",
+      "tuning_trials": 22,
       "hyperparameters": {
-        "learning_rate": 0.0009,
-        "batch_size": 64,
-        "hidden_dim": 512,
-        "num_hidden_layers": 5,
-        "weight_decay": 0.00028,
-        "dropout": 0.135,
+        "learning_rate": 0.000748,
+        "batch_size": 128,
+        "hidden_dim": 768,
+        "num_hidden_layers": 2,
+        "weight_decay": 8.787e-6,
+        "dropout": 0.44,
         "epochs": 50,
         "early_stopping_patience": 15,
-        "value_weight": 1.82,
-        "policy_weight": 1.66
+        "value_weight": 0.625,
+        "policy_weight": 1.57
       },
-      "notes": "Initial estimate from random/bayesian search with simulated evaluation. Needs real validation."
+      "notes": "Optimized via HP tuning on H100. Trial 1 achieved best val_loss=0.4325, combined_score=1.0"
     },
     "square8_3p": {
       "optimized": false,

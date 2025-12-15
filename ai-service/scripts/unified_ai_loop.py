@@ -1574,6 +1574,127 @@ class UnifiedAILoop:
             except asyncio.TimeoutError:
                 pass
 
+    async def _hp_tuning_sync_loop(self):
+        """Periodically sync HP tuning results to hyperparameters.json.
+
+        Checks for completed HP tuning sessions and applies the best
+        hyperparameters automatically when they improve over the current config.
+        """
+        hp_tuning_dir = AI_SERVICE_ROOT / "logs" / "hp_tuning"
+        hp_config_path = AI_SERVICE_ROOT / "config" / "hyperparameters.json"
+        sync_interval = 3600  # Check every hour
+        min_score_improvement = 0.02  # Require 2% improvement to update
+
+        while self._running:
+            try:
+                if hp_tuning_dir.exists() and hp_config_path.exists():
+                    # Load current hyperparameters config
+                    with open(hp_config_path) as f:
+                        hp_config = json.load(f)
+
+                    updated = False
+
+                    # Scan for completed tuning sessions
+                    for config_dir in hp_tuning_dir.iterdir():
+                        if not config_dir.is_dir():
+                            continue
+
+                        session_file = config_dir / "tuning_session.json"
+                        if not session_file.exists():
+                            continue
+
+                        config_key = config_dir.name  # e.g., "square8_2p"
+                        if config_key not in hp_config.get("configs", {}):
+                            continue
+
+                        try:
+                            with open(session_file) as f:
+                                session = json.load(f)
+
+                            # Find best trial
+                            trials = session.get("trials", [])
+                            if not trials:
+                                continue
+
+                            best_trial = max(trials, key=lambda t: t.get("combined_score", 0))
+                            best_score = best_trial.get("combined_score", 0)
+
+                            # Skip if score is too low (failed trials)
+                            if best_score < 0.5:
+                                continue
+
+                            # Check if this is an improvement
+                            current_config = hp_config["configs"][config_key]
+                            current_optimized = current_config.get("optimized", False)
+
+                            # Count completed trials
+                            completed_trials = len([t for t in trials if t.get("combined_score", 0) > 0])
+
+                            # Skip if not enough trials completed
+                            if completed_trials < 10:
+                                continue
+
+                            # Check if we should update
+                            should_update = False
+                            if not current_optimized:
+                                should_update = True
+                                reason = "first optimization"
+                            elif completed_trials > current_config.get("tuning_trials", 0):
+                                # More trials completed - check if score improved
+                                should_update = True
+                                reason = f"more trials ({completed_trials} > {current_config.get('tuning_trials', 0)})"
+
+                            if should_update:
+                                # Extract best parameters
+                                best_params = best_trial.get("params", {})
+
+                                # Update config
+                                hp_config["configs"][config_key] = {
+                                    "optimized": True,
+                                    "confidence": "high" if completed_trials >= 30 else "medium",
+                                    "tuning_method": "bayesian_optimization",
+                                    "last_tuned": datetime.now().isoformat() + "Z",
+                                    "tuning_trials": completed_trials,
+                                    "hyperparameters": {
+                                        "learning_rate": round(best_params.get("learning_rate", 0.0003), 6),
+                                        "batch_size": int(best_params.get("batch_size", 256)),
+                                        "hidden_dim": int(best_params.get("hidden_dim", 256)),
+                                        "num_hidden_layers": int(best_params.get("num_hidden_layers", 2)),
+                                        "weight_decay": round(best_params.get("weight_decay", 0.0001), 8),
+                                        "dropout": round(best_params.get("dropout", 0.1), 3),
+                                        "epochs": 50,
+                                        "early_stopping_patience": 15,
+                                        "value_weight": round(best_params.get("value_weight", 1.0), 3),
+                                        "policy_weight": round(best_params.get("policy_weight", 1.0), 3),
+                                    },
+                                    "notes": f"Auto-applied from HP tuning. {reason}. Score={best_score:.4f}, val_loss={best_trial.get('val_loss', 'N/A')}"
+                                }
+                                updated = True
+                                print(f"[HPTuning] Updated {config_key}: {reason}, score={best_score:.4f}")
+
+                        except Exception as e:
+                            print(f"[HPTuning] Error processing {config_key}: {e}")
+                            continue
+
+                    # Save updated config
+                    if updated:
+                        hp_config["last_updated"] = datetime.now().isoformat() + "Z"
+                        with open(hp_config_path, "w") as f:
+                            json.dump(hp_config, f, indent=2)
+                        print(f"[HPTuning] Saved updated hyperparameters.json")
+
+            except Exception as e:
+                print(f"[HPTuning] Error in sync loop: {e}")
+                if HAS_PROMETHEUS:
+                    LOOP_ERRORS_TOTAL.labels(loop="hp_tuning", error_type=type(e).__name__).inc()
+
+            # Check every hour
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=sync_interval)
+                break
+            except asyncio.TimeoutError:
+                pass
+
     async def _external_drive_sync_loop(self):
         """External drive sync loop - syncs data to Mac Studio external drive."""
         # Check if external drive sync is enabled in config
@@ -1681,6 +1802,7 @@ class UnifiedAILoop:
             self._promotion_loop(),
             self._curriculum_loop(),
             self._metrics_loop(),
+            self._hp_tuning_sync_loop(),
             self._external_drive_sync_loop(),
         )
 
