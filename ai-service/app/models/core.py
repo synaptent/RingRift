@@ -3,10 +3,48 @@ Pydantic Models for RingRift Game State
 Mirrors TypeScript types from src/shared/types/game.ts
 """
 
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict, Tuple
+import pydantic
+from pydantic import Field
+from typing import Optional, List, Dict, Tuple, Any, TypeVar
 from enum import Enum
 from datetime import datetime
+
+# Pydantic v1/v2 compatibility layer
+# The codebase uses Pydantic v2 method names but v1 is installed.
+# Add v2 method aliases to v1 BaseModel.
+_PYDANTIC_VERSION = int(pydantic.VERSION.split('.')[0])
+
+if _PYDANTIC_VERSION >= 2:
+    from pydantic import BaseModel, ConfigDict
+else:
+    # Pydantic v1: add v2 method aliases
+    from pydantic import BaseModel as _BaseModel
+
+    T = TypeVar('T', bound='BaseModel')
+
+    class BaseModel(_BaseModel):
+        """Pydantic v1 BaseModel with v2 method aliases for compatibility."""
+
+        def model_copy(self: T, *, update: Optional[Dict[str, Any]] = None, deep: bool = False) -> T:
+            """v2 alias for v1's copy()"""
+            return self.copy(update=update, deep=deep)
+
+        def model_dump(self, *, by_alias: bool = False, **kwargs) -> Dict[str, Any]:
+            """v2 alias for v1's dict()"""
+            return self.dict(by_alias=by_alias, **kwargs)
+
+        @classmethod
+        def model_validate(cls: type[T], obj: Any) -> T:
+            """v2 alias for v1's parse_obj()"""
+            return cls.parse_obj(obj)
+
+        @classmethod
+        def model_construct(cls: type[T], **values) -> T:
+            """v2 alias for v1's construct()"""
+            return cls.construct(**values)
+
+    # ConfigDict doesn't exist in v1 but is imported - create a no-op
+    ConfigDict = dict
 
 
 class BoardType(str, Enum):

@@ -26,6 +26,7 @@ export type TeachingTopic =
   | 'territory'
   | 'active_no_moves'
   | 'forced_elimination'
+  | 'recovery_action'
   | 'victory_elimination'
   | 'victory_territory'
   | 'victory_stalemate';
@@ -174,6 +175,35 @@ const TEACHING_CONTENT: Record<TeachingTopic, TeachingContent> = {
     ],
     relatedPhases: ['movement', 'territory_processing', 'forced_elimination'],
   },
+  // GAP-RECOV-01: TeachingOverlay topic for recovery action
+  recovery_action: {
+    title: 'Recovery Action',
+    icon: '🔄',
+    // Recovery action description based on RR-CANON-R110–R115
+    description:
+      'When you have no stacks but still own markers and have buried rings inside opponent stacks, you can use a Recovery Action to stay in the game by sliding markers to form lines.',
+    tips: [
+      // GAP-RECOV-01: Eligibility explanation
+      'WHEN CAN YOU RECOVER? You are eligible for recovery when: (1) you control NO stacks, (2) you own at least one marker on the board, and (3) you have at least one buried ring (your color inside any stack, not as top ring).',
+      // GAP-RECOV-01: Rings in hand clarification
+      'RINGS IN HAND: Having rings in hand does NOT prevent recovery eligibility. If you have rings but no stacks to place them on, you can still use recovery action if you have markers and buried rings.',
+      // GAP-RECOV-02: Recovery action mechanics
+      'HOW TO RECOVER: Slide one of your markers to an adjacent empty cell. If the slide completes a line of markers (at least the required line length), the line collapses into territory.',
+      // GAP-RECOV-02: Fallback recovery
+      'FALLBACK RECOVERY: If no slide can form a line anywhere on the board, you may slide a marker to any adjacent empty cell, or perform a "stack-strike" onto an adjacent stack (sacrificing the marker to eliminate the top ring).',
+      // GAP-RECOV-03: Cost and payment
+      'RECOVERY COST: Exact-length lines cost 1 buried ring. Overlength lines offer a choice: Option 1 (collapse all) costs 1 buried ring; Option 2 (collapse minimum) is FREE. Fallback recovery costs 1 buried ring.',
+      // GAP-RECOV-03: Temporary vs permanent elimination distinction
+      'TEMPORARILY ELIMINATED vs PERMANENTLY ELIMINATED: You are "temporarily eliminated" (can still recover) if you have markers + buried rings. You are "permanently eliminated" only when you have NO rings anywhere (no stacks, no hand, no buried rings).',
+      // GAP-RECOV-04: Recovery vs real actions for LPS
+      'RECOVERY AND LPS: Recovery actions do NOT count as "real actions" for Last Player Standing. Like forced elimination, recovery keeps you in the game but does not prevent an opponent from winning via LPS.',
+      // Skip option
+      'SKIP RECOVERY: You may choose to skip recovery entirely, preserving your buried rings for a future turn.',
+      // Rules reference
+      'For detailed recovery mechanics, see ringrift_complete_rules §4.5 and RULES_CANONICAL_SPEC R110–R115.',
+    ],
+    relatedPhases: ['movement'],
+  },
   victory_elimination: {
     title: TEACHING_TOPICS_COPY.victory_elimination.heading,
     icon: '💎',
@@ -209,6 +239,10 @@ const TEACHING_CONTENT: Record<TeachingTopic, TeachingContent> = {
       'LPS requires THREE rounds: Across all three rounds, you must have and take at least one real action while all others have none. Victory is declared after the third round completes.',
       // GAP-LPS-03: Emphasize FE ≠ real action
       'Forced elimination is NOT a real action: even if you are forced to eliminate caps, that does not count as a move for LPS purposes. If your opponent has real moves and you only have forced eliminations, they have not lost yet.',
+      // GAP-RECOV-04: Recovery also ≠ real action for LPS
+      "Recovery actions are NOT real actions: like forced elimination, recovery slides (marker slides by temporarily eliminated players) do not count toward breaking an opponent's LPS progress.",
+      // Real actions summary for clarity
+      'REAL ACTIONS FOR LPS: Only placements, movements, and captures count as real actions. Forced elimination and recovery do NOT count for LPS.',
       // === Structural Stalemate ===
       'STRUCTURAL STALEMATE: This happens when NO player has ANY real moves or forced eliminations available – the game is truly stuck.',
       // GAP-STALE-04: Distinction between single-player ANM and global stalemate
@@ -808,6 +842,7 @@ export function TeachingTopicButtons({
     { topic: 'line_bonus', label: 'Lines', icon: '═' },
     { topic: 'line_territory_order', label: 'Phase Order', icon: '📊' },
     { topic: 'territory', label: 'Territory', icon: '▣' },
+    { topic: 'recovery_action', label: 'Recovery', icon: '🔄' },
   ];
 
   const victoryTopics: { topic: TeachingTopic; label: string; icon: string }[] = [

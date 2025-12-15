@@ -644,8 +644,22 @@ def main():
             matches = glob.glob(pattern)
             db_paths.extend(Path(m) for m in matches)
 
+    # Determine teacher path (either single model or ensemble)
+    if args.ensemble:
+        teacher_path = Path(args.ensemble)
+        logger.info(f"Using ensemble model as teacher: {teacher_path}")
+        # Mark output as ensemble-distilled
+        student_config = StudentConfig(
+            name=f"ensemble_{student_config.name}",
+            hidden_size=student_config.hidden_size,
+            num_layers=student_config.num_layers,
+            dropout=student_config.dropout,
+        )
+    else:
+        teacher_path = Path(args.teacher)
+
     result = run_distillation(
-        teacher_path=Path(args.teacher),
+        teacher_path=teacher_path,
         student_config=student_config,
         distillation_config=distillation_config,
         db_paths=db_paths,

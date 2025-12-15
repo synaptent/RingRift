@@ -146,7 +146,7 @@ export const EnvSchema = z.object({
   AI_SERVICE_URL: z.string().optional(),
 
   /** AI service request timeout (milliseconds) */
-  AI_SERVICE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  AI_SERVICE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
 
   /** AI rules request timeout (milliseconds) */
   AI_RULES_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),

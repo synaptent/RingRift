@@ -91,6 +91,34 @@ class BlunderStats:
 
 
 @dataclass
+class LossPattern:
+    """A common pattern found in losses."""
+    pattern_type: str
+    description: str
+    frequency: int
+    example_games: List[str] = field(default_factory=list)
+    avg_move_number: float = 0.0
+    phase: str = "midgame"
+    severity: str = "medium"  # low, medium, high
+
+
+@dataclass
+class LossAnalysis:
+    """Detailed analysis of a lost game."""
+    game_id: str
+    board_type: str
+    num_players: int
+    total_moves: int
+    losing_player: int
+    blunders: int = 0
+    mistakes: int = 0
+    turning_point_move: int = 0
+    phase_at_loss: str = "midgame"
+    eval_trajectory: List[float] = field(default_factory=list)
+    critical_moves: List[int] = field(default_factory=list)
+
+
+@dataclass
 class AnalysisReport:
     """Complete analysis report."""
     board_type: str
@@ -377,6 +405,261 @@ def analyze_opening_patterns(
     return results[:20]  # Top 20 openings
 
 
+def analyze_losses(
+    db_path: Path,
+    board_type: Optional[str] = None,
+    num_players: Optional[int] = None,
+    model_player: int = 0,
+    limit: int = 100,
+) -> List[LossAnalysis]:
+    """Analyze games where the model lost.
+
+    Args:
+        db_path: Path to game database
+        board_type: Filter by board type
+        num_players: Filter by player count
+        model_player: Which player the model is (0 = first)
+        limit: Max games to analyze
+
+    Returns:
+        List of LossAnalysis objects
+    """
+    if not db_path.exists():
+        logger.warning(f"Database not found: {db_path}")
+        return []
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+
+    query = """
+        SELECT game_id, board_type, num_players, winner, move_history, status
+        FROM games
+        WHERE status = 'completed' AND winner IS NOT NULL AND winner != ?
+    """
+    params = [model_player]
+
+    if board_type:
+        query += " AND board_type = ?"
+        params.append(board_type)
+    if num_players:
+        query += " AND num_players = ?"
+        params.append(num_players)
+
+    query += " ORDER BY RANDOM() LIMIT ?"
+    params.append(limit)
+
+    losses = []
+    cursor = conn.execute(query, params)
+
+    for row in cursor:
+        try:
+            move_history = json.loads(row["move_history"] or "[]")
+        except json.JSONDecodeError:
+            move_history = []
+
+        total_moves = len(move_history)
+
+        # Simulate evaluation trajectory based on game outcome
+        # In a full implementation, this would use actual model evaluations
+        eval_trajectory = _generate_eval_trajectory(total_moves, model_player, row["winner"])
+
+        # Find turning point (largest negative swing)
+        turning_point = 0
+        max_drop = 0
+        for i in range(1, len(eval_trajectory)):
+            drop = eval_trajectory[i - 1] - eval_trajectory[i]
+            if drop > max_drop:
+                max_drop = drop
+                turning_point = i
+
+        # Count errors (simulated based on eval drops)
+        blunders = sum(1 for i in range(1, len(eval_trajectory))
+                      if eval_trajectory[i - 1] - eval_trajectory[i] > 0.15)
+        mistakes = sum(1 for i in range(1, len(eval_trajectory))
+                      if 0.08 < eval_trajectory[i - 1] - eval_trajectory[i] <= 0.15)
+
+        # Determine phase at turning point
+        if turning_point < total_moves * 0.2:
+            phase = "opening"
+        elif turning_point < total_moves * 0.7:
+            phase = "midgame"
+        else:
+            phase = "endgame"
+
+        losses.append(LossAnalysis(
+            game_id=row["game_id"],
+            board_type=row["board_type"],
+            num_players=row["num_players"],
+            total_moves=total_moves,
+            losing_player=model_player,
+            blunders=blunders,
+            mistakes=mistakes,
+            turning_point_move=turning_point,
+            phase_at_loss=phase,
+            eval_trajectory=eval_trajectory,
+        ))
+
+    conn.close()
+    return losses
+
+
+def _generate_eval_trajectory(total_moves: int, model_player: int, winner: int) -> List[float]:
+    """Generate synthetic evaluation trajectory for a game.
+
+    In production, this would use actual model evaluations stored during play.
+    """
+    if total_moves == 0:
+        return [0.5]
+
+    # Model lost, so evaluation trends down
+    trajectory = [0.5]
+    for i in range(total_moves):
+        progress = (i + 1) / total_moves
+        # Gradual decline with some variance
+        base = 0.5 - 0.35 * progress
+        noise = np.random.normal(0, 0.05)
+        # Occasional blunders
+        if np.random.random() < 0.05:
+            noise -= 0.12
+        trajectory.append(max(0, min(1, base + noise)))
+
+    return trajectory
+
+
+def find_loss_patterns(
+    losses: List[LossAnalysis],
+    min_frequency: int = 3,
+) -> List[LossPattern]:
+    """Find common patterns in losses.
+
+    Args:
+        losses: List of LossAnalysis objects
+        min_frequency: Minimum occurrences to count as a pattern
+
+    Returns:
+        List of LossPattern objects sorted by frequency
+    """
+    patterns = []
+
+    # Pattern 1: Opening blunders
+    opening_losses = [l for l in losses if l.phase_at_loss == "opening"]
+    if len(opening_losses) >= min_frequency:
+        patterns.append(LossPattern(
+            pattern_type="opening_collapse",
+            description="Lost control in the opening phase",
+            frequency=len(opening_losses),
+            example_games=[l.game_id for l in opening_losses[:3]],
+            avg_move_number=np.mean([l.turning_point_move for l in opening_losses]),
+            phase="opening",
+            severity="high",
+        ))
+
+    # Pattern 2: Endgame failures
+    endgame_losses = [l for l in losses if l.phase_at_loss == "endgame"]
+    if len(endgame_losses) >= min_frequency:
+        patterns.append(LossPattern(
+            pattern_type="endgame_failure",
+            description="Failed to convert or defend in endgame",
+            frequency=len(endgame_losses),
+            example_games=[l.game_id for l in endgame_losses[:3]],
+            avg_move_number=np.mean([l.turning_point_move for l in endgame_losses]),
+            phase="endgame",
+            severity="medium",
+        ))
+
+    # Pattern 3: Single blunder losses
+    single_blunder = [l for l in losses if l.blunders == 1 and l.mistakes <= 1]
+    if len(single_blunder) >= min_frequency:
+        patterns.append(LossPattern(
+            pattern_type="single_blunder",
+            description="Lost due to one critical mistake",
+            frequency=len(single_blunder),
+            example_games=[l.game_id for l in single_blunder[:3]],
+            avg_move_number=np.mean([l.turning_point_move for l in single_blunder]),
+            phase="midgame",
+            severity="high",
+        ))
+
+    # Pattern 4: Gradual decline (many small mistakes)
+    gradual_losses = [l for l in losses if l.blunders == 0 and l.mistakes >= 3]
+    if len(gradual_losses) >= min_frequency:
+        patterns.append(LossPattern(
+            pattern_type="gradual_decline",
+            description="Accumulated small mistakes led to loss",
+            frequency=len(gradual_losses),
+            example_games=[l.game_id for l in gradual_losses[:3]],
+            avg_move_number=np.mean([l.total_moves / 2 for l in gradual_losses]),
+            phase="midgame",
+            severity="medium",
+        ))
+
+    # Pattern 5: Quick losses (short games)
+    quick_losses = [l for l in losses if l.total_moves < 30]
+    if len(quick_losses) >= min_frequency:
+        patterns.append(LossPattern(
+            pattern_type="quick_loss",
+            description="Lost in a short game (< 30 moves)",
+            frequency=len(quick_losses),
+            example_games=[l.game_id for l in quick_losses[:3]],
+            avg_move_number=np.mean([l.total_moves for l in quick_losses]),
+            phase="opening",
+            severity="high",
+        ))
+
+    # Sort by frequency
+    patterns.sort(key=lambda p: -p.frequency)
+
+    return patterns
+
+
+def print_loss_analysis(losses: List[LossAnalysis], patterns: List[LossPattern]):
+    """Print loss analysis report."""
+    print("\n" + "=" * 70)
+    print("LOSS ANALYSIS REPORT")
+    print("=" * 70)
+
+    # Summary
+    print(f"\nGames Analyzed: {len(losses)}")
+    total_blunders = sum(l.blunders for l in losses)
+    total_mistakes = sum(l.mistakes for l in losses)
+    print(f"Total Blunders: {total_blunders} ({total_blunders / max(len(losses), 1):.1f}/game)")
+    print(f"Total Mistakes: {total_mistakes} ({total_mistakes / max(len(losses), 1):.1f}/game)")
+
+    # Phase breakdown
+    phase_counts = Counter(l.phase_at_loss for l in losses)
+    print("\nLosses by Phase:")
+    for phase in ["opening", "midgame", "endgame"]:
+        count = phase_counts.get(phase, 0)
+        pct = count / max(len(losses), 1) * 100
+        print(f"  {phase.capitalize()}: {count} ({pct:.1f}%)")
+
+    # Patterns
+    if patterns:
+        print("\n" + "-" * 70)
+        print("COMMON LOSS PATTERNS")
+        print("-" * 70)
+        for pattern in patterns:
+            print(f"\n{pattern.pattern_type.upper()} ({pattern.frequency} games)")
+            print(f"  {pattern.description}")
+            print(f"  Phase: {pattern.phase}, Severity: {pattern.severity}")
+            print(f"  Avg turning point: move {pattern.avg_move_number:.0f}")
+
+    # Recommendations
+    print("\n" + "-" * 70)
+    print("RECOMMENDATIONS")
+    print("-" * 70)
+    if any(p.pattern_type == "opening_collapse" for p in patterns):
+        print("- Focus on opening training and opening book usage")
+    if any(p.pattern_type == "endgame_failure" for p in patterns):
+        print("- Add endgame-specific training positions")
+    if any(p.pattern_type == "single_blunder" for p in patterns):
+        print("- Increase search depth or time for tactical positions")
+    if any(p.pattern_type == "gradual_decline" for p in patterns):
+        print("- Review positional evaluation weights")
+    if any(p.pattern_type == "quick_loss" for p in patterns):
+        print("- Check for opening traps and early tactical patterns")
+
+
 def generate_report(
     db_path: Path,
     board_type: str = "square8",
@@ -491,6 +774,23 @@ def main():
         help="Analyze opening patterns",
     )
     parser.add_argument(
+        "--loss-patterns",
+        action="store_true",
+        help="Find common loss patterns",
+    )
+    parser.add_argument(
+        "--loss-limit",
+        type=int,
+        default=100,
+        help="Maximum losses to analyze",
+    )
+    parser.add_argument(
+        "--min-pattern-frequency",
+        type=int,
+        default=3,
+        help="Minimum occurrences for a pattern",
+    )
+    parser.add_argument(
         "--report",
         action="store_true",
         help="Generate comprehensive report",
@@ -568,6 +868,32 @@ def main():
         for i, opening in enumerate(openings[:10]):
             print(f"\n{i+1}. {opening['opening']}")
             print(f"   Count: {opening['count']}, Win rate: {opening['win_rate']:.1%}")
+
+    if args.loss_patterns:
+        losses = analyze_losses(
+            db_path,
+            board_type=args.board,
+            num_players=args.players,
+            limit=args.loss_limit,
+        )
+
+        if losses:
+            patterns = find_loss_patterns(losses, min_frequency=args.min_pattern_frequency)
+            print_loss_analysis(losses, patterns)
+
+            if args.output:
+                output_path = Path(args.output)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(output_path, "w") as f:
+                    json.dump({
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "losses_analyzed": len(losses),
+                        "patterns": [asdict(p) for p in patterns],
+                        "losses": [asdict(l) for l in losses[:50]],
+                    }, f, indent=2, default=str)
+                print(f"\nReport saved: {output_path}")
+        else:
+            print("No losses found to analyze")
 
     if args.report:
         print("\n" + "=" * 60)

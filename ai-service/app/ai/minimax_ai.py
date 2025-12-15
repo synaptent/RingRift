@@ -579,7 +579,8 @@ class MinimaxAI(HeuristicAI):
         Minimax recursive function with Paranoid algorithm support
         """
         self.nodes_visited += 1
-        if self.nodes_visited % 1000 == 0:
+        # Check timeout every 100 nodes for faster response to time limits
+        if self.nodes_visited % 100 == 0:
             if time.time() - self.start_time > self.time_limit:
                 # Return heuristic to unwind safely, but result will be
                 # discarded by outer loop check
@@ -810,7 +811,8 @@ class MinimaxAI(HeuristicAI):
         during tree traversal.
         """
         self.nodes_visited += 1
-        if self.nodes_visited % 1000 == 0:
+        # Check timeout every 100 nodes for faster response to time limits
+        if self.nodes_visited % 100 == 0:
             if time.time() - self.start_time > self.time_limit:
                 return self._evaluate_mutable(state)
 

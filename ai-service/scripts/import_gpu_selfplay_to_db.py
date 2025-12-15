@@ -103,6 +103,7 @@ def _find_matching_candidate_move(
     desired_type: MoveType,
     from_pos: Optional[Position],
     to_pos: Optional[Position],
+    must_move_from_key: Optional[str] = None,
 ) -> Optional[Move]:
     from_key = from_pos.to_key() if from_pos else None
     to_key = to_pos.to_key() if to_pos else None
@@ -113,10 +114,21 @@ def _find_matching_candidate_move(
     for candidate in candidates:
         if candidate.type != desired_type:
             continue
+
         cand_from = candidate.from_pos.to_key() if candidate.from_pos else None
-        if cand_from != from_key:
-            continue
         cand_to = candidate.to.to_key() if candidate.to else None
+
+        # Handle implicit from position (after placement, CPU moves have from=None
+        # because from is implicit from must_move_from_stack_key)
+        if cand_from is None and from_key is not None:
+            # If candidate has no from but GPU has explicit from, check if it matches
+            # the must_move_from constraint or just match by destination
+            if must_move_from_key is not None and must_move_from_key != from_key:
+                continue  # GPU from doesn't match the constrained stack
+            # If must_move_from_key matches or there's no constraint, continue to to matching
+        elif cand_from != from_key:
+            continue
+
         if cand_to != to_key:
             continue
         return candidate
@@ -274,6 +286,7 @@ def expand_gpu_jsonl_moves_to_canonical(
             desired_type=desired_type,
             from_pos=gpu_move.from_pos,
             to_pos=gpu_move.to,
+            must_move_from_key=state.must_move_from_stack_key,
         )
         if matched is None:
             raise RuntimeError(
@@ -342,9 +355,9 @@ def import_game(
     # Get initial state - either from record or create default
     initial_state_dict = game_record.get("initial_state")
     if initial_state_dict:
-        # Reconstruct initial state from dict
+        # Reconstruct initial state from dict (Pydantic v1 API)
         try:
-            initial_state = GameState.model_validate(initial_state_dict)
+            initial_state = GameState.parse_obj(initial_state_dict)
         except Exception as e:
             print(f"  Warning: Failed to parse initial_state for {game_id}: {e}")
             return False
