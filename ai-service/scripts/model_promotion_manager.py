@@ -71,7 +71,7 @@ PROMOTION_RUNTIME_DIR = AI_SERVICE_ROOT / "runs" / "promotion"
 PROMOTED_CONFIG_SEED_PATH = AI_SERVICE_ROOT / "data" / "promoted_models.json"
 PROMOTION_LOG_SEED_PATH = AI_SERVICE_ROOT / "data" / "model_promotion_history.json"
 PROMOTED_CONFIG_PATH = PROMOTION_RUNTIME_DIR / "promoted_models.json"
-ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
+ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"
 PROMOTION_LOG_PATH = PROMOTION_RUNTIME_DIR / "model_promotion_history.json"
 
 # Sandbox config path (TypeScript side)
