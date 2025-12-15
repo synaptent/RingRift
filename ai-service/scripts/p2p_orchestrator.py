@@ -1373,6 +1373,93 @@ class P2POrchestrator:
             return False
         return True
 
+
+    # =========================================================================
+    # SAFEGUARDS - Load, rate limiting, and coordinator integration
+    # =========================================================================
+
+    def _check_spawn_rate_limit(self) -> Tuple[bool, str]:
+        """Check if we're within the spawn rate limit.
+
+        SAFEGUARD: Prevents runaway process spawning by limiting spawns per minute.
+
+        Returns:
+            (can_spawn, reason) - True if within rate limit
+        """
+        now = time.time()
+        # Clean old timestamps (older than 60 seconds)
+        self.spawn_timestamps = [t for t in self.spawn_timestamps if now - t < 60]
+
+        if len(self.spawn_timestamps) >= SPAWN_RATE_LIMIT_PER_MINUTE:
+            return False, f"Rate limit: {len(self.spawn_timestamps)}/{SPAWN_RATE_LIMIT_PER_MINUTE} spawns in last minute"
+
+        return True, f"Rate OK: {len(self.spawn_timestamps)}/{SPAWN_RATE_LIMIT_PER_MINUTE}"
+
+    def _record_spawn(self) -> None:
+        """Record a process spawn for rate limiting."""
+        self.spawn_timestamps.append(time.time())
+
+    async def _check_coordinator_available(self) -> bool:
+        """Check if the unified coordinator is available.
+
+        SAFEGUARD: In agent mode, defer job decisions to coordinator.
+
+        Returns:
+            True if coordinator is reachable
+        """
+        if not self.coordinator_url:
+            return False
+
+        # Cache check for 30 seconds
+        now = time.time()
+        if now - self.last_coordinator_check < 30:
+            return self.coordinator_available
+
+        self.last_coordinator_check = now
+
+        try:
+            async with get_client_session(timeout=ClientTimeout(total=5)) as session:
+                async with session.get(f"{self.coordinator_url}/api/health") as resp:
+                    self.coordinator_available = resp.status == 200
+                    if self.coordinator_available:
+                        print(f"[P2P] Coordinator available at {self.coordinator_url}")
+                    return self.coordinator_available
+        except Exception:
+            self.coordinator_available = False
+            return False
+
+    def _can_spawn_process(self, reason: str = "job") -> Tuple[bool, str]:
+        """Combined safeguard check before spawning any process.
+
+        SAFEGUARD: Checks load average, rate limit, and agent mode.
+
+        Args:
+            reason: Description of why we want to spawn (for logging)
+
+        Returns:
+            (can_spawn, explanation) - True if all checks pass
+        """
+        # Check 1: Load average
+        load_ok, load_reason = self.self_info.check_load_average_safe()
+        if not load_ok:
+            print(f"[P2P] BLOCKED spawn ({reason}): {load_reason}")
+            return False, load_reason
+
+        # Check 2: Rate limit
+        rate_ok, rate_reason = self._check_spawn_rate_limit()
+        if not rate_ok:
+            print(f"[P2P] BLOCKED spawn ({reason}): {rate_reason}")
+            return False, rate_reason
+
+        # Check 3: Agent mode - if coordinator is available and we're in agent mode,
+        # we should not autonomously spawn jobs (let coordinator decide)
+        if self.agent_mode and self.coordinator_available:
+            msg = "Agent mode: deferring to coordinator"
+            print(f"[P2P] BLOCKED spawn ({reason}): {msg}")
+            return False, msg
+
+        return True, "All safeguards passed"
+
     def _detect_build_version(self) -> str:
         env_version = (os.environ.get(BUILD_VERSION_ENV, "") or "").strip()
         if env_version:
@@ -16039,8 +16126,25 @@ print(json.dumps({{
         job_id: Optional[str] = None,
         cuda_visible_devices: Optional[str] = None,
     ) -> Optional[ClusterJob]:
-        """Start a job on the local node."""
+        """Start a job on the local node.
+
+        SAFEGUARD: Checks coordination safeguards before spawning.
+        """
         try:
+            # SAFEGUARD: Check safeguards before spawning
+            if HAS_SAFEGUARDS and _safeguards:
+                task_type_str = job_type.value if hasattr(job_type, 'value') else str(job_type)
+                allowed, reason = check_before_spawn(task_type_str, self.node_id)
+                if not allowed:
+                    print(f"[P2P] SAFEGUARD blocked {task_type_str} on {self.node_id}: {reason}")
+                    return None
+
+                # Apply backpressure delay
+                delay = _safeguards.get_delay()
+                if delay > 0:
+                    print(f"[P2P] SAFEGUARD applying {delay:.1f}s backpressure delay")
+                    await asyncio.sleep(delay)
+
             if job_id:
                 job_id = str(job_id)
                 with self.jobs_lock:
