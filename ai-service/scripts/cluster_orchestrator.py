@@ -33,7 +33,7 @@ import yaml
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Import unified cluster coordination
+# Import unified cluster coordination (legacy module)
 try:
     from app.coordination import (
         acquire_orchestrator_lock,
@@ -44,10 +44,25 @@ try:
         cleanup_stale_tasks,
         MAX_LOAD_THRESHOLD,
     )
-    HAS_COORDINATION = True
+    HAS_LEGACY_COORDINATION = True
 except ImportError:
-    HAS_COORDINATION = False
-    print("[WARN] Cluster coordination module not available, using local lock only")
+    HAS_LEGACY_COORDINATION = False
+    print("[WARN] Legacy cluster coordination module not available")
+
+# Import enhanced ClusterCoordinator (preferred)
+try:
+    from app.distributed.cluster_coordinator import (
+        ClusterCoordinator,
+        TaskRole,
+        check_and_abort_if_role_held,
+    )
+    HAS_ENHANCED_COORDINATION = True
+except ImportError:
+    HAS_ENHANCED_COORDINATION = False
+    ClusterCoordinator = None
+    TaskRole = None
+
+HAS_COORDINATION = HAS_LEGACY_COORDINATION or HAS_ENHANCED_COORDINATION
 
 LOG_DIR = Path(__file__).parent.parent / "logs" / "orchestrator"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -881,17 +896,28 @@ def save_state(state: ClusterState):
 def acquire_lock() -> bool:
     """Acquire lockfile to prevent multiple instances.
 
-    Uses unified cluster coordination if available, falls back to local lock.
+    Uses enhanced ClusterCoordinator if available, falls back to legacy then local lock.
     """
-    # Use unified coordination if available
-    if HAS_COORDINATION:
-        if not acquire_orchestrator_lock("cluster_orchestrator"):
-            log("Another orchestrator is already running (via unified lock)", "WARN")
+    # Prefer enhanced ClusterCoordinator
+    if HAS_ENHANCED_COORDINATION:
+        coordinator = ClusterCoordinator()
+        if coordinator.is_role_held(TaskRole.ORCHESTRATOR):
+            existing_pid = coordinator.get_role_holder_pid(TaskRole.ORCHESTRATOR)
+            log(f"Another orchestrator is already running (PID {existing_pid})", "WARN")
             return False
-        log("Acquired unified orchestrator lock")
+        log("Enhanced coordination available - lock check passed")
+        # Note: actual lock is acquired via context manager in main loop
         return True
 
-    # Fallback to local lockfile
+    # Fallback to legacy unified coordination
+    if HAS_LEGACY_COORDINATION:
+        if not acquire_orchestrator_lock("cluster_orchestrator"):
+            log("Another orchestrator is already running (via legacy lock)", "WARN")
+            return False
+        log("Acquired legacy orchestrator lock")
+        return True
+
+    # Final fallback to local lockfile
     if LOCKFILE.exists():
         try:
             pid = int(LOCKFILE.read_text().strip())
@@ -907,8 +933,8 @@ def acquire_lock() -> bool:
 
 def release_lock():
     """Release lockfile."""
-    # Release unified coordination lock
-    if HAS_COORDINATION:
+    # Release legacy unified coordination lock
+    if HAS_LEGACY_COORDINATION:
         release_orchestrator_lock()
 
     # Also release local lockfile
@@ -920,14 +946,19 @@ def release_lock():
 
 def check_host_can_spawn(host_name: str, ssh_host: str, task_type: str = "selfplay") -> bool:
     """Check if a host can accept new tasks using coordination module."""
-    if not HAS_COORDINATION:
-        return True  # No coordination, allow spawn
+    # Prefer enhanced ClusterCoordinator
+    if HAS_ENHANCED_COORDINATION:
+        coordinator = ClusterCoordinator()
+        return coordinator.can_spawn_process(task_type)
 
-    if check_emergency_halt():
-        log(f"Emergency halt active, blocking spawn on {host_name}", "WARN")
-        return False
+    # Fallback to legacy coordination
+    if HAS_LEGACY_COORDINATION:
+        if check_emergency_halt():
+            log(f"Emergency halt active, blocking spawn on {host_name}", "WARN")
+            return False
+        return can_spawn_task(host=ssh_host, task_type=task_type)
 
-    return can_spawn_task(host=ssh_host, task_type=task_type)
+    return True  # No coordination, allow spawn
 
 
 def sync_to_mac_studio(hosts: List[HostConfig], dry_run: bool = False) -> bool:

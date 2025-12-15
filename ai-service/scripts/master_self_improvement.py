@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
 """
+DEPRECATED: This module is deprecated. Use scripts/unified_ai_loop.py instead.
+
+The unified_ai_loop.py provides all functionality with proper cluster coordination,
+event-driven data flow, and feedback loop integration.
+
+To migrate:
+    python scripts/unified_ai_loop.py --foreground --verbose
+
+---
 Master Self-Improvement Loop for RingRift AI.
 
 This script ties together all the integration components into a unified
@@ -99,14 +108,14 @@ class MasterConfig:
     registry_dir: str = "data/model_registry"
     model_storage_dir: str = "data/models"
 
-    # Training settings
-    min_games_for_training: int = 500
+    # Training settings - match app/config/unified_config.py
+    min_games_for_training: int = 500  # Canonical: 500
     training_interval_hours: float = 4.0
     auto_train: bool = True
 
-    # Evaluation settings
+    # Evaluation settings - match app/config/unified_config.py
     min_games_for_promotion: int = 200
-    elo_improvement_threshold: float = 20.0
+    elo_improvement_threshold: float = 25.0  # Canonical: 25 (was 20)
     tournament_games_per_pair: int = 50
 
     # Selfplay settings

@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
 """
+DEPRECATED: This module is deprecated. Use scripts/unified_ai_loop.py instead.
+
+The unified_ai_loop.py provides all functionality with proper cluster coordination,
+event-driven data flow, and feedback loop integration.
+
+To migrate:
+    python scripts/unified_ai_loop.py --foreground --verbose
+
+---
 Integrated Self-Improvement Controller for RingRift AI.
 
 This module unifies all AI training components into a cohesive self-improvement

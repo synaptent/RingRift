@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Unified AI Improvement Controller - Single entry point for all improvement operations.
+"""
+DEPRECATED: This module is deprecated. Use scripts/unified_ai_loop.py instead.
+
+The unified_ai_loop.py provides all functionality with proper cluster coordination,
+event-driven data flow, and feedback loop integration.
+
+To migrate:
+    python scripts/unified_ai_loop.py --foreground --verbose
+
+---
+Unified AI Improvement Controller - Single entry point for all improvement operations.
 
 This controller integrates all improvement components into a cohesive, pipelined system:
 1. Auto-detects cluster mode (local vs distributed)

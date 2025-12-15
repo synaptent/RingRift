@@ -74,6 +74,22 @@ from .cluster_coordinator import (
     TaskInfo,
     check_and_abort_if_role_held,
 )
+from .db_utils import (
+    atomic_write,
+    safe_transaction,
+    exclusive_db_lock,
+    atomic_json_update,
+    TransactionManager,
+    save_state_atomically,
+    load_state_safely,
+)
+from .health_checks import (
+    HealthChecker,
+    HealthSummary,
+    ComponentHealth,
+    get_health_summary,
+    format_health_report,
+)
 
 __all__ = [
     # Host configuration and memory detection
@@ -131,4 +147,18 @@ __all__ = [
     "ProcessLimits",
     "TaskInfo",
     "check_and_abort_if_role_held",
+    # Database utilities
+    "atomic_write",
+    "safe_transaction",
+    "exclusive_db_lock",
+    "atomic_json_update",
+    "TransactionManager",
+    "save_state_atomically",
+    "load_state_safely",
+    # Health checks
+    "HealthChecker",
+    "HealthSummary",
+    "ComponentHealth",
+    "get_health_summary",
+    "format_health_report",
 ]

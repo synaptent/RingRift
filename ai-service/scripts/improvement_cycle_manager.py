@@ -32,6 +32,20 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.models import BoardType
+from app.config.unified_config import get_config
+
+# Import cluster coordination to prevent multiple managers running simultaneously
+try:
+    from app.distributed.cluster_coordinator import (
+        ClusterCoordinator,
+        TaskRole,
+        check_and_abort_if_role_held,
+    )
+    HAS_COORDINATION = True
+except ImportError:
+    HAS_COORDINATION = False
+    ClusterCoordinator = None
+    TaskRole = None
 
 
 # =============================================================================
@@ -90,9 +104,10 @@ BOARD_CONFIGS = [
     {"board_type": "square8", "num_players": 2, "priority": 1.0, "min_games": 15000},
 ]
 
-# Training thresholds (tunable via environment variables)
-MIN_NEW_GAMES_FOR_TRAINING = int(os.environ.get("RINGRIFT_MIN_GAMES_FOR_TRAINING", "1000"))
-TRAINING_COOLDOWN_SECONDS = int(os.environ.get("RINGRIFT_TRAINING_COOLDOWN_SECONDS", "900"))  # 15 min between training runs
+# Training thresholds - loaded from unified config (supports env var overrides)
+_unified_config = get_config()
+MIN_NEW_GAMES_FOR_TRAINING = _unified_config.training.trigger_threshold_games
+TRAINING_COOLDOWN_SECONDS = _unified_config.training.min_interval_seconds
 TOURNAMENT_GAMES_PER_MATCHUP = 20
 PROMOTION_THRESHOLD = 0.55  # 55% win rate for promotion
 
@@ -926,6 +941,18 @@ class ImprovementCycleManager:
         import subprocess
 
         config = f"{board_type}_{num_players}p"
+
+        # Check coordination - prevent spawning if HP tuning role is already held
+        if HAS_COORDINATION:
+            coordinator = ClusterCoordinator()
+            if coordinator.is_role_held(TaskRole.HP_TUNING):
+                existing_pid = coordinator.get_role_holder_pid(TaskRole.HP_TUNING)
+                print(f"[ImprovementManager] {config}: HP tuning blocked - another HP job running (PID {existing_pid})")
+                return False
+            if not coordinator.can_spawn_process("training"):
+                print(f"[ImprovementManager] {config}: HP tuning blocked - training process limit reached")
+                return False
+
         script_path = Path(self.ringrift_path) / "ai-service" / "scripts" / "hyperparameter_ab_testing.py"
 
         if not script_path.exists():
@@ -942,8 +969,14 @@ class ImprovementCycleManager:
 
         try:
             # Run in background
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            print(f"[ImprovementManager] {config}: Started hyperparameter experiment for '{param}'")
+            process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"[ImprovementManager] {config}: Started hyperparameter experiment for '{param}' (PID {process.pid})")
+
+            # Register process with coordinator for tracking
+            if HAS_COORDINATION:
+                coordinator = ClusterCoordinator()
+                coordinator.register_process(process.pid, "training", parent_pid=os.getpid())
+
             return True
         except Exception as e:
             print(f"[ImprovementManager] {config}: Failed to start experiment: {e}")
@@ -1358,8 +1391,21 @@ class ImprovementCycleManager:
     def trigger_training(self, board_type: str, num_players: int) -> bool:
         """Mark training as triggered for configuration.
 
-        Performs data quality check first if enabled.
+        Performs coordination check and data quality check first.
         """
+        config = f"{board_type}_{num_players}p"
+
+        # Check coordination - prevent triggering if training role already held
+        if HAS_COORDINATION:
+            coordinator = ClusterCoordinator()
+            if coordinator.is_role_held(TaskRole.TRAINING):
+                existing_pid = coordinator.get_role_holder_pid(TaskRole.TRAINING)
+                print(f"[ImprovementManager] {config}: Training trigger blocked - another training job running (PID {existing_pid})")
+                return False
+            if not coordinator.can_spawn_process("training"):
+                print(f"[ImprovementManager] {config}: Training trigger blocked - training process limit reached")
+                return False
+
         cycle = self._ensure_cycle_state(board_type, num_players)
         if cycle.pending_training:
             return False
@@ -1367,7 +1413,7 @@ class ImprovementCycleManager:
         # Check data quality before training
         is_ok, issues = self.check_data_quality(board_type, num_players)
         if not is_ok:
-            print(f"[ImprovementManager] {board_type}_{num_players}p: Training blocked due to data quality issues:")
+            print(f"[ImprovementManager] {config}: Training blocked due to data quality issues:")
             for issue in issues:
                 print(f"  - {issue}")
             return False
@@ -1375,6 +1421,7 @@ class ImprovementCycleManager:
         cycle.pending_training = True
         self.state.total_training_triggered += 1
         self._save_state()
+        print(f"[ImprovementManager] {config}: Training triggered (coordination check passed)")
         return True
 
     def handle_training_complete(self, board_type: str, num_players: int,
