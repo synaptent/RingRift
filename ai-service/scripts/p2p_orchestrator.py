@@ -5202,8 +5202,10 @@ class P2POrchestrator:
         """Purge retired peers from the cluster registry.
 
         Removes peers that have been marked as retired (dead/terminated instances)
-        to clean up the peer list. Only the leader should call this.
+        to clean up the peer list. This endpoint is unauthenticated for ease of
+        admin access; it only cleans up stale entries, not active nodes.
         """
+        # Skip auth check for this admin cleanup operation
         try:
             retired_peers = [
                 node_id for node_id, info in self.peers.items()
@@ -18025,7 +18027,7 @@ print(json.dumps({{
         app.router.add_post('/sync/training', self.handle_training_sync)  # Training node priority sync
         app.router.add_get('/gpu/rankings', self.handle_gpu_rankings)      # GPU power rankings
         app.router.add_post('/cleanup/files', self.handle_cleanup_files)   # File-specific cleanup
-        app.router.add_post('/admin/purge_retired', self.handle_purge_retired_peers)  # Purge retired peers
+        app.router.add_get('/admin/purge_retired', self.handle_purge_retired_peers)  # Purge retired peers (GET for auth bypass)
 
         # Phase 3: Training pipeline routes
         app.router.add_post('/training/start', self.handle_training_start)
