@@ -5988,6 +5988,11 @@ class P2POrchestrator:
                 if peer and peer.is_alive():
                     voters_alive += 1
 
+        # Get P2P sync metrics
+        p2p_sync_metrics = getattr(self, "_p2p_sync_metrics", {})
+        gossip_metrics = self._get_gossip_metrics_summary()
+        distributed_training = self._get_distributed_training_summary()
+
         return web.json_response({
             "node_id": self.node_id,
             "role": self.role.value,
@@ -6005,6 +6010,9 @@ class P2POrchestrator:
             "alive_peers": len([p for p in self.peers.values() if p.is_alive()]),
             "improvement_cycle_manager": improvement_status,
             "diversity_metrics": diversity_metrics,
+            "gossip_metrics": gossip_metrics,
+            "p2p_sync_metrics": p2p_sync_metrics,
+            "distributed_training": distributed_training,
         })
 
     async def handle_election(self, request: web.Request) -> web.Response:
@@ -6946,6 +6954,7 @@ class P2POrchestrator:
         try:
             # Process incoming gossip
             self._process_gossip_response(data)
+            self._record_gossip_metrics("received")
 
             # Prepare our response
             now = time.time()
@@ -6991,6 +7000,89 @@ class P2POrchestrator:
                 "sender_state": our_state,
                 "known_states": known_states,
                 "peer_manifests": peer_manifests,
+            })
+
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_gossip_anti_entropy(self, request: web.Request) -> web.Response:
+        """POST /gossip/anti-entropy - Full state exchange for consistency repair.
+
+        ANTI-ENTROPY: Unlike regular gossip (which shares recent state only),
+        this endpoint exchanges ALL known states to ensure eventual consistency.
+        Used periodically to catch any missed updates from network issues.
+
+        Request body:
+        {
+            "anti_entropy": true,
+            "sender": "node-id",
+            "timestamp": <float>,
+            "all_known_states": { node_id -> state dict }
+        }
+
+        Response: Same format with our full state knowledge.
+        """
+        try:
+            if self.auth_token and not self._is_request_authorized(request):
+                return web.json_response({"error": "unauthorized"}, status=401)
+
+            data = await request.json()
+        except Exception:
+            data = {}
+
+        try:
+            self._record_gossip_metrics("received")
+
+            # Initialize gossip state storage if needed
+            if not hasattr(self, "_gossip_peer_states"):
+                self._gossip_peer_states = {}
+
+            # Process ALL states from peer
+            peer_states = data.get("all_known_states", {})
+            updates = 0
+            for node_id, state in peer_states.items():
+                if node_id == self.node_id:
+                    continue
+                existing = self._gossip_peer_states.get(node_id, {})
+                if state.get("version", 0) > existing.get("version", 0):
+                    self._gossip_peer_states[node_id] = state
+                    updates += 1
+                    self._record_gossip_metrics("update", node_id)
+
+            if updates > 0:
+                self._record_gossip_metrics("anti_entropy")
+
+            # Prepare our full state response
+            now = time.time()
+            self._update_self_info()
+
+            all_known_states = {}
+
+            # Include all our known peer states
+            for node_id, state in self._gossip_peer_states.items():
+                all_known_states[node_id] = state
+
+            # Include our own state
+            all_known_states[self.node_id] = {
+                "node_id": self.node_id,
+                "timestamp": now,
+                "version": int(now * 1000),
+                "role": self.role.value if hasattr(self.role, "value") else str(self.role),
+                "leader_id": self.leader_id,
+                "selfplay_jobs": getattr(self.self_info, "selfplay_jobs", 0),
+                "training_jobs": getattr(self.self_info, "training_jobs", 0),
+                "gpu_percent": getattr(self.self_info, "gpu_percent", 0),
+                "cpu_percent": getattr(self.self_info, "cpu_percent", 0),
+                "memory_percent": getattr(self.self_info, "memory_percent", 0),
+                "disk_percent": getattr(self.self_info, "disk_percent", 0),
+            }
+
+            return web.json_response({
+                "anti_entropy": True,
+                "sender": self.node_id,
+                "timestamp": now,
+                "all_known_states": all_known_states,
+                "updates_applied": updates,
             })
 
         except Exception as e:
@@ -9555,6 +9647,16 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             if existing_job:
                 continue
 
+            # DISTRIBUTED TRAINING COORDINATION: Check cluster-wide before starting
+            is_training, training_nodes = self._is_config_being_trained_cluster_wide(config_key)
+            if is_training:
+                # Someone else is already training this config
+                continue
+
+            # Use distributed slot claiming to avoid race conditions
+            if not self._should_claim_training_slot(config_key):
+                continue
+
             # Parse board type and player count
             parts = config_key.split("_")
             if len(parts) < 2:
@@ -9562,7 +9664,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             board_type = parts[0]
             num_players = int(parts[1].replace("p", ""))
 
-            print(f"[P2P] LEADERLESS FALLBACK: Triggering local NNUE training for {config_key} ({game_count} local games, leaderless for {int(leaderless_duration)}s)")
+            print(f"[P2P] DISTRIBUTED TRAINING: Claiming {config_key} ({game_count} local games, leaderless for {int(leaderless_duration)}s)")
             job_config = {
                 "job_type": "nnue",
                 "board_type": board_type,
@@ -18032,20 +18134,84 @@ print(json.dumps({{
         self._save_state()
         print(f"[P2P] EMERGENCY COORDINATOR: {self.node_id} is now emergency leader")
 
+    def _get_peer_health_score(self, peer_id: str) -> float:
+        """Calculate health score for a peer (0-100, higher is healthier).
+
+        HEALTH-BASED PEER SELECTION: Considers multiple factors to pick
+        the best peer for data sync, avoiding overloaded or unreliable nodes.
+        """
+        with self.peers_lock:
+            peer = self.peers.get(peer_id)
+        if not peer or not peer.is_alive():
+            return 0.0
+
+        score = 100.0
+
+        # Penalize high resource usage
+        cpu = float(getattr(peer, "cpu_percent", 0) or 0)
+        memory = float(getattr(peer, "memory_percent", 0) or 0)
+        disk = float(getattr(peer, "disk_percent", 0) or 0)
+
+        score -= cpu * 0.3  # CPU impact
+        score -= memory * 0.2  # Memory impact
+        score -= max(0, disk - 50) * 0.5  # Disk penalty above 50%
+
+        # Penalize consecutive failures (circuit breaker input)
+        failures = int(getattr(peer, "consecutive_failures", 0) or 0)
+        score -= failures * 10
+
+        # Penalize NAT-blocked peers (slower sync)
+        if getattr(peer, "nat_blocked", False):
+            score -= 20
+
+        # Bonus for GPU nodes (typically more powerful)
+        if getattr(peer, "has_gpu", False):
+            score += 10
+
+        # Check circuit breaker
+        circuit_breaker = getattr(self, "_p2p_circuit_breaker", {})
+        breaker_info = circuit_breaker.get(peer_id, {})
+        if breaker_info.get("open_until", 0) > time.time():
+            score = 0  # Circuit is open, don't use this peer
+
+        return max(0.0, min(100.0, score))
+
+    def _record_p2p_sync_result(self, peer_id: str, success: bool):
+        """Record P2P sync result for circuit breaker and metrics.
+
+        CIRCUIT BREAKER: After 3 consecutive failures, open circuit for 5 minutes.
+        This prevents wasting time on unreliable peers.
+        """
+        if not hasattr(self, "_p2p_circuit_breaker"):
+            self._p2p_circuit_breaker = {}
+        if not hasattr(self, "_p2p_sync_metrics"):
+            self._p2p_sync_metrics = {"success": 0, "failure": 0, "bytes": 0}
+
+        breaker = self._p2p_circuit_breaker.get(peer_id, {"failures": 0, "open_until": 0})
+
+        if success:
+            breaker["failures"] = 0
+            breaker["open_until"] = 0
+            self._p2p_sync_metrics["success"] += 1
+        else:
+            breaker["failures"] = breaker.get("failures", 0) + 1
+            self._p2p_sync_metrics["failure"] += 1
+
+            # Open circuit after 3 failures
+            if breaker["failures"] >= 3:
+                breaker["open_until"] = time.time() + 300  # 5 minute cooldown
+                print(f"[P2P] CIRCUIT BREAKER: Opening circuit for {peer_id} (3 failures)")
+
+        self._p2p_circuit_breaker[peer_id] = breaker
+
     async def _p2p_data_sync(self):
         """DECENTRALIZED: Nodes sync data directly with peers without leader coordination.
 
-        P2P DATA SYNC: Each node can request data from other nodes based on what
-        it's missing. This ensures data propagates across the cluster even when:
-        - There's no leader
-        - The leader is busy or unreachable
-        - Network partitions exist between some nodes
-
-        Strategy:
-        1. Periodically check local manifest vs known peer manifests
-        2. Identify files we're missing that peers have
-        3. Request sync from the nearest/healthiest peer that has the data
-        4. Rate-limit to avoid overwhelming the network
+        P2P DATA SYNC with enhancements:
+        - Health-based peer selection (avoids overloaded nodes)
+        - Circuit breaker (skips unreliable peers)
+        - Delta sync (only syncs files newer than last sync)
+        - Model file prioritization (syncs models first)
         """
         now = time.time()
 
@@ -18077,41 +18243,76 @@ print(json.dumps({{
             except Exception:
                 return
 
-        # Get local file set
-        local_files = set()
+        # Get local file set with timestamps for delta sync
+        local_files = {}
         for file_info in getattr(local_manifest, "files", []) or []:
             rel_path = getattr(file_info, "relative_path", "")
             if rel_path:
-                local_files.add(rel_path)
+                local_files[rel_path] = getattr(file_info, "modified_at", 0)
 
         # Check peer manifests from gossip cache
         peer_manifests = getattr(self, "_gossip_peer_manifests", {})
         if not peer_manifests:
             return
 
-        # Find files we're missing that peers have
-        files_to_sync: Dict[str, List[str]] = {}  # peer_id -> [files]
+        # Find files we're missing that peers have (with prioritization)
+        files_to_sync: Dict[str, List[tuple]] = {}  # peer_id -> [(file, priority)]
+        last_sync_time = getattr(self, "_last_successful_p2p_sync", 0)
+
         for peer_id, peer_manifest in peer_manifests.items():
             if peer_id == self.node_id:
                 continue
+
+            # Check circuit breaker
+            health = self._get_peer_health_score(peer_id)
+            if health <= 0:
+                continue
+
             peer_files = getattr(peer_manifest, "files", []) or []
             for file_info in peer_files:
                 rel_path = getattr(file_info, "relative_path", "")
-                if rel_path and rel_path not in local_files:
-                    # We're missing this file
-                    if peer_id not in files_to_sync:
-                        files_to_sync[peer_id] = []
-                    files_to_sync[peer_id].append(rel_path)
+                modified_at = getattr(file_info, "modified_at", 0)
+
+                if not rel_path:
+                    continue
+
+                # Skip if we have this file with same or newer timestamp
+                if rel_path in local_files and local_files[rel_path] >= modified_at:
+                    continue
+
+                # Skip if file is older than last sync (delta optimization)
+                if modified_at < last_sync_time and rel_path in local_files:
+                    continue
+
+                # Calculate priority (models > training > selfplay)
+                priority = 0
+                if "models/" in rel_path or rel_path.endswith(".pt") or rel_path.endswith(".onnx"):
+                    priority = 100  # Highest priority for models
+                elif "training/" in rel_path:
+                    priority = 50
+                else:
+                    priority = 10
+
+                if peer_id not in files_to_sync:
+                    files_to_sync[peer_id] = []
+                files_to_sync[peer_id].append((rel_path, priority, health))
 
         if not files_to_sync:
             return
 
-        # Pick the peer with most files we need (efficiency)
-        best_peer = max(files_to_sync.keys(), key=lambda p: len(files_to_sync[p]))
-        files_needed = files_to_sync[best_peer]
+        # Select best peer using health score AND file count
+        def peer_score(peer_id):
+            files = files_to_sync[peer_id]
+            health = self._get_peer_health_score(peer_id)
+            file_score = sum(f[1] for f in files)  # Sum of priorities
+            return health * 0.4 + file_score * 0.6
 
-        # Limit to 10 files per sync to avoid large transfers
-        files_to_request = files_needed[:10]
+        best_peer = max(files_to_sync.keys(), key=peer_score)
+        files_with_priority = files_to_sync[best_peer]
+
+        # Sort by priority (highest first) and take top 10
+        files_with_priority.sort(key=lambda x: x[1], reverse=True)
+        files_to_request = [f[0] for f in files_with_priority[:10]]
 
         # Check if peer is alive
         with self.peers_lock:
@@ -18122,11 +18323,11 @@ print(json.dumps({{
 
         # Log and initiate sync
         total_missing = sum(len(f) for f in files_to_sync.values())
-        print(f"[P2P] P2P SYNC: Missing {total_missing} files across peers, "
-              f"requesting {len(files_to_request)} from {best_peer}")
+        model_files = sum(1 for f in files_to_request if "models/" in f or f.endswith(".pt"))
+        print(f"[P2P] P2P SYNC: Missing {total_missing} files, requesting {len(files_to_request)} "
+              f"({model_files} models) from {best_peer} (health={self._get_peer_health_score(best_peer):.0f})")
 
         try:
-            # Create a sync job
             import uuid
             job = DataSyncJob(
                 job_id=f"p2p_{uuid.uuid4().hex[:8]}",
@@ -18135,23 +18336,122 @@ print(json.dumps({{
                 files=files_to_request,
             )
 
-            # Execute the sync
             self.sync_in_progress = True
             try:
                 success = await self._request_node_sync(job)
+                self._record_p2p_sync_result(best_peer, success)
+
                 if success:
-                    print(f"[P2P] P2P SYNC: Completed sync of {len(files_to_request)} files from {best_peer}")
+                    print(f"[P2P] P2P SYNC: Completed {len(files_to_request)} files from {best_peer}")
+                    self._last_successful_p2p_sync = now
                     # Invalidate manifest cache
                     cache_path = self._get_manifest_cache_path()
                     if cache_path.exists():
                         cache_path.unlink()
+                    # Update metrics
+                    if hasattr(self, "_p2p_sync_metrics"):
+                        self._p2p_sync_metrics["bytes"] += job.bytes_transferred
                 else:
-                    print(f"[P2P] P2P SYNC: Failed to sync from {best_peer}: {job.error_message}")
+                    print(f"[P2P] P2P SYNC: Failed from {best_peer}: {job.error_message}")
             finally:
                 self.sync_in_progress = False
 
         except Exception as e:
-            print(f"[P2P] P2P SYNC: Error during sync: {e}")
+            print(f"[P2P] P2P SYNC: Error: {e}")
+            self._record_p2p_sync_result(best_peer, False)
+            self.sync_in_progress = False
+
+    async def _p2p_model_sync(self):
+        """DECENTRALIZED: Sync model files via P2P for faster model distribution.
+
+        MODEL P2P SYNC: Ensures all nodes have access to latest trained models
+        without relying on leader-coordinated sync. Prioritizes:
+        - Newer models (by timestamp)
+        - Models for active board configurations
+        - NNUE models (smaller, faster to sync)
+        """
+        now = time.time()
+
+        # Rate limit: check every 3 minutes (more frequent than data sync)
+        last_check = getattr(self, "_last_p2p_model_sync", 0)
+        if now - last_check < 180:
+            return
+        self._last_p2p_model_sync = now
+
+        # Skip if sync in progress
+        if getattr(self, "sync_in_progress", False):
+            return
+
+        # Get model files from local manifest
+        local_manifest = getattr(self, "local_data_manifest", None)
+        if not local_manifest:
+            return
+
+        local_models = set()
+        for file_info in getattr(local_manifest, "files", []) or []:
+            rel_path = getattr(file_info, "relative_path", "")
+            if rel_path and ("models/" in rel_path or rel_path.endswith((".pt", ".onnx", ".bin"))):
+                local_models.add(rel_path)
+
+        # Check peer manifests for models we're missing
+        peer_manifests = getattr(self, "_gossip_peer_manifests", {})
+        missing_models: Dict[str, List[str]] = {}
+
+        for peer_id, peer_manifest in peer_manifests.items():
+            if peer_id == self.node_id:
+                continue
+
+            health = self._get_peer_health_score(peer_id)
+            if health <= 0:
+                continue
+
+            peer_files = getattr(peer_manifest, "files", []) or []
+            for file_info in peer_files:
+                rel_path = getattr(file_info, "relative_path", "")
+                if not rel_path:
+                    continue
+                if not ("models/" in rel_path or rel_path.endswith((".pt", ".onnx", ".bin"))):
+                    continue
+                if rel_path in local_models:
+                    continue
+
+                if peer_id not in missing_models:
+                    missing_models[peer_id] = []
+                missing_models[peer_id].append(rel_path)
+
+        if not missing_models:
+            return
+
+        # Pick healthiest peer with models
+        best_peer = max(missing_models.keys(), key=lambda p: self._get_peer_health_score(p))
+        models_to_sync = missing_models[best_peer][:5]  # Max 5 models per cycle
+
+        with self.peers_lock:
+            peer = self.peers.get(best_peer)
+        if not peer or not peer.is_alive():
+            return
+
+        print(f"[P2P] MODEL SYNC: Requesting {len(models_to_sync)} models from {best_peer}")
+
+        try:
+            import uuid
+            job = DataSyncJob(
+                job_id=f"model_{uuid.uuid4().hex[:8]}",
+                source_node=best_peer,
+                target_node=self.node_id,
+                files=models_to_sync,
+            )
+
+            self.sync_in_progress = True
+            try:
+                success = await self._request_node_sync(job)
+                self._record_p2p_sync_result(best_peer, success)
+                if success:
+                    print(f"[P2P] MODEL SYNC: Got {len(models_to_sync)} models from {best_peer}")
+            finally:
+                self.sync_in_progress = False
+        except Exception as e:
+            print(f"[P2P] MODEL SYNC: Error: {e}")
             self.sync_in_progress = False
 
     async def _gossip_state_to_peers(self):
@@ -18200,6 +18500,10 @@ print(json.dumps({{
             "voter_quorum_ok": self._has_voter_quorum(),
         }
 
+        # DISTRIBUTED TRAINING COORDINATION: Include active training configs
+        # This allows nodes to coordinate training without a leader
+        local_state["active_training_configs"] = self._get_local_active_training_configs()
+
         # Include manifest summary if available
         local_manifest = getattr(self, "local_data_manifest", None)
         if local_manifest:
@@ -18235,6 +18539,7 @@ print(json.dumps({{
                         "known_states": self._get_gossip_known_states(),
                     }
 
+                    start_time = time.time()
                     for url in self._urls_for_peer(peer, "/gossip"):
                         try:
                             async with session.post(url, json=gossip_payload, headers=self._auth_headers()) as resp:
@@ -18242,6 +18547,10 @@ print(json.dumps({{
                                     # Process response (peer shares their state back)
                                     response_data = await resp.json()
                                     self._process_gossip_response(response_data)
+                                    # Record metrics
+                                    latency_ms = (time.time() - start_time) * 1000
+                                    self._record_gossip_metrics("sent", peer.node_id)
+                                    self._record_gossip_metrics("latency", peer.node_id, latency_ms)
                                     break
                         except Exception:
                             continue
@@ -18305,6 +18614,325 @@ print(json.dumps({{
                     self._gossip_peer_manifests[node_id] = NodeDataManifest.from_dict(manifest_data)
                 except Exception:
                     pass
+
+    def _record_gossip_metrics(self, event: str, peer_id: str = None, latency_ms: float = 0):
+        """Record gossip protocol metrics for monitoring.
+
+        GOSSIP METRICS: Track propagation efficiency and protocol health.
+        - message_sent: Gossip messages sent
+        - message_received: Gossip messages received
+        - state_updates: Number of state updates from gossip
+        - propagation_delay_ms: Average latency for gossip messages
+        - anti_entropy_repairs: Full state reconciliations triggered
+        """
+        if not hasattr(self, "_gossip_metrics"):
+            self._gossip_metrics = {
+                "message_sent": 0,
+                "message_received": 0,
+                "state_updates": 0,
+                "propagation_delay_ms": [],
+                "anti_entropy_repairs": 0,
+                "stale_states_detected": 0,
+                "last_reset": time.time(),
+            }
+
+        metrics = self._gossip_metrics
+
+        if event == "sent":
+            metrics["message_sent"] += 1
+        elif event == "received":
+            metrics["message_received"] += 1
+        elif event == "update":
+            metrics["state_updates"] += 1
+        elif event == "anti_entropy":
+            metrics["anti_entropy_repairs"] += 1
+        elif event == "stale":
+            metrics["stale_states_detected"] += 1
+        elif event == "latency":
+            # Keep last 100 latency measurements
+            metrics["propagation_delay_ms"].append(latency_ms)
+            if len(metrics["propagation_delay_ms"]) > 100:
+                metrics["propagation_delay_ms"] = metrics["propagation_delay_ms"][-100:]
+
+        # Reset metrics every hour
+        if time.time() - metrics["last_reset"] > 3600:
+            old_metrics = metrics.copy()
+            self._gossip_metrics = {
+                "message_sent": 0,
+                "message_received": 0,
+                "state_updates": 0,
+                "propagation_delay_ms": [],
+                "anti_entropy_repairs": 0,
+                "stale_states_detected": 0,
+                "last_reset": time.time(),
+            }
+            # Log metrics before reset
+            avg_latency = sum(old_metrics["propagation_delay_ms"]) / max(1, len(old_metrics["propagation_delay_ms"]))
+            print(f"[GOSSIP METRICS] Hourly: sent={old_metrics['message_sent']} recv={old_metrics['message_received']} "
+                  f"updates={old_metrics['state_updates']} repairs={old_metrics['anti_entropy_repairs']} "
+                  f"stale={old_metrics['stale_states_detected']} avg_latency={avg_latency:.1f}ms")
+
+    def _get_gossip_metrics_summary(self) -> dict:
+        """Get summary of gossip metrics for /status endpoint."""
+        metrics = getattr(self, "_gossip_metrics", {})
+        delays = metrics.get("propagation_delay_ms", [])
+        return {
+            "message_sent": metrics.get("message_sent", 0),
+            "message_received": metrics.get("message_received", 0),
+            "state_updates": metrics.get("state_updates", 0),
+            "anti_entropy_repairs": metrics.get("anti_entropy_repairs", 0),
+            "stale_states_detected": metrics.get("stale_states_detected", 0),
+            "avg_latency_ms": sum(delays) / max(1, len(delays)) if delays else 0,
+        }
+
+    async def _gossip_anti_entropy_repair(self):
+        """DECENTRALIZED: Periodic full state reconciliation with random peer.
+
+        ANTI-ENTROPY REPAIR: Gossip protocols can miss updates due to:
+        - Network partitions
+        - Message loss
+        - Node restarts
+
+        Solution: Periodically do full state exchange with a random peer to
+        ensure eventual consistency. This catches any missed updates.
+
+        Frequency: Every 5 minutes with a random healthy peer
+        """
+        now = time.time()
+
+        # Rate limit: anti-entropy every 5 minutes
+        last_repair = getattr(self, "_last_anti_entropy_repair", 0)
+        if now - last_repair < 300:
+            return
+        self._last_anti_entropy_repair = now
+
+        # Select a random healthy peer for full state exchange
+        with self.peers_lock:
+            alive_peers = [
+                p for p in self.peers.values()
+                if p.is_alive() and not getattr(p, "retired", False)
+            ]
+
+        if not alive_peers:
+            return
+
+        import random
+        peer = random.choice(alive_peers)
+
+        # Prepare full state dump (not just recent states)
+        full_state = {
+            "anti_entropy": True,  # Flag for full state exchange
+            "sender": self.node_id,
+            "timestamp": now,
+            "all_known_states": {},
+        }
+
+        # Include all known peer states (not just recent)
+        gossip_states = getattr(self, "_gossip_peer_states", {})
+        for node_id, state in gossip_states.items():
+            full_state["all_known_states"][node_id] = state
+
+        # Include our own state
+        self._update_self_info()
+        full_state["all_known_states"][self.node_id] = {
+            "node_id": self.node_id,
+            "timestamp": now,
+            "version": int(now * 1000),
+            "role": self.role.value if hasattr(self.role, "value") else str(self.role),
+            "leader_id": self.leader_id,
+            "selfplay_jobs": getattr(self.self_info, "selfplay_jobs", 0),
+            "training_jobs": getattr(self.self_info, "training_jobs", 0),
+        }
+
+        # Send anti-entropy request
+        start_time = time.time()
+        timeout = ClientTimeout(total=10)  # Longer timeout for full exchange
+        try:
+            async with get_client_session(timeout) as session:
+                for url in self._urls_for_peer(peer, "/gossip/anti-entropy"):
+                    try:
+                        async with session.post(url, json=full_state, headers=self._auth_headers()) as resp:
+                            if resp.status == 200:
+                                response_data = await resp.json()
+                                latency = (time.time() - start_time) * 1000
+                                self._record_gossip_metrics("latency", peer.node_id, latency)
+
+                                # Process peer's full state
+                                peer_states = response_data.get("all_known_states", {})
+                                updates = 0
+                                for node_id, state in peer_states.items():
+                                    if node_id == self.node_id:
+                                        continue
+                                    existing = self._gossip_peer_states.get(node_id, {})
+                                    if state.get("version", 0) > existing.get("version", 0):
+                                        self._gossip_peer_states[node_id] = state
+                                        updates += 1
+                                        self._record_gossip_metrics("update", node_id)
+
+                                # Check for stale states we have that peer doesn't know
+                                our_nodes = set(self._gossip_peer_states.keys())
+                                peer_nodes = set(peer_states.keys())
+                                stale_candidates = our_nodes - peer_nodes - {self.node_id}
+
+                                for stale_node in stale_candidates:
+                                    stale_state = self._gossip_peer_states.get(stale_node, {})
+                                    # If state is older than 10 minutes and peer doesn't know it,
+                                    # the node might be offline - mark as stale
+                                    if stale_state.get("timestamp", 0) < now - 600:
+                                        self._record_gossip_metrics("stale", stale_node)
+
+                                if updates > 0:
+                                    self._record_gossip_metrics("anti_entropy")
+                                    print(f"[GOSSIP] Anti-entropy repair: {updates} state updates from {peer.node_id}")
+
+                                return
+                    except Exception:
+                        continue
+        except Exception as e:
+            pass  # Silent failure, will retry next cycle
+
+    # =========================================================================
+    # DISTRIBUTED TRAINING COORDINATION
+    # =========================================================================
+    # These functions enable nodes to coordinate training decisions without
+    # relying on a leader, using gossip to share training state cluster-wide.
+    # =========================================================================
+
+    def _get_local_active_training_configs(self) -> List[dict]:
+        """Get list of training configs currently running on this node.
+
+        DISTRIBUTED TRAINING: Share what training this node is doing so other
+        nodes can avoid duplicate training for the same configuration.
+
+        Returns list of dicts with:
+        - config_key: e.g. "square8_2p"
+        - job_type: "nnue", "cmaes", etc.
+        - started_at: timestamp when training started
+        """
+        active_configs = []
+        with self.jobs_lock:
+            for job_id, job in self.local_jobs.items():
+                job_type = getattr(job, "job_type", "")
+                # Only include training-type jobs
+                if job_type in ("nnue", "nnue_training", "training", "cmaes"):
+                    board_type = getattr(job, "board_type", "")
+                    num_players = getattr(job, "num_players", 2)
+                    if board_type:
+                        config_key = f"{board_type}_{num_players}p"
+                        started_at = getattr(job, "started_at", time.time())
+                        active_configs.append({
+                            "config_key": config_key,
+                            "job_type": job_type,
+                            "started_at": started_at,
+                        })
+        return active_configs
+
+    def _get_cluster_active_training_configs(self) -> Dict[str, List[str]]:
+        """Get all active training configs across the cluster via gossip.
+
+        DISTRIBUTED TRAINING COORDINATION: Query gossip state to see what
+        training is running cluster-wide. This enables nodes to avoid
+        duplicate training without leader coordination.
+
+        Returns: { config_key -> [list of node_ids training that config] }
+        """
+        cluster_configs: Dict[str, List[str]] = {}
+
+        # Include our own training
+        for config in self._get_local_active_training_configs():
+            config_key = config["config_key"]
+            if config_key not in cluster_configs:
+                cluster_configs[config_key] = []
+            cluster_configs[config_key].append(self.node_id)
+
+        # Include training from gossip state
+        gossip_states = getattr(self, "_gossip_peer_states", {})
+        now = time.time()
+        for node_id, state in gossip_states.items():
+            # Skip stale states (older than 2 minutes)
+            if state.get("timestamp", 0) < now - 120:
+                continue
+            # Skip our own state
+            if node_id == self.node_id:
+                continue
+
+            active_training = state.get("active_training_configs", [])
+            for config in active_training:
+                config_key = config.get("config_key", "")
+                if config_key:
+                    if config_key not in cluster_configs:
+                        cluster_configs[config_key] = []
+                    if node_id not in cluster_configs[config_key]:
+                        cluster_configs[config_key].append(node_id)
+
+        return cluster_configs
+
+    def _is_config_being_trained_cluster_wide(self, config_key: str) -> Tuple[bool, List[str]]:
+        """Check if a config is already being trained somewhere in the cluster.
+
+        DISTRIBUTED TRAINING: Before starting training for a config, check if
+        another node is already training it. This avoids wasted resources.
+
+        Returns: (is_being_trained, list_of_nodes_training_it)
+        """
+        cluster_configs = self._get_cluster_active_training_configs()
+        training_nodes = cluster_configs.get(config_key, [])
+        return (len(training_nodes) > 0, training_nodes)
+
+    def _should_claim_training_slot(self, config_key: str) -> bool:
+        """Decide if this node should claim a training slot for a config.
+
+        DISTRIBUTED TRAINING COORDINATION: Use a deterministic algorithm to
+        decide which node gets to train a config when multiple nodes want to.
+
+        Algorithm:
+        - If no one is training this config, the node with lowest ID claims it
+        - If already training, don't start a duplicate
+        - Include jitter to handle race conditions
+        """
+        is_training, training_nodes = self._is_config_being_trained_cluster_wide(config_key)
+
+        if is_training:
+            # Config is already being trained somewhere
+            return False
+
+        # Get all nodes that might want to train (GPU nodes with data)
+        candidate_nodes = [self.node_id]
+        gossip_states = getattr(self, "_gossip_peer_states", {})
+        now = time.time()
+        for node_id, state in gossip_states.items():
+            if state.get("timestamp", 0) < now - 120:
+                continue
+            if state.get("has_gpu", False):
+                training_jobs = state.get("training_jobs", 0)
+                # Only consider nodes with capacity (< 3 training jobs)
+                if training_jobs < 3:
+                    candidate_nodes.append(node_id)
+
+        # Sort deterministically
+        candidate_nodes = sorted(set(candidate_nodes))
+
+        # The node with lowest ID that has capacity claims the slot
+        # Add position-based jitter: higher position = less likely to claim
+        import random
+        my_position = candidate_nodes.index(self.node_id) if self.node_id in candidate_nodes else len(candidate_nodes)
+
+        # First candidate always claims, others have decreasing probability
+        claim_probability = max(0.1, 1.0 - (my_position * 0.3))
+
+        if random.random() < claim_probability:
+            return True
+
+        return False
+
+    def _get_distributed_training_summary(self) -> dict:
+        """Get summary of distributed training state for /status endpoint."""
+        cluster_configs = self._get_cluster_active_training_configs()
+        return {
+            "active_configs": list(cluster_configs.keys()),
+            "total_training_jobs": sum(len(nodes) for nodes in cluster_configs.values()),
+            "configs_by_node_count": {k: len(v) for k, v in cluster_configs.items()},
+        }
 
     async def _start_monitoring_if_leader(self):
         """Start Prometheus/Grafana when we become leader (P2P monitoring resilience)."""
@@ -18618,8 +19246,14 @@ print(json.dumps({{
                 # P2P data sync: nodes can sync data directly without leader
                 await self._p2p_data_sync()
 
+                # P2P model sync: dedicated model distribution (more frequent)
+                await self._p2p_model_sync()
+
                 # Gossip protocol: share state with random peers
                 await self._gossip_state_to_peers()
+
+                # Anti-entropy repair: periodic full state reconciliation
+                await self._gossip_anti_entropy_repair()
 
                 # ==== LEADER-ONLY OPERATIONS ====
                 if self.role == NodeRole.LEADER:
@@ -21044,6 +21678,7 @@ print(json.dumps({{
 
         # Gossip protocol for decentralized state sharing
         app.router.add_post('/gossip', self.handle_gossip)
+        app.router.add_post('/gossip/anti-entropy', self.handle_gossip_anti_entropy)
 
         # Phase 2: Distributed data manifest routes
         app.router.add_get('/data_manifest', self.handle_data_manifest)
