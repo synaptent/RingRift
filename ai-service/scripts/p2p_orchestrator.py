@@ -15273,34 +15273,36 @@ print(json.dumps({{
                 target_selfplay = max(2, target_selfplay - 4)
             # REMOVED: No more "scale up more" logic that caused runaway
         else:
-            # CPU-only nodes: scale aggressively with CPU cores
+            # CPU-only nodes: conservative scaling
             if cpu_count >= 32:
-                # Target 35% of cores as jobs for 60% CPU utilization
                 cpu_target = int(cpu_count * TARGET_JOBS_PER_CORE)
-                mem_cap = memory_gb // 3 if memory_gb > 0 else 64
-                core_cap = 48 if cpu_count < 128 else min(192, int(cpu_count * 0.5))
+                mem_cap = memory_gb // 4 if memory_gb > 0 else 24  # 4GB per job (safer)
+                # SAFEGUARD: CPU-only nodes capped at 24 max
+                core_cap = min(24, max(8, cpu_count // 8))
                 target_selfplay = max(target_selfplay, min(cpu_target, mem_cap, core_cap))
             elif cpu_count > 0:
-                cpu_target = max(4, int(cpu_count * TARGET_JOBS_PER_CORE))
-                target_selfplay = max(target_selfplay, cpu_target)
+                cpu_target = max(2, int(cpu_count * TARGET_JOBS_PER_CORE))
+                target_selfplay = max(target_selfplay, min(cpu_target, 16))
             elif memory_gb >= 64:
-                target_selfplay = 8
+                target_selfplay = 6
 
             if memory_gb > 0 and memory_gb < 16:
                 # Only cap for very low-memory machines
                 mem_target = max(2, memory_gb // 2)
                 target_selfplay = min(target_selfplay, mem_target)
 
-            # Utilization-aware scaling (relaxed thresholds for 60% target).
-            if cpu_percent > 90:
-                target_selfplay = max(2, target_selfplay - 2)
-            elif cpu_percent < 40 and mem_percent < 70:
-                target_selfplay = min(192, int(target_selfplay * 1.3))
+            # Utilization-aware reduction only (no scale-up)
+            if cpu_percent > 80:
+                target_selfplay = max(2, target_selfplay - 4)
+            # REMOVED: Scale-up logic that caused runaway
 
         if disk_percent >= DISK_WARNING_THRESHOLD:
             target_selfplay = min(target_selfplay, 2)
         if mem_percent >= MEMORY_WARNING_THRESHOLD:
             target_selfplay = min(target_selfplay, 1)
+
+        # SAFEGUARD: Apply global hard cap
+        target_selfplay = min(target_selfplay, MAX_SELFPLAY_PER_NODE)
 
         return int(max(1, target_selfplay))
 
