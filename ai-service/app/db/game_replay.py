@@ -1781,13 +1781,18 @@ class GameReplayDB:
             conditions.append("total_moves <= ?")
             params.append(max_moves)
 
-        if exclude_training_excluded:
-            # Exclude timeout/excluded games - handle case where column doesn't exist
-            conditions.append("COALESCE(excluded_from_training, 0) = 0")
-
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 
         with self._get_conn() as conn:
+            # Check if excluded_from_training column exists before using it
+            if exclude_training_excluded:
+                cursor = conn.execute("PRAGMA table_info(games)")
+                columns = {row[1] for row in cursor.fetchall()}
+                if "excluded_from_training" in columns:
+                    if where_clause == "1=1":
+                        where_clause = "COALESCE(excluded_from_training, 0) = 0"
+                    else:
+                        where_clause += " AND COALESCE(excluded_from_training, 0) = 0"
             rows = conn.execute(
                 f"""
                 SELECT * FROM games
@@ -1866,12 +1871,19 @@ class GameReplayDB:
             conditions.append("total_moves <= ?")
             params.append(max_moves)
 
-        if exclude_training_excluded:
-            conditions.append("COALESCE(excluded_from_training, 0) = 0")
-
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 
         with self._get_conn() as conn:
+            # Check if excluded_from_training column exists before using it
+            if exclude_training_excluded:
+                cursor = conn.execute("PRAGMA table_info(games)")
+                columns = {row[1] for row in cursor.fetchall()}
+                if "excluded_from_training" in columns:
+                    if where_clause == "1=1":
+                        where_clause = "COALESCE(excluded_from_training, 0) = 0"
+                    else:
+                        where_clause += " AND COALESCE(excluded_from_training, 0) = 0"
+
             row = conn.execute(
                 f"SELECT COUNT(*) as count FROM games WHERE {where_clause}",
                 params,

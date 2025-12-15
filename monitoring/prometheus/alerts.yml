@@ -1159,3 +1159,73 @@ groups:
           description: 'System is meeting production SLOs with {{ with query "ringrift_games_active" }}{{ . | first | value }}{{ end }} active games. p95 latency and error rate within targets.'
           runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md'
           impact: 'Positive signal for production readiness (continue monitoring).'
+
+  # ===========================================================================
+  # DATA QUALITY ALERTS
+  # ===========================================================================
+  - name: data_quality
+    interval: 60s
+    rules:
+      # -------------------------------------------------------------------------
+      # High Draw Rate - Warning
+      # -------------------------------------------------------------------------
+      - alert: DataQualityHighDrawRate
+        expr: ringrift_data_draw_rate > 0.15
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+          component: training-data
+        annotations:
+          summary: 'High draw rate in training data ({{ $value | humanizePercentage }})'
+          description: 'Draw rate in database {{ $labels.db_name }} exceeds 15%. This may indicate games timing out or other data quality issues.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/DATA_QUALITY.md'
+          impact: 'Training data may be contaminated with timeout games, degrading model quality.'
+
+      # -------------------------------------------------------------------------
+      # Games Hitting Move Limit - Critical
+      # -------------------------------------------------------------------------
+      - alert: DataQualityTimeoutGames
+        expr: ringrift_data_games_at_limit > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: ai
+          component: training-data
+        annotations:
+          summary: 'Timeout games detected in training data ({{ $value }} games at limit {{ $labels.limit }})'
+          description: 'Database {{ $labels.db_name }} contains {{ $value }} games that hit the {{ $labels.limit }} move limit. These are likely timeout games that should be filtered.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/DATA_QUALITY.md#timeout-games'
+          impact: 'Training data contamination will degrade model performance. Run filter_timeout_games.py immediately.'
+
+      # -------------------------------------------------------------------------
+      # Low Quality Score
+      # -------------------------------------------------------------------------
+      - alert: DataQualityLowScore
+        expr: ringrift_data_quality_score < 80
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+          component: training-data
+        annotations:
+          summary: 'Low data quality score for {{ $labels.db_name }} ({{ $value }}/100)'
+          description: 'Quality score for database {{ $labels.db_name }} is below 80. Check for contamination, duplicate games, or schema issues.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/DATA_QUALITY.md'
+          impact: 'Training on low-quality data may produce suboptimal models.'
+
+      # -------------------------------------------------------------------------
+      # Suspicious High Move Count
+      # -------------------------------------------------------------------------
+      - alert: DataQualitySuspiciousGames
+        expr: ringrift_data_games_high_moves > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+          component: training-data
+        annotations:
+          summary: 'Suspicious high-move games detected ({{ $value }} games > 1000 moves)'
+          description: 'Database {{ $labels.db_name }} contains {{ $value }} games with unusually high move counts. These may indicate infinite loops or timeout conditions.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/DATA_QUALITY.md'
+          impact: 'Potential data quality issue affecting training.'

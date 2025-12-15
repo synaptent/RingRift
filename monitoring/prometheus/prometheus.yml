@@ -101,6 +101,19 @@ scrape_configs:
     scrape_timeout: 15s
 
   # ---------------------------------------------------------------------------
+  # RingRift Data Quality Monitor (training data quality metrics)
+  # ---------------------------------------------------------------------------
+  - job_name: 'ringrift-data-quality'
+    static_configs:
+      - targets: ['host.docker.internal:9093']
+        labels:
+          service: 'ringrift'
+          component: 'data-quality'
+    metrics_path: '/metrics'
+    scrape_interval: 60s
+    scrape_timeout: 30s
+
+  # ---------------------------------------------------------------------------
   # Redis (if using redis_exporter)
   # Uncomment when redis_exporter is deployed
   # ---------------------------------------------------------------------------

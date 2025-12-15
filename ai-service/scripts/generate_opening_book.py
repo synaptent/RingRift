@@ -5,24 +5,402 @@ Analyzes strong games to extract common opening sequences that lead to
 favorable positions. The opening book can be used to reduce early-game
 variance in selfplay and training.
 
+Features:
+    - Extract openings from high-Elo games
+    - Weight moves by Elo and win rate
+    - Multi-database support (glob patterns)
+    - Export in selfplay-optimized format
+
 Usage:
-    python scripts/generate_opening_book.py --games 10000
+    # Generate from single database
     python scripts/generate_opening_book.py --db data/games/selfplay.db --min-games 50
+
+    # Generate from multiple databases with Elo filter
+    python scripts/generate_opening_book.py --db "data/games/*.db" --min-elo 1600
+
+    # View stats for existing book
+    python scripts/generate_opening_book.py --book data/opening_book.json --stats
+
+    # Export for selfplay
+    python scripts/generate_opening_book.py --book data/opening_book.json --export-selfplay data/openings_flat.json
 """
 
 import argparse
+import glob as glob_module
 import json
 import sqlite3
 import sys
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 
+@dataclass
+class OpeningNode:
+    """Node in the opening book tree with Elo-weighted statistics."""
+    move: str
+    count: int = 0
+    wins: int = 0
+    draws: int = 0
+    losses: int = 0
+    total_elo: float = 0.0
+    children: Dict[str, "OpeningNode"] = field(default_factory=dict)
+
+    @property
+    def win_rate(self) -> float:
+        total = self.wins + self.draws + self.losses
+        if total == 0:
+            return 0.5
+        return (self.wins + 0.5 * self.draws) / total
+
+    @property
+    def avg_elo(self) -> float:
+        return self.total_elo / self.count if self.count > 0 else 1500.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "move": self.move,
+            "count": self.count,
+            "wins": self.wins,
+            "draws": self.draws,
+            "losses": self.losses,
+            "avg_elo": round(self.avg_elo, 1),
+            "win_rate": round(self.win_rate, 4),
+            "children": {k: v.to_dict() for k, v in self.children.items()},
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "OpeningNode":
+        node = cls(
+            move=data["move"],
+            count=data["count"],
+            wins=data["wins"],
+            draws=data.get("draws", 0),
+            losses=data["losses"],
+            total_elo=data.get("avg_elo", 1500.0) * data["count"],
+        )
+        for k, v in data.get("children", {}).items():
+            node.children[k] = cls.from_dict(v)
+        return node
+
+
+@dataclass
+class OpeningBook:
+    """Complete opening book with tree structure and metadata."""
+    board_type: str
+    num_players: int
+    max_depth: int
+    min_games: int
+    root: OpeningNode = field(default_factory=lambda: OpeningNode(move="root"))
+    total_games: int = 0
+    source_databases: List[str] = field(default_factory=list)
+
+    def add_game(
+        self,
+        moves: List[str],
+        winner: Optional[int],
+        player_elo: float = 1500.0,
+    ):
+        """Add a game's opening to the book."""
+        self.total_games += 1
+        node = self.root
+        current_player = 0
+
+        for i, move in enumerate(moves[:self.max_depth]):
+            move_str = str(move)
+            if move_str not in node.children:
+                node.children[move_str] = OpeningNode(move=move_str)
+
+            child = node.children[move_str]
+            child.count += 1
+            child.total_elo += player_elo
+
+            if winner is None:
+                child.draws += 1
+            elif winner == current_player:
+                child.wins += 1
+            else:
+                child.losses += 1
+
+            node = child
+            current_player = (current_player + 1) % self.num_players
+
+    def prune(self, min_count: int = None):
+        """Remove moves played fewer than min_count times."""
+        min_count = min_count or self.min_games
+
+        def prune_node(node: OpeningNode) -> bool:
+            to_remove = [m for m, c in node.children.items() if c.count < min_count]
+            for move in to_remove:
+                del node.children[move]
+            for child in node.children.values():
+                prune_node(child)
+            return len(node.children) > 0 or node.count >= min_count
+
+        prune_node(self.root)
+
+    def get_moves_for_position(
+        self,
+        position_moves: List[str],
+        temperature: float = 1.0,
+        min_win_rate: float = 0.3,
+    ) -> List[Tuple[str, float]]:
+        """Get weighted candidate moves for a position."""
+        node = self.root
+        for move in position_moves:
+            if str(move) in node.children:
+                node = node.children[str(move)]
+            else:
+                return []
+
+        candidates = []
+        for move, child in node.children.items():
+            if child.win_rate >= min_win_rate:
+                weight = (child.count ** 0.5) * (child.win_rate ** 2) * (child.avg_elo / 1500.0) ** 0.5
+                if temperature != 1.0:
+                    weight = weight ** (1.0 / temperature)
+                candidates.append((move, weight))
+
+        total = sum(w for _, w in candidates)
+        if total > 0:
+            candidates = [(m, w / total) for m, w in candidates]
+        return sorted(candidates, key=lambda x: -x[1])
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "board_type": self.board_type,
+            "num_players": self.num_players,
+            "max_depth": self.max_depth,
+            "min_games": self.min_games,
+            "total_games": self.total_games,
+            "source_databases": self.source_databases,
+            "root": self.root.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "OpeningBook":
+        book = cls(
+            board_type=data["board_type"],
+            num_players=data["num_players"],
+            max_depth=data["max_depth"],
+            min_games=data["min_games"],
+            total_games=data["total_games"],
+            source_databases=data.get("source_databases", []),
+        )
+        book.root = OpeningNode.from_dict(data["root"])
+        return book
+
+    def save(self, path: str):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f, indent=2)
+        print(f"Saved opening book to {path}")
+
+    @classmethod
+    def load(cls, path: str) -> "OpeningBook":
+        with open(path) as f:
+            return cls.from_dict(json.load(f))
+
+
+def extract_games_from_db(
+    db_path: str,
+    board_type: str,
+    num_players: int,
+    min_elo: float = 0.0,
+) -> List[Dict[str, Any]]:
+    """Extract games from various database schemas."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    games = []
+
+    # Try standard games table
+    try:
+        cursor = conn.execute("""
+            SELECT game_id, winner, moves_json, player_elos
+            FROM games
+            WHERE board_type = ? AND num_players = ?
+            AND status = 'completed'
+        """, (board_type, num_players))
+        for row in cursor:
+            elos = json.loads(row["player_elos"]) if row["player_elos"] else [1500.0]
+            avg_elo = sum(elos) / len(elos) if elos else 1500.0
+            if avg_elo >= min_elo:
+                games.append({
+                    "moves": json.loads(row["moves_json"]) if row["moves_json"] else [],
+                    "winner": row["winner"],
+                    "avg_elo": avg_elo,
+                })
+    except (sqlite3.OperationalError, json.JSONDecodeError):
+        pass
+
+    # Try selfplay_games table
+    try:
+        cursor = conn.execute("""
+            SELECT game_id, winner, moves, model_elo
+            FROM selfplay_games
+            WHERE board_type = ? AND num_players = ? AND model_elo >= ?
+        """, (board_type, num_players, min_elo))
+        for row in cursor:
+            moves = row["moves"]
+            if isinstance(moves, str):
+                moves = json.loads(moves)
+            games.append({
+                "moves": moves or [],
+                "winner": row["winner"],
+                "avg_elo": row["model_elo"] or 1500.0,
+            })
+    except (sqlite3.OperationalError, json.JSONDecodeError):
+        pass
+
+    # Try game_results table
+    try:
+        cursor = conn.execute("""
+            SELECT game_id, winner, action_history, elo
+            FROM game_results
+            WHERE config LIKE ? AND elo >= ?
+        """, (f"{board_type}_{num_players}p%", min_elo))
+        for row in cursor:
+            history = row["action_history"]
+            if isinstance(history, str):
+                history = json.loads(history)
+            moves = [str(a.get("move", a)) for a in history] if history else []
+            games.append({
+                "moves": moves,
+                "winner": row["winner"],
+                "avg_elo": row["elo"] or 1500.0,
+            })
+    except (sqlite3.OperationalError, json.JSONDecodeError):
+        pass
+
+    conn.close()
+    return games
+
+
+def generate_book_from_databases(
+    db_paths: List[str],
+    board_type: str,
+    num_players: int,
+    max_depth: int = 15,
+    min_games: int = 10,
+    min_elo: float = 1500.0,
+) -> OpeningBook:
+    """Generate opening book from multiple databases."""
+    book = OpeningBook(
+        board_type=board_type,
+        num_players=num_players,
+        max_depth=max_depth,
+        min_games=min_games,
+        source_databases=db_paths,
+    )
+
+    total_processed = 0
+    total_skipped = 0
+
+    for db_path in db_paths:
+        if not Path(db_path).exists():
+            print(f"Warning: Database not found: {db_path}")
+            continue
+
+        print(f"Processing {db_path}...")
+        games = extract_games_from_db(db_path, board_type, num_players, min_elo)
+
+        for game in games:
+            moves = game.get("moves", [])
+            if not moves or len(moves) < 3:
+                total_skipped += 1
+                continue
+
+            book.add_game(moves, game.get("winner"), game.get("avg_elo", 1500.0))
+            total_processed += 1
+
+    print(f"Processed {total_processed} games, skipped {total_skipped}")
+    book.prune(min_games)
+    return book
+
+
+def export_for_selfplay(book: OpeningBook, output_path: str):
+    """Export opening book as flat list for selfplay sampling."""
+    openings = []
+
+    def collect_sequences(node: OpeningNode, current_seq: List[str], depth: int):
+        if depth >= book.max_depth or not node.children:
+            if current_seq:
+                openings.append({
+                    "moves": current_seq.copy(),
+                    "weight": node.count * node.win_rate * (node.avg_elo / 1500.0),
+                    "count": node.count,
+                    "win_rate": node.win_rate,
+                })
+            return
+        for move, child in node.children.items():
+            current_seq.append(move)
+            collect_sequences(child, current_seq, depth + 1)
+            current_seq.pop()
+
+    collect_sequences(book.root, [], 0)
+
+    total_weight = sum(o["weight"] for o in openings)
+    if total_weight > 0:
+        for o in openings:
+            o["weight"] /= total_weight
+
+    openings.sort(key=lambda x: -x["weight"])
+
+    output = {
+        "board_type": book.board_type,
+        "num_players": book.num_players,
+        "total_openings": len(openings),
+        "openings": openings,
+    }
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w") as f:
+        json.dump(output, f, indent=2)
+    print(f"Exported {len(openings)} openings to {output_path}")
+
+
+def print_book_stats(book: OpeningBook, max_depth: int = 5):
+    """Print statistics about the opening book."""
+    print(f"\n{'='*50}")
+    print(f"Opening Book Statistics")
+    print(f"{'='*50}")
+    print(f"Board Type: {book.board_type}")
+    print(f"Players: {book.num_players}")
+    print(f"Total Games: {book.total_games}")
+    print(f"Max Depth: {book.max_depth}")
+    print(f"Min Games: {book.min_games}")
+    print(f"Sources: {len(book.source_databases)} database(s)")
+
+    def count_at_depth(node: OpeningNode, depth: int, counts: Dict[int, int]):
+        if depth > max_depth:
+            return
+        counts[depth] = counts.get(depth, 0) + len(node.children)
+        for child in node.children.values():
+            count_at_depth(child, depth + 1, counts)
+
+    depth_counts = {}
+    count_at_depth(book.root, 0, depth_counts)
+
+    print(f"\nMoves by Depth:")
+    total_moves = 0
+    for depth in sorted(depth_counts.keys()):
+        count = depth_counts[depth]
+        total_moves += count
+        print(f"  Depth {depth}: {count} unique moves")
+    print(f"  Total: {total_moves} unique positions")
+
+    print(f"\nTop First Moves:")
+    first_moves = sorted(book.root.children.items(), key=lambda x: x[1].count, reverse=True)[:10]
+    for move, node in first_moves:
+        print(f"  {move}: {node.count} games, {node.win_rate:.1%} win rate, Elo {node.avg_elo:.0f}")
+
+
+# Legacy function for backward compatibility
 def extract_opening_sequences(
     db_path: str,
     board_type: str = "square8",
@@ -31,23 +409,10 @@ def extract_opening_sequences(
     min_games: int = 50,
     min_win_rate: float = 0.52,
 ) -> Dict[str, dict]:
-    """Extract opening sequences from game database.
-
-    Args:
-        db_path: Path to game database
-        board_type: Filter by board type
-        num_players: Filter by number of players
-        max_depth: Maximum opening depth (moves)
-        min_games: Minimum games for a sequence to be included
-        min_win_rate: Minimum win rate for inclusion
-
-    Returns:
-        Dict mapping move sequences to statistics
-    """
+    """Extract opening sequences from game database (legacy format)."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
-    # Get completed games with winners
     cursor = conn.execute("""
         SELECT game_id, winner, moves_json
         FROM games
@@ -57,7 +422,6 @@ def extract_opening_sequences(
         AND winner IS NOT NULL
     """, (board_type, num_players))
 
-    # Track sequences: key = move sequence as tuple, value = {wins_p0, wins_p1, total}
     sequences: Dict[Tuple, Dict] = defaultdict(lambda: {"wins": [0] * num_players, "total": 0})
 
     games_processed = 0
@@ -66,7 +430,6 @@ def extract_opening_sequences(
             moves = json.loads(row["moves_json"]) if row["moves_json"] else []
             winner = row["winner"]
 
-            # Extract opening sequences at each depth
             for depth in range(1, min(len(moves) + 1, max_depth + 1)):
                 seq = tuple(str(m) for m in moves[:depth])
                 sequences[seq]["total"] += 1
@@ -79,17 +442,14 @@ def extract_opening_sequences(
 
     conn.close()
 
-    # Filter and format results
     opening_book = {}
     for seq, stats in sequences.items():
         if stats["total"] < min_games:
             continue
 
-        # Calculate win rate for player 0 (first player)
         p0_wins = stats["wins"][0]
         win_rate = p0_wins / stats["total"]
 
-        # Include if win rate is notable (significantly above or below 50%)
         if abs(win_rate - 0.5) < (min_win_rate - 0.5):
             continue
 
