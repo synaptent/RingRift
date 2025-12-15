@@ -999,6 +999,82 @@ def find_model_file(model_id: str) -> Optional[Path]:
     return None
 
 
+def sync_alias_elo(
+    *,
+    alias_id: str,
+    source_model_id: str,
+    board_type: str,
+    num_players: int,
+    verbose: bool = False,
+) -> bool:
+    """Sync ELO rating from source model to alias participant.
+
+    This ensures that when a model is promoted to an alias (e.g., ringrift_best_sq8_2p),
+    the alias participant inherits the same ELO rating as the source model. This prevents
+    ELO fragmentation where the same model is tracked as two separate participants.
+
+    Args:
+        alias_id: The alias participant ID (e.g., "ringrift_best_sq8_2p")
+        source_model_id: The source model ID (e.g., "sq8_2p_nn_baseline_20251214_092235")
+        board_type: Board type (e.g., "square8")
+        num_players: Number of players (e.g., 2)
+        verbose: Whether to print status messages
+
+    Returns:
+        True if sync was successful, False otherwise
+    """
+    if not HAS_UNIFIED_ELO:
+        if verbose:
+            print(f"[model_promotion] Skipping ELO sync - unified_elo_db not available")
+        return False
+
+    try:
+        db = get_elo_database()
+
+        # Get source model's rating
+        source_rating = db.get_rating(source_model_id, board_type, num_players)
+
+        if source_rating.games_played == 0:
+            if verbose:
+                print(f"[model_promotion] Source model {source_model_id} has no games, skipping ELO sync")
+            return False
+
+        # Ensure alias participant exists
+        db.ensure_participant(
+            alias_id,
+            participant_type="alias",
+            use_neural_net=True,
+            model_path=str(MODELS_DIR / f"{alias_id}.pth"),
+            metadata={"source_model_id": source_model_id, "is_alias": True},
+        )
+
+        # Create alias rating with same stats as source
+        alias_rating = UnifiedEloRating(
+            participant_id=alias_id,
+            board_type=board_type,
+            num_players=num_players,
+            rating=source_rating.rating,
+            games_played=source_rating.games_played,
+            wins=source_rating.wins,
+            losses=source_rating.losses,
+            draws=source_rating.draws,
+            rating_deviation=source_rating.rating_deviation,
+        )
+
+        db.update_rating(alias_rating)
+
+        if verbose:
+            print(f"[model_promotion] Synced ELO: {alias_id} <- {source_model_id} "
+                  f"(rating={source_rating.rating:.1f}, games={source_rating.games_played})")
+
+        return True
+
+    except Exception as e:
+        if verbose:
+            print(f"[model_promotion] ELO sync failed: {e}")
+        return False
+
+
 def publish_best_alias(
     *,
     board_type: str,
@@ -1036,6 +1112,16 @@ def publish_best_alias(
             "games_played": int(games_played),
             "published_at": published_at,
         },
+    )
+
+    # Sync ELO rating from source model to alias participant
+    # This prevents ELO fragmentation where same model tracked as separate participants
+    sync_alias_elo(
+        alias_id=alias,
+        source_model_id=best_model_id,
+        board_type=board_type,
+        num_players=num_players,
+        verbose=verbose,
     )
 
     if verbose:

@@ -5774,10 +5774,85 @@ class UnifiedAILoop:
                 print(f"[FeedbackRouter] Scaling up parallel hosts: {current_parallel} -> {new_parallel}")
                 self.config.data_ingestion.parallel_hosts = new_parallel
 
+            # Try to start selfplay on idle hosts via SSH (fallback when P2P unavailable)
+            await self._spawn_selfplay_on_idle_hosts()
+
             return True
         except Exception as e:
             print(f"[FeedbackRouter] Error handling SCALE_UP_SELFPLAY: {e}")
             return False
+
+    async def _spawn_selfplay_on_idle_hosts(self) -> int:
+        """Spawn selfplay on hosts with no active selfplay processes.
+
+        Returns number of hosts where selfplay was started.
+        """
+        import asyncio
+        import subprocess
+
+        # GH200 hosts that should be running selfplay
+        gh200_hosts = [f"lambda-gh200-{c}" for c in "abcdefghijkl"]
+        idle_hosts = []
+
+        # Check each host for selfplay processes
+        async def check_host(host: str) -> tuple[str, int]:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", host,
+                    "ps aux | grep -E 'selfplay|hybrid' | grep -v grep | wc -l",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+                count = int(stdout.decode().strip() or "0")
+                return (host, count)
+            except Exception:
+                return (host, -1)  # -1 means unreachable
+
+        # Check all hosts in parallel
+        results = await asyncio.gather(*[check_host(h) for h in gh200_hosts])
+
+        for host, count in results:
+            if count == 0:  # Idle host
+                idle_hosts.append(host)
+            elif count == -1:
+                print(f"[Utilization] {host}: unreachable")
+
+        if not idle_hosts:
+            print("[Utilization] No idle hosts found")
+            return 0
+
+        print(f"[Utilization] Found {len(idle_hosts)} idle hosts: {idle_hosts}")
+
+        # Start selfplay on idle hosts
+        started = 0
+        for host in idle_hosts[:3]:  # Limit to 3 hosts per cycle to avoid overwhelming
+            try:
+                cmd = f'''cd ~/ringrift/ai-service && source venv/bin/activate && \\
+                    mkdir -p data/selfplay/auto_$(date +%s) && \\
+                    for i in 1 2; do \\
+                        nohup python scripts/run_hybrid_selfplay.py \\
+                            --board-type square8 --num-players 2 --num-games 50000 \\
+                            --record-db data/games/selfplay.db \\
+                            --output-dir data/selfplay/auto_$(date +%s)/$i \\
+                            --engine-mode mixed --seed $((RANDOM + 900000)) \\
+                            > logs/auto_selfplay_$i.log 2>&1 & \\
+                    done && echo "Started selfplay"'''
+
+                proc = await asyncio.create_subprocess_exec(
+                    "ssh", "-o", "ConnectTimeout=10", host, cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=30)
+
+                if proc.returncode == 0:
+                    print(f"[Utilization] Started selfplay on {host}")
+                    started += 1
+            except Exception as e:
+                print(f"[Utilization] Failed to start selfplay on {host}: {e}")
+
+        return started
 
     async def _handle_scale_down_selfplay(self, signal: 'FeedbackSignal') -> bool:
         """Handle SCALE_DOWN_SELFPLAY signals - reduce concurrent selfplay to avoid resource contention."""
