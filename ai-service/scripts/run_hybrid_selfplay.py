@@ -201,6 +201,8 @@ def run_hybrid_selfplay(
     lean_db: bool = False,
     enforce_canonical_history: bool = True,
     parity_mode: Optional[str] = None,
+    mcts_sims: int = 100,
+    nnue_blend: float = 0.5,
 ) -> Dict[str, Any]:
     """Run hybrid GPU-accelerated self-play.
 
@@ -212,9 +214,11 @@ def run_hybrid_selfplay(
         max_moves: Maximum moves per game
         seed: Random seed
         use_numba: Use Numba JIT-compiled rules
-        engine_mode: Engine mode (random-only, heuristic-only, or mixed)
+        engine_mode: Engine mode (random-only, heuristic-only, mixed, nnue-guided, or mcts)
         weights: Heuristic weights dict (from CMA-ES profile or defaults)
         mix_ratio: For mixed mode: probability of heuristic (0.0-1.0). Default 0.8
+        mcts_sims: Number of MCTS simulations per move (for mcts mode). Default 100
+        nnue_blend: For nnue-guided mode: blend ratio of NNUE vs heuristic. Default 0.5
 
     Returns:
         Statistics dictionary
@@ -264,6 +268,10 @@ def run_hybrid_selfplay(
     logger.info(f"Engine mode: {engine_mode}")
     if engine_mode == "mixed":
         logger.info(f"Mix ratio: {mix_ratio:.1%} heuristic / {1-mix_ratio:.1%} random")
+    elif engine_mode == "mcts":
+        logger.info(f"MCTS simulations: {mcts_sims}")
+    elif engine_mode == "nnue-guided":
+        logger.info(f"NNUE blend: {nnue_blend:.1%} NNUE / {1-nnue_blend:.1%} heuristic")
     logger.info(f"Device: {device}")
     logger.info(f"Numba: {use_numba}")
     logger.info(f"Output: {output_dir}")
@@ -275,6 +283,41 @@ def run_hybrid_selfplay(
         num_players=num_players,
         prefer_gpu=True,
     )
+
+    # Initialize NNUE evaluator for nnue-guided mode
+    nnue_evaluator = None
+    if engine_mode == "nnue-guided":
+        try:
+            from app.ai.nnue import BatchNNUEEvaluator
+            nnue_evaluator = BatchNNUEEvaluator(
+                board_type=board_type_enum,
+                num_players=num_players,
+                device=device,
+            )
+            if nnue_evaluator.available:
+                logger.info(f"NNUE evaluator loaded for {board_type_enum.value}")
+            else:
+                logger.warning("NNUE model not available, falling back to heuristic")
+                nnue_evaluator = None
+        except ImportError as e:
+            logger.warning(f"NNUE not available: {e}. Falling back to heuristic.")
+            nnue_evaluator = None
+
+    # Initialize MCTS for mcts mode
+    mcts_ai = None
+    if engine_mode == "mcts":
+        try:
+            from app.mcts.improved_mcts import ImprovedMCTS, MCTSConfig
+            mcts_config = MCTSConfig(
+                num_simulations=mcts_sims,
+                exploration_constant=1.414,
+                use_dirichlet_noise=True,
+            )
+            mcts_ai = ImprovedMCTS(config=mcts_config)
+            logger.info(f"MCTS initialized with {mcts_sims} simulations per move")
+        except ImportError as e:
+            logger.warning(f"MCTS not available: {e}. Falling back to heuristic.")
+            mcts_ai = None
 
     # Optional recording to GameReplayDB for downstream training/parity tooling.
     replay_db = get_or_create_db(
@@ -385,8 +428,63 @@ def run_hybrid_selfplay(
                         else:
                             # Use random selection
                             best_move = valid_moves[np.random.randint(len(valid_moves))]
+                    elif engine_mode == "mcts" and mcts_ai is not None:
+                        # MCTS mode: Use Monte Carlo Tree Search for move selection
+                        try:
+                            best_move = mcts_ai.search(game_state)
+                            if best_move is None or best_move not in valid_moves:
+                                # Fallback to heuristic if MCTS fails
+                                move_scores = evaluator.evaluate_moves(
+                                    game_state, valid_moves, current_player, GameEngine
+                                )
+                                if move_scores:
+                                    best_score = max(s for _, s in move_scores)
+                                    best_moves = [m for m, s in move_scores if s == best_score]
+                                    best_move = np.random.choice(best_moves) if len(best_moves) > 1 else best_moves[0]
+                                else:
+                                    best_move = valid_moves[0]
+                        except Exception as e:
+                            logger.debug(f"MCTS error: {e}, falling back to heuristic")
+                            best_move = valid_moves[np.random.randint(len(valid_moves))]
+                    elif engine_mode == "nnue-guided" and nnue_evaluator is not None:
+                        # NNUE-guided mode: Blend NNUE and heuristic scores
+                        try:
+                            # Get heuristic scores
+                            heuristic_scores = evaluator.evaluate_moves(
+                                game_state, valid_moves, current_player, GameEngine
+                            )
+                            heuristic_dict = {m: s for m, s in heuristic_scores} if heuristic_scores else {}
+
+                            # Get NNUE scores for each move (evaluate resulting positions)
+                            nnue_scores = {}
+                            for move in valid_moves:
+                                try:
+                                    # Apply move to get resulting state
+                                    next_state = GameEngine.apply_move(game_state.model_copy(deep=True), move)
+                                    nnue_val = nnue_evaluator.evaluate(next_state)
+                                    nnue_scores[move] = nnue_val if nnue_val is not None else 0.0
+                                except Exception:
+                                    nnue_scores[move] = 0.0
+
+                            # Blend scores: nnue_blend * NNUE + (1 - nnue_blend) * heuristic
+                            blended_scores = []
+                            for move in valid_moves:
+                                h_score = heuristic_dict.get(move, 0.0)
+                                n_score = nnue_scores.get(move, 0.0)
+                                blended = nnue_blend * n_score + (1 - nnue_blend) * h_score
+                                blended_scores.append((move, blended))
+
+                            if blended_scores:
+                                best_score = max(s for _, s in blended_scores)
+                                best_moves = [m for m, s in blended_scores if s == best_score]
+                                best_move = np.random.choice(best_moves) if len(best_moves) > 1 else best_moves[0]
+                            else:
+                                best_move = valid_moves[0]
+                        except Exception as e:
+                            logger.debug(f"NNUE error: {e}, falling back to heuristic")
+                            best_move = valid_moves[np.random.randint(len(valid_moves))]
                     else:
-                        # heuristic-only: Evaluate moves (hybrid CPU/GPU)
+                        # heuristic-only (default): Evaluate moves (hybrid CPU/GPU)
                         move_scores = evaluator.evaluate_moves(
                             game_state,
                             valid_moves,
@@ -789,8 +887,20 @@ def main():
         "--engine-mode",
         type=str,
         default="heuristic-only",
-        choices=["random-only", "heuristic-only", "mixed"],
-        help="Engine mode: random-only (uniform random), heuristic-only (GPU heuristic), or mixed (probabilistic blend)",
+        choices=["random-only", "heuristic-only", "mixed", "nnue-guided", "mcts"],
+        help="Engine mode: random-only (uniform random), heuristic-only (GPU heuristic), mixed (probabilistic blend), nnue-guided (NNUE neural network), or mcts (Monte Carlo Tree Search)",
+    )
+    parser.add_argument(
+        "--mcts-sims",
+        type=int,
+        default=100,
+        help="Number of MCTS simulations per move (for mcts mode). Default: 100",
+    )
+    parser.add_argument(
+        "--nnue-blend",
+        type=float,
+        default=0.5,
+        help="For nnue-guided mode: blend ratio of NNUE vs heuristic (0.0=heuristic only, 1.0=NNUE only). Default: 0.5",
     )
     parser.add_argument(
         "--mix-ratio",
@@ -889,6 +999,8 @@ def main():
                 lean_db=bool(args.lean_db),
                 enforce_canonical_history=not bool(args.no_enforce_canonical_history),
                 parity_mode=args.parity_mode,
+                mcts_sims=args.mcts_sims,
+                nnue_blend=args.nnue_blend,
             )
         finally:
             # Record task completion for duration learning

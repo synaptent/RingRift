@@ -453,6 +453,63 @@ def get_high_memory_hosts(host_names: List[str]) -> List[str]:
     return high_mem
 
 
+# Valid host statuses for job dispatch
+READY_HOST_STATUSES = {"ready"}  # Only hosts with these statuses receive jobs
+
+
+def get_host_status(host: HostConfig) -> str:
+    """Get the status of a host from its properties.
+
+    Args:
+        host: HostConfig to check
+
+    Returns:
+        Status string (e.g., "ready", "disabled", "setup", "unstable", "stopped")
+        Returns "ready" if no status is configured.
+    """
+    return str(host.properties.get("status", "ready")).lower().strip()
+
+
+def is_host_ready(host: HostConfig) -> bool:
+    """Check if a host is ready to receive jobs.
+
+    Args:
+        host: HostConfig to check
+
+    Returns:
+        True if host status is in READY_HOST_STATUSES
+    """
+    return get_host_status(host) in READY_HOST_STATUSES
+
+
+def load_ready_hosts(config_path: Optional[str] = None) -> Dict[str, HostConfig]:
+    """Load only hosts with status='ready' from YAML configuration.
+
+    This is the preferred function for job dispatch - it filters out disabled,
+    setup, unstable, and stopped hosts automatically.
+
+    Args:
+        config_path: Optional explicit path to config file.
+
+    Returns:
+        Dict mapping host names to HostConfig objects for ready hosts only.
+    """
+    all_hosts = load_remote_hosts(config_path)
+    return {name: host for name, host in all_hosts.items() if is_host_ready(host)}
+
+
+def filter_ready_hosts(hosts: Dict[str, HostConfig]) -> Dict[str, HostConfig]:
+    """Filter a hosts dict to only include ready hosts.
+
+    Args:
+        hosts: Dict of host name to HostConfig
+
+    Returns:
+        Filtered dict with only ready hosts
+    """
+    return {name: host for name, host in hosts.items() if is_host_ready(host)}
+
+
 def clear_memory_cache() -> None:
     """Clear the memory detection cache to force re-detection."""
     global _HOST_MEMORY_CACHE

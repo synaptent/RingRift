@@ -3655,50 +3655,61 @@ class TrainingScheduler:
             training_dir.mkdir(parents=True, exist_ok=True)
             data_path = training_dir / f"unified_{config_key}.npz"
 
+            # Skip export if NPZ file exists and is recent (less than 6 hours old)
+            # This allows reuse of existing data and avoids errors from corrupted DBs
+            export_max_age = 6 * 3600  # 6 hours
+            skip_export = False
+            if data_path.exists():
+                npz_age = time.time() - data_path.stat().st_mtime
+                if npz_age < export_max_age:
+                    print(f"[Training] Skipping export - NPZ file recent ({npz_age/3600:.1f}h old < {export_max_age/3600:.0f}h)")
+                    skip_export = True
+
             # Determine encoder version (v3 for hex, default for square)
             encoder_version = self.config.hex_encoder_version if board_type == "hexagonal" else "default"
 
-            export_cmd = [
-                sys.executable,
-                str(AI_SERVICE_ROOT / self.config.export_script),
-                "--db", str(largest_db),
-                "--output", str(data_path),
-                "--board-type", board_type,
-                "--num-players", str(num_players),
-                "--sample-every", "2",
-                # Quality filters - only train on good data
-                "--require-completed",  # Only games that completed normally
-                "--min-moves", "10",    # Filter out trivially short games
-                "--exclude-recovery",   # Exclude error recovery games
-            ]
-            if encoder_version != "default":
-                export_cmd.extend(["--encoder-version", encoder_version])
+            if not skip_export:
+                export_cmd = [
+                    sys.executable,
+                    str(AI_SERVICE_ROOT / self.config.export_script),
+                    "--db", str(largest_db),
+                    "--output", str(data_path),
+                    "--board-type", board_type,
+                    "--num-players", str(num_players),
+                    "--sample-every", "2",
+                    # Quality filters - only train on good data
+                    "--require-completed",  # Only games that completed normally
+                    "--min-moves", "10",    # Filter out trivially short games
+                    "--exclude-recovery",   # Exclude error recovery games
+                ]
+                if encoder_version != "default":
+                    export_cmd.extend(["--encoder-version", encoder_version])
 
-            # Use parity fixtures to truncate games at safe points (avoid parity divergence)
-            parity_fixtures_dir = AI_SERVICE_ROOT / "data" / "parity_fixtures"
-            if parity_fixtures_dir.exists() and any(parity_fixtures_dir.iterdir()):
-                export_cmd.extend(["--parity-fixtures-dir", str(parity_fixtures_dir)])
-                print(f"[Training] Using parity fixtures from {parity_fixtures_dir}")
+                # Use parity fixtures to truncate games at safe points (avoid parity divergence)
+                parity_fixtures_dir = AI_SERVICE_ROOT / "data" / "parity_fixtures"
+                if parity_fixtures_dir.exists() and any(parity_fixtures_dir.iterdir()):
+                    export_cmd.extend(["--parity-fixtures-dir", str(parity_fixtures_dir)])
+                    print(f"[Training] Using parity fixtures from {parity_fixtures_dir}")
 
-            print(f"[Training] Exporting data for {config_key} (encoder: {encoder_version})...")
-            # Set PYTHONPATH to AI_SERVICE_ROOT so that 'app' module can be imported
-            export_env = os.environ.copy()
-            export_env["PYTHONPATH"] = str(AI_SERVICE_ROOT)
-            export_process = await asyncio.create_subprocess_exec(
-                *export_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=AI_SERVICE_ROOT,
-                env=export_env,
-            )
-            stdout, stderr = await export_process.communicate()
+                print(f"[Training] Exporting data for {config_key} (encoder: {encoder_version})...")
+                # Set PYTHONPATH to AI_SERVICE_ROOT so that 'app' module can be imported
+                export_env = os.environ.copy()
+                export_env["PYTHONPATH"] = str(AI_SERVICE_ROOT)
+                export_process = await asyncio.create_subprocess_exec(
+                    *export_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=AI_SERVICE_ROOT,
+                    env=export_env,
+                )
+                stdout, stderr = await export_process.communicate()
 
-            if export_process.returncode != 0:
-                error_msg = stderr.decode().strip()[:500] if stderr else "Unknown error"
-                print(f"[Training] Export failed for {config_key}: {error_msg}")
-                self.state.training_in_progress = False
-                self._release_training_lock()
-                return False
+                if export_process.returncode != 0:
+                    error_msg = stderr.decode().strip()[:500] if stderr else "Unknown error"
+                    print(f"[Training] Export failed for {config_key}: {error_msg}")
+                    self.state.training_in_progress = False
+                    self._release_training_lock()
+                    return False
 
             # Start NN training process
             timestamp = int(time.time())
