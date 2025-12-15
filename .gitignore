@@ -40,7 +40,8 @@ jest-results.json
 test-results/
 playwright-report/
 playwright/.cache/
-# Note: tests/e2e/__snapshots__/ baseline images should be committed
+# E2E test snapshots (platform-specific, not committed)
+tests/e2e/__snapshots__/
 
 # Temporary files
 *.tmp
