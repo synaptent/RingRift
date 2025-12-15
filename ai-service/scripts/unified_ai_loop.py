@@ -3279,6 +3279,33 @@ class TrainingScheduler:
             except Exception:
                 pass
 
+        # Factor 6: Underrepresented config priority - CRITICAL for balancing model counts
+        # Configs with 0 trained models get drastically lower threshold to bootstrap training
+        # This ensures we build models for ALL 9 board/player combinations
+        if hasattr(self.config_priority, '_trained_model_counts'):
+            self.config_priority._update_trained_model_counts()
+            model_count = self.config_priority._trained_model_counts.get(config_key, 0)
+
+            if model_count == 0:
+                # NO trained models - minimum viable threshold (50 games)
+                # This is critical for bootstrapping underrepresented configs
+                bootstrap_threshold = 50
+                if final_threshold > bootstrap_threshold:
+                    print(f"[Training] BOOTSTRAP: {config_key} has 0 trained models - threshold {final_threshold} → {bootstrap_threshold}")
+                    final_threshold = bootstrap_threshold
+            elif model_count == 1:
+                # Only 1 model - still very underrepresented
+                single_model_threshold = min_threshold  # 125 games
+                if final_threshold > single_model_threshold:
+                    print(f"[Training] UNDERREPRESENTED: {config_key} has 1 model - threshold {final_threshold} → {single_model_threshold}")
+                    final_threshold = single_model_threshold
+            elif model_count <= 3:
+                # 2-3 models - lower threshold to catch up
+                catchup_threshold = min_threshold * 3 // 2  # ~188 games
+                if final_threshold > catchup_threshold:
+                    print(f"[Training] CATCHUP: {config_key} has {model_count} models - threshold {final_threshold} → {catchup_threshold}")
+                    final_threshold = catchup_threshold
+
         if final_threshold != base_threshold:
             print(f"[Training] Dynamic threshold for {config_key}: {final_threshold} (base: {base_threshold}, adj: {adjustment:.2f})")
 
