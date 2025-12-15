@@ -165,8 +165,8 @@ def scan_aggregated_directory(
         logger.error(f"Input directory does not exist: {input_dir}")
         return results
 
-    # Use recursive glob to find ALL games.jsonl files at any depth
-    for jsonl_file in input_dir.glob("**/games.jsonl"):
+    # Use recursive glob to find ALL .jsonl files at any depth (games.jsonl, games_*.jsonl, etc)
+    for jsonl_file in input_dir.glob("**/*.jsonl"):
         # Skip empty files
         try:
             if jsonl_file.stat().st_size == 0:
