@@ -382,7 +382,7 @@ class UnifiedLoopConfig:
     hosts_config_path: str = "config/remote_hosts.yaml"
 
     # Database paths
-    elo_db: str = "data/elo_leaderboard.db"  # Canonical Elo database
+    elo_db: str = "data/unified_elo.db"  # Canonical Elo database
     data_manifest_db: str = "data/data_manifest.db"
 
     # Logging
@@ -1101,7 +1101,7 @@ class ModelPromoter:
 
         try:
             # Query Elo database for candidates
-            elo_db_path = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"
+            elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
             if not elo_db_path.exists():
                 return []
 
@@ -1237,7 +1237,7 @@ class AdaptiveCurriculum:
 
         try:
             # Query Elo by config
-            elo_db_path = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"
+            elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
             if not elo_db_path.exists():
                 return {}
 
@@ -1744,7 +1744,7 @@ class UnifiedAILoop:
             MODEL_PROMOTIONS.set(self.state.total_promotions)
 
             # Update Elo and win rates from Elo database
-            elo_db_path = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"
+            elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
             if elo_db_path.exists():
                 conn = sqlite3.connect(elo_db_path)
                 cursor = conn.cursor()

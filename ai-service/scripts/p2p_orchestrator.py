@@ -9041,7 +9041,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 ai_root = Path(self.ringrift_path) / "ai-service"
                 db_path = ai_root / "data" / "unified_elo.db"
                 if not db_path.exists():
-                    db_path = ai_root / "data" / "elo_leaderboard.db"
+                    db_path = ai_root / "data" / "unified_elo.db"
                 if db_path.exists():
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
@@ -10138,15 +10138,15 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             ai_root = Path(self.ringrift_path) / "ai-service"
 
             if source == "trained":
-                # Use elo_leaderboard.db - actual trained NN models
-                db_path = ai_root / "data" / "elo_leaderboard.db"
+                # Use unified_elo.db - actual trained NN models
+                db_path = ai_root / "data" / "unified_elo.db"
                 if not db_path.exists():
                     return web.json_response([])
 
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
 
-                # elo_leaderboard.db has different schema (model_id instead of participant_id)
+                # unified_elo.db has different schema (model_id instead of participant_id)
                 query = """
                     SELECT model_id, rating, games_played, wins, losses
                     FROM elo_ratings
@@ -11659,7 +11659,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             # Canonical Elo database for trained models
             db_paths = [
-                ai_root / "data" / "elo_leaderboard.db",
+                ai_root / "data" / "unified_elo.db",
             ]
 
             data = []
@@ -11680,7 +11680,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         conn.close()
                         continue
 
-                    # Build query - elo_leaderboard.db has different schema (no board_type/num_players)
+                    # Build query - unified_elo.db has different schema (no board_type/num_players)
                     cursor.execute("PRAGMA table_info(rating_history)")
                     columns = {col[1] for col in cursor.fetchall()}
 
@@ -11701,7 +11701,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                 query += " AND board_type = ? AND num_players = ?"
                                 params.extend([board_type, num_players])
                     else:
-                        # elo_leaderboard.db schema (model_id instead of participant_id)
+                        # unified_elo.db schema (model_id instead of participant_id)
                         query = """
                             SELECT model_id, rating, games_played, timestamp
                             FROM rating_history

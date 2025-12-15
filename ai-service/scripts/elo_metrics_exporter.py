@@ -105,6 +105,25 @@ if HAS_PROMETHEUS:
         []
     )
 
+    # Top N models per config for leaderboard display
+    MODEL_ELO_LEADER = Gauge(
+        'ringrift_model_elo_leader',
+        'Top models Elo rating per configuration with rank',
+        ['config', 'rank', 'model', 'model_type']
+    )
+
+    MODEL_LEADER_GAMES = Gauge(
+        'ringrift_model_leader_games',
+        'Games played by top models per configuration',
+        ['config', 'rank', 'model']
+    )
+
+    MODEL_LEADER_WINRATE = Gauge(
+        'ringrift_model_leader_winrate',
+        'Win rate of top models per configuration',
+        ['config', 'rank', 'model']
+    )
+
 
 def get_current_elo_ratings() -> List[Tuple]:
     """Get current Elo ratings from database."""
@@ -303,6 +322,65 @@ def update_metrics():
         if latest_update:
             age = time.time() - latest_update
             DATA_SYNC_AGE.set(age)
+
+    # Update top N leaders per config (for leaderboard panels)
+    # Group ratings by config and take top 5
+    from collections import defaultdict
+    config_leaders: Dict[str, List] = defaultdict(list)
+
+    for row in ratings:
+        participant_id, board_type, num_players, rating, games, wins, losses, draws, last_update, ptype, version = row
+        config = f"{board_type}_{num_players}p"
+
+        # Only include models with sufficient games
+        if games >= 5:
+            config_leaders[config].append({
+                'model': participant_id.split('/')[-1][:40],
+                'rating': rating,
+                'games': games,
+                'wins': wins,
+                'losses': losses,
+                'draws': draws,
+                'model_type': 'neural' if 'nn' in participant_id.lower() or 'ringrift' in participant_id.lower()
+                              else 'mcts' if 'mcts' in participant_id.lower()
+                              else 'heuristic' if 'heuristic' in participant_id.lower()
+                              else 'random' if 'random' in participant_id.lower()
+                              else 'other'
+            })
+
+    # Export top 5 per config with rank labels
+    ALL_CONFIGS = [
+        'square8_2p', 'square8_3p', 'square8_4p',
+        'square19_2p', 'square19_3p', 'square19_4p',
+        'hexagonal_2p', 'hexagonal_3p', 'hexagonal_4p',
+    ]
+
+    for config in ALL_CONFIGS:
+        leaders = config_leaders.get(config, [])
+        # Sort by rating descending
+        leaders.sort(key=lambda x: x['rating'], reverse=True)
+
+        for rank, leader in enumerate(leaders[:5], start=1):
+            MODEL_ELO_LEADER.labels(
+                config=config,
+                rank=str(rank),
+                model=leader['model'],
+                model_type=leader['model_type']
+            ).set(leader['rating'])
+
+            MODEL_LEADER_GAMES.labels(
+                config=config,
+                rank=str(rank),
+                model=leader['model']
+            ).set(leader['games'])
+
+            total = leader['wins'] + leader['losses'] + leader['draws']
+            winrate = leader['wins'] / total if total > 0 else 0
+            MODEL_LEADER_WINRATE.labels(
+                config=config,
+                rank=str(rank),
+                model=leader['model']
+            ).set(winrate)
 
 
 class MetricsHandler(BaseHTTPRequestHandler):

@@ -324,20 +324,24 @@ function PhaseIndicator({
 
   return (
     <div
-      className={`${phase.colorClass} text-white px-4 py-3 rounded-lg shadow-lg`}
+      className={`${phase.colorClass} text-white px-4 py-3 rounded-xl shadow-lg ring-1 ring-white/10 transition-all duration-300 ease-out`}
       role="status"
       aria-live="polite"
       aria-label={phaseAriaLabel}
       data-testid="phase-indicator"
     >
       <div className="flex items-center gap-3">
-        {phase.icon && <span className="text-2xl flex-shrink-0">{phase.icon}</span>}
+        {phase.icon && (
+          <span className="text-2xl flex-shrink-0 bg-white/15 rounded-lg p-2 shadow-inner">
+            {phase.icon}
+          </span>
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <div className="font-bold text-base">{phase.label}</div>
+            <div className="font-bold text-base tracking-tight">{phase.label}</div>
             <Tooltip content={tooltipContent}>
               <span
-                className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-100/70 bg-white/10 text-[10px] text-slate-50"
+                className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/40 bg-white/15 text-[10px] text-white font-medium hover:bg-white/25 hover:border-white/60 transition-colors cursor-help"
                 aria-label="Phase details"
                 data-testid="phase-tooltip-trigger"
               >
@@ -345,12 +349,13 @@ function PhaseIndicator({
               </span>
             </Tooltip>
           </div>
-          <div className="text-sm opacity-90">{phase.description}</div>
+          <div className="text-sm text-white/85 mt-0.5">{phase.description}</div>
           {contextualHint && (
             <div
-              className="mt-1.5 text-xs font-medium bg-white/20 rounded px-2 py-1 inline-block"
+              className="mt-2 text-xs font-semibold bg-white/25 backdrop-blur-sm rounded-md px-2.5 py-1.5 inline-flex items-center gap-1.5 shadow-sm border border-white/20"
               data-testid="phase-action-hint"
             >
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               {contextualHint}
             </div>
           )}
@@ -374,10 +379,10 @@ function WeirdStateBanner({
 }) {
   const toneClasses =
     weirdState.tone === 'critical'
-      ? 'border-red-400/80 bg-red-950/70 text-red-50'
+      ? 'border-red-400/60 bg-gradient-to-r from-red-950/80 to-red-900/60 text-red-50 shadow-lg shadow-red-900/30'
       : weirdState.tone === 'warning'
-        ? 'border-amber-400/80 bg-amber-950/70 text-amber-50'
-        : 'border-sky-400/80 bg-sky-950/70 text-sky-50';
+        ? 'border-amber-400/60 bg-gradient-to-r from-amber-950/80 to-amber-900/60 text-amber-50 shadow-lg shadow-amber-900/20'
+        : 'border-sky-400/60 bg-gradient-to-r from-sky-950/80 to-sky-900/60 text-sky-50 shadow-lg shadow-sky-900/20';
 
   const badgeLabel =
     weirdState.type === 'last-player-standing'
@@ -392,30 +397,37 @@ function WeirdStateBanner({
 
   const icon = weirdState.tone === 'critical' ? '⚠️' : weirdState.tone === 'warning' ? '⚠️' : 'ℹ️';
 
+  const iconBgClass =
+    weirdState.tone === 'critical'
+      ? 'bg-red-900/50'
+      : weirdState.tone === 'warning'
+        ? 'bg-amber-900/50'
+        : 'bg-sky-900/50';
+
   return (
     <div
-      className={`mb-3 px-4 py-3 rounded-lg border text-xs sm:text-[13px] flex items-start gap-3 ${toneClasses}`}
+      className={`mb-3 px-4 py-3 rounded-xl border text-xs sm:text-[13px] flex items-start gap-3 transition-all duration-300 ${toneClasses}`}
       role="status"
       aria-live="polite"
       data-testid="hud-weird-state-banner"
     >
-      <div className="mt-0.5 text-lg" aria-hidden="true">
+      <div className={`mt-0.5 text-lg p-1.5 rounded-lg ${iconBgClass}`} aria-hidden="true">
         {icon}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-[11px] uppercase tracking-wide font-semibold opacity-80">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold opacity-90 px-2 py-0.5 rounded-full bg-white/10 border border-white/10">
             {badgeLabel}
           </span>
         </div>
         <div className="font-semibold text-sm leading-snug">{weirdState.title}</div>
-        <div className="mt-1 text-[11px] leading-snug opacity-90">{weirdState.body}</div>
+        <div className="mt-1.5 text-[11px] leading-snug opacity-85">{weirdState.body}</div>
       </div>
       {onShowHelp && (
         <button
           type="button"
           onClick={onShowHelp}
-          className="ml-1 mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border border-current/60 text-[11px] font-semibold"
+          className="ml-1 mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-current/50 text-sm font-semibold bg-white/10 hover:bg-white/20 hover:border-current/70 transition-colors"
           aria-label="Learn more about this situation"
           data-testid="hud-weird-state-help"
         >
@@ -479,40 +491,48 @@ function LpsTrackingIndicator({
   const playerName = exclusivePlayer?.username ?? `Player ${consecutiveExclusivePlayer}`;
 
   // Color progression: amber (1-2), red (3 = victory imminent)
-  const colorClass =
-    consecutiveExclusiveRounds >= 3
-      ? 'border-red-400/80 bg-red-950/70 text-red-50'
-      : 'border-amber-400/80 bg-amber-950/70 text-amber-50';
+  const isVictoryImminent = consecutiveExclusiveRounds >= 3;
+  const colorClass = isVictoryImminent
+    ? 'border-red-400/60 bg-gradient-to-r from-red-950/80 to-red-900/60 text-red-50 shadow-lg shadow-red-900/30'
+    : 'border-amber-400/60 bg-gradient-to-r from-amber-950/80 to-amber-900/60 text-amber-50 shadow-md shadow-amber-900/20';
 
   const roundsLeft = Math.max(0, 3 - consecutiveExclusiveRounds);
-  const statusText =
-    consecutiveExclusiveRounds >= 3
-      ? 'LPS Victory!'
-      : `${roundsLeft} round${roundsLeft !== 1 ? 's' : ''} until LPS`;
+  const statusText = isVictoryImminent
+    ? 'LPS Victory!'
+    : `${roundsLeft} round${roundsLeft !== 1 ? 's' : ''} until LPS`;
 
   return (
     <div
-      className={`mb-3 px-3 py-2 rounded-lg border text-xs flex items-center gap-2 ${colorClass}`}
+      className={`mb-3 px-4 py-3 rounded-xl border text-xs flex items-center gap-3 transition-all duration-300 ${colorClass} ${
+        isVictoryImminent ? 'animate-pulse' : ''
+      }`}
       role="status"
       aria-live="polite"
       data-testid="hud-lps-indicator"
     >
-      <span className="text-base" aria-hidden="true">
+      <span
+        className={`text-xl p-1.5 rounded-lg ${isVictoryImminent ? 'bg-red-900/50' : 'bg-amber-900/50'}`}
+        aria-hidden="true"
+      >
         🏆
       </span>
       <div className="flex-1 min-w-0">
         <div className="font-semibold text-sm">{playerName} has exclusive actions</div>
-        <div className="text-[11px] opacity-90">
-          {statusText} • Round {consecutiveExclusiveRounds}/3
+        <div className="text-[11px] opacity-90 mt-0.5 flex items-center gap-2">
+          <span>{statusText}</span>
+          <span className="text-[10px] opacity-70">•</span>
+          <span className="font-mono">Round {consecutiveExclusiveRounds}/3</span>
         </div>
       </div>
       {/* Progress dots */}
-      <div className="flex gap-1" aria-label={`${consecutiveExclusiveRounds} of 3 rounds`}>
+      <div className="flex gap-1.5" aria-label={`${consecutiveExclusiveRounds} of 3 rounds`}>
         {[1, 2, 3].map((n) => (
           <span
             key={n}
-            className={`w-2 h-2 rounded-full ${
-              n <= consecutiveExclusiveRounds ? 'bg-current' : 'bg-current/30'
+            className={`w-3 h-3 rounded-full transition-all duration-300 ${
+              n <= consecutiveExclusiveRounds
+                ? 'bg-current shadow-sm'
+                : 'bg-current/25 border border-current/30'
             }`}
           />
         ))}
@@ -844,27 +864,27 @@ const PLAYER_COLOR_CLASSES = ['bg-emerald-500', 'bg-sky-500', 'bg-amber-500', 'b
  */
 function RingStatsFromVM({ stats }: { stats: PlayerRingStatsViewModel }) {
   return (
-    <div className="grid grid-cols-3 gap-2 text-xs mt-2">
+    <div className="grid grid-cols-3 gap-2 text-xs mt-3 bg-slate-900/50 rounded-lg p-2 border border-slate-700/50">
       <div className="text-center">
-        <div className="font-bold text-slate-200">{stats.inHand}</div>
+        <div className="font-bold text-lg text-slate-200">{stats.inHand}</div>
         <Tooltip content="Rings not yet placed on the board. Place these during the ring placement phase to build your stacks.">
-          <span className="text-slate-400 cursor-help border-b border-dotted border-slate-500">
+          <span className="text-[10px] text-slate-400 cursor-help border-b border-dotted border-slate-600 hover:text-slate-300 transition-colors">
             In Hand
           </span>
         </Tooltip>
       </div>
-      <div className="text-center">
-        <div className="font-bold text-slate-200">{stats.onBoard}</div>
+      <div className="text-center border-x border-slate-700/50">
+        <div className="font-bold text-lg text-slate-200">{stats.onBoard}</div>
         <Tooltip content="Rings currently in your stacks on the board. These can be moved, captured, or eliminated.">
-          <span className="text-slate-400 cursor-help border-b border-dotted border-slate-500">
+          <span className="text-[10px] text-slate-400 cursor-help border-b border-dotted border-slate-600 hover:text-slate-300 transition-colors">
             On Board
           </span>
         </Tooltip>
       </div>
       <div className="text-center">
-        <div className="font-bold text-red-400">{stats.eliminated}</div>
+        <div className="font-bold text-lg text-red-400">{stats.eliminated}</div>
         <Tooltip content="Rings permanently removed from play. Each elimination counts toward Ring Elimination victory!">
-          <span className="text-slate-400 cursor-help border-b border-dotted border-slate-500">
+          <span className="text-[10px] text-slate-400 cursor-help border-b border-dotted border-slate-600 hover:text-slate-300 transition-colors">
             Eliminated
           </span>
         </Tooltip>
@@ -903,22 +923,41 @@ function PlayerCardFromVM({
 
   const playerAriaLabel = playerStatusParts.join(' ');
 
+  // Current player gets a more prominent visual treatment
+  const isActivePlayer = player.isCurrentPlayer;
+  const cardBaseClasses = isActivePlayer
+    ? 'bg-gradient-to-br from-blue-900/80 to-slate-900/80 border-blue-400/70 shadow-lg shadow-blue-500/20'
+    : 'bg-slate-800/60 border-slate-700 hover:border-slate-600';
+
+  const userRingClasses = player.isUserPlayer
+    ? 'ring-2 ring-green-400/70 ring-offset-1 ring-offset-slate-900'
+    : '';
+
   return (
     <article
       className={`
-      p-3 rounded-lg border-2 transition-all bg-slate-800/60
-      ${player.isCurrentPlayer ? 'border-blue-500' : 'border-slate-700'}
-      ${player.isUserPlayer ? 'ring-2 ring-green-400' : ''}
+      p-3 rounded-xl border-2 transition-all duration-300 ease-out
+      ${cardBaseClasses}
+      ${userRingClasses}
     `}
       aria-label={playerAriaLabel}
       data-testid={`player-card-${player.id}`}
     >
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <div className={`w-4 h-4 rounded-full ${player.colorClass}`} />
+          <div
+            className={`w-5 h-5 rounded-full ${player.colorClass} shadow-sm ${
+              isActivePlayer ? 'ring-2 ring-white/40 animate-pulse' : ''
+            }`}
+          />
           <span className="font-semibold text-slate-100">{player.username}</span>
           {player.aiInfo.isAI && <Badge>🤖 AI</Badge>}
-          {player.isCurrentPlayer && <Badge variant="primary">Current Turn</Badge>}
+          {player.isCurrentPlayer && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/90 text-white text-xs font-semibold shadow-sm animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-white" />
+              Current Turn
+            </span>
+          )}
         </div>
 
         {timeControl && player.timeRemaining !== undefined && (
@@ -931,13 +970,13 @@ function PlayerCardFromVM({
       </div>
 
       {player.aiInfo.isAI && (
-        <div className="flex flex-col gap-1 mb-2">
+        <div className="flex flex-wrap gap-1.5 mb-2">
           <span
-            className={`text-[10px] px-1.5 py-0.5 rounded ${player.aiInfo.difficultyBgColor} ${player.aiInfo.difficultyColor} font-semibold`}
+            className={`text-[10px] px-2 py-1 rounded-md ${player.aiInfo.difficultyBgColor} ${player.aiInfo.difficultyColor} font-semibold shadow-sm`}
           >
             {player.aiInfo.difficultyLabel} Lv{player.aiInfo.difficulty}
           </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-300">
+          <span className="text-[10px] px-2 py-1 rounded-md bg-slate-700/80 text-slate-300 font-medium">
             {player.aiInfo.aiTypeLabel}
           </span>
         </div>
@@ -945,10 +984,11 @@ function PlayerCardFromVM({
 
       <RingStatsFromVM stats={player.ringStats} />
       {player.territorySpaces > 0 && (
-        <div className="text-sm mt-1 text-center text-slate-300">
-          <span className="font-semibold text-slate-100">{player.territorySpaces}</span> territory
-          space
-          {player.territorySpaces !== 1 ? 's' : ''}
+        <div className="text-sm mt-2 text-center text-slate-300 bg-emerald-900/30 rounded-md py-1 border border-emerald-700/40">
+          <span className="font-semibold text-emerald-300">{player.territorySpaces}</span>{' '}
+          <span className="text-emerald-200/80">
+            territory space{player.territorySpaces !== 1 ? 's' : ''}
+          </span>
         </div>
       )}
     </article>
@@ -1183,24 +1223,27 @@ export function GameHUD(props: GameHUDProps) {
 export function VictoryConditionsPanel({ className = '' }: { className?: string }) {
   return (
     <div
-      className={`px-4 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-[11px] text-slate-300 leading-snug ${className}`}
+      className={`px-4 py-3 bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-700/80 rounded-xl text-[11px] text-slate-300 leading-snug shadow-sm ${className}`}
       data-testid="victory-conditions-help"
     >
-      <div className="font-semibold text-slate-100 mb-1">Victory</div>
+      <div className="font-semibold text-slate-100 mb-2 text-xs uppercase tracking-wider flex items-center gap-2">
+        <span className="text-amber-400">🏆</span>
+        Victory Conditions
+      </div>
 
-      <div className="space-y-1.5">
-        <div className="flex items-start gap-1">
-          <span className="mt-0.5">•</span>
+      <div className="space-y-2">
+        <div className="flex items-start gap-2 p-2 rounded-lg bg-rose-950/30 border border-rose-900/40 hover:border-rose-800/50 transition-colors">
+          <span className="text-rose-400 text-sm mt-0.5">⚔️</span>
           <div className="flex-1">
-            <div className="flex items-center gap-1">
-              <span>Ring Elimination – Eliminate enough rings to win!</span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-medium text-rose-200">Ring Elimination</span>
               <Tooltip
                 content={
                   'How to eliminate rings:\n• Move onto a marker to remove it as a ring\n• Choose "full bonus" when you score a line\n• Claim territory (costs the cap from an eligible stack)\n• Forced elimination when you have no moves\n\nThe number of rings you need depends on player count. Check your progress in the Score Summary above!'
                 }
               >
                 <span
-                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-500 text-[10px] text-slate-200"
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-600/50 bg-rose-900/30 text-[9px] text-rose-300 hover:bg-rose-900/50 transition-colors cursor-help"
                   aria-label="Elimination victory details"
                   data-testid="victory-tooltip-elimination-trigger"
                 >
@@ -1208,21 +1251,24 @@ export function VictoryConditionsPanel({ className = '' }: { className?: string 
                 </span>
               </Tooltip>
             </div>
+            <div className="text-[10px] text-rose-300/70 mt-0.5">
+              Eliminate enough opponent rings
+            </div>
           </div>
         </div>
 
-        <div className="flex items-start gap-1">
-          <span className="mt-0.5">•</span>
+        <div className="flex items-start gap-2 p-2 rounded-lg bg-emerald-950/30 border border-emerald-900/40 hover:border-emerald-800/50 transition-colors">
+          <span className="text-emerald-400 text-sm mt-0.5">🏰</span>
           <div className="flex-1">
-            <div className="flex items-center gap-1">
-              <span>Territory Control – Dominate the board with your territory!</span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-medium text-emerald-200">Territory Control</span>
               <Tooltip
                 content={
                   'Territory = spaces you permanently control.\n\nTo claim a region:\n1. Isolate a group of spaces by surrounding them\n2. Spend the cap from an eligible stack outside the region\n   (multicolor stacks or stacks taller than 1 ring)\n\nWin by controlling at least your fair share (1/N of board) AND more territory than all opponents combined!'
                 }
               >
                 <span
-                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-500 text-[10px] text-slate-200"
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-emerald-600/50 bg-emerald-900/30 text-[9px] text-emerald-300 hover:bg-emerald-900/50 transition-colors cursor-help"
                   aria-label="Territory victory details"
                   data-testid="victory-tooltip-territory-trigger"
                 >
@@ -1230,27 +1276,33 @@ export function VictoryConditionsPanel({ className = '' }: { className?: string 
                 </span>
               </Tooltip>
             </div>
+            <div className="text-[10px] text-emerald-300/70 mt-0.5">
+              Dominate the board with your territory
+            </div>
           </div>
         </div>
 
-        <div className="flex items-start gap-1">
-          <span className="mt-0.5">•</span>
+        <div className="flex items-start gap-2 p-2 rounded-lg bg-purple-950/30 border border-purple-900/40 hover:border-purple-800/50 transition-colors">
+          <span className="text-purple-400 text-sm mt-0.5">👑</span>
           <div className="flex-1">
-            <div className="flex items-center gap-1">
-              <span>Last Player Standing – Dominate the board for 3 rounds!</span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-medium text-purple-200">Last Player Standing</span>
               <Tooltip
                 content={
                   'If you are the only player who can actually move for 3 rounds in a row, you win!\n\nWhat counts as a "real move":\n• Placing rings\n• Moving stacks\n• Capturing opponents\n\nIf opponents are stuck and can only do forced eliminations, that doesn\'t count as a real move for them.'
                 }
               >
                 <span
-                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-500 text-[10px] text-slate-200"
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-purple-600/50 bg-purple-900/30 text-[9px] text-purple-300 hover:bg-purple-900/50 transition-colors cursor-help"
                   aria-label="Last Player Standing victory details"
                   data-testid="victory-tooltip-last-player-standing-trigger"
                 >
                   ?
                 </span>
               </Tooltip>
+            </div>
+            <div className="text-[10px] text-purple-300/70 mt-0.5">
+              Be the only active player for 3 rounds
             </div>
           </div>
         </div>
@@ -1276,20 +1328,30 @@ function CompactScoreSummary({ players }: { players: PlayerViewModel[] }) {
 
   return (
     <div
-      className="mt-3 px-3 py-2 bg-slate-900/70 border border-slate-700 rounded-lg text-[11px] text-slate-200"
+      className="mt-3 px-3 py-3 bg-gradient-to-br from-slate-900/90 to-slate-800/70 border border-slate-700/80 rounded-xl text-[11px] text-slate-200 shadow-sm"
       role="region"
       aria-label={scoreSummaryAriaLabel}
       data-testid="hud-score-summary"
     >
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-        Score summary
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+        <span className="text-slate-500">📊</span>
+        Score Summary
       </div>
-      <div className="grid grid-cols-1 gap-1.5">
+      <div className="grid grid-cols-1 gap-2">
         {players.map((player) => (
-          <div key={player.id} className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
+          <div
+            key={player.id}
+            className={`flex items-center justify-between gap-2 p-2 rounded-lg transition-colors ${
+              player.isCurrentPlayer
+                ? 'bg-blue-900/30 border border-blue-700/40'
+                : 'bg-slate-800/40 border border-slate-700/30 hover:bg-slate-800/60'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
               <span
-                className={`inline-block w-2 h-2 rounded-full ${player.colorClass}`}
+                className={`inline-block w-3 h-3 rounded-full ${player.colorClass} shadow-sm ${
+                  player.isCurrentPlayer ? 'ring-2 ring-white/30' : ''
+                }`}
                 aria-hidden="true"
               />
               <span className="truncate">
@@ -1297,22 +1359,25 @@ function CompactScoreSummary({ players }: { players: PlayerViewModel[] }) {
                   {player.isUserPlayer ? 'You' : player.username}
                 </span>
                 {player.isCurrentPlayer && (
-                  <span className="ml-1 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-blue-100">
+                  <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-blue-500/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-blue-200 border border-blue-400/30">
+                    <span className="w-1 h-1 rounded-full bg-blue-300 animate-pulse" />
                     Turn
                   </span>
                 )}
               </span>
             </div>
-            <div className="flex items-center gap-3 text-[10px] text-slate-300">
-              <span className="flex items-center gap-1">
-                <span className="text-red-300">Rings Eliminated</span>
-                <span className="font-mono text-red-200">
+            <div className="flex items-center gap-3 text-[10px]">
+              <span className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose-950/40 border border-rose-800/30">
+                <span className="text-rose-400">⚔</span>
+                <span className="font-mono font-medium text-rose-200">
                   {player.ringStats.eliminated}/{player.ringStats.total}
                 </span>
               </span>
-              <span className="flex items-center gap-1">
-                <span className="text-emerald-300">Territory</span>
-                <span className="font-mono text-emerald-200">{player.territorySpaces}</span>
+              <span className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-950/40 border border-emerald-800/30">
+                <span className="text-emerald-400">🏰</span>
+                <span className="font-mono font-medium text-emerald-200">
+                  {player.territorySpaces}
+                </span>
               </span>
             </div>
           </div>
@@ -1945,24 +2010,26 @@ function GameHUDFromViewModel({
 
       {/* Game Progress */}
       <div className="mt-3">
-        <div className="text-center py-2 rounded-lg border border-slate-700 bg-slate-900/70">
-          <div className="text-2xl font-bold text-slate-100">{turnNumber}</div>
+        <div className="text-center py-3 rounded-xl border border-slate-700/80 bg-gradient-to-b from-slate-800/80 to-slate-900/90 shadow-inner">
+          <div className="text-3xl font-bold text-slate-100 tracking-tight">{turnNumber}</div>
           <Tooltip
             content={
               'Turn counts completed full cycles around the table.\nMove # counts individual actions within those turns.'
             }
           >
-            <span className="inline-flex items-center justify-center gap-1 text-xs text-slate-400">
-              <span>Turn</span>
+            <span className="inline-flex items-center justify-center gap-1.5 text-xs text-slate-400 mt-0.5">
+              <span className="uppercase tracking-wider font-medium">Turn</span>
               <span
                 aria-hidden="true"
-                className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-600 text-[10px] text-slate-300"
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-600 bg-slate-800 text-[10px] text-slate-300 hover:border-slate-500 hover:text-slate-200 transition-colors cursor-help"
               >
                 ?
               </span>
             </span>
           </Tooltip>
-          {moveNumber > 0 && <div className="text-xs text-slate-500">Move #{moveNumber}</div>}
+          {moveNumber > 0 && (
+            <div className="text-[11px] text-slate-500 mt-0.5 font-mono">Move #{moveNumber}</div>
+          )}
         </div>
       </div>
 
@@ -1971,8 +2038,8 @@ function GameHUDFromViewModel({
 
       {/* Instruction Banner */}
       {instruction && (
-        <div className="mt-3 px-4 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-center">
-          <span className="text-slate-200 font-medium">{instruction}</span>
+        <div className="mt-3 px-4 py-3 bg-gradient-to-r from-amber-900/40 via-amber-900/30 to-amber-900/40 border border-amber-600/40 rounded-xl text-center shadow-sm">
+          <span className="text-amber-100 font-medium text-sm">{instruction}</span>
         </div>
       )}
 

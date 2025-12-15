@@ -52,7 +52,7 @@ ELO_CALIBRATION_INTERVAL = 72  # Run Elo tournament every 72 iterations (6 hours
 ELO_CALIBRATION_GAMES = 50  # Games per config for Elo calibration
 
 # Elo-driven scheduling configuration (curriculum learning)
-ELO_LEADERBOARD_DB = Path(__file__).parent.parent / "data" / "elo_leaderboard.db"
+ELO_LEADERBOARD_DB = Path(__file__).parent.parent / "data" / "unified_elo.db"
 ELO_CURRICULUM_ENABLED = True  # Enable Elo-based opponent selection
 ELO_MATCH_WINDOW = 200  # Match opponents within this Elo range
 ELO_UNDERSERVED_THRESHOLD = 100  # Configs with fewer games are "underserved"

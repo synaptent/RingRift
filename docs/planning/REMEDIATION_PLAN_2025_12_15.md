@@ -1,8 +1,9 @@
 # Remediation Plan: Critical Assessment Findings
 
-**Date:** 2025-12-15  
-**Status:** Active  
-**Owner:** Development Team  
+**Date:** 2025-12-15
+**Status:** Active (Blocker Identified)
+**Last Updated:** 2025-12-15T03:05Z
+**Owner:** Development Team
 **Related Documents:**
 
 - [`PROJECT_GOALS.md`](../../PROJECT_GOALS.md)
@@ -40,7 +41,121 @@ The AI training infrastructure is substantial (13 nodes, ~2,500 selfplay jobs) b
 
 ---
 
-## 2. Priority 1: Frontend UX Polish
+## 1.1. Blockers Discovered
+
+### BLOCKER: P2-AI-01 Canonical Selfplay Data Insufficiency
+
+**Discovered:** 2025-12-15 (during P2-AI-01 audit)
+**Status:** 🔴 Critical Blocker for AI Training Pipeline
+**Impact:** Blocks P2-AI-02 through P2-AI-06
+
+**Findings:**
+
+The canonical selfplay audit revealed that while all 5 canonical DBs exist with `canonical_ok=true`, the total game count is far below training thresholds:
+
+| Database                  | Current Games | Target    | Status          |
+| ------------------------- | ------------- | --------- | --------------- |
+| `canonical_square8.db`    | 12            | 100+      | ❌ Insufficient |
+| `canonical_square8_3p.db` | 2             | 50+       | ❌ Insufficient |
+| `canonical_square8_4p.db` | 2             | 50+       | ❌ Insufficient |
+| `canonical_square19.db`   | 1             | 25+       | ❌ Insufficient |
+| `canonical_hex.db`        | 1             | 25+       | ❌ Insufficient |
+| **Total**                 | **18 games**  | **~250+** | ❌ Insufficient |
+
+**Root Cause:**
+
+- Selfplay scale-up requires long-running processes (hours to days depending on board size)
+- Not suitable for subtask execution in agent context
+- Requires human operator to run on GPU cluster or distributed nodes
+
+**Operator Instructions for Selfplay Scale-Up:**
+
+The following commands should be run by the human operator to generate sufficient training data:
+
+```bash
+# Navigate to ai-service directory
+cd ai-service
+
+# Activate virtual environment
+source .venv/bin/activate  # or: source venv/bin/activate
+
+# Generate canonical selfplay with parity gate
+# For square8 2-player (primary target: 100+ games)
+python scripts/generate_canonical_selfplay.py \
+  --board square8 \
+  --players 2 \
+  --games 100 \
+  --output data/canonical_square8.db
+
+# For square8 3-player (target: 50+ games)
+python scripts/generate_canonical_selfplay.py \
+  --board square8 \
+  --players 3 \
+  --games 50 \
+  --output data/canonical_square8_3p.db
+
+# For square8 4-player (target: 50+ games)
+python scripts/generate_canonical_selfplay.py \
+  --board square8 \
+  --players 4 \
+  --games 50 \
+  --output data/canonical_square8_4p.db
+
+# For square19 2-player (target: 25+ games, longer runtime)
+python scripts/generate_canonical_selfplay.py \
+  --board square19 \
+  --players 2 \
+  --games 25 \
+  --output data/canonical_square19.db
+
+# For hex 2-player (target: 25+ games)
+python scripts/generate_canonical_selfplay.py \
+  --board hexagonal \
+  --players 2 \
+  --games 25 \
+  --output data/canonical_hex.db
+```
+
+**Estimated Runtimes:**
+
+- `square8` 2P: ~2-4 hours for 100 games
+- `square8` 3P/4P: ~3-6 hours each for 50 games
+- `square19` 2P: ~6-12 hours for 25 games
+- `hexagonal` 2P: ~8-16 hours for 25 games
+
+**Verification After Completion:**
+
+```bash
+# Verify all DBs pass canonical gates
+python scripts/run_parity_and_history_gate.py --db data/canonical_square8.db
+# Repeat for each DB
+```
+
+**Impact on Timeline:**
+
+- P2-AI-02 through P2-AI-06 are blocked until selfplay completes
+- Original Phase A/B timeline shifts by ~1-3 days depending on compute availability
+- Priority 1 UX work can proceed in parallel (unblocked)
+
+---
+
+## 1.2. Completed Work
+
+### ✅ Priority 1: Frontend UX Polish - COMPLETE
+
+All P1-UX subtasks have been completed as of 2025-12-15:
+
+- **P1-UX-01:** Teaching Overlays for Recovery Actions - ✅ Complete
+- **P1-UX-02:** Spectator UI Completion - ✅ Complete
+- **P1-UX-03:** Sandbox UX Player Focus - ✅ Complete
+- **P1-UX-04:** Mobile/Touch Ergonomics - ✅ Complete
+- **P1-UX-05:** HUD Visual Polish - ✅ Complete
+
+See [`docs/ux/FRONTEND_UX_PROGRESS.md`](../ux/FRONTEND_UX_PROGRESS.md) for detailed implementation notes.
+
+---
+
+## 2. Priority 1: Frontend UX Polish (COMPLETE)
 
 ### P1-UX-01: Teaching Overlay Completion for Recovery Actions
 
@@ -172,10 +287,13 @@ The AI training infrastructure is substantial (13 nodes, ~2,500 selfplay jobs) b
 
 ---
 
-## 3. Priority 2: AI Model Training Pipeline
+## 3. Priority 2: AI Model Training Pipeline (BLOCKED)
 
-### P2-AI-01: Canonical Selfplay Scale-Up
+> ⚠️ **BLOCKER:** This entire priority is blocked pending completion of P2-AI-01 selfplay scale-up by human operator. See [Section 1.1 Blockers Discovered](#11-blockers-discovered) for operator instructions.
 
+### P2-AI-01: Canonical Selfplay Scale-Up (🔴 AWAITING OPERATOR ACTION)
+
+**Status:** 🔴 Requires human operator to run selfplay commands on GPU cluster
 **Scope:** Scale canonical selfplay databases to training-appropriate sizes across all board types and player counts.
 
 **Deliverables:**
@@ -203,8 +321,9 @@ The AI training infrastructure is substantial (13 nodes, ~2,500 selfplay jobs) b
 
 ---
 
-### P2-AI-02: Parity Gate Validation
+### P2-AI-02: Parity Gate Validation (⏸️ BLOCKED)
 
+**Status:** ⏸️ Blocked - awaiting P2-AI-01 completion
 **Scope:** Verify TS↔Python parity for scaled canonical databases before training.
 
 **Deliverables:**
@@ -226,8 +345,9 @@ The AI training infrastructure is substantial (13 nodes, ~2,500 selfplay jobs) b
 
 ---
 
-### P2-AI-03: Training Data Export
+### P2-AI-03: Training Data Export (⏸️ BLOCKED)
 
+**Status:** ⏸️ Blocked - awaiting P2-AI-02 completion
 **Scope:** Export canonical databases to training-ready format (NPZ/tensor datasets).
 
 **Deliverables:**
@@ -251,8 +371,9 @@ The AI training infrastructure is substantial (13 nodes, ~2,500 selfplay jobs) b
 
 ---
 
-### P2-AI-04: v2 Model Training Runs
+### P2-AI-04: v2 Model Training Runs (⏸️ BLOCKED)
 
+**Status:** ⏸️ Blocked - awaiting P2-AI-03 completion
 **Scope:** Train v2 neural models on canonical data for each board type.
 
 **Deliverables:**
@@ -277,8 +398,9 @@ The AI training infrastructure is substantial (13 nodes, ~2,500 selfplay jobs) b
 
 ---
 
-### P2-AI-05: Model Evaluation
+### P2-AI-05: Model Evaluation (⏸️ BLOCKED)
 
+**Status:** ⏸️ Blocked - awaiting P2-AI-04 completion
 **Scope:** Evaluate v2 models via Elo tournaments and strength assessment.
 
 **Deliverables:**
@@ -302,8 +424,9 @@ The AI training infrastructure is substantial (13 nodes, ~2,500 selfplay jobs) b
 
 ---
 
-### P2-AI-06: Model Promotion
+### P2-AI-06: Model Promotion (⏸️ BLOCKED)
 
+**Status:** ⏸️ Blocked - awaiting P2-AI-05 completion
 **Scope:** Promote evaluated v2 models to canonical status for production use.
 
 **Deliverables:**

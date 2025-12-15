@@ -42,7 +42,7 @@ sys.path.insert(0, str(AI_SERVICE_ROOT))
 
 MODELS_DIR = AI_SERVICE_ROOT / "models"
 ARCHIVE_DIR = AI_SERVICE_ROOT / "models" / "archive"
-ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"  # Canonical Elo database
+ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"  # Canonical Elo database
 
 # Default thresholds
 DEFAULT_MIN_ELO = 1400  # Prune models below this Elo

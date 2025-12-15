@@ -346,15 +346,10 @@ describe('GameHUD', () => {
 
     const helper = screen.getByTestId('victory-conditions-help');
     expect(helper).toBeInTheDocument();
-    expect(
-      screen.getByText(/Ring Elimination – Eliminate enough rings to win/i)
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Territory Control – Dominate the board with your territory/i)
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Last Player Standing – Dominate the board for 3 rounds/i)
-    ).toBeInTheDocument();
+    // Updated to match new polished VictoryConditionsPanel layout
+    expect(screen.getByText('Ring Elimination')).toBeInTheDocument();
+    expect(screen.getByText('Territory Control')).toBeInTheDocument();
+    expect(screen.getByText('Last Player Standing')).toBeInTheDocument();
   });
 
   it('renders legacy sub-phase detail copy for line and territory processing', () => {

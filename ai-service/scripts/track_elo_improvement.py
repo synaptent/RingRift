@@ -249,7 +249,7 @@ def export_to_csv(conn: sqlite3.Connection, output_path: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Track Elo improvement over time")
-    parser.add_argument("--db", type=str, default="data/elo_leaderboard.db",
+    parser.add_argument("--db", type=str, default="data/unified_elo.db",
                         help="Path to Elo database")
     parser.add_argument("--hours", type=int, default=24,
                         help="Hours of history to show")

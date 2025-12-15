@@ -83,7 +83,7 @@ curriculum:
 hosts_config_path: 'config/remote_hosts.yaml'
 
 # Database paths (relative to ai-service root)
-elo_db: 'data/elo_leaderboard.db' # Canonical Elo database for trained models
+elo_db: 'data/unified_elo.db' # Canonical Elo database for trained models
 data_manifest_db: 'data/data_manifest.db'
 
 # Logging

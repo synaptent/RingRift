@@ -368,10 +368,11 @@ describe('GameHUD – view-model props', () => {
 
     const scoreSummary = screen.getByTestId('hud-score-summary');
     expect(scoreSummary).toBeInTheDocument();
-    expect(scoreSummary).toHaveTextContent(/Score summary/i);
-    // The summary should surface both rings and territory information for players.
-    expect(scoreSummary).toHaveTextContent(/Rings/i);
-    expect(scoreSummary).toHaveTextContent(/Territory/i);
+    expect(scoreSummary).toHaveTextContent(/Score Summary/i);
+    // The summary should surface both rings (⚔) and territory (🏰) information for players
+    // using icons and elimination counts. Verify the score data is present.
+    expect(scoreSummary).toHaveTextContent('1/9'); // Alice's eliminated/total rings
+    expect(scoreSummary).toHaveTextContent('2'); // Alice's territory spaces
   });
 
   it('shows sandbox no-clock label when flagged and no time control is provided', () => {

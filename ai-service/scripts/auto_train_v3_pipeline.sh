@@ -79,7 +79,7 @@ python scripts/run_model_elo_tournament.py \
     --board-type "$BOARD_TYPE" \
     --num-players "$NUM_PLAYERS" \
     --games-per-pair 50 \
-    --db "data/elo_leaderboard.db" \
+    --db "data/unified_elo.db" \
     2>&1 | tee "$LOG_DIR/tournament.log"
 
 log "Tournament complete!"

@@ -246,7 +246,7 @@ def run_tournament(board: str, players: int) -> Dict[str, float]:
         "--board-type", board,
         "--num-players", str(players),
         "--games-per-pair", str(TOURNAMENT_GAMES_PER_PAIR),
-        "--db", str(DATA_DIR / "elo_leaderboard.db"),
+        "--db", str(DATA_DIR / "unified_elo.db"),
     ]
 
     logger.info(f"Running tournament for {board} {players}p")
@@ -259,7 +259,7 @@ def run_tournament(board: str, players: int) -> Dict[str, float]:
     # Parse ratings from Elo database
     ratings = {}
     try:
-        conn = sqlite3.connect(str(DATA_DIR / "elo_leaderboard.db"))
+        conn = sqlite3.connect(str(DATA_DIR / "unified_elo.db"))
         cursor = conn.execute(
             """
             SELECT model_id, rating FROM elo_ratings

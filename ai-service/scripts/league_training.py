@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 LEAGUE_DB_PATH = AI_SERVICE_ROOT / "data" / "league_standings.db"
-ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"
+ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 
 
 # League configuration

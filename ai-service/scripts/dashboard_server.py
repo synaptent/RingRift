@@ -27,7 +27,7 @@ from flask_cors import CORS
 SCRIPT_DIR = Path(__file__).parent
 AI_SERVICE_ROOT = SCRIPT_DIR.parent
 DASHBOARD_ASSETS = SCRIPT_DIR / "dashboard_assets"
-ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"
+ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 GAMES_DB_PATH = AI_SERVICE_ROOT / "data" / "games" / "selfplay.db"
 
 app = Flask(__name__, static_folder=str(DASHBOARD_ASSETS))

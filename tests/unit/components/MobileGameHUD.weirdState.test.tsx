@@ -102,8 +102,8 @@ describe('MobileGameHUD – decision timer and weird-state help', () => {
     const timer = screen.getByTestId('mobile-decision-timer');
     expect(timer).toHaveAttribute('data-severity', 'warning');
     expect(timer).toHaveTextContent('0:04');
-    // Server cap indicator shows an asterisk
-    expect(timer).toHaveTextContent('*');
+    // Server cap indicator shows a "server" badge
+    expect(timer).toHaveTextContent('server');
   });
 
   it('emits weird-state help telemetry and opens teaching overlay', () => {

@@ -66,7 +66,7 @@ describe('MobileGameHUD', () => {
     await user.click(screen.getByRole('button', { name: /You|Alice/ }));
     expect(screen.getByText('In Hand')).toBeInTheDocument();
     expect(screen.getByText('On Board')).toBeInTheDocument();
-    expect(screen.getByText('Captured')).toBeInTheDocument();
+    expect(screen.getByText('Eliminated')).toBeInTheDocument();
   });
 
   it('renders spectator badge with viewer count when spectating', () => {

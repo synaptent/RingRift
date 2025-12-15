@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
-ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"
+ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 
 
 def _best_model_for_config(board_type: str, num_players: int) -> Optional[Dict[str, Any]]:

@@ -37,7 +37,7 @@ sys.path.insert(0, str(AI_SERVICE_ROOT))
 # Paths
 MODELS_DIR = AI_SERVICE_ROOT / "models"
 PROMOTED_DIR = MODELS_DIR / "promoted"
-ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"
+ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 PROMOTION_STATE_PATH = AI_SERVICE_ROOT / "data" / "auto_promotion_state.json"
 
 # P2P orchestrator for cluster sync

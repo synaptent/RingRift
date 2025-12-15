@@ -70,10 +70,10 @@ function MobileWeirdStateBanner({
 }) {
   const toneClasses =
     weirdState.tone === 'critical'
-      ? 'border-red-400/80 bg-red-950/80 text-red-50'
+      ? 'border-red-400/60 bg-gradient-to-r from-red-950/90 to-red-900/70 text-red-50 shadow-md shadow-red-900/30'
       : weirdState.tone === 'warning'
-        ? 'border-amber-400/80 bg-amber-950/80 text-amber-50'
-        : 'border-sky-400/80 bg-sky-950/80 text-sky-50';
+        ? 'border-amber-400/60 bg-gradient-to-r from-amber-950/90 to-amber-900/70 text-amber-50 shadow-md shadow-amber-900/20'
+        : 'border-sky-400/60 bg-gradient-to-r from-sky-950/90 to-sky-900/70 text-sky-50 shadow-md shadow-sky-900/20';
 
   const badgeLabel =
     weirdState.type === 'last-player-standing'
@@ -88,30 +88,37 @@ function MobileWeirdStateBanner({
 
   const icon = weirdState.tone === 'critical' ? '⚠️' : weirdState.tone === 'warning' ? '⚠️' : 'ℹ️';
 
+  const iconBgClass =
+    weirdState.tone === 'critical'
+      ? 'bg-red-900/50'
+      : weirdState.tone === 'warning'
+        ? 'bg-amber-900/50'
+        : 'bg-sky-900/50';
+
   return (
     <div
-      className={`px-2 py-1.5 rounded-lg border text-[10px] flex items-start gap-2 ${toneClasses}`}
+      className={`px-3 py-2 rounded-xl border text-[10px] flex items-start gap-2 transition-all duration-300 ${toneClasses}`}
       role="status"
       aria-live="polite"
       data-testid="mobile-weird-state-banner"
     >
-      <span className="mt-0.5 text-base" aria-hidden="true">
+      <span className={`mt-0.5 text-base p-1 rounded-lg ${iconBgClass}`} aria-hidden="true">
         {icon}
       </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1 mb-0.5">
-          <span className="text-[9px] uppercase tracking-wide font-semibold opacity-80">
+          <span className="text-[9px] uppercase tracking-wider font-bold opacity-90 px-1.5 py-0.5 rounded-full bg-white/10 border border-white/10">
             {badgeLabel}
           </span>
         </div>
         <div className="font-semibold text-xs leading-snug">{weirdState.title}</div>
-        <div className="mt-0.5 text-[10px] leading-snug opacity-90">{weirdState.body}</div>
+        <div className="mt-1 text-[10px] leading-snug opacity-85">{weirdState.body}</div>
       </div>
       {onShowHelp && (
         <button
           type="button"
           onClick={onShowHelp}
-          className="ml-1 mt-0.5 inline-flex h-11 w-11 items-center justify-center rounded-full border border-current/60 text-sm font-semibold touch-manipulation"
+          className="ml-1 mt-0.5 inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-current/50 text-sm font-semibold touch-manipulation bg-white/10 active:bg-white/20 transition-colors"
           aria-label="Learn more about this situation"
           data-testid="mobile-weird-state-help"
         >
@@ -144,27 +151,36 @@ function MobileLpsIndicator({
   const playerName = exclusivePlayer?.username ?? `P${consecutiveExclusivePlayer}`;
 
   // Color progression: amber (1-2), red (3 = victory imminent)
-  const colorClass =
-    consecutiveExclusiveRounds >= 3
-      ? 'border-red-400/80 bg-red-950/80 text-red-50'
-      : 'border-amber-400/80 bg-amber-950/80 text-amber-50';
+  const isVictoryImminent = consecutiveExclusiveRounds >= 3;
+  const colorClass = isVictoryImminent
+    ? 'border-red-400/60 bg-gradient-to-r from-red-950/90 to-red-900/70 text-red-50 shadow-md shadow-red-900/30'
+    : 'border-amber-400/60 bg-gradient-to-r from-amber-950/90 to-amber-900/70 text-amber-50 shadow-md shadow-amber-900/20';
 
   return (
     <div
-      className={`mb-2 px-2 py-1.5 rounded-lg border text-[11px] flex items-center gap-2 ${colorClass}`}
+      className={`mb-2 px-3 py-2 rounded-xl border text-[11px] flex items-center gap-2 transition-all duration-300 ${colorClass} ${
+        isVictoryImminent ? 'animate-pulse' : ''
+      }`}
       role="status"
       aria-live="polite"
       data-testid="mobile-lps-indicator"
     >
-      <span aria-hidden="true">🏆</span>
+      <span
+        className={`p-1 rounded-lg ${isVictoryImminent ? 'bg-red-900/50' : 'bg-amber-900/50'}`}
+        aria-hidden="true"
+      >
+        🏆
+      </span>
       <span className="font-semibold truncate flex-1">{playerName} exclusive</span>
       {/* Progress dots */}
-      <div className="flex gap-0.5" aria-label={`${consecutiveExclusiveRounds} of 3 rounds`}>
+      <div className="flex gap-1" aria-label={`${consecutiveExclusiveRounds} of 3 rounds`}>
         {[1, 2, 3].map((n) => (
           <span
             key={n}
-            className={`w-1.5 h-1.5 rounded-full ${
-              n <= consecutiveExclusiveRounds ? 'bg-current' : 'bg-current/30'
+            className={`w-2 h-2 rounded-full transition-all duration-300 ${
+              n <= consecutiveExclusiveRounds
+                ? 'bg-current shadow-sm'
+                : 'bg-current/25 border border-current/30'
             }`}
           />
         ))}
@@ -205,35 +221,35 @@ function MobileVictoryProgress({
 
   return (
     <div
-      className="mb-2 px-2 py-1.5 rounded-lg border border-slate-600/50 bg-slate-900/60 text-[10px]"
+      className="mb-2 px-3 py-2 rounded-xl border border-slate-700/60 bg-gradient-to-br from-slate-900/80 to-slate-800/60 text-[10px] shadow-sm"
       data-testid="mobile-victory-progress"
     >
       <div className="flex items-center gap-3">
         {showRings && ringLeader && (
-          <div className="flex items-center gap-1.5 flex-1">
+          <div className="flex items-center gap-1.5 flex-1 p-1.5 rounded-lg bg-rose-950/30 border border-rose-900/30">
             <span className="text-rose-400">⚔</span>
-            <div className="flex-1 h-1 bg-slate-700 rounded-full overflow-hidden">
+            <div className="flex-1 h-1.5 bg-slate-700/80 rounded-full overflow-hidden">
               <div
-                className="h-full bg-rose-500"
+                className="h-full bg-gradient-to-r from-rose-500 to-rose-400 transition-all duration-300"
                 style={{ width: `${Math.min(ringLeader.percentage, 100)}%` }}
               />
             </div>
-            <span className="text-slate-300 whitespace-nowrap">
+            <span className="text-rose-200 whitespace-nowrap font-medium">
               {getPlayerName(ringLeader.playerNumber).slice(0, 6)}: {ringLeader.eliminated}/
               {ringElimination.threshold}
             </span>
           </div>
         )}
         {showTerritory && territoryLeader && (
-          <div className="flex items-center gap-1.5 flex-1">
+          <div className="flex items-center gap-1.5 flex-1 p-1.5 rounded-lg bg-emerald-950/30 border border-emerald-900/30">
             <span className="text-emerald-400">🏰</span>
-            <div className="flex-1 h-1 bg-slate-700 rounded-full overflow-hidden">
+            <div className="flex-1 h-1.5 bg-slate-700/80 rounded-full overflow-hidden">
               <div
-                className="h-full bg-emerald-500"
+                className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-300"
                 style={{ width: `${Math.min(territoryLeader.percentage, 100)}%` }}
               />
             </div>
-            <span className="text-slate-300 whitespace-nowrap">
+            <span className="text-emerald-200 whitespace-nowrap font-medium">
               {getPlayerName(territoryLeader.playerNumber).slice(0, 6)}: {territoryLeader.spaces}/
               {territory.threshold}
             </span>
@@ -258,17 +274,20 @@ function MobilePhaseBar({
 }) {
   return (
     <div
-      className={`flex items-center justify-between px-3 py-2 rounded-lg ${phase.colorClass}`}
+      className={`flex items-center justify-between px-3 py-2.5 rounded-xl shadow-lg ring-1 ring-white/10 transition-all duration-300 ${phase.colorClass}`}
       data-testid="mobile-phase-bar"
     >
       <div className="flex items-center gap-2 min-w-0">
-        {phase.icon && <span className="text-lg">{phase.icon}</span>}
-        <span className="font-semibold text-sm text-white truncate">{phase.label}</span>
+        {phase.icon && (
+          <span className="text-lg bg-white/15 rounded-lg p-1.5 shadow-inner">{phase.icon}</span>
+        )}
+        <span className="font-bold text-sm text-white truncate tracking-tight">{phase.label}</span>
       </div>
       <div className="flex items-center gap-2 text-xs text-white/90">
-        <span className="font-mono">Turn {turnNumber}</span>
+        <span className="font-mono bg-black/20 px-2 py-0.5 rounded-md">Turn {turnNumber}</span>
         {isMyTurn && (
-          <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px] font-semibold uppercase">
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/25 text-[10px] font-bold uppercase shadow-sm border border-white/20">
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
             Your turn
           </span>
         )}
@@ -283,54 +302,71 @@ function MobilePhaseBar({
 function MobilePlayerRow({ player, isExpanded }: { player: PlayerViewModel; isExpanded: boolean }) {
   const { ringStats, territorySpaces, aiInfo } = player;
 
+  // Current player gets a more prominent visual treatment
+  const isActivePlayer = player.isCurrentPlayer;
+  const cardBaseClasses = isActivePlayer
+    ? 'bg-gradient-to-r from-blue-900/60 to-slate-900/60 border-blue-400/60 shadow-md shadow-blue-500/10'
+    : 'bg-slate-800/50 border-slate-700/50 active:bg-slate-800/70';
+
+  const userRingClasses = player.isUserPlayer
+    ? 'ring-2 ring-green-400/50 ring-offset-1 ring-offset-slate-900'
+    : '';
+
   return (
     <div
-      className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg transition-colors ${
-        player.isCurrentPlayer ? 'bg-blue-900/40 border border-blue-500/50' : 'bg-slate-800/50'
-      } ${player.isUserPlayer ? 'ring-1 ring-green-400/50' : ''}`}
+      className={`flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl border transition-all duration-200 ${cardBaseClasses} ${userRingClasses}`}
     >
       {/* Player identity */}
       <div className="flex items-center gap-2 min-w-0 flex-1">
-        <div className={`w-3 h-3 rounded-full shrink-0 ${player.colorClass}`} />
-        <span className="text-xs font-medium text-slate-100 truncate">
+        <div
+          className={`w-4 h-4 rounded-full shrink-0 ${player.colorClass} shadow-sm ${
+            isActivePlayer ? 'ring-2 ring-white/40 animate-pulse' : ''
+          }`}
+        />
+        <span className="text-xs font-semibold text-slate-100 truncate">
           {player.isUserPlayer ? 'You' : player.username}
         </span>
         {aiInfo.isAI && (
-          <span className="text-[9px] px-1 py-0.5 rounded bg-slate-700 text-slate-300">AI</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-slate-700/80 text-slate-300 font-medium">
+            AI
+          </span>
         )}
         {player.isCurrentPlayer && (
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-blue-500/30 text-[9px] uppercase text-blue-200 border border-blue-400/30">
+            <span className="w-1 h-1 rounded-full bg-blue-300 animate-pulse" />
+            Turn
+          </span>
         )}
       </div>
 
       {/* Quick stats */}
-      <div className="flex items-center gap-3 text-[10px] text-slate-300">
-        <span className="flex items-center gap-1">
-          <span className="text-red-300">🔴</span>
-          <span className="font-mono">
+      <div className="flex items-center gap-2 text-[10px]">
+        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-950/40 border border-rose-800/30">
+          <span className="text-rose-400">⚔</span>
+          <span className="font-mono font-medium text-rose-200">
             {ringStats.eliminated}/{ringStats.total}
           </span>
         </span>
-        <span className="flex items-center gap-1">
-          <span className="text-emerald-300">🏰</span>
-          <span className="font-mono">{territorySpaces}</span>
+        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-950/40 border border-emerald-800/30">
+          <span className="text-emerald-400">🏰</span>
+          <span className="font-mono font-medium text-emerald-200">{territorySpaces}</span>
         </span>
       </div>
 
       {/* Expanded details */}
       {isExpanded && (
-        <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] text-slate-300 pt-2 border-t border-slate-700">
+        <div className="w-full mt-2 grid grid-cols-3 gap-2 text-[10px] text-slate-300 pt-2 border-t border-slate-700/60 bg-slate-900/30 rounded-lg p-2">
           <div className="text-center">
-            <div className="font-bold text-slate-100">{ringStats.inHand}</div>
-            <div>In Hand</div>
+            <div className="font-bold text-lg text-slate-100">{ringStats.inHand}</div>
+            <div className="text-slate-400">In Hand</div>
+          </div>
+          <div className="text-center border-x border-slate-700/50">
+            <div className="font-bold text-lg text-slate-100">{ringStats.onBoard}</div>
+            <div className="text-slate-400">On Board</div>
           </div>
           <div className="text-center">
-            <div className="font-bold text-slate-100">{ringStats.onBoard}</div>
-            <div>On Board</div>
-          </div>
-          <div className="text-center">
-            <div className="font-bold text-red-400">{ringStats.eliminated}</div>
-            <div>Captured</div>
+            <div className="font-bold text-lg text-red-400">{ringStats.eliminated}</div>
+            <div className="text-slate-400">Eliminated</div>
           </div>
         </div>
       )}
@@ -357,10 +393,10 @@ function MobileDecisionTimer({
 
   const bgClass =
     severity === 'critical'
-      ? 'bg-red-900/80 border-red-400/60'
+      ? 'bg-gradient-to-r from-red-900/90 to-red-800/80 border-red-400/60 shadow-md shadow-red-900/30'
       : severity === 'warning'
-        ? 'bg-amber-900/80 border-amber-400/60'
-        : 'bg-slate-800/80 border-slate-600';
+        ? 'bg-gradient-to-r from-amber-900/90 to-amber-800/80 border-amber-400/60 shadow-md shadow-amber-900/20'
+        : 'bg-gradient-to-r from-slate-800/90 to-slate-700/80 border-slate-500/60';
 
   const textClass =
     severity === 'critical'
@@ -369,17 +405,28 @@ function MobileDecisionTimer({
         ? 'text-amber-100'
         : 'text-slate-100';
 
+  const iconClass =
+    severity === 'critical'
+      ? 'text-red-300 bg-red-900/50'
+      : severity === 'warning'
+        ? 'text-amber-300 bg-amber-900/50'
+        : 'text-slate-300 bg-slate-700/50';
+
   return (
     <div
-      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-xs ${bgClass} ${
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs transition-all duration-300 ${bgClass} ${
         severity === 'critical' ? 'animate-pulse' : ''
       }`}
       data-testid="mobile-decision-timer"
       data-severity={severity ?? undefined}
     >
-      <span className="text-[10px]">⏱</span>
-      <span className={`font-mono ${textClass}`}>{timeLabel}</span>
-      {isServerCapped && <span className="text-[9px] text-amber-200">*</span>}
+      <span className={`text-[10px] p-0.5 rounded ${iconClass}`}>⏱</span>
+      <span className={`font-mono font-semibold ${textClass}`}>{timeLabel}</span>
+      {isServerCapped && (
+        <span className="text-[9px] text-amber-200 px-1 py-0.5 rounded-full bg-amber-900/40 border border-amber-600/40">
+          server
+        </span>
+      )}
     </div>
   );
 }

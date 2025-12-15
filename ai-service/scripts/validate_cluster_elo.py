@@ -27,7 +27,7 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 # Mac Studio is the authoritative source for Elo ratings
 MAC_STUDIO_ELO_URL = "http://100.107.168.125:8770/api/elo/leaderboard"
-LOCAL_ELO_DB = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"
+LOCAL_ELO_DB = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 
 # Cluster nodes to validate
 CLUSTER_NODES = [
@@ -110,7 +110,7 @@ def sync_elo_to_node(host: str, source_db: Path) -> bool:
             "scp",
             "-o", "ConnectTimeout=10",
             str(source_db),
-            f"ubuntu@{host}:~/ringrift/ai-service/data/elo_leaderboard.db"
+            f"ubuntu@{host}:~/ringrift/ai-service/data/unified_elo.db"
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         return result.returncode == 0

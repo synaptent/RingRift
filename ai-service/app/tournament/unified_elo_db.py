@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 # Database location - canonical Elo database for all trained models
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "elo_leaderboard.db"
+DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "unified_elo.db"
 
 # Global singleton
 _elo_db_instance: Optional["EloDatabase"] = None
