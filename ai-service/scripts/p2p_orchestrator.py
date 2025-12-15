@@ -1179,6 +1179,11 @@ class P2POrchestrator:
         # Track when each node's GPU first went idle with running jobs
         self.gpu_idle_since: Dict[str, float] = {}  # node_id -> timestamp when GPU went idle
 
+        # A/B Testing Framework - Compare models head-to-head with statistical significance
+        # Key: test_id (UUID), Value: ABTestState dict
+        self.ab_tests: Dict[str, Dict[str, Any]] = {}
+        self.ab_test_lock = threading.Lock()
+
         # Locks for thread safety
         self.peers_lock = threading.Lock()
         self.jobs_lock = threading.Lock()
@@ -1959,6 +1964,44 @@ class P2POrchestrator:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_metrics_config
             ON metrics_history(board_type, num_players, timestamp)
+        """)
+
+        # A/B Testing tables
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ab_tests (
+                test_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                board_type TEXT NOT NULL,
+                num_players INTEGER NOT NULL,
+                model_a TEXT NOT NULL,
+                model_b TEXT NOT NULL,
+                target_games INTEGER DEFAULT 100,
+                confidence_threshold REAL DEFAULT 0.95,
+                status TEXT DEFAULT 'running',
+                winner TEXT,
+                created_at REAL NOT NULL,
+                completed_at REAL,
+                metadata TEXT
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ab_test_games (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                test_id TEXT NOT NULL,
+                game_id TEXT NOT NULL,
+                model_a_result TEXT NOT NULL,
+                model_a_score REAL NOT NULL,
+                model_b_score REAL NOT NULL,
+                game_length INTEGER,
+                played_at REAL NOT NULL,
+                metadata TEXT,
+                FOREIGN KEY (test_id) REFERENCES ab_tests(test_id)
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ab_games_test
+            ON ab_test_games(test_id, played_at)
         """)
 
         conn.commit()
@@ -10825,11 +10868,30 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 model_stat = model_path.stat()
 
                 # Parse model name for lineage info
-                # Common patterns: square8_2p_v5_gen12, nnue_square8_2p_epoch50
-                config_match = re.search(r"(square\d+|hex\w*)_(\d+)p", model_name)
+                # Common patterns:
+                #   - square8_2p_v5_gen12, nnue_square8_2p_epoch50
+                #   - ringrift_best_sq8_2p, ringrift_best_sq19_2p
+                #   - hex_3p_nn_baseline, ringrift_best_hex_2p
+                # Handle both full names (square8, hexagonal) and abbreviations (sq8, hex)
+                config_match = re.search(
+                    r"(square\d+|sq\d+|hexagonal|hex)[\W_]*(\d+)p",
+                    model_name,
+                    re.I
+                )
                 gen_match = re.search(r"gen(\d+)|v(\d+)|epoch(\d+)", model_name, re.I)
 
-                config = f"{config_match.group(1)}_{config_match.group(2)}p" if config_match else "unknown"
+                if config_match:
+                    board = config_match.group(1).lower()
+                    players = config_match.group(2)
+                    # Normalize board names (only transform abbreviations, not full names)
+                    if board.startswith("sq") and not board.startswith("square"):
+                        # sq8 -> square8, sq19 -> square19
+                        board = f"square{board[2:]}"
+                    elif board == "hex":
+                        board = "hexagonal"
+                    config = f"{board}_{players}p"
+                else:
+                    config = "unknown"
                 generation = int(gen_match.group(1) or gen_match.group(2) or gen_match.group(3) or 0) if gen_match else 0
 
                 model_info = {
@@ -11208,21 +11270,216 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         return rollback_status
 
+    async def _execute_rollback(self, config: str, dry_run: bool = False) -> Dict[str, Any]:
+        """Execute a rollback for the given config by restoring previous model.
+
+        Args:
+            config: Config string like "square8_2p"
+            dry_run: If True, only simulate the rollback without making changes
+
+        Returns:
+            Dict with rollback results (success, message, details)
+        """
+        import shutil
+        import json
+
+        result = {
+            "success": False,
+            "config": config,
+            "dry_run": dry_run,
+            "message": "",
+            "details": {},
+        }
+
+        try:
+            ai_root = Path(self.ringrift_path) / "ai-service"
+            models_dir = ai_root / "models"
+            archive_dir = models_dir / "archive"
+            archive_dir.mkdir(parents=True, exist_ok=True)
+
+            # Parse config to get board type and player count
+            parts = config.rsplit("_", 1)
+            if len(parts) != 2 or not parts[1].endswith("p"):
+                result["message"] = f"Invalid config format: {config}"
+                return result
+
+            board = parts[0]
+            players = parts[1][:-1]
+
+            # Find the current best model alias
+            # Common patterns: ringrift_best_sq8_2p, ringrift_best_square8_2p
+            board_abbrev = board.replace("square", "sq").replace("hexagonal", "hex")
+            best_patterns = [
+                f"ringrift_best_{board_abbrev}_{players}p.pth",
+                f"ringrift_best_{board}_{players}p.pth",
+            ]
+
+            current_best = None
+            for pattern in best_patterns:
+                candidate = models_dir / pattern
+                if candidate.exists():
+                    current_best = candidate
+                    break
+
+            if not current_best:
+                result["message"] = f"No best model found for {config}"
+                return result
+
+            # Find previous checkpoints for this config
+            checkpoint_dir = models_dir / "checkpoints"
+            checkpoints = []
+            if checkpoint_dir.exists():
+                for ckpt in checkpoint_dir.glob(f"*{board_abbrev}*{players}p*.pth"):
+                    try:
+                        stat = ckpt.stat()
+                        checkpoints.append({
+                            "path": ckpt,
+                            "mtime": stat.st_mtime,
+                            "name": ckpt.name,
+                        })
+                    except Exception:
+                        continue
+
+            # Also check archive for previous best models
+            for archived in archive_dir.glob(f"*{board_abbrev}*{players}p*.pth"):
+                try:
+                    stat = archived.stat()
+                    checkpoints.append({
+                        "path": archived,
+                        "mtime": stat.st_mtime,
+                        "name": archived.name,
+                    })
+                except Exception:
+                    continue
+
+            # Sort by modification time descending
+            checkpoints.sort(key=lambda x: x["mtime"], reverse=True)
+
+            # Filter out the current best model
+            current_mtime = current_best.stat().st_mtime
+            previous_checkpoints = [c for c in checkpoints if abs(c["mtime"] - current_mtime) > 60]
+
+            if not previous_checkpoints:
+                result["message"] = f"No previous checkpoints found for rollback of {config}"
+                return result
+
+            # Select the most recent previous checkpoint
+            rollback_source = previous_checkpoints[0]
+
+            result["details"] = {
+                "current_model": current_best.name,
+                "rollback_to": rollback_source["name"],
+                "rollback_age_hours": round((time.time() - rollback_source["mtime"]) / 3600, 1),
+                "available_checkpoints": len(previous_checkpoints),
+            }
+
+            if dry_run:
+                result["success"] = True
+                result["message"] = f"Dry run: Would rollback {current_best.name} to {rollback_source['name']}"
+                return result
+
+            # Archive the current model
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            archived_name = f"{current_best.stem}_archived_{timestamp}.pth"
+            shutil.copy2(current_best, archive_dir / archived_name)
+
+            # Restore the previous checkpoint
+            shutil.copy2(rollback_source["path"], current_best)
+
+            # Log the rollback
+            rollback_log = ai_root / "logs" / "rollbacks.json"
+            rollback_log.parent.mkdir(parents=True, exist_ok=True)
+
+            rollback_entry = {
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "config": config,
+                "previous_model": current_best.name,
+                "rolled_back_to": rollback_source["name"],
+                "archived_as": archived_name,
+            }
+
+            try:
+                existing = json.loads(rollback_log.read_text()) if rollback_log.exists() else []
+            except Exception:
+                existing = []
+
+            existing.append(rollback_entry)
+            rollback_log.write_text(json.dumps(existing[-100:], indent=2))  # Keep last 100 rollbacks
+
+            result["success"] = True
+            result["message"] = f"Successfully rolled back {config} from {current_best.name} to {rollback_source['name']}"
+
+            # Increment rollback counter
+            self.diversity_metrics["rollbacks"] += 1
+
+            # Send alert notification
+            asyncio.create_task(self.notifier.send(
+                title="Model Rollback Executed",
+                message=f"Rolled back {config} from {current_best.name} to {rollback_source['name']}",
+                level="warning",
+                fields={
+                    "Config": config,
+                    "Previous": current_best.name,
+                    "Restored": rollback_source["name"],
+                    "Age": f"{result['details']['rollback_age_hours']:.1f}h",
+                },
+                node_id=self.node_id,
+            ))
+
+        except Exception as e:
+            result["message"] = f"Rollback failed: {str(e)}"
+
+        return result
+
+    async def _auto_rollback_check(self) -> List[Dict[str, Any]]:
+        """Automatically check and execute rollbacks for critical candidates.
+
+        Returns list of executed rollbacks.
+        """
+        # Check if auto-rollback is enabled
+        if os.environ.get("RINGRIFT_AUTO_ROLLBACK", "").lower() not in ("1", "true", "yes"):
+            return []
+
+        executed = []
+        try:
+            status = await self._check_rollback_conditions()
+            for candidate in status.get("candidates", []):
+                # Only auto-rollback if multiple serious conditions are met
+                reasons = candidate.get("reasons", [])
+                if len(reasons) >= 2 or any("Overfitting" in r for r in reasons):
+                    config = candidate["config"]
+                    result = await self._execute_rollback(config, dry_run=False)
+                    executed.append(result)
+                    if result["success"]:
+                        logger.warning(f"[AUTO-ROLLBACK] Executed for {config}: {reasons}")
+        except Exception as e:
+            logger.error(f"[AUTO-ROLLBACK] Error: {e}")
+
+        return executed
+
     # =========================================================================
     # Feature 6: Distributed Selfplay Autoscaling
     # =========================================================================
 
     async def _get_autoscaling_metrics(self) -> Dict[str, Any]:
         """Get metrics for autoscaling decisions."""
+        # Autoscaling thresholds tuned for 46-node cluster
+        # These can be overridden via environment variables
+        max_workers = int(os.environ.get("RINGRIFT_AUTOSCALE_MAX_WORKERS", "46"))
+        min_workers = int(os.environ.get("RINGRIFT_AUTOSCALE_MIN_WORKERS", "2"))
+        scale_up_threshold = int(os.environ.get("RINGRIFT_AUTOSCALE_SCALE_UP_GPH", "100"))
+        scale_down_threshold = int(os.environ.get("RINGRIFT_AUTOSCALE_SCALE_DOWN_GPH", "500"))
+        target_freshness = float(os.environ.get("RINGRIFT_AUTOSCALE_TARGET_FRESHNESS_HOURS", "2"))
+
         autoscale = {
             "current_state": {},
             "recommendations": [],
             "thresholds": {
-                "scale_up_games_per_hour": 50,  # Scale up if below this
-                "scale_down_games_per_hour": 200,  # Scale down if above this
-                "max_workers": 10,
-                "min_workers": 1,
-                "target_data_freshness_hours": 2,
+                "scale_up_games_per_hour": scale_up_threshold,  # Scale up if below this
+                "scale_down_games_per_hour": scale_down_threshold,  # Scale down if above this
+                "max_workers": max_workers,
+                "min_workers": min_workers,
+                "target_data_freshness_hours": target_freshness,
             },
         }
 
@@ -11922,6 +12179,52 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         except Exception as e:
             return web.json_response([{"error": str(e)}])
 
+    async def handle_rollback_execute(self, request: web.Request) -> web.Response:
+        """POST /rollback/execute - Execute a model rollback.
+
+        Query params:
+            config: Config string like "square8_2p" (required)
+            dry_run: If "true", only simulate the rollback (default: false)
+        """
+        try:
+            config = request.query.get("config")
+            if not config:
+                return web.json_response({"error": "Missing required parameter: config"}, status=400)
+
+            dry_run = request.query.get("dry_run", "").lower() in ("true", "1", "yes")
+
+            result = await self._execute_rollback(config, dry_run=dry_run)
+            status_code = 200 if result["success"] else 400
+            return web.json_response(result, status=status_code)
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_rollback_auto(self, request: web.Request) -> web.Response:
+        """POST /rollback/auto - Trigger automatic rollback check for all configs.
+
+        This will check all configs for rollback conditions and execute rollbacks
+        for any that meet the criteria.
+        """
+        try:
+            # Temporarily enable auto-rollback for this request
+            original_env = os.environ.get("RINGRIFT_AUTO_ROLLBACK", "")
+            os.environ["RINGRIFT_AUTO_ROLLBACK"] = "true"
+
+            executed = await self._auto_rollback_check()
+
+            # Restore original env
+            if original_env:
+                os.environ["RINGRIFT_AUTO_ROLLBACK"] = original_env
+            else:
+                os.environ.pop("RINGRIFT_AUTO_ROLLBACK", None)
+
+            return web.json_response({
+                "executed_rollbacks": executed,
+                "count": len(executed),
+            })
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
     async def handle_autoscale_metrics(self, request: web.Request) -> web.Response:
         """GET /autoscale/metrics - Autoscaling metrics and recommendations."""
         try:
@@ -11947,6 +12250,127 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "Reason": "Current scaling is optimal",
                     "SuggestedWorkers": metrics.get("current_state", {}).get("total_nodes", 1),
                 })
+            return web.json_response(table_data)
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
+
+    async def handle_webhook_test(self, request: web.Request) -> web.Response:
+        """POST /webhook/test - Test webhook notification.
+
+        Query params:
+            level: debug/info/warning/error (default: info)
+            message: Custom message (default: "Test notification")
+        """
+        try:
+            level = request.query.get("level", "info")
+            message = request.query.get("message", "Test notification from RingRift AI orchestrator")
+
+            has_slack = bool(self.notifier.slack_webhook)
+            has_discord = bool(self.notifier.discord_webhook)
+
+            if not has_slack and not has_discord:
+                return web.json_response({
+                    "success": False,
+                    "message": "No webhooks configured. Set RINGRIFT_SLACK_WEBHOOK and/or RINGRIFT_DISCORD_WEBHOOK",
+                })
+
+            await self.notifier.send(
+                title="Webhook Test",
+                message=message,
+                level=level,
+                fields={
+                    "Node": self.node_id,
+                    "Timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "Level": level.upper(),
+                },
+                node_id=self.node_id,
+            )
+
+            return web.json_response({
+                "success": True,
+                "message": f"Test notification sent to {'Slack' if has_slack else ''}{' and ' if has_slack and has_discord else ''}{'Discord' if has_discord else ''}",
+                "level": level,
+            })
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_trends_summary(self, request: web.Request) -> web.Response:
+        """GET /trends/summary - Get summary of metrics over time period.
+
+        Query params:
+            hours: Time period in hours (default: 24)
+        """
+        try:
+            hours = float(request.query.get("hours", "24"))
+            summary = self.get_metrics_summary(hours)
+            return web.json_response(summary)
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_trends_history(self, request: web.Request) -> web.Response:
+        """GET /trends/history - Get historical metrics data.
+
+        Query params:
+            metric: Metric type (required) - e.g., "best_elo", "games_generated", "training_loss"
+            hours: Time period in hours (default: 24)
+            board: Board type filter (optional) - e.g., "square8"
+            players: Number of players filter (optional) - e.g., 2
+            limit: Max records to return (default: 1000)
+        """
+        try:
+            metric_type = request.query.get("metric")
+            if not metric_type:
+                return web.json_response({"error": "Missing required parameter: metric"}, status=400)
+
+            hours = float(request.query.get("hours", "24"))
+            board_type = request.query.get("board")
+            num_players = int(request.query.get("players")) if request.query.get("players") else None
+            limit = int(request.query.get("limit", "1000"))
+
+            history = self.get_metrics_history(
+                metric_type=metric_type,
+                board_type=board_type,
+                num_players=num_players,
+                hours=hours,
+                limit=limit,
+            )
+
+            return web.json_response({
+                "metric": metric_type,
+                "period_hours": hours,
+                "count": len(history),
+                "data": history,
+            })
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_trends_table(self, request: web.Request) -> web.Response:
+        """GET /trends/table - Historical trends in table format for Grafana Infinity.
+
+        Query params:
+            metric: Metric type (required)
+            hours: Time period (default: 168 = 7 days)
+        """
+        try:
+            metric_type = request.query.get("metric")
+            if not metric_type:
+                return web.json_response([{"error": "Missing metric parameter"}])
+
+            hours = float(request.query.get("hours", "168"))
+            history = self.get_metrics_history(metric_type=metric_type, hours=hours, limit=500)
+
+            table_data = []
+            for record in history:
+                from datetime import datetime
+                ts = datetime.fromtimestamp(record["timestamp"]).strftime("%Y-%m-%d %H:%M")
+                config = f"{record.get('board_type', '')}_{record.get('num_players', '')}p" if record.get('board_type') else "global"
+                table_data.append({
+                    "Timestamp": ts,
+                    "Config": config,
+                    "Value": round(record["value"], 3),
+                    "Metric": metric_type,
+                })
+
             return web.json_response(table_data)
         except Exception as e:
             return web.json_response([{"error": str(e)}])
@@ -15682,8 +16106,14 @@ print(json.dumps({{
         app.router.add_get('/training/efficiency/table', self.handle_training_efficiency_table)
         app.router.add_get('/rollback/status', self.handle_rollback_status)
         app.router.add_get('/rollback/candidates', self.handle_rollback_candidates)
+        app.router.add_post('/rollback/execute', self.handle_rollback_execute)
+        app.router.add_post('/rollback/auto', self.handle_rollback_auto)
         app.router.add_get('/autoscale/metrics', self.handle_autoscale_metrics)
         app.router.add_get('/autoscale/recommendations', self.handle_autoscale_recommendations)
+        app.router.add_post('/webhook/test', self.handle_webhook_test)
+        app.router.add_get('/trends/summary', self.handle_trends_summary)
+        app.router.add_get('/trends/history', self.handle_trends_history)
+        app.router.add_get('/trends/table', self.handle_trends_table)
         app.router.add_get('/api/training/status', self.handle_api_training_status)
         app.router.add_get('/api/canonical/health', self.handle_api_canonical_health)
         app.router.add_get('/api/canonical/jobs', self.handle_api_canonical_jobs_list)

@@ -645,6 +645,7 @@ def _build_mixed_ai_pool(
     heuristic_weights: Optional[Dict[str, float]] = None,
     nn_pool_size: int = 0,
     nn_pool_dir: Optional[str] = None,
+    think_time_override: Optional[int] = None,
 ) -> Tuple[Dict[int, Any], Dict[str, Any]]:
     """Construct per-player AI instances for a single game.
 
@@ -674,7 +675,18 @@ def _build_mixed_ai_pool(
     # In soak contexts we want near-zero search budgets for high-tier engines.
     # The core AI implementations treat think_time <= 0 as "use default budget",
     # so we pass a tiny positive value instead.
-    soak_think_time_ms = 1
+    #
+    # However, for larger boards (square19, hexagonal), the near-zero budget
+    # leads to high stalemate rates as the AI can't find winning lines.
+    # Use board-specific think times to balance speed vs stalemate reduction.
+    if think_time_override is not None:
+        soak_think_time_ms = think_time_override
+    else:
+        soak_think_time_ms = {
+            BoardType.SQUARE8: 1,     # Fast, small board
+            BoardType.SQUARE19: 50,   # Larger board needs more search time
+            BoardType.HEXAGONAL: 50,  # Larger board needs more search time
+        }.get(board_type, 1)
 
     if engine_mode == "descent-only":
         from app.ai.descent_ai import DescentAI  # type: ignore
@@ -1090,6 +1102,14 @@ def run_self_play_soak(
             flush=True,
         )
 
+    # Think time override for stalemate reduction
+    think_time_override = getattr(args, "think_time_ms", None)
+    if think_time_override is not None:
+        print(
+            f"[think-time] Override: {think_time_override}ms",
+            flush=True,
+        )
+
     # Memory management options
     intra_game_gc_interval = getattr(args, "intra_game_gc_interval", 0)
     streaming_record = getattr(args, "streaming_record", False)
@@ -1367,6 +1387,7 @@ def run_self_play_soak(
                 heuristic_weights=heuristic_weights,
                 nn_pool_size=nn_pool_size,
                 nn_pool_dir=nn_pool_dir,
+                think_time_override=think_time_override,
             )
             if profile_timing:
                 timing_totals["ai_build"] += time.time() - t_ai_start
@@ -3223,6 +3244,16 @@ def _parse_args() -> argparse.Namespace:
             "This helps balance training data by ensuring more games start from both "
             "perspectives. Default: 0.5 (50%% chance). Set to 0 to let AI decide, "
             "set to 1.0 to always swap. Recommended: 0.5 for balanced training."
+        ),
+    )
+    parser.add_argument(
+        "--think-time-ms",
+        type=int,
+        default=None,
+        help=(
+            "Override AI think time in milliseconds. By default, uses board-specific "
+            "values: 1ms for square8 (fast), 50ms for square19/hexagonal (reduce stalemates). "
+            "Increase for better move quality at the cost of longer games."
         ),
     )
     return parser.parse_args()
