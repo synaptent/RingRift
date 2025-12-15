@@ -9040,11 +9040,17 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 import sqlite3
                 ai_root = Path(self.ringrift_path) / "ai-service"
                 db_path = ai_root / "data" / "unified_elo.db"
+                if not db_path.exists():
+                    db_path = ai_root / "data" / "elo_leaderboard.db"
                 if db_path.exists():
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
-                    cursor.execute("""
-                        SELECT board_type, num_players, MAX(rating), participant_id, games_played
+                    # Check which column name is used (model_id vs participant_id)
+                    cursor.execute("PRAGMA table_info(elo_ratings)")
+                    columns = [col[1] for col in cursor.fetchall()]
+                    id_col = "model_id" if "model_id" in columns else "participant_id"
+                    cursor.execute(f"""
+                        SELECT board_type, num_players, MAX(rating), {id_col}, games_played
                         FROM elo_ratings
                         WHERE games_played >= 10
                         GROUP BY board_type, num_players
@@ -10206,9 +10212,15 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 cursor = conn.cursor()
 
                 # Build query with optional filters
-                query = """
+                # Note: elo_leaderboard.db uses model_id, unified schema uses participant_id
+                # Check which column exists
+                cursor.execute("PRAGMA table_info(elo_ratings)")
+                columns = [col[1] for col in cursor.fetchall()]
+                id_col = "model_id" if "model_id" in columns else "participant_id"
+
+                query = f"""
                     SELECT
-                        participant_id,
+                        {id_col},
                         board_type,
                         num_players,
                         rating,
@@ -10231,7 +10243,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     params.append(int(num_players_filter))
 
                 if nn_only:
-                    query += " AND (participant_id LIKE '%NN%' OR participant_id LIKE '%nn%')"
+                    query += f" AND ({id_col} LIKE '%NN%' OR {id_col} LIKE '%nn%')"
 
                 query += " ORDER BY rating DESC LIMIT ?"
                 params.append(limit)
