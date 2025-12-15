@@ -4718,11 +4718,21 @@ class P2POrchestrator:
         This enables the training pipeline to access games stored in JSONL format.
         Converted files are tracked to avoid re-processing.
 
+        Features:
+        - Chunked reading to handle large files without memory issues
+        - Limited files per cycle to avoid blocking the event loop
+        - Spawns external converter for large backlogs
+
         Returns:
             Number of games converted.
         """
         import json
         import sqlite3
+
+        # Configuration
+        MAX_FILES_PER_CYCLE = 50  # Process max 50 files per cycle to avoid blocking
+        CHUNK_SIZE = 500  # Lines to read at a time
+        LARGE_BACKLOG_THRESHOLD = 200  # Spawn external converter if more files
 
         # Track converted files to avoid re-processing
         converted_marker_file = data_dir / ".jsonl_converted"
@@ -4745,22 +4755,49 @@ class P2POrchestrator:
         if not jsonl_files:
             return 0
 
-        # Group by board type
-        board_type_files: Dict[str, List[Path]] = {}
+        # Filter to unconverted files and sort by size (smallest first for quick wins)
+        unconverted_files = []
         for jsonl_file in jsonl_files:
-            # Skip empty files
             try:
-                if jsonl_file.stat().st_size < 100:
+                file_size = jsonl_file.stat().st_size
+                if file_size < 100:
                     continue
+                file_key = str(jsonl_file.relative_to(data_dir))
+                if file_key not in converted_files:
+                    unconverted_files.append((jsonl_file, file_size, file_key))
             except Exception:
                 continue
 
-            # Skip already converted
-            file_key = str(jsonl_file.relative_to(data_dir))
-            if file_key in converted_files:
-                continue
+        if not unconverted_files:
+            return 0
 
-            # Determine board type from path
+        # Sort by size (smallest first) and limit per cycle
+        unconverted_files.sort(key=lambda x: x[1])
+        files_this_cycle = unconverted_files[:MAX_FILES_PER_CYCLE]
+
+        # If large backlog, spawn external converter in background
+        if len(unconverted_files) > LARGE_BACKLOG_THRESHOLD:
+            print(f"[P2P] Large JSONL backlog ({len(unconverted_files)} files), spawning background converter")
+            converter_script = self.ringrift_path / "ai-service" / "scripts" / "chunked_jsonl_converter.py"
+            if converter_script.exists():
+                try:
+                    import subprocess
+                    subprocess.Popen(
+                        ["python3", str(converter_script),
+                         "--input-dir", str(selfplay_dir),
+                         "--output-dir", str(games_dir),
+                         "--workers", "2",
+                         "--chunk-size", "500"],
+                        stdout=open("/tmp/chunked_converter.log", "a"),
+                        stderr=subprocess.STDOUT,
+                        cwd=str(self.ringrift_path / "ai-service"),
+                    )
+                except Exception as e:
+                    print(f"[P2P] Failed to spawn background converter: {e}")
+
+        # Group files by board type
+        board_type_files: Dict[str, List[Tuple[Path, str]]] = {}
+        for jsonl_file, file_size, file_key in files_this_cycle:
             path_str = str(jsonl_file).lower()
             if "hex" in path_str:
                 if "4p" in path_str:
@@ -4786,16 +4823,18 @@ class P2POrchestrator:
 
             if board_key not in board_type_files:
                 board_type_files[board_key] = []
-            board_type_files[board_key].append(jsonl_file)
+            board_type_files[board_key].append((jsonl_file, file_key))
 
-        # Convert each board type to a consolidated DB
+        # Convert each board type to a consolidated DB (chunked reading)
         for board_key, files in board_type_files.items():
             if not files:
                 continue
 
             db_path = games_dir / f"jsonl_converted_{board_key}.db"
             try:
-                conn = sqlite3.connect(str(db_path))
+                conn = sqlite3.connect(str(db_path), timeout=30.0)
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS games (
                         game_id TEXT PRIMARY KEY,
@@ -4813,29 +4852,22 @@ class P2POrchestrator:
                 conn.commit()
 
                 games_added = 0
-                for jsonl_file in files:
-                    file_key = str(jsonl_file.relative_to(data_dir))
+                for jsonl_file, file_key in files:
                     try:
-                        with open(jsonl_file, "r") as f:
+                        # Read file in chunks to avoid memory issues
+                        chunk_buffer = []
+                        with open(jsonl_file, "r", encoding="utf-8", errors="replace") as f:
                             for line_num, line in enumerate(f, 1):
                                 line = line.strip()
                                 if not line:
                                     continue
                                 try:
                                     record = json.loads(line)
-                                    game_id = f"{jsonl_file.stem}_{record.get('game_id', line_num)}_{line_num}"
-                                    board_type = record.get("board_type", board_key.split("_")[0])
-                                    num_players = record.get("num_players", int(board_key[-2]) if board_key[-2].isdigit() else 2)
-
-                                    conn.execute("""
-                                        INSERT OR IGNORE INTO games
-                                        (game_id, board_type, num_players, winner, move_count,
-                                         game_status, victory_type, created_at, source, metadata_json)
-                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                    """, (
+                                    game_id = f"{jsonl_file.stem}_{record.get('game_id', line_num)}"
+                                    chunk_buffer.append((
                                         game_id,
-                                        board_type,
-                                        num_players,
+                                        record.get("board_type", board_key.split("_")[0]),
+                                        record.get("num_players", int(board_key[-2]) if board_key[-2].isdigit() else 2),
                                         record.get("winner", 0),
                                         record.get("move_count", 0),
                                         record.get("status", "completed"),
@@ -4844,9 +4876,31 @@ class P2POrchestrator:
                                         f"jsonl:{jsonl_file.name}",
                                         json.dumps(record),
                                     ))
-                                    games_added += 1
+
+                                    # Flush chunk when buffer is full
+                                    if len(chunk_buffer) >= CHUNK_SIZE:
+                                        conn.executemany("""
+                                            INSERT OR IGNORE INTO games
+                                            (game_id, board_type, num_players, winner, move_count,
+                                             game_status, victory_type, created_at, source, metadata_json)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        """, chunk_buffer)
+                                        games_added += len(chunk_buffer)
+                                        chunk_buffer = []
+
                                 except (json.JSONDecodeError, Exception):
                                     continue
+
+                        # Flush remaining records
+                        if chunk_buffer:
+                            conn.executemany("""
+                                INSERT OR IGNORE INTO games
+                                (game_id, board_type, num_players, winner, move_count,
+                                 game_status, victory_type, created_at, source, metadata_json)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, chunk_buffer)
+                            games_added += len(chunk_buffer)
+
                         newly_converted.append(file_key)
                     except Exception as e:
                         print(f"[P2P] Error converting {jsonl_file.name}: {e}")
