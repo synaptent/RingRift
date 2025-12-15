@@ -5097,10 +5097,11 @@ class P2POrchestrator:
                 await asyncio.sleep(60)
 
     async def _consolidate_selfplay_data(self):
-        """Consolidate siloed job databases into main selfplay.db.
+        """Consolidate siloed job databases AND JSONL files into training DB.
 
         LEARNED LESSONS: Selfplay jobs write to job-specific databases for isolation.
-        These need to be periodically merged into the main selfplay.db for:
+        GPU selfplay jobs write JSONL files for efficiency.
+        These need to be periodically merged into the training DB for:
         1. Training triggers to see accurate game counts
         2. Cross-node data sync to work correctly
         3. Training scripts to find all available data
@@ -5115,16 +5116,67 @@ class P2POrchestrator:
 
         try:
             import sqlite3
+            import subprocess
             from pathlib import Path
 
             data_dir = Path(self.ringrift_path) / "ai-service" / "data"
             selfplay_dir = data_dir / "selfplay"
-            main_db_path = data_dir / "games" / "selfplay.db"
+            games_dir = data_dir / "games"
+            main_db_path = games_dir / "selfplay.db"
+            jsonl_db_path = games_dir / "jsonl_aggregated.db"
 
             if not selfplay_dir.exists():
                 return
 
-            # Find all job databases with games
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(Path(self.ringrift_path) / "ai-service")
+
+            # --- PART 1: Aggregate JSONL files (GPU selfplay output) ---
+            jsonl_files = list(selfplay_dir.glob("**/games.jsonl"))
+            # Filter to files > 1KB and modified in last 24 hours
+            recent_jsonl = []
+            for jf in jsonl_files:
+                try:
+                    if jf.stat().st_size > 1024:
+                        recent_jsonl.append(jf)
+                except Exception:
+                    pass
+
+            if recent_jsonl:
+                total_lines = 0
+                for jf in recent_jsonl[:20]:  # Sample first 20
+                    try:
+                        with open(jf) as f:
+                            total_lines += sum(1 for _ in f)
+                    except Exception:
+                        pass
+
+                if total_lines > 100:  # Only run if there's meaningful data
+                    aggregate_script = Path(self.ringrift_path) / "ai-service" / "scripts" / "aggregate_jsonl_to_db.py"
+                    if aggregate_script.exists():
+                        # Check if aggregation already running
+                        if not getattr(self, "_jsonl_aggregation_running", False):
+                            self._jsonl_aggregation_running = True
+                            print(f"[P2P] JSONL aggregation: ~{total_lines * len(recent_jsonl) // 20} games in {len(recent_jsonl)} files")
+                            cmd = [
+                                sys.executable, str(aggregate_script),
+                                "--input-dir", str(selfplay_dir),
+                                "--output-db", str(jsonl_db_path),
+                            ]
+                            proc = subprocess.Popen(
+                                cmd,
+                                env=env,
+                                stdout=open("/tmp/jsonl_aggregate.log", "w"),
+                                stderr=subprocess.STDOUT,
+                                cwd=str(Path(self.ringrift_path) / "ai-service"),
+                            )
+                            print(f"[P2P] Started JSONL aggregation (PID: {proc.pid})")
+                            # Reset flag after ~10 minutes
+                            asyncio.get_event_loop().call_later(
+                                600, lambda: setattr(self, "_jsonl_aggregation_running", False)
+                            )
+
+            # --- PART 2: Merge job DBs (CPU selfplay output) ---
             dbs_to_merge = []
             for db_path in selfplay_dir.glob("**/games.db"):
                 # Skip if it's in a .tmp directory or is the main DB
@@ -5139,38 +5191,31 @@ class P2POrchestrator:
                 except Exception:
                     pass
 
-            if not dbs_to_merge:
-                return
+            if dbs_to_merge:
+                total_games = sum(c for _, c in dbs_to_merge)
+                print(f"[P2P] DB consolidation: {len(dbs_to_merge)} DBs with {total_games} games to merge")
 
-            total_games = sum(c for _, c in dbs_to_merge)
-            print(f"[P2P] Data consolidation: {len(dbs_to_merge)} DBs with {total_games} games to merge")
+                # Use merge script if available
+                merge_script = Path(self.ringrift_path) / "ai-service" / "scripts" / "merge_game_dbs.py"
+                if merge_script.exists():
+                    # Build command with all DBs
+                    cmd = [
+                        sys.executable, str(merge_script),  # Use venv Python
+                        "--output", str(main_db_path),
+                        "--dedupe-by-game-id",
+                    ]
+                    for db_path, _ in dbs_to_merge[:50]:  # Limit to 50 DBs at a time
+                        cmd.extend(["--db", str(db_path)])
 
-            # Use merge script if available
-            merge_script = Path(self.ringrift_path) / "ai-service" / "scripts" / "merge_game_dbs.py"
-            if merge_script.exists() and len(dbs_to_merge) > 0:
-                import subprocess
-
-                # Build command with all DBs
-                cmd = [
-                    sys.executable, str(merge_script),  # Use venv Python
-                    "--output", str(main_db_path),
-                    "--dedupe-by-game-id",
-                ]
-                for db_path, _ in dbs_to_merge[:50]:  # Limit to 50 DBs at a time
-                    cmd.extend(["--db", str(db_path)])
-
-                env = os.environ.copy()
-                env["PYTHONPATH"] = str(Path(self.ringrift_path) / "ai-service")
-
-                # Run merge in background
-                proc = subprocess.Popen(
-                    cmd,
-                    env=env,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    cwd=str(Path(self.ringrift_path) / "ai-service"),
-                )
-                print(f"[P2P] Started data merge (PID: {proc.pid})")
+                    # Run merge in background
+                    proc = subprocess.Popen(
+                        cmd,
+                        env=env,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        cwd=str(Path(self.ringrift_path) / "ai-service"),
+                    )
+                    print(f"[P2P] Started DB merge (PID: {proc.pid})")
 
         except Exception as e:
             print(f"[P2P] Data consolidation error: {e}")
