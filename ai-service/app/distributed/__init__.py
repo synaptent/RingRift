@@ -99,6 +99,56 @@ from .circuit_breaker import (
     get_training_breaker,
     format_circuit_status,
 )
+from .event_helpers import (
+    has_event_bus,
+    get_event_bus_safe,
+    get_event_types,
+    create_event,
+    emit_event_safe,
+    subscribe_safe,
+    emit_model_promoted_safe,
+    emit_training_completed_safe,
+    emit_evaluation_completed_safe,
+    emit_error_safe,
+    emit_elo_updated_safe,
+    emit_new_games_safe,
+    emit_training_started_safe,
+    emit_training_failed_safe,
+    emit_sync,
+)
+
+# Unified data sync components
+from .unified_manifest import (
+    DataManifest,
+    HostSyncState,
+    create_manifest,
+)
+from .unified_data_sync import (
+    UnifiedDataSyncService,
+    SyncConfig,
+    load_hosts_from_yaml,
+)
+from .manifest_replication import (
+    ManifestReplicator,
+    ReplicaHost,
+    create_replicator_from_config,
+)
+from .p2p_sync_client import (
+    P2PFallbackSync,
+    P2PSyncClient,
+)
+from .content_deduplication import (
+    ContentDeduplicator,
+    GameFingerprint,
+    DeduplicationResult,
+    create_deduplicator,
+)
+from .ingestion_wal import (
+    IngestionWAL,
+    WALEntry,
+    WALCheckpoint,
+    create_ingestion_wal,
+)
 
 __all__ = [
     # Host configuration and memory detection
@@ -178,4 +228,43 @@ __all__ = [
     "get_host_breaker",
     "get_training_breaker",
     "format_circuit_status",
+    # Event helpers (safe wrappers)
+    "has_event_bus",
+    "get_event_bus_safe",
+    "get_event_types",
+    "create_event",
+    "emit_event_safe",
+    "subscribe_safe",
+    "emit_model_promoted_safe",
+    "emit_training_completed_safe",
+    "emit_evaluation_completed_safe",
+    "emit_error_safe",
+    "emit_new_games_safe",
+    "emit_training_started_safe",
+    "emit_training_failed_safe",
+    "emit_sync",
+    # Unified data sync
+    "DataManifest",
+    "HostSyncState",
+    "create_manifest",
+    "UnifiedDataSyncService",
+    "SyncConfig",
+    "load_hosts_from_yaml",
+    # Manifest replication
+    "ManifestReplicator",
+    "ReplicaHost",
+    "create_replicator_from_config",
+    # P2P sync
+    "P2PFallbackSync",
+    "P2PSyncClient",
+    # Content deduplication
+    "ContentDeduplicator",
+    "GameFingerprint",
+    "DeduplicationResult",
+    "create_deduplicator",
+    # Ingestion WAL
+    "IngestionWAL",
+    "WALEntry",
+    "WALCheckpoint",
+    "create_ingestion_wal",
 ]

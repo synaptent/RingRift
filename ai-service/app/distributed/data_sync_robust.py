@@ -57,94 +57,81 @@ except ImportError:
 # =============================================================================
 # Storage Types and Host Classification
 # =============================================================================
+#
+# NOTE: Host classification has been consolidated into host_classification.py
+# This section imports from the unified module for backward compatibility.
+#
+# For new code, use:
+#   from app.distributed.host_classification import (
+#       StorageType, HostSyncProfile, classify_host_storage, get_ephemeral_hosts
+#   )
+# =============================================================================
 
+try:
+    from app.distributed.host_classification import (
+        StorageType,
+        HostTier,
+        HostSyncProfile,
+        classify_host_storage,
+        classify_host_tier,
+        get_ephemeral_hosts,
+        get_hosts_by_storage_type,
+        get_hosts_by_tier,
+        create_sync_profile,
+        create_sync_profiles,
+    )
+    HAS_HOST_CLASSIFICATION = True
+except ImportError:
+    HAS_HOST_CLASSIFICATION = False
+    # Fallback: define minimal versions
+    from enum import Enum
 
-class StorageType(str, Enum):
-    """Storage type classification for hosts."""
-    PERSISTENT = "persistent"  # Normal disk storage
-    EPHEMERAL = "ephemeral"    # RAM disk (/dev/shm) - data lost on termination
-    SSD = "ssd"                # Fast SSD storage
-    NETWORK = "network"        # Network-attached storage
+    class StorageType(str, Enum):
+        """Storage type classification for hosts (fallback)."""
+        PERSISTENT = "persistent"
+        EPHEMERAL = "ephemeral"
+        SSD = "ssd"
+        NETWORK = "network"
 
+    @dataclass
+    class HostSyncProfile:
+        """Sync profile for a host (fallback)."""
+        host_name: str
+        storage_type: StorageType = StorageType.PERSISTENT
+        poll_interval_seconds: int = 60
+        priority: int = 1
+        max_parallel_transfers: int = 2
+        compress_in_transit: bool = False
+        is_ephemeral: bool = False
+        aggressive_sync: bool = False
+        last_sync_time: float = 0.0
+        games_at_risk: int = 0
 
-@dataclass
-class HostSyncProfile:
-    """Sync profile for a host based on its characteristics."""
-    host_name: str
-    storage_type: StorageType = StorageType.PERSISTENT
-    poll_interval_seconds: int = 60
-    priority: int = 1  # Higher = sync first
-    max_parallel_transfers: int = 2
-    compress_in_transit: bool = False
-    # Ephemeral-specific settings
-    is_ephemeral: bool = False
-    aggressive_sync: bool = False  # True for ephemeral hosts
-    last_sync_time: float = 0.0
-    games_at_risk: int = 0  # Estimated games that could be lost
+        @classmethod
+        def for_ephemeral_host(cls, host_name: str) -> "HostSyncProfile":
+            return cls(host_name=host_name, storage_type=StorageType.EPHEMERAL,
+                      poll_interval_seconds=15, priority=10, is_ephemeral=True, aggressive_sync=True)
 
-    @classmethod
-    def for_ephemeral_host(cls, host_name: str) -> "HostSyncProfile":
-        """Create profile for ephemeral (RAM disk) host."""
-        return cls(
-            host_name=host_name,
-            storage_type=StorageType.EPHEMERAL,
-            poll_interval_seconds=15,  # Aggressive: 15s instead of 60s
-            priority=10,  # High priority
-            max_parallel_transfers=4,  # More parallelism
-            compress_in_transit=True,  # Compress to speed up
-            is_ephemeral=True,
-            aggressive_sync=True,
-        )
+        @classmethod
+        def for_persistent_host(cls, host_name: str) -> "HostSyncProfile":
+            return cls(host_name=host_name, storage_type=StorageType.PERSISTENT)
 
-    @classmethod
-    def for_persistent_host(cls, host_name: str) -> "HostSyncProfile":
-        """Create profile for persistent storage host."""
-        return cls(
-            host_name=host_name,
-            storage_type=StorageType.PERSISTENT,
-            poll_interval_seconds=60,
-            priority=1,
-            max_parallel_transfers=2,
-            compress_in_transit=False,
-            is_ephemeral=False,
-            aggressive_sync=False,
-        )
+    def classify_host_storage(host_config: Dict[str, Any]) -> StorageType:
+        storage_type = host_config.get("storage_type", "").lower()
+        if storage_type in ("ram", "ephemeral"):
+            return StorageType.EPHEMERAL
+        remote_path = host_config.get("remote_path", "")
+        if "/dev/shm" in remote_path:
+            return StorageType.EPHEMERAL
+        return StorageType.PERSISTENT
 
-
-def classify_host_storage(host_config: Dict[str, Any]) -> StorageType:
-    """Classify host storage type from configuration."""
-    # Explicit storage_type in config
-    storage_type = host_config.get("storage_type", "").lower()
-    if storage_type == "ram":
-        return StorageType.EPHEMERAL
-    if storage_type == "ssd":
-        return StorageType.SSD
-    if storage_type == "network":
-        return StorageType.NETWORK
-
-    # Infer from remote_path
-    remote_path = host_config.get("remote_path", "")
-    if "/dev/shm" in remote_path or "/run/shm" in remote_path:
-        return StorageType.EPHEMERAL
-
-    return StorageType.PERSISTENT
-
-
-def get_ephemeral_hosts(hosts_config: Dict[str, Any]) -> List[str]:
-    """Get list of ephemeral host names from config."""
-    ephemeral = []
-
-    # Check vast_hosts (typically ephemeral)
-    for name, config in hosts_config.get("vast_hosts", {}).items():
-        if classify_host_storage(config) == StorageType.EPHEMERAL:
-            ephemeral.append(name)
-
-    # Check standard_hosts for any with RAM storage
-    for name, config in hosts_config.get("standard_hosts", {}).items():
-        if classify_host_storage(config) == StorageType.EPHEMERAL:
-            ephemeral.append(name)
-
-    return ephemeral
+    def get_ephemeral_hosts(hosts_config: Dict[str, Any]) -> List[str]:
+        ephemeral = []
+        for section in ("vast_hosts", "standard_hosts"):
+            for name, config in hosts_config.get(section, {}).items():
+                if classify_host_storage(config) == StorageType.EPHEMERAL:
+                    ephemeral.append(name)
+        return ephemeral
 
 
 # =============================================================================

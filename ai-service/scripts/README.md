@@ -53,7 +53,13 @@ Features:
 
 ### Data Management
 
-- `streaming_data_collector.py` - Incremental game data sync
+- `unified_data_sync.py` - **Unified data sync service** (replaces deprecated scripts below)
+  - Run as daemon: `python scripts/unified_data_sync.py`
+  - With watchdog: `python scripts/unified_data_sync.py --watchdog`
+  - One-shot sync: `python scripts/unified_data_sync.py --once`
+- `streaming_data_collector.py` - _(DEPRECATED)_ Incremental game data sync - use `unified_data_sync.py`
+- `collector_watchdog.py` - _(DEPRECATED)_ Collector health monitoring - use `unified_data_sync.py --watchdog`
+- `sync_all_data.py` - _(DEPRECATED)_ Batch data sync - use `unified_data_sync.py --once`
 - `build_canonical_training_pool_db.py` - Training data pooling
 - `aggregate_jsonl_to_db.py` - JSONL to SQLite conversion
 

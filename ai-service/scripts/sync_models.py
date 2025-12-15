@@ -67,30 +67,33 @@ except ImportError:
     HOSTS_MODULE_AVAILABLE = False
     HostConfig = None
 
-# Import sync_lock for coordinating file transfers
-try:
-    from app.coordination.sync_lock import acquire_sync_lock, release_sync_lock
-    HAS_SYNC_LOCK = True
-except ImportError:
-    HAS_SYNC_LOCK = False
+# Import coordination helpers for sync lock and bandwidth management
+from app.coordination.helpers import (
+    has_sync_lock,
+    acquire_sync_lock_safe,
+    release_sync_lock_safe,
+    has_bandwidth_manager,
+    request_bandwidth_safe,
+    release_bandwidth_safe,
+    get_transfer_priorities,
+)
 
-    def acquire_sync_lock(host: str, timeout: float = 30.0) -> bool:
-        return True
+HAS_SYNC_LOCK = has_sync_lock()
+HAS_BANDWIDTH_MANAGER = has_bandwidth_manager()
+TransferPriority = get_transfer_priorities()
 
-    def release_sync_lock(host: str) -> None:
-        pass
+# Wrapper functions for backwards compatibility
+def acquire_sync_lock(host: str, timeout: float = 30.0) -> bool:
+    return acquire_sync_lock_safe(host, timeout)
 
-# Import BandwidthManager for large model transfers
-try:
-    from app.coordination.bandwidth_manager import (
-        request_bandwidth,
-        release_bandwidth,
-        TransferPriority,
-    )
-    HAS_BANDWIDTH_MANAGER = True
-except ImportError:
-    HAS_BANDWIDTH_MANAGER = False
-    TransferPriority = None
+def release_sync_lock(host: str) -> None:
+    release_sync_lock_safe(host)
+
+def request_bandwidth(host: str, mbps: float = 100.0, priority=None):
+    return request_bandwidth_safe(host, mbps, priority)
+
+def release_bandwidth(host: str) -> None:
+    release_bandwidth_safe(host)
 
 logging.basicConfig(
     level=logging.INFO,

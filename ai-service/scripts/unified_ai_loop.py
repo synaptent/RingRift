@@ -1011,12 +1011,20 @@ def start_metrics_server(port: int = 9090) -> Optional[HTTPServer]:
 
 @dataclass
 class DataIngestionConfig:
-    """Configuration for streaming data collection."""
+    """Configuration for streaming data collection.
+
+    When use_external_sync=True, the internal data collector is disabled and
+    the loop expects an external unified_data_sync.py service to handle data sync.
+    This allows using advanced features like P2P fallback, WAL, and content dedup.
+    """
     poll_interval_seconds: int = 60
     sync_method: str = "incremental"  # "incremental" or "full"
     deduplication: bool = True
     min_games_per_sync: int = 10
     remote_db_pattern: str = "data/games/*.db"
+    # External sync: when True, skip internal data collection and rely on external
+    # unified_data_sync.py service (provides P2P fallback, WAL, content dedup)
+    use_external_sync: bool = False
 
 
 @dataclass
@@ -5479,19 +5487,53 @@ class UnifiedAILoop:
                     )
 
     async def _data_collection_loop(self):
-        """Main data collection loop - runs every 60 seconds."""
-        print("[DataCollection] Loop starting...", flush=True)
+        """Main data collection loop - runs every 60 seconds.
+
+        When use_external_sync=True, this loop only monitors for new data
+        synced by the external unified_data_sync.py service.
+        """
+        use_external = self.config.data_ingestion.use_external_sync
+        if use_external:
+            print("[DataCollection] External sync mode - monitoring synced directory...", flush=True)
+        else:
+            print("[DataCollection] Loop starting...", flush=True)
         _quality_check_counter = 0
         _quality_check_interval = 10  # Check quality every 10 sync cycles
+        _last_game_count = 0  # For external sync mode monitoring
 
         while self._running:
             try:
-                new_games = await self.data_collector.run_collection_cycle()
-                self.health_tracker.record_success("data_collector")
-                if new_games > 0:
-                    print(f"[DataCollection] Synced {new_games} new games")
+                if use_external:
+                    # External sync mode: just count games in synced directory
+                    synced_dir = AI_SERVICE_ROOT / "data" / "games" / "synced"
+                    new_games = 0
+                    current_count = 0
+                    if synced_dir.exists():
+                        for db_path in synced_dir.rglob("*.db"):
+                            if "schema" in db_path.name:
+                                continue
+                            try:
+                                import sqlite3
+                                conn = sqlite3.connect(db_path)
+                                count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+                                conn.close()
+                                current_count += count
+                            except Exception:
+                                pass
+                        new_games = max(0, current_count - _last_game_count)
+                        _last_game_count = current_count
+                    self.health_tracker.record_success("data_collector")
+                    if new_games > 0:
+                        print(f"[DataCollection] External sync detected {new_games} new games (total: {current_count})")
+                else:
+                    # Internal sync mode: actively pull from hosts
+                    new_games = await self.data_collector.run_collection_cycle()
+                    self.health_tracker.record_success("data_collector")
+                    if new_games > 0:
+                        print(f"[DataCollection] Synced {new_games} new games")
 
-                    # Check if training threshold reached
+                # Check if training threshold reached (works in both modes)
+                if new_games > 0:
                     trigger_config = self.training_scheduler.should_trigger_training()
                     if trigger_config:
                         await self.event_bus.publish(DataEvent(
@@ -5500,10 +5542,11 @@ class UnifiedAILoop:
                         ))
 
                 # Periodic data quality check (every 10 cycles, ~10 minutes)
+                # Only run quality stats when using internal collector (has compute_quality_stats)
                 _quality_check_counter += 1
                 if _quality_check_counter >= _quality_check_interval:
                     _quality_check_counter = 0
-                    if self.feedback:
+                    if self.feedback and not use_external:
                         try:
                             quality_stats = self.data_collector.compute_quality_stats()
                             quality_score = self.feedback.update_data_quality(

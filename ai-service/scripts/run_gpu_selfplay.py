@@ -67,20 +67,18 @@ from app.training.generate_data import create_initial_state
 from app.db.game_replay import GameReplayDB
 from app.game_engine import GameEngine
 
-# Import coordination for task limits and duration tracking
-try:
-    from app.coordination import (
-        TaskCoordinator,
-        TaskType,
-        can_spawn,
-        register_running_task,
-        record_task_completion,
-    )
-    HAS_COORDINATION = True
-except ImportError:
-    HAS_COORDINATION = False
-    TaskCoordinator = None
-    TaskType = None
+# Import coordination helpers for task limits and duration tracking
+from app.coordination.helpers import (
+    has_coordination,
+    get_task_types,
+    can_spawn_safe,
+    register_running_task_safe,
+    record_task_completion_safe,
+)
+
+# For backwards compatibility
+HAS_COORDINATION = has_coordination()
+TaskType = get_task_types()
 
 # NOTE: Victory type derivation is now handled internally by the
 # BatchGameState class in gpu_parallel_games.py, which derives
@@ -1080,24 +1078,21 @@ def main():
         weights = load_weights_from_profile(args.weights_file, args.profile)
         logger.info(f"Loaded weights from {args.weights_file}:{args.profile}")
 
-    # Check coordination before spawning
+    # Check coordination before spawning (using safe helpers)
     task_id = None
     start_time = time.time()
-    if HAS_COORDINATION:
+    if HAS_COORDINATION and TaskType is not None:
         import socket
         node_id = socket.gethostname()
-        allowed, reason = can_spawn(TaskType.GPU_SELFPLAY, node_id)
+        allowed, reason = can_spawn_safe(TaskType.GPU_SELFPLAY, node_id)
         if not allowed:
             logger.warning(f"Coordination denied spawn: {reason}")
             logger.info("Proceeding anyway (coordination is advisory)")
 
-        # Register task for tracking
+        # Register task for tracking (safe version handles errors internally)
         task_id = f"gpu_selfplay_{args.board}_{args.num_players}p_{os.getpid()}"
-        try:
-            register_running_task(task_id, "gpu_selfplay", node_id, os.getpid())
+        if register_running_task_safe(task_id, "gpu_selfplay", 60.0):
             logger.info(f"Registered task {task_id} with coordinator")
-        except Exception as e:
-            logger.warning(f"Failed to register task: {e}")
 
     try:
         run_gpu_selfplay(
@@ -1124,16 +1119,12 @@ def main():
             noise_scale=args.noise_scale,
         )
     finally:
-        # Record task completion for duration learning
+        # Record task completion for duration learning (safe version handles errors)
         if HAS_COORDINATION and task_id:
-            try:
-                import socket
-                node_id = socket.gethostname()
-                config = f"{args.board}_{args.num_players}p"
-                record_task_completion("gpu_selfplay", config, node_id, start_time, time.time())
+            config = f"{args.board}_{args.num_players}p"
+            actual_duration = time.time() - start_time
+            if record_task_completion_safe(task_id, "gpu_selfplay", actual_duration):
                 logger.info(f"Recorded task completion for duration learning")
-            except Exception as e:
-                logger.warning(f"Failed to record task completion: {e}")
 
 
 if __name__ == "__main__":

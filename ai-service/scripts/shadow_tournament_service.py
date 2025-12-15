@@ -47,18 +47,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
-# Try to import event bus
-try:
-    from app.distributed.data_events import (
-        DataEventType,
-        DataEvent,
-        get_event_bus,
-        emit_evaluation_completed,
-        emit_error,
-    )
-    HAS_EVENT_BUS = True
-except ImportError:
-    HAS_EVENT_BUS = False
+# Import event bus helpers (consolidated imports)
+from app.distributed.event_helpers import (
+    has_event_bus,
+    get_event_bus_safe,
+    emit_evaluation_completed_safe,
+    emit_error_safe,
+    DataEventType,
+    DataEvent,
+)
+HAS_EVENT_BUS = has_event_bus()
+
+# For backwards compatibility, get the raw functions if available
+if HAS_EVENT_BUS:
+    from app.distributed.data_events import get_event_bus, emit_evaluation_completed, emit_error
+else:
+    get_event_bus = get_event_bus_safe
+    emit_evaluation_completed = emit_evaluation_completed_safe
+    emit_error = emit_error_safe
 
 # Prometheus metrics for observability
 try:

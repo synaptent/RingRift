@@ -58,16 +58,18 @@ logger = logging.getLogger(__name__)
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
-# Try to import leader election
+# Import coordination helpers for leader election
 sys.path.insert(0, str(AI_SERVICE_ROOT))
-try:
-    from app.coordination.orchestrator_registry import (
-        OrchestratorRole,
-        get_registry,
-    )
-    HAS_LEADER_ELECTION = True
-except ImportError:
-    HAS_LEADER_ELECTION = False
+from app.coordination.helpers import (
+    has_coordination,
+    get_registry_safe,
+    get_orchestrator_roles,
+    warn_if_orchestrator_running,
+)
+
+HAS_LEADER_ELECTION = has_coordination()
+OrchestratorRole = get_orchestrator_roles()
+get_registry = get_registry_safe
 
 
 @dataclass

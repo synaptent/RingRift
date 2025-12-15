@@ -196,7 +196,7 @@ class TestDataManifest:
 
     def test_manifest_init(self):
         """Test manifest database initialization."""
-        from scripts.streaming_data_collector import DataManifest
+        from app.distributed.unified_data_sync import DataManifest
 
         manifest = DataManifest(self.db_path)
         assert self.db_path.exists()
@@ -214,7 +214,7 @@ class TestDataManifest:
 
     def test_game_deduplication(self):
         """Test marking games as synced and checking."""
-        from scripts.streaming_data_collector import DataManifest
+        from app.distributed.unified_data_sync import DataManifest
 
         manifest = DataManifest(self.db_path)
 
@@ -241,7 +241,7 @@ class TestDataManifest:
 
     def test_host_state_persistence(self):
         """Test saving and loading host state."""
-        from scripts.streaming_data_collector import DataManifest, HostSyncState
+        from app.distributed.unified_data_sync import DataManifest, HostSyncState
 
         manifest = DataManifest(self.db_path)
 
@@ -262,7 +262,7 @@ class TestDataManifest:
 
     def test_sync_history(self):
         """Test recording sync history."""
-        from scripts.streaming_data_collector import DataManifest
+        from app.distributed.unified_data_sync import DataManifest
 
         manifest = DataManifest(self.db_path)
 

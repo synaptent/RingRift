@@ -9,6 +9,9 @@ Primary modules:
 4. queue_monitor - Queue depth monitoring with backpressure signals
 5. bandwidth_manager - Network bandwidth allocation for transfers
 6. sync_mutex - Cross-process mutex for rsync operations
+7. p2p_backend - REST API client for P2P orchestrator cluster
+8. job_scheduler - Priority-based job scheduling with Elo curriculum
+9. stage_events - Event-driven pipeline orchestration with callbacks
 
 Usage:
     # Task coordination (canonical)
@@ -257,6 +260,115 @@ from app.coordination.transaction_isolation import (
     get_transaction_stats,
 )
 
+# Coordination helpers (safe wrappers to reduce duplicate try/except imports)
+from app.coordination.helpers import (
+    # Availability checks
+    has_coordination,
+    has_sync_lock,
+    has_bandwidth_manager,
+    has_duration_scheduler,
+    has_cross_process_events,
+    has_resource_targets,
+    # Type getters
+    get_task_types,
+    get_orchestrator_roles,
+    get_queue_types,
+    get_transfer_priorities,
+    get_event_poller_class,
+    # Coordinator functions
+    get_coordinator_safe,
+    can_spawn_safe,
+    register_task_safe,
+    complete_task_safe,
+    fail_task_safe,
+    # Orchestrator role functions
+    get_registry_safe,
+    acquire_role_safe,
+    release_role_safe,
+    has_role,
+    get_role_holder,
+    # Safeguard functions
+    check_spawn_allowed,
+    get_safeguards,
+    # Convenience functions
+    get_current_node_id,
+    is_unified_loop_running,
+    warn_if_orchestrator_running,
+    # Queue backpressure functions
+    should_throttle_safe,
+    should_stop_safe,
+    get_throttle_factor_safe,
+    report_queue_depth_safe,
+    # Sync mutex functions
+    get_sync_lock_context,
+    acquire_sync_lock_safe,
+    release_sync_lock_safe,
+    # Bandwidth functions
+    request_bandwidth_safe,
+    release_bandwidth_safe,
+    get_bandwidth_context,
+    # Duration scheduling functions
+    can_schedule_task_safe,
+    register_running_task_safe,
+    record_task_completion_safe,
+    estimate_duration_safe,
+    # Cross-process events functions
+    publish_event_safe,
+    poll_events_safe,
+    ack_event_safe,
+    subscribe_process_safe,
+    # Resource targets functions
+    get_resource_targets_safe,
+    get_host_targets_safe,
+    get_cluster_summary_safe,
+    should_scale_up_safe,
+    should_scale_down_safe,
+    set_backpressure_safe,
+)
+
+# P2P Backend exports (REST API client for P2P orchestrator)
+from app.coordination.p2p_backend import (
+    P2PBackend,
+    P2PNodeInfo,
+    discover_p2p_leader_url,
+    get_p2p_backend,
+    P2P_DEFAULT_PORT,
+    P2P_HTTP_TIMEOUT,
+    HAS_AIOHTTP,
+)
+
+# Job Scheduler exports (priority-based job scheduling)
+from app.coordination.job_scheduler import (
+    PriorityJobScheduler,
+    JobPriority,
+    ScheduledJob,
+    get_scheduler as get_job_scheduler,
+    reset_scheduler as reset_job_scheduler,
+    get_config_game_counts,
+    select_curriculum_config,
+    get_underserved_configs,
+    get_cpu_rich_hosts,
+    get_gpu_rich_hosts,
+    TARGET_GPU_UTILIZATION_MIN,
+    TARGET_GPU_UTILIZATION_MAX,
+    TARGET_CPU_UTILIZATION_MIN,
+    TARGET_CPU_UTILIZATION_MAX,
+    MIN_MEMORY_GB_FOR_TASKS,
+    ELO_CURRICULUM_ENABLED,
+)
+
+# Stage Events exports (event-driven pipeline orchestration)
+from app.coordination.stage_events import (
+    StageEventBus,
+    StageEvent,
+    StageCompletionResult,
+    StageCompletionCallback,
+    get_event_bus as get_stage_event_bus,
+    reset_event_bus as reset_stage_event_bus,
+    create_pipeline_callbacks,
+    register_standard_callbacks,
+)
+
 __all__ = [
     # Task Coordinator (canonical)
     "TaskCoordinator",
@@ -438,4 +550,96 @@ __all__ = [
     "rollback_merge_transaction",
     "merge_transaction",
     "get_transaction_stats",
+    # Coordination helpers (safe wrappers)
+    "has_coordination",
+    "get_task_types",
+    "get_orchestrator_roles",
+    "get_queue_types",
+    "get_transfer_priorities",
+    "get_event_poller_class",
+    "get_coordinator_safe",
+    "can_spawn_safe",
+    "register_task_safe",
+    "complete_task_safe",
+    "fail_task_safe",
+    "get_registry_safe",
+    "acquire_role_safe",
+    "release_role_safe",
+    "has_role",
+    "get_role_holder",
+    "check_spawn_allowed",
+    "get_safeguards",
+    "get_current_node_id",
+    "is_unified_loop_running",
+    "warn_if_orchestrator_running",
+    # Additional availability checks
+    "has_sync_lock",
+    "has_bandwidth_manager",
+    "has_duration_scheduler",
+    "has_cross_process_events",
+    "has_resource_targets",
+    # Queue backpressure helpers
+    "should_throttle_safe",
+    "should_stop_safe",
+    "get_throttle_factor_safe",
+    "report_queue_depth_safe",
+    # Sync mutex helpers
+    "get_sync_lock_context",
+    "acquire_sync_lock_safe",
+    "release_sync_lock_safe",
+    # Bandwidth helpers
+    "request_bandwidth_safe",
+    "release_bandwidth_safe",
+    "get_bandwidth_context",
+    # Duration scheduling helpers
+    "can_schedule_task_safe",
+    "register_running_task_safe",
+    "record_task_completion_safe",
+    "estimate_duration_safe",
+    # Cross-process events helpers
+    "publish_event_safe",
+    "poll_events_safe",
+    "ack_event_safe",
+    "subscribe_process_safe",
+    # Resource targets helpers
+    "get_resource_targets_safe",
+    "get_host_targets_safe",
+    "get_cluster_summary_safe",
+    "should_scale_up_safe",
+    "should_scale_down_safe",
+    "set_backpressure_safe",
+    # P2P Backend (REST API client for P2P orchestrator)
+    "P2PBackend",
+    "P2PNodeInfo",
+    "discover_p2p_leader_url",
+    "get_p2p_backend",
+    "P2P_DEFAULT_PORT",
+    "P2P_HTTP_TIMEOUT",
+    "HAS_AIOHTTP",
+    # Job Scheduler (priority-based job scheduling)
+    "PriorityJobScheduler",
+    "JobPriority",
+    "ScheduledJob",
+    "get_job_scheduler",
+    "reset_job_scheduler",
+    "get_config_game_counts",
+    "select_curriculum_config",
+    "get_underserved_configs",
+    "get_cpu_rich_hosts",
+    "get_gpu_rich_hosts",
+    "TARGET_GPU_UTILIZATION_MIN",
+    "TARGET_GPU_UTILIZATION_MAX",
+    "TARGET_CPU_UTILIZATION_MIN",
+    "TARGET_CPU_UTILIZATION_MAX",
+    "MIN_MEMORY_GB_FOR_TASKS",
+    "ELO_CURRICULUM_ENABLED",
+    # Stage Events (event-driven pipeline orchestration)
+    "StageEventBus",
+    "StageEvent",
+    "StageCompletionResult",
+    "StageCompletionCallback",
+    "get_stage_event_bus",
+    "reset_stage_event_bus",
+    "create_pipeline_callbacks",
+    "register_standard_callbacks",
 ]

@@ -447,6 +447,531 @@ def warn_if_orchestrator_running(daemon_name: str = "daemon") -> None:
 
 
 # =============================================================================
+# Queue Backpressure Functions
+# =============================================================================
+
+# Queue types
+_QueueType = None
+_should_throttle_production = None
+_should_stop_production = None
+_get_throttle_factor = None
+_report_queue_depth = None
+
+try:
+    from app.coordination import (
+        QueueType,
+        should_throttle_production,
+        should_stop_production,
+        get_throttle_factor,
+        report_queue_depth,
+    )
+    _QueueType = QueueType
+    _should_throttle_production = should_throttle_production
+    _should_stop_production = should_stop_production
+    _get_throttle_factor = get_throttle_factor
+    _report_queue_depth = report_queue_depth
+except ImportError:
+    pass
+
+
+def get_queue_types():
+    """Get the QueueType enum if available."""
+    return _QueueType
+
+
+def should_throttle_safe(queue_type: Any = None) -> bool:
+    """Safely check if production should be throttled.
+
+    Args:
+        queue_type: QueueType enum value (uses default if None)
+
+    Returns:
+        True if throttling should occur, False otherwise.
+    """
+    if _should_throttle_production is None:
+        return False
+    try:
+        if queue_type is None and _QueueType is not None:
+            queue_type = _QueueType.TRAINING_DATA
+        return _should_throttle_production(queue_type) if queue_type else False
+    except Exception:
+        return False
+
+
+def should_stop_safe(queue_type: Any = None) -> bool:
+    """Safely check if production should stop entirely.
+
+    Returns:
+        True if production should stop, False otherwise.
+    """
+    if _should_stop_production is None:
+        return False
+    try:
+        if queue_type is None and _QueueType is not None:
+            queue_type = _QueueType.TRAINING_DATA
+        return _should_stop_production(queue_type) if queue_type else False
+    except Exception:
+        return False
+
+
+def get_throttle_factor_safe(queue_type: Any = None) -> float:
+    """Safely get the throttle factor (1.0 = no throttle, 0.0 = full throttle).
+
+    Returns:
+        Throttle factor between 0.0 and 1.0, defaults to 1.0.
+    """
+    if _get_throttle_factor is None:
+        return 1.0
+    try:
+        if queue_type is None and _QueueType is not None:
+            queue_type = _QueueType.TRAINING_DATA
+        return _get_throttle_factor(queue_type) if queue_type else 1.0
+    except Exception:
+        return 1.0
+
+
+def report_queue_depth_safe(queue_type: Any, depth: int) -> None:
+    """Safely report queue depth for backpressure calculation."""
+    if _report_queue_depth is None:
+        return
+    try:
+        _report_queue_depth(queue_type, depth)
+    except Exception:
+        pass
+
+
+# =============================================================================
+# Sync Mutex Functions
+# =============================================================================
+
+_sync_lock = None
+_acquire_sync_lock = None
+_release_sync_lock = None
+
+try:
+    from app.coordination import (
+        sync_lock,
+        acquire_sync_lock,
+        release_sync_lock,
+    )
+    _sync_lock = sync_lock
+    _acquire_sync_lock = acquire_sync_lock
+    _release_sync_lock = release_sync_lock
+except ImportError:
+    pass
+
+
+def has_sync_lock() -> bool:
+    """Check if sync lock functionality is available."""
+    return _sync_lock is not None
+
+
+def get_sync_lock_context():
+    """Get the sync_lock context manager if available.
+
+    Returns:
+        sync_lock context manager or None.
+    """
+    return _sync_lock
+
+
+def acquire_sync_lock_safe(host: str, timeout: float = 120.0) -> bool:
+    """Safely acquire a sync lock for a host.
+
+    Args:
+        host: Host identifier
+        timeout: Lock timeout in seconds
+
+    Returns:
+        True if lock acquired, False otherwise.
+    """
+    if _acquire_sync_lock is None:
+        return True  # Allow operation if no lock available
+    try:
+        return _acquire_sync_lock(host, timeout)
+    except Exception as e:
+        logger.warning(f"Failed to acquire sync lock for {host}: {e}")
+        return True  # Allow operation on error
+
+
+def release_sync_lock_safe(host: str) -> None:
+    """Safely release a sync lock for a host."""
+    if _release_sync_lock is None:
+        return
+    try:
+        _release_sync_lock(host)
+    except Exception as e:
+        logger.warning(f"Failed to release sync lock for {host}: {e}")
+
+
+# =============================================================================
+# Bandwidth Management Functions
+# =============================================================================
+
+_TransferPriority = None
+_request_bandwidth = None
+_release_bandwidth = None
+_bandwidth_allocation = None
+
+try:
+    from app.coordination import (
+        TransferPriority,
+        request_bandwidth,
+        release_bandwidth,
+        bandwidth_allocation,
+    )
+    _TransferPriority = TransferPriority
+    _request_bandwidth = request_bandwidth
+    _release_bandwidth = release_bandwidth
+    _bandwidth_allocation = bandwidth_allocation
+except ImportError:
+    pass
+
+
+def has_bandwidth_manager() -> bool:
+    """Check if bandwidth management is available."""
+    return _request_bandwidth is not None
+
+
+def get_transfer_priorities():
+    """Get the TransferPriority enum if available."""
+    return _TransferPriority
+
+
+def request_bandwidth_safe(
+    host: str,
+    requested_mbps: float = 100.0,
+    priority: Any = None,
+) -> Tuple[bool, float]:
+    """Safely request bandwidth allocation.
+
+    Args:
+        host: Host identifier
+        requested_mbps: Requested bandwidth in Mbps
+        priority: TransferPriority enum value
+
+    Returns:
+        Tuple of (granted: bool, allocated_mbps: float)
+    """
+    if _request_bandwidth is None:
+        return (True, requested_mbps)  # Allow full bandwidth if not managed
+    try:
+        if priority is None and _TransferPriority is not None:
+            priority = _TransferPriority.NORMAL
+        return _request_bandwidth(host, requested_mbps, priority)
+    except Exception as e:
+        logger.warning(f"Bandwidth request failed for {host}: {e}")
+        return (True, requested_mbps)
+
+
+def release_bandwidth_safe(host: str) -> None:
+    """Safely release bandwidth allocation."""
+    if _release_bandwidth is None:
+        return
+    try:
+        _release_bandwidth(host)
+    except Exception as e:
+        logger.warning(f"Bandwidth release failed for {host}: {e}")
+
+
+def get_bandwidth_context():
+    """Get the bandwidth_allocation context manager if available."""
+    return _bandwidth_allocation
+
+
+# =============================================================================
+# Duration Scheduling Functions
+# =============================================================================
+
+_can_schedule_task = None
+_register_running_task = None
+_record_task_completion = None
+_estimate_task_duration = None
+
+try:
+    from app.coordination import (
+        can_schedule_task,
+        register_running_task,
+        record_task_completion,
+        estimate_task_duration,
+    )
+    _can_schedule_task = can_schedule_task
+    _register_running_task = register_running_task
+    _record_task_completion = record_task_completion
+    _estimate_task_duration = estimate_task_duration
+except ImportError:
+    pass
+
+
+def has_duration_scheduler() -> bool:
+    """Check if duration scheduling is available."""
+    return _can_schedule_task is not None
+
+
+def can_schedule_task_safe(task_type: str, estimated_duration: float = 60.0) -> bool:
+    """Safely check if a task can be scheduled based on resource availability.
+
+    Args:
+        task_type: Type of task to schedule
+        estimated_duration: Estimated duration in seconds
+
+    Returns:
+        True if task can be scheduled, False otherwise.
+    """
+    if _can_schedule_task is None:
+        return True
+    try:
+        return _can_schedule_task(task_type, estimated_duration)
+    except Exception:
+        return True
+
+
+def register_running_task_safe(
+    task_id: str,
+    task_type: str,
+    estimated_duration: float = 60.0,
+) -> bool:
+    """Safely register a task as running for duration tracking.
+
+    Returns:
+        True if registered successfully, False otherwise.
+    """
+    if _register_running_task is None:
+        return False
+    try:
+        _register_running_task(task_id, task_type, estimated_duration)
+        return True
+    except Exception as e:
+        logger.debug(f"Failed to register running task: {e}")
+        return False
+
+
+def record_task_completion_safe(
+    task_id: str,
+    task_type: str,
+    actual_duration: float,
+) -> bool:
+    """Safely record task completion for duration learning.
+
+    Returns:
+        True if recorded successfully, False otherwise.
+    """
+    if _record_task_completion is None:
+        return False
+    try:
+        _record_task_completion(task_id, task_type, actual_duration)
+        return True
+    except Exception as e:
+        logger.debug(f"Failed to record task completion: {e}")
+        return False
+
+
+def estimate_duration_safe(task_type: str, default: float = 60.0) -> float:
+    """Safely estimate task duration based on historical data.
+
+    Args:
+        task_type: Type of task
+        default: Default duration if no data available
+
+    Returns:
+        Estimated duration in seconds.
+    """
+    if _estimate_task_duration is None:
+        return default
+    try:
+        return _estimate_task_duration(task_type) or default
+    except Exception:
+        return default
+
+
+# =============================================================================
+# Cross-Process Events Functions
+# =============================================================================
+
+_publish_event = None
+_poll_events = None
+_ack_event = None
+_subscribe_process = None
+_CrossProcessEventPoller = None
+
+try:
+    from app.coordination import (
+        publish_event,
+        poll_events,
+        ack_event,
+        subscribe_process,
+        CrossProcessEventPoller,
+    )
+    _publish_event = publish_event
+    _poll_events = poll_events
+    _ack_event = ack_event
+    _subscribe_process = subscribe_process
+    _CrossProcessEventPoller = CrossProcessEventPoller
+except ImportError:
+    pass
+
+
+def has_cross_process_events() -> bool:
+    """Check if cross-process events are available."""
+    return _publish_event is not None
+
+
+def publish_event_safe(event_type: str, payload: Dict[str, Any] = None) -> bool:
+    """Safely publish a cross-process event.
+
+    Returns:
+        True if published, False otherwise.
+    """
+    if _publish_event is None:
+        return False
+    try:
+        _publish_event(event_type, payload or {})
+        return True
+    except Exception as e:
+        logger.debug(f"Failed to publish event: {e}")
+        return False
+
+
+def poll_events_safe(
+    event_types: List[str] = None,
+    limit: int = 100,
+) -> List[Any]:
+    """Safely poll for cross-process events.
+
+    Returns:
+        List of events, empty list if unavailable or error.
+    """
+    if _poll_events is None:
+        return []
+    try:
+        return _poll_events(event_types, limit) or []
+    except Exception:
+        return []
+
+
+def ack_event_safe(event_id: int) -> bool:
+    """Safely acknowledge a cross-process event."""
+    if _ack_event is None:
+        return False
+    try:
+        _ack_event(event_id)
+        return True
+    except Exception:
+        return False
+
+
+def subscribe_process_safe(process_name: str = None) -> bool:
+    """Safely subscribe the current process to events."""
+    if _subscribe_process is None:
+        return False
+    try:
+        _subscribe_process(process_name)
+        return True
+    except Exception:
+        return False
+
+
+def get_event_poller_class():
+    """Get the CrossProcessEventPoller class if available."""
+    return _CrossProcessEventPoller
+
+
+# =============================================================================
+# Resource Targets Functions
+# =============================================================================
+
+_get_resource_targets = None
+_get_host_targets = None
+_get_cluster_summary = None
+_should_scale_up_targets = None
+_should_scale_down_targets = None
+_set_backpressure = None
+
+try:
+    from app.coordination import (
+        get_resource_targets,
+        get_host_targets,
+        get_cluster_summary,
+        should_scale_up as should_scale_up_targets,
+        should_scale_down as should_scale_down_targets,
+        set_backpressure,
+    )
+    _get_resource_targets = get_resource_targets
+    _get_host_targets = get_host_targets
+    _get_cluster_summary = get_cluster_summary
+    _should_scale_up_targets = should_scale_up_targets
+    _should_scale_down_targets = should_scale_down_targets
+    _set_backpressure = set_backpressure
+except ImportError:
+    pass
+
+
+def has_resource_targets() -> bool:
+    """Check if resource targets are available."""
+    return _get_resource_targets is not None
+
+
+def get_resource_targets_safe():
+    """Safely get the resource target manager."""
+    if _get_resource_targets is None:
+        return None
+    try:
+        return _get_resource_targets()
+    except Exception:
+        return None
+
+
+def get_host_targets_safe(host: str):
+    """Safely get targets for a specific host."""
+    if _get_host_targets is None:
+        return None
+    try:
+        return _get_host_targets(host)
+    except Exception:
+        return None
+
+
+def get_cluster_summary_safe() -> Dict[str, Any]:
+    """Safely get cluster summary."""
+    if _get_cluster_summary is None:
+        return {}
+    try:
+        return _get_cluster_summary() or {}
+    except Exception:
+        return {}
+
+
+def should_scale_up_safe(host: str) -> bool:
+    """Safely check if a host should scale up."""
+    if _should_scale_up_targets is None:
+        return False
+    try:
+        return _should_scale_up_targets(host)
+    except Exception:
+        return False
+
+
+def should_scale_down_safe(host: str) -> bool:
+    """Safely check if a host should scale down."""
+    if _should_scale_down_targets is None:
+        return False
+    try:
+        return _should_scale_down_targets(host)
+    except Exception:
+        return False
+
+
+def set_backpressure_safe(active: bool) -> None:
+    """Safely set backpressure state."""
+    if _set_backpressure is None:
+        return
+    try:
+        _set_backpressure(active)
+    except Exception:
+        pass
+
+
+# =============================================================================
 # Re-exports for convenience
 # =============================================================================
 
@@ -459,3 +984,6 @@ OrchestratorRegistry = _OrchestratorRegistry
 Safeguards = _Safeguards
 CircuitBreaker = _CircuitBreaker
 CircuitState = _CircuitState
+QueueType = _QueueType
+TransferPriority = _TransferPriority
+CrossProcessEventPoller = _CrossProcessEventPoller

@@ -48,31 +48,49 @@ from app.rules.default_engine import DefaultRulesEngine
 from app.utils.victory_type import derive_victory_type
 from app.training.generate_data import create_initial_state
 
-# Import event emission for feedback loop integration
-try:
-    from app.distributed.data_events import emit_elo_updated, get_event_bus
-    import asyncio
-    HAS_EVENT_BUS = True
-except ImportError:
-    HAS_EVENT_BUS = False
-    emit_elo_updated = None
+# Import event bus helpers (consolidated imports)
+import asyncio
+from app.distributed.event_helpers import (
+    has_event_bus,
+    get_event_bus_safe,
+    emit_elo_updated_safe,
+)
+HAS_EVENT_BUS = has_event_bus()
 
-# Import coordination for task limits and duration tracking
-try:
+# For backwards compatibility
+if HAS_EVENT_BUS:
+    from app.distributed.data_events import emit_elo_updated, get_event_bus
+else:
+    get_event_bus = get_event_bus_safe
+    emit_elo_updated = emit_elo_updated_safe
+
+# Import coordination helpers (consolidated imports)
+from app.coordination.helpers import (
+    has_coordination,
+    get_registry_safe,
+    can_spawn_safe,
+    OrchestratorRole,
+    TaskType,
+)
+HAS_COORDINATION = has_coordination()
+
+# For backwards compatibility
+if HAS_COORDINATION:
     from app.coordination import (
-        OrchestratorRole,
         get_registry,
-        TaskType,
         can_spawn,
         can_schedule_task,
         estimate_task_duration,
         register_running_task,
         record_task_completion,
     )
-    HAS_COORDINATION = True
-except ImportError:
-    HAS_COORDINATION = False
-    OrchestratorRole = None  # type: ignore
+else:
+    get_registry = get_registry_safe
+    can_spawn = can_spawn_safe
+    can_schedule_task = None
+    estimate_task_duration = None
+    register_running_task = None
+    record_task_completion = None
 
 
 # ============================================

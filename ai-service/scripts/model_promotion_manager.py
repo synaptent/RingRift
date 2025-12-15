@@ -51,35 +51,42 @@ try:
 except ImportError:
     HAS_LINEAGE = False
 
-# Import event bus for pipeline integration
-try:
-    from app.distributed.data_events import (
-        DataEventType,
-        DataEvent,
-        get_event_bus,
-        emit_model_promoted,
-        emit_error,
-    )
-    HAS_EVENT_BUS = True
-except ImportError:
-    HAS_EVENT_BUS = False
+# Import event bus helpers (consolidated imports)
+from app.distributed.event_helpers import (
+    has_event_bus,
+    get_event_bus_safe,
+    emit_model_promoted_safe,
+    emit_error_safe,
+    DataEventType,
+    DataEvent,
+)
+HAS_EVENT_BUS = has_event_bus()
 
-# Import coordination to prevent multiple promotion managers
-try:
-    from app.coordination import (
-        # Orchestrator role management
-        OrchestratorRole,
-        get_registry,
-        # Task coordination for spawn limits
-        TaskCoordinator,
-        TaskType,
-        can_spawn,
-    )
-    HAS_COORDINATION = True
-except ImportError:
-    HAS_COORDINATION = False
-    OrchestratorRole = None
-    TaskCoordinator = None
+# For backwards compatibility, get the raw functions if available
+if HAS_EVENT_BUS:
+    from app.distributed.data_events import get_event_bus, emit_model_promoted, emit_error
+else:
+    get_event_bus = get_event_bus_safe
+    emit_model_promoted = emit_model_promoted_safe
+    emit_error = emit_error_safe
+
+# Import coordination helpers (consolidated imports)
+from app.coordination.helpers import (
+    has_coordination,
+    get_registry_safe,
+    can_spawn_safe,
+    OrchestratorRole,
+    TaskCoordinator,
+    TaskType,
+)
+HAS_COORDINATION = has_coordination()
+
+# For backwards compatibility
+if HAS_COORDINATION:
+    from app.coordination import get_registry, can_spawn
+else:
+    get_registry = get_registry_safe
+    can_spawn = can_spawn_safe
 
 # Import canonical config helpers
 try:

@@ -8,6 +8,7 @@ functionality, consolidating:
 - content_deduplication.py (content-hash deduplication)
 - ingestion_wal.py (crash-safe game ingestion)
 - collector_watchdog.py (health monitoring and auto-restart)
+- gossip_sync.py (P2P gossip-based data replication)
 
 Features:
 1. Continuous polling with configurable intervals
@@ -17,6 +18,7 @@ Features:
 5. Distributed manifest replication
 6. Self-healing with watchdog monitoring
 7. Event-driven coordination
+8. P2P gossip sync for resilient, eventually-consistent replication
 
 Usage:
     # Programmatic
@@ -112,22 +114,52 @@ try:
 except ImportError:
     HAS_EVENT_BUS = False
 
-try:
-    from app.coordination.sync_mutex import acquire_sync_lock, release_sync_lock
-    HAS_SYNC_LOCK = True
-except ImportError:
-    HAS_SYNC_LOCK = False
+# Import coordination helpers (consolidated imports)
+from app.coordination.helpers import (
+    # Sync lock
+    has_sync_lock,
+    acquire_sync_lock_safe,
+    release_sync_lock_safe,
+    # Bandwidth
+    has_bandwidth_manager,
+    get_transfer_priorities,
+    request_bandwidth_safe,
+    release_bandwidth_safe,
+    # Orchestrator
+    has_coordination,
+    get_orchestrator_roles,
+    get_registry_safe,
+    # Cross-process events
+    has_cross_process_events,
+    publish_event_safe,
+)
 
-try:
-    from app.coordination.bandwidth_manager import (
-        request_bandwidth,
-        release_bandwidth,
-        TransferPriority,
-    )
-    HAS_BANDWIDTH_MANAGER = True
-except ImportError:
-    HAS_BANDWIDTH_MANAGER = False
+HAS_SYNC_LOCK = has_sync_lock()
+HAS_BANDWIDTH_MANAGER = has_bandwidth_manager()
+HAS_ORCHESTRATOR_REGISTRY = has_coordination()
+HAS_CROSS_PROCESS_EVENTS = has_cross_process_events()
 
+# Wrapper functions for backwards compatibility
+def acquire_sync_lock(host: str, timeout: float = 120.0) -> bool:
+    return acquire_sync_lock_safe(host, timeout)
+
+def release_sync_lock(host: str) -> None:
+    release_sync_lock_safe(host)
+
+def request_bandwidth(host: str, mbps: float = 100.0, priority=None):
+    return request_bandwidth_safe(host, mbps, priority)
+
+def release_bandwidth(host: str) -> None:
+    release_bandwidth_safe(host)
+
+TransferPriority = get_transfer_priorities()
+OrchestratorRole = get_orchestrator_roles()
+get_registry = get_registry_safe
+
+def publish_cross_process_event(event_type: str, payload: dict = None):
+    publish_event_safe(event_type, payload)
+
+# Circuit breaker still has its own import (not in helpers)
 try:
     from app.distributed.circuit_breaker import (
         get_host_breaker,
@@ -138,20 +170,31 @@ try:
 except ImportError:
     HAS_CIRCUIT_BREAKER = False
 
+# Try to import unified manifest (consolidated implementation)
 try:
-    from app.coordination.orchestrator_registry import (
-        OrchestratorRole,
-        get_registry,
+    from app.distributed.unified_manifest import (
+        DataManifest as UnifiedDataManifest,
+        HostSyncState as UnifiedHostSyncState,
+        create_manifest,
     )
-    HAS_ORCHESTRATOR_REGISTRY = True
+    HAS_UNIFIED_MANIFEST = True
 except ImportError:
-    HAS_ORCHESTRATOR_REGISTRY = False
+    HAS_UNIFIED_MANIFEST = False
+    UnifiedDataManifest = None
+    UnifiedHostSyncState = None
 
+# Gossip sync for P2P data replication (optional backend)
 try:
-    from app.coordination.cross_process_events import publish_event as publish_cross_process_event
-    HAS_CROSS_PROCESS_EVENTS = True
+    from app.distributed.gossip_sync import (
+        GossipSyncDaemon,
+        load_peer_config,
+        GOSSIP_PORT,
+    )
+    HAS_GOSSIP_SYNC = True
 except ImportError:
-    HAS_CROSS_PROCESS_EVENTS = False
+    HAS_GOSSIP_SYNC = False
+    GossipSyncDaemon = None
+    GOSSIP_PORT = 8771
 
 
 # =============================================================================
@@ -228,25 +271,34 @@ class SyncConfig:
     # Dead letter queue
     dead_letter_enabled: bool = True
 
+    # Gossip sync (P2P data replication)
+    enable_gossip_sync: bool = False  # Disabled by default, enable for P2P replication
+    gossip_port: int = 8771
 
-@dataclass
-class HostSyncState:
-    """Sync state for a host."""
-    name: str
-    last_sync_time: float = 0.0
-    last_game_count: int = 0
-    total_games_synced: int = 0
-    consecutive_failures: int = 0
-    last_error: str = ""
-    last_error_time: float = 0.0
+
+# HostSyncState - use unified implementation if available
+if HAS_UNIFIED_MANIFEST:
+    HostSyncState = UnifiedHostSyncState
+else:
+    @dataclass
+    class HostSyncState:
+        """Sync state for a host (legacy fallback)."""
+        name: str
+        last_sync_time: float = 0.0
+        last_game_count: int = 0
+        total_games_synced: int = 0
+        consecutive_failures: int = 0
+        last_error: str = ""
+        last_error_time: float = 0.0
 
 
 # =============================================================================
-# Data Manifest (Local Storage)
+# Data Manifest - Legacy implementation (kept for fallback)
+# For new code, use: from app.distributed.unified_manifest import DataManifest
 # =============================================================================
 
-class DataManifest:
-    """Tracks synced game IDs for deduplication."""
+class _LegacyDataManifest:
+    """Tracks synced game IDs for deduplication (legacy fallback)."""
 
     def __init__(self, db_path: Path):
         self.db_path = db_path
@@ -336,6 +388,8 @@ class DataManifest:
         game_ids: List[str],
         source_host: str,
         source_db: str,
+        board_type: Optional[str] = None,
+        num_players: Optional[int] = None,
         content_hashes: Optional[List[str]] = None,
     ):
         """Mark games as synced."""
@@ -347,9 +401,9 @@ class DataManifest:
             content_hash = content_hashes[i] if content_hashes and i < len(content_hashes) else None
             cursor.execute("""
                 INSERT OR IGNORE INTO synced_games
-                (game_id, source_host, source_db, synced_at, content_hash)
-                VALUES (?, ?, ?, ?, ?)
-            """, (game_id, source_host, source_db, now, content_hash))
+                (game_id, source_host, source_db, synced_at, board_type, num_players, content_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (game_id, source_host, source_db, now, board_type, num_players, content_hash))
 
         conn.commit()
         conn.close()
@@ -452,6 +506,13 @@ class DataManifest:
         return count
 
 
+# DataManifest - use unified implementation if available
+if HAS_UNIFIED_MANIFEST:
+    DataManifest = UnifiedDataManifest
+else:
+    DataManifest = _LegacyDataManifest
+
+
 # =============================================================================
 # Unified Data Sync Service
 # =============================================================================
@@ -509,6 +570,7 @@ class UnifiedDataSyncService:
         self._p2p_fallback: Optional[P2PFallbackSync] = None
         self._content_deduplicator: Optional[ContentDeduplicator] = None
         self._ingestion_wal: Optional[IngestionWAL] = None
+        self._gossip_daemon: Optional[GossipSyncDaemon] = None
 
         self._init_components()
 
@@ -572,6 +634,22 @@ class UnifiedDataSyncService:
                 logger.info("Write-ahead log enabled")
             except Exception as e:
                 logger.warning(f"Could not initialize WAL: {e}")
+
+        # Gossip sync for P2P data replication
+        if self.config.enable_gossip_sync and HAS_GOSSIP_SYNC:
+            try:
+                hosts_config = AI_SERVICE_ROOT / "config" / "remote_hosts.yaml"
+                peers_config = load_peer_config(hosts_config)
+                node_id = socket.gethostname()
+                self._gossip_daemon = GossipSyncDaemon(
+                    node_id=node_id,
+                    data_dir=AI_SERVICE_ROOT / "data" / "games",
+                    peers_config=peers_config,
+                    listen_port=self.config.gossip_port,
+                )
+                logger.info(f"Gossip sync enabled ({len(peers_config)} peers)")
+            except Exception as e:
+                logger.warning(f"Could not initialize gossip sync: {e}")
 
     def _build_ssh_args(self, host: HostConfig) -> str:
         """Build SSH arguments string."""
@@ -935,7 +1013,9 @@ class UnifiedDataSyncService:
                     "p2p_fallback": self._p2p_fallback is not None,
                     "content_deduplication": self._content_deduplicator is not None,
                     "wal": self._ingestion_wal is not None,
+                    "gossip_sync": self._gossip_daemon is not None,
                 },
+                "gossip_status": self._gossip_daemon.get_status() if self._gossip_daemon else None,
             })
 
         async def handle_hosts(request):
@@ -1001,6 +1081,14 @@ class UnifiedDataSyncService:
         # Start HTTP API
         await self._setup_http()
 
+        # Start gossip daemon if enabled
+        if self._gossip_daemon:
+            try:
+                await self._gossip_daemon.start()
+                logger.info("Gossip sync daemon started")
+            except Exception as e:
+                logger.warning(f"Failed to start gossip daemon: {e}")
+
         heartbeat_interval = 30
         last_heartbeat = time.time()
 
@@ -1052,6 +1140,14 @@ class UnifiedDataSyncService:
             if self._p2p_fallback and hasattr(self._p2p_fallback, 'close'):
                 await self._p2p_fallback.close()
 
+            # Stop gossip daemon
+            if self._gossip_daemon:
+                try:
+                    await self._gossip_daemon.stop()
+                    logger.info("Gossip sync daemon stopped")
+                except Exception as e:
+                    logger.warning(f"Error stopping gossip daemon: {e}")
+
             await self._cleanup_http()
 
         logger.info("Unified data sync stopped")
@@ -1083,6 +1179,9 @@ class UnifiedDataSyncService:
         if self._manifest_replicator:
             stats["manifest_replication"] = self._manifest_replicator.get_status()
 
+        if self._gossip_daemon:
+            stats["gossip_sync"] = self._gossip_daemon.get_status()
+
         return stats
 
     @classmethod
@@ -1109,6 +1208,8 @@ class UnifiedDataSyncService:
             retry_base_delay_seconds=di.get("retry_base_delay_seconds", 5.0),
             dead_letter_enabled=di.get("dead_letter_enabled", True),
             training_threshold=data.get("training", {}).get("trigger_threshold_games", 300),
+            enable_gossip_sync=di.get("enable_gossip_sync", False),
+            gossip_port=di.get("gossip_port", GOSSIP_PORT),
         )
 
         # Determine hosts config path
@@ -1232,6 +1333,7 @@ Examples:
         logger.info(f"  P2P fallback: {service._p2p_fallback is not None}")
         logger.info(f"  Content dedup: {service._content_deduplicator is not None}")
         logger.info(f"  WAL: {service._ingestion_wal is not None}")
+        logger.info(f"  Gossip sync: {service._gossip_daemon is not None}")
         return
 
     # Signal handlers

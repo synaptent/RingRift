@@ -60,17 +60,42 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
-# Try to import event bus
-try:
-    from app.distributed.data_events import (
-        DataEventType,
-        DataEvent,
-        get_event_bus,
-        emit_new_games,
-    )
-    HAS_EVENT_BUS = True
-except ImportError:
-    HAS_EVENT_BUS = False
+# Import event bus helpers (consolidated imports)
+from app.distributed.event_helpers import (
+    has_event_bus,
+    get_event_bus_safe,
+    emit_new_games_safe,
+    DataEventType,
+    DataEvent,
+)
+HAS_EVENT_BUS = has_event_bus()
+
+# For backwards compatibility
+if HAS_EVENT_BUS:
+    from app.distributed.data_events import get_event_bus, emit_new_games
+else:
+    get_event_bus = get_event_bus_safe
+    # emit_new_games wrapper
+    async def emit_new_games(host, new_games, config="", source=""):
+        return await emit_new_games_safe(host, new_games, config, source)
+
+# Import coordination helpers (consolidated imports)
+from app.coordination.helpers import (
+    has_coordination,
+    get_registry_safe,
+    OrchestratorRole,
+)
+HAS_COORDINATION = has_coordination()
+
+# For backwards compatibility
+if HAS_COORDINATION:
+    from app.coordination import get_registry
+    from app.coordination.orchestrator_registry import orchestrator_role
+else:
+    get_registry = get_registry_safe
+    orchestrator_role = None  # No-op if coordination unavailable
+
+HAS_ORCHESTRATOR_REGISTRY = HAS_COORDINATION
 
 # Try to import cross-process event queue for distributed coordination
 try:
@@ -104,18 +129,6 @@ try:
     HAS_SYNC_LOCK = True
 except ImportError:
     HAS_SYNC_LOCK = False
-
-# Try to import OrchestratorRegistry for daemon role management
-try:
-    from app.coordination.orchestrator_registry import (
-        OrchestratorRole,
-        orchestrator_role,
-        get_registry,
-    )
-    HAS_ORCHESTRATOR_REGISTRY = True
-except ImportError:
-    HAS_ORCHESTRATOR_REGISTRY = False
-    OrchestratorRole = None
 
 # Try to import BandwidthManager for large transfers
 try:
@@ -162,13 +175,28 @@ try:
 except ImportError:
     HAS_P2P_FALLBACK = False
 
+# Try to import host classification (consolidated module)
+try:
+    from app.distributed.host_classification import (
+        StorageType,
+        HostTier,
+        HostSyncProfile,
+        classify_host_storage,
+        classify_host_tier,
+        get_ephemeral_hosts,
+        create_sync_profile,
+    )
+    HAS_HOST_CLASSIFICATION = True
+except ImportError:
+    HAS_HOST_CLASSIFICATION = False
+    StorageType = None
+    HostSyncProfile = None
+
 # Try to import robust data sync for WAL and Elo replication
 try:
     from app.distributed.data_sync_robust import (
         WriteAheadLog,
         EloReplicator,
-        StorageType,
-        classify_host_storage,
         create_elo_replicator,
     )
     HAS_ROBUST_SYNC = True
@@ -176,7 +204,19 @@ except ImportError:
     HAS_ROBUST_SYNC = False
     WriteAheadLog = None
     EloReplicator = None
-    StorageType = None
+
+# Try to import unified manifest (consolidated implementation)
+try:
+    from app.distributed.unified_manifest import (
+        DataManifest as UnifiedDataManifest,
+        HostSyncState as UnifiedHostSyncState,
+        create_manifest,
+    )
+    HAS_UNIFIED_MANIFEST = True
+except ImportError:
+    HAS_UNIFIED_MANIFEST = False
+    UnifiedDataManifest = None
+    UnifiedHostSyncState = None
 
 
 @dataclass
@@ -195,16 +235,20 @@ class HostConfig:
     is_ephemeral: bool = False  # True for RAM disk hosts (data lost on termination)
 
 
-@dataclass
-class HostSyncState:
-    """Sync state for a host."""
-    name: str
-    last_sync_time: float = 0.0
-    last_game_count: int = 0
-    total_games_synced: int = 0
-    consecutive_failures: int = 0
-    last_error: str = ""
-    last_error_time: float = 0.0
+# HostSyncState - use unified implementation if available
+if HAS_UNIFIED_MANIFEST:
+    HostSyncState = UnifiedHostSyncState
+else:
+    @dataclass
+    class HostSyncState:
+        """Sync state for a host (legacy fallback)."""
+        name: str
+        last_sync_time: float = 0.0
+        last_game_count: int = 0
+        total_games_synced: int = 0
+        consecutive_failures: int = 0
+        last_error: str = ""
+        last_error_time: float = 0.0
 
 
 @dataclass
@@ -236,8 +280,14 @@ class CollectorConfig:
     elo_replication_interval_seconds: int = 60
 
 
-class DataManifest:
-    """Tracks synced game IDs for deduplication."""
+# =============================================================================
+# DataManifest - Legacy implementation (kept for fallback)
+# For new code, use: from app.distributed.unified_manifest import DataManifest
+# =============================================================================
+
+
+class _LegacyDataManifest:
+    """Tracks synced game IDs for deduplication (legacy fallback)."""
 
     def __init__(self, db_path: Path):
         self.db_path = db_path
@@ -475,6 +525,13 @@ class DataManifest:
         """, (time.time(), entry_id))
         conn.commit()
         conn.close()
+
+
+# DataManifest - use unified implementation if available
+if HAS_UNIFIED_MANIFEST:
+    DataManifest = UnifiedDataManifest
+else:
+    DataManifest = _LegacyDataManifest
 
 
 class StreamingDataCollector:

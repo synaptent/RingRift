@@ -1,5 +1,5 @@
 [Unit]
-Description=RingRift Streaming Data Collector
+Description=RingRift Unified Data Sync Service
 Documentation=https://github.com/ringrift/ai-service
 After=network-online.target
 Wants=network-online.target
@@ -14,12 +14,13 @@ WorkingDirectory=/home/ubuntu/ringrift/ai-service
 Environment="PYTHONUNBUFFERED=1"
 Environment="PYTHONPATH=/home/ubuntu/ringrift/ai-service"
 
-# Main process - runs data collection standalone
+# Main process - runs unified data sync with watchdog
+# Note: unified_data_sync.py replaces the deprecated streaming_data_collector.py
 ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python \
-    scripts/streaming_data_collector.py \
+    scripts/unified_data_sync.py \
     --config config/unified_loop.yaml \
     --hosts config/remote_hosts.yaml \
-    --interval 60
+    --watchdog
 
 # Restart policy
 Restart=on-failure
@@ -34,7 +35,7 @@ CPUQuota=50%
 # Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=streaming-collector
+SyslogIdentifier=unified-data-sync
 
 # Security hardening
 NoNewPrivileges=yes

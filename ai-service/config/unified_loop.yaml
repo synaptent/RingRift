@@ -17,6 +17,10 @@ data_ingestion:
   deduplication: true # Deduplicate games by ID across hosts
   min_games_per_sync: 5 # Reduced from 10 - sync smaller batches more frequently
   remote_db_pattern: 'data/games/*.db'
+  # External sync: when true, skip internal data collection and rely on external
+  # unified_data_sync.py service (provides P2P fallback, WAL, content dedup)
+  # Usage: python scripts/unified_data_sync.py --watchdog
+  use_external_sync: false # Set to true to use external unified_data_sync.py
   # Hardening options
   checksum_validation: true # Validate game integrity on sync
   retry_max_attempts: 3 # Max retries with exponential backoff

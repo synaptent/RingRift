@@ -80,37 +80,42 @@ import yaml
 # Allow imports from app/
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# Import sync_lock for coordinating rsync operations
-try:
-    from app.coordination.sync_mutex import sync_lock
-    HAS_SYNC_LOCK = True
-except ImportError:
-    HAS_SYNC_LOCK = False
-    sync_lock = None  # type: ignore
+# Import coordination helpers for sync, bandwidth, and orchestration
+from app.coordination.helpers import (
+    # Sync lock
+    has_sync_lock,
+    get_sync_lock_context,
+    acquire_sync_lock_safe,
+    release_sync_lock_safe,
+    # Bandwidth
+    has_bandwidth_manager,
+    get_transfer_priorities,
+    request_bandwidth_safe,
+    release_bandwidth_safe,
+    # Orchestrator
+    has_coordination,
+    get_orchestrator_roles,
+    get_registry_safe,
+    acquire_role_safe,
+    release_role_safe,
+)
 
-# Import bandwidth management for large data transfers
-try:
-    from app.coordination.bandwidth_manager import (
-        request_bandwidth,
-        release_bandwidth,
-        TransferPriority,
-    )
-    HAS_BANDWIDTH_MANAGER = True
-except ImportError:
-    HAS_BANDWIDTH_MANAGER = False
-    TransferPriority = None  # type: ignore
+HAS_SYNC_LOCK = has_sync_lock()
+sync_lock = get_sync_lock_context()
 
-# Import OrchestratorRegistry for daemon role management
-try:
-    from app.coordination.orchestrator_registry import (
-        OrchestratorRole,
-        orchestrator_role,
-        get_registry,
-    )
-    HAS_ORCHESTRATOR_REGISTRY = True
-except ImportError:
-    HAS_ORCHESTRATOR_REGISTRY = False
-    OrchestratorRole = None  # type: ignore
+HAS_BANDWIDTH_MANAGER = has_bandwidth_manager()
+TransferPriority = get_transfer_priorities()
+
+HAS_ORCHESTRATOR_REGISTRY = has_coordination()
+OrchestratorRole = get_orchestrator_roles()
+get_registry = get_registry_safe
+
+# Wrapper functions for backwards compatibility
+def request_bandwidth(host: str, mbps: float = 100.0, priority=None):
+    return request_bandwidth_safe(host, mbps, priority)
+
+def release_bandwidth(host: str) -> None:
+    release_bandwidth_safe(host)
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 

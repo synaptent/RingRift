@@ -46,6 +46,7 @@ _emit_model_promoted = None
 _emit_training_completed = None
 _emit_evaluation_completed = None
 _emit_error = None
+_emit_elo_updated = None
 
 try:
     from app.distributed.data_events import (
@@ -57,6 +58,7 @@ try:
         emit_training_completed,
         emit_evaluation_completed,
         emit_error,
+        emit_elo_updated,
     )
     _HAS_EVENT_BUS = True
     _DataEventType = DataEventType
@@ -67,6 +69,7 @@ try:
     _emit_training_completed = emit_training_completed
     _emit_evaluation_completed = emit_evaluation_completed
     _emit_error = emit_error
+    _emit_elo_updated = emit_elo_updated
 except ImportError:
     pass
 
@@ -325,6 +328,39 @@ async def emit_error_safe(
         return True
     except Exception as e:
         logger.warning(f"Failed to emit ERROR: {e}")
+        return False
+
+
+async def emit_elo_updated_safe(
+    config: str,
+    model_id: str,
+    new_elo: float,
+    old_elo: float,
+    games_played: int,
+    source: str = ""
+) -> bool:
+    """Safely emit ELO_UPDATED event.
+
+    Args:
+        config: Configuration key (e.g., "square8_2p")
+        model_id: Model identifier
+        new_elo: New Elo rating
+        old_elo: Previous Elo rating
+        games_played: Number of games played
+        source: Source component name
+
+    Returns:
+        True if emitted successfully, False otherwise.
+    """
+    if not _HAS_EVENT_BUS or _emit_elo_updated is None:
+        logger.debug(f"Event bus unavailable, skipping ELO_UPDATED: {model_id}")
+        return False
+
+    try:
+        await _emit_elo_updated(config, model_id, new_elo, old_elo, games_played, source=source)
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to emit ELO_UPDATED: {e}")
         return False
 
 

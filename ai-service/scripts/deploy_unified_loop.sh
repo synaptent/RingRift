@@ -52,6 +52,7 @@ AWS_HOSTS=(
 # Files to deploy
 CORE_FILES=(
     "scripts/unified_ai_loop.py"
+    "scripts/unified_data_sync.py"
     "scripts/streaming_data_collector.py"
     "scripts/shadow_tournament_service.py"
     "scripts/regression_gate.py"
