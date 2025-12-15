@@ -16678,7 +16678,11 @@ print(json.dumps({{
 
     async def _manifest_collection_loop(self):
         """Periodically collect manifests for dashboard/training/sync decisions."""
-        await asyncio.sleep(2.0)  # Let the HTTP server come up first
+        # IMPORTANT: Wait longer before first manifest collection to ensure HTTP server
+        # is fully responsive. Initial manifest collection reads 700+ JSONL files and
+        # can take several minutes, which can block health checks if started too early.
+        await asyncio.sleep(60.0)  # Wait 60s before first manifest collection
+        print("[P2P] Starting manifest collection loop (first collection in 60s)")
         while self.running:
             try:
                 if self.role == NodeRole.LEADER:
