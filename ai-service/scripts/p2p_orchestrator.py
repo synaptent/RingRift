@@ -108,6 +108,39 @@ def record_peer_failure(peer_host: str, error: Optional[Exception] = None) -> No
         get_host_breaker().record_failure(peer_host, error)
 
 
+def get_disk_usage_percent(path: str = None) -> float:
+    """Get disk usage percentage for the given path.
+
+    Returns:
+        Disk usage as a percentage (0-100), or 100.0 on error.
+    """
+    check_path = path or os.path.dirname(os.path.abspath(__file__))
+    try:
+        stat = os.statvfs(check_path)
+        total = stat.f_blocks * stat.f_frsize
+        free = stat.f_bavail * stat.f_frsize
+        if total <= 0:
+            return 100.0
+        used = total - free
+        return (used / total) * 100.0
+    except Exception:
+        return 100.0  # Assume full on error to be safe
+
+
+def check_disk_has_capacity(threshold: float = None) -> Tuple[bool, float]:
+    """Check if disk has capacity below threshold for data sync.
+
+    Args:
+        threshold: Max disk usage percentage (defaults to MAX_DISK_USAGE_PERCENT)
+
+    Returns:
+        Tuple of (has_capacity: bool, current_percent: float)
+    """
+    threshold = threshold if threshold is not None else MAX_DISK_USAGE_PERCENT
+    current = get_disk_usage_percent()
+    return (current < threshold, current)
+
+
 async def peer_request(
     session: "ClientSession",
     method: str,
@@ -309,9 +342,11 @@ DISCOVERY_INTERVAL = 120  # seconds between discovery broadcasts
 # These thresholds are env-overridable so heterogeneous clusters (e.g. small
 # Mac disks vs large cloud volumes) can tune health/scheduling without code
 # changes.
-DISK_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", "90") or 90)  # Stop all new jobs
-DISK_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", "80") or 80)    # Reduce jobs
-DISK_CLEANUP_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CLEANUP_THRESHOLD", "85") or 85)    # Trigger cleanup
+# 2025-12-15: Lowered disk thresholds to enforce 70% max disk usage as requested
+# This prevents disk exhaustion that was causing orchestrator instability
+DISK_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", "70") or 70)  # Stop all new jobs at 70%
+DISK_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", "65") or 65)    # Start cleanup at 65%
+DISK_CLEANUP_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CLEANUP_THRESHOLD", "65") or 65)    # Trigger cleanup at 65%
 MEMORY_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_MEMORY_CRITICAL_THRESHOLD", "95") or 95)  # Stop jobs
 MEMORY_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_MEMORY_WARNING_THRESHOLD", "85") or 85)    # Reduce jobs
 MIN_MEMORY_GB_FOR_TASKS = int(os.environ.get("RINGRIFT_P2P_MIN_MEMORY_GB", "64") or 64)                # Skip low-memory nodes
@@ -391,6 +426,9 @@ LOAD_AVERAGE_MAX_MULTIPLIER = float(os.environ.get("RINGRIFT_P2P_LOAD_AVG_MAX_MU
 SPAWN_RATE_LIMIT_PER_MINUTE = int(os.environ.get("RINGRIFT_P2P_SPAWN_RATE_LIMIT", "5") or 5)  # Max spawns per minute
 COORDINATOR_URL = os.environ.get("RINGRIFT_COORDINATOR_URL", "")  # If set, defer to coordinator
 AGENT_MODE_ENABLED = os.environ.get("RINGRIFT_P2P_AGENT_MODE", "").lower() in {"1", "true", "yes", "on"}
+
+# Disk capacity limit - stop syncing when disk usage exceeds this percentage
+MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
 
 # Arbiter URL for split-brain resolution when voter quorum fails
 # This should be a reliably-reachable node (e.g., Oracle Cloud instance with public IP)
@@ -3797,6 +3835,12 @@ class P2POrchestrator:
         if not self.current_sync_plan:
             return
 
+        # Check disk capacity before syncing
+        has_capacity, disk_percent = check_disk_has_capacity()
+        if not has_capacity:
+            print(f"[P2P] SKIPPING SYNC - Disk usage {disk_percent:.1f}% exceeds limit {MAX_DISK_USAGE_PERCENT}%")
+            return
+
         with self.sync_lock:
             if self.sync_in_progress:
                 print("[P2P] Sync already in progress, skipping")
@@ -3951,6 +3995,17 @@ class P2POrchestrator:
         Pulls files over the P2P HTTP channel to avoid SSH/rsync dependencies.
         Uses get_data_directory() to support both disk and ramdrive storage.
         """
+        # Check disk capacity before pulling files
+        has_capacity, disk_percent = check_disk_has_capacity()
+        if not has_capacity:
+            return {
+                "success": False,
+                "error": f"Disk full ({disk_percent:.1f}% >= {MAX_DISK_USAGE_PERCENT}%)",
+                "disk_percent": disk_percent,
+                "bytes_transferred": 0,
+                "files_completed": 0,
+            }
+
         data_dir = self.get_data_directory()
         data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -4383,6 +4438,12 @@ class P2POrchestrator:
 
                 # Check if enough time has passed since last sync
                 if time.time() - self.last_training_sync_time < self.training_sync_interval:
+                    continue
+
+                # Check disk capacity before syncing
+                has_capacity, disk_percent = check_disk_has_capacity()
+                if not has_capacity:
+                    print(f"[P2P] SKIPPING training sync - Disk {disk_percent:.1f}% >= {MAX_DISK_USAGE_PERCENT}%")
                     continue
 
                 print("[P2P] Running periodic training node sync...")
@@ -8005,6 +8066,15 @@ print(json.dumps(result))
         }
         """
         try:
+            # Check disk capacity before accepting sync request
+            has_capacity, disk_percent = check_disk_has_capacity()
+            if not has_capacity:
+                return web.json_response({
+                    "error": f"Disk full ({disk_percent:.1f}% >= {MAX_DISK_USAGE_PERCENT}%)",
+                    "disk_percent": disk_percent,
+                    "threshold": MAX_DISK_USAGE_PERCENT
+                }, status=507)  # 507 Insufficient Storage
+
             data = await request.json()
             source_node_id = data.get("source_node_id")
             files = data.get("files", [])

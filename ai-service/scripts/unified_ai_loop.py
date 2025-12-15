@@ -627,6 +627,42 @@ except ImportError:
 MIN_MEMORY_GB = 64  # Minimum RAM to run the unified loop
 DISABLE_LOCAL_TASKS = os.environ.get("RINGRIFT_DISABLE_LOCAL_TASKS", "").lower() in ("1", "true", "yes", "on")
 
+# Disk capacity limit - stop syncing when disk usage exceeds this percentage
+MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
+
+
+def get_disk_usage_percent(path: str = None) -> float:
+    """Get disk usage percentage for the given path (defaults to AI_SERVICE_ROOT).
+
+    Returns:
+        Disk usage as a percentage (0-100), or 100.0 on error.
+    """
+    check_path = path or str(AI_SERVICE_ROOT)
+    try:
+        stat = os.statvfs(check_path)
+        total = stat.f_blocks * stat.f_frsize
+        free = stat.f_bavail * stat.f_frsize
+        if total <= 0:
+            return 100.0
+        used = total - free
+        return (used / total) * 100.0
+    except Exception:
+        return 100.0  # Assume full on error to be safe
+
+
+def check_disk_has_capacity(threshold: float = None) -> Tuple[bool, float]:
+    """Check if disk has capacity below threshold for data sync.
+
+    Args:
+        threshold: Max disk usage percentage (defaults to MAX_DISK_USAGE_PERCENT)
+
+    Returns:
+        Tuple of (has_capacity: bool, current_percent: float)
+    """
+    threshold = threshold or MAX_DISK_USAGE_PERCENT
+    current = get_disk_usage_percent()
+    return (current < threshold, current)
+
 
 # =============================================================================
 # Prometheus Metrics
@@ -2315,6 +2351,12 @@ class StreamingDataCollector:
         """
         print(f"[DataCollector] Starting collection cycle for {len(self.state.hosts)} hosts...", flush=True)
 
+        # Check disk capacity before syncing
+        has_capacity, disk_percent = check_disk_has_capacity()
+        if not has_capacity:
+            print(f"[DataCollector] SKIPPING SYNC - Disk usage {disk_percent:.1f}% exceeds limit {MAX_DISK_USAGE_PERCENT}%")
+            return 0
+
         enabled_hosts = [h for h in self.state.hosts.values() if h.enabled]
         if not enabled_hosts:
             return 0
@@ -2433,6 +2475,12 @@ class StreamingDataCollector:
         This is called after _fast_parallel_query has confirmed the host has new data.
         Uses unified_manifest for sync history logging.
         """
+        # Re-check disk capacity before each sync (secondary safety)
+        has_capacity, disk_percent = check_disk_has_capacity()
+        if not has_capacity:
+            print(f"[DataCollector] {host.name}: SKIPPING - Disk {disk_percent:.1f}% >= {MAX_DISK_USAGE_PERCENT}%")
+            return 0
+
         print(f"[DataCollector] {host.name}: {current_count} games (last: {host.last_game_count}, new: {new_games})")
 
         sync_start = time.time()
