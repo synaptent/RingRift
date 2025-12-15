@@ -131,10 +131,25 @@ class EloDatabase:
         logger.info(f"EloDatabase initialized at {self.db_path}")
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Get thread-local database connection."""
+        """Get thread-local database connection with optimized settings.
+
+        Uses WAL mode for better concurrent read/write performance and
+        configures appropriate timeouts for multi-process access.
+        """
         if not hasattr(self._local, "conn") or self._local.conn is None:
             self._local.conn = sqlite3.connect(str(self.db_path), timeout=30.0)
             self._local.conn.row_factory = sqlite3.Row
+
+            # Enable WAL mode for better concurrency (multiple readers, one writer)
+            # This is safe to call even if already enabled - SQLite handles idempotently
+            self._local.conn.execute('PRAGMA journal_mode=WAL')
+
+            # Increase busy timeout to handle contention from multiple processes
+            self._local.conn.execute('PRAGMA busy_timeout=10000')  # 10 seconds
+
+            # Synchronous NORMAL is safe with WAL mode and faster than FULL
+            self._local.conn.execute('PRAGMA synchronous=NORMAL')
+
         return self._local.conn
 
     @property

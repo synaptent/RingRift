@@ -73,6 +73,89 @@ except ImportError:
     ClusterCoordinator = None
     TaskRole = None
 
+# Import health checks for component monitoring
+try:
+    from app.distributed.health_checks import (
+        HealthChecker,
+        HealthSummary,
+        get_health_summary,
+        format_health_report,
+    )
+    HAS_HEALTH_CHECKS = True
+except ImportError:
+    HAS_HEALTH_CHECKS = False
+    HealthChecker = None
+    HealthSummary = None
+
+# Import TaskCoordinator for global task limits and rate limiting
+try:
+    from app.coordination.task_coordinator import (
+        TaskCoordinator,
+        TaskType,
+        TaskLimits,
+        CoordinatorState,
+    )
+    HAS_TASK_COORDINATOR = True
+except ImportError:
+    HAS_TASK_COORDINATOR = False
+    TaskCoordinator = None
+    TaskType = None
+
+# Import centralized Elo service (canonical ELO operations)
+try:
+    from app.training.elo_service import (
+        EloService,
+        get_elo_service,
+        ELO_DB_PATH as CANONICAL_ELO_DB_PATH,
+    )
+    HAS_ELO_SERVICE = True
+except ImportError:
+    HAS_ELO_SERVICE = False
+    EloService = None
+    get_elo_service = None
+    CANONICAL_ELO_DB_PATH = None
+
+# Import pipeline feedback controller for closed-loop integration
+try:
+    from app.integration.pipeline_feedback import (
+        PipelineFeedbackController,
+        FeedbackAction,
+        create_feedback_controller,
+    )
+    HAS_FEEDBACK = True
+except ImportError:
+    HAS_FEEDBACK = False
+    PipelineFeedbackController = None
+    FeedbackAction = None
+
+# Import cross-process event queue for multi-daemon coordination
+try:
+    from app.coordination.cross_process_events import (
+        CrossProcessEventQueue,
+        CrossProcessEvent,
+    )
+    HAS_CROSS_PROCESS_EVENTS = True
+except ImportError:
+    HAS_CROSS_PROCESS_EVENTS = False
+    CrossProcessEventQueue = None
+    CrossProcessEvent = None
+
+# Import pre-spawn health checks for remote hosts
+try:
+    from app.coordination.health_check import (
+        is_host_healthy,
+        check_host_health,
+        get_healthy_hosts,
+        HealthStatus as PreSpawnHealthStatus,
+    )
+    HAS_PRE_SPAWN_HEALTH = True
+except ImportError:
+    HAS_PRE_SPAWN_HEALTH = False
+    is_host_healthy = None
+    check_host_health = None
+    get_healthy_hosts = None
+    PreSpawnHealthStatus = None
+
 # Memory and local task configuration
 MIN_MEMORY_GB = 64  # Minimum RAM to run the unified loop
 DISABLE_LOCAL_TASKS = os.environ.get("RINGRIFT_DISABLE_LOCAL_TASKS", "").lower() in ("1", "true", "yes", "on")
@@ -246,6 +329,167 @@ if HAS_PROMETHEUS:
         []
     )
 
+    # Health monitoring metrics
+    COMPONENT_HEALTH = Gauge(
+        'ringrift_component_health',
+        'Component health status (1=healthy, 0.5=degraded, 0=unhealthy)',
+        ['component']
+    )
+    COMPONENT_LAST_SUCCESS = Gauge(
+        'ringrift_component_last_success_timestamp',
+        'Unix timestamp of last successful operation per component',
+        ['component']
+    )
+    COMPONENT_CONSECUTIVE_FAILURES = Gauge(
+        'ringrift_component_consecutive_failures',
+        'Number of consecutive failures per component',
+        ['component']
+    )
+    OVERALL_HEALTH = Gauge(
+        'ringrift_overall_health',
+        'Overall system health (1=healthy, 0.5=degraded, 0=unhealthy)',
+        []
+    )
+
+
+class HealthStatus(Enum):
+    """Component health status levels."""
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class ComponentHealth:
+    """Tracks health state for a single component."""
+    name: str
+    status: HealthStatus = HealthStatus.UNKNOWN
+    last_success: float = 0.0
+    last_failure: float = 0.0
+    consecutive_failures: int = 0
+    last_error: str = ""
+    stale_threshold_seconds: int = 300
+
+    def record_success(self):
+        """Record a successful operation."""
+        self.last_success = time.time()
+        self.consecutive_failures = 0
+        self.status = HealthStatus.HEALTHY
+
+    def record_failure(self, error: str = ""):
+        """Record a failed operation."""
+        self.last_failure = time.time()
+        self.consecutive_failures += 1
+        self.last_error = error
+        if self.consecutive_failures >= 3:
+            self.status = HealthStatus.UNHEALTHY
+        else:
+            self.status = HealthStatus.DEGRADED
+
+    def check_staleness(self) -> HealthStatus:
+        """Check if component is stale (no recent activity)."""
+        if self.last_success == 0:
+            return HealthStatus.UNKNOWN
+        age = time.time() - self.last_success
+        if age > self.stale_threshold_seconds * 2:
+            return HealthStatus.UNHEALTHY
+        elif age > self.stale_threshold_seconds:
+            return HealthStatus.DEGRADED
+        return HealthStatus.HEALTHY
+
+    def get_status(self) -> HealthStatus:
+        """Get current health status (considers staleness)."""
+        staleness = self.check_staleness()
+        if self.status == HealthStatus.UNHEALTHY or staleness == HealthStatus.UNHEALTHY:
+            return HealthStatus.UNHEALTHY
+        if self.status == HealthStatus.DEGRADED or staleness == HealthStatus.DEGRADED:
+            return HealthStatus.DEGRADED
+        if self.status == HealthStatus.HEALTHY and staleness == HealthStatus.HEALTHY:
+            return HealthStatus.HEALTHY
+        return HealthStatus.UNKNOWN
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "name": self.name,
+            "status": self.get_status().value,
+            "last_success": self.last_success,
+            "last_failure": self.last_failure,
+            "consecutive_failures": self.consecutive_failures,
+            "last_error": self.last_error,
+            "age_seconds": time.time() - self.last_success if self.last_success > 0 else -1,
+        }
+
+
+# Global health tracker (set by UnifiedAILoop)
+_health_tracker: Optional["HealthTracker"] = None
+
+
+class HealthTracker:
+    """Tracks health of all system components."""
+
+    def __init__(self):
+        # Initialize health trackers for each component
+        self.components: Dict[str, ComponentHealth] = {
+            "data_collector": ComponentHealth("data_collector", stale_threshold_seconds=300),
+            "evaluator": ComponentHealth("evaluator", stale_threshold_seconds=1800),
+            "training_scheduler": ComponentHealth("training_scheduler", stale_threshold_seconds=7200),
+            "promoter": ComponentHealth("promoter", stale_threshold_seconds=3600),
+            "curriculum": ComponentHealth("curriculum", stale_threshold_seconds=3600),
+        }
+
+    def record_success(self, component: str):
+        """Record successful operation for a component."""
+        if component in self.components:
+            self.components[component].record_success()
+            self._update_metrics(component)
+
+    def record_failure(self, component: str, error: str = ""):
+        """Record failed operation for a component."""
+        if component in self.components:
+            self.components[component].record_failure(error)
+            self._update_metrics(component)
+
+    def _update_metrics(self, component: str):
+        """Update Prometheus metrics for a component."""
+        if not HAS_PROMETHEUS:
+            return
+        ch = self.components[component]
+        status = ch.get_status()
+        COMPONENT_HEALTH.labels(component=component).set(
+            1.0 if status == HealthStatus.HEALTHY else
+            0.5 if status == HealthStatus.DEGRADED else 0.0
+        )
+        if ch.last_success > 0:
+            COMPONENT_LAST_SUCCESS.labels(component=component).set(ch.last_success)
+        COMPONENT_CONSECUTIVE_FAILURES.labels(component=component).set(ch.consecutive_failures)
+
+    def get_overall_status(self) -> HealthStatus:
+        """Get overall system health status."""
+        statuses = [c.get_status() for c in self.components.values()]
+        if any(s == HealthStatus.UNHEALTHY for s in statuses):
+            return HealthStatus.UNHEALTHY
+        if any(s == HealthStatus.DEGRADED for s in statuses):
+            return HealthStatus.DEGRADED
+        if all(s == HealthStatus.HEALTHY for s in statuses):
+            return HealthStatus.HEALTHY
+        return HealthStatus.UNKNOWN
+
+    def get_health_summary(self) -> Dict[str, Any]:
+        """Get full health summary for API response."""
+        overall = self.get_overall_status()
+        if HAS_PROMETHEUS:
+            OVERALL_HEALTH.set(
+                1.0 if overall == HealthStatus.HEALTHY else
+                0.5 if overall == HealthStatus.DEGRADED else 0.0
+            )
+        return {
+            "status": overall.value,
+            "timestamp": time.time(),
+            "components": {name: ch.to_dict() for name, ch in self.components.items()},
+        }
+
 
 class MetricsHandler(BaseHTTPRequestHandler):
     """HTTP handler for Prometheus metrics endpoint."""
@@ -257,10 +501,22 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(generate_latest())
         elif self.path == '/health':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b'OK')
+            # Return detailed health status if tracker is available
+            global _health_tracker
+            if _health_tracker is not None:
+                health_data = _health_tracker.get_health_summary()
+                status = health_data.get("status", "unknown")
+                http_code = 200 if status == "healthy" else 503 if status == "unhealthy" else 200
+                self.send_response(http_code)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(health_data, indent=2).encode())
+            else:
+                # Basic health check if tracker not initialized
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'OK')
         else:
             self.send_response(404)
             self.end_headers()
@@ -302,9 +558,12 @@ class DataIngestionConfig:
 
 @dataclass
 class TrainingConfig:
-    """Configuration for automatic training triggers."""
-    trigger_threshold_games: int = 1000
-    min_interval_seconds: int = 1800  # 30 minutes minimum between training
+    """Configuration for automatic training triggers.
+
+    NOTE: Defaults match app/config/unified_config.py (single source of truth)
+    """
+    trigger_threshold_games: int = 500  # Canonical: 500 (was 1000)
+    min_interval_seconds: int = 1200  # Canonical: 20 min (was 30)
     max_concurrent_jobs: int = 1
     prefer_gpu_hosts: bool = True
     nnue_training_script: str = "scripts/train_nnue.py"
@@ -316,19 +575,25 @@ class TrainingConfig:
 
 @dataclass
 class EvaluationConfig:
-    """Configuration for continuous evaluation."""
+    """Configuration for continuous evaluation.
+
+    NOTE: Defaults match app/config/unified_config.py (single source of truth)
+    """
     shadow_interval_seconds: int = 900  # 15 minutes
-    shadow_games_per_config: int = 10
+    shadow_games_per_config: int = 15  # Canonical: 15 (was 10)
     full_tournament_interval_seconds: int = 3600  # 1 hour
     full_tournament_games: int = 50
-    baseline_models: List[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100"])
+    baseline_models: List[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100", "mcts_500"])
 
 
 @dataclass
 class PromotionConfig:
-    """Configuration for automatic model promotion."""
+    """Configuration for automatic model promotion.
+
+    NOTE: Defaults match app/config/unified_config.py (single source of truth)
+    """
     auto_promote: bool = True
-    elo_threshold: int = 20  # Must beat current best by 20 Elo
+    elo_threshold: int = 25  # Canonical: 25 (was 20)
     min_games: int = 50
     significance_level: float = 0.05
     sync_to_cluster: bool = True
@@ -336,11 +601,14 @@ class PromotionConfig:
 
 @dataclass
 class CurriculumConfig:
-    """Configuration for adaptive curriculum."""
+    """Configuration for adaptive curriculum.
+
+    NOTE: Defaults match app/config/unified_config.py (single source of truth)
+    """
     adaptive: bool = True
     rebalance_interval_seconds: int = 3600  # 1 hour
-    max_weight_multiplier: float = 2.0
-    min_weight_multiplier: float = 0.5
+    max_weight_multiplier: float = 1.5  # Canonical: 1.5 (was 2.0)
+    min_weight_multiplier: float = 0.7  # Canonical: 0.7 (was 0.5)
 
 
 @dataclass
@@ -376,6 +644,22 @@ class PERConfig:
 
 
 @dataclass
+class FeedbackConfig:
+    """Configuration for pipeline feedback controller integration."""
+    enabled: bool = True  # Enable closed-loop feedback
+    # Performance-based training triggers
+    elo_plateau_threshold: float = 15.0  # Elo gain below this triggers plateau detection
+    elo_plateau_lookback: int = 5  # Number of evaluations to look back
+    win_rate_degradation_threshold: float = 0.40  # Win rate below this triggers retraining
+    # Data quality gates
+    max_parity_failure_rate: float = 0.10  # Block training if parity failures exceed this
+    min_data_quality_score: float = 0.70  # Minimum data quality to proceed with training
+    # CMA-ES/NAS auto-trigger
+    plateau_count_for_cmaes: int = 2  # Trigger CMA-ES after this many consecutive plateaus
+    plateau_count_for_nas: int = 4  # Trigger NAS after this many consecutive plateaus
+
+
+@dataclass
 class UnifiedLoopConfig:
     """Complete configuration for the unified AI loop."""
     data_ingestion: DataIngestionConfig = field(default_factory=DataIngestionConfig)
@@ -386,6 +670,7 @@ class UnifiedLoopConfig:
     pbt: PBTConfig = field(default_factory=PBTConfig)
     nas: NASConfig = field(default_factory=NASConfig)
     per: PERConfig = field(default_factory=PERConfig)
+    feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
 
     # Host configuration
     hosts_config_path: str = "config/remote_hosts.yaml"
@@ -456,6 +741,11 @@ class UnifiedLoopConfig:
                 if hasattr(config.per, k):
                     setattr(config.per, k, v)
 
+        if "feedback" in data:
+            for k, v in data["feedback"].items():
+                if hasattr(config.feedback, k):
+                    setattr(config.feedback, k, v)
+
         for key in ["hosts_config_path", "elo_db", "data_manifest_db", "log_dir",
                     "verbose", "metrics_port", "metrics_enabled", "dry_run"]:
             if key in data:
@@ -479,6 +769,7 @@ class DataEventType(Enum):
     PROMOTION_CANDIDATE = "promotion_candidate"
     MODEL_PROMOTED = "model_promoted"
     CURRICULUM_REBALANCED = "curriculum_rebalanced"
+    ELO_SIGNIFICANT_CHANGE = "elo_significant_change"  # Triggers event-driven curriculum rebalance
     # PBT events
     PBT_STARTED = "pbt_started"
     PBT_GENERATION_COMPLETE = "pbt_generation_complete"
@@ -491,6 +782,11 @@ class DataEventType(Enum):
     # PER events
     PER_BUFFER_REBUILT = "per_buffer_rebuilt"
     PER_PRIORITIES_UPDATED = "per_priorities_updated"
+    # Optimization events
+    CMAES_TRIGGERED = "cmaes_triggered"
+    NAS_TRIGGERED = "nas_triggered"
+    PLATEAU_DETECTED = "plateau_detected"
+    HYPERPARAMETER_UPDATED = "hyperparameter_updated"
 
 
 @dataclass
@@ -599,6 +895,10 @@ class UnifiedLoopState:
     consecutive_failures: int = 0
     last_error: str = ""
     last_error_time: str = ""
+
+    # Health check state
+    last_health_check: str = ""
+    health_status: str = "unknown"  # "healthy", "unhealthy", or "unknown"
 
     # Curriculum weights (config_key -> weight)
     curriculum_weights: Dict[str, float] = field(default_factory=dict)
@@ -713,13 +1013,29 @@ class StreamingDataCollector:
         if not host.enabled:
             return 0
 
+        # Pre-spawn health check - fail fast if host is unhealthy
+        if HAS_PRE_SPAWN_HEALTH:
+            if not is_host_healthy(host.ssh_host):
+                host.consecutive_failures += 1
+                if host.consecutive_failures <= 1:  # Only log first failure
+                    print(f"[DataCollector] Skipping {host.name}: host unhealthy (cached check)")
+                return 0
+
         try:
             # Query game count on remote host
             ssh_target = f"{host.ssh_user}@{host.ssh_host}"
             port_arg = f"-p {host.ssh_port}" if host.ssh_port != 22 else ""
 
-            # Get game count from all DBs
-            cmd = f'ssh -o ConnectTimeout=10 {port_arg} {ssh_target} "cd ~/ringrift/ai-service && find data/games -name \'*.db\' -exec sqlite3 {{}} \'SELECT COUNT(*) FROM games\' \\; 2>/dev/null | awk \'{{s+=$1}} END {{print s}}\'"'
+            # Get game count from all DBs (using Python since sqlite3 CLI may not be installed)
+            python_script = (
+                "import sqlite3, glob, os; "
+                "os.chdir(os.path.expanduser('~/ringrift/ai-service')); "
+                "dbs=glob.glob('data/games/*.db'); "
+                "total=0; "
+                "[total := total + sqlite3.connect(db).execute('SELECT COUNT(*) FROM games').fetchone()[0] for db in dbs if 'schema' not in db]; "
+                "print(total)"
+            )
+            cmd = f'ssh -o ConnectTimeout=10 {port_arg} {ssh_target} "python3 -c \\"{python_script}\\"" 2>/dev/null'
 
             result = await asyncio.create_subprocess_shell(
                 cmd,
@@ -730,6 +1046,8 @@ class StreamingDataCollector:
 
             current_count = int(stdout.decode().strip() or "0")
             new_games = max(0, current_count - host.last_game_count)
+
+            print(f"[DataCollector] {host.name}: {current_count} games (last: {host.last_game_count}, new: {new_games})")
 
             if new_games >= self.config.min_games_per_sync:
                 # Trigger rsync for incremental sync
@@ -779,8 +1097,80 @@ class StreamingDataCollector:
         """Perform full sync (same as incremental for now)."""
         await self._incremental_sync(host)
 
+    def compute_quality_stats(self, sample_size: int = 500) -> Dict[str, Any]:
+        """Compute data quality statistics from synced databases.
+
+        Returns:
+            Dictionary with draw_rate, timeout_rate, game_lengths, etc.
+        """
+        synced_dir = AI_SERVICE_ROOT / "data" / "games" / "synced"
+        if not synced_dir.exists():
+            return {"draw_rate": 0, "timeout_rate": 0, "game_lengths": []}
+
+        total_games = 0
+        draws = 0
+        timeouts = 0
+        game_lengths = []
+
+        for db_path in synced_dir.rglob("*.db"):
+            try:
+                conn = sqlite3.connect(str(db_path))
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+
+                # Check table structure
+                cursor.execute("PRAGMA table_info(games)")
+                columns = {row['name'] for row in cursor.fetchall()}
+
+                has_winner = 'winner' in columns
+                has_total_moves = 'total_moves' in columns
+
+                # Sample recent games
+                if has_winner and has_total_moves:
+                    cursor.execute("""
+                        SELECT winner, total_moves FROM games
+                        ORDER BY ROWID DESC LIMIT ?
+                    """, (sample_size,))
+                elif has_winner:
+                    cursor.execute("""
+                        SELECT winner, 0 as total_moves FROM games
+                        ORDER BY ROWID DESC LIMIT ?
+                    """, (sample_size,))
+                else:
+                    conn.close()
+                    continue
+
+                for row in cursor.fetchall():
+                    total_games += 1
+                    winner = row['winner']
+                    moves = row['total_moves']
+
+                    # Count draws (winner = -1 or winner is NULL typically means draw)
+                    if winner is None or winner == -1:
+                        draws += 1
+
+                    # Count timeouts (games hitting move limits)
+                    if moves >= 500:  # Common move limits
+                        timeouts += 1
+
+                    if moves > 0:
+                        game_lengths.append(moves)
+
+                conn.close()
+            except Exception as e:
+                print(f"[DataCollector] Quality stats error for {db_path}: {e}")
+                continue
+
+        return {
+            "draw_rate": draws / total_games if total_games > 0 else 0,
+            "timeout_rate": timeouts / total_games if total_games > 0 else 0,
+            "game_lengths": game_lengths,
+            "total_sampled": total_games,
+        }
+
     async def run_collection_cycle(self) -> int:
         """Run one data collection cycle across all hosts."""
+        print(f"[DataCollector] Starting collection cycle for {len(self.state.hosts)} hosts...", flush=True)
         total_new = 0
         tasks = []
 
@@ -922,26 +1312,156 @@ class ShadowTournamentService:
 # =============================================================================
 
 class TrainingScheduler:
-    """Schedules and manages training runs."""
+    """Schedules and manages training runs with cluster-wide coordination."""
 
-    def __init__(self, config: TrainingConfig, state: UnifiedLoopState, event_bus: EventBus):
+    def __init__(
+        self,
+        config: TrainingConfig,
+        state: UnifiedLoopState,
+        event_bus: EventBus,
+        feedback_config: Optional[FeedbackConfig] = None,
+        feedback: Optional["PipelineFeedbackController"] = None
+    ):
         self.config = config
         self.state = state
         self.event_bus = event_bus
+        self.feedback_config = feedback_config or FeedbackConfig()
+        self.feedback = feedback
         self._training_process: Optional[asyncio.subprocess.Process] = None
+        # Cluster-wide training coordination
+        self._training_lock_fd: Optional[int] = None
+        self._training_lock_path: Optional[Path] = None
+
+    def set_feedback_controller(self, feedback: "PipelineFeedbackController"):
+        """Set the feedback controller (called after initialization)."""
+        self.feedback = feedback
+
+    def _acquire_training_lock(self) -> bool:
+        """Acquire cluster-wide training lock using file locking.
+
+        Returns True if lock acquired, False if training already running.
+        """
+        import fcntl
+        import socket
+
+        lock_dir = AI_SERVICE_ROOT / "data" / "coordination"
+        lock_dir.mkdir(parents=True, exist_ok=True)
+
+        hostname = socket.gethostname()
+        self._training_lock_path = lock_dir / f"training.{hostname}.lock"
+
+        try:
+            self._training_lock_fd = os.open(
+                str(self._training_lock_path),
+                os.O_RDWR | os.O_CREAT
+            )
+            fcntl.flock(self._training_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            os.ftruncate(self._training_lock_fd, 0)
+            os.lseek(self._training_lock_fd, 0, os.SEEK_SET)
+            os.write(self._training_lock_fd, f"{os.getpid()}\n".encode())
+            print(f"[Training] Acquired cluster-wide training lock on {hostname}")
+            return True
+        except (OSError, BlockingIOError) as e:
+            if self._training_lock_fd is not None:
+                os.close(self._training_lock_fd)
+                self._training_lock_fd = None
+            print(f"[Training] Lock acquisition failed: {e}")
+            return False
+
+    def _release_training_lock(self):
+        """Release the cluster-wide training lock."""
+        import fcntl
+
+        if self._training_lock_fd is not None:
+            try:
+                fcntl.flock(self._training_lock_fd, fcntl.LOCK_UN)
+                os.close(self._training_lock_fd)
+                print("[Training] Released cluster-wide training lock")
+            except Exception as e:
+                print(f"[Training] Error releasing lock: {e}")
+            finally:
+                self._training_lock_fd = None
+            if self._training_lock_path and self._training_lock_path.exists():
+                try:
+                    self._training_lock_path.unlink()
+                except Exception:
+                    pass
+
+    def is_training_locked_elsewhere(self) -> bool:
+        """Check if training is running on another host in the cluster."""
+        import socket
+
+        lock_dir = AI_SERVICE_ROOT / "data" / "coordination"
+        if not lock_dir.exists():
+            return False
+
+        hostname = socket.gethostname()
+        for lock_file in lock_dir.glob("training.*.lock"):
+            if f"training.{hostname}.lock" in lock_file.name:
+                continue
+            try:
+                if lock_file.stat().st_size > 0:
+                    age = time.time() - lock_file.stat().st_mtime
+                    if age < 3600:
+                        other_host = lock_file.name.replace("training.", "").replace(".lock", "")
+                        print(f"[Training] Training lock held by {other_host}")
+                        return True
+            except Exception:
+                continue
+        return False
 
     def should_trigger_training(self) -> Optional[str]:
-        """Check if training should be triggered. Returns config key or None."""
+        """Check if training should be triggered. Returns config key or None.
+
+        Training can be triggered by:
+        1. Game count threshold (traditional) - enough new games collected
+        2. Elo plateau detection - model stopped improving
+        3. Win rate degradation - model performing worse than threshold
+        """
         if self.state.training_in_progress:
             return None
 
-        # Check minimum interval
+        # Check for cluster-wide training lock (prevent simultaneous training)
+        if self.is_training_locked_elsewhere():
+            return None
+
         now = time.time()
 
         for config_key, config_state in self.state.configs.items():
+            # Check minimum interval between training runs
+            if now - config_state.last_training_time < self.config.min_interval_seconds:
+                continue
+
+            # Trigger 1: Traditional game count threshold
             if config_state.games_since_training >= self.config.trigger_threshold_games:
-                if now - config_state.last_training_time >= self.config.min_interval_seconds:
-                    return config_key
+                print(f"[Training] Trigger: game threshold reached for {config_key} "
+                      f"({config_state.games_since_training} games)")
+                return config_key
+
+            # Trigger 2: Performance-based - Elo plateau detection
+            if self.feedback:
+                if self.feedback.eval_analyzer.is_plateau(
+                    config_key,
+                    min_improvement=self.feedback_config.elo_plateau_threshold,
+                    lookback=self.feedback_config.elo_plateau_lookback
+                ):
+                    # Only trigger if we have some data to train on
+                    if config_state.games_since_training >= self.config.trigger_threshold_games // 4:
+                        print(f"[Training] Trigger: Elo plateau detected for {config_key} "
+                              f"(trend < {self.feedback_config.elo_plateau_threshold})")
+                        return config_key
+
+            # Trigger 3: Performance-based - Win rate degradation
+            if self.feedback:
+                weak_configs = self.feedback.eval_analyzer.get_weak_configs(
+                    threshold=self.feedback_config.win_rate_degradation_threshold
+                )
+                if config_key in weak_configs:
+                    # Urgent retraining needed - lower data threshold
+                    if config_state.games_since_training >= self.config.trigger_threshold_games // 4:
+                        print(f"[Training] Trigger: Win rate degradation for {config_key} "
+                              f"(below {self.feedback_config.win_rate_degradation_threshold})")
+                        return config_key
 
         return None
 
@@ -959,9 +1479,39 @@ class TrainingScheduler:
         if self.state.training_in_progress:
             return False
 
+        # P0-3: Data quality gate - check before training
+        if self.feedback:
+            # Check parity failure rate
+            parity_failure_rate = self.feedback.data_monitor.get_parity_failure_rate()
+            if parity_failure_rate > self.feedback_config.max_parity_failure_rate:
+                print(f"[Training] BLOCKED by data quality gate: parity failure rate "
+                      f"{parity_failure_rate:.1%} exceeds threshold "
+                      f"{self.feedback_config.max_parity_failure_rate:.1%}")
+                return False
+
+            # Check if data is quarantined
+            if self.feedback.should_quarantine_data():
+                print(f"[Training] BLOCKED by data quality gate: data quarantined due to quality issues")
+                return False
+
+            # Check data quality score
+            if self.feedback.state.data_quality_score < self.feedback_config.min_data_quality_score:
+                print(f"[Training] BLOCKED by data quality gate: data quality score "
+                      f"{self.feedback.state.data_quality_score:.2f} below threshold "
+                      f"{self.feedback_config.min_data_quality_score:.2f}")
+                return False
+
+            print(f"[Training] Data quality gate PASSED: parity_failure_rate={parity_failure_rate:.1%}, "
+                  f"quality_score={self.feedback.state.data_quality_score:.2f}")
+
         parts = config_key.rsplit("_", 1)
         board_type = parts[0]
         num_players = int(parts[1].replace("p", ""))
+
+        # Acquire cluster-wide training lock
+        if not self._acquire_training_lock():
+            print(f"[Training] Could not acquire cluster-wide lock for {config_key}")
+            return False
 
         await self.event_bus.publish(DataEvent(
             event_type=DataEventType.TRAINING_STARTED,
@@ -982,6 +1532,7 @@ class TrainingScheduler:
             if not game_dbs:
                 print(f"[Training] No game databases found")
                 self.state.training_in_progress = False
+                self._release_training_lock()
                 return False
 
             largest_db = max(game_dbs, key=lambda p: p.stat().st_size)
@@ -1018,12 +1569,22 @@ class TrainingScheduler:
             if export_process.returncode != 0:
                 print(f"[Training] Export failed for {config_key}")
                 self.state.training_in_progress = False
+                self._release_training_lock()
                 return False
 
             # Start NN training process
             timestamp = int(time.time())
             model_id = f"{config_key}_v3_{timestamp}"
             run_dir = AI_SERVICE_ROOT / "logs" / "unified_training" / model_id
+
+            # Calculate adaptive epochs based on feedback
+            base_epochs = 100
+            if self.feedback:
+                epochs_multiplier = self.feedback.get_epochs_multiplier()
+                epochs = max(50, int(base_epochs * epochs_multiplier))  # Floor at 50
+                print(f"[Training] Adaptive epochs: {epochs} (base={base_epochs}, multiplier={epochs_multiplier:.2f})")
+            else:
+                epochs = base_epochs
 
             cmd = [
                 sys.executable,
@@ -1034,7 +1595,7 @@ class TrainingScheduler:
                 "--run-dir", str(run_dir),
                 "--model-id", model_id,
                 "--model-version", model_version,
-                "--epochs", "100",
+                "--epochs", str(epochs),
             ]
 
             print(f"[Training] Starting training for {model_id}...")
@@ -1050,6 +1611,7 @@ class TrainingScheduler:
         except Exception as e:
             print(f"[TrainingScheduler] Error starting training: {e}")
             self.state.training_in_progress = False
+            self._release_training_lock()
             return False
 
     async def check_training_status(self) -> Optional[Dict[str, Any]]:
@@ -1068,6 +1630,7 @@ class TrainingScheduler:
             self.state.training_config = ""
             self.state.total_training_runs += 1
             self._training_process = None
+            self._release_training_lock()  # Release cluster-wide lock
 
             if config_key in self.state.configs:
                 self.state.configs[config_key].last_training_time = time.time()
@@ -1119,7 +1682,7 @@ class ModelPromoter:
 
             # Find models that beat current best by threshold
             cursor.execute("""
-                SELECT model_id, board_type, num_players, rating, games_played
+                SELECT participant_id, board_type, num_players, rating, games_played
                 FROM elo_ratings
                 WHERE games_played >= ?
                 ORDER BY board_type, num_players, rating DESC
@@ -1232,12 +1795,17 @@ class ModelPromoter:
 # =============================================================================
 
 class AdaptiveCurriculum:
-    """Manages Elo-weighted training curriculum."""
+    """Manages Elo-weighted training curriculum with feedback integration."""
 
     def __init__(self, config: CurriculumConfig, state: UnifiedLoopState, event_bus: EventBus):
         self.config = config
         self.state = state
         self.event_bus = event_bus
+        self.feedback: Optional["PipelineFeedbackController"] = None
+
+    def set_feedback_controller(self, feedback: "PipelineFeedbackController"):
+        """Set the feedback controller for curriculum adjustments."""
+        self.feedback = feedback
 
     async def rebalance_weights(self) -> Dict[str, float]:
         """Recompute training weights based on Elo performance."""
@@ -1257,7 +1825,7 @@ class AdaptiveCurriculum:
             cursor.execute("""
                 SELECT board_type, num_players, MAX(rating) as best_elo
                 FROM elo_ratings
-                WHERE model_id LIKE 'ringrift_%'
+                WHERE participant_id LIKE 'ringrift_%'
                 GROUP BY board_type, num_players
             """)
 
@@ -1278,9 +1846,17 @@ class AdaptiveCurriculum:
 
             new_weights = {}
             for config_key, elo in elo_by_config.items():
-                # Boost weight for underperforming configs
+                # Boost weight for underperforming configs based on Elo
                 deficit = median_elo - elo
-                weight = 1.0 + (deficit / 200.0)
+                elo_weight = 1.0 + (deficit / 200.0)
+
+                # Merge with feedback controller weights if available
+                if self.feedback:
+                    feedback_weight = self.feedback.get_curriculum_weight(config_key)
+                    # Average Elo-based and feedback-based weights
+                    weight = (elo_weight + feedback_weight) / 2.0
+                else:
+                    weight = elo_weight
 
                 # Clamp to configured range
                 weight = max(self.config.min_weight_multiplier,
@@ -1639,7 +2215,8 @@ class UnifiedAILoop:
             config.evaluation, self.state, self.event_bus
         )
         self.training_scheduler = TrainingScheduler(
-            config.training, self.state, self.event_bus
+            config.training, self.state, self.event_bus,
+            feedback_config=config.feedback  # Pass feedback config for performance-based triggers
         )
         self.model_promoter = ModelPromoter(
             config.promotion, self.state, self.event_bus
@@ -1658,6 +2235,53 @@ class UnifiedAILoop:
         self.per_integration = PERIntegration(
             config.per, self.state, self.event_bus
         )
+
+        # Pipeline feedback controller for closed-loop integration
+        self.feedback: Optional[PipelineFeedbackController] = None
+        if HAS_FEEDBACK and config.feedback.enabled:
+            try:
+                self.feedback = create_feedback_controller(AI_SERVICE_ROOT)
+                # Wire feedback controller to training scheduler for performance-based triggers
+                self.training_scheduler.set_feedback_controller(self.feedback)
+                # Wire feedback controller to adaptive curriculum for curriculum weight integration
+                self.adaptive_curriculum.set_feedback_controller(self.feedback)
+                print("[UnifiedLoop] Pipeline feedback controller initialized and wired to components")
+                # Subscribe to events for feedback loop integration
+                self.event_bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_for_feedback)
+                self.event_bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_for_feedback)
+                self.event_bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_for_feedback)
+                # Event-driven curriculum rebalancing on significant Elo changes
+                self.event_bus.subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, self._on_elo_significant_change)
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize feedback controller: {e}")
+
+        # Health monitoring
+        global _health_tracker
+        self.health_tracker = HealthTracker()
+        _health_tracker = self.health_tracker  # Set global for HTTP endpoint
+        print("[UnifiedLoop] Health tracker initialized")
+
+        # Task coordination - prevents runaway spawning across orchestrators
+        self.task_coordinator: Optional[TaskCoordinator] = None
+        if HAS_TASK_COORDINATOR:
+            try:
+                self.task_coordinator = TaskCoordinator.get_instance()
+                # Register this loop as the main improvement loop
+                import socket
+                node_id = socket.gethostname()
+                allowed, reason = self.task_coordinator.can_spawn_task(TaskType.IMPROVEMENT_LOOP, node_id)
+                if not allowed:
+                    print(f"[UnifiedLoop] WARNING: TaskCoordinator denied spawning: {reason}")
+                else:
+                    self._task_id = f"unified_loop_{int(time.time())}"
+                    self.task_coordinator.register_task(
+                        self._task_id, TaskType.IMPROVEMENT_LOOP, node_id, os.getpid()
+                    )
+                print("[UnifiedLoop] Task coordinator integrated - global limits enforced")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize task coordinator: {e}")
+        else:
+            self._task_id = None
 
         # State management
         self._state_path = AI_SERVICE_ROOT / config.log_dir / "unified_loop_state.json"
@@ -1760,9 +2384,9 @@ class UnifiedAILoop:
 
                 # Get best Elo for each config
                 cursor.execute("""
-                    SELECT board_type, num_players, model_id, rating, games_played
+                    SELECT board_type, num_players, participant_id, rating, games_played
                     FROM elo_ratings
-                    WHERE model_id LIKE 'ringrift_%'
+                    WHERE participant_id LIKE 'ringrift_%'
                     ORDER BY board_type, num_players, rating DESC
                 """)
 
@@ -1805,6 +2429,155 @@ class UnifiedAILoop:
 
         except Exception as e:
             print(f"[Metrics] Error updating training progress metrics: {e}")
+
+    # =========================================================================
+    # Feedback Controller Callbacks
+    # =========================================================================
+
+    async def _on_evaluation_for_feedback(self, event: DataEvent):
+        """Handle evaluation completion for feedback loop."""
+        if not self.feedback:
+            return
+
+        try:
+            payload = event.payload
+            config_key = payload.get('config')
+            win_rate = payload.get('win_rate')
+            elo = payload.get('elo')
+
+            # Forward to feedback controller
+            await self.feedback.on_stage_complete('evaluation', {
+                'config_key': config_key,
+                'win_rate': win_rate,
+                'elo': elo,
+            })
+
+            # Check for CMA-ES trigger signals
+            pending_actions = self.feedback.get_pending_actions()
+            for signal in pending_actions:
+                if signal.action == FeedbackAction.TRIGGER_CMAES:
+                    print(f"[Feedback] CMA-ES trigger signal received: {signal.reason}")
+                    # Could auto-start CMA-ES here if enabled
+                elif signal.action == FeedbackAction.TRIGGER_NAS:
+                    print(f"[Feedback] NAS trigger signal received: {signal.reason}")
+                    # Could auto-start NAS here if enabled
+
+        except Exception as e:
+            print(f"[Feedback] Error processing evaluation feedback: {e}")
+
+    async def _on_training_for_feedback(self, event: DataEvent):
+        """Handle training completion for feedback loop."""
+        if not self.feedback:
+            return
+
+        try:
+            payload = event.payload
+            config_key = payload.get('config')
+            final_loss = payload.get('final_loss')
+            val_loss = payload.get('val_loss')
+            epochs = payload.get('epochs')
+
+            # Forward to feedback controller
+            await self.feedback.on_stage_complete('training', {
+                'config_key': config_key,
+                'final_loss': final_loss,
+                'val_loss': val_loss,
+                'epochs': epochs,
+            })
+
+            # Log feedback state summary
+            summary = self.feedback.get_state_summary()
+            print(f"[Feedback] Post-training state: plateau_count={summary['plateau_count']}, "
+                  f"weak_configs={summary['weak_configs']}")
+
+        except Exception as e:
+            print(f"[Feedback] Error processing training feedback: {e}")
+
+    async def _on_promotion_for_feedback(self, event: DataEvent):
+        """Handle model promotion for feedback loop."""
+        if not self.feedback:
+            return
+
+        try:
+            payload = event.payload
+            model_id = payload.get('model_id')
+            config_key = payload.get('config')
+            elo_gain = payload.get('elo_gain', 0)
+            success = payload.get('success', True)
+            reason = payload.get('reason', '')
+
+            # Forward to feedback controller's promotion handler
+            await self.feedback.on_stage_complete('promotion', {
+                'config_key': config_key,
+                'model_id': model_id,
+                'elo_gain': elo_gain,
+                'success': success,
+                'reason': reason,
+            })
+
+            # Log feedback state after promotion handling
+            summary = self.feedback.get_state_summary()
+            if success:
+                print(f"[Feedback] Model {model_id} promoted (+{elo_gain} Elo)")
+            else:
+                print(f"[Feedback] Promotion failed for {model_id}: {reason}")
+                print(f"[Feedback] Consecutive failures: {summary['consecutive_promotion_failures']}, "
+                      f"Config failures: {summary['promotion_failure_configs']}")
+
+            # Check for urgent retraining or CMA-ES signals
+            pending_actions = self.feedback.get_pending_actions()
+            for signal in pending_actions:
+                if signal.action == FeedbackAction.URGENT_RETRAINING:
+                    print(f"[Feedback] URGENT RETRAINING signal: {signal.reason}")
+                elif signal.action == FeedbackAction.TRIGGER_CMAES:
+                    print(f"[Feedback] CMA-ES trigger after promotion failures: {signal.reason}")
+
+        except Exception as e:
+            print(f"[Feedback] Error processing promotion feedback: {e}")
+
+    async def _on_elo_significant_change(self, event: DataEvent):
+        """Handle significant Elo changes by triggering curriculum rebalancing.
+
+        This enables event-driven curriculum rebalancing when a model's Elo
+        changes significantly (exceeds the threshold in unified config).
+        """
+        try:
+            payload = event.payload
+            config_key = payload.get('config', '')
+            model_id = payload.get('model_id', '')
+            elo_change = payload.get('elo_change', 0)
+            new_elo = payload.get('new_elo', 0)
+            threshold = payload.get('threshold', 50)
+
+            print(f"[Curriculum] Significant Elo change detected for {config_key}: "
+                  f"{elo_change:+.1f} Elo (model: {model_id}, threshold: {threshold})")
+
+            # Trigger immediate curriculum rebalancing
+            if self.adaptive_curriculum:
+                old_weights = dict(self.state.curriculum_weights)
+                weights = await self.adaptive_curriculum.rebalance_weights()
+                if weights:
+                    print(f"[Curriculum] Event-driven rebalance triggered: {weights}")
+                    self.state.last_curriculum_rebalance = time.time()
+
+                    # Emit rebalance event
+                    await self.event_bus.publish(DataEvent(
+                        event_type=DataEventType.CURRICULUM_REBALANCED,
+                        payload={
+                            "trigger": "elo_change",
+                            "elo_change": elo_change,
+                            "config": config_key,
+                            "old_weights": old_weights,
+                            "new_weights": weights,
+                        },
+                    ))
+
+                    # Update Prometheus metrics
+                    if HAS_PROMETHEUS:
+                        CURRICULUM_REBALANCES_TOTAL.inc()
+
+        except Exception as e:
+            print(f"[Curriculum] Error handling Elo change event: {e}")
 
     def _load_state(self):
         """Load state from checkpoint file."""
@@ -1865,9 +2638,14 @@ class UnifiedAILoop:
 
     async def _data_collection_loop(self):
         """Main data collection loop - runs every 60 seconds."""
+        print("[DataCollection] Loop starting...", flush=True)
+        _quality_check_counter = 0
+        _quality_check_interval = 10  # Check quality every 10 sync cycles
+
         while self._running:
             try:
                 new_games = await self.data_collector.run_collection_cycle()
+                self.health_tracker.record_success("data_collector")
                 if new_games > 0:
                     print(f"[DataCollection] Synced {new_games} new games")
 
@@ -1879,9 +2657,29 @@ class UnifiedAILoop:
                             payload={"config": trigger_config}
                         ))
 
+                # Periodic data quality check (every 10 cycles, ~10 minutes)
+                _quality_check_counter += 1
+                if _quality_check_counter >= _quality_check_interval:
+                    _quality_check_counter = 0
+                    if self.feedback:
+                        try:
+                            quality_stats = self.data_collector.compute_quality_stats()
+                            quality_score = self.feedback.update_data_quality(
+                                draw_rate=quality_stats.get("draw_rate"),
+                                timeout_rate=quality_stats.get("timeout_rate"),
+                                game_lengths=quality_stats.get("game_lengths"),
+                            )
+                            print(f"[DataQuality] Updated: score={quality_score:.2f}, "
+                                  f"draw_rate={quality_stats.get('draw_rate', 0):.1%}, "
+                                  f"timeout_rate={quality_stats.get('timeout_rate', 0):.1%}, "
+                                  f"sampled={quality_stats.get('total_sampled', 0)} games")
+                        except Exception as qe:
+                            print(f"[DataQuality] Error computing quality: {qe}")
+
             except Exception as e:
                 print(f"[DataCollection] Error: {e}")
                 self.state.consecutive_failures += 1
+                self.health_tracker.record_failure("data_collector", str(e))
 
             self._save_state()
 
@@ -1908,6 +2706,7 @@ class UnifiedAILoop:
                         print(f"[Evaluation] Running shadow tournament for {config_key}")
                         await self.shadow_tournament.run_shadow_tournament(config_key)
                         self._last_shadow_eval[config_key] = now
+                        self.health_tracker.record_success("evaluator")
                         break  # One at a time to avoid overload
 
                 # Check for full tournament
@@ -1915,9 +2714,11 @@ class UnifiedAILoop:
                     print("[Evaluation] Running full tournament")
                     await self.shadow_tournament.run_full_tournament()
                     self._last_full_eval = now
+                    self.health_tracker.record_success("evaluator")
 
             except Exception as e:
                 print(f"[Evaluation] Error: {e}")
+                self.health_tracker.record_failure("evaluator", str(e))
 
             # Wait 60 seconds between checks
             try:
@@ -1934,6 +2735,7 @@ class UnifiedAILoop:
                 result = await self.training_scheduler.check_training_status()
                 if result:
                     print(f"[Training] Completed: {result}")
+                    self.health_tracker.record_success("training_scheduler")
 
                 # Check if we should start training
                 if not self.state.training_in_progress:
@@ -1944,6 +2746,7 @@ class UnifiedAILoop:
 
             except Exception as e:
                 print(f"[Training] Error: {e}")
+                self.health_tracker.record_failure("training_scheduler", str(e))
 
             # Check every 30 seconds
             try:
@@ -1957,12 +2760,14 @@ class UnifiedAILoop:
         while self._running:
             try:
                 candidates = await self.model_promoter.check_promotion_candidates()
+                self.health_tracker.record_success("promoter")
                 for candidate in candidates:
                     print(f"[Promotion] Found candidate: {candidate['model_id']} (+{candidate['elo_gain']} Elo)")
                     await self.model_promoter.execute_promotion(candidate)
 
             except Exception as e:
                 print(f"[Promotion] Error: {e}")
+                self.health_tracker.record_failure("promoter", str(e))
 
             # Check every 5 minutes
             try:
@@ -1980,9 +2785,11 @@ class UnifiedAILoop:
                     weights = await self.adaptive_curriculum.rebalance_weights()
                     if weights:
                         print(f"[Curriculum] Rebalanced weights: {weights}")
+                        self.health_tracker.record_success("curriculum")
 
             except Exception as e:
                 print(f"[Curriculum] Error: {e}")
+                self.health_tracker.record_failure("curriculum", str(e))
 
             # Check every 10 minutes
             try:
@@ -2005,6 +2812,59 @@ class UnifiedAILoop:
 
             try:
                 await asyncio.wait_for(self._shutdown_event.wait(), timeout=15)
+                break
+            except asyncio.TimeoutError:
+                pass
+
+    async def _health_check_loop(self):
+        """Periodically run component health checks."""
+        if not HAS_HEALTH_CHECKS:
+            print("[HealthCheck] Health checks module not available - skipping")
+            return
+
+        health_check_interval = 300  # Check every 5 minutes
+        consecutive_failures = 0
+        max_consecutive_failures = 3  # Alert threshold
+
+        while self._running:
+            try:
+                checker = HealthChecker()
+                summary = checker.check_all()
+
+                # Update state with health info
+                self.state.last_health_check = datetime.now().isoformat()
+                self.state.health_status = "healthy" if summary.healthy else "unhealthy"
+
+                # Update Prometheus metrics if available
+                if HAS_PROMETHEUS:
+                    LOOP_CYCLES_TOTAL.labels(loop="health_check").inc()
+
+                if summary.healthy:
+                    consecutive_failures = 0
+                    if self.config.verbose:
+                        print(f"[HealthCheck] All components healthy")
+                else:
+                    consecutive_failures += 1
+                    print(f"[HealthCheck] UNHEALTHY - {len(summary.issues)} issues:")
+                    for issue in summary.issues:
+                        print(f"  - {issue}")
+
+                    # Alert on consecutive failures
+                    if consecutive_failures >= max_consecutive_failures:
+                        print(f"[HealthCheck] CRITICAL: {consecutive_failures} consecutive health check failures!")
+
+                # Log warnings even when healthy
+                if summary.warnings:
+                    for warning in summary.warnings:
+                        print(f"[HealthCheck] Warning: {warning}")
+
+            except Exception as e:
+                print(f"[HealthCheck] Error running health check: {e}")
+                if HAS_PROMETHEUS:
+                    LOOP_ERRORS_TOTAL.labels(loop="health_check", error_type=type(e).__name__).inc()
+
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=health_check_interval)
                 break
             except asyncio.TimeoutError:
                 pass
@@ -2258,12 +3118,33 @@ class UnifiedAILoop:
                 elif self.config.nas.auto_start_on_plateau:
                     # Check for Elo plateau (no improvement in last 12 hours)
                     plateau_detected = False
-                    for config_state in self.state.configs.values():
+                    plateau_config = None
+                    for config_key, config_state in self.state.configs.items():
                         if config_state.elo_trend <= 0 and config_state.current_elo > 1500:
                             plateau_detected = True
+                            plateau_config = config_key
                             break
 
                     if plateau_detected and not self.state.nas_in_progress:
+                        # Emit PLATEAU_DETECTED event
+                        await self.event_bus.publish(DataEvent(
+                            event_type=DataEventType.PLATEAU_DETECTED,
+                            payload={
+                                "config": plateau_config,
+                                "current_elo": self.state.configs[plateau_config].current_elo,
+                                "elo_trend": self.state.configs[plateau_config].elo_trend,
+                                "trigger": "nas_auto_start",
+                            }
+                        ))
+                        # Emit NAS_TRIGGERED event
+                        await self.event_bus.publish(DataEvent(
+                            event_type=DataEventType.NAS_TRIGGERED,
+                            payload={
+                                "config": plateau_config,
+                                "reason": "elo_plateau",
+                                "current_elo": self.state.configs[plateau_config].current_elo,
+                            }
+                        ))
                         await self.nas_integration.start_nas_run()
 
             except Exception as e:
@@ -2302,11 +3183,130 @@ class UnifiedAILoop:
             except asyncio.TimeoutError:
                 pass
 
+    async def _cross_process_event_loop(self):
+        """Poll for cross-process events from other daemons.
+
+        This bridges events from data_sync_daemon, cluster_orchestrator,
+        and other external processes into the unified loop's event bus.
+        """
+        if not HAS_CROSS_PROCESS_EVENTS:
+            print("[CrossProcess] Event queue not available - skipping integration")
+            return
+
+        # Initialize cross-process event queue
+        try:
+            event_queue = CrossProcessEventQueue()
+            subscriber_id = event_queue.subscribe(
+                process_name="unified_ai_loop",
+                event_types=[
+                    "new_games",
+                    "training_threshold",
+                    "model_promoted",
+                    "training_completed",
+                    "evaluation_completed",
+                    "elo_significant_change",
+                    "daemon_started",
+                    "daemon_stopped",
+                ]
+            )
+            print(f"[CrossProcess] Subscribed as {subscriber_id}")
+        except Exception as e:
+            print(f"[CrossProcess] Failed to initialize: {e}")
+            return
+
+        # Mapping from cross-process event types to local DataEventType
+        EVENT_TYPE_MAP = {
+            "new_games": DataEventType.NEW_GAMES_AVAILABLE,
+            "training_threshold": DataEventType.TRAINING_THRESHOLD_REACHED,
+            "model_promoted": DataEventType.MODEL_PROMOTED,
+            "training_completed": DataEventType.TRAINING_COMPLETED,
+            "evaluation_completed": DataEventType.EVALUATION_COMPLETED,
+            "elo_significant_change": DataEventType.ELO_SIGNIFICANT_CHANGE,
+        }
+
+        last_event_id = 0
+
+        while self._running:
+            try:
+                # Poll for new events from other processes
+                events = event_queue.poll(
+                    subscriber_id=subscriber_id,
+                    since_event_id=last_event_id,
+                    limit=50,
+                )
+
+                for cp_event in events:
+                    # Skip events from ourselves
+                    if cp_event.source == "unified_ai_loop":
+                        event_queue.ack(subscriber_id, cp_event.event_id)
+                        last_event_id = max(last_event_id, cp_event.event_id)
+                        continue
+
+                    # Map to local event type
+                    local_event_type = EVENT_TYPE_MAP.get(cp_event.event_type)
+                    if local_event_type:
+                        # Bridge to local event bus
+                        await self.event_bus.publish(DataEvent(
+                            event_type=local_event_type,
+                            payload={
+                                **cp_event.payload,
+                                "_cross_process_source": cp_event.source,
+                                "_cross_process_host": cp_event.hostname,
+                            }
+                        ))
+                        print(f"[CrossProcess] Bridged {cp_event.event_type} from {cp_event.source}@{cp_event.hostname}")
+
+                    # Acknowledge the event
+                    event_queue.ack(subscriber_id, cp_event.event_id)
+                    last_event_id = max(last_event_id, cp_event.event_id)
+
+            except Exception as e:
+                print(f"[CrossProcess] Error polling events: {e}")
+
+            # Poll every 5 seconds
+            try:
+                await asyncio.wait_for(
+                    self._shutdown_event.wait(),
+                    timeout=5
+                )
+                break
+            except asyncio.TimeoutError:
+                pass
+
+        print("[CrossProcess] Event polling stopped")
+
+    def _cleanup_stale_training_locks(self):
+        """Clean up stale training lock files on startup.
+
+        Lock files older than 4 hours are considered stale and removed.
+        """
+        import socket
+
+        lock_dir = AI_SERVICE_ROOT / "data" / "coordination"
+        if not lock_dir.exists():
+            return
+
+        hostname = socket.gethostname()
+        stale_threshold = 4 * 3600  # 4 hours
+
+        for lock_file in lock_dir.glob("training.*.lock"):
+            try:
+                age = time.time() - lock_file.stat().st_mtime
+                if age > stale_threshold:
+                    lock_host = lock_file.name.replace("training.", "").replace(".lock", "")
+                    print(f"[UnifiedLoop] Removing stale training lock from {lock_host} (age: {age/3600:.1f}h)")
+                    lock_file.unlink()
+            except Exception as e:
+                print(f"[UnifiedLoop] Error cleaning lock file {lock_file}: {e}")
+
     async def run(self):
         """Main entry point - runs all loops concurrently."""
         self._running = True
         self._started_time = time.time()
         self.state.started_at = datetime.now().isoformat()
+
+        # Clean up stale training locks from previous runs
+        self._cleanup_stale_training_locks()
 
         # Load previous state and configuration
         self._load_state()
@@ -2336,11 +3336,13 @@ class UnifiedAILoop:
             self._promotion_loop(),
             self._curriculum_loop(),
             self._metrics_loop(),
+            self._health_check_loop(),
             self._hp_tuning_sync_loop(),
             self._external_drive_sync_loop(),
             self._pbt_loop(),
             self._nas_loop(),
             self._per_loop(),
+            self._cross_process_event_loop(),
         )
 
         print("[UnifiedLoop] Shutdown complete")
@@ -2350,6 +3352,13 @@ class UnifiedAILoop:
         self._running = False
         self._shutdown_event.set()
         self._save_state()
+        # Unregister from task coordinator
+        if self.task_coordinator and self._task_id:
+            try:
+                self.task_coordinator.unregister_task(self._task_id)
+                print("[UnifiedLoop] Unregistered from task coordinator")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to unregister task: {e}")
 
 
 # =============================================================================
@@ -2389,6 +3398,11 @@ def main():
             print(f"  Training runs: {state.get('total_training_runs', 0)}")
             print(f"  Evaluations: {state.get('total_evaluations', 0)}")
             print(f"  Promotions: {state.get('total_promotions', 0)}")
+            # Health status
+            health_status = state.get('health_status', 'unknown')
+            last_health = state.get('last_health_check', 'N/A')
+            status_icon = "✓" if health_status == "healthy" else "✗" if health_status == "unhealthy" else "?"
+            print(f"  Health: {status_icon} {health_status} (last check: {last_health})")
         else:
             print("No state file found - daemon may not be running")
         return

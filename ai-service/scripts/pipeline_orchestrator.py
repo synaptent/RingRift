@@ -112,9 +112,10 @@ try:
 except ImportError:
     HAS_AIOHTTP = False
 
-# Persistent Elo database integration (shared with continuous_improvement_daemon)
+# Persistent Elo database integration (centralized service)
 try:
-    from scripts.run_model_elo_tournament import (
+    from app.training.elo_service import (
+        get_elo_service,
         init_elo_database,
         register_models,
         update_elo_after_match,
@@ -125,6 +126,7 @@ try:
 except ImportError:
     HAS_PERSISTENT_ELO = False
     ELO_DB_PATH = None
+    get_elo_service = None
 
 # Diverse tournament orchestrator integration (for Elo calibration across all configs)
 try:
@@ -140,6 +142,34 @@ try:
     HAS_DIVERSE_TOURNAMENTS = True
 except ImportError:
     HAS_DIVERSE_TOURNAMENTS = False
+
+# TaskCoordinator for global task limits and coordination
+try:
+    from app.coordination.task_coordinator import (
+        TaskCoordinator,
+        TaskType,
+        TaskLimits,
+        CoordinatorState,
+    )
+    HAS_TASK_COORDINATOR = True
+except ImportError:
+    HAS_TASK_COORDINATOR = False
+    TaskCoordinator = None
+    TaskType = None
+
+# Pipeline feedback controller for closed-loop adaptation
+try:
+    from app.integration.pipeline_feedback import (
+        PipelineFeedbackController,
+        FeedbackAction,
+        FeedbackSignal,
+        create_feedback_controller,
+    )
+    HAS_FEEDBACK = True
+except ImportError:
+    HAS_FEEDBACK = False
+    PipelineFeedbackController = None
+    FeedbackAction = None
 
 
 @dataclass
@@ -779,6 +809,36 @@ class PipelineOrchestrator:
             self.log(f"Using P2P backend with leader: {p2p_leader_url}")
         else:
             self.log("Using SSH backend")
+
+        # Task coordination - prevents runaway spawning across orchestrators
+        self.task_coordinator: Optional[TaskCoordinator] = None
+        self._task_id: Optional[str] = None
+        if HAS_TASK_COORDINATOR:
+            try:
+                self.task_coordinator = TaskCoordinator.get_instance()
+                import socket
+                node_id = socket.gethostname()
+                allowed, reason = self.task_coordinator.can_spawn_task(TaskType.PIPELINE, node_id)
+                if not allowed:
+                    self.log(f"WARNING: TaskCoordinator denied spawning: {reason}", "WARN")
+                else:
+                    self._task_id = f"pipeline_{int(time.time())}"
+                    self.task_coordinator.register_task(
+                        self._task_id, TaskType.PIPELINE, node_id, os.getpid()
+                    )
+                self.log("Task coordinator integrated - global limits enforced")
+            except Exception as e:
+                self.log(f"Warning: Failed to initialize task coordinator: {e}", "WARN")
+
+        # Feedback controller - closed-loop adaptation
+        self.feedback: Optional[PipelineFeedbackController] = None
+        if HAS_FEEDBACK:
+            try:
+                ai_service_dir = Path(__file__).resolve().parents[1]
+                self.feedback = create_feedback_controller(ai_service_dir)
+                self.log("Feedback controller integrated - closed-loop adaptation enabled")
+            except Exception as e:
+                self.log(f"Warning: Failed to initialize feedback controller: {e}", "WARN")
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """Load pipeline configuration from JSON."""
@@ -1799,6 +1859,16 @@ python3 scripts/run_self_play_soak.py \\
 
             if all_complete or total_games >= min_games:
                 self.log(f"Canonical selfplay complete: {total_games} games", "OK")
+                # Feedback loop - notify controller of selfplay results
+                if self.feedback:
+                    try:
+                        await self.feedback.on_stage_complete('canonical-selfplay', {
+                            'games': total_games,
+                            'config_key': f"{board_type}_{num_players}p",
+                            'workers': len(selfplay_workers),
+                        })
+                    except Exception as e:
+                        self.log(f"Feedback on selfplay failed: {e}", "WARN")
                 return total_games
 
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
@@ -1905,6 +1975,17 @@ python3 scripts/run_parity_validation.py \\
             self.log(f"Parity validation PASSED: {results['games_passed']}/{results['total_games_checked']} games", "OK")
         else:
             self.log(f"Parity validation FAILED: {results['games_failed']} games with issues", "ERROR")
+
+        # Feedback loop - notify controller of parity validation results
+        if self.feedback:
+            try:
+                await self.feedback.on_stage_complete('parity-validation', {
+                    'passed': results['games_passed'],
+                    'failed': results['games_failed'],
+                    'total_games': results['total_games_checked'],
+                })
+            except Exception as e:
+                self.log(f"Feedback on parity validation failed: {e}", "WARN")
 
         return results
 
@@ -2262,6 +2343,19 @@ python -m app.training.train \\
             else:
                 self.log(f"{config_key} training failed: {stderr[:200]}", "ERROR")
 
+        # Feedback loop - notify controller of training results
+        if self.feedback:
+            try:
+                success_count = sum(1 for s in results.values() if s)
+                await self.feedback.on_stage_complete('training', {
+                    'configs_trained': list(results.keys()),
+                    'success_count': success_count,
+                    'total_configs': len(results),
+                    'iteration': iteration,
+                })
+            except Exception as e:
+                self.log(f"Feedback on training failed: {e}", "WARN")
+
         self._save_state()
         return results
 
@@ -2498,6 +2592,19 @@ python scripts/run_ai_tournament.py \\
                 conn.close()
             except Exception as e:
                 self.log(f"Failed to update persistent Elo DB: {e}", "WARN")
+
+        # Feedback loop - notify controller of evaluation results
+        if self.feedback:
+            try:
+                avg_win_rate = sum(results.values()) / len(results) if results else 0.5
+                await self.feedback.on_stage_complete('evaluation', {
+                    'config_key': f"{self._board_type}_{self._num_players}p",
+                    'win_rate': avg_win_rate,
+                    'success_count': success_count,
+                    'total_matchups': len(TOURNAMENT_MATCHUPS),
+                })
+            except Exception as e:
+                self.log(f"Feedback on evaluation failed: {e}", "WARN")
 
         return results
 
@@ -2870,13 +2977,26 @@ python scripts/run_ai_tournament.py \\
             return
 
         # Run full iterations
-        for i in range(start_iteration, start_iteration + iterations):
-            success = await self.run_full_iteration(i)
-            if not success:
-                self.log(f"Iteration {i} failed, stopping pipeline", "ERROR")
-                break
+        try:
+            for i in range(start_iteration, start_iteration + iterations):
+                success = await self.run_full_iteration(i)
+                if not success:
+                    self.log(f"Iteration {i} failed, stopping pipeline", "ERROR")
+                    break
 
-        self.log("Pipeline complete")
+            self.log("Pipeline complete")
+        finally:
+            self._cleanup()
+
+    def _cleanup(self) -> None:
+        """Cleanup resources and unregister from task coordinator."""
+        # Unregister from task coordinator
+        if self.task_coordinator and self._task_id:
+            try:
+                self.task_coordinator.unregister_task(self._task_id)
+                self.log("Unregistered from task coordinator")
+            except Exception as e:
+                self.log(f"Warning: Failed to unregister task: {e}", "WARN")
 
 
 def main():

@@ -90,6 +90,15 @@ from .health_checks import (
     get_health_summary,
     format_health_report,
 )
+from .circuit_breaker import (
+    CircuitBreaker,
+    CircuitState,
+    CircuitStatus,
+    CircuitOpenError,
+    get_host_breaker,
+    get_training_breaker,
+    format_circuit_status,
+)
 
 __all__ = [
     # Host configuration and memory detection

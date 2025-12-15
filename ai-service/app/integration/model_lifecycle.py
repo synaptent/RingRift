@@ -40,20 +40,23 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LifecycleConfig:
-    """Configuration for model lifecycle management."""
+    """Configuration for model lifecycle management.
+
+    NOTE: Training thresholds should match app/config/unified_config.py
+    """
     # Registry paths
     registry_dir: str = "data/model_registry"
     model_storage_dir: str = "data/models"
 
-    # Promotion criteria
-    min_elo_improvement: float = 20.0
+    # Promotion criteria - match unified_config.py
+    min_elo_improvement: float = 25.0  # Canonical: 25 (was 20)
     min_games_for_staging: int = 50
     min_games_for_production: int = 200
     min_win_rate_vs_production: float = 0.52
     max_value_mse_degradation: float = 0.05
 
-    # Training triggers
-    min_games_for_training: int = 500
+    # Training triggers - match unified_config.py
+    min_games_for_training: int = 500  # Canonical: 500
     training_data_staleness_hours: int = 24
     auto_train_on_data_threshold: bool = True
 

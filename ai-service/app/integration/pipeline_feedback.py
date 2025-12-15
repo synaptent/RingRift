@@ -21,6 +21,7 @@ Integration:
     await self.feedback.on_stage_complete(stage_name, result)
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -49,6 +50,10 @@ class FeedbackAction(Enum):
     EXTEND_TRAINING = "extend_training"
     REDUCE_TRAINING = "reduce_training"
     NO_ACTION = "no_action"
+    # Promotion-related actions
+    PROMOTION_FAILED = "promotion_failed"
+    PROMOTION_SUCCEEDED = "promotion_succeeded"
+    URGENT_RETRAINING = "urgent_retraining"
 
 
 @dataclass
@@ -96,6 +101,11 @@ class FeedbackState:
     last_nas_trigger: float = 0.0
     cmaes_cooldown_hours: float = 6.0
     nas_cooldown_hours: float = 24.0
+
+    # Promotion tracking
+    consecutive_promotion_failures: int = 0
+    last_promotion_success: float = 0.0
+    promotion_failure_configs: Dict[str, int] = field(default_factory=dict)  # config -> failure count
 
 
 class EvaluationAnalyzer:
@@ -294,6 +304,7 @@ class PipelineFeedbackController:
             'selfplay': self._on_selfplay_complete,
             'canonical-selfplay': self._on_selfplay_complete,
             'cmaes': self._on_cmaes_complete,
+            'promotion': self._on_promotion_complete,
         }
 
         handler = handlers.get(stage)
@@ -445,6 +456,102 @@ class PipelineFeedbackController:
             # Reset plateau count on successful optimization
             self.state.plateau_count = 0
 
+    async def _on_promotion_complete(self, result: Dict[str, Any]):
+        """Handle model promotion completion - track success/failure and adjust training.
+
+        If promotion fails repeatedly for a config, increase its curriculum weight
+        and potentially trigger urgent retraining or hyperparameter optimization.
+        """
+        config_key = result.get('config_key', 'default')
+        success = result.get('success', False)
+        elo_gain = result.get('elo_gain', 0)
+        model_id = result.get('model_id', 'unknown')
+        reason = result.get('reason', '')
+
+        if success:
+            # Promotion succeeded
+            self.state.consecutive_promotion_failures = 0
+            self.state.last_promotion_success = time.time()
+
+            # Clear failure count for this config
+            if config_key in self.state.promotion_failure_configs:
+                del self.state.promotion_failure_configs[config_key]
+
+            # Decrease plateau count on successful promotion
+            self.state.plateau_count = max(0, self.state.plateau_count - 1)
+
+            self._emit_signal(FeedbackSignal(
+                source_stage='promotion',
+                target_stage='training',
+                action=FeedbackAction.PROMOTION_SUCCEEDED,
+                magnitude=min(1.0, elo_gain / 50.0),  # Normalize by expected gain
+                reason=f"Model {model_id} promoted (+{elo_gain} Elo)",
+                metadata={'config': config_key, 'elo_gain': elo_gain, 'model_id': model_id}
+            ))
+        else:
+            # Promotion failed
+            self.state.consecutive_promotion_failures += 1
+
+            # Track per-config failure count
+            self.state.promotion_failure_configs[config_key] = (
+                self.state.promotion_failure_configs.get(config_key, 0) + 1
+            )
+            config_failures = self.state.promotion_failure_configs[config_key]
+
+            self._emit_signal(FeedbackSignal(
+                source_stage='promotion',
+                target_stage='training',
+                action=FeedbackAction.PROMOTION_FAILED,
+                magnitude=0.3 + (0.1 * min(config_failures, 5)),  # Increase urgency with failures
+                reason=f"Promotion failed for {config_key}: {reason}",
+                metadata={
+                    'config': config_key,
+                    'model_id': model_id,
+                    'consecutive_failures': self.state.consecutive_promotion_failures,
+                    'config_failures': config_failures,
+                }
+            ))
+
+            # Increase curriculum weight for repeatedly failing configs
+            if config_failures >= 2:
+                current_weight = self.state.curriculum_weights.get(config_key, 1.0)
+                new_weight = min(2.5, current_weight * 1.3)  # More aggressive increase
+                self.state.curriculum_weights[config_key] = new_weight
+
+                self._emit_signal(FeedbackSignal(
+                    source_stage='promotion',
+                    target_stage='training',
+                    action=FeedbackAction.INCREASE_CURRICULUM_WEIGHT,
+                    magnitude=0.3,
+                    reason=f"Promotion failed {config_failures}x for {config_key}",
+                    metadata={'config': config_key, 'new_weight': new_weight}
+                ))
+
+            # Trigger urgent retraining after 3 consecutive failures
+            if self.state.consecutive_promotion_failures >= 3:
+                self._emit_signal(FeedbackSignal(
+                    source_stage='promotion',
+                    target_stage='training',
+                    action=FeedbackAction.URGENT_RETRAINING,
+                    magnitude=1.0,
+                    reason=f"{self.state.consecutive_promotion_failures} consecutive promotion failures",
+                    metadata={'configs_affected': list(self.state.promotion_failure_configs.keys())}
+                ))
+
+                # Increase epochs for more thorough training
+                self.state.epochs_multiplier = min(1.5, self.state.epochs_multiplier * 1.2)
+
+            # Trigger CMA-ES after 5 consecutive failures
+            if self.state.consecutive_promotion_failures >= 5 and self._should_trigger_cmaes():
+                self._emit_signal(FeedbackSignal(
+                    source_stage='promotion',
+                    target_stage='cmaes',
+                    action=FeedbackAction.TRIGGER_CMAES,
+                    magnitude=1.0,
+                    reason=f"5+ consecutive promotion failures, trying hyperparameter optimization"
+                ))
+                self.state.last_cmaes_trigger = time.time()
+
     # =========================================================================
     # Trigger Checks
     # =========================================================================
@@ -485,11 +592,84 @@ class PipelineFeedbackController:
         """Check if data should be quarantined due to quality issues."""
         return self.data_monitor.should_quarantine()
 
+    def update_data_quality(
+        self,
+        parity_results: Optional[List[bool]] = None,
+        game_lengths: Optional[List[int]] = None,
+        draw_rate: Optional[float] = None,
+        timeout_rate: Optional[float] = None,
+    ) -> float:
+        """Update data quality metrics and compute overall quality score.
+
+        Args:
+            parity_results: Recent parity validation results (True=passed)
+            game_lengths: Recent game lengths for outlier detection
+            draw_rate: Current draw rate (0-1)
+            timeout_rate: Rate of games hitting move limits (0-1)
+
+        Returns:
+            Updated data_quality_score (0-1)
+        """
+        score = 1.0
+
+        # Factor 1: Parity failure rate (most important)
+        if parity_results:
+            for result in parity_results:
+                self.data_monitor.add_parity_result(result)
+
+        parity_failure_rate = self.data_monitor.get_parity_failure_rate()
+        self.state.parity_failure_rate = parity_failure_rate
+        # Deduct based on parity failures (max 40% deduction)
+        parity_penalty = min(0.4, parity_failure_rate * 4)
+        score -= parity_penalty
+
+        # Factor 2: Draw rate (target < 20%)
+        if draw_rate is not None:
+            draw_threshold = 0.20
+            if draw_rate > draw_threshold:
+                draw_penalty = min(0.2, (draw_rate - draw_threshold) * 2)
+                score -= draw_penalty
+
+        # Factor 3: Timeout/move limit rate (should be < 5%)
+        if timeout_rate is not None:
+            timeout_threshold = 0.05
+            if timeout_rate > timeout_threshold:
+                timeout_penalty = min(0.2, (timeout_rate - timeout_threshold) * 4)
+                score -= timeout_penalty
+
+        # Factor 4: Game length outliers (games with >1000 moves are suspicious)
+        if game_lengths:
+            self.data_monitor.game_lengths.extend(game_lengths)
+            # Keep bounded
+            if len(self.data_monitor.game_lengths) > 1000:
+                self.data_monitor.game_lengths = self.data_monitor.game_lengths[-1000:]
+
+            outlier_count = sum(1 for l in game_lengths if l > 1000)
+            outlier_rate = outlier_count / len(game_lengths) if game_lengths else 0
+            if outlier_rate > 0.01:  # More than 1% outliers
+                outlier_penalty = min(0.2, outlier_rate * 10)
+                score -= outlier_penalty
+
+        # Clamp score to [0, 1]
+        score = max(0.0, min(1.0, score))
+        self.state.data_quality_score = score
+
+        logger.info(f"Data quality updated: score={score:.2f}, "
+                    f"parity_failure_rate={parity_failure_rate:.1%}")
+
+        return score
+
     def get_pending_actions(self) -> List[FeedbackSignal]:
         """Get pending feedback actions that require external handling."""
         pending = []
+        actionable_types = (
+            FeedbackAction.TRIGGER_CMAES,
+            FeedbackAction.TRIGGER_NAS,
+            FeedbackAction.URGENT_RETRAINING,
+            FeedbackAction.PROMOTION_FAILED,
+        )
         for signal in self.signals[-10:]:  # Last 10 signals
-            if signal.action in (FeedbackAction.TRIGGER_CMAES, FeedbackAction.TRIGGER_NAS):
+            if signal.action in actionable_types:
                 pending.append(signal)
         return pending
 
@@ -504,7 +684,262 @@ class PipelineFeedbackController:
             'parity_failure_rate': f"{self.state.parity_failure_rate:.1%}",
             'weak_configs': self.eval_analyzer.get_weak_configs(),
             'recent_signals': len(self.signals),
+            # Promotion tracking
+            'consecutive_promotion_failures': self.state.consecutive_promotion_failures,
+            'promotion_failure_configs': dict(self.state.promotion_failure_configs),
+            'last_promotion_success': self.state.last_promotion_success,
         }
+
+
+# =============================================================================
+# Feedback Signal Router
+# =============================================================================
+
+class FeedbackSignalRouter:
+    """
+    Routes feedback signals to registered handlers.
+
+    This allows different components to subscribe to specific feedback actions
+    and be notified when those actions are triggered.
+
+    Usage:
+        router = FeedbackSignalRouter()
+
+        # Register handlers
+        router.register_handler(FeedbackAction.TRIGGER_CMAES, cmaes_handler)
+        router.register_handler(FeedbackAction.INCREASE_CURRICULUM_WEIGHT, curriculum_handler)
+
+        # Route signals
+        await router.route(signal)
+    """
+
+    def __init__(self):
+        self._handlers: Dict[FeedbackAction, List[callable]] = defaultdict(list)
+        self._signal_history: List[Tuple[float, FeedbackSignal, str]] = []  # (timestamp, signal, handler_result)
+        self._max_history = 500
+
+    def register_handler(
+        self,
+        action: FeedbackAction,
+        handler: callable,
+        name: Optional[str] = None
+    ):
+        """Register a handler for a specific feedback action.
+
+        Args:
+            action: The FeedbackAction to handle
+            handler: Async or sync callable that takes (signal: FeedbackSignal) -> bool
+            name: Optional handler name for logging
+        """
+        handler_info = {
+            'handler': handler,
+            'name': name or handler.__name__ if hasattr(handler, '__name__') else 'anonymous',
+        }
+        self._handlers[action].append(handler_info)
+        logger.info(f"Registered handler '{handler_info['name']}' for {action.value}")
+
+    def unregister_handler(self, action: FeedbackAction, handler: callable):
+        """Unregister a handler."""
+        self._handlers[action] = [
+            h for h in self._handlers[action]
+            if h['handler'] != handler
+        ]
+
+    async def route(self, signal: FeedbackSignal) -> List[Tuple[str, bool]]:
+        """Route a signal to all registered handlers for its action.
+
+        Returns:
+            List of (handler_name, success) tuples
+        """
+        results = []
+        handlers = self._handlers.get(signal.action, [])
+
+        if not handlers:
+            logger.debug(f"No handlers registered for {signal.action.value}")
+            self._record_history(signal, "no_handlers")
+            return results
+
+        for handler_info in handlers:
+            handler = handler_info['handler']
+            name = handler_info['name']
+
+            try:
+                # Support both async and sync handlers
+                if asyncio.iscoroutinefunction(handler):
+                    success = await handler(signal)
+                else:
+                    success = handler(signal)
+
+                results.append((name, success))
+                self._record_history(signal, f"{name}:{'ok' if success else 'fail'}")
+                logger.debug(f"Handler '{name}' processed {signal.action.value}: {success}")
+
+            except Exception as e:
+                logger.error(f"Handler '{name}' failed for {signal.action.value}: {e}")
+                results.append((name, False))
+                self._record_history(signal, f"{name}:error:{str(e)[:50]}")
+
+        return results
+
+    def _record_history(self, signal: FeedbackSignal, result: str):
+        """Record signal routing to history."""
+        self._signal_history.append((time.time(), signal, result))
+        if len(self._signal_history) > self._max_history:
+            self._signal_history = self._signal_history[-self._max_history:]
+
+    def get_history(
+        self,
+        action: Optional[FeedbackAction] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Get signal routing history.
+
+        Args:
+            action: Filter by action type
+            limit: Maximum entries to return
+        """
+        history = self._signal_history
+        if action:
+            history = [(t, s, r) for t, s, r in history if s.action == action]
+
+        return [
+            {
+                'timestamp': t,
+                'action': s.action.value,
+                'source': s.source_stage,
+                'target': s.target_stage,
+                'magnitude': s.magnitude,
+                'reason': s.reason,
+                'result': r,
+            }
+            for t, s, r in history[-limit:]
+        ]
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get routing statistics."""
+        stats = {
+            'total_signals_routed': len(self._signal_history),
+            'handlers_registered': {
+                action.value: len(handlers)
+                for action, handlers in self._handlers.items()
+            },
+            'signals_by_action': {},
+        }
+
+        for _, signal, _ in self._signal_history:
+            action = signal.action.value
+            stats['signals_by_action'][action] = stats['signals_by_action'].get(action, 0) + 1
+
+        return stats
+
+
+class OpponentWinRateTracker:
+    """
+    Tracks win rates against specific opponent types.
+
+    This enables opponent-specific curriculum adjustments - if the model
+    struggles against a specific opponent (e.g., MCTS-1000), we can
+    increase training weight for games against that opponent.
+
+    Usage:
+        tracker = OpponentWinRateTracker()
+        tracker.record_game("ringrift_v3", "mcts_100", won=True)
+        tracker.record_game("ringrift_v3", "mcts_1000", won=False)
+
+        weak_opponents = tracker.get_weak_opponents("ringrift_v3")
+    """
+
+    def __init__(self, min_games: int = 10, weak_threshold: float = 0.45):
+        self.min_games = min_games
+        self.weak_threshold = weak_threshold
+
+        # model_id -> opponent_id -> {wins, losses}
+        self._records: Dict[str, Dict[str, Dict[str, int]]] = defaultdict(
+            lambda: defaultdict(lambda: {'wins': 0, 'losses': 0, 'draws': 0})
+        )
+        self._history: List[Tuple[float, str, str, str]] = []  # (timestamp, model, opponent, result)
+
+    def record_game(
+        self,
+        model_id: str,
+        opponent_id: str,
+        won: Optional[bool] = None,
+        draw: bool = False
+    ):
+        """Record a game result against an opponent."""
+        if draw:
+            self._records[model_id][opponent_id]['draws'] += 1
+            result = 'draw'
+        elif won:
+            self._records[model_id][opponent_id]['wins'] += 1
+            result = 'win'
+        else:
+            self._records[model_id][opponent_id]['losses'] += 1
+            result = 'loss'
+
+        self._history.append((time.time(), model_id, opponent_id, result))
+
+        # Keep bounded
+        if len(self._history) > 10000:
+            self._history = self._history[-10000:]
+
+    def get_win_rate(self, model_id: str, opponent_id: str) -> Optional[float]:
+        """Get win rate against a specific opponent. Returns None if insufficient games."""
+        record = self._records.get(model_id, {}).get(opponent_id)
+        if not record:
+            return None
+
+        total = record['wins'] + record['losses'] + record['draws']
+        if total < self.min_games:
+            return None
+
+        # Count draws as half wins
+        return (record['wins'] + 0.5 * record['draws']) / total
+
+    def get_weak_opponents(self, model_id: str) -> List[Tuple[str, float]]:
+        """Get opponents where model has below-threshold win rate.
+
+        Returns:
+            List of (opponent_id, win_rate) tuples, sorted by win rate ascending
+        """
+        weak = []
+        for opponent_id, record in self._records.get(model_id, {}).items():
+            win_rate = self.get_win_rate(model_id, opponent_id)
+            if win_rate is not None and win_rate < self.weak_threshold:
+                weak.append((opponent_id, win_rate))
+
+        return sorted(weak, key=lambda x: x[1])
+
+    def get_strong_opponents(self, model_id: str, threshold: float = 0.60) -> List[Tuple[str, float]]:
+        """Get opponents where model has above-threshold win rate."""
+        strong = []
+        for opponent_id, record in self._records.get(model_id, {}).items():
+            win_rate = self.get_win_rate(model_id, opponent_id)
+            if win_rate is not None and win_rate >= threshold:
+                strong.append((opponent_id, win_rate))
+
+        return sorted(strong, key=lambda x: x[1], reverse=True)
+
+    def get_summary(self, model_id: str) -> Dict[str, Any]:
+        """Get summary of opponent performance for a model."""
+        opponents = self._records.get(model_id, {})
+        summary = {
+            'total_opponents': len(opponents),
+            'opponents': {},
+        }
+
+        for opponent_id, record in opponents.items():
+            win_rate = self.get_win_rate(model_id, opponent_id)
+            total = record['wins'] + record['losses'] + record['draws']
+            summary['opponents'][opponent_id] = {
+                'wins': record['wins'],
+                'losses': record['losses'],
+                'draws': record['draws'],
+                'total': total,
+                'win_rate': win_rate,
+            }
+
+        return summary
 
 
 # =============================================================================
@@ -516,5 +951,18 @@ def create_feedback_controller(
     config: Optional[Dict[str, Any]] = None
 ) -> PipelineFeedbackController:
     """Create a feedback controller with standard paths."""
+    # Ensure ai_service_dir is a Path object
+    if isinstance(ai_service_dir, str):
+        ai_service_dir = Path(ai_service_dir)
     state_path = ai_service_dir / "logs" / "feedback" / "feedback_state.json"
     return PipelineFeedbackController(state_path=state_path, config=config)
+
+
+def create_feedback_router() -> FeedbackSignalRouter:
+    """Create a feedback signal router."""
+    return FeedbackSignalRouter()
+
+
+def create_opponent_tracker(min_games: int = 10, weak_threshold: float = 0.45) -> OpponentWinRateTracker:
+    """Create an opponent win rate tracker."""
+    return OpponentWinRateTracker(min_games=min_games, weak_threshold=weak_threshold)

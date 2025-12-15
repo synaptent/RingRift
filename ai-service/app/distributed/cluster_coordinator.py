@@ -356,8 +356,36 @@ class ClusterCoordinator:
         conn.commit()
         conn.close()
 
+    def cleanup_stale_locks(self) -> List[str]:
+        """Clean up lock files held by dead processes.
+
+        Returns list of cleaned up lock files.
+        """
+        cleaned = []
+        for lock_file in LOCK_DIR.glob(f"*.{self.hostname}.lock"):
+            try:
+                content = lock_file.read_text().strip()
+                if content:
+                    pid = int(content)
+                    if not psutil.pid_exists(pid):
+                        # Process is dead, remove the lock
+                        lock_file.unlink()
+                        cleaned.append(str(lock_file))
+                        print(f"[ClusterCoordinator] Cleaned stale lock: {lock_file.name} (dead PID {pid})")
+            except (ValueError, FileNotFoundError, PermissionError) as e:
+                # Invalid PID or file issues - try to clean anyway
+                try:
+                    lock_file.unlink()
+                    cleaned.append(str(lock_file))
+                except Exception:
+                    pass
+        return cleaned
+
     def cleanup_stale_entries(self, max_age_hours: float = 24.0):
         """Clean up stale task and process entries."""
+        # First clean up stale lock files
+        self.cleanup_stale_locks()
+
         conn = sqlite3.connect(str(REGISTRY_DB), timeout=30)
         cursor = conn.cursor()
 

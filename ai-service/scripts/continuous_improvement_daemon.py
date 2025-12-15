@@ -46,6 +46,8 @@ from typing import Any, Dict, List, Optional, Tuple
 # Allow imports from app/
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from app.config.unified_config import get_config
+
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 # Import unified cluster coordination
@@ -69,9 +71,10 @@ def check_emergency_halt() -> bool:
     halt_file = AI_SERVICE_ROOT / "data" / "coordination" / "EMERGENCY_HALT"
     return halt_file.exists()
 
-# Import persistent Elo database functions
+# Import persistent Elo database functions (centralized service)
 try:
-    from scripts.run_model_elo_tournament import (
+    from app.training.elo_service import (
+        get_elo_service,
         init_elo_database,
         register_models,
         update_elo_after_match,
@@ -82,6 +85,7 @@ try:
 except ImportError:
     HAS_PERSISTENT_ELO = False
     ELO_DB_PATH = None
+    get_elo_service = None
 
 # Import ImprovementCycleManager for diverse AI scheduling
 try:
@@ -104,6 +108,20 @@ try:
     HAS_LEAGUE_SYSTEM = True
 except ImportError:
     HAS_LEAGUE_SYSTEM = False
+
+# TaskCoordinator for global task limits and coordination
+try:
+    from app.coordination.task_coordinator import (
+        TaskCoordinator,
+        TaskType,
+        TaskLimits,
+        CoordinatorState,
+    )
+    HAS_TASK_COORDINATOR = True
+except ImportError:
+    HAS_TASK_COORDINATOR = False
+    TaskCoordinator = None
+    TaskType = None
 
 # Import optimized hyperparameters
 try:
@@ -525,9 +543,10 @@ BOARD_CONFIGS = [
     {"board": "hexagonal", "players": 4, "priority": 0.1, "min_games": 400},
 ]
 
-# Training thresholds
-MIN_NEW_GAMES_FOR_TRAINING = 500  # Train after this many new games
-TRAINING_COOLDOWN_SECONDS = 900    # 15 min between training runs (was 30 min)
+# Training thresholds - loaded from unified config (single source of truth)
+_unified_config = get_config()
+MIN_NEW_GAMES_FOR_TRAINING = _unified_config.training.trigger_threshold_games
+TRAINING_COOLDOWN_SECONDS = _unified_config.training.min_interval_seconds
 TOURNAMENT_GAMES = 50              # Games per model comparison
 PROMOTION_THRESHOLD = 0.55         # Win rate needed for promotion
 
@@ -2984,6 +3003,26 @@ async def run_daemon(foreground: bool = False) -> None:
         except Exception as e:
             print(f"[Daemon] Warning: Lock acquisition failed: {e}")
 
+    # Task coordination - global limits across all orchestrators
+    tc_task_id = None
+    task_coordinator = None
+    if HAS_TASK_COORDINATOR:
+        try:
+            task_coordinator = TaskCoordinator.get_instance()
+            import socket
+            node_id = socket.gethostname()
+            allowed, reason = task_coordinator.can_spawn_task(TaskType.IMPROVEMENT_LOOP, node_id)
+            if not allowed:
+                print(f"[Daemon] WARNING: TaskCoordinator denied spawning: {reason}")
+            else:
+                tc_task_id = f"daemon_{int(time.time())}"
+                task_coordinator.register_task(
+                    tc_task_id, TaskType.IMPROVEMENT_LOOP, node_id, os.getpid()
+                )
+            print("[Daemon] Task coordinator integrated - global limits enforced")
+        except Exception as e:
+            print(f"[Daemon] Warning: Failed to initialize task coordinator: {e}")
+
     try:
         # Main loop
         last_leader_ok: Optional[bool] = None
@@ -3024,6 +3063,14 @@ async def run_daemon(foreground: bool = False) -> None:
                     pass
 
     finally:
+        # Unregister from task coordinator
+        if task_coordinator and tc_task_id:
+            try:
+                task_coordinator.unregister_task(tc_task_id)
+                print("[Daemon] Unregistered from task coordinator")
+            except Exception as e:
+                print(f"[Daemon] Warning: Task coordinator unregister failed: {e}")
+
         # Release lock and save state
         if lock_context is not None:
             try:

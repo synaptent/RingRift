@@ -48,6 +48,15 @@ from app.rules.default_engine import DefaultRulesEngine
 from app.utils.victory_type import derive_victory_type
 from app.training.generate_data import create_initial_state
 
+# Import event emission for feedback loop integration
+try:
+    from app.distributed.data_events import emit_elo_updated, get_event_bus
+    import asyncio
+    HAS_EVENT_BUS = True
+except ImportError:
+    HAS_EVENT_BUS = False
+    emit_elo_updated = None
+
 
 # ============================================
 # Game Execution with Neural Networks
@@ -812,12 +821,19 @@ def update_elo_after_match(
     duration_sec: float = 0.0,
 ):
     """Update Elo ratings after a match using unified EloDatabase."""
+    # Get old Elo ratings before update (for event emission)
+    old_rating_a = db.get_rating(model_a, board_type, num_players)
+    old_rating_b = db.get_rating(model_b, board_type, num_players)
+    old_elo_a = old_rating_a.rating
+    old_elo_b = old_rating_b.rating
+
     # Determine rankings from winner
     if winner == model_a:
         is_draw = False
     elif winner == model_b:
         # Swap so winner is first in the call
         model_a, model_b = model_b, model_a
+        old_elo_a, old_elo_b = old_elo_b, old_elo_a
         is_draw = False
     else:
         is_draw = True
@@ -832,6 +848,43 @@ def update_elo_after_match(
         game_length=game_length,
         duration_sec=duration_sec,
     )
+
+    # Emit ELO_UPDATED events for feedback loop integration
+    if HAS_EVENT_BUS:
+        config_key = f"{board_type}_{num_players}p"
+        rating_a = db.get_rating(model_a, board_type, num_players)
+        rating_b = db.get_rating(model_b, board_type, num_players)
+        new_elo_a = rating_a.rating
+        new_elo_b = rating_b.rating
+        games_a = rating_a.games_played
+        games_b = rating_b.games_played
+
+        # Run async event emission in sync context
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If there's already a running loop, schedule the coroutines
+                asyncio.ensure_future(emit_elo_updated(
+                    config=config_key, model_id=model_a, new_elo=new_elo_a,
+                    old_elo=old_elo_a, games_played=games_a, source="run_model_elo_tournament"
+                ))
+                asyncio.ensure_future(emit_elo_updated(
+                    config=config_key, model_id=model_b, new_elo=new_elo_b,
+                    old_elo=old_elo_b, games_played=games_b, source="run_model_elo_tournament"
+                ))
+            else:
+                # No running loop, run synchronously
+                loop.run_until_complete(emit_elo_updated(
+                    config=config_key, model_id=model_a, new_elo=new_elo_a,
+                    old_elo=old_elo_a, games_played=games_a, source="run_model_elo_tournament"
+                ))
+                loop.run_until_complete(emit_elo_updated(
+                    config=config_key, model_id=model_b, new_elo=new_elo_b,
+                    old_elo=old_elo_b, games_played=games_b, source="run_model_elo_tournament"
+                ))
+        except Exception as e:
+            # Don't fail the match update if event emission fails
+            pass
 
 
 def print_leaderboard(leaderboard: List[Dict[str, Any]], title: str = "Elo Leaderboard"):
@@ -1347,6 +1400,37 @@ def main():
     parser.add_argument("--emit-events", action="store_true", help="Emit data events for pipeline integration")
 
     args = parser.parse_args()
+
+    # === PROCESS SAFEGUARDS ===
+    # Limit torch.compile workers to prevent process sprawl
+    import os
+    os.environ.setdefault("TORCH_COMPILE_MAX_WORKERS", "8")
+    os.environ.setdefault("OMP_NUM_THREADS", "4")
+
+    # Check system load before starting
+    try:
+        load_avg = os.getloadavg()[0]
+        if load_avg > 50 and not args.leaderboard_only:
+            print(f"[Tournament] WARNING: System load is {load_avg:.1f}, which is very high")
+            print("[Tournament] Consider waiting for load to decrease or use --leaderboard-only")
+            if load_avg > 100:
+                print("[Tournament] ERROR: Load too high (>100), aborting to prevent system overload")
+                return
+    except (OSError, AttributeError):
+        pass  # getloadavg not available on all platforms
+
+    # Check ClusterCoordinator for exclusive tournament access
+    try:
+        from app.distributed.cluster_coordinator import ClusterCoordinator, TaskRole
+        coordinator = ClusterCoordinator()
+        if not args.leaderboard_only and coordinator.is_role_held(TaskRole.TOURNAMENT):
+            holder_pid = coordinator.get_role_holder_pid(TaskRole.TOURNAMENT)
+            print(f"[Tournament] ERROR: Another tournament is already running (PID {holder_pid})")
+            print("[Tournament] Wait for it to complete or kill it first")
+            return
+    except ImportError:
+        pass  # Coordinator not available, continue without check
+    # === END SAFEGUARDS ===
 
     # Quick mode: reduce games for fast shadow evaluation
     if args.quick:

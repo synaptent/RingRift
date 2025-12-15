@@ -17,7 +17,11 @@ from typing import TYPE_CHECKING
 # Lazy imports to avoid circular dependencies
 if TYPE_CHECKING:
     from .unified_loop_extensions import UnifiedLoopExtensions, ExtensionConfig
-    from .pipeline_feedback import PipelineFeedbackController, FeedbackAction
+    from .pipeline_feedback import (
+        PipelineFeedbackController, FeedbackAction, FeedbackSignal,
+        FeedbackSignalRouter, OpponentWinRateTracker,
+        create_feedback_controller, create_feedback_router, create_opponent_tracker
+    )
     from .model_lifecycle import ModelLifecycleManager, LifecycleConfig
     from .p2p_integration import P2PIntegrationManager, P2PIntegrationConfig
 
@@ -30,6 +34,12 @@ __all__ = [
     # Pipeline feedback
     "PipelineFeedbackController",
     "FeedbackAction",
+    "FeedbackSignal",
+    "FeedbackSignalRouter",
+    "OpponentWinRateTracker",
+    "create_feedback_controller",
+    "create_feedback_router",
+    "create_opponent_tracker",
 
     # Model lifecycle
     "ModelLifecycleManager",
@@ -53,6 +63,18 @@ def get_pipeline_feedback_controller():
     """Get PipelineFeedbackController class."""
     from .pipeline_feedback import PipelineFeedbackController
     return PipelineFeedbackController
+
+
+def get_feedback_signal_router():
+    """Get FeedbackSignalRouter class."""
+    from .pipeline_feedback import FeedbackSignalRouter
+    return FeedbackSignalRouter
+
+
+def get_opponent_win_rate_tracker():
+    """Get OpponentWinRateTracker class."""
+    from .pipeline_feedback import OpponentWinRateTracker
+    return OpponentWinRateTracker
 
 
 def get_model_lifecycle_manager():

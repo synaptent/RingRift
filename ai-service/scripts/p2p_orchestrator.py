@@ -16207,6 +16207,12 @@ print(json.dumps({{
                 env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
                 env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
 
+                # SAFEGUARD: Final check before spawning (load + rate limit)
+                can_spawn, spawn_reason = self._can_spawn_process(f"selfplay-{board_type}-{num_players}p")
+                if not can_spawn:
+                    print(f"[P2P] BLOCKED selfplay spawn: {spawn_reason}")
+                    return None
+
                 log_handle = open(output_dir / "run.log", "a")
                 try:
                     proc = subprocess.Popen(
@@ -16216,6 +16222,7 @@ print(json.dumps({{
                         env=env,
                         cwd=self.ringrift_path,
                     )
+                    self._record_spawn()  # Track spawn for rate limiting
                 finally:
                     log_handle.close()
 
@@ -16328,6 +16335,12 @@ print(json.dumps({{
                     else:
                         env["CUDA_VISIBLE_DEVICES"] = "0"
 
+                # SAFEGUARD: Final check before spawning (load + rate limit)
+                can_spawn, spawn_reason = self._can_spawn_process(f"gpu-selfplay-{board_type}-{num_players}p")
+                if not can_spawn:
+                    print(f"[P2P] BLOCKED GPU selfplay spawn: {spawn_reason}")
+                    return None
+
                 log_handle = open(output_dir / "gpu_run.log", "a")
                 try:
                     proc = subprocess.Popen(
@@ -16337,6 +16350,7 @@ print(json.dumps({{
                         env=env,
                         cwd=self.ringrift_path,
                     )
+                    self._record_spawn()  # Track spawn for rate limiting
                 finally:
                     log_handle.close()
 
@@ -16441,6 +16455,12 @@ print(json.dumps({{
                     else:
                         env["CUDA_VISIBLE_DEVICES"] = "0"
 
+                # SAFEGUARD: Final check before spawning (load + rate limit)
+                can_spawn, spawn_reason = self._can_spawn_process(f"hybrid-selfplay-{board_type}-{num_players}p")
+                if not can_spawn:
+                    print(f"[P2P] BLOCKED hybrid selfplay spawn: {spawn_reason}")
+                    return None
+
                 log_handle = open(output_dir / "hybrid_run.log", "a")
                 try:
                     proc = subprocess.Popen(
@@ -16450,6 +16470,7 @@ print(json.dumps({{
                         env=env,
                         cwd=self.ringrift_path,
                     )
+                    self._record_spawn()  # Track spawn for rate limiting
                 finally:
                     log_handle.close()
 
@@ -16484,8 +16505,19 @@ print(json.dumps({{
         num_players: int = 2,
         engine_mode: str = "hybrid",
     ):
-        """Request a remote node to start a job with specific configuration."""
+        """Request a remote node to start a job with specific configuration.
+
+        SAFEGUARD: Checks coordination safeguards before requesting remote spawn.
+        """
         try:
+            # SAFEGUARD: Check safeguards before requesting remote spawn
+            if HAS_SAFEGUARDS and _safeguards:
+                task_type_str = job_type.value if hasattr(job_type, 'value') else str(job_type)
+                allowed, reason = check_before_spawn(task_type_str, node.node_id)
+                if not allowed:
+                    print(f"[P2P] SAFEGUARD blocked remote {task_type_str} on {node.node_id}: {reason}")
+                    return
+
             job_id = f"{job_type.value}_{board_type}_{num_players}p_{int(time.time())}_{uuid.uuid4().hex[:6]}"
 
             # NAT-blocked nodes can't accept inbound /start_job; enqueue a relay command instead.

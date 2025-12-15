@@ -32,11 +32,87 @@ import json
 import os
 import socket
 import subprocess
+import tempfile
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+
+# ============================================
+# Atomic File Operations
+# ============================================
+
+def atomic_write_json(filepath: Path, data: Any, indent: int = 2) -> None:
+    """
+    Write JSON data to file atomically.
+
+    Uses write-to-temp-then-rename pattern to prevent corruption
+    if process crashes during write.
+
+    Args:
+        filepath: Target file path
+        data: Data to serialize as JSON
+        indent: JSON indentation (default 2)
+    """
+    filepath = Path(filepath)
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write to temp file in same directory (for atomic rename)
+    fd, temp_path = tempfile.mkstemp(
+        dir=filepath.parent,
+        prefix=f".{filepath.name}.",
+        suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, 'w') as f:
+            json.dump(data, f, indent=indent)
+            f.flush()
+            os.fsync(f.fileno())  # Ensure data hits disk
+
+        # Atomic rename (POSIX guarantees atomicity)
+        os.rename(temp_path, filepath)
+    except:
+        # Clean up temp file on error
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+        raise
+
+
+def safe_read_json(filepath: Path, default: Any = None) -> Any:
+    """
+    Safely read JSON file with fallback on corruption.
+
+    Args:
+        filepath: File to read
+        default: Value to return if file doesn't exist or is corrupt
+
+    Returns:
+        Parsed JSON data or default value
+    """
+    filepath = Path(filepath)
+    if not filepath.exists():
+        return default
+
+    try:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Warning: Failed to read {filepath}: {e}")
+        # Attempt to read backup if it exists
+        backup = filepath.with_suffix(filepath.suffix + '.bak')
+        if backup.exists():
+            try:
+                with open(backup, 'r') as f:
+                    print(f"Recovered from backup: {backup}")
+                    return json.load(f)
+            except:
+                pass
+        return default
+
 
 # Coordination files
 COORDINATION_DIR = Path("/tmp/ringrift_coordination")
@@ -248,23 +324,24 @@ def can_spawn_task(host: str, task_type: str = "selfplay", ssh_user: str = "ubun
 
 
 def load_process_registry() -> List[TaskInfo]:
-    """Load the process registry from disk."""
+    """Load the process registry from disk safely."""
     ensure_coordination_dir()
     try:
-        if PROCESS_REGISTRY.exists():
-            with open(PROCESS_REGISTRY, 'r') as f:
-                data = json.load(f)
-                return [TaskInfo.from_dict(t) for t in data]
+        data = safe_read_json(PROCESS_REGISTRY, default=[])
+        return [TaskInfo.from_dict(t) for t in data]
     except Exception as e:
         print(f"Error loading registry: {e}")
     return []
 
 
 def save_process_registry(tasks: List[TaskInfo]):
-    """Save the process registry to disk."""
+    """Save the process registry to disk atomically.
+
+    Uses atomic write (temp file + rename) to prevent corruption
+    if process crashes during write.
+    """
     ensure_coordination_dir()
-    with open(PROCESS_REGISTRY, 'w') as f:
-        json.dump([t.to_dict() for t in tasks], f, indent=2)
+    atomic_write_json(PROCESS_REGISTRY, [t.to_dict() for t in tasks])
 
 
 def register_task(host: str, task_type: str, pid: int, command: str = "") -> bool:

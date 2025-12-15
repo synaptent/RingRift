@@ -180,6 +180,7 @@ Rate limit configuration:
 | Sandbox AI               | 1000 requests | per minute        |
 | Authenticated API        | 200 requests  | per minute        |
 | Anonymous API            | 50 requests   | per minute        |
+| Game API                 | 2000 requests | per minute per IP |
 | WebSocket connections    | 500           | per minute per IP |
 | Game creation (per user) | 20 games      | per 10 minutes    |
 | Game creation (per IP)   | 500 games     | per 10 minutes    |

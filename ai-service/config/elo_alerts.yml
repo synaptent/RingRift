@@ -1,0 +1,95 @@
+# Prometheus Alerting Rules for RingRift AI Elo Monitoring
+# These rules monitor the AI improvement feedback loop
+
+groups:
+  - name: elo_improvement
+    interval: 60s
+    rules:
+      # Alert when top model Elo drops significantly
+      - alert: EloRegression
+        expr: |
+          (
+            max(ringrift_model_elo_current{model_type="neural"}) by (config)
+            - max(ringrift_model_elo_current{model_type="neural"} offset 1h) by (config)
+          ) < -50
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Elo regression detected for {{ $labels.config }}'
+          description: 'Top neural model Elo dropped by {{ $value | printf "%.0f" }} points in the last hour'
+
+      # Alert when no new games are being collected
+      - alert: SelfplayStalled
+        expr: |
+          increase(ringrift_games_synced_total[30m]) < 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Selfplay appears stalled'
+          description: 'Less than 10 games collected in the last 30 minutes'
+
+      # Alert when training hasn't run in expected time
+      - alert: TrainingNotRunning
+        expr: |
+          time() - ringrift_last_training_timestamp > 7200
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: 'No training in 2+ hours'
+          description: "Training hasn't run in {{ $value | humanizeDuration }}"
+
+      # Alert on significant Elo improvement (positive feedback)
+      - alert: EloImprovement
+        expr: |
+          (
+            max(ringrift_model_elo_current{model_type="neural"}) by (config)
+            - max(ringrift_model_elo_current{model_type="neural"} offset 1h) by (config)
+          ) > 30
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: 'Elo improvement for {{ $labels.config }}'
+          description: 'Top neural model Elo improved by {{ $value | printf "%.0f" }} points'
+
+      # Alert when neural beats all baselines by large margin
+      - alert: StrongModel
+        expr: |
+          (
+            max(ringrift_model_elo_current{model_type="neural"}) by (config)
+            - max(ringrift_model_elo_current{model_type="heuristic"}) by (config)
+          ) > 200
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: 'Strong neural model for {{ $labels.config }}'
+          description: 'Neural model is {{ $value | printf "%.0f" }} Elo above heuristic baseline'
+
+  - name: cluster_health
+    interval: 30s
+    rules:
+      # Alert on high cluster load
+      - alert: HighClusterLoad
+        expr: |
+          node_load1 > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'High load on {{ $labels.instance }}'
+          description: '1-minute load average is {{ $value | printf "%.1f" }}'
+
+      # Alert when improvement loop stops
+      - alert: ImprovementLoopDown
+        expr: |
+          up{job="unified_ai_loop"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Unified AI loop is down'
+          description: 'The improvement loop has stopped responding'
