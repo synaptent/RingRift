@@ -207,6 +207,31 @@ const getPlayerColors = (playerNumber?: number) => {
   );
 };
 
+// Contrasting highlight colors for just-moved rings (complements player colors)
+const getJustMovedHighlight = (playerNumber?: number): string => {
+  switch (playerNumber) {
+    case 1: // Emerald → Rose highlight
+      return 'ring-[2px] ring-rose-400 ring-inset';
+    case 2: // Sky/Blue → Orange highlight
+      return 'ring-[2px] ring-orange-400 ring-inset';
+    case 3: // Amber/Yellow → Violet highlight
+      return 'ring-[2px] ring-violet-400 ring-inset';
+    case 4: // Fuchsia → Cyan highlight
+      return 'ring-[2px] ring-cyan-400 ring-inset';
+    default:
+      return 'ring-[2px] ring-white ring-inset';
+  }
+};
+
+// Derive highlight from colorClass for ViewModel-based rendering
+const getJustMovedHighlightFromColorClass = (colorClass: string): string => {
+  if (colorClass.includes('emerald')) return 'ring-[2px] ring-rose-400 ring-inset';
+  if (colorClass.includes('sky')) return 'ring-[2px] ring-orange-400 ring-inset';
+  if (colorClass.includes('amber')) return 'ring-[2px] ring-violet-400 ring-inset';
+  if (colorClass.includes('fuchsia')) return 'ring-[2px] ring-cyan-400 ring-inset';
+  return 'ring-[2px] ring-white ring-inset';
+};
+
 const generateFileLabels = (size: number, skipI = false): string[] => {
   const labels: string[] = [];
   let code = 'a'.charCodeAt(0);
@@ -292,14 +317,14 @@ const StackWidget: React.FC<{
           const isTop = index === topIndex;
           const isInCap = index <= capEndIndex;
 
-          // Base shape with 2px border (increased from 1px for visibility)
-          const baseShape = `${ringSizeClasses} rounded-full border-[2px]`;
+          // Base shape with 3px border for visibility
+          const baseShape = `${ringSizeClasses} rounded-full border-[3px]`;
           // Cap outline for rings in the cap
           const capOutline = isInCap
             ? 'ring-[0.5px] ring-offset-[0.5px] ring-offset-slate-900'
             : '';
-          // Just-moved highlight: cyan glow inside the black outline
-          const justMovedHighlight = isJustMoved ? 'ring-[1.5px] ring-cyan-300/90 ring-inset' : '';
+          // Just-moved highlight: contrasting color based on ring color
+          const justMovedHighlight = isJustMoved ? getJustMovedHighlight(playerNumber) : '';
           const topShadow = isTop ? 'shadow-md shadow-slate-900/70' : 'shadow-sm';
 
           return (
@@ -365,13 +390,15 @@ const StackFromViewModel: React.FC<{
         {rings.map((ringVM, index) => {
           const { colorClass, borderClass, isTop, isInCap } = ringVM;
 
-          // Base shape with 2px border (increased from 1px for visibility)
-          const baseShape = `${ringSizeClasses} rounded-full border-[2px]`;
+          // Base shape with 3px border for visibility
+          const baseShape = `${ringSizeClasses} rounded-full border-[3px]`;
           const capOutline = isInCap
             ? 'ring-[0.5px] ring-offset-[0.5px] ring-offset-slate-900'
             : '';
-          // Just-moved highlight: cyan glow inside the black outline
-          const justMovedHighlight = isJustMoved ? 'ring-[1.5px] ring-cyan-300/90 ring-inset' : '';
+          // Just-moved highlight: contrasting color based on ring color
+          const justMovedHighlight = isJustMoved
+            ? getJustMovedHighlightFromColorClass(colorClass)
+            : '';
           const topShadow = isTop ? 'shadow-md shadow-slate-900/70' : 'shadow-sm';
 
           return (

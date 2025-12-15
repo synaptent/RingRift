@@ -836,6 +836,67 @@ def main():
                 if result.overfit_gap > OVERFIT_THRESHOLD:
                     print(f"  ⚠️  WARNING: Model may be overfitting!")
 
+    elif args.evaluate_stratified:
+        if not args.model:
+            parser.error("--evaluate-stratified requires --model")
+
+        model_path = Path(args.model)
+        if not model_path.exists():
+            model_path = MODELS_DIR / args.model
+
+        # Infer board type and players from model name if not provided
+        board_type = args.board
+        num_players = args.players
+
+        if not board_type or not num_players:
+            name = model_path.stem
+            parts = name.split("_")
+            if not board_type:
+                board_type = parts[0] if parts else "square8"
+            if not num_players:
+                for p in parts:
+                    if p.endswith("p") and p[:-1].isdigit():
+                        num_players = int(p[:-1])
+                        break
+                if not num_players:
+                    num_players = 2
+
+        print(f"Evaluating {model_path.name} on {board_type}_{num_players}p with phase stratification...")
+        results = evaluate_model_stratified(model_path, board_type, num_players)
+
+        if results:
+            print(f"\nStratified Results:")
+            for phase in GAME_PHASES:
+                if phase in results:
+                    r = results[phase]
+                    print(f"  {phase.capitalize():10s}: loss={r.loss:.4f}, accuracy={r.accuracy:.4f} ({r.num_samples} samples)")
+                else:
+                    print(f"  {phase.capitalize():10s}: No data")
+
+            # Identify weakest phase
+            by_acc = sorted([(p, r.accuracy) for p, r in results.items()], key=lambda x: x[1])
+            print(f"\n  Weakest phase: {by_acc[0][0]} ({by_acc[0][1]:.4f})")
+            print(f"  Strongest phase: {by_acc[-1][0]} ({by_acc[-1][1]:.4f})")
+        else:
+            print("No results - check if holdout data exists for this config")
+
+    elif args.stratified_summary:
+        board_type = args.board or "square8"
+        num_players = args.players or 2
+
+        summary = get_stratified_summary(board_type, num_players)
+        print(f"\nStratified Summary for {board_type}_{num_players}p:")
+
+        if summary["phases"]:
+            for phase in GAME_PHASES:
+                if phase in summary["phases"]:
+                    p = summary["phases"][phase]
+                    print(f"  {phase.capitalize():10s}: accuracy={p['accuracy']:.4f}, loss={p['loss']:.4f}")
+            print(f"\n  Weakest phase: {summary['weakest_phase']}")
+            print(f"  Strongest phase: {summary['strongest_phase']}")
+        else:
+            print("  No stratified evaluations found")
+
     elif args.check_overfitting:
         print("Checking for overfitting...")
         overfit = check_for_overfitting()

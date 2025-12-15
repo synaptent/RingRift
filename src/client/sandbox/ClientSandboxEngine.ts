@@ -21,6 +21,7 @@ import {
   BOARD_CONFIGS,
   positionToString,
   stringToPosition,
+  positionsEqual,
   createHistoryEntry,
   hashGameState,
   isValidPosition,
@@ -224,6 +225,10 @@ export class ClientSandboxEngine {
   // Internal turn-level state for sandbox per-turn flow.
   private _hasPlacedThisTurn: boolean = false;
   private _mustMoveFromStackKey: string | undefined;
+  // Track rings placed this turn for the 3-ring-per-turn limit
+  private _ringsPlacedThisTurn: number = 0;
+  // Track the position where rings were placed this turn (all must go to same position)
+  private _placementPositionThisTurn: string | undefined;
 
   // Internal selection state for movement. This is intentionally kept off of
   // GameState to avoid diverging the shared type.
@@ -676,6 +681,8 @@ export class ClientSandboxEngine {
       this._hasPlacedThisTurn = false;
       this._mustMoveFromStackKey = undefined;
       this._selectedStackKey = undefined;
+      this._ringsPlacedThisTurn = 0;
+      this._placementPositionThisTurn = undefined;
       this.handleStartOfInteractiveTurn();
     }
 
@@ -966,6 +973,8 @@ export class ClientSandboxEngine {
     this._hasPlacedThisTurn = false;
     this._mustMoveFromStackKey = undefined;
     this._selectedStackKey = undefined;
+    this._ringsPlacedThisTurn = 0;
+    this._placementPositionThisTurn = undefined;
     this._movementInvocationContext = null;
     this._lastAIMove = null;
     this._pendingLineRewardElimination = false;
@@ -1090,19 +1099,65 @@ export class ClientSandboxEngine {
       const beforeState = this.getGameState();
       const playerNumber = beforeState.currentPlayer;
 
-      // Preserve placed-on-stack metadata for history, mirroring the backend
-      // place_ring representation.
       const key = positionToString(pos);
       const existingBefore = beforeState.board.stacks.get(key);
+
+      // If we've already placed rings this turn, check if clicking on a valid
+      // landing target to trigger movement
+      if (this._ringsPlacedThisTurn > 0 && this._placementPositionThisTurn) {
+        const placementPos = stringToPosition(this._placementPositionThisTurn);
+        if (!positionsEqual(pos, placementPos)) {
+          // Check if this is a valid landing from our placement position
+          const landingPositions = this.getValidLandingPositionsForCurrentPlayer(placementPos);
+          const isValidLanding = landingPositions.some((t) => positionsEqual(t, pos));
+
+          if (isValidLanding) {
+            // User wants to move after placing - transition to movement and apply
+            this.gameState = {
+              ...this.gameState,
+              currentPhase: 'movement',
+            };
+
+            // Apply the movement move
+            this._movementInvocationContext = 'human';
+            try {
+              await this.handleMovementClick(pos);
+            } finally {
+              this._movementInvocationContext = null;
+            }
+            return;
+          }
+        }
+      }
+
+      // Preserve placed-on-stack metadata for history, mirroring the backend
+      // place_ring representation.
       const placedOnStack = !!existingBefore && existingBefore.rings.length > 0;
+
+      // Check if we've already placed rings this turn at a different position
+      // All rings in a turn must go to the same position
+      if (this._placementPositionThisTurn && this._placementPositionThisTurn !== key) {
+        // Clicking on a different position after placing - just select it (don't place)
+        // This allows the user to select a different stack to see its movement options
+        this._selectedStackKey = key;
+        return;
+      }
+
+      // Check if we've reached the 3-ring-per-turn limit
+      if (this._ringsPlacedThisTurn >= 3) {
+        // Already placed 3 rings, can't place more - just select
+        this._selectedStackKey = key;
+        return;
+      }
 
       // Selection logic for stacking on existing stacks:
       // - Click on ANY stack (own or opponent) not yet selected → just select it (don't place)
       // - Click on selected stack → place ring on top (taking control if opponent's)
       // - Click on empty space → place ring there
       // Rules §2.1: "On existing stack (any owner)" - placing on opponent stacks takes control
-      if (existingBefore) {
-        // Clicking on any existing stack
+      // Exception: if this is the position we've been placing at, always allow placement
+      if (existingBefore && this._placementPositionThisTurn !== key) {
+        // Clicking on any existing stack that's not our placement position
         if (this._selectedStackKey !== key) {
           // Not currently selected → select it and return (don't place yet)
           this._selectedStackKey = key;
@@ -1136,11 +1191,27 @@ export class ClientSandboxEngine {
         return;
       }
 
+      // Track placement for 3-ring-per-turn limit
+      this._ringsPlacedThisTurn += 1;
+      this._placementPositionThisTurn = key;
+
       // After successful placement, set _selectedStackKey so clicking the same
       // cell again will place another ring (instead of just selecting it).
-      // This enables humans to place multiple rings on the same stack by
-      // clicking repeatedly.
       this._selectedStackKey = key;
+
+      // Keep phase as ring_placement if we can still place more rings (up to 3)
+      // The adapter may have transitioned to 'movement', but we override that
+      // so humans can continue placing rings with subsequent clicks.
+      if (this._ringsPlacedThisTurn < 3) {
+        this.gameState = {
+          ...this.gameState,
+          currentPhase: 'ring_placement',
+        };
+      }
+
+      // Mark that we've placed this turn and set the must-move key
+      this._hasPlacedThisTurn = true;
+      this._mustMoveFromStackKey = key;
 
       // The orchestrator adapter already recorded the canonical Move into
       // moveHistory/history. Capture snapshots only so HistoryPlayback remains aligned.
