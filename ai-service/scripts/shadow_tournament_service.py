@@ -72,14 +72,14 @@ ALL_CONFIGS = [
 @dataclass
 class TournamentConfig:
     """Configuration for shadow tournaments."""
-    shadow_interval_seconds: int = 900  # 15 minutes
-    shadow_games: int = 10
+    shadow_interval_seconds: int = 300  # OPTIMIZED: 5 minutes (was 15 min / 900s)
+    shadow_games: int = 15  # OPTIMIZED: 15 games (was 10) for better signal
     full_interval_seconds: int = 3600  # 1 hour
     full_games: int = 50
     include_baselines: bool = True
     baseline_models: List[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100"])
     timeout_seconds: int = 600  # Per tournament
-    concurrent_tournaments: int = 1
+    concurrent_tournaments: int = 4  # OPTIMIZED: 4 parallel tournaments (was 1)
 
 
 @dataclass
@@ -252,6 +252,84 @@ class ShadowTournamentService:
             self._results_history.append(result)
             return result
 
+    async def run_parallel_shadow_tournaments(
+        self,
+        configs: Optional[List[tuple]] = None,
+        max_concurrent: Optional[int] = None,
+    ) -> List[EvaluationResult]:
+        """Run shadow tournaments in parallel for faster evaluation.
+
+        OPTIMIZED: Run up to N tournaments concurrently to maximize throughput.
+        This significantly reduces total evaluation time when cluster has capacity.
+
+        Args:
+            configs: List of (board_type, num_players) tuples to evaluate
+            max_concurrent: Max concurrent tournaments (default: config.concurrent_tournaments)
+
+        Returns:
+            List of EvaluationResults for all configs
+        """
+        if configs is None:
+            # Get configs that need evaluation
+            configs = []
+            now = time.time()
+            for board_type, num_players in ALL_CONFIGS:
+                config_key = f"{board_type}_{num_players}p"
+                last = self._last_shadow.get(config_key, 0)
+                if now - last >= self.config.shadow_interval_seconds:
+                    configs.append((board_type, num_players))
+
+        if not configs:
+            return []
+
+        max_concurrent = max_concurrent or self.config.concurrent_tournaments
+        results = []
+
+        # Process in batches of max_concurrent
+        for i in range(0, len(configs), max_concurrent):
+            batch = configs[i:i + max_concurrent]
+            print(f"[ShadowTournament] Running parallel batch: {[f'{b[0]}_{b[1]}p' for b in batch]}")
+
+            # Create concurrent tasks for this batch
+            tasks = [
+                self.run_shadow_tournament(board_type, num_players)
+                for board_type, num_players in batch
+            ]
+
+            # Execute batch in parallel
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process results
+            for j, result in enumerate(batch_results):
+                if isinstance(result, Exception):
+                    board_type, num_players = batch[j]
+                    config_key = f"{board_type}_{num_players}p"
+                    error_result = EvaluationResult(
+                        config=config_key,
+                        board_type=board_type,
+                        num_players=num_players,
+                        games_played=0,
+                        wins=0, losses=0, draws=0,
+                        win_rate=0.0,
+                        elo_estimate=0.0,
+                        duration_seconds=0.0,
+                        timestamp=time.time(),
+                        tournament_type="shadow",
+                        success=False,
+                        error=str(result),
+                    )
+                    results.append(error_result)
+                else:
+                    results.append(result)
+                    if result.success:
+                        # Check for regression
+                        regression = self.check_regression(result)
+                        if regression:
+                            print(f"[ShadowTournament] ⚠️  REGRESSION: {result.config} dropped {regression['drop']:.0f} Elo")
+
+        print(f"[ShadowTournament] Parallel evaluation complete: {len([r for r in results if r.success])}/{len(results)} succeeded")
+        return results
+
     async def run_full_tournament(
         self,
         configs: Optional[List[tuple]] = None,
@@ -393,6 +471,24 @@ class ShadowTournamentService:
 
         return None
 
+    def get_all_needs_shadow_eval(self) -> List[tuple]:
+        """Get all configurations needing shadow evaluation.
+
+        OPTIMIZED: Returns all configs that are due for evaluation,
+        allowing parallel processing instead of one at a time.
+        """
+        now = time.time()
+        configs = []
+
+        for board_type, num_players in ALL_CONFIGS:
+            config_key = f"{board_type}_{num_players}p"
+            last = self._last_shadow.get(config_key, 0)
+
+            if now - last >= self.config.shadow_interval_seconds:
+                configs.append((board_type, num_players))
+
+        return configs
+
     def needs_full_eval(self) -> bool:
         """Check if full tournament is due."""
         return time.time() - self._last_full >= self.config.full_interval_seconds
@@ -418,9 +514,14 @@ class ShadowTournamentService:
         return avg_late - avg_early
 
     async def run(self):
-        """Main service loop."""
+        """Main service loop.
+
+        OPTIMIZED: Uses parallel evaluation to maximize throughput.
+        """
         self._running = True
-        print(f"[ShadowTournament] Starting - shadow every {self.config.shadow_interval_seconds}s, full every {self.config.full_interval_seconds}s")
+        print(f"[ShadowTournament] Starting - shadow every {self.config.shadow_interval_seconds}s, "
+              f"full every {self.config.full_interval_seconds}s, "
+              f"max_concurrent={self.config.concurrent_tournaments}")
 
         # Start HTTP API
         await self._setup_http()
@@ -430,25 +531,17 @@ class ShadowTournamentService:
                 if self._watched_dirs:
                     await self._check_watched_dirs()
 
-                shadow_config = self.get_needs_shadow_eval()
-                if shadow_config:
-                    board_type, num_players = shadow_config
-                    print(f"[ShadowTournament] Running shadow for {board_type}_{num_players}p")
-                    result = await self.run_shadow_tournament(board_type, num_players)
-                    if result.success:
-                        print(f"[ShadowTournament] {result.config}: win_rate={result.win_rate:.2%}, elo~{result.elo_estimate:.0f}")
+                # OPTIMIZED: Use parallel evaluation instead of sequential
+                # Get all configs that need evaluation
+                configs_to_eval = self.get_all_needs_shadow_eval()
+                if configs_to_eval:
+                    print(f"[ShadowTournament] {len(configs_to_eval)} configs need evaluation, running in parallel")
+                    results = await self.run_parallel_shadow_tournaments(configs_to_eval)
 
-                        # Check for regression
-                        regression = self.check_regression(result)
-                        if regression:
-                            print(f"[ShadowTournament] ⚠️  REGRESSION DETECTED: {result.config} dropped {regression['drop']:.0f} Elo")
-                            if HAS_EVENT_BUS:
-                                await emit_error(
-                                    "shadow_tournament",
-                                    f"Elo regression: {result.config} dropped {regression['drop']:.0f} points",
-                                    details=regression,
-                                    source="shadow_tournament_service",
-                                )
+                    # Log successful results
+                    for result in results:
+                        if result.success:
+                            print(f"[ShadowTournament] {result.config}: win_rate={result.win_rate:.2%}, elo~{result.elo_estimate:.0f}")
 
                 if self.needs_full_eval():
                     print("[ShadowTournament] Running full tournament")

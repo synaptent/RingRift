@@ -57,17 +57,17 @@ FEEDBACK_DB_PATH = AI_SERVICE_ROOT / "data" / "feedback" / "accelerator_state.db
 
 # Elo momentum thresholds
 ELO_MOMENTUM_LOOKBACK = 5  # Number of recent updates to consider
-ELO_STRONG_IMPROVEMENT = 30.0  # Elo points gained = strong improvement
-ELO_MODERATE_IMPROVEMENT = 15.0  # Elo points gained = moderate improvement
+ELO_STRONG_IMPROVEMENT = 25.0  # OPTIMIZED: Lower bar for strong improvement (was 30)
+ELO_MODERATE_IMPROVEMENT = 12.0  # OPTIMIZED: Lower bar for moderate improvement (was 15)
 ELO_PLATEAU_THRESHOLD = 5.0  # Less than this = plateau
 
 # Training trigger thresholds
-MIN_GAMES_FOR_TRAINING = int(os.environ.get("RINGRIFT_MIN_GAMES_TRAINING", "500"))
-ACCELERATED_MIN_GAMES = int(os.environ.get("RINGRIFT_ACCEL_MIN_GAMES", "250"))
-HOT_PATH_MIN_GAMES = int(os.environ.get("RINGRIFT_HOT_MIN_GAMES", "100"))
+MIN_GAMES_FOR_TRAINING = int(os.environ.get("RINGRIFT_MIN_GAMES_TRAINING", "300"))  # OPTIMIZED: 300 (was 500)
+ACCELERATED_MIN_GAMES = int(os.environ.get("RINGRIFT_ACCEL_MIN_GAMES", "150"))  # OPTIMIZED: 150 (was 250)
+HOT_PATH_MIN_GAMES = int(os.environ.get("RINGRIFT_HOT_MIN_GAMES", "75"))  # OPTIMIZED: 75 games for maximum speed
 
 # Intensity multipliers
-MAX_INTENSITY_MULTIPLIER = 2.0
+MAX_INTENSITY_MULTIPLIER = 2.5  # OPTIMIZED: Higher ceiling for accelerating models (was 2.0)
 MIN_INTENSITY_MULTIPLIER = 0.5
 
 
@@ -169,18 +169,25 @@ class ConfigMomentum:
         self._update_intensity()
 
     def _update_intensity(self) -> None:
-        """Update training intensity based on momentum state."""
+        """Update training intensity based on momentum state.
+
+        OPTIMIZED: Faster hot-path activation (2 consecutive instead of 3)
+        to maximize positive feedback during improvement phases.
+        """
         if self.momentum_state == MomentumState.ACCELERATING:
-            if self.consecutive_improvements >= 3:
+            # OPTIMIZED: Trigger hot-path after just 2 consecutive improvements (was 3)
+            if self.consecutive_improvements >= 2:
                 self.intensity = TrainingIntensity.HOT_PATH
             else:
                 self.intensity = TrainingIntensity.ACCELERATED
         elif self.momentum_state == MomentumState.IMPROVING:
+            # OPTIMIZED: Jump to accelerated immediately on any improvement
             self.intensity = TrainingIntensity.ACCELERATED
         elif self.momentum_state == MomentumState.STABLE:
             self.intensity = TrainingIntensity.NORMAL
         elif self.momentum_state == MomentumState.PLATEAU:
-            if self.consecutive_plateaus >= 3:
+            # OPTIMIZED: Stay at normal longer before reducing (was 3)
+            if self.consecutive_plateaus >= 4:
                 self.intensity = TrainingIntensity.REDUCED
             else:
                 self.intensity = TrainingIntensity.NORMAL
@@ -537,16 +544,17 @@ class FeedbackAccelerator:
         games = momentum.games_since_training
 
         # Determine threshold based on intensity
+        # OPTIMIZED: Higher multipliers for accelerating models to maximize learning velocity
         if momentum.intensity == TrainingIntensity.HOT_PATH:
-            threshold = HOT_PATH_MIN_GAMES
-            epochs_mult = 1.5
-            lr_mult = 1.2
+            threshold = HOT_PATH_MIN_GAMES  # 75 games
+            epochs_mult = 2.0  # OPTIMIZED: Double epochs for hot-path (was 1.5)
+            lr_mult = 1.3  # OPTIMIZED: Higher LR for faster convergence (was 1.2)
         elif momentum.intensity == TrainingIntensity.ACCELERATED:
-            threshold = ACCELERATED_MIN_GAMES
-            epochs_mult = 1.2
-            lr_mult = 1.1
+            threshold = ACCELERATED_MIN_GAMES  # 150 games
+            epochs_mult = 1.5  # OPTIMIZED: More epochs (was 1.2)
+            lr_mult = 1.2  # OPTIMIZED: Higher LR (was 1.1)
         elif momentum.intensity == TrainingIntensity.REDUCED:
-            threshold = MIN_GAMES_FOR_TRAINING * 1.5
+            threshold = MIN_GAMES_FOR_TRAINING * 1.5  # 450 games
             epochs_mult = 0.8
             lr_mult = 0.9
         elif momentum.intensity == TrainingIntensity.PAUSED:
@@ -659,6 +667,7 @@ class FeedbackAccelerator:
         """Get recommended selfplay rate multiplier for a config.
 
         Improving models should generate more data to capitalize on momentum.
+        OPTIMIZED: Higher multipliers to maximize data generation during improvement.
         """
         if config_key not in self._configs:
             return 1.0
@@ -666,15 +675,87 @@ class FeedbackAccelerator:
         momentum = self._configs[config_key]
 
         if momentum.momentum_state == MomentumState.ACCELERATING:
-            return 1.5  # Generate 50% more data
+            # OPTIMIZED: Generate 2x more data during strong improvement (was 1.5)
+            if momentum.consecutive_improvements >= 3:
+                return 2.5  # Super hot-path: 2.5x data generation
+            return 2.0
         elif momentum.momentum_state == MomentumState.IMPROVING:
-            return 1.3
+            return 1.5  # OPTIMIZED: was 1.3
         elif momentum.momentum_state == MomentumState.PLATEAU:
-            return 1.1  # Slight increase to try breaking plateau
+            return 1.2  # OPTIMIZED: Increase to try breaking plateau (was 1.1)
         elif momentum.momentum_state == MomentumState.REGRESSING:
-            return 0.8  # Reduce until we understand the issue
+            return 0.7  # OPTIMIZED: Reduce more to avoid bad data (was 0.8)
         else:
             return 1.0
+
+    def get_aggregate_selfplay_recommendation(self) -> Dict[str, Any]:
+        """Get aggregate selfplay rate recommendation across all configs.
+
+        Returns a recommendation based on the overall momentum state of the system,
+        useful for cluster-wide selfplay rate adjustments.
+        """
+        if not self._configs:
+            return {
+                'recommended_multiplier': 1.0,
+                'reason': 'no configs tracked',
+                'aggregate_momentum': 'unknown',
+            }
+
+        # Count configs in each state
+        accelerating = 0
+        improving = 0
+        stable = 0
+        plateau = 0
+        regressing = 0
+
+        for config in self._configs.values():
+            if config.momentum_state == MomentumState.ACCELERATING:
+                accelerating += 1
+            elif config.momentum_state == MomentumState.IMPROVING:
+                improving += 1
+            elif config.momentum_state == MomentumState.PLATEAU:
+                plateau += 1
+            elif config.momentum_state == MomentumState.REGRESSING:
+                regressing += 1
+            else:
+                stable += 1
+
+        total = len(self._configs)
+
+        # Determine aggregate state based on majority
+        if accelerating >= total * 0.5:
+            aggregate = 'accelerating'
+            multiplier = 2.0
+            reason = f'{accelerating}/{total} configs accelerating'
+        elif accelerating + improving >= total * 0.5:
+            aggregate = 'improving'
+            multiplier = 1.5
+            reason = f'{accelerating + improving}/{total} configs improving'
+        elif regressing >= total * 0.3:
+            aggregate = 'regressing'
+            multiplier = 0.8
+            reason = f'{regressing}/{total} configs regressing'
+        elif plateau >= total * 0.5:
+            aggregate = 'plateau'
+            multiplier = 1.1
+            reason = f'{plateau}/{total} configs in plateau'
+        else:
+            aggregate = 'stable'
+            multiplier = 1.0
+            reason = 'mixed momentum states'
+
+        return {
+            'recommended_multiplier': multiplier,
+            'reason': reason,
+            'aggregate_momentum': aggregate,
+            'states': {
+                'accelerating': accelerating,
+                'improving': improving,
+                'stable': stable,
+                'plateau': plateau,
+                'regressing': regressing,
+            }
+        }
 
     # =========================================================================
     # Status and Reporting

@@ -24,7 +24,7 @@ data_ingestion:
 
 # Automatic training triggers
 training:
-  trigger_threshold_games: 500 # Reduced from 1000 - more frequent training
+  trigger_threshold_games: 300 # OPTIMIZED: 300 games for faster feedback loops (was 500)
   min_interval_seconds: 1200 # 20 min minimum (reduced from 30)
   max_concurrent_jobs: 1 # Only one training job at a time
   prefer_gpu_hosts: true # Schedule training on GPU hosts
@@ -39,8 +39,13 @@ training:
 # Continuous evaluation (shadow + full tournaments)
 evaluation:
   # Shadow tournaments: quick evaluation during normal operation
-  shadow_interval_seconds: 900 # 15 minutes between shadow evals
+  # OPTIMIZED: Reduced from 900s to 300s since parallel execution is 3x faster
+  shadow_interval_seconds: 300 # 5 minutes between shadow evals
   shadow_games_per_config: 15 # Increased from 10 for lower variance
+  # Adaptive interval settings (go faster when cluster is healthy)
+  adaptive_interval_enabled: true
+  adaptive_interval_min_seconds: 120 # Can go as low as 2 min during fast feedback
+  adaptive_interval_max_seconds: 600 # Cap at 10 min during high load
 
   # Full tournaments: comprehensive evaluation periodically
   full_tournament_interval_seconds: 3600 # 1 hour between full tournaments
@@ -60,13 +65,13 @@ evaluation:
 # Automatic model promotion
 promotion:
   auto_promote: true # Enable automatic promotion
-  elo_threshold: 25 # Increased from 20 for more confidence
-  min_games: 50 # Minimum games before promotion eligible
-  significance_level: 0.05 # Statistical significance requirement
+  elo_threshold: 20 # OPTIMIZED: Reduced from 25 for faster exploration with CI safety
+  min_games: 40 # OPTIMIZED: Reduced from 50 - Wilson CI provides safety margin
+  significance_level: 0.05 # Statistical significance requirement (95% confidence)
   sync_to_cluster: true # Sync promoted models to all hosts
   # Safety settings
-  cooldown_seconds: 1800 # Wait 30min between promotions
-  max_promotions_per_day: 10 # Limit promotions to avoid instability
+  cooldown_seconds: 900 # OPTIMIZED: 15min cooldown (was 30min) for faster iteration
+  max_promotions_per_day: 15 # OPTIMIZED: Allow more promotions during fast improvement
   regression_test: true # Run regression tests before promotion
 
 # Adaptive curriculum (Elo-weighted training)

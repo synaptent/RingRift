@@ -317,6 +317,120 @@ class PipelineFeedbackController:
 
         self._save_state()
 
+    async def on_stage_failed(self, stage: str, result: Dict[str, Any]):
+        """Handle failure of a pipeline stage.
+
+        This method is called when a stage fails (error, timeout, etc.) to:
+        1. Track failure patterns
+        2. Adjust parameters to prevent repeated failures
+        3. Emit signals for recovery actions
+
+        Args:
+            stage: Name of the failed stage (training, evaluation, etc.)
+            result: Dictionary with failure details (config_key, error, duration, etc.)
+        """
+        config_key = result.get('config_key', result.get('config', 'unknown'))
+        error = result.get('error', 'unknown error')
+        duration = result.get('duration', 0)
+
+        logger.warning(f"Stage '{stage}' failed for {config_key}: {error}")
+
+        # Track failures in state
+        if not hasattr(self.state, 'failure_counts'):
+            self.state.failure_counts = defaultdict(int)
+        if not hasattr(self.state, 'consecutive_failures'):
+            self.state.consecutive_failures = defaultdict(int)
+
+        failure_key = f"{stage}:{config_key}"
+        self.state.failure_counts[failure_key] += 1
+        self.state.consecutive_failures[stage] += 1
+
+        # Stage-specific failure handling
+        if stage == 'training':
+            await self._on_training_failed(config_key, error, duration)
+        elif stage == 'evaluation':
+            await self._on_evaluation_failed(config_key, error)
+        elif stage == 'promotion':
+            await self._on_promotion_failed(config_key, error)
+        elif stage in ('selfplay', 'canonical-selfplay'):
+            await self._on_selfplay_failed(config_key, error)
+        elif stage == 'parity-validation':
+            await self._on_parity_failed(config_key, error)
+
+        self._save_state()
+
+    async def _on_training_failed(self, config_key: str, error: str, duration: float):
+        """Handle training failure - potentially adjust data or retry."""
+        # If training fails repeatedly, might need more data diversity
+        failure_key = f"training:{config_key}"
+        if self.state.failure_counts.get(failure_key, 0) >= 2:
+            self._emit_signal(FeedbackSignal(
+                source_stage='training',
+                target_stage='data_collection',
+                action=FeedbackAction.INCREASE_DATA_COLLECTION,
+                magnitude=0.3,
+                reason=f"Repeated training failures for {config_key} - need more diverse data",
+                metadata={'config': config_key, 'error': str(error)[:200]}
+            ))
+
+        # If OOM or similar, reduce batch size
+        if 'memory' in error.lower() or 'oom' in error.lower() or 'cuda' in error.lower():
+            self.state.batch_size_multiplier = max(0.5, self.state.batch_size_multiplier * 0.8)
+            logger.info(f"Reduced batch size multiplier to {self.state.batch_size_multiplier} due to memory error")
+
+    async def _on_evaluation_failed(self, config_key: str, error: str):
+        """Handle evaluation failure - skip model, potentially adjust eval parameters."""
+        # Track model as problematic
+        model_id = config_key.split('/')[-1] if '/' in config_key else config_key
+
+        # If evaluation times out repeatedly, reduce eval games
+        if 'timeout' in error.lower():
+            self._emit_signal(FeedbackSignal(
+                source_stage='evaluation',
+                target_stage='evaluation',
+                action=FeedbackAction.REDUCE_TRAINING,  # Using as proxy for reduce_eval
+                magnitude=0.2,
+                reason=f"Evaluation timeout for {config_key}",
+                metadata={'config': config_key}
+            ))
+
+    async def _on_promotion_failed(self, config_key: str, error: str):
+        """Handle promotion failure - emit signal for retry or investigation."""
+        self._emit_signal(FeedbackSignal(
+            source_stage='promotion',
+            target_stage='training',
+            action=FeedbackAction.PROMOTION_FAILED,
+            magnitude=0.5,
+            reason=f"Promotion failed for {config_key}: {error[:100]}",
+            metadata={'config': config_key, 'error': str(error)[:200]}
+        ))
+
+    async def _on_selfplay_failed(self, config_key: str, error: str):
+        """Handle selfplay failure - adjust worker parameters."""
+        # If workers are failing, might need to reduce parallelism
+        if self.state.consecutive_failures.get('selfplay', 0) >= 3:
+            self.state.games_per_worker_multiplier = max(0.5, self.state.games_per_worker_multiplier * 0.8)
+            logger.info(f"Reduced games_per_worker to {self.state.games_per_worker_multiplier} due to repeated selfplay failures")
+
+    async def _on_parity_failed(self, config_key: str, error: str):
+        """Handle parity validation failure - quarantine data source."""
+        self.state.consecutive_parity_failures += 1
+
+        if self.state.consecutive_parity_failures >= 3:
+            self._emit_signal(FeedbackSignal(
+                source_stage='parity-validation',
+                target_stage='data_collection',
+                action=FeedbackAction.QUARANTINE_DATA,
+                magnitude=0.8,
+                reason=f"Repeated parity failures - quarantine data from {config_key}",
+                metadata={'config': config_key}
+            ))
+
+    def reset_consecutive_failures(self, stage: str):
+        """Reset consecutive failure count for a stage after success."""
+        if hasattr(self.state, 'consecutive_failures'):
+            self.state.consecutive_failures[stage] = 0
+
     async def _on_evaluation_complete(self, result: Dict[str, Any]):
         """Handle evaluation completion - adjust curriculum weights."""
         config_key = result.get('config_key', 'default')

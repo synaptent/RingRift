@@ -204,6 +204,67 @@ except ImportError:
     update_config_weights = None
     get_config_weights = None
 
+# Feedback accelerator for positive feedback maximization
+try:
+    from app.training.feedback_accelerator import (
+        FeedbackAccelerator,
+        MomentumState,
+        TrainingIntensity,
+        TrainingDecision,
+        get_feedback_accelerator,
+        should_trigger_training as accelerator_should_trigger,
+        get_training_intensity,
+        record_elo_update,
+        record_games_generated,
+        record_training_complete,
+        record_promotion,
+        get_curriculum_weights as get_momentum_curriculum_weights,
+        get_selfplay_rate_recommendation,
+    )
+    HAS_FEEDBACK_ACCELERATOR = True
+except ImportError:
+    HAS_FEEDBACK_ACCELERATOR = False
+    FeedbackAccelerator = None
+    MomentumState = None
+    TrainingIntensity = None
+    get_feedback_accelerator = None
+    accelerator_should_trigger = None
+    get_training_intensity = None
+    record_elo_update = None
+    record_games_generated = None
+    record_training_complete = None
+    record_promotion = None
+    get_momentum_curriculum_weights = None
+    get_selfplay_rate_recommendation = None
+
+# Improvement optimizer for maximizing AI training throughput
+try:
+    from app.training.improvement_optimizer import (
+        ImprovementOptimizer,
+        ImprovementSignal,
+        OptimizationRecommendation,
+        get_improvement_optimizer,
+        should_fast_track_training,
+        get_dynamic_threshold as get_optimizer_dynamic_threshold,
+        get_evaluation_interval,
+        record_promotion_success,
+        record_training_complete as record_optimizer_training_complete,
+        get_improvement_metrics,
+    )
+    HAS_IMPROVEMENT_OPTIMIZER = True
+except ImportError:
+    HAS_IMPROVEMENT_OPTIMIZER = False
+    ImprovementOptimizer = None
+    ImprovementSignal = None
+    OptimizationRecommendation = None
+    get_improvement_optimizer = None
+    should_fast_track_training = None
+    get_optimizer_dynamic_threshold = None
+    get_evaluation_interval = None
+    record_promotion_success = None
+    record_optimizer_training_complete = None
+    get_improvement_metrics = None
+
 # Unified execution framework for local and remote commands
 try:
     from app.execution.executor import (
@@ -670,6 +731,21 @@ if HAS_PROMETHEUS:
         'PID controller job adjustment recommendation',
         []
     )
+    SELFPLAY_RATE = Gauge(
+        'ringrift_selfplay_rate_per_hour',
+        'Current negotiated selfplay rate (games per hour)',
+        []
+    )
+    UTILIZATION_STATUS = Gauge(
+        'ringrift_utilization_status',
+        'Cluster utilization status: -1=below, 0=optimal, 1=above target',
+        []
+    )
+    CONFIG_WEIGHT = Gauge(
+        'ringrift_config_weight',
+        'Data-aware config weight for selfplay distribution',
+        ['config_key']
+    )
 
     # Cross-process event metrics
     CROSS_PROCESS_EVENTS_BRIDGED = Counter(
@@ -959,12 +1035,17 @@ class EvaluationConfig:
     """Configuration for continuous evaluation.
 
     NOTE: Defaults match app/config/unified_config.py (single source of truth)
+    OPTIMIZED: Reduced default from 900s to 300s since parallel execution is 3x faster
     """
-    shadow_interval_seconds: int = 900  # 15 minutes
+    shadow_interval_seconds: int = 300  # 5 minutes (reduced from 15)
     shadow_games_per_config: int = 15  # Canonical: 15 (was 10)
     full_tournament_interval_seconds: int = 3600  # 1 hour
     full_tournament_games: int = 50
     baseline_models: List[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100", "mcts_500"])
+    # Adaptive interval settings - go faster when cluster is healthy
+    adaptive_interval_enabled: bool = True
+    adaptive_interval_min_seconds: int = 120  # Can go as low as 2 min
+    adaptive_interval_max_seconds: int = 600  # Cap at 10 min during high load
 
 
 @dataclass
@@ -1354,6 +1435,150 @@ class ConfigState:
     current_elo: float = 1500.0
     elo_trend: float = 0.0  # Positive = improving
     training_weight: float = 1.0
+
+
+class ConfigPriorityQueue:
+    """Priority queue for config evaluation and training based on performance.
+
+    Prioritizes configs that need the most attention:
+    1. Negative Elo trend (getting worse) - highest priority
+    2. Haven't been evaluated recently
+    3. Lower Elo (need more improvement)
+    4. Higher games_since_training (more data available)
+
+    This ensures resources are focused on configs that will benefit most
+    from evaluation and training, maximizing the feedback loop efficiency.
+    """
+
+    def __init__(self):
+        self._priority_cache: Dict[str, float] = {}
+        self._last_recalc: float = 0.0
+        self._recalc_interval: float = 60.0  # Recalculate every 60 seconds
+
+    def calculate_priority(
+        self,
+        config_key: str,
+        config_state: ConfigState,
+        now: Optional[float] = None
+    ) -> float:
+        """Calculate priority score for a config (higher = more urgent).
+
+        Priority factors (weights can be tuned):
+        - Negative Elo trend: +100 points per -10 Elo trend
+        - Time since evaluation: +10 points per 5 minutes
+        - Distance from Elo 1800 (target): +50 points per 100 Elo below
+        - Games since training: +20 points per 100 games
+
+        Returns:
+            Priority score (higher = should be processed first)
+        """
+        if now is None:
+            now = time.time()
+
+        score = 0.0
+
+        # Factor 1: Negative Elo trend (biggest weight - fix regressions fast)
+        if config_state.elo_trend < 0:
+            score += abs(config_state.elo_trend) * 10  # -10 trend = +100 priority
+
+        # Factor 2: Time since last evaluation
+        time_since_eval = now - config_state.last_evaluation_time
+        score += (time_since_eval / 300) * 10  # +10 points per 5 minutes
+
+        # Factor 3: Distance from target Elo (1800)
+        target_elo = 1800.0
+        if config_state.current_elo < target_elo:
+            elo_gap = target_elo - config_state.current_elo
+            score += (elo_gap / 100) * 50  # +50 points per 100 Elo below target
+
+        # Factor 4: Games since training (more data = ready for training)
+        score += (config_state.games_since_training / 100) * 20
+
+        # Factor 5: Bonus for configs that recently had successful promotions
+        # (momentum - keep pushing what's working)
+        time_since_promotion = now - config_state.last_promotion_time
+        if time_since_promotion < 3600:  # Within last hour
+            score += 30  # Bonus for recent success
+
+        return score
+
+    def get_prioritized_configs(
+        self,
+        configs: Dict[str, ConfigState],
+        limit: Optional[int] = None
+    ) -> List[Tuple[str, float]]:
+        """Get configs sorted by priority (highest first).
+
+        Args:
+            configs: Dict of config_key -> ConfigState
+            limit: Optional limit on number of configs to return
+
+        Returns:
+            List of (config_key, priority_score) tuples, sorted by priority
+        """
+        now = time.time()
+
+        # Recalculate priorities if cache is stale
+        if now - self._last_recalc > self._recalc_interval:
+            self._priority_cache.clear()
+            for config_key, config_state in configs.items():
+                self._priority_cache[config_key] = self.calculate_priority(
+                    config_key, config_state, now
+                )
+            self._last_recalc = now
+
+        # Sort by priority (highest first)
+        sorted_configs = sorted(
+            self._priority_cache.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        if limit:
+            sorted_configs = sorted_configs[:limit]
+
+        return sorted_configs
+
+    def get_highest_priority_for_training(
+        self,
+        configs: Dict[str, ConfigState],
+        min_games_threshold: int = 100
+    ) -> Optional[str]:
+        """Get the highest priority config that's ready for training.
+
+        Args:
+            configs: Dict of config_key -> ConfigState
+            min_games_threshold: Minimum games_since_training to be eligible
+
+        Returns:
+            Config key with highest priority that meets threshold, or None
+        """
+        now = time.time()
+        best_key = None
+        best_score = -1.0
+
+        for config_key, config_state in configs.items():
+            if config_state.games_since_training < min_games_threshold:
+                continue
+
+            score = self.calculate_priority(config_key, config_state, now)
+            if score > best_score:
+                best_score = score
+                best_key = config_key
+
+        return best_key
+
+    def invalidate_cache(self, config_key: Optional[str] = None):
+        """Invalidate priority cache (call after state changes).
+
+        Args:
+            config_key: Specific config to invalidate, or None for all
+        """
+        if config_key:
+            self._priority_cache.pop(config_key, None)
+        else:
+            self._priority_cache.clear()
+            self._last_recalc = 0.0
 
 
 @dataclass
@@ -1790,16 +2015,47 @@ class StreamingDataCollector:
         }
 
     async def run_collection_cycle(self) -> int:
-        """Run one data collection cycle across all hosts."""
+        """Run one data collection cycle across all hosts.
+
+        OPTIMIZED: Uses a fast parallel pre-query phase to identify hosts with new data,
+        then only syncs those hosts. This reduces cycle time significantly.
+        """
         print(f"[DataCollector] Starting collection cycle for {len(self.state.hosts)} hosts...", flush=True)
+
+        enabled_hosts = [h for h in self.state.hosts.values() if h.enabled]
+        if not enabled_hosts:
+            return 0
+
+        # Phase 1: Fast parallel pre-query to get game counts (5s timeout per host)
+        host_counts = await self._fast_parallel_query(enabled_hosts)
+
+        # Phase 2: Only sync hosts that have new data
+        hosts_with_new_data = []
+        for host in enabled_hosts:
+            current_count = host_counts.get(host.name, 0)
+            if current_count > 0:
+                new_games = max(0, current_count - host.last_game_count)
+                if new_games >= self.config.min_games_per_sync:
+                    hosts_with_new_data.append((host, current_count, new_games))
+
+        if hosts_with_new_data:
+            print(f"[DataCollector] {len(hosts_with_new_data)} hosts have new data to sync")
+
+        # Phase 3: Sync hosts with new data (limited concurrency to avoid network saturation)
         total_new = 0
-        tasks = []
+        max_concurrent_syncs = 4  # Limit concurrent rsync operations
 
-        for host in self.state.hosts.values():
-            if host.enabled:
-                tasks.append(self.sync_host(host))
+        semaphore = asyncio.Semaphore(max_concurrent_syncs)
 
-        if tasks:
+        async def sync_with_limit(host: HostState, current_count: int, new_games: int) -> int:
+            async with semaphore:
+                return await self._sync_host_data(host, current_count, new_games)
+
+        if hosts_with_new_data:
+            tasks = [
+                sync_with_limit(host, count, new_games)
+                for host, count, new_games in hosts_with_new_data
+            ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for result in results:
                 if isinstance(result, int):
@@ -1813,6 +2069,107 @@ class StreamingDataCollector:
             self._update_per_config_game_counts(total_new)
 
         return total_new
+
+    async def _fast_parallel_query(self, hosts: List[HostState]) -> Dict[str, int]:
+        """Query all hosts in parallel with short timeout to get game counts.
+
+        This is much faster than querying each host sequentially during sync_host.
+        Uses a 5-second timeout to quickly identify unreachable hosts.
+
+        Returns:
+            Dict mapping host name to game count (0 for failed queries)
+        """
+        async def query_host_count(host: HostState) -> Tuple[str, int]:
+            # Circuit breaker check
+            if HAS_CIRCUIT_BREAKER:
+                breaker = get_host_breaker()
+                if not breaker.can_execute(host.ssh_host):
+                    return (host.name, 0)
+
+            try:
+                ssh_target = f"{host.ssh_user}@{host.ssh_host}"
+                port_arg = f"-p {host.ssh_port}" if host.ssh_port != 22 else ""
+
+                # Simplified query for speed
+                python_script = (
+                    "import sqlite3, glob, os; "
+                    "os.chdir(os.path.expanduser('~/ringrift/ai-service')); "
+                    "dbs=glob.glob('data/games/*.db'); "
+                    "total=0; "
+                    "[total := total + sqlite3.connect(db).execute('SELECT COUNT(*) FROM games').fetchone()[0] for db in dbs if 'schema' not in db]; "
+                    "print(total)"
+                )
+                cmd = f'ssh -o ConnectTimeout=5 -o BatchMode=yes {port_arg} {ssh_target} "python3 -c \"{python_script}\"" 2>/dev/null'
+
+                result = await asyncio.create_subprocess_shell(
+                    cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await asyncio.wait_for(result.communicate(), timeout=8)
+
+                count = int(stdout.decode().strip() or "0")
+                return (host.name, count)
+
+            except Exception:
+                return (host.name, 0)
+
+        # Run all queries in parallel
+        start_time = time.time()
+        tasks = [query_host_count(h) for h in hosts]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        elapsed = time.time() - start_time
+        successful = sum(1 for r in results if isinstance(r, tuple) and r[1] > 0)
+        print(f"[DataCollector] Pre-query completed in {elapsed:.1f}s ({successful}/{len(hosts)} hosts responded)")
+
+        # Convert to dict
+        counts = {}
+        for result in results:
+            if isinstance(result, tuple):
+                counts[result[0]] = result[1]
+        return counts
+
+    async def _sync_host_data(self, host: HostState, current_count: int, new_games: int) -> int:
+        """Sync data from a host that has new games.
+
+        This is called after _fast_parallel_query has confirmed the host has new data.
+        """
+        print(f"[DataCollector] {host.name}: {current_count} games (last: {host.last_game_count}, new: {new_games})")
+
+        try:
+            # Trigger rsync for incremental sync
+            if self.config.sync_method == "incremental":
+                await self._incremental_sync(host)
+            else:
+                await self._full_sync(host)
+
+            host.last_game_count = current_count
+            host.last_sync_time = time.time()
+
+            # Publish event
+            await self.event_bus.publish(DataEvent(
+                event_type=DataEventType.NEW_GAMES_AVAILABLE,
+                payload={
+                    "host": host.name,
+                    "new_games": new_games,
+                    "total_games": current_count,
+                }
+            ))
+
+            host.consecutive_failures = 0
+            # Record success with circuit breaker
+            if HAS_CIRCUIT_BREAKER:
+                get_host_breaker().record_success(host.ssh_host)
+            return new_games
+
+        except Exception as e:
+            host.consecutive_failures += 1
+            # Record failure with circuit breaker
+            if HAS_CIRCUIT_BREAKER:
+                get_host_breaker().record_failure(host.ssh_host, e)
+            print(f"[DataCollector] Failed to sync {host.name}: {e}")
+            return 0
 
     def _update_per_config_game_counts(self, new_games: int) -> None:
         """Update per-config games_since_training counters.
@@ -1859,6 +2216,18 @@ class StreamingDataCollector:
                     proportion = count / total_counted
                     added = int(new_games * proportion)
                     self.state.configs[config_key].games_since_training += added
+
+            # Update data-aware config weights for balanced selfplay distribution
+            # Underserved configs get higher weights to help reach 60-80% utilization efficiently
+            if HAS_RESOURCE_OPTIMIZER and update_config_weights is not None:
+                try:
+                    new_weights = update_config_weights(config_counts)
+                    # Update Prometheus metrics for config weights
+                    if HAS_PROMETHEUS:
+                        for ck, weight in new_weights.items():
+                            CONFIG_WEIGHT.labels(config_key=ck).set(weight)
+                except Exception:
+                    pass  # Non-critical
         else:
             # Fallback: distribute to square8_2p
             if "square8_2p" in self.state.configs:
@@ -1876,6 +2245,10 @@ class ShadowTournamentService:
         self.config = config
         self.state = state
         self.event_bus = event_bus
+        # Tracking for adaptive intervals
+        self._eval_durations: List[float] = []  # Recent evaluation durations
+        self._eval_success_rate: float = 1.0  # Rolling success rate
+        self._last_interval_adjustment: float = 0.0
 
     async def run_shadow_tournament(self, config_key: str) -> Dict[str, Any]:
         """Run a quick shadow tournament for a configuration."""
@@ -2033,7 +2406,105 @@ class ShadowTournamentService:
         successful = sum(1 for r in processed_results if r.get("success", False))
         print(f"[ShadowTournament] Completed {len(config_keys)} tournaments in {elapsed:.1f}s ({successful} successful)")
 
+        # Track evaluation performance for adaptive intervals
+        self._eval_durations.append(elapsed)
+        if len(self._eval_durations) > 20:
+            self._eval_durations = self._eval_durations[-20:]
+        
+        # Update rolling success rate (exponential moving average)
+        success_rate = successful / max(1, len(config_keys))
+        self._eval_success_rate = 0.7 * self._eval_success_rate + 0.3 * success_rate
+
         return processed_results
+
+    def get_adaptive_interval(self, promotion_velocity: float = 0.0) -> int:
+        """Calculate adaptive evaluation interval based on cluster health and performance.
+
+        The interval adapts based on:
+        1. Evaluation success rate - faster when evals succeed consistently
+        2. Evaluation duration - faster when evals complete quickly
+        3. Promotion velocity - faster when we're getting good results
+        4. Time since last adjustment - smoothing to prevent oscillation
+
+        Returns:
+            Adaptive interval in seconds (between min and max configured values)
+        """
+        if not self.config.adaptive_interval_enabled:
+            return self.config.shadow_interval_seconds
+
+        base_interval = self.config.shadow_interval_seconds
+        min_interval = self.config.adaptive_interval_min_seconds
+        max_interval = self.config.adaptive_interval_max_seconds
+
+        # Start with base adjustment factor
+        adjustment = 1.0
+
+        # Factor 1: Success rate (faster when successful)
+        if self._eval_success_rate >= 0.95:
+            adjustment *= 0.7  # 30% faster when nearly all succeed
+        elif self._eval_success_rate >= 0.80:
+            adjustment *= 0.85  # 15% faster when most succeed
+        elif self._eval_success_rate < 0.50:
+            adjustment *= 1.5  # Slow down if many failures
+
+        # Factor 2: Evaluation duration (faster when quick)
+        if self._eval_durations:
+            avg_duration = sum(self._eval_durations) / len(self._eval_durations)
+            if avg_duration < 60:  # Under 1 minute average
+                adjustment *= 0.8  # 20% faster
+            elif avg_duration < 120:  # Under 2 minutes
+                adjustment *= 0.9  # 10% faster
+            elif avg_duration > 300:  # Over 5 minutes
+                adjustment *= 1.3  # Slow down
+
+        # Factor 3: Promotion velocity (faster when getting results)
+        if promotion_velocity > 0.5:  # More than 0.5 promotions/hour
+            adjustment *= 0.8  # Ride the momentum - evaluate more often
+        elif promotion_velocity < 0.1 and promotion_velocity > 0:
+            adjustment *= 0.9  # Try to break plateau with more evaluation
+
+        # Factor 4: Improvement optimizer acceleration
+        # When on a promotion streak or high data quality, evaluate faster
+        if HAS_IMPROVEMENT_OPTIMIZER:
+            try:
+                optimizer = get_improvement_optimizer()
+                metrics = optimizer.get_improvement_metrics()
+
+                # Consecutive promotions - strong positive signal
+                consecutive = metrics.get('consecutive_promotions', 0)
+                if consecutive >= 3:
+                    adjustment *= 0.7  # 30% faster for strong streak
+                elif consecutive >= 2:
+                    adjustment *= 0.85  # 15% faster for building streak
+
+                # High data quality means more likely to find promotable models
+                if metrics.get('parity_success_rate', 0) >= 0.98:
+                    adjustment *= 0.9  # 10% faster with clean data
+
+                # Use optimizer's dynamic evaluation interval
+                optimizer_interval = get_evaluation_interval(base_interval)
+                if optimizer_interval < base_interval:
+                    # Blend with optimizer recommendation
+                    adjustment = min(adjustment, optimizer_interval / base_interval)
+            except Exception:
+                pass  # Don't fail evaluation for optimizer errors
+
+        # Calculate final interval
+        final_interval = int(base_interval * adjustment)
+
+        # Clamp to configured bounds
+        final_interval = max(min_interval, min(max_interval, final_interval))
+
+        # Log significant changes
+        now = time.time()
+        if now - self._last_interval_adjustment > 300:  # Log at most every 5 min
+            if final_interval != base_interval:
+                print(f"[ShadowTournament] Adaptive interval: {final_interval}s "
+                      f"(base={base_interval}s, success_rate={self._eval_success_rate:.1%}, "
+                      f"promotion_velocity={promotion_velocity:.2f}/hr)")
+                self._last_interval_adjustment = now
+
+        return final_interval
 
 
 # =============================================================================
@@ -2130,6 +2601,31 @@ class TrainingScheduler:
         max_threshold = base_threshold * 2   # Never go above 200% of base
 
         final_threshold = max(min_threshold, min(max_threshold, dynamic_threshold))
+
+        # Factor 4: Improvement optimizer positive feedback acceleration
+        # When we're on a promotion streak or have high-quality data, push even harder
+        if HAS_IMPROVEMENT_OPTIMIZER:
+            try:
+                optimizer = get_improvement_optimizer()
+                optimizer_threshold = optimizer.get_dynamic_threshold(config_key)
+                metrics = optimizer.get_improvement_metrics()
+
+                # Take the more aggressive (lower) threshold between local and optimizer
+                if optimizer_threshold < final_threshold:
+                    streak_info = f"streak={metrics.get('consecutive_promotions', 0)}"
+                    print(f"[ImprovementOptimizer] Accelerating threshold for {config_key}: "
+                          f"{final_threshold} → {optimizer_threshold} ({streak_info})")
+                    final_threshold = optimizer_threshold
+
+                # Additional fast-track check for exceptional performance
+                if should_fast_track_training(config_key):
+                    fast_threshold = max(min_threshold, final_threshold * 8 // 10)  # 20% faster
+                    if fast_threshold < final_threshold:
+                        print(f"[ImprovementOptimizer] Fast-tracking {config_key}: {final_threshold} → {fast_threshold}")
+                        final_threshold = fast_threshold
+            except Exception as e:
+                if self.config.verbose:
+                    print(f"[ImprovementOptimizer] Error getting threshold: {e}")
 
         if final_threshold != base_threshold:
             print(f"[Training] Dynamic threshold for {config_key}: {final_threshold} (base: {base_threshold}, adj: {adjustment:.2f})")
@@ -2232,9 +2728,10 @@ class TrainingScheduler:
         """Check if training should be triggered. Returns config key or None.
 
         Training can be triggered by:
-        1. Game count threshold (traditional) - enough new games collected
-        2. Elo plateau detection - model stopped improving
-        3. Win rate degradation - model performing worse than threshold
+        1. Momentum-based acceleration (fastest) - model improving, capitalize on momentum
+        2. Game count threshold (traditional) - enough new games collected
+        3. Elo plateau detection - model stopped improving
+        4. Win rate degradation - model performing worse than threshold
         """
         if self.state.training_in_progress:
             return None
@@ -2256,10 +2753,35 @@ class TrainingScheduler:
 
         now = time.time()
 
-        for config_key, config_state in self.state.configs.items():
+        # Get configs sorted by priority (underperforming configs first)
+        # This ensures that when multiple configs are ready, we train the most urgent one
+        priority_queue = ConfigPriorityQueue()
+        prioritized_configs = priority_queue.get_prioritized_configs(self.state.configs)
+
+        for config_key, priority_score in prioritized_configs:
+            config_state = self.state.configs[config_key]
             # Check minimum interval between training runs
             if now - config_state.last_training_time < self.config.min_interval_seconds:
                 continue
+
+            # Trigger 0: Momentum-based acceleration (positive feedback optimization)
+            # When a model is improving, train more frequently to capitalize on momentum
+            if HAS_FEEDBACK_ACCELERATOR:
+                try:
+                    decision = get_feedback_accelerator().get_training_decision(config_key)
+                    if decision.should_train:
+                        # Update games_since_training in accelerator
+                        record_games_generated(config_key, config_state.games_since_training)
+
+                        intensity_str = decision.intensity.value if decision.intensity else "normal"
+                        momentum_str = decision.momentum.value if decision.momentum else "stable"
+                        print(f"[Training] Trigger: momentum-based acceleration for {config_key} "
+                              f"(intensity={intensity_str}, momentum={momentum_str}, "
+                              f"threshold={decision.min_games_threshold})")
+                        return config_key
+                except Exception as e:
+                    if self.config.verbose:
+                        print(f"[Training] Feedback accelerator error: {e}")
 
             # Trigger 1: Dynamic game count threshold (adapts to promotion velocity)
             dynamic_threshold = self._get_dynamic_threshold(config_key)
@@ -2492,6 +3014,28 @@ class TrainingScheduler:
                 calibration_report = await self._run_calibration_analysis(config_key)
                 if calibration_report:
                     result["calibration"] = calibration_report
+
+            # Record training completion in improvement optimizer for positive feedback
+            if HAS_IMPROVEMENT_OPTIMIZER and success:
+                try:
+                    optimizer = get_improvement_optimizer()
+                    calibration_ece = None
+                    if "calibration" in result:
+                        calibration_ece = result["calibration"].get("ece")
+
+                    rec = optimizer.record_training_complete(
+                        config_key=config_key,
+                        duration_seconds=result["duration"],
+                        val_loss=0.0,  # Not tracked here, but could be added
+                        calibration_ece=calibration_ece,
+                    )
+                    metrics = optimizer.get_improvement_metrics()
+                    print(f"[ImprovementOptimizer] Training complete recorded for {config_key}: "
+                          f"duration={result['duration']/60:.1f}min, "
+                          f"training_runs_24h={metrics['training_runs_24h']}")
+                except Exception as e:
+                    if self.config.verbose:
+                        print(f"[ImprovementOptimizer] Error recording training: {e}")
 
             await self.event_bus.publish(DataEvent(
                 event_type=DataEventType.TRAINING_COMPLETED,
@@ -3242,6 +3786,8 @@ class UnifiedAILoop:
         self.shadow_tournament = ShadowTournamentService(
             config.evaluation, self.state, self.event_bus
         )
+        # Priority queue for focusing resources on underperforming configs
+        self.config_priority = ConfigPriorityQueue()
         self.training_scheduler = TrainingScheduler(
             config.training, self.state, self.event_bus,
             feedback_config=config.feedback  # Pass feedback config for performance-based triggers
@@ -3720,6 +4266,30 @@ class UnifiedAILoop:
             final_loss = payload.get('final_loss')
             val_loss = payload.get('val_loss')
             epochs = payload.get('epochs')
+            games_used = payload.get('games_used', 0)
+            initial_loss = payload.get('initial_loss', float('inf'))
+
+            # Record in feedback accelerator for momentum tracking
+            if HAS_FEEDBACK_ACCELERATOR and config_key:
+                try:
+                    # Determine if loss improved
+                    loss_improved = (final_loss is not None and
+                                     final_loss < initial_loss)
+
+                    record_training_complete(
+                        config_key=config_key,
+                        loss_improved=loss_improved,
+                        games_used=games_used
+                    )
+                    accelerator = get_feedback_accelerator()
+                    momentum_data = accelerator.get_config_momentum(config_key)
+                    if momentum_data:
+                        print(f"[FeedbackAccelerator] Training complete for {config_key}: "
+                              f"momentum={momentum_data.momentum_state.value}, "
+                              f"intensity={momentum_data.intensity.value}")
+                except Exception as e:
+                    if self.config.verbose:
+                        print(f"[FeedbackAccelerator] Error recording training complete: {e}")
 
             # Forward to feedback controller
             await self.feedback.on_stage_complete('training', {
@@ -3763,8 +4333,42 @@ class UnifiedAILoop:
             model_id = payload.get('model_id')
             config_key = payload.get('config')
             elo_gain = payload.get('elo_gain', 0)
+            new_elo = payload.get('new_elo', 0)
             success = payload.get('success', True)
             reason = payload.get('reason', '')
+
+            # Record in feedback accelerator for momentum tracking
+            if HAS_FEEDBACK_ACCELERATOR and config_key:
+                try:
+                    if success and new_elo > 0:
+                        # Record promotion to accelerate positive feedback
+                        record_promotion(config_key, new_elo, model_id)
+                        print(f"[FeedbackAccelerator] Recorded promotion for {config_key}: "
+                              f"Elo={new_elo:.0f}")
+                except Exception as e:
+                    if self.config.verbose:
+                        print(f"[FeedbackAccelerator] Error recording promotion: {e}")
+
+            # Record in improvement optimizer for positive feedback amplification
+            if HAS_IMPROVEMENT_OPTIMIZER and config_key:
+                try:
+                    optimizer = get_improvement_optimizer()
+                    if success and elo_gain > 0:
+                        rec = optimizer.record_promotion_success(
+                            config_key=config_key,
+                            elo_gain=elo_gain,
+                            model_id=model_id or "",
+                        )
+                        metrics = optimizer.get_improvement_metrics()
+                        print(f"[ImprovementOptimizer] Promotion success recorded for {config_key}: "
+                              f"+{elo_gain:.0f} Elo, streak={metrics['consecutive_promotions']}, "
+                              f"threshold→{metrics['effective_threshold']}")
+                    else:
+                        optimizer.record_promotion_failure(config_key, reason=reason)
+                        print(f"[ImprovementOptimizer] Promotion failure recorded for {config_key}")
+                except Exception as e:
+                    if self.config.verbose:
+                        print(f"[ImprovementOptimizer] Error recording promotion: {e}")
 
             # Forward to feedback controller's promotion handler
             await self.feedback.on_stage_complete('promotion', {
@@ -3819,6 +4423,9 @@ class UnifiedAILoop:
 
         This enables event-driven curriculum rebalancing when a model's Elo
         changes significantly (exceeds the threshold in unified config).
+
+        Also records Elo updates in the feedback accelerator for momentum tracking
+        to enable positive feedback optimization.
         """
         try:
             payload = event.payload
@@ -3826,10 +4433,26 @@ class UnifiedAILoop:
             model_id = payload.get('model_id', '')
             elo_change = payload.get('elo_change', 0)
             new_elo = payload.get('new_elo', 0)
+            games_played = payload.get('games_played', 0)
             threshold = payload.get('threshold', 50)
 
             print(f"[Curriculum] Significant Elo change detected for {config_key}: "
                   f"{elo_change:+.1f} Elo (model: {model_id}, threshold: {threshold})")
+
+            # Record Elo update in feedback accelerator for momentum tracking
+            if HAS_FEEDBACK_ACCELERATOR and config_key and new_elo > 0:
+                try:
+                    momentum = record_elo_update(config_key, new_elo, games_played, model_id)
+                    if momentum:
+                        accelerator = get_feedback_accelerator()
+                        momentum_data = accelerator.get_config_momentum(config_key)
+                        if momentum_data:
+                            print(f"[FeedbackAccelerator] {config_key}: Elo={new_elo:.0f}, "
+                                  f"momentum={momentum_data.momentum_state.value}, "
+                                  f"intensity={momentum_data.intensity.value}")
+                except Exception as e:
+                    if self.config.verbose:
+                        print(f"[FeedbackAccelerator] Error recording Elo update: {e}")
 
             # Trigger immediate curriculum rebalancing
             if self.adaptive_curriculum:
@@ -3909,6 +4532,31 @@ class UnifiedAILoop:
                 print(f"[Selfplay] Rate negotiated via resource_optimizer: {approved_rate}/hour")
             except Exception as e:
                 print(f"[Selfplay] Resource optimizer rate negotiation failed: {e}")
+
+        # Consult feedback accelerator for momentum-based rate recommendation
+        # This allows the system to accelerate selfplay when models are improving
+        if HAS_FEEDBACK_ACCELERATOR and get_selfplay_rate_recommendation is not None:
+            try:
+                # Get momentum-based recommendation across all configs
+                recommendation = get_selfplay_rate_recommendation()
+                if recommendation and recommendation.get('recommended_multiplier', 1.0) != 1.0:
+                    rec_multiplier = recommendation['recommended_multiplier']
+                    rec_reason = recommendation.get('reason', 'momentum-based adjustment')
+                    momentum_state = recommendation.get('aggregate_momentum', 'unknown')
+
+                    # Only log if momentum suggests a different rate than requested
+                    if abs(rec_multiplier - multiplier) > 0.1:
+                        print(f"[FeedbackAccelerator] Momentum-based rate recommendation: "
+                              f"{rec_multiplier:.2f}x (aggregate momentum: {momentum_state})")
+
+                        # If we're improving and the recommendation is higher, factor it in
+                        if rec_multiplier > multiplier and momentum_state in ('accelerating', 'improving'):
+                            final_multiplier = (multiplier + rec_multiplier) / 2
+                            print(f"[FeedbackAccelerator] Blending momentum into rate: "
+                                  f"{multiplier:.2f}x -> {final_multiplier:.2f}x")
+            except Exception as e:
+                if self.config.verbose:
+                    print(f"[FeedbackAccelerator] Error getting rate recommendation: {e}")
 
     # =========================================================================
     # Adaptive Controller Callbacks
@@ -4701,12 +5349,34 @@ class UnifiedAILoop:
             try:
                 now = time.time()
 
+                # Get promotion velocity for adaptive interval calculation
+                promotion_velocity = 0.0
+                if hasattr(self, 'training_scheduler') and hasattr(self.training_scheduler, '_promotion_history'):
+                    recent_promo = [t for t in self.training_scheduler._promotion_history if now - t < 3600]
+                    promotion_velocity = len(recent_promo)  # promotions per hour
+
+                # Get adaptive interval (adjusts based on success rate, duration, and promotion velocity)
+                adaptive_interval = self.shadow_tournament.get_adaptive_interval(promotion_velocity)
+
                 # Collect all configs that need shadow evaluation
                 configs_needing_eval = []
                 for config_key in self.state.configs:
                     last_eval = self._last_shadow_eval.get(config_key, 0)
-                    if now - last_eval >= self.config.evaluation.shadow_interval_seconds:
+                    if now - last_eval >= adaptive_interval:
                         configs_needing_eval.append(config_key)
+
+                # Sort by priority (highest priority = most urgent to evaluate)
+                # This ensures underperforming configs get evaluated first
+                if configs_needing_eval:
+                    prioritized = self.config_priority.get_prioritized_configs(
+                        {k: self.state.configs[k] for k in configs_needing_eval}
+                    )
+                    configs_needing_eval = [k for k, _ in prioritized]
+
+                    # Log priority info for top configs
+                    if prioritized and len(prioritized) > 1:
+                        top_priority = prioritized[0]
+                        print(f"[Evaluation] Highest priority: {top_priority[0]} (score={top_priority[1]:.1f})")
 
                 # Run shadow tournaments in parallel (major optimization!)
                 if configs_needing_eval:
@@ -4783,6 +5453,19 @@ class UnifiedAILoop:
                                 if failure_rate > max_rate:
                                     print(f"[Training] BLOCKED by parity validation: {failure_rate:.1%} > {max_rate:.1%}")
                                     continue
+
+                            # Record data quality in improvement optimizer for acceleration
+                            if HAS_IMPROVEMENT_OPTIMIZER:
+                                try:
+                                    optimizer = get_improvement_optimizer()
+                                    parity_success = 1.0 - parity_result.get("failure_rate", 0)
+                                    data_quality = self.feedback.state.data_quality_score if self.feedback else 1.0
+                                    rec = optimizer.record_data_quality(parity_success, data_quality)
+                                    if rec.signal in (ImprovementSignal.QUALITY_DATA_SURGE, ImprovementSignal.DATA_QUALITY_HIGH):
+                                        print(f"[ImprovementOptimizer] High data quality detected: "
+                                              f"parity={parity_success:.1%}, quality={data_quality:.2f}")
+                                except Exception:
+                                    pass  # Don't block training for optimizer errors
 
                         print(f"[Training] Starting training for {trigger_config}")
                         await self.training_scheduler.start_training(trigger_config)
@@ -5052,12 +5735,23 @@ class UnifiedAILoop:
                     if apply_feedback_adjustment is not None:
                         try:
                             new_rate = apply_feedback_adjustment(requestor="unified_loop_utilization")
+                            status = get_utilization_status() if get_utilization_status else {}
+                            cpu_util = status.get('cpu_util', 0)
+                            gpu_util = status.get('gpu_util', 0)
+                            util_status_text = status.get('status', 'unknown')
+
+                            # Update Prometheus metrics for cluster utilization tracking
+                            if HAS_PROMETHEUS:
+                                SELFPLAY_RATE.set(new_rate)
+                                # Map status text to numeric: below=-1, optimal=0, above=1
+                                status_value = 0 if util_status_text == 'optimal' else (-1 if 'below' in util_status_text else 1)
+                                UTILIZATION_STATUS.set(status_value)
+                                OPTIMIZER_IN_TARGET.labels(resource='cpu').set(1 if 60 <= cpu_util <= 80 else 0)
+                                OPTIMIZER_IN_TARGET.labels(resource='gpu').set(1 if 60 <= gpu_util <= 80 else 0)
+
                             if self.config.verbose:
-                                status = get_utilization_status() if get_utilization_status else {}
-                                cpu_util = status.get('cpu_util', 0)
-                                gpu_util = status.get('gpu_util', 0)
                                 print(f"[Utilization] Feedback adjustment applied: rate={new_rate}/hr "
-                                      f"(CPU={cpu_util:.1f}%, GPU={gpu_util:.1f}%)")
+                                      f"(CPU={cpu_util:.1f}%, GPU={gpu_util:.1f}%, status={util_status_text})")
                             last_feedback_adjustment_time = now
                         except Exception as e:
                             if self.config.verbose:

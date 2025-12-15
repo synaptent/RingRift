@@ -68,6 +68,10 @@ class GameRecord:
     outcome: Dict[str, float]  # Player ID -> final score
     timestamp: float = field(default_factory=time.time)
     source: str = "hot_buffer"
+    # Priority fields for experience replay
+    avg_elo: float = 1500.0  # Average Elo of players in this game
+    priority: float = 1.0  # Base priority (can be updated by TD error)
+    from_promoted_model: bool = False  # Was this from a model that got promoted?
 
     def to_training_samples(self) -> List[Tuple[np.ndarray, np.ndarray, float]]:
         """Convert game to training samples (state, policy, value)."""

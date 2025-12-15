@@ -76,6 +76,38 @@ def get_client_session(timeout: ClientTimeout = None) -> ClientSession:
         return ClientSession(connector=connector, timeout=timeout)
     return ClientSession(timeout=timeout)
 
+# Circuit breaker for fault-tolerant peer communication
+try:
+    from app.distributed.circuit_breaker import (
+        get_host_breaker,
+        CircuitOpenError,
+        CircuitState,
+    )
+    HAS_CIRCUIT_BREAKER = True
+except ImportError:
+    HAS_CIRCUIT_BREAKER = False
+    CircuitOpenError = Exception
+
+
+def check_peer_circuit(peer_host: str) -> bool:
+    """Check if a peer's circuit is open. Returns True if request allowed."""
+    if not HAS_CIRCUIT_BREAKER:
+        return True
+    return get_host_breaker().can_execute(peer_host)
+
+
+def record_peer_success(peer_host: str) -> None:
+    """Record successful communication with a peer."""
+    if HAS_CIRCUIT_BREAKER:
+        get_host_breaker().record_success(peer_host)
+
+
+def record_peer_failure(peer_host: str, error: Optional[Exception] = None) -> None:
+    """Record failed communication with a peer."""
+    if HAS_CIRCUIT_BREAKER:
+        get_host_breaker().record_failure(peer_host, error)
+
+
 # Dynamic host registry for IP auto-update
 try:
     from app.distributed.dynamic_registry import (
@@ -140,13 +172,30 @@ try:
         get_optimal_concurrency,
         get_cluster_utilization,
     )
+    # Import rate negotiation functions for cooperative utilization (60-80% target)
+    from app.coordination.resource_optimizer import (
+        negotiate_selfplay_rate,
+        get_current_selfplay_rate,
+        apply_feedback_adjustment,
+        get_utilization_status,
+        update_config_weights,
+        get_config_weights,
+    )
+    HAS_RATE_NEGOTIATION = True
     HAS_NEW_COORDINATION = True
     # Get targets from unified source
     _unified_targets = get_resource_targets()
 except ImportError:
     HAS_NEW_COORDINATION = False
+    HAS_RATE_NEGOTIATION = False
     OrchestratorRole = None
     _unified_targets = None
+    negotiate_selfplay_rate = None
+    get_current_selfplay_rate = None
+    apply_feedback_adjustment = None
+    get_utilization_status = None
+    update_config_weights = None
+    get_config_weights = None
 
 # P2P-integrated monitoring management
 try:
@@ -4825,12 +4874,13 @@ class P2POrchestrator:
 
         LEARNED LESSONS - Simple health endpoint for monitoring and load balancers.
         Returns node health status without full cluster state.
+        Includes utilization status from resource_optimizer for cluster coordination.
         """
         try:
             self._update_self_info()
             is_healthy = self.self_info.is_healthy()
 
-            return web.json_response({
+            response = {
                 "healthy": is_healthy,
                 "node_id": self.node_id,
                 "role": self.role.value,
@@ -4839,7 +4889,23 @@ class P2POrchestrator:
                 "cpu_percent": self.self_info.cpu_percent,
                 "selfplay_jobs": self.self_info.selfplay_jobs,
                 "training_jobs": self.self_info.training_jobs,
-            })
+            }
+
+            # Add cluster utilization status for cooperative 60-80% targeting
+            if HAS_RATE_NEGOTIATION and get_utilization_status is not None:
+                try:
+                    util_status = get_utilization_status()
+                    response["cluster_utilization"] = {
+                        "cpu_util": util_status.get("cpu_util", 0),
+                        "gpu_util": util_status.get("gpu_util", 0),
+                        "selfplay_rate": util_status.get("current_rate", 1000),
+                        "target_range": "60-80%",
+                        "status": util_status.get("status", "unknown"),
+                    }
+                except Exception:
+                    pass
+
+            return web.json_response(response)
         except Exception as e:
             return web.json_response({"error": str(e), "healthy": False}, status=500)
 
@@ -6560,12 +6626,29 @@ print(json.dumps(result))
             data = await request.json()
             job_id = f"improve_{uuid.uuid4().hex[:8]}"
 
+            # Query negotiated rate from resource_optimizer for cooperative utilization
+            # This ensures selfplay rate respects cluster-wide 60-80% utilization target
+            requested_games = data.get("games_per_iteration", 1000)
+            if HAS_RATE_NEGOTIATION and negotiate_selfplay_rate is not None:
+                try:
+                    # Negotiate rate with resource_optimizer (60-80% target)
+                    approved_rate = negotiate_selfplay_rate(
+                        requested_rate=requested_games,
+                        reason=f"p2p_improvement_loop:{job_id}",
+                        requestor=f"p2p_{self.node_id}",
+                    )
+                    if approved_rate != requested_games:
+                        print(f"[P2P] games_per_iteration adjusted: {requested_games} -> {approved_rate} (utilization-based)")
+                    requested_games = approved_rate
+                except Exception as e:
+                    print(f"[P2P] Rate negotiation failed, using default: {e}")
+
             state = ImprovementLoopState(
                 job_id=job_id,
                 board_type=data.get("board_type", "square8"),
                 num_players=data.get("num_players", 2),
                 max_iterations=data.get("max_iterations", 50),
-                games_per_iteration=data.get("games_per_iteration", 1000),
+                games_per_iteration=requested_games,
                 phase="selfplay",
                 status="running",
                 started_at=time.time(),
@@ -14964,6 +15047,24 @@ print(json.dumps({{
                 await self._stop_monitoring_if_not_leader()
                 if self.role == NodeRole.LEADER:
                     await self._start_monitoring_if_leader()
+
+                # Report node resources to resource_optimizer for cluster-wide utilization tracking
+                # This enables cooperative 60-80% utilization targeting across orchestrators
+                if HAS_NEW_COORDINATION and get_resource_optimizer is not None:
+                    try:
+                        optimizer = get_resource_optimizer()
+                        self._update_self_info()
+                        node_resources = NodeResources(
+                            node_id=self.node_id,
+                            cpu_percent=self.self_info.cpu_percent,
+                            memory_percent=self.self_info.memory_percent,
+                            active_jobs=self.self_info.selfplay_jobs + self.self_info.training_jobs,
+                            has_gpu=self.self_info.has_gpu,
+                            gpu_name=self.self_info.gpu_type or "",
+                        )
+                        optimizer.report_node_resources(node_resources)
+                    except Exception:
+                        pass  # Non-critical, don't disrupt heartbeat
 
                 # Save state periodically
                 self._save_state()

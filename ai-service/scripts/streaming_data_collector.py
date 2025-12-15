@@ -89,6 +89,18 @@ except ImportError:
     HAS_BANDWIDTH_MANAGER = False
     TransferPriority = None
 
+# Try to import CircuitBreaker for fault tolerance
+try:
+    from app.distributed.circuit_breaker import (
+        get_host_breaker,
+        CircuitOpenError,
+        CircuitState,
+    )
+    HAS_CIRCUIT_BREAKER = True
+except ImportError:
+    HAS_CIRCUIT_BREAKER = False
+    CircuitOpenError = Exception  # Fallback
+
 
 @dataclass
 class HostConfig:
@@ -453,6 +465,15 @@ class StreamingDataCollector:
         """Sync games from a single host. Returns count of new games."""
         state = self.host_states[host.name]
 
+        # Circuit breaker check - skip hosts with open circuits
+        if HAS_CIRCUIT_BREAKER:
+            breaker = get_host_breaker()
+            if not breaker.can_execute(host.ssh_host):
+                circuit_state = breaker.get_state(host.ssh_host)
+                if circuit_state == CircuitState.OPEN:
+                    print(f"[Collector] {host.name}: Circuit OPEN, skipping sync")
+                return 0
+
         # Check backoff for failed hosts
         if state.consecutive_failures > 0:
             backoff = min(
@@ -470,6 +491,9 @@ class StreamingDataCollector:
             new_games = max(0, current_count - state.last_game_count)
 
             if new_games < self.config.min_games_per_sync:
+                # Record success even if no games - connection worked
+                if HAS_CIRCUIT_BREAKER:
+                    get_host_breaker().record_success(host.ssh_host)
                 return 0
 
             print(f"[Collector] {host.name}: {new_games} new games detected")
@@ -492,11 +516,20 @@ class StreamingDataCollector:
             self.manifest.record_sync(host.name, synced, duration, True)
             self.manifest.save_host_state(state)
 
+            # Record circuit breaker success
+            if HAS_CIRCUIT_BREAKER:
+                get_host_breaker().record_success(host.ssh_host)
+
             # Emit event
             if HAS_EVENT_BUS and synced > 0:
                 await emit_new_games(host.name, synced, current_count, "streaming_data_collector")
 
             return synced
+
+        except CircuitOpenError:
+            # Circuit just opened - skip without incrementing failures
+            print(f"[Collector] {host.name}: Circuit opened during sync")
+            return 0
 
         except Exception as e:
             state.consecutive_failures += 1
@@ -506,6 +539,10 @@ class StreamingDataCollector:
             duration = time.time() - start_time
             self.manifest.record_sync(host.name, 0, duration, False)
             self.manifest.save_host_state(state)
+
+            # Record circuit breaker failure
+            if HAS_CIRCUIT_BREAKER:
+                get_host_breaker().record_failure(host.ssh_host, e)
 
             print(f"[Collector] {host.name}: Sync failed ({state.consecutive_failures}): {e}")
 
