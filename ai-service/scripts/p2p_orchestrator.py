@@ -267,8 +267,11 @@ ELECTION_TIMEOUT = 10  # seconds to wait for election responses
 # Leader lease must be comfortably larger than the heartbeat cadence; otherwise
 # small scheduling delays can cause leaders to "expire" their own lease and
 # flap into leaderless states.
-LEADER_LEASE_DURATION = 90  # seconds
-LEADER_LEASE_RENEW_INTERVAL = 10  # How often leader renews lease
+# LEARNED LESSONS: Increased from 90s to 180s - network latency between cloud providers
+# (Oracle/Lambda/AWS) can cause lease renewal to fail even with Tailscale. The 180s
+# window provides ample buffer for transient network issues.
+LEADER_LEASE_DURATION = 180  # seconds (increased from 90s for cross-provider stability)
+LEADER_LEASE_RENEW_INTERVAL = 15  # How often leader renews lease (increased from 10s)
 JOB_CHECK_INTERVAL = 60  # seconds between job status checks
 DISCOVERY_PORT = 8771  # UDP port for peer discovery
 DISCOVERY_INTERVAL = 120  # seconds between discovery broadcasts
@@ -4290,6 +4293,169 @@ class P2POrchestrator:
                 print(f"[P2P] Tailscale IP update loop error: {e}")
                 await asyncio.sleep(60)
 
+    async def _convert_jsonl_to_db(self, data_dir: Path, games_dir: Path) -> int:
+        """Convert JSONL selfplay files to SQLite DB format for training.
+
+        This enables the training pipeline to access games stored in JSONL format.
+        Converted files are tracked to avoid re-processing.
+
+        Returns:
+            Number of games converted.
+        """
+        import json
+        import sqlite3
+
+        # Track converted files to avoid re-processing
+        converted_marker_file = data_dir / ".jsonl_converted"
+        converted_files: set = set()
+        if converted_marker_file.exists():
+            try:
+                converted_files = set(converted_marker_file.read_text().strip().split("\n"))
+            except Exception:
+                pass
+
+        total_converted = 0
+        newly_converted = []
+        selfplay_dir = data_dir / "selfplay"
+
+        if not selfplay_dir.exists():
+            return 0
+
+        # Find all JSONL files in selfplay subdirectories
+        jsonl_files = list(selfplay_dir.rglob("*.jsonl"))
+        if not jsonl_files:
+            return 0
+
+        # Group by board type
+        board_type_files: Dict[str, List[Path]] = {}
+        for jsonl_file in jsonl_files:
+            # Skip empty files
+            try:
+                if jsonl_file.stat().st_size < 100:
+                    continue
+            except Exception:
+                continue
+
+            # Skip already converted
+            file_key = str(jsonl_file.relative_to(data_dir))
+            if file_key in converted_files:
+                continue
+
+            # Determine board type from path
+            path_str = str(jsonl_file).lower()
+            if "hex" in path_str:
+                if "4p" in path_str:
+                    board_key = "hexagonal_4p"
+                elif "3p" in path_str:
+                    board_key = "hexagonal_3p"
+                else:
+                    board_key = "hexagonal_2p"
+            elif "square19" in path_str or "sq19" in path_str:
+                if "4p" in path_str:
+                    board_key = "square19_4p"
+                elif "3p" in path_str:
+                    board_key = "square19_3p"
+                else:
+                    board_key = "square19_2p"
+            else:
+                if "4p" in path_str:
+                    board_key = "square8_4p"
+                elif "3p" in path_str:
+                    board_key = "square8_3p"
+                else:
+                    board_key = "square8_2p"
+
+            if board_key not in board_type_files:
+                board_type_files[board_key] = []
+            board_type_files[board_key].append(jsonl_file)
+
+        # Convert each board type to a consolidated DB
+        for board_key, files in board_type_files.items():
+            if not files:
+                continue
+
+            db_path = games_dir / f"jsonl_converted_{board_key}.db"
+            try:
+                conn = sqlite3.connect(str(db_path))
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS games (
+                        game_id TEXT PRIMARY KEY,
+                        board_type TEXT,
+                        num_players INTEGER,
+                        winner INTEGER,
+                        move_count INTEGER,
+                        game_status TEXT,
+                        victory_type TEXT,
+                        created_at TEXT,
+                        source TEXT,
+                        metadata_json TEXT
+                    )
+                """)
+                conn.commit()
+
+                games_added = 0
+                for jsonl_file in files:
+                    file_key = str(jsonl_file.relative_to(data_dir))
+                    try:
+                        with open(jsonl_file, "r") as f:
+                            for line_num, line in enumerate(f, 1):
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                try:
+                                    record = json.loads(line)
+                                    game_id = f"{jsonl_file.stem}_{record.get('game_id', line_num)}_{line_num}"
+                                    board_type = record.get("board_type", board_key.split("_")[0])
+                                    num_players = record.get("num_players", int(board_key[-2]) if board_key[-2].isdigit() else 2)
+
+                                    conn.execute("""
+                                        INSERT OR IGNORE INTO games
+                                        (game_id, board_type, num_players, winner, move_count,
+                                         game_status, victory_type, created_at, source, metadata_json)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    """, (
+                                        game_id,
+                                        board_type,
+                                        num_players,
+                                        record.get("winner", 0),
+                                        record.get("move_count", 0),
+                                        record.get("status", "completed"),
+                                        record.get("victory_type", "unknown"),
+                                        record.get("timestamp", ""),
+                                        f"jsonl:{jsonl_file.name}",
+                                        json.dumps(record),
+                                    ))
+                                    games_added += 1
+                                except (json.JSONDecodeError, Exception):
+                                    continue
+                        newly_converted.append(file_key)
+                    except Exception as e:
+                        print(f"[P2P] Error converting {jsonl_file.name}: {e}")
+                        continue
+
+                conn.commit()
+                conn.close()
+                total_converted += games_added
+
+                if games_added > 0:
+                    print(f"[P2P] Converted {games_added} games to {db_path.name}")
+
+            except Exception as e:
+                print(f"[P2P] Error creating DB for {board_key}: {e}")
+
+        # Update converted files marker
+        if newly_converted:
+            try:
+                all_converted = converted_files | set(newly_converted)
+                converted_marker_file.write_text("\n".join(sorted(all_converted)))
+            except Exception:
+                pass
+
+        if total_converted > 0:
+            print(f"[P2P] JSONL conversion complete: {total_converted} total games converted")
+
+        return total_converted
+
     async def _data_management_loop(self):
         """Background loop for automatic data management.
 
@@ -4312,12 +4478,16 @@ class P2POrchestrator:
 
                 print("[P2P] Running data management check...")
 
-                # 1. Check local database sizes and trigger exports
+                # 0. Convert JSONL selfplay files to DB format
                 data_dir = self.get_data_directory()
                 games_dir = data_dir / "games"
                 training_dir = data_dir / "training"
+                games_dir.mkdir(parents=True, exist_ok=True)
                 training_dir.mkdir(parents=True, exist_ok=True)
 
+                await self._convert_jsonl_to_db(data_dir, games_dir)
+
+                # 1. Check local database sizes and trigger exports
                 # Count current exports
                 current_exports = len([p for p, t in active_exports.items()
                                        if time.time() - t < 3600])  # 1 hour timeout
@@ -4410,6 +4580,85 @@ class P2POrchestrator:
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(60)
+
+    async def _consolidate_selfplay_data(self):
+        """Consolidate siloed job databases into main selfplay.db.
+
+        LEARNED LESSONS: Selfplay jobs write to job-specific databases for isolation.
+        These need to be periodically merged into the main selfplay.db for:
+        1. Training triggers to see accurate game counts
+        2. Cross-node data sync to work correctly
+        3. Training scripts to find all available data
+
+        Runs every ~5 minutes (every 5th job check cycle) to avoid overhead.
+        """
+        # Only run every 5th cycle (~5 minutes with JOB_CHECK_INTERVAL=60)
+        cycle_counter = getattr(self, "_consolidation_cycle", 0)
+        self._consolidation_cycle = cycle_counter + 1
+        if cycle_counter % 5 != 0:
+            return
+
+        try:
+            import sqlite3
+            from pathlib import Path
+
+            data_dir = Path(self.ringrift_path) / "ai-service" / "data"
+            selfplay_dir = data_dir / "selfplay"
+            main_db_path = data_dir / "games" / "selfplay.db"
+
+            if not selfplay_dir.exists():
+                return
+
+            # Find all job databases with games
+            dbs_to_merge = []
+            for db_path in selfplay_dir.glob("**/games.db"):
+                # Skip if it's in a .tmp directory or is the main DB
+                if ".tmp" in str(db_path) or db_path == main_db_path:
+                    continue
+                try:
+                    conn = sqlite3.connect(str(db_path), timeout=5)
+                    count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+                    conn.close()
+                    if count > 0:
+                        dbs_to_merge.append((db_path, count))
+                except Exception:
+                    pass
+
+            if not dbs_to_merge:
+                return
+
+            total_games = sum(c for _, c in dbs_to_merge)
+            print(f"[P2P] Data consolidation: {len(dbs_to_merge)} DBs with {total_games} games to merge")
+
+            # Use merge script if available
+            merge_script = Path(self.ringrift_path) / "ai-service" / "scripts" / "merge_game_dbs.py"
+            if merge_script.exists() and len(dbs_to_merge) > 0:
+                import subprocess
+
+                # Build command with all DBs
+                cmd = [
+                    "python3", str(merge_script),
+                    "--output", str(main_db_path),
+                    "--dedupe-by-game-id",
+                ]
+                for db_path, _ in dbs_to_merge[:50]:  # Limit to 50 DBs at a time
+                    cmd.extend(["--db", str(db_path)])
+
+                env = os.environ.copy()
+                env["PYTHONPATH"] = str(Path(self.ringrift_path) / "ai-service")
+
+                # Run merge in background
+                proc = subprocess.Popen(
+                    cmd,
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    cwd=str(Path(self.ringrift_path) / "ai-service"),
+                )
+                print(f"[P2P] Started data merge (PID: {proc.pid})")
+
+        except Exception as e:
+            print(f"[P2P] Data consolidation error: {e}")
 
     async def _start_auto_training(self, data_path: str):
         """Start automatic training job on local node."""
@@ -5307,11 +5556,17 @@ class P2POrchestrator:
     ):
         """Run GPU selfplay job using run_hybrid_selfplay.py."""
         import sys
+        from pathlib import Path
 
         script_path = os.path.join(self.ringrift_path, "ai-service", "scripts", "run_hybrid_selfplay.py")
         if not os.path.exists(script_path):
             print(f"[P2P] Selfplay script not found: {script_path}")
             return
+
+        # Set up output directory with database recording
+        board_norm = board_type.replace("hexagonal", "hex")
+        output_dir = Path(self.ringrift_path) / "ai-service" / "data" / "selfplay" / "p2p_hybrid" / f"{board_norm}_{num_players}p" / job_id
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         cmd = [
             sys.executable,
@@ -5319,6 +5574,11 @@ class P2POrchestrator:
             "--board-type", board_type,
             "--num-players", str(num_players),
             "--num-games", str(num_games),
+            "--output-dir", str(output_dir),
+            "--record-db", str(output_dir / "games.db"),
+            "--lean-db",
+            "--engine-mode", engine_mode or "mixed",
+            "--seed", str(int(time.time() * 1000) % 2**31),
         ]
 
         env = os.environ.copy()
@@ -16460,6 +16720,8 @@ print(json.dumps({{
                     await self._manage_cluster_jobs()
                     # Cluster rebalancing: migrate jobs from weak to powerful nodes
                     await self._check_cluster_balance()
+                    # Data consolidation: merge siloed job DBs to main selfplay.db
+                    await self._consolidate_selfplay_data()
                     # Phase 3: Check if training should be triggered automatically
                     await self._check_and_trigger_training()
                     # Phase 5: Check improvement cycles for automated training

@@ -26,6 +26,15 @@ MAX_LOAD=100
 KILL_MODE=false
 SLACK_WEBHOOK=""
 
+# State file for tracking kills and implementing backoff
+STATE_DIR="${HOME}/.ringrift"
+STATE_FILE="${STATE_DIR}/watchdog_state.json"
+mkdir -p "$STATE_DIR"
+
+# Backoff settings
+MAX_KILLS_PER_HOUR=3
+BASE_BACKOFF_MINUTES=5
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -98,7 +107,40 @@ send_alert "$HOSTNAME: $PROBLEM_MSG" "WARNING"
 
 # Kill mode - try to recover
 if [[ "$KILL_MODE" == "true" ]]; then
-    echo "[$TIMESTAMP] [ACTION] Attempting to kill excess processes..."
+    # Check for backoff before taking action
+    NOW_EPOCH=$(date +%s)
+    HOUR_AGO_EPOCH=$((NOW_EPOCH - 3600))
+
+    # Read state file
+    KILL_TIMESTAMPS=""
+    LAST_KILL_EPOCH=0
+    if [[ -f "$STATE_FILE" ]]; then
+        KILL_TIMESTAMPS=$(grep -oE '"[0-9]+"' "$STATE_FILE" 2>/dev/null | tr -d '"' || true)
+        LAST_KILL_EPOCH=$(echo "$KILL_TIMESTAMPS" | sort -rn | head -1)
+        LAST_KILL_EPOCH=${LAST_KILL_EPOCH:-0}
+    fi
+
+    # Count kills in the past hour
+    KILLS_IN_HOUR=0
+    for ts in $KILL_TIMESTAMPS; do
+        if [[ "$ts" -gt "$HOUR_AGO_EPOCH" ]]; then
+            KILLS_IN_HOUR=$((KILLS_IN_HOUR + 1))
+        fi
+    done
+
+    # Calculate backoff time (exponential: 5, 10, 20 minutes)
+    BACKOFF_SECONDS=$((BASE_BACKOFF_MINUTES * 60 * (2 ** KILLS_IN_HOUR)))
+    BACKOFF_SECONDS=$((BACKOFF_SECONDS > 3600 ? 3600 : BACKOFF_SECONDS))  # Cap at 1 hour
+
+    SECONDS_SINCE_LAST=$((NOW_EPOCH - LAST_KILL_EPOCH))
+
+    if [[ "$KILLS_IN_HOUR" -ge "$MAX_KILLS_PER_HOUR" ]] && [[ "$SECONDS_SINCE_LAST" -lt "$BACKOFF_SECONDS" ]]; then
+        WAIT_MORE=$((BACKOFF_SECONDS - SECONDS_SINCE_LAST))
+        echo "[$TIMESTAMP] [BACKOFF] Too many kills ($KILLS_IN_HOUR in past hour). Waiting ${WAIT_MORE}s more."
+        exit 0
+    fi
+
+    echo "[$TIMESTAMP] [ACTION] Attempting to kill excess processes... (kills_in_hour=$KILLS_IN_HOUR)"
 
     # Kill selfplay processes first (most likely culprit)
     SELFPLAY_PIDS=$(pgrep -f "run_self_play" 2>/dev/null || true)
@@ -121,6 +163,17 @@ if [[ "$KILL_MODE" == "true" ]]; then
         pkill -9 python 2>/dev/null || true
         send_alert "$HOSTNAME: CRITICAL - Killed all Python processes (load: $NEW_LOAD)" "CRITICAL"
     fi
+
+    # Record this kill action for backoff tracking
+    # Keep only timestamps from the past hour
+    NEW_TIMESTAMPS="$NOW_EPOCH"
+    for ts in $KILL_TIMESTAMPS; do
+        if [[ "$ts" -gt "$HOUR_AGO_EPOCH" ]]; then
+            NEW_TIMESTAMPS="$NEW_TIMESTAMPS $ts"
+        fi
+    done
+    echo "{\"kills\": [$(echo $NEW_TIMESTAMPS | tr ' ' ',')]}" > "$STATE_FILE"
+    echo "[$TIMESTAMP] [STATE] Recorded kill at $NOW_EPOCH (total in hour: $((KILLS_IN_HOUR + 1)))"
 fi
 
 # Exit with error code to indicate problems were found
