@@ -201,7 +201,7 @@ def play_game(
     moves = 0
 
     try:
-        while state.status == GameStatus.IN_PROGRESS and moves < max_moves:
+        while state.game_status == GameStatus.IN_PROGRESS and moves < max_moves:
             current_player = state.current_player
             ai = ais.get(current_player)
 
@@ -223,7 +223,7 @@ def play_game(
 
         # Determine winner
         winner = 0
-        if state.status == GameStatus.VICTORY:
+        if state.game_status == GameStatus.VICTORY:
             winner = state.winner if state.winner else 0
 
         return GameResult(
