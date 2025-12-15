@@ -3413,6 +3413,18 @@ class P2POrchestrator:
                                     manifest.selfplay_games += line_count
                                 except Exception:
                                     pass
+                            # Count games in SQLite databases
+                            elif rel_path.endswith(".db"):
+                                try:
+                                    import sqlite3
+                                    conn = sqlite3.connect(str(file_path), timeout=5)
+                                    cursor = conn.execute("SELECT COUNT(*) FROM games")
+                                    game_count = cursor.fetchone()[0]
+                                    conn.close()
+                                    file_info.game_count = game_count
+                                    manifest.selfplay_games += game_count
+                                except Exception:
+                                    pass
                         elif file_type == "model":
                             manifest.model_count += 1
                         elif file_type == "training":
