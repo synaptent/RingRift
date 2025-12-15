@@ -78,22 +78,21 @@ THRESHOLDS: Dict[Tuple[str, int], int] = {
     ("hexagonal", 4): 50,
 }
 
-# Export settings per config type
-# Format: (board_type, num_players) -> (max_games, sample_every, epochs, max_moves)
-# max_moves limits replay depth to avoid slow late-game state reconstruction
-EXPORT_SETTINGS: Dict[Tuple[str, int], Tuple[int, int, int, Optional[int]]] = {
-    # Square8: ~100-200 moves per game - can replay fully
-    ("square8", 2): (50, 5, 5, None),
-    ("square8", 3): (50, 5, 5, None),
-    ("square8", 4): (50, 5, 5, None),
-    # Square19: ~300-500 moves per game - limit to first 100 moves
-    ("square19", 2): (30, 5, 5, 100),
-    ("square19", 3): (30, 5, 5, 100),
-    ("square19", 4): (30, 5, 5, 100),
-    # Hexagonal: ~800-1200 moves per game - limit to first 100 moves (fast replay)
-    ("hexagonal", 2): (50, 5, 5, 100),
-    ("hexagonal", 3): (50, 5, 5, 100),
-    ("hexagonal", 4): (50, 5, 5, 100),
+# Export settings per config: (max_games, sample_every, epochs)
+# Replay bug is now fixed so all moves can be replayed correctly
+EXPORT_SETTINGS: Dict[Tuple[str, int], Tuple[int, int, int]] = {
+    # Square8: ~100-200 moves per game
+    ("square8", 2): (50, 5, 5),
+    ("square8", 3): (50, 5, 5),
+    ("square8", 4): (50, 5, 5),
+    # Square19: ~300-500 moves per game
+    ("square19", 2): (30, 5, 5),
+    ("square19", 3): (30, 5, 5),
+    ("square19", 4): (30, 5, 5),
+    # Hexagonal: ~800-1200 moves per game
+    ("hexagonal", 2): (50, 5, 5),
+    ("hexagonal", 3): (50, 5, 5),
+    ("hexagonal", 4): (50, 5, 5),
 }
 
 # Default settings if config not found

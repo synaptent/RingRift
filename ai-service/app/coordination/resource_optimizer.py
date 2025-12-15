@@ -113,6 +113,7 @@ class NodeResources:
     disk_percent: float = 0.0
     gpu_memory_percent: float = 0.0
     cpu_count: int = 0
+    gpu_count: int = 0  # Number of GPUs on node
     memory_gb: float = 0.0
     has_gpu: bool = False
     gpu_name: str = ""
@@ -121,6 +122,38 @@ class NodeResources:
     training_jobs: int = 0
     updated_at: float = 0.0
     orchestrator: str = ""  # Which orchestrator reported this
+
+    def get_max_gpu_jobs(self) -> int:
+        """Get max GPU jobs based on GPU count and type.
+
+        Conservative limits to prevent GPU starvation:
+        - 2-4 jobs per high-end GPU (H100, A100)
+        - 1-2 jobs per consumer GPU
+        """
+        if not self.has_gpu or self.gpu_count == 0:
+            return 0
+        # High-end datacenter GPUs can handle more parallelism
+        if any(g in self.gpu_name.upper() for g in ["H100", "H200", "A100", "L40"]):
+            jobs_per_gpu = 4
+        elif any(g in self.gpu_name.upper() for g in ["A10", "4090", "5090", "3090"]):
+            jobs_per_gpu = 3
+        else:
+            jobs_per_gpu = 2
+        return self.gpu_count * jobs_per_gpu
+
+    def get_max_cpu_jobs(self) -> int:
+        """Get max CPU jobs based on CPU count.
+
+        Reasonable limits to prevent CPU starvation:
+        - Up to 1 job per 2 cores for hybrid selfplay
+        - Cap at reasonable total for memory constraints
+        """
+        if self.cpu_count == 0:
+            return 8  # Default fallback
+        # ~1 job per 2 cores, capped by memory (assume ~1GB per job)
+        cpu_based = max(1, self.cpu_count // 2)
+        memory_based = max(1, int(self.memory_gb / 2)) if self.memory_gb > 0 else 32
+        return min(cpu_based, memory_based, 48)  # Hard cap at 48
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -766,6 +799,7 @@ class ResourceOptimizer:
                     disk_percent REAL DEFAULT 0,
                     gpu_memory_percent REAL DEFAULT 0,
                     cpu_count INTEGER DEFAULT 0,
+                    gpu_count INTEGER DEFAULT 0,
                     memory_gb REAL DEFAULT 0,
                     has_gpu INTEGER DEFAULT 0,
                     gpu_name TEXT DEFAULT '',
@@ -864,14 +898,14 @@ class ResourceOptimizer:
                 conn.execute("""
                     INSERT OR REPLACE INTO node_resources (
                         node_id, cpu_percent, gpu_percent, memory_percent,
-                        disk_percent, gpu_memory_percent, cpu_count, memory_gb,
+                        disk_percent, gpu_memory_percent, cpu_count, gpu_count, memory_gb,
                         has_gpu, gpu_name, active_jobs, selfplay_jobs,
                         training_jobs, orchestrator, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     resources.node_id, resources.cpu_percent, resources.gpu_percent,
                     resources.memory_percent, resources.disk_percent,
-                    resources.gpu_memory_percent, resources.cpu_count,
+                    resources.gpu_memory_percent, resources.cpu_count, resources.gpu_count,
                     resources.memory_gb, int(resources.has_gpu), resources.gpu_name,
                     resources.active_jobs, resources.selfplay_jobs,
                     resources.training_jobs, resources.orchestrator,
@@ -957,6 +991,7 @@ class ResourceOptimizer:
                         disk_percent=row["disk_percent"],
                         gpu_memory_percent=row["gpu_memory_percent"],
                         cpu_count=row["cpu_count"],
+                        gpu_count=row["gpu_count"],
                         memory_gb=row["memory_gb"],
                         has_gpu=bool(row["has_gpu"]),
                         gpu_name=row["gpu_name"],
@@ -1009,6 +1044,7 @@ class ResourceOptimizer:
                         disk_percent=row["disk_percent"],
                         gpu_memory_percent=row["gpu_memory_percent"],
                         cpu_count=row["cpu_count"],
+                        gpu_count=row["gpu_count"],
                         memory_gb=row["memory_gb"],
                         has_gpu=bool(row["has_gpu"]),
                         gpu_name=row["gpu_name"],
@@ -1098,7 +1134,8 @@ class ResourceOptimizer:
     ) -> int:
         """Calculate optimal job count for a node.
 
-        Uses PID control to smoothly adjust toward target utilization.
+        Uses PID control to smoothly adjust toward target utilization,
+        with hardware-aware limits based on GPU/CPU count.
 
         Args:
             node_id: Node identifier
@@ -1109,12 +1146,14 @@ class ResourceOptimizer:
         Returns:
             Optimal number of concurrent jobs
         """
+        # Get node resources for hardware-aware limits
+        node = self.get_node_resources(node_id)
+        if node is None:
+            # No node data - use conservative defaults
+            return min(current_jobs, 4 if resource_type == "gpu" else 8)
+
         # Get current utilization if not provided
         if current_util is None:
-            node = self.get_node_resources(node_id)
-            if node is None:
-                return current_jobs  # No data, maintain current
-
             current_util = node.gpu_percent if resource_type == "gpu" else node.cpu_percent
 
         # Use PID controller to get adjustment
@@ -1130,8 +1169,14 @@ class ResourceOptimizer:
         # Calculate new job count with bounds
         new_jobs = max(1, current_jobs + job_adjustment)
 
-        # Cap based on resource type
-        max_jobs = 32 if resource_type == "gpu" else 48
+        # Use hardware-aware limits instead of hardcoded values
+        if resource_type == "gpu":
+            max_jobs = node.get_max_gpu_jobs() if node.has_gpu else 0
+            if max_jobs == 0:
+                max_jobs = 4  # Fallback for unknown GPU
+        else:
+            max_jobs = node.get_max_cpu_jobs()
+
         new_jobs = min(new_jobs, max_jobs)
 
         return new_jobs
