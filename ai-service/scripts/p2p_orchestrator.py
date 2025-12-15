@@ -5388,7 +5388,11 @@ class P2POrchestrator:
             print(f"[P2P] Failed to start auto-training: {e}")
 
     async def _request_data_from_peers(self):
-        """Request training data sync from peers with large datasets."""
+        """Sync training data (NPZ files) from peers with large datasets.
+
+        This ensures training data is distributed across the cluster so any
+        GPU node can run training jobs.
+        """
         try:
             # Check disk capacity before requesting data
             has_capacity, disk_pct = check_disk_has_capacity(DISK_CRITICAL_THRESHOLD)
@@ -5397,32 +5401,105 @@ class P2POrchestrator:
                     print(f"[P2P] Skipping data sync request: disk at {disk_pct:.1f}% (limit {DISK_CRITICAL_THRESHOLD}%)")
                 return
 
-            with self.peers_lock:
-                peers = list(self.peers.values())
-
-            # This node is a training node if it has GPU
+            # Only sync if we're a GPU node (training capable)
             if not self.self_info.is_gpu_node():
                 return
 
-            # Check manifest for peers with more data
-            for peer in peers:
-                if not peer.is_alive():
+            # Rate limit: only sync every 10 minutes
+            last_sync = getattr(self, "_last_training_data_sync", 0)
+            if time.time() - last_sync < 600:
+                return
+
+            # Load hosts config to get SSH details
+            if not HAS_HOSTS_FOR_SYNC:
+                return
+
+            hosts = load_remote_hosts()
+            if not hosts:
+                return
+
+            local_training_dir = Path(self.ringrift_path) / "ai-service" / "data" / "training"
+            local_training_dir.mkdir(parents=True, exist_ok=True)
+
+            # Calculate local training data size
+            local_training_mb = sum(
+                f.stat().st_size for f in local_training_dir.glob("*.npz")
+            ) / (1024 * 1024) if local_training_dir.exists() else 0
+
+            # Find peers with more training data
+            synced_from = []
+            for host_name, host_config in hosts.items():
+                if host_name == self.node_id:
                     continue
 
-                # Check peer's data manifest
-                if not self.cluster_data_manifest:
+                # Skip hosts without SSH access
+                ssh_host = host_config.ssh_host
+                if not ssh_host:
                     continue
-                peer_manifest = self.cluster_data_manifest.node_manifests.get(peer.node_id)
-                if not peer_manifest:
-                    continue
-                peer_training_mb = peer_manifest.training_data_size / (1024 * 1024)
 
-                if peer_training_mb > TRAINING_DATA_SYNC_THRESHOLD_MB:
-                    # Request sync via existing sync mechanism
-                    print(f"[P2P] Peer {peer.node_id} has {peer_training_mb:.1f}MB training data")
+                # Check if host is alive via P2P
+                with self.peers_lock:
+                    peer = self.peers.get(host_name)
+                if not peer or not peer.is_alive():
+                    continue
+
+                # Get remote training data size via SSH
+                try:
+                    ssh_user = getattr(host_config, 'ssh_user', 'ubuntu')
+                    remote_path = getattr(host_config, 'ringrift_path', '/home/ubuntu/ringrift')
+                    if remote_path.startswith('~'):
+                        remote_path = remote_path.replace('~', f'/home/{ssh_user}')
+
+                    # Check remote training data size
+                    cmd = [
+                        "ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+                        f"{ssh_user}@{ssh_host}",
+                        f"du -sb {remote_path}/ai-service/data/training/*.npz 2>/dev/null | awk '{{sum+=$1}}END{{print sum}}'"
+                    ]
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                    remote_size = int(result.stdout.strip() or 0)
+                    remote_mb = remote_size / (1024 * 1024)
+
+                    # Sync if remote has significantly more data (>20MB more)
+                    if remote_mb > local_training_mb + 20:
+                        print(f"[P2P] Syncing training data from {host_name}: {remote_mb:.1f}MB -> local {local_training_mb:.1f}MB")
+
+                        # Use rsync to sync NPZ files
+                        rsync_cmd = [
+                            "rsync", "-avz", "--progress",
+                            "-e", "ssh -o ConnectTimeout=30 -o StrictHostKeyChecking=no",
+                            f"{ssh_user}@{ssh_host}:{remote_path}/ai-service/data/training/*.npz",
+                            str(local_training_dir) + "/"
+                        ]
+
+                        sync_result = subprocess.run(
+                            rsync_cmd, capture_output=True, text=True, timeout=300
+                        )
+
+                        if sync_result.returncode == 0:
+                            synced_from.append(host_name)
+                            print(f"[P2P] Successfully synced training data from {host_name}")
+                        else:
+                            print(f"[P2P] Failed to sync from {host_name}: {sync_result.stderr[:200]}")
+
+                except subprocess.TimeoutExpired:
+                    print(f"[P2P] Timeout checking training data on {host_name}")
+                except Exception as e:
+                    print(f"[P2P] Error syncing from {host_name}: {e}")
+
+            if synced_from:
+                # Recalculate local size after sync
+                new_local_mb = sum(
+                    f.stat().st_size for f in local_training_dir.glob("*.npz")
+                ) / (1024 * 1024)
+                print(f"[P2P] Training data sync complete: {local_training_mb:.1f}MB -> {new_local_mb:.1f}MB")
+
+            self._last_training_data_sync = time.time()
 
         except Exception as e:
             print(f"[P2P] Data sync request error: {e}")
+            import traceback
+            traceback.print_exc()
 
     # ============================================
     # Git Auto-Update Methods
