@@ -1739,10 +1739,15 @@ class GameReplayDB:
         max_moves: Optional[int] = None,
         limit: int = 100,
         offset: int = 0,
+        exclude_training_excluded: bool = True,
     ) -> List[dict]:
         """Query games by metadata filters.
 
         Returns list of game metadata dictionaries matching filters.
+
+        Args:
+            exclude_training_excluded: If True, exclude games marked with
+                excluded_from_training=1 (e.g., timeout games). Default True.
         """
         conditions = []
         params = []
@@ -1775,6 +1780,10 @@ class GameReplayDB:
         if max_moves is not None:
             conditions.append("total_moves <= ?")
             params.append(max_moves)
+
+        if exclude_training_excluded:
+            # Exclude timeout/excluded games - handle case where column doesn't exist
+            conditions.append("COALESCE(excluded_from_training, 0) = 0")
 
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 
@@ -1818,8 +1827,14 @@ class GameReplayDB:
         source: Optional[str] = None,
         min_moves: Optional[int] = None,
         max_moves: Optional[int] = None,
+        exclude_training_excluded: bool = True,
     ) -> int:
-        """Get count of games matching filters."""
+        """Get count of games matching filters.
+
+        Args:
+            exclude_training_excluded: If True, exclude games marked with
+                excluded_from_training=1 (e.g., timeout games). Default True.
+        """
         conditions = []
         params: List[Any] = []
 
@@ -1850,6 +1865,9 @@ class GameReplayDB:
         if max_moves is not None:
             conditions.append("total_moves <= ?")
             params.append(max_moves)
+
+        if exclude_training_excluded:
+            conditions.append("COALESCE(excluded_from_training, 0) = 0")
 
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 

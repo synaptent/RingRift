@@ -91,7 +91,7 @@ scrape_configs:
   # ---------------------------------------------------------------------------
   - job_name: 'ringrift-elo-metrics'
     static_configs:
-      - targets: ['localhost:9092']
+      - targets: ['host.docker.internal:9092']
         labels:
           service: 'ringrift'
           component: 'elo-metrics'

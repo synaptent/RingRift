@@ -9097,6 +9097,93 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             except Exception:
                 pass
 
+            # === DATA QUALITY METRICS ===
+            lines.append("# HELP ringrift_data_quality_games Total games analyzed for quality")
+            lines.append("# TYPE ringrift_data_quality_games gauge")
+            lines.append("# HELP ringrift_data_quality_short_rate Percentage of short games (<10 moves)")
+            lines.append("# TYPE ringrift_data_quality_short_rate gauge")
+            lines.append("# HELP ringrift_data_quality_issues Number of data quality issues detected")
+            lines.append("# TYPE ringrift_data_quality_issues gauge")
+            try:
+                quality = await self._get_data_quality_cached()
+                for config, data in quality.get("configs", {}).items():
+                    parts = config.rsplit("_", 1)
+                    if len(parts) == 2:
+                        board_type = parts[0]
+                        num_players = parts[1].replace("p", "")
+                        lines.append(f'ringrift_data_quality_games{{board_type="{board_type}",num_players="{num_players}"}} {data.get("total_games", 0)}')
+                        lines.append(f'ringrift_data_quality_short_rate{{board_type="{board_type}",num_players="{num_players}"}} {data.get("short_game_rate", 0)}')
+                lines.append(f'ringrift_data_quality_issues {len(quality.get("issues", []))}')
+            except Exception:
+                pass
+
+            # === TRAINING EFFICIENCY METRICS ===
+            lines.append("# HELP ringrift_gpu_hours_total Total GPU hours used for training")
+            lines.append("# TYPE ringrift_gpu_hours_total gauge")
+            lines.append("# HELP ringrift_elo_per_gpu_hour Elo points gained per GPU hour")
+            lines.append("# TYPE ringrift_elo_per_gpu_hour gauge")
+            lines.append("# HELP ringrift_training_cost_usd Estimated training cost in USD")
+            lines.append("# TYPE ringrift_training_cost_usd gauge")
+            try:
+                efficiency = await self._get_training_efficiency_cached()
+                for config, data in efficiency.get("configs", {}).items():
+                    parts = config.rsplit("_", 1)
+                    if len(parts) == 2:
+                        board_type = parts[0]
+                        num_players = parts[1].replace("p", "")
+                        lines.append(f'ringrift_gpu_hours_total{{board_type="{board_type}",num_players="{num_players}"}} {data.get("gpu_hours", 0)}')
+                        lines.append(f'ringrift_elo_per_gpu_hour{{board_type="{board_type}",num_players="{num_players}"}} {data.get("elo_per_gpu_hour", 0)}')
+                        lines.append(f'ringrift_training_cost_usd{{board_type="{board_type}",num_players="{num_players}"}} {data.get("estimated_cost_usd", 0)}')
+                summary = efficiency.get("summary", {})
+                if summary:
+                    lines.append(f'ringrift_gpu_hours_total {summary.get("total_gpu_hours", 0)}')
+                    lines.append(f'ringrift_training_cost_usd {summary.get("total_estimated_cost_usd", 0)}')
+            except Exception:
+                pass
+
+            # === MODEL LINEAGE METRICS ===
+            lines.append("# HELP ringrift_model_count Total number of trained models")
+            lines.append("# TYPE ringrift_model_count gauge")
+            lines.append("# HELP ringrift_model_generation Latest model generation per config")
+            lines.append("# TYPE ringrift_model_generation gauge")
+            try:
+                lineage = await self._get_model_lineage_cached()
+                lines.append(f'ringrift_model_count {lineage.get("total_models", 0)}')
+                for config, data in lineage.get("configs", {}).items():
+                    parts = config.rsplit("_", 1)
+                    if len(parts) == 2:
+                        board_type = parts[0]
+                        num_players = parts[1].replace("p", "")
+                        lines.append(f'ringrift_model_generation{{board_type="{board_type}",num_players="{num_players}"}} {data.get("latest_generation", 0)}')
+            except Exception:
+                pass
+
+            # === ROLLBACK STATUS METRICS ===
+            lines.append("# HELP ringrift_rollback_candidates Number of configs recommended for rollback")
+            lines.append("# TYPE ringrift_rollback_candidates gauge")
+            try:
+                rollback = await self._check_rollback_conditions()
+                lines.append(f'ringrift_rollback_candidates {len(rollback.get("candidates", []))}')
+            except Exception:
+                pass
+
+            # === AUTOSCALING METRICS ===
+            lines.append("# HELP ringrift_autoscale_suggested_workers Suggested worker count from autoscaling")
+            lines.append("# TYPE ringrift_autoscale_suggested_workers gauge")
+            lines.append("# HELP ringrift_cluster_games_per_hour Current cluster-wide game generation rate")
+            lines.append("# TYPE ringrift_cluster_games_per_hour gauge")
+            try:
+                autoscale = await self._get_autoscaling_metrics()
+                state = autoscale.get("current_state", {})
+                lines.append(f'ringrift_cluster_games_per_hour {state.get("games_per_hour", 0)}')
+                recs = autoscale.get("recommendations", [])
+                if recs:
+                    lines.append(f'ringrift_autoscale_suggested_workers {recs[0].get("suggested_workers", state.get("total_nodes", 1))}')
+                else:
+                    lines.append(f'ringrift_autoscale_suggested_workers {state.get("total_nodes", 1)}')
+            except Exception:
+                pass
+
             # Uptime metric
             if hasattr(self, 'start_time'):
                 uptime = now - self.start_time
@@ -10587,6 +10674,640 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         setattr(self, cache_time_key, now)
         return stats
 
+    # =========================================================================
+    # Feature 1: Tournament Matchup Analysis
+    # =========================================================================
+
+    async def _get_matchup_matrix_cached(self) -> Dict[str, Any]:
+        """Get head-to-head matchup statistics with caching (5 min TTL)."""
+        import sqlite3
+        from collections import defaultdict
+
+        cache_key = "_matchup_matrix_cache"
+        cache_time_key = "_matchup_matrix_cache_time"
+        cache_ttl = 300
+
+        now = time.time()
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
+            if now - getattr(self, cache_time_key) < cache_ttl:
+                return getattr(self, cache_key)
+
+        ai_root = Path(self.ringrift_path) / "ai-service"
+        db_path = ai_root / "data" / "unified_elo.db"
+
+        matrix = {"matchups": [], "models": [], "configs": {}}
+
+        if not db_path.exists():
+            setattr(self, cache_key, matrix)
+            setattr(self, cache_time_key, now)
+            return matrix
+
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+
+            # Get all match history
+            rows = conn.execute("""
+                SELECT participant_a, participant_b, winner, board_type, num_players,
+                       game_length, duration_sec, timestamp
+                FROM match_history
+                WHERE timestamp > ?
+                ORDER BY timestamp DESC
+                LIMIT 10000
+            """, (now - 86400 * 7,)).fetchall()  # Last 7 days
+
+            # Build matchup stats
+            h2h: Dict[str, Dict[str, Dict[str, int]]] = defaultdict(lambda: defaultdict(lambda: {"wins": 0, "losses": 0, "draws": 0}))
+            models = set()
+            config_stats = defaultdict(lambda: {"total_matches": 0, "avg_game_length": [], "avg_duration": []})
+
+            for row in rows:
+                a = row["participant_a"]
+                b = row["participant_b"]
+                winner = row["winner"]
+                config = f"{row['board_type']}_{row['num_players']}p"
+
+                if a and b:
+                    models.add(a)
+                    models.add(b)
+
+                    if winner == a:
+                        h2h[a][b]["wins"] += 1
+                        h2h[b][a]["losses"] += 1
+                    elif winner == b:
+                        h2h[b][a]["wins"] += 1
+                        h2h[a][b]["losses"] += 1
+                    else:
+                        h2h[a][b]["draws"] += 1
+                        h2h[b][a]["draws"] += 1
+
+                    config_stats[config]["total_matches"] += 1
+                    if row["game_length"]:
+                        config_stats[config]["avg_game_length"].append(row["game_length"])
+                    if row["duration_sec"]:
+                        config_stats[config]["avg_duration"].append(row["duration_sec"])
+
+            # Convert to matchup list
+            matchups = []
+            for model_a in sorted(models):
+                for model_b in sorted(models):
+                    if model_a < model_b:  # Avoid duplicates
+                        stats = h2h[model_a][model_b]
+                        total = stats["wins"] + stats["losses"] + stats["draws"]
+                        if total > 0:
+                            matchups.append({
+                                "model_a": model_a,
+                                "model_b": model_b,
+                                "a_wins": stats["wins"],
+                                "b_wins": stats["losses"],
+                                "draws": stats["draws"],
+                                "total": total,
+                                "a_win_rate": round(stats["wins"] / total, 3) if total > 0 else 0,
+                            })
+
+            # Compute config averages
+            for config, data in config_stats.items():
+                if data["avg_game_length"]:
+                    data["avg_game_length"] = round(sum(data["avg_game_length"]) / len(data["avg_game_length"]), 1)
+                else:
+                    data["avg_game_length"] = 0
+                if data["avg_duration"]:
+                    data["avg_duration"] = round(sum(data["avg_duration"]) / len(data["avg_duration"]), 2)
+                else:
+                    data["avg_duration"] = 0
+
+            matrix["matchups"] = matchups
+            matrix["models"] = sorted(models)
+            matrix["configs"] = dict(config_stats)
+            matrix["total_matches"] = sum(c["total_matches"] for c in config_stats.values())
+
+            conn.close()
+        except Exception:
+            pass
+
+        setattr(self, cache_key, matrix)
+        setattr(self, cache_time_key, now)
+        return matrix
+
+    # =========================================================================
+    # Feature 2: Model Lineage Tracking
+    # =========================================================================
+
+    async def _get_model_lineage_cached(self) -> Dict[str, Any]:
+        """Get model lineage and ancestry with caching (10 min TTL)."""
+        import re
+
+        cache_key = "_model_lineage_cache"
+        cache_time_key = "_model_lineage_cache_time"
+        cache_ttl = 600
+
+        now = time.time()
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
+            if now - getattr(self, cache_time_key) < cache_ttl:
+                return getattr(self, cache_key)
+
+        ai_root = Path(self.ringrift_path) / "ai-service"
+        models_dir = ai_root / "models"
+
+        lineage = {"models": [], "generations": {}, "configs": {}}
+
+        if not models_dir.exists():
+            setattr(self, cache_key, lineage)
+            setattr(self, cache_time_key, now)
+            return lineage
+
+        try:
+            # Discover all models
+            model_files = list(models_dir.glob("**/*.pt")) + list(models_dir.glob("**/*.pth"))
+
+            for model_path in model_files:
+                model_name = model_path.stem
+                model_stat = model_path.stat()
+
+                # Parse model name for lineage info
+                # Common patterns: square8_2p_v5_gen12, nnue_square8_2p_epoch50
+                config_match = re.search(r"(square\d+|hex\w*)_(\d+)p", model_name)
+                gen_match = re.search(r"gen(\d+)|v(\d+)|epoch(\d+)", model_name, re.I)
+
+                config = f"{config_match.group(1)}_{config_match.group(2)}p" if config_match else "unknown"
+                generation = int(gen_match.group(1) or gen_match.group(2) or gen_match.group(3) or 0) if gen_match else 0
+
+                model_info = {
+                    "name": model_name,
+                    "path": str(model_path.relative_to(ai_root)),
+                    "config": config,
+                    "generation": generation,
+                    "size_mb": round(model_stat.st_size / 1024 / 1024, 2),
+                    "created_at": model_stat.st_mtime,
+                    "age_hours": round((now - model_stat.st_mtime) / 3600, 1),
+                }
+                lineage["models"].append(model_info)
+
+                # Track generations per config
+                if config not in lineage["generations"]:
+                    lineage["generations"][config] = []
+                lineage["generations"][config].append(model_info)
+
+            # Sort models by generation within each config
+            for config in lineage["generations"]:
+                lineage["generations"][config].sort(key=lambda m: m["generation"])
+
+            # Summary per config
+            for config, models in lineage["generations"].items():
+                lineage["configs"][config] = {
+                    "total_models": len(models),
+                    "latest_generation": max(m["generation"] for m in models) if models else 0,
+                    "latest_model": models[-1]["name"] if models else None,
+                    "total_size_mb": round(sum(m["size_mb"] for m in models), 1),
+                }
+
+            lineage["total_models"] = len(lineage["models"])
+
+        except Exception:
+            pass
+
+        setattr(self, cache_key, lineage)
+        setattr(self, cache_time_key, now)
+        return lineage
+
+    # =========================================================================
+    # Feature 3: Data Quality Metrics
+    # =========================================================================
+
+    async def _get_data_quality_cached(self) -> Dict[str, Any]:
+        """Get data quality metrics with caching (5 min TTL)."""
+        import json
+        from collections import defaultdict
+
+        cache_key = "_data_quality_cache"
+        cache_time_key = "_data_quality_cache_time"
+        cache_ttl = 300
+
+        now = time.time()
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
+            if now - getattr(self, cache_time_key) < cache_ttl:
+                return getattr(self, cache_key)
+
+        ai_root = Path(self.ringrift_path) / "ai-service"
+        quality = {"configs": {}, "issues": [], "summary": {}}
+
+        data_dirs = [
+            ai_root / "data" / "games" / "daemon_sync",
+            ai_root / "data" / "selfplay",
+        ]
+        cutoff = now - 86400  # Last 24 hours
+
+        try:
+            config_stats = defaultdict(lambda: {
+                "total_games": 0,
+                "game_lengths": [],
+                "short_games": 0,  # < 10 moves
+                "long_games": 0,   # > 500 moves
+                "stalemates": 0,
+                "unique_openings": set(),
+                "player_wins": defaultdict(int),
+                "parse_errors": 0,
+            })
+
+            for data_dir in data_dirs:
+                if not data_dir.exists():
+                    continue
+                for jsonl_path in data_dir.rglob("*.jsonl"):
+                    try:
+                        if jsonl_path.stat().st_mtime < cutoff:
+                            continue
+                        with open(jsonl_path, "r") as f:
+                            for line in f:
+                                try:
+                                    game = json.loads(line)
+                                    board_type = game.get("board_type", "unknown")
+                                    num_players = game.get("num_players", 0)
+                                    config = f"{board_type}_{num_players}p"
+
+                                    stats = config_stats[config]
+                                    stats["total_games"] += 1
+
+                                    length = game.get("length", 0)
+                                    if length > 0:
+                                        stats["game_lengths"].append(length)
+                                        if length < 10:
+                                            stats["short_games"] += 1
+                                        elif length > 500:
+                                            stats["long_games"] += 1
+
+                                    victory_type = game.get("victory_type", "")
+                                    if victory_type == "stalemate":
+                                        stats["stalemates"] += 1
+
+                                    # Track opening diversity
+                                    moves = game.get("moves", [])
+                                    if moves and len(moves) >= 2:
+                                        opening = str(moves[0].get("action", ""))[:15] + "-" + str(moves[1].get("action", ""))[:15]
+                                        stats["unique_openings"].add(opening)
+
+                                    # Track winner distribution
+                                    winner = game.get("winner")
+                                    if winner is not None:
+                                        stats["player_wins"][winner] += 1
+
+                                except json.JSONDecodeError:
+                                    config_stats["unknown"]["parse_errors"] += 1
+                    except Exception:
+                        continue
+
+            # Convert to quality metrics
+            issues = []
+            for config, stats in config_stats.items():
+                total = stats["total_games"]
+                if total == 0:
+                    continue
+
+                lengths = stats["game_lengths"]
+                avg_length = sum(lengths) / len(lengths) if lengths else 0
+                length_std = (sum((l - avg_length) ** 2 for l in lengths) / len(lengths)) ** 0.5 if len(lengths) > 1 else 0
+
+                short_rate = stats["short_games"] / total
+                long_rate = stats["long_games"] / total
+                stalemate_rate = stats["stalemates"] / total
+                opening_diversity = len(stats["unique_openings"])
+
+                # Detect issues
+                if short_rate > 0.1:
+                    issues.append({"config": config, "issue": "high_short_game_rate", "value": round(short_rate * 100, 1), "severity": "warning"})
+                if stalemate_rate > 0.3:
+                    issues.append({"config": config, "issue": "high_stalemate_rate", "value": round(stalemate_rate * 100, 1), "severity": "warning"})
+                if opening_diversity < 5 and total > 50:
+                    issues.append({"config": config, "issue": "low_opening_diversity", "value": opening_diversity, "severity": "warning"})
+
+                # Check for player bias
+                wins = stats["player_wins"]
+                if len(wins) >= 2 and total > 20:
+                    max_win_rate = max(wins.values()) / total
+                    if max_win_rate > 0.7:
+                        issues.append({"config": config, "issue": "player_bias", "value": round(max_win_rate * 100, 1), "severity": "info"})
+
+                quality["configs"][config] = {
+                    "total_games": total,
+                    "avg_length": round(avg_length, 1),
+                    "length_std": round(length_std, 1),
+                    "short_game_rate": round(short_rate * 100, 1),
+                    "long_game_rate": round(long_rate * 100, 1),
+                    "stalemate_rate": round(stalemate_rate * 100, 1),
+                    "opening_diversity": opening_diversity,
+                    "parse_errors": stats["parse_errors"],
+                }
+
+            quality["issues"] = issues
+            quality["summary"] = {
+                "total_configs": len(quality["configs"]),
+                "total_issues": len(issues),
+                "critical_issues": len([i for i in issues if i["severity"] == "critical"]),
+                "warning_issues": len([i for i in issues if i["severity"] == "warning"]),
+            }
+
+        except Exception:
+            pass
+
+        setattr(self, cache_key, quality)
+        setattr(self, cache_time_key, now)
+        return quality
+
+    # =========================================================================
+    # Feature 4: Training Efficiency Dashboard
+    # =========================================================================
+
+    async def _get_training_efficiency_cached(self) -> Dict[str, Any]:
+        """Get training efficiency metrics with caching (5 min TTL)."""
+        import sqlite3
+        import re
+
+        cache_key = "_training_efficiency_cache"
+        cache_time_key = "_training_efficiency_cache_time"
+        cache_ttl = 300
+
+        now = time.time()
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
+            if now - getattr(self, cache_time_key) < cache_ttl:
+                return getattr(self, cache_key)
+
+        ai_root = Path(self.ringrift_path) / "ai-service"
+        efficiency = {"configs": {}, "summary": {}, "cost_tracking": {}}
+
+        try:
+            # Get Elo history to track improvements
+            db_path = ai_root / "data" / "unified_elo.db"
+            elo_history = {}
+
+            if db_path.exists():
+                conn = sqlite3.connect(db_path)
+                rows = conn.execute("""
+                    SELECT board_type, num_players, participant_id, rating, timestamp
+                    FROM rating_history
+                    WHERE timestamp > ?
+                    ORDER BY timestamp ASC
+                """, (now - 86400 * 7,)).fetchall()  # Last 7 days
+
+                for row in rows:
+                    config = f"{row[0]}_{row[1]}p"
+                    if config not in elo_history:
+                        elo_history[config] = {"ratings": [], "timestamps": []}
+                    elo_history[config]["ratings"].append(row[3])
+                    elo_history[config]["timestamps"].append(row[4])
+                conn.close()
+
+            # Parse training logs for GPU hours
+            logs_dir = ai_root / "logs" / "training"
+            gpu_hours_per_config = {}
+
+            if logs_dir.exists():
+                for log_file in logs_dir.glob("*.log"):
+                    try:
+                        content = log_file.read_text(errors='ignore')
+                        config_match = re.search(r"(square\d+|hex\w*)_(\d+)p", log_file.name)
+                        if not config_match:
+                            continue
+                        config = f"{config_match.group(1)}_{config_match.group(2)}p"
+
+                        # Extract training duration
+                        duration_match = re.search(r"(?:total[_\s]?time|duration)[:\s]*([\d.]+)\s*(?:s|sec|min|h)", content, re.I)
+                        if duration_match:
+                            duration = float(duration_match.group(1))
+                            # Assume hours if > 100, else assume minutes
+                            if duration > 100:
+                                duration = duration / 3600  # seconds to hours
+                            elif duration < 24:
+                                duration = duration / 60  # minutes to hours
+
+                            if config not in gpu_hours_per_config:
+                                gpu_hours_per_config[config] = 0
+                            gpu_hours_per_config[config] += duration
+                    except Exception:
+                        continue
+
+            # Calculate efficiency metrics per config
+            for config in set(list(elo_history.keys()) + list(gpu_hours_per_config.keys())):
+                elo_data = elo_history.get(config, {"ratings": [], "timestamps": []})
+                gpu_hours = gpu_hours_per_config.get(config, 0)
+
+                if elo_data["ratings"]:
+                    initial_elo = elo_data["ratings"][0] if elo_data["ratings"] else 1500
+                    current_elo = elo_data["ratings"][-1] if elo_data["ratings"] else 1500
+                    elo_gain = current_elo - initial_elo
+                else:
+                    initial_elo = current_elo = 1500
+                    elo_gain = 0
+
+                # Elo per GPU hour
+                elo_per_hour = elo_gain / gpu_hours if gpu_hours > 0 else 0
+
+                # Estimated cost (assuming $2/GPU-hour average)
+                estimated_cost = gpu_hours * 2.0
+
+                efficiency["configs"][config] = {
+                    "gpu_hours": round(gpu_hours, 2),
+                    "initial_elo": round(initial_elo, 1),
+                    "current_elo": round(current_elo, 1),
+                    "elo_gain": round(elo_gain, 1),
+                    "elo_per_gpu_hour": round(elo_per_hour, 2),
+                    "estimated_cost_usd": round(estimated_cost, 2),
+                    "cost_per_elo_point": round(estimated_cost / max(elo_gain, 1), 2) if elo_gain > 0 else None,
+                }
+
+            # Summary
+            total_gpu_hours = sum(c.get("gpu_hours", 0) for c in efficiency["configs"].values())
+            total_elo_gain = sum(c.get("elo_gain", 0) for c in efficiency["configs"].values())
+            total_cost = sum(c.get("estimated_cost_usd", 0) for c in efficiency["configs"].values())
+
+            efficiency["summary"] = {
+                "total_gpu_hours": round(total_gpu_hours, 2),
+                "total_elo_gain": round(total_elo_gain, 1),
+                "total_estimated_cost_usd": round(total_cost, 2),
+                "overall_elo_per_gpu_hour": round(total_elo_gain / max(total_gpu_hours, 1), 2),
+            }
+
+        except Exception:
+            pass
+
+        setattr(self, cache_key, efficiency)
+        setattr(self, cache_time_key, now)
+        return efficiency
+
+    # =========================================================================
+    # Feature 5: Automated Model Rollback
+    # =========================================================================
+
+    async def _check_rollback_conditions(self) -> Dict[str, Any]:
+        """Check if any models should be rolled back based on metrics."""
+        rollback_status = {"candidates": [], "recent_rollbacks": [], "config_status": {}}
+
+        try:
+            # Get holdout metrics for overfitting detection
+            holdout = await self._get_holdout_metrics_cached()
+
+            # Get Elo data for regression detection
+            ai_root = Path(self.ringrift_path) / "ai-service"
+            db_path = ai_root / "data" / "unified_elo.db"
+
+            elo_data = {}
+            if db_path.exists():
+                import sqlite3
+                conn = sqlite3.connect(db_path)
+                rows = conn.execute("""
+                    SELECT board_type, num_players, participant_id, rating, timestamp
+                    FROM rating_history
+                    ORDER BY timestamp DESC
+                    LIMIT 1000
+                """).fetchall()
+
+                for row in rows:
+                    config = f"{row[0]}_{row[1]}p"
+                    if config not in elo_data:
+                        elo_data[config] = []
+                    elo_data[config].append({"model": row[2], "rating": row[3], "timestamp": row[4]})
+                conn.close()
+
+            # Check each config for rollback conditions
+            for config, holdout_data in holdout.get("configs", {}).items():
+                status = {"config": config, "rollback_recommended": False, "reasons": []}
+
+                # Check 1: Overfitting (overfit_gap > 0.15)
+                overfit_gap = holdout_data.get("overfit_gap", 0)
+                if overfit_gap and overfit_gap > 0.15:
+                    status["rollback_recommended"] = True
+                    status["reasons"].append(f"Overfitting detected: gap={overfit_gap:.3f}")
+
+                # Check 2: Low holdout accuracy (< 60%)
+                holdout_acc = holdout_data.get("holdout_accuracy", 1.0)
+                if holdout_acc and holdout_acc < 0.6:
+                    status["rollback_recommended"] = True
+                    status["reasons"].append(f"Low holdout accuracy: {holdout_acc*100:.1f}%")
+
+                # Check 3: Elo regression (dropped > 50 points recently)
+                if config in elo_data and len(elo_data[config]) >= 2:
+                    recent = elo_data[config][0]["rating"]
+                    previous = max(e["rating"] for e in elo_data[config][:10])
+                    if previous - recent > 50:
+                        status["rollback_recommended"] = True
+                        status["reasons"].append(f"Elo regression: {previous:.0f} -> {recent:.0f}")
+
+                rollback_status["config_status"][config] = status
+                if status["rollback_recommended"]:
+                    rollback_status["candidates"].append(status)
+
+            # Load recent rollback history if exists
+            rollback_log = ai_root / "logs" / "rollbacks.json"
+            if rollback_log.exists():
+                import json
+                try:
+                    rollback_status["recent_rollbacks"] = json.loads(rollback_log.read_text())[-10:]
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
+
+        return rollback_status
+
+    # =========================================================================
+    # Feature 6: Distributed Selfplay Autoscaling
+    # =========================================================================
+
+    async def _get_autoscaling_metrics(self) -> Dict[str, Any]:
+        """Get metrics for autoscaling decisions."""
+        autoscale = {
+            "current_state": {},
+            "recommendations": [],
+            "thresholds": {
+                "scale_up_games_per_hour": 50,  # Scale up if below this
+                "scale_down_games_per_hour": 200,  # Scale down if above this
+                "max_workers": 10,
+                "min_workers": 1,
+                "target_data_freshness_hours": 2,
+            },
+        }
+
+        try:
+            # Get current worker count
+            with self.peers_lock:
+                total_nodes = len(self.peers) + 1
+                gpu_nodes = len([p for p in self.peers.values() if getattr(p, "has_gpu", False)])
+                if self.self_info.has_gpu:
+                    gpu_nodes += 1
+
+            with self.jobs_lock:
+                active_selfplay = len([j for j in self.local_jobs.values()
+                                      if j.job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY)
+                                      and j.status == "running"])
+
+            autoscale["current_state"] = {
+                "total_nodes": total_nodes,
+                "gpu_nodes": gpu_nodes,
+                "active_selfplay_jobs": active_selfplay,
+            }
+
+            # Get game generation throughput
+            analytics = await self._get_game_analytics_cached()
+            total_throughput = sum(c.get("throughput_per_hour", 0) for c in analytics.get("configs", {}).values())
+
+            autoscale["current_state"]["games_per_hour"] = round(total_throughput, 1)
+
+            # Get data freshness
+            now = time.time()
+            ai_root = Path(self.ringrift_path) / "ai-service"
+            selfplay_dir = ai_root / "data" / "selfplay"
+
+            freshest_data = 0
+            if selfplay_dir.exists():
+                for jsonl in selfplay_dir.rglob("*.jsonl"):
+                    try:
+                        mtime = jsonl.stat().st_mtime
+                        if mtime > freshest_data:
+                            freshest_data = mtime
+                    except Exception:
+                        continue
+
+            data_age_hours = (now - freshest_data) / 3600 if freshest_data > 0 else 999
+            autoscale["current_state"]["data_freshness_hours"] = round(data_age_hours, 2)
+
+            # Generate recommendations
+            thresholds = autoscale["thresholds"]
+
+            if total_throughput < thresholds["scale_up_games_per_hour"] and total_nodes < thresholds["max_workers"]:
+                autoscale["recommendations"].append({
+                    "action": "scale_up",
+                    "reason": f"Low throughput ({total_throughput:.0f} games/h < {thresholds['scale_up_games_per_hour']})",
+                    "suggested_workers": min(total_nodes + 2, thresholds["max_workers"]),
+                })
+
+            if total_throughput > thresholds["scale_down_games_per_hour"] and total_nodes > thresholds["min_workers"]:
+                autoscale["recommendations"].append({
+                    "action": "scale_down",
+                    "reason": f"High throughput ({total_throughput:.0f} games/h > {thresholds['scale_down_games_per_hour']})",
+                    "suggested_workers": max(total_nodes - 1, thresholds["min_workers"]),
+                })
+
+            if data_age_hours > thresholds["target_data_freshness_hours"]:
+                autoscale["recommendations"].append({
+                    "action": "scale_up",
+                    "reason": f"Stale data ({data_age_hours:.1f}h > {thresholds['target_data_freshness_hours']}h)",
+                    "suggested_workers": min(total_nodes + 1, thresholds["max_workers"]),
+                })
+
+            # Cost optimization recommendation
+            efficiency = await self._get_training_efficiency_cached()
+            elo_per_hour = efficiency.get("summary", {}).get("overall_elo_per_gpu_hour", 0)
+            if elo_per_hour < 1 and total_nodes > 2:
+                autoscale["recommendations"].append({
+                    "action": "optimize",
+                    "reason": f"Low efficiency ({elo_per_hour:.2f} Elo/GPU-h) - consider reducing workers",
+                    "suggested_workers": max(total_nodes - 1, thresholds["min_workers"]),
+                })
+
+        except Exception:
+            pass
+
+        return autoscale
+
     async def handle_victory_table(self, request: web.Request) -> web.Response:
         """GET /victory/table - Victory type breakdown for Grafana Infinity.
 
@@ -11053,6 +11774,180 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             return web.json_response(table_data)
 
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
+
+    # =========================================================================
+    # Feature Endpoints
+    # =========================================================================
+
+    async def handle_matchup_matrix(self, request: web.Request) -> web.Response:
+        """GET /matchups/matrix - Head-to-head matchup statistics."""
+        try:
+            matrix = await self._get_matchup_matrix_cached()
+            return web.json_response(matrix)
+        except Exception as e:
+            return web.json_response({"error": str(e)})
+
+    async def handle_matchup_table(self, request: web.Request) -> web.Response:
+        """GET /matchups/table - Matchups in table format for Grafana Infinity."""
+        try:
+            matrix = await self._get_matchup_matrix_cached()
+            table_data = []
+            for matchup in matrix.get("matchups", []):
+                table_data.append({
+                    "ModelA": matchup["model_a"],
+                    "ModelB": matchup["model_b"],
+                    "AWins": matchup["a_wins"],
+                    "BWins": matchup["b_wins"],
+                    "Draws": matchup["draws"],
+                    "Total": matchup["total"],
+                    "AWinRate": round(matchup["a_win_rate"] * 100, 1),
+                })
+            return web.json_response(table_data)
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
+
+    async def handle_model_lineage(self, request: web.Request) -> web.Response:
+        """GET /models/lineage - Model ancestry and generation tracking."""
+        try:
+            lineage = await self._get_model_lineage_cached()
+            return web.json_response(lineage)
+        except Exception as e:
+            return web.json_response({"error": str(e)})
+
+    async def handle_model_lineage_table(self, request: web.Request) -> web.Response:
+        """GET /models/lineage/table - Model lineage in table format for Grafana Infinity."""
+        try:
+            lineage = await self._get_model_lineage_cached()
+            table_data = []
+            for model in lineage.get("models", []):
+                table_data.append({
+                    "Name": model["name"],
+                    "Config": model["config"],
+                    "Generation": model["generation"],
+                    "SizeMB": model["size_mb"],
+                    "AgeHours": model["age_hours"],
+                })
+            return web.json_response(sorted(table_data, key=lambda x: (-x["Generation"], x["Config"])))
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
+
+    async def handle_data_quality(self, request: web.Request) -> web.Response:
+        """GET /data/quality - Data quality metrics and issue detection."""
+        try:
+            quality = await self._get_data_quality_cached()
+            return web.json_response(quality)
+        except Exception as e:
+            return web.json_response({"error": str(e)})
+
+    async def handle_data_quality_table(self, request: web.Request) -> web.Response:
+        """GET /data/quality/table - Data quality in table format for Grafana Infinity."""
+        try:
+            quality = await self._get_data_quality_cached()
+            table_data = []
+            for config, metrics in quality.get("configs", {}).items():
+                status = "OK"
+                for issue in quality.get("issues", []):
+                    if issue["config"] == config and issue["severity"] == "warning":
+                        status = "WARNING"
+                        break
+                table_data.append({
+                    "Config": config,
+                    "Games": metrics["total_games"],
+                    "AvgLength": metrics["avg_length"],
+                    "ShortRate": metrics["short_game_rate"],
+                    "StalemateRate": metrics["stalemate_rate"],
+                    "OpeningDiv": metrics["opening_diversity"],
+                    "Status": status,
+                })
+            return web.json_response(table_data)
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
+
+    async def handle_data_quality_issues(self, request: web.Request) -> web.Response:
+        """GET /data/quality/issues - Data quality issues in table format."""
+        try:
+            quality = await self._get_data_quality_cached()
+            return web.json_response(quality.get("issues", []))
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
+
+    async def handle_training_efficiency(self, request: web.Request) -> web.Response:
+        """GET /training/efficiency - Training efficiency and cost metrics."""
+        try:
+            efficiency = await self._get_training_efficiency_cached()
+            return web.json_response(efficiency)
+        except Exception as e:
+            return web.json_response({"error": str(e)})
+
+    async def handle_training_efficiency_table(self, request: web.Request) -> web.Response:
+        """GET /training/efficiency/table - Efficiency in table format for Grafana Infinity."""
+        try:
+            efficiency = await self._get_training_efficiency_cached()
+            table_data = []
+            for config, metrics in efficiency.get("configs", {}).items():
+                table_data.append({
+                    "Config": config,
+                    "GPUHours": metrics["gpu_hours"],
+                    "EloGain": metrics["elo_gain"],
+                    "EloPerHour": metrics["elo_per_gpu_hour"],
+                    "CostUSD": metrics["estimated_cost_usd"],
+                    "CostPerElo": metrics["cost_per_elo_point"],
+                })
+            return web.json_response(table_data)
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
+
+    async def handle_rollback_status(self, request: web.Request) -> web.Response:
+        """GET /rollback/status - Model rollback status and recommendations."""
+        try:
+            status = await self._check_rollback_conditions()
+            return web.json_response(status)
+        except Exception as e:
+            return web.json_response({"error": str(e)})
+
+    async def handle_rollback_candidates(self, request: web.Request) -> web.Response:
+        """GET /rollback/candidates - Rollback candidates in table format."""
+        try:
+            status = await self._check_rollback_conditions()
+            table_data = []
+            for candidate in status.get("candidates", []):
+                table_data.append({
+                    "Config": candidate["config"],
+                    "Reasons": ", ".join(candidate["reasons"]),
+                    "Recommended": "YES" if candidate["rollback_recommended"] else "NO",
+                })
+            return web.json_response(table_data)
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
+
+    async def handle_autoscale_metrics(self, request: web.Request) -> web.Response:
+        """GET /autoscale/metrics - Autoscaling metrics and recommendations."""
+        try:
+            metrics = await self._get_autoscaling_metrics()
+            return web.json_response(metrics)
+        except Exception as e:
+            return web.json_response({"error": str(e)})
+
+    async def handle_autoscale_recommendations(self, request: web.Request) -> web.Response:
+        """GET /autoscale/recommendations - Autoscaling recommendations table."""
+        try:
+            metrics = await self._get_autoscaling_metrics()
+            table_data = []
+            for rec in metrics.get("recommendations", []):
+                table_data.append({
+                    "Action": rec["action"].upper(),
+                    "Reason": rec["reason"],
+                    "SuggestedWorkers": rec["suggested_workers"],
+                })
+            if not table_data:
+                table_data.append({
+                    "Action": "NONE",
+                    "Reason": "Current scaling is optimal",
+                    "SuggestedWorkers": metrics.get("current_state", {}).get("total_nodes", 1),
+                })
+            return web.json_response(table_data)
         except Exception as e:
             return web.json_response([{"error": str(e)}])
 
@@ -14775,6 +15670,20 @@ print(json.dumps({{
         app.router.add_get('/holdout/table', self.handle_holdout_table)
         app.router.add_get('/mcts/stats', self.handle_mcts_stats)
         app.router.add_get('/mcts/table', self.handle_mcts_table)
+        # Feature endpoints
+        app.router.add_get('/matchups/matrix', self.handle_matchup_matrix)
+        app.router.add_get('/matchups/table', self.handle_matchup_table)
+        app.router.add_get('/models/lineage', self.handle_model_lineage)
+        app.router.add_get('/models/lineage/table', self.handle_model_lineage_table)
+        app.router.add_get('/data/quality', self.handle_data_quality)
+        app.router.add_get('/data/quality/table', self.handle_data_quality_table)
+        app.router.add_get('/data/quality/issues', self.handle_data_quality_issues)
+        app.router.add_get('/training/efficiency', self.handle_training_efficiency)
+        app.router.add_get('/training/efficiency/table', self.handle_training_efficiency_table)
+        app.router.add_get('/rollback/status', self.handle_rollback_status)
+        app.router.add_get('/rollback/candidates', self.handle_rollback_candidates)
+        app.router.add_get('/autoscale/metrics', self.handle_autoscale_metrics)
+        app.router.add_get('/autoscale/recommendations', self.handle_autoscale_recommendations)
         app.router.add_get('/api/training/status', self.handle_api_training_status)
         app.router.add_get('/api/canonical/health', self.handle_api_canonical_health)
         app.router.add_get('/api/canonical/jobs', self.handle_api_canonical_jobs_list)
