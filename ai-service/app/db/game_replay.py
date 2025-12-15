@@ -1832,7 +1832,10 @@ class GameReplayDB:
 
         Yields (metadata, initial_state, moves) tuples for each game.
         """
-        games = self.query_games(**filters, limit=10000)
+        # Remove limit from filters if present, use default of 10000
+        filters_copy = dict(filters)
+        limit = filters_copy.pop("limit", 10000)
+        games = self.query_games(**filters_copy, limit=limit)
 
         for game_meta in games:
             game_id = game_meta["game_id"]
