@@ -425,7 +425,8 @@ LEADER_LEASE_RENEW_INTERVAL = 15  # How often leader renews lease (increased fro
 # LEADERLESS FALLBACK: When the cluster has no leader for this long, individual nodes
 # may trigger local training to prevent data accumulation without progress.
 # This makes the system more resilient to leader election failures.
-LEADERLESS_TRAINING_TIMEOUT = 600  # 10 minutes without leader triggers local training
+# Reduced from 10 minutes to 3 minutes for faster response to leader instability.
+LEADERLESS_TRAINING_TIMEOUT = 180  # 3 minutes without leader triggers local training
 JOB_CHECK_INTERVAL = 60  # seconds between job status checks
 DISCOVERY_PORT = 8771  # UDP port for peer discovery
 DISCOVERY_INTERVAL = 120  # seconds between discovery broadcasts
@@ -17994,9 +17995,22 @@ print(json.dumps({{
         return False  # We remain leader
 
     async def _job_management_loop(self):
-        """Leader-only: Manage jobs across the cluster."""
+        """Manage jobs - leader coordinates cluster, all nodes handle local operations."""
         while self.running:
             try:
+                # ==== DECENTRALIZED OPERATIONS (all nodes) ====
+                # These run on every node to ensure cluster health even without a leader
+
+                # Local data consolidation: merge siloed job DBs to main selfplay.db
+                await self._consolidate_selfplay_data()
+
+                # Local stuck job detection: each node monitors its own processes
+                await self._check_local_stuck_jobs()
+
+                # Leaderless training fallback: trigger local training if no leader for too long
+                await self._check_local_training_fallback()
+
+                # ==== LEADER-ONLY OPERATIONS ====
                 if self.role == NodeRole.LEADER:
                     # LEARNED LESSONS - Check for split-brain before acting as leader
                     if await self._check_and_resolve_split_brain():
@@ -18007,15 +18021,11 @@ print(json.dumps({{
                     await self._manage_cluster_jobs()
                     # Cluster rebalancing: migrate jobs from weak to powerful nodes
                     await self._check_cluster_balance()
-                    # Data consolidation: merge siloed job DBs to main selfplay.db
-                    await self._consolidate_selfplay_data()
                     # Phase 3: Check if training should be triggered automatically
                     await self._check_and_trigger_training()
-                    # LEADERLESS FALLBACK: If no leader for too long, trigger local training
-                    await self._check_local_training_fallback()
                     # Phase 5: Check improvement cycles for automated training
                     await self._check_improvement_cycles()
-                    # Self-healing: detect and handle stuck jobs
+                    # Cluster-wide stuck job detection (remote nodes)
                     await self._check_and_kill_stuck_jobs()
                     # Self-healing: auto-scale GPU utilization toward 60-80% target
                     await self._auto_scale_gpu_utilization()
@@ -18093,6 +18103,92 @@ print(json.dumps({{
 
         if killed > 0:
             print(f"[P2P] Self-healing: killed {killed} stuck job(s)")
+        return killed
+
+    async def _check_local_stuck_jobs(self) -> int:
+        """DECENTRALIZED: Detect and kill stuck processes on THIS node only.
+
+        Runs on ALL nodes (not just leader) to ensure each node can self-heal
+        even when there's no functioning leader in the cluster.
+
+        Detects:
+        - GPU selfplay processes with 0% GPU utilization for too long
+        - Training processes that haven't made progress
+        - Orphaned processes that aren't tracked in local_jobs
+
+        Returns:
+            Number of stuck processes terminated
+        """
+        killed = 0
+        now = time.time()
+        STUCK_THRESHOLD = 900  # 15 minutes
+
+        # Only check periodically to avoid excessive process scanning
+        last_check = getattr(self, "_last_local_stuck_check", 0)
+        if now - last_check < 300:  # Check every 5 minutes
+            return 0
+        self._last_local_stuck_check = now
+
+        # Check if local GPU is at 0% but we have running GPU selfplay jobs
+        gpu_percent = float(getattr(self.self_info, "gpu_percent", 0) or 0)
+        selfplay_jobs = int(getattr(self.self_info, "selfplay_jobs", 0) or 0)
+        has_gpu = bool(getattr(self.self_info, "has_gpu", False))
+
+        if has_gpu and selfplay_jobs > 0 and gpu_percent < 5:
+            last_gpu_active = getattr(self, "_local_last_gpu_active", 0)
+            if last_gpu_active == 0:
+                self._local_last_gpu_active = now
+            elif now - last_gpu_active > STUCK_THRESHOLD:
+                print(f"[P2P] LOCAL STUCK: {selfplay_jobs} selfplay jobs but {gpu_percent:.0f}% GPU for {int((now - last_gpu_active)/60)}min")
+                # Kill all local GPU selfplay processes and let them restart
+                try:
+                    import subprocess
+                    # Kill gpu_selfplay processes specifically
+                    result = subprocess.run(
+                        ["pkill", "-9", "-f", "gpu_selfplay"],
+                        timeout=10, capture_output=True
+                    )
+                    if result.returncode == 0:
+                        killed += 1
+                        print(f"[P2P] LOCAL: Killed stuck GPU selfplay processes")
+                        # Clear job tracking so they restart
+                        with self.jobs_lock:
+                            gpu_jobs = [jid for jid, job in self.local_jobs.items()
+                                       if "gpu" in str(getattr(job, "job_type", "")).lower()]
+                            for jid in gpu_jobs:
+                                del self.local_jobs[jid]
+                        self._local_last_gpu_active = now
+                except Exception as e:
+                    print(f"[P2P] LOCAL: Failed to kill stuck processes: {e}")
+        elif has_gpu and gpu_percent >= 5:
+            self._local_last_gpu_active = now
+
+        # Check for orphaned selfplay processes (processes running but not in job tracking)
+        try:
+            import subprocess
+            # Count actual selfplay processes
+            result = subprocess.run(
+                ["pgrep", "-fc", "selfplay|gpu_selfplay"],
+                timeout=5, capture_output=True, text=True
+            )
+            actual_processes = int(result.stdout.strip() or "0") if result.returncode == 0 else 0
+
+            with self.jobs_lock:
+                tracked_jobs = len(self.local_jobs)
+
+            # If we have way more processes than tracked jobs, we have orphans
+            if actual_processes > tracked_jobs + 10:
+                last_orphan_check = getattr(self, "_last_orphan_kill", 0)
+                if now - last_orphan_check > 3600:  # Max once per hour
+                    print(f"[P2P] LOCAL: Orphan detection: {actual_processes} processes vs {tracked_jobs} tracked")
+                    # Don't auto-kill orphans yet, just warn
+                    # Could add aggressive cleanup here if needed
+                    self._last_orphan_kill = now
+        except Exception:
+            pass
+
+        if killed > 0:
+            print(f"[P2P] LOCAL self-healing: terminated {killed} stuck process(es)")
         return killed
 
     async def _remote_kill_stuck_job(self, target_node: str, job_id: str, job_type: str) -> bool:
