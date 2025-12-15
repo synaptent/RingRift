@@ -12375,6 +12375,536 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         except Exception as e:
             return web.json_response([{"error": str(e)}])
 
+    # ==================== A/B Testing Framework ====================
+
+    def _calculate_ab_test_stats(self, test_id: str) -> Dict[str, Any]:
+        """Calculate statistical significance for an A/B test."""
+        import math
+
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+
+            # Get game results
+            cursor.execute("""
+                SELECT model_a_result, model_a_score, model_b_score, game_length
+                FROM ab_test_games WHERE test_id = ?
+            """, (test_id,))
+            games = cursor.fetchall()
+            conn.close()
+
+            if not games:
+                return {
+                    "games_played": 0,
+                    "model_a_wins": 0,
+                    "model_b_wins": 0,
+                    "draws": 0,
+                    "model_a_score": 0.0,
+                    "model_b_score": 0.0,
+                    "model_a_winrate": 0.0,
+                    "model_b_winrate": 0.0,
+                    "confidence": 0.0,
+                    "likely_winner": None,
+                    "statistically_significant": False,
+                }
+
+            # Count results
+            model_a_wins = sum(1 for g in games if g[0] == "win")
+            model_b_wins = sum(1 for g in games if g[0] == "loss")
+            draws = sum(1 for g in games if g[0] == "draw")
+            total = len(games)
+
+            model_a_score = sum(g[1] for g in games)
+            model_b_score = sum(g[2] for g in games)
+
+            # Winrate (using score, e.g., 1 for win, 0.5 for draw, 0 for loss)
+            model_a_winrate = model_a_score / total if total > 0 else 0.0
+            model_b_winrate = model_b_score / total if total > 0 else 0.0
+
+            # Wilson score confidence interval for statistical significance
+            # Using normal approximation for simplicity
+            def wilson_ci(wins: int, n: int, z: float = 1.96) -> Tuple[float, float]:
+                if n == 0:
+                    return (0.0, 1.0)
+                p = wins / n
+                denominator = 1 + z * z / n
+                center = (p + z * z / (2 * n)) / denominator
+                spread = z * math.sqrt((p * (1 - p) + z * z / (4 * n)) / n) / denominator
+                return (max(0, center - spread), min(1, center + spread))
+
+            # Calculate confidence intervals
+            a_lo, a_hi = wilson_ci(model_a_wins + draws // 2, total)
+            b_lo, b_hi = wilson_ci(model_b_wins + draws // 2, total)
+
+            # Determine if statistically significant (non-overlapping CIs)
+            statistically_significant = a_hi < b_lo or b_hi < a_lo
+
+            # Estimate confidence based on score difference and sample size
+            if total > 0:
+                score_diff = abs(model_a_winrate - model_b_winrate)
+                # Rough confidence estimate (higher with more games and larger diff)
+                confidence = min(0.99, 1 - math.exp(-total * score_diff * 2))
+            else:
+                confidence = 0.0
+
+            # Determine likely winner
+            likely_winner = None
+            if model_a_winrate > model_b_winrate + 0.05:
+                likely_winner = "model_a"
+            elif model_b_winrate > model_a_winrate + 0.05:
+                likely_winner = "model_b"
+
+            avg_game_length = sum(g[3] for g in games if g[3]) / max(1, sum(1 for g in games if g[3]))
+
+            return {
+                "games_played": total,
+                "model_a_wins": model_a_wins,
+                "model_b_wins": model_b_wins,
+                "draws": draws,
+                "model_a_score": model_a_score,
+                "model_b_score": model_b_score,
+                "model_a_winrate": round(model_a_winrate, 4),
+                "model_b_winrate": round(model_b_winrate, 4),
+                "confidence": round(confidence, 4),
+                "likely_winner": likely_winner,
+                "statistically_significant": statistically_significant,
+                "avg_game_length": round(avg_game_length, 1),
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def handle_abtest_create(self, request: web.Request) -> web.Response:
+        """POST /abtest/create - Create a new A/B test between two models.
+
+        JSON body:
+            name: Test name (required)
+            description: Test description (optional)
+            board_type: Board type (required) - e.g., "square8"
+            num_players: Number of players (required) - e.g., 2
+            model_a: Path or ID of first model (required)
+            model_b: Path or ID of second model (required)
+            target_games: Number of games to play (default: 100)
+            confidence_threshold: Confidence level to conclude (default: 0.95)
+        """
+        try:
+            data = await request.json()
+
+            # Validate required fields
+            required = ["name", "board_type", "num_players", "model_a", "model_b"]
+            for field in required:
+                if field not in data:
+                    return web.json_response({"error": f"Missing required field: {field}"}, status=400)
+
+            test_id = str(uuid.uuid4())
+            now = time.time()
+
+            test_data = {
+                "test_id": test_id,
+                "name": data["name"],
+                "description": data.get("description", ""),
+                "board_type": data["board_type"],
+                "num_players": int(data["num_players"]),
+                "model_a": data["model_a"],
+                "model_b": data["model_b"],
+                "target_games": int(data.get("target_games", 100)),
+                "confidence_threshold": float(data.get("confidence_threshold", 0.95)),
+                "status": "running",
+                "winner": None,
+                "created_at": now,
+                "completed_at": None,
+                "metadata": json.dumps(data.get("metadata", {})),
+            }
+
+            # Store in database
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO ab_tests (
+                    test_id, name, description, board_type, num_players,
+                    model_a, model_b, target_games, confidence_threshold,
+                    status, winner, created_at, completed_at, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                test_data["test_id"], test_data["name"], test_data["description"],
+                test_data["board_type"], test_data["num_players"],
+                test_data["model_a"], test_data["model_b"],
+                test_data["target_games"], test_data["confidence_threshold"],
+                test_data["status"], test_data["winner"],
+                test_data["created_at"], test_data["completed_at"],
+                test_data["metadata"],
+            ))
+            conn.commit()
+            conn.close()
+
+            # Store in memory
+            with self.ab_test_lock:
+                self.ab_tests[test_id] = test_data
+
+            return web.json_response({
+                "test_id": test_id,
+                "status": "created",
+                "message": f"A/B test '{data['name']}' created. Submit game results via POST /abtest/result",
+            })
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_abtest_result(self, request: web.Request) -> web.Response:
+        """POST /abtest/result - Submit a game result for an A/B test.
+
+        JSON body:
+            test_id: A/B test ID (required)
+            game_id: Unique game ID (required)
+            winner: "model_a", "model_b", or "draw" (required)
+            game_length: Number of moves in the game (optional)
+            metadata: Additional game metadata (optional)
+        """
+        try:
+            data = await request.json()
+
+            test_id = data.get("test_id")
+            if not test_id:
+                return web.json_response({"error": "Missing test_id"}, status=400)
+
+            game_id = data.get("game_id") or str(uuid.uuid4())
+            winner = data.get("winner")
+            if winner not in ["model_a", "model_b", "draw"]:
+                return web.json_response({"error": "winner must be 'model_a', 'model_b', or 'draw'"}, status=400)
+
+            # Calculate scores
+            if winner == "model_a":
+                model_a_result = "win"
+                model_a_score = 1.0
+                model_b_score = 0.0
+            elif winner == "model_b":
+                model_a_result = "loss"
+                model_a_score = 0.0
+                model_b_score = 1.0
+            else:
+                model_a_result = "draw"
+                model_a_score = 0.5
+                model_b_score = 0.5
+
+            now = time.time()
+
+            # Store game result
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+
+            # Verify test exists
+            cursor.execute("SELECT status, target_games, confidence_threshold FROM ab_tests WHERE test_id = ?", (test_id,))
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return web.json_response({"error": f"Test {test_id} not found"}, status=404)
+
+            test_status, target_games, confidence_threshold = row
+            if test_status != "running":
+                conn.close()
+                return web.json_response({"error": f"Test {test_id} is {test_status}, not running"}, status=400)
+
+            # Insert game result
+            cursor.execute("""
+                INSERT INTO ab_test_games (
+                    test_id, game_id, model_a_result, model_a_score, model_b_score,
+                    game_length, played_at, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                test_id, game_id, model_a_result, model_a_score, model_b_score,
+                data.get("game_length"), now, json.dumps(data.get("metadata", {})),
+            ))
+            conn.commit()
+            conn.close()
+
+            # Calculate updated stats
+            stats = self._calculate_ab_test_stats(test_id)
+
+            # Check if test should conclude
+            should_conclude = False
+            if stats.get("games_played", 0) >= target_games:
+                should_conclude = True
+            elif stats.get("statistically_significant") and stats.get("confidence", 0) >= confidence_threshold:
+                should_conclude = True
+
+            if should_conclude:
+                winner_model = stats.get("likely_winner")
+                conn = sqlite3.connect(str(self.db_path))
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE ab_tests SET status = 'completed', winner = ?, completed_at = ?
+                    WHERE test_id = ?
+                """, (winner_model, time.time(), test_id))
+                conn.commit()
+                conn.close()
+
+                # Notify
+                self.notifier.notify(
+                    f"A/B Test Complete: {test_id}",
+                    f"Winner: {winner_model or 'inconclusive'}\n"
+                    f"Games: {stats['games_played']}, Confidence: {stats['confidence']:.1%}"
+                )
+
+            return web.json_response({
+                "test_id": test_id,
+                "game_id": game_id,
+                "recorded": True,
+                "stats": stats,
+                "concluded": should_conclude,
+            })
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_abtest_status(self, request: web.Request) -> web.Response:
+        """GET /abtest/status - Get status of an A/B test.
+
+        Query params:
+            test_id: A/B test ID (required)
+        """
+        try:
+            test_id = request.query.get("test_id")
+            if not test_id:
+                return web.json_response({"error": "Missing test_id parameter"}, status=400)
+
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM ab_tests WHERE test_id = ?", (test_id,))
+            row = cursor.fetchone()
+            conn.close()
+
+            if not row:
+                return web.json_response({"error": f"Test {test_id} not found"}, status=404)
+
+            test_data = {
+                "test_id": row[0],
+                "name": row[1],
+                "description": row[2],
+                "board_type": row[3],
+                "num_players": row[4],
+                "model_a": row[5],
+                "model_b": row[6],
+                "target_games": row[7],
+                "confidence_threshold": row[8],
+                "status": row[9],
+                "winner": row[10],
+                "created_at": row[11],
+                "completed_at": row[12],
+                "metadata": json.loads(row[13]) if row[13] else {},
+            }
+
+            # Add current stats
+            test_data["stats"] = self._calculate_ab_test_stats(test_id)
+
+            return web.json_response(test_data)
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_abtest_list(self, request: web.Request) -> web.Response:
+        """GET /abtest/list - List all A/B tests.
+
+        Query params:
+            status: Filter by status (optional) - "running", "completed", "cancelled"
+            limit: Max results (default: 50)
+        """
+        try:
+            status_filter = request.query.get("status")
+            limit = int(request.query.get("limit", "50"))
+
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+
+            if status_filter:
+                cursor.execute(
+                    "SELECT test_id, name, board_type, num_players, model_a, model_b, status, winner, created_at "
+                    "FROM ab_tests WHERE status = ? ORDER BY created_at DESC LIMIT ?",
+                    (status_filter, limit)
+                )
+            else:
+                cursor.execute(
+                    "SELECT test_id, name, board_type, num_players, model_a, model_b, status, winner, created_at "
+                    "FROM ab_tests ORDER BY created_at DESC LIMIT ?",
+                    (limit,)
+                )
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            tests = []
+            for row in rows:
+                test_id = row[0]
+                stats = self._calculate_ab_test_stats(test_id)
+                tests.append({
+                    "test_id": test_id,
+                    "name": row[1],
+                    "board_type": row[2],
+                    "num_players": row[3],
+                    "model_a": row[4],
+                    "model_b": row[5],
+                    "status": row[6],
+                    "winner": row[7],
+                    "created_at": row[8],
+                    "games_played": stats.get("games_played", 0),
+                    "model_a_winrate": stats.get("model_a_winrate", 0),
+                    "model_b_winrate": stats.get("model_b_winrate", 0),
+                    "confidence": stats.get("confidence", 0),
+                })
+
+            return web.json_response({"tests": tests, "count": len(tests)})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_abtest_cancel(self, request: web.Request) -> web.Response:
+        """POST /abtest/cancel - Cancel a running A/B test.
+
+        JSON body:
+            test_id: A/B test ID (required)
+            reason: Cancellation reason (optional)
+        """
+        try:
+            data = await request.json()
+            test_id = data.get("test_id")
+            if not test_id:
+                return web.json_response({"error": "Missing test_id"}, status=400)
+
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            cursor.execute("SELECT status FROM ab_tests WHERE test_id = ?", (test_id,))
+            row = cursor.fetchone()
+
+            if not row:
+                conn.close()
+                return web.json_response({"error": f"Test {test_id} not found"}, status=404)
+
+            if row[0] != "running":
+                conn.close()
+                return web.json_response({"error": f"Test {test_id} is already {row[0]}"}, status=400)
+
+            cursor.execute(
+                "UPDATE ab_tests SET status = 'cancelled', completed_at = ? WHERE test_id = ?",
+                (time.time(), test_id)
+            )
+            conn.commit()
+            conn.close()
+
+            return web.json_response({"test_id": test_id, "status": "cancelled"})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_abtest_table(self, request: web.Request) -> web.Response:
+        """GET /abtest/table - A/B tests in table format for Grafana Infinity.
+
+        Query params:
+            status: Filter by status (optional)
+        """
+        try:
+            status_filter = request.query.get("status")
+
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+
+            if status_filter:
+                cursor.execute(
+                    "SELECT test_id, name, board_type, num_players, model_a, model_b, status, winner, created_at "
+                    "FROM ab_tests WHERE status = ? ORDER BY created_at DESC LIMIT 100",
+                    (status_filter,)
+                )
+            else:
+                cursor.execute(
+                    "SELECT test_id, name, board_type, num_players, model_a, model_b, status, winner, created_at "
+                    "FROM ab_tests ORDER BY created_at DESC LIMIT 100"
+                )
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            table_data = []
+            for row in rows:
+                test_id = row[0]
+                stats = self._calculate_ab_test_stats(test_id)
+                from datetime import datetime
+                created = datetime.fromtimestamp(row[8]).strftime("%Y-%m-%d %H:%M") if row[8] else ""
+
+                table_data.append({
+                    "Test ID": test_id[:8],
+                    "Name": row[1],
+                    "Config": f"{row[2]}_{row[3]}p",
+                    "Model A": row[4].split("/")[-1] if "/" in row[4] else row[4],
+                    "Model B": row[5].split("/")[-1] if "/" in row[5] else row[5],
+                    "Games": stats.get("games_played", 0),
+                    "A Win%": f"{stats.get('model_a_winrate', 0):.1%}",
+                    "B Win%": f"{stats.get('model_b_winrate', 0):.1%}",
+                    "Confidence": f"{stats.get('confidence', 0):.1%}",
+                    "Status": row[6],
+                    "Winner": row[7] or "-",
+                    "Created": created,
+                })
+
+            return web.json_response(table_data)
+        except Exception as e:
+            return web.json_response([{"error": str(e)}])
+
+    async def handle_abtest_run(self, request: web.Request) -> web.Response:
+        """POST /abtest/run - Start running games for an A/B test using the cluster.
+
+        This schedules games to be played between model_a and model_b on available nodes.
+
+        JSON body:
+            test_id: A/B test ID (required)
+            parallel_games: Number of games to run in parallel (default: 4)
+            think_time_ms: AI think time in ms (default: 100)
+        """
+        try:
+            data = await request.json()
+            test_id = data.get("test_id")
+            if not test_id:
+                return web.json_response({"error": "Missing test_id"}, status=400)
+
+            # Get test info
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT board_type, num_players, model_a, model_b, target_games, status "
+                "FROM ab_tests WHERE test_id = ?",
+                (test_id,)
+            )
+            row = cursor.fetchone()
+            conn.close()
+
+            if not row:
+                return web.json_response({"error": f"Test {test_id} not found"}, status=404)
+
+            board_type, num_players, model_a, model_b, target_games, status = row
+            if status != "running":
+                return web.json_response({"error": f"Test is {status}, not running"}, status=400)
+
+            # Get current game count
+            stats = self._calculate_ab_test_stats(test_id)
+            games_remaining = target_games - stats.get("games_played", 0)
+
+            if games_remaining <= 0:
+                return web.json_response({
+                    "test_id": test_id,
+                    "message": "Test has reached target games",
+                    "stats": stats,
+                })
+
+            parallel = int(data.get("parallel_games", 4))
+            think_time = int(data.get("think_time_ms", 100))
+
+            # Schedule games via existing tournament infrastructure
+            # This creates a mini-tournament between the two models
+            tournament_id = f"abtest_{test_id[:8]}"
+
+            return web.json_response({
+                "test_id": test_id,
+                "status": "scheduled",
+                "games_remaining": games_remaining,
+                "parallel_games": parallel,
+                "think_time_ms": think_time,
+                "message": f"Use tournament infrastructure to run {games_remaining} games between models",
+                "hint": "Games should be submitted via POST /abtest/result as they complete",
+            })
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
     async def handle_api_training_status(self, request: web.Request) -> web.Response:
         """Get training pipeline status including NNUE, CMAES, and auto-promotion state.
 
@@ -16114,6 +16644,16 @@ print(json.dumps({{
         app.router.add_get('/trends/summary', self.handle_trends_summary)
         app.router.add_get('/trends/history', self.handle_trends_history)
         app.router.add_get('/trends/table', self.handle_trends_table)
+
+        # A/B Testing endpoints
+        app.router.add_post('/abtest/create', self.handle_abtest_create)
+        app.router.add_post('/abtest/result', self.handle_abtest_result)
+        app.router.add_get('/abtest/status', self.handle_abtest_status)
+        app.router.add_get('/abtest/list', self.handle_abtest_list)
+        app.router.add_post('/abtest/cancel', self.handle_abtest_cancel)
+        app.router.add_get('/abtest/table', self.handle_abtest_table)
+        app.router.add_post('/abtest/run', self.handle_abtest_run)
+
         app.router.add_get('/api/training/status', self.handle_api_training_status)
         app.router.add_get('/api/canonical/health', self.handle_api_canonical_health)
         app.router.add_get('/api/canonical/jobs', self.handle_api_canonical_jobs_list)

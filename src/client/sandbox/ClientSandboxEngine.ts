@@ -1136,6 +1136,12 @@ export class ClientSandboxEngine {
         return;
       }
 
+      // After successful placement, set _selectedStackKey so clicking the same
+      // cell again will place another ring (instead of just selecting it).
+      // This enables humans to place multiple rings on the same stack by
+      // clicking repeatedly.
+      this._selectedStackKey = key;
+
       // The orchestrator adapter already recorded the canonical Move into
       // moveHistory/history. Capture snapshots only so HistoryPlayback remains aligned.
       this.recordHistorySnapshotsOnly(beforeState);
