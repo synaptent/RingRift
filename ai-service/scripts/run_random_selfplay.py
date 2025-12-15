@@ -27,7 +27,7 @@ from app.utils.victory_type import derive_victory_type
 def play_random_game(
     board_type: str = "square8",
     num_players: int = 2,
-    max_moves: int = 500,
+    max_moves: int = 10000,
     seed: Optional[int] = None,
     game_index: int = 0,
 ) -> dict:

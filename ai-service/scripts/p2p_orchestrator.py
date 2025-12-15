@@ -5767,7 +5767,7 @@ print(wins / total)
             games_per_matchup = int(data.get("games_per_matchup", 50) or 50)
             seed = int(data.get("seed", 1) or 1)
             think_time_scale = float(data.get("think_time_scale", 1.0) or 1.0)
-            max_moves = int(data.get("max_moves", 300) or 300)
+            max_moves = int(data.get("max_moves", 10000) or 10000)
             wilson_confidence = float(data.get("wilson_confidence", 0.95) or 0.95)
             nn_model_id = data.get("nn_model_id") or None
             config_path = data.get("config") or None
@@ -6058,7 +6058,7 @@ agents = [
 ]
 
 # Play until completion
-max_moves = 500
+max_moves = 10000
 move_count = 0
 while not engine.is_game_over() and move_count < max_moves:
     current_player = engine.current_player
@@ -12904,7 +12904,7 @@ for game_idx in range({eval_games}):
         candidate_player = 1
 
     # Play game
-    max_moves = 500
+    max_moves = 10000
     move_count = 0
     while not engine.is_game_over() and move_count < max_moves:
         current_player = engine.current_player

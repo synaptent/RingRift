@@ -178,7 +178,7 @@ def move_to_dict(move: Move) -> Dict[str, Any]:
 def play_game_with_trajectory(
     board_type: str,
     seed: int,
-    max_moves: int = 200,
+    max_moves: int = 10000,
 ) -> GameTrajectory:
     """Play a full game and record the trajectory."""
     rules = DefaultRulesEngine()

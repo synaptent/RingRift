@@ -111,7 +111,7 @@ class CurriculumConfig:
     num_players: int = 2
 
     # Maximum moves per self-play game
-    max_moves: int = 200
+    max_moves: int = 10000
 
     # AI configuration for self-play
     think_time_ms: int = 500

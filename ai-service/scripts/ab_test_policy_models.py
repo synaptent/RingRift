@@ -296,7 +296,7 @@ def play_match(
     ai_a: MCTSAI,
     ai_b: MCTSAI,
     model_a_player: int,
-    max_moves: int = 500,
+    max_moves: int = 10000,
 ) -> MatchResult:
     """Play a single match between two AIs."""
     game_state = create_game_state()

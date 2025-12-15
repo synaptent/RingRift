@@ -49,7 +49,7 @@ class CMAESConfig:
 
     # Evaluation settings
     games_per_eval: int = 24
-    max_moves: int = 200
+    max_moves: int = 10000
     eval_randomness: float = 0.02
 
     # Board and player configuration
@@ -282,7 +282,7 @@ class SelfPlayConfig:
 
     # Generation settings
     num_games: int = 1000
-    max_moves_per_game: int = 200
+    max_moves_per_game: int = 10000
     parallel_games: int = 4
 
     # AI settings

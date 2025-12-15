@@ -47,7 +47,7 @@ def play_mcts_game(
     num_players: int,
     mcts_iterations: int = 400,
     seed: int = None,
-    max_moves: int = 500,
+    max_moves: int = 10000,
     randomness: float = 0.15,
 ) -> Dict[str, Any]:
     """Play a single game with MCTS-only players.

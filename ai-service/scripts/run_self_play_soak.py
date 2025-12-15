@@ -3195,7 +3195,7 @@ def main() -> None:  # pragma: no cover - CLI entrypoint
         args.engine_mode = "mixed"
         args.difficulty_band = getattr(args, "difficulty_band", "light")
         args.num_players = 2
-        args.max_moves = 150
+        args.max_moves = 10000
         if args.seed is None:
             args.seed = 1764142864
         if getattr(args, "gc_interval", 0) == 0:

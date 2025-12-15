@@ -125,7 +125,7 @@ class GPUWorker:
         board_size: int = 8,
         num_players: int = 2,
         default_games: int = 50,
-        max_moves: int = 500,
+        max_moves: int = 10000,
     ):
         self.device = get_device()
         self.board_size = board_size

@@ -107,7 +107,7 @@ class GPUFitnessEvaluator:
         board_size: int = 8,
         num_players: int = 2,
         games_per_eval: int = 50,
-        max_moves: int = 500,
+        max_moves: int = 10000,
         device: Optional[torch.device] = None,
         baseline_weights: Optional[Dict[str, float]] = None,
         board_type: Optional[str] = None,
@@ -201,7 +201,7 @@ class MultiGPUFitnessEvaluator:
         board_size: int = 8,
         num_players: int = 2,
         games_per_eval: int = 50,
-        max_moves: int = 500,
+        max_moves: int = 10000,
         baseline_weights: Optional[Dict[str, float]] = None,
     ):
         self.devices = get_all_cuda_devices()
@@ -280,7 +280,7 @@ def run_gpu_cmaes(
     games_per_eval: int,
     output_dir: str,
     sigma: float = 0.5,
-    max_moves: int = 500,
+    max_moves: int = 10000,
     baseline_weights: Optional[Dict[str, float]] = None,
     multi_gpu: bool = False,
     seed: int = 42,

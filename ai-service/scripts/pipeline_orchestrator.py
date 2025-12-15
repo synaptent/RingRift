@@ -178,7 +178,7 @@ class SelfplayJob:
     num_players: int
     num_games: int
     engine_mode: str = "mixed"  # Use mixed for diverse training data
-    max_moves: int = 500
+    max_moves: int = 10000
     seed: int = 0
     use_trained_profiles: bool = True  # Load CMA-ES optimized heuristics
     use_neural_net: bool = False  # Enable NN for descent/mcts

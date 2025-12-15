@@ -62,7 +62,7 @@ def check_nn_quality_gate(
     num_players: int,
     quality_threshold: float,
     num_games: int = 20,
-    max_moves: int = 200,
+    max_moves: int = 10000,
 ) -> Tuple[bool, float]:
     """Run a quick tournament to check if NN model meets quality threshold.
 

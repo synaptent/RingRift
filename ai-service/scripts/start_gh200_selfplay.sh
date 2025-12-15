@@ -48,6 +48,8 @@ nohup python3 scripts/run_self_play_soak.py \
     --engine-mode heuristic-only \
     --gpu \
     --gpu-batch-size 512 \
+    --max-moves 500 \
+    --num-games 100000 \
     --log-jsonl "${DATA_DIR}/gpu_heuristic_sq8_2p.jsonl" \
     --record-db "${DATA_DIR}/gpu_heuristic.db" \
     --lean-db \
@@ -68,6 +70,7 @@ for i in 1 2 3 4; do
         --board-type square8 \
         --num-players 2 \
         --engine-mode nn-only \
+        --num-games 100000 \
         --log-jsonl "${DATA_DIR}/nn_sq8_2p_worker${i}.jsonl" \
         --record-db "${DATA_DIR}/nn_selfplay.db" \
         --lean-db \
@@ -95,6 +98,7 @@ for config in "square8:2" "square8:3" "square8:4"; do
         --board-type $board \
         --num-players $players \
         --engine-mode mixed \
+        --num-games 100000 \
         --log-jsonl "${DATA_DIR}/mixed_${board}_${players}p.jsonl" \
         --record-db "${DATA_DIR}/mixed_selfplay.db" \
         --lean-db \

@@ -18,7 +18,7 @@ class TrainConfig:
     weight_decay: float = 1e-4
     history_length: int = 3
     seed: int = 42
-    max_moves_per_game: int = 200
+    max_moves_per_game: int = 10000
     k_elo: int = 32
     policy_weight: float = 1.0
 
@@ -149,7 +149,7 @@ def get_training_config_for_board(
         config.num_filters = 192
         config.batch_size = 64  # Can use larger batches
         config.learning_rate = 2e-3  # Slightly higher LR
-        config.max_moves_per_game = 150  # Shorter games on 8x8
+        config.max_moves_per_game = 10000  # Allow games to complete naturally
         config.model_id = "ringrift_v5_sq8_2p_2xh100"
 
     elif board_type == BoardType.SQUARE19:
@@ -159,7 +159,7 @@ def get_training_config_for_board(
         config.num_filters = 192
         config.batch_size = 24  # Smaller batch for larger action space
         config.learning_rate = 5e-4  # Lower LR for stability
-        config.max_moves_per_game = 300  # Longer games on 19x19
+        config.max_moves_per_game = 10000  # Allow games to complete naturally
         config.model_id = "ringrift_v4_sq19_2p"
 
     elif board_type == BoardType.HEXAGONAL:
@@ -169,7 +169,7 @@ def get_training_config_for_board(
         config.num_filters = 192
         config.batch_size = 20  # Smaller batch for largest action space
         config.learning_rate = 5e-4  # Lower LR for stability
-        config.max_moves_per_game = 250  # Medium game length
+        config.max_moves_per_game = 10000  # Allow games to complete naturally
         config.model_id = "ringrift_v4_hex_2p"
 
     else:
@@ -190,7 +190,7 @@ BOARD_TRAINING_CONFIGS: Dict[BoardType, Dict[str, any]] = {
         "num_filters": 192,
         "batch_size": 64,
         "learning_rate": 2e-3,
-        "max_moves_per_game": 150,
+        "max_moves_per_game": 10000,
         "model_id": "ringrift_v5_sq8_2p_2xh100",
         "description": "Canonical square8 v3-family (12 blocks, 192 filters)",
     },
@@ -200,7 +200,7 @@ BOARD_TRAINING_CONFIGS: Dict[BoardType, Dict[str, any]] = {
         "num_filters": 192,
         "batch_size": 24,  # Smaller for large action space stability
         "learning_rate": 5e-4,  # Lower for stability
-        "max_moves_per_game": 300,
+        "max_moves_per_game": 10000,
         "model_id": "ringrift_v4_sq19_2p",
         "description": "Full-capacity square19 baseline (v2-family)",
     },
@@ -210,7 +210,7 @@ BOARD_TRAINING_CONFIGS: Dict[BoardType, Dict[str, any]] = {
         "num_filters": 192,
         "batch_size": 20,  # Smallest batch for largest action space
         "learning_rate": 5e-4,  # Lower for stability
-        "max_moves_per_game": 300,  # Increased for larger 469-cell board
+        "max_moves_per_game": 10000,  # Allow games to complete naturally
         "model_id": "ringrift_v4_hex_2p",
         "description": "Full-capacity hex baseline (v2-family)",
     },

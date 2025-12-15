@@ -5313,7 +5313,7 @@ class ParallelGameRunner:
         # Run games with specific heuristic weights
         results = runner.run_games(
             weights_per_game=[weights1, weights2, ...],  # length 64
-            max_moves=500,
+            max_moves=10000,
         )
 
         # Results contain win/loss/draw for each game
@@ -5839,7 +5839,7 @@ class ParallelGameRunner:
     def run_games(
         self,
         weights_list: Optional[List[Dict[str, float]]] = None,
-        max_moves: int = 500,
+        max_moves: int = 10000,
         callback: Optional[Callable[[int, BatchGameState], None]] = None,
     ) -> Dict[str, Any]:
         """Run all games to completion.
@@ -7296,7 +7296,7 @@ def evaluate_candidate_fitness_gpu(
     num_games: int = 10,
     board_size: int = 8,
     num_players: int = 2,
-    max_moves: int = 500,
+    max_moves: int = 10000,
     device: Optional[torch.device] = None,
 ) -> float:
     """Evaluate CMA-ES candidate fitness using GPU parallel games.

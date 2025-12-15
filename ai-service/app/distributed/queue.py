@@ -60,7 +60,7 @@ class EvalTask:
     games_per_eval: int = 24
     eval_mode: str = "multi-start"
     state_pool_id: str = "v1"
-    max_moves: int = 200
+    max_moves: int = 10000
     eval_randomness: float = 0.0
     seed: Optional[int] = None
 

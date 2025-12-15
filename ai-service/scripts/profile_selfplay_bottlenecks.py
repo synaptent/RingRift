@@ -194,7 +194,7 @@ class SelfPlayProfiler:
             ais.append(ai)
 
         move_count = 0
-        max_moves = 500
+        max_moves = 10000
 
         while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
             current_player = state.current_player

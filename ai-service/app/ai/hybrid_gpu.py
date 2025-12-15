@@ -638,7 +638,7 @@ class HybridSelfPlayRunner:
     def run_game(
         self,
         seed: Optional[int] = None,
-        max_moves: int = 500,
+        max_moves: int = 10000,
     ) -> Dict[str, Any]:
         """Run a single game with hybrid evaluation.
 
@@ -751,7 +751,7 @@ class HybridSelfPlayRunner:
     def run_games(
         self,
         num_games: int,
-        max_moves: int = 500,
+        max_moves: int = 10000,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> List[Dict[str, Any]]:
         """Run multiple games with hybrid evaluation.

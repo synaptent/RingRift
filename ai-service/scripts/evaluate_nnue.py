@@ -146,7 +146,7 @@ def run_game(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     swap_sides: bool = False,
-    max_moves: int = 300,
+    max_moves: int = 10000,
     verbose: bool = False,
 ) -> MatchResult:
     """Run a single game between two AI configurations.

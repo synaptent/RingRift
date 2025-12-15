@@ -1394,15 +1394,44 @@ async def check_and_run_training(state: DaemonState) -> List[str]:
         print(f"[Daemon] Training needed for {key}: {bs.games_since_last_training} new games (threshold: {min_games_threshold})")
 
         # Export training data
-        export_cmd = [
-            sys.executable, "scripts/jsonl_to_npz.py",
-            "--input-dir", str(AI_SERVICE_ROOT / "data" / "selfplay"),
-            "--output", str(AI_SERVICE_ROOT / "data" / "training" / f"daemon_{key}.npz"),
-            "--board-type", config["board"],
-            "--num-players", str(config["players"]),
-        ]
+        # For hex boards, use V3 encoder (16 channels) for compatibility with HexNeuralNet_v3
+        # For square boards, use default encoder (works with both V2 and V3 models)
+        data_output_path = AI_SERVICE_ROOT / "data" / "training" / f"daemon_{key}.npz"
 
-        success, output = run_command(export_cmd, timeout=600)
+        if config["board"] == "hexagonal":
+            # Use export_replay_dataset.py with V3 encoder for hex boards
+            # Find available game databases
+            game_dbs = list((AI_SERVICE_ROOT / "data" / "games").glob("*.db"))
+            if game_dbs:
+                export_cmd = [
+                    sys.executable, "scripts/export_replay_dataset.py",
+                    "--db", str(game_dbs[0]),  # Use first available DB
+                    "--output", str(data_output_path),
+                    "--board-type", config["board"],
+                    "--num-players", str(config["players"]),
+                    "--encoder-version", "v3",
+                    "--sample-every", "2",
+                ]
+            else:
+                # Fallback to jsonl if no DBs available
+                export_cmd = [
+                    sys.executable, "scripts/jsonl_to_npz.py",
+                    "--input-dir", str(AI_SERVICE_ROOT / "data" / "selfplay"),
+                    "--output", str(data_output_path),
+                    "--board-type", config["board"],
+                    "--num-players", str(config["players"]),
+                ]
+        else:
+            # Square boards use jsonl_to_npz.py (produces 56 channels, compatible with V3)
+            export_cmd = [
+                sys.executable, "scripts/jsonl_to_npz.py",
+                "--input-dir", str(AI_SERVICE_ROOT / "data" / "selfplay"),
+                "--output", str(data_output_path),
+                "--board-type", config["board"],
+                "--num-players", str(config["players"]),
+            ]
+
+        success, output = run_command(export_cmd, timeout=1200)  # Increased timeout for V3 export
         if not success:
             print(f"[Daemon] Export failed for {key}: {output[:200]}")
             continue
@@ -1416,7 +1445,7 @@ async def check_and_run_training(state: DaemonState) -> List[str]:
         iteration = bs.current_iteration + 1
         model_id = f"{key}_iter{iteration}"
         model_path = AI_SERVICE_ROOT / "models" / f"{model_id}.pth"
-        data_path = AI_SERVICE_ROOT / "data" / "training" / f"daemon_{key}.npz"
+        # data_output_path defined above during export
 
         run_dir = (
             AI_SERVICE_ROOT
@@ -1441,7 +1470,7 @@ async def check_and_run_training(state: DaemonState) -> List[str]:
             "--model-id",
             model_id,
             "--data-path",
-            str(data_path),
+            str(data_output_path),
             "--epochs", "50",
             "--model-version",
             model_version,

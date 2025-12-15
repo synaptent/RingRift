@@ -131,7 +131,7 @@ class TournamentRunner:
         scheduler: TournamentScheduler,
         elo_calculator: Optional[EloCalculator] = None,
         max_workers: int = 4,
-        max_moves: int = 500,
+        max_moves: int = 10000,
         seed: Optional[int] = None,
         persist_to_unified_elo: bool = True,
         tournament_id: Optional[str] = None,

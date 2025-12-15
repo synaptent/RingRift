@@ -151,7 +151,7 @@ def play_single_game(
         Tuple of (game_length, winner, termination_reason)
     """
     # Increase env limit to avoid early cutoff
-    env_config = TrainingEnvConfig(max_moves=500)
+    env_config = TrainingEnvConfig(max_moves=10000)
     env = make_env(env_config)
     state = env.reset(seed=seed)
 
@@ -160,7 +160,7 @@ def play_single_game(
     ai_p2 = create_ai_instance(ai_type, 2, seed + 1000000, memory_config)
 
     move_count = 0
-    max_moves = 500  # Safety limit to prevent infinite games
+    max_moves = 10000  # Safety limit to prevent infinite games
     termination_reason = "unknown"
 
     while True:

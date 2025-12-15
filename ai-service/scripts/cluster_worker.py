@@ -280,7 +280,7 @@ def evaluate_candidate_task(task: Dict[str, Any]) -> Dict[str, Any]:
         games_per_eval = task.get("games_per_eval", 24)
         eval_mode = task.get("eval_mode", "multi-start")
         state_pool_id = task.get("state_pool_id", "v1")
-        max_moves = task.get("max_moves", 200)
+        max_moves = task.get("max_moves", 10000)
         eval_randomness = task.get("eval_randomness", 0.0)
         seed = task.get("seed")
         record_games = task.get("record_games", False)

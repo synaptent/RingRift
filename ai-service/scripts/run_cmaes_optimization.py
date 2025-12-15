@@ -391,7 +391,7 @@ def play_single_game_from_state(
     candidate_weights: HeuristicWeights,
     opponent_weights: HeuristicWeights,
     candidate_plays_first: bool,
-    max_moves: int = 500,
+    max_moves: int = 10000,
     *,
     randomness: float = 0.0,
     rng_seed_base: Optional[int] = None,

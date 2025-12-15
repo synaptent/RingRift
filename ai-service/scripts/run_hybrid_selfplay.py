@@ -224,11 +224,11 @@ def run_hybrid_selfplay(
     # Larger boards need more moves (multiple actions per turn are counted)
     if max_moves is None:
         max_moves_defaults = {
-            "square8": 500,    # 8x8 games typically complete in ~100-300 moves
-            "square19": 2500,  # 19x19 needs ~5x more headroom
-            "hex": 2500,       # Hex boards also need higher limits
+            "square8": 10000,   # Allow games to complete naturally
+            "square19": 10000,  # Allow games to complete naturally
+            "hex": 10000,       # Allow games to complete naturally
         }
-        max_moves = max_moves_defaults.get(board_type.lower(), 2500)
+        max_moves = max_moves_defaults.get(board_type.lower(), 10000)
     board_type_enum_map = {
         "square8": BoardType.SQUARE8,
         "square19": BoardType.SQUARE19,
