@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Elo rating reconciliation for distributed P2P nodes.
 
+This module handles distributed consistency for Elo ratings across the cluster.
+It complements `app.training.elo_service` (the canonical Elo service interface)
+by providing reconciliation utilities for multi-node deployments.
+
 In a distributed P2P setup, multiple nodes may:
 1. Record match results to their local DB copies
 2. Have network partitions causing temporary inconsistencies
@@ -11,6 +15,10 @@ This module provides reconciliation utilities to:
 - Sync match histories from remote nodes
 - Merge conflicting match records
 - Alert on significant Elo discrepancies
+
+Note: For core Elo operations (rating queries, match recording), use
+`app.training.elo_service`. This module is specifically for distributed
+consistency concerns.
 
 Usage:
     from app.training.elo_reconciliation import (
