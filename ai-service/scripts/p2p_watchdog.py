@@ -4,12 +4,18 @@
 This script should be run periodically via cron to ensure the P2P orchestrator
 stays healthy and connected to the cluster.
 
+Features:
+- Checks if P2P process is running and responsive
+- Uses systemctl for managed services, falls back to direct process control
+- Prevents restart loops by requiring minimum process uptime before restart
+- Configurable peer count requirements
+
 Usage:
     # Check and restart if needed
-    python scripts/p2p_watchdog.py --node-id lambda-h100 --peers http://3.208.88.21:8770
+    python scripts/p2p_watchdog.py --node-id lambda-h100 --peers http://100.97.104.89:8770
 
-    # Cron entry (every 2 minutes):
-    */2 * * * * cd /home/ubuntu/ringrift/ai-service && python3 scripts/p2p_watchdog.py --node-id lambda-h100 --peers http://3.208.88.21:8770 >> /tmp/p2p_watchdog.log 2>&1
+    # Cron entry (every 5 minutes - recommended to allow service to stabilize):
+    */5 * * * * cd /home/ubuntu/ringrift/ai-service && python3 scripts/p2p_watchdog.py --node-id lambda-h100 --peers http://100.97.104.89:8770,http://100.91.25.13:8770 >> /tmp/p2p_watchdog.log 2>&1
 """
 from __future__ import annotations
 
@@ -63,6 +69,44 @@ def is_p2p_running() -> bool:
         return result.returncode == 0
     except Exception:
         return False
+
+
+def get_p2p_uptime_seconds() -> float:
+    """Get how long the P2P process has been running (in seconds).
+
+    Returns 0 if process not found or error.
+    """
+    try:
+        # Get PID of p2p_orchestrator
+        result = subprocess.run(
+            ["pgrep", "-f", "p2p_orchestrator"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            return 0.0
+
+        pid = result.stdout.strip().split('\n')[0]
+        if not pid:
+            return 0.0
+
+        # Get process start time using ps
+        ps_result = subprocess.run(
+            ["ps", "-p", pid, "-o", "etimes="],
+            capture_output=True,
+            text=True
+        )
+        if ps_result.returncode != 0:
+            return 0.0
+
+        uptime_str = ps_result.stdout.strip()
+        return float(uptime_str) if uptime_str else 0.0
+    except Exception:
+        return 0.0
+
+
+# Minimum uptime before considering a restart (prevents restart loops)
+MIN_UPTIME_BEFORE_RESTART = 180  # 3 minutes
 
 
 def is_systemd_service_available() -> bool:
@@ -203,7 +247,12 @@ def main():
     # Check health
     health = check_p2p_health(args.port)
     if not health:
-        log("P2P running but not responding, restarting...")
+        # Check process uptime before restarting to prevent restart loops
+        uptime = get_p2p_uptime_seconds()
+        if uptime > 0 and uptime < MIN_UPTIME_BEFORE_RESTART:
+            log(f"P2P not responding but only {uptime:.0f}s old (< {MIN_UPTIME_BEFORE_RESTART}s), skipping restart")
+            return
+        log(f"P2P running but not responding (uptime: {uptime:.0f}s), restarting...")
         stop_p2p()
         time.sleep(2)
         start_p2p(args.node_id, args.port, peers, ringrift_path)
