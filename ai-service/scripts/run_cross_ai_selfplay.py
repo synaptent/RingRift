@@ -51,6 +51,7 @@ from app.models import (
     GameStatus,
 )
 from app.game_engine import GameEngine
+from app.training.generate_data import create_initial_state
 
 logging.basicConfig(
     level=logging.INFO,
@@ -190,7 +191,7 @@ def play_game(
         ai_info[pnum] = {"type": ai_type_name, "difficulty": diff}
 
     # Initialize game state
-    state = GameState.initial(
+    state = create_initial_state(
         board_type=bt_enum,
         num_players=num_players,
     )
