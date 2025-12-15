@@ -195,6 +195,9 @@ def run_hybrid_selfplay(
     seed: int = 42,
     use_numba: bool = True,
     engine_mode: str = "heuristic-only",
+    p2_engine_mode: Optional[str] = None,  # Different engine for player 2 (asymmetric matches)
+    p3_engine_mode: Optional[str] = None,  # Different engine for player 3 (3-4 player games)
+    p4_engine_mode: Optional[str] = None,  # Different engine for player 4 (4 player games)
     weights: Optional[Dict[str, float]] = None,
     mix_ratio: float = 0.8,
     record_db: Optional[str] = None,
@@ -214,7 +217,10 @@ def run_hybrid_selfplay(
         max_moves: Maximum moves per game
         seed: Random seed
         use_numba: Use Numba JIT-compiled rules
-        engine_mode: Engine mode (random-only, heuristic-only, mixed, nnue-guided, or mcts)
+        engine_mode: Engine mode for player 1 (random-only, heuristic-only, mixed, nnue-guided, or mcts)
+        p2_engine_mode: Engine mode for player 2 (if different from player 1)
+        p3_engine_mode: Engine mode for player 3 (if different, for 3-4 player games)
+        p4_engine_mode: Engine mode for player 4 (if different, for 4 player games)
         weights: Heuristic weights dict (from CMA-ES profile or defaults)
         mix_ratio: For mixed mode: probability of heuristic (0.0-1.0). Default 0.8
         mcts_sims: Number of MCTS simulations per move (for mcts mode). Default 100

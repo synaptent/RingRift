@@ -9278,18 +9278,18 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             await self._dispatch_training_job(job_config)
 
     async def _check_local_training_fallback(self):
-        """Fallback training trigger when cluster has no leader.
+        """DECENTRALIZED training trigger when cluster has no leader.
 
         LEADERLESS RESILIENCE: When the cluster has been without a leader for too long
-        (LEADERLESS_TRAINING_TIMEOUT), individual nodes can trigger local training to
-        prevent data accumulation without progress.
+        (LEADERLESS_TRAINING_TIMEOUT = 3 minutes), individual nodes can trigger local
+        training to prevent data accumulation without progress.
 
         This makes the system more resilient to leader election failures while avoiding
         duplicate training by:
-        1. Only triggering after a significant leaderless period (10 minutes)
+        1. Only triggering after a brief leaderless period (3 minutes)
         2. Using random jitter so nodes don't all train simultaneously
         3. Only training on local data (no cluster-wide coordination needed)
-        4. Using longer cooldowns between fallback training runs
+        4. Using reasonable cooldowns between fallback training runs
         """
         # Skip if we ARE the leader or have a known leader
         if self.role == NodeRole.LEADER or self.leader_id:
@@ -9303,15 +9303,15 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         if leaderless_duration < LEADERLESS_TRAINING_TIMEOUT:
             return
 
-        # Rate limit fallback training (30 minute cooldown)
-        fallback_cooldown = 1800  # 30 minutes between fallback triggers
+        # Rate limit fallback training (10 minute cooldown - more aggressive than before)
+        fallback_cooldown = 600  # 10 minutes between fallback triggers
         if current_time - self.last_local_training_fallback < fallback_cooldown:
             return
 
-        # Random jitter: only proceed with 20% probability per check
+        # Random jitter: 40% probability per check (more aggressive than 20%)
         # This distributes training across nodes over time
         import random
-        if random.random() > 0.2:
+        if random.random() > 0.4:
             return
 
         # Check if we have a GPU (training needs GPU)
@@ -9321,10 +9321,16 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         # Check local data manifest
         local_manifest = getattr(self, "local_data_manifest", None)
         if not local_manifest:
-            return
+            # Try to collect manifest if we don't have one
+            try:
+                local_manifest = self._collect_local_data_manifest()
+                with self.manifest_lock:
+                    self.local_data_manifest = local_manifest
+            except Exception:
+                return
 
-        # Check for sufficient local data (use higher threshold for fallback)
-        min_games_fallback = 5000  # Higher threshold for leaderless training
+        # Check for sufficient local data (lower threshold for faster training)
+        min_games_fallback = 2000  # Lower threshold for faster response
         total_local_games = getattr(local_manifest, "selfplay_games", 0)
         if total_local_games < min_games_fallback:
             return
@@ -9339,10 +9345,16 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 key = f"{board_type}_{num_players}p"
                 game_counts_by_type[key] = game_counts_by_type.get(key, 0) + game_count
 
+        # Sort by game count (descending) to train on richest data first
+        sorted_configs = sorted(game_counts_by_type.items(), key=lambda x: x[1], reverse=True)
+
         # Trigger local training for configurations with enough data
-        triggered_any = False
-        for config_key, game_count in game_counts_by_type.items():
-            if game_count < 2000:  # Minimum threshold
+        triggered_count = 0
+        max_concurrent_fallback = 2  # Can trigger up to 2 training jobs per fallback
+        for config_key, game_count in sorted_configs:
+            if triggered_count >= max_concurrent_fallback:
+                break
+            if game_count < 1000:  # Minimum threshold (lowered)
                 continue
 
             # Check if we already have a running training job for this config
@@ -9366,11 +9378,11 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 "total_games": game_count,
             }
             await self._dispatch_training_job(job_config)
-            triggered_any = True
-            break  # Only trigger one training job per fallback check
+            triggered_count += 1
 
-        if triggered_any:
+        if triggered_count > 0:
             self.last_local_training_fallback = current_time
+            print(f"[P2P] LEADERLESS FALLBACK: Triggered {triggered_count} local training job(s)")
 
     async def _check_improvement_cycles(self):
         """Periodic check for improvement cycle readiness (leader only).
