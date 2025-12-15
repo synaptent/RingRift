@@ -26,6 +26,37 @@ MAX_LOAD=100
 KILL_MODE=false
 SLACK_WEBHOOK=""
 
+# Detect hardware capabilities
+CPU_CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "8")
+GPU_COUNT=$(nvidia-smi -L 2>/dev/null | wc -l || echo "0")
+MEMORY_GB=$(free -g 2>/dev/null | awk '/^Mem:/{print $2}' || echo "16")
+
+# Scale limits based on hardware
+# High-core machines (192+ cores like GH200) get much higher limits
+if [[ "$CPU_CORES" -ge 192 ]]; then
+    MACHINE_TIER="high-end"
+    MAX_CPU_SELFPLAY=$((CPU_CORES * 2))  # Up to 2x cores for high-end
+    MAX_GPU_SELFPLAY=16
+    MAX_PYTHON_PROCS=$((CPU_CORES * 3))
+elif [[ "$CPU_CORES" -ge 64 ]]; then
+    MACHINE_TIER="medium"
+    MAX_CPU_SELFPLAY=$((CPU_CORES))  # 1x cores for medium
+    MAX_GPU_SELFPLAY=8
+    MAX_PYTHON_PROCS=$((CPU_CORES * 2))
+else
+    MACHINE_TIER="standard"
+    MAX_CPU_SELFPLAY=$((CPU_CORES * 2))  # 2x cores for small machines
+    MAX_GPU_SELFPLAY=4
+    MAX_PYTHON_PROCS=$((CPU_CORES * 4))
+fi
+
+# Orchestrators: should be exactly 1 per node
+MAX_ORCHESTRATORS=2
+# Training: typically 1-2 per node, scale with memory
+MAX_TRAINING=$((MEMORY_GB / 32 + 1))
+[[ "$MAX_TRAINING" -lt 2 ]] && MAX_TRAINING=2
+[[ "$MAX_TRAINING" -gt 8 ]] && MAX_TRAINING=8
+
 # State file for tracking kills and implementing backoff
 STATE_DIR="${HOME}/.ringrift"
 STATE_FILE="${STATE_DIR}/watchdog_state.json"
@@ -103,7 +134,7 @@ fi
 
 # Report status
 if [[ ${#PROBLEMS[@]} -eq 0 ]]; then
-    echo "[$TIMESTAMP] [OK] Host: $HOSTNAME | Python: $PYTHON_COUNT | Load: $LOAD_1M"
+    echo "[$TIMESTAMP] [OK] Host: $HOSTNAME | Tier: $MACHINE_TIER (${CPU_CORES}c/${MEMORY_GB}G) | Python: $PYTHON_COUNT (max:$MAX_PYTHON_PROCS) | Load: $LOAD_1M"
     exit 0
 fi
 
@@ -171,28 +202,76 @@ if [[ "$KILL_MODE" == "true" ]]; then
         exit 0
     fi
 
-    echo "[$TIMESTAMP] [ACTION] Attempting to kill excess processes... (kills_in_hour=$KILLS_IN_HOUR)"
+    echo "[$TIMESTAMP] [ACTION] Classifying processes... (kills_in_hour=$KILLS_IN_HOUR)"
 
-    # Kill selfplay processes first (most likely culprit)
-    SELFPLAY_PIDS=$(pgrep -f "run_self_play" 2>/dev/null || true)
-    if [[ -n "$SELFPLAY_PIDS" ]]; then
-        SELFPLAY_COUNT=$(echo "$SELFPLAY_PIDS" | wc -l)
-        if [[ "$SELFPLAY_COUNT" -gt 10 ]]; then
-            echo "[$TIMESTAMP] [ACTION] Killing $SELFPLAY_COUNT selfplay processes..."
-            echo "$SELFPLAY_PIDS" | xargs kill -9 2>/dev/null || true
-            send_alert "$HOSTNAME: Killed $SELFPLAY_COUNT selfplay processes" "ACTION"
+    # Classify all Python processes by type
+    ORCHESTRATOR_PIDS=""
+    TRAINING_PIDS=""
+    GPU_SELFPLAY_PIDS=""
+    CPU_SELFPLAY_PIDS=""
+    OTHER_PIDS=""
+
+    for pid in $(pgrep python 2>/dev/null); do
+        CMDLINE=$(cat /proc/$pid/cmdline 2>/dev/null | tr '\0' ' ' || true)
+        if [[ -z "$CMDLINE" ]]; then
+            continue
         fi
+
+        if echo "$CMDLINE" | grep -qE "p2p_orchestrator|unified_ai_loop"; then
+            ORCHESTRATOR_PIDS="$ORCHESTRATOR_PIDS $pid"
+        elif echo "$CMDLINE" | grep -qE "train_nnue|run_nn_training|improvement_cycle"; then
+            TRAINING_PIDS="$TRAINING_PIDS $pid"
+        elif echo "$CMDLINE" | grep -qE "run_gpu_selfplay"; then
+            GPU_SELFPLAY_PIDS="$GPU_SELFPLAY_PIDS $pid"
+        elif echo "$CMDLINE" | grep -qE "run_self_play|run_hybrid_selfplay|selfplay"; then
+            CPU_SELFPLAY_PIDS="$CPU_SELFPLAY_PIDS $pid"
+        else
+            OTHER_PIDS="$OTHER_PIDS $pid"
+        fi
+    done
+
+    # Count each type
+    ORCH_COUNT=$(echo $ORCHESTRATOR_PIDS | wc -w)
+    TRAIN_COUNT=$(echo $TRAINING_PIDS | wc -w)
+    GPU_SP_COUNT=$(echo $GPU_SELFPLAY_PIDS | wc -w)
+    CPU_SP_COUNT=$(echo $CPU_SELFPLAY_PIDS | wc -w)
+    OTHER_COUNT=$(echo $OTHER_PIDS | wc -w)
+
+    echo "[$TIMESTAMP] [CLASSIFY] orchestrators=$ORCH_COUNT training=$TRAIN_COUNT gpu_selfplay=$GPU_SP_COUNT cpu_selfplay=$CPU_SP_COUNT other=$OTHER_COUNT"
+
+    # NEVER kill orchestrators or training - these are critical
+    KILLED=0
+
+    # Kill excess GPU selfplay (beyond MAX_GPU_SELFPLAY)
+    if [[ "$GPU_SP_COUNT" -gt "$MAX_GPU_SELFPLAY" ]]; then
+        EXCESS=$((GPU_SP_COUNT - MAX_GPU_SELFPLAY))
+        echo "[$TIMESTAMP] [ACTION] Killing $EXCESS excess GPU selfplay processes (limit: $MAX_GPU_SELFPLAY)..."
+        echo $GPU_SELFPLAY_PIDS | tr ' ' '\n' | tail -n $EXCESS | xargs -r kill -9 2>/dev/null || true
+        KILLED=$((KILLED + EXCESS))
     fi
 
-    # If still overloaded, kill all Python processes
-    sleep 5
+    # Kill excess CPU selfplay (beyond MAX_CPU_SELFPLAY)
+    if [[ "$CPU_SP_COUNT" -gt "$MAX_CPU_SELFPLAY" ]]; then
+        EXCESS=$((CPU_SP_COUNT - MAX_CPU_SELFPLAY))
+        echo "[$TIMESTAMP] [ACTION] Killing $EXCESS excess CPU selfplay processes (limit: $MAX_CPU_SELFPLAY)..."
+        echo $CPU_SELFPLAY_PIDS | tr ' ' '\n' | tail -n $EXCESS | xargs -r kill -9 2>/dev/null || true
+        KILLED=$((KILLED + EXCESS))
+    fi
+
+    if [[ "$KILLED" -gt 0 ]]; then
+        send_alert "$HOSTNAME: Killed $KILLED excess selfplay processes (GPU:$GPU_SP_COUNT->$MAX_GPU_SELFPLAY, CPU:$CPU_SP_COUNT->$MAX_CPU_SELFPLAY). Protected: $ORCH_COUNT orchestrators, $TRAIN_COUNT training." "ACTION"
+    else
+        echo "[$TIMESTAMP] [OK] All process counts within limits, no action taken"
+    fi
+
+    # Alert if load is still high but don't kill critical processes
+    sleep 3
     NEW_LOAD=$(awk '{print $1}' /proc/loadavg 2>/dev/null || uptime | awk -F'[, ]+' '{print $(NF-2)}')
     NEW_LOAD_INT=${NEW_LOAD%.*}
 
     if [[ "$NEW_LOAD_INT" -gt "$MAX_LOAD" ]]; then
-        echo "[$TIMESTAMP] [CRITICAL] Load still high ($NEW_LOAD), killing all Python..."
-        pkill -9 python 2>/dev/null || true
-        send_alert "$HOSTNAME: CRITICAL - Killed all Python processes (load: $NEW_LOAD)" "CRITICAL"
+        echo "[$TIMESTAMP] [HIGH-LOAD] Load still high ($NEW_LOAD). Protected: $ORCH_COUNT orchestrators, $TRAIN_COUNT training jobs."
+        send_alert "$HOSTNAME: HIGH LOAD ($NEW_LOAD) after cleanup. Orchestrators ($ORCH_COUNT) and training ($TRAIN_COUNT) protected." "WARNING"
     fi
 
     # Record this kill action for backoff tracking
