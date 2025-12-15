@@ -125,6 +125,28 @@ DEFAULT_EXTERNAL_DRIVE = "/Volumes/RingRift-Data/selfplay_repository"
 # Default poll interval (5 minutes)
 DEFAULT_POLL_INTERVAL = 300
 
+# Disk capacity limits (consistent with orchestrator MAX_DISK_USAGE_PERCENT)
+MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
+
+
+def check_disk_has_capacity(path: Path, threshold: float = None) -> Tuple[bool, float]:
+    """Check if disk has capacity for more data.
+
+    Args:
+        path: Path to check disk usage for
+        threshold: Max disk usage percentage (defaults to MAX_DISK_USAGE_PERCENT)
+
+    Returns:
+        Tuple of (has_capacity, current_usage_percent)
+    """
+    threshold = threshold if threshold is not None else MAX_DISK_USAGE_PERCENT
+    try:
+        usage = shutil.disk_usage(path)
+        percent = (usage.used / usage.total) * 100
+        return percent < threshold, percent
+    except Exception:
+        return True, 0.0  # Allow sync to continue if we can't check
+
 
 @dataclass
 class HostConfig:
@@ -433,6 +455,12 @@ class ExternalDriveSyncDaemon:
         # Create host directory
         host_dir = self.raw_dir / host.name
         host_dir.mkdir(parents=True, exist_ok=True)
+
+        # Check disk capacity before syncing
+        has_capacity, disk_percent = check_disk_has_capacity(self.raw_dir)
+        if not has_capacity:
+            self._log(f"{host.name}: SKIPPING - disk usage {disk_percent:.1f}% >= {MAX_DISK_USAGE_PERCENT}%", "WARN")
+            return 0, 0
 
         if self.dry_run:
             self._log(f"{host.name}: [DRY RUN] would sync to {host_dir}")

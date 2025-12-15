@@ -76,6 +76,42 @@ log_warning() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_section() { echo -e "\n${CYAN}=== $1 ===${NC}"; }
 
+# Disk capacity limits (consistent with orchestrator MAX_DISK_USAGE_PERCENT)
+MAX_DISK_USAGE_PERCENT=${RINGRIFT_MAX_DISK_PERCENT:-70}
+
+check_disk_capacity() {
+    # Check if target directory disk has capacity
+    # Returns 0 if OK, 1 if disk is too full
+    local target_path="${1:-$TARGET_DIR}"
+
+    # Get disk usage percentage for the target path
+    local usage
+    if [[ -d "$target_path" ]]; then
+        usage=$(df "$target_path" | tail -1 | awk '{print $5}' | sed 's/%//')
+    else
+        # Target doesn't exist yet, check parent
+        local parent_dir=$(dirname "$target_path")
+        if [[ -d "$parent_dir" ]]; then
+            usage=$(df "$parent_dir" | tail -1 | awk '{print $5}' | sed 's/%//')
+        else
+            log_warning "Cannot determine disk usage for $target_path"
+            return 0  # Allow sync to continue
+        fi
+    fi
+
+    if [[ -z "$usage" ]]; then
+        log_warning "Could not parse disk usage"
+        return 0
+    fi
+
+    if (( usage >= MAX_DISK_USAGE_PERCENT )); then
+        log_error "Disk usage at ${usage}% exceeds limit (${MAX_DISK_USAGE_PERCENT}%)"
+        return 1
+    fi
+
+    return 0
+}
+
 # Parse arguments
 DRY_RUN=false
 while [[ $# -gt 0 ]]; do
@@ -183,6 +219,12 @@ do_rsync_sync() {
     local ssh_key="${5:-}"
     local ssh_port="${6:-22}"
     local dest="$7"
+
+    # Check disk capacity before syncing
+    if ! check_disk_capacity "$dest"; then
+        log_error "Skipping sync to $name - disk capacity limit reached"
+        return 1
+    fi
 
     local ssh_opts="-o ConnectTimeout=$SSH_CONNECT_TIMEOUT -o StrictHostKeyChecking=no -o BatchMode=yes"
     [[ -n "$ssh_key" ]] && ssh_opts="$ssh_opts -i $ssh_key"
