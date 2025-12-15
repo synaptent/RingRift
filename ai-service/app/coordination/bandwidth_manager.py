@@ -497,7 +497,7 @@ class BandwidthManager:
 
 # Global singleton
 _manager: Optional[BandwidthManager] = None
-_manager_lock = threading.Lock()
+_manager_lock = threading.RLock()
 
 
 def get_bandwidth_manager(db_path: Optional[Path] = None) -> BandwidthManager:

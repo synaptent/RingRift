@@ -120,7 +120,7 @@ class OrchestratorRegistry:
     """
 
     _instance: Optional['OrchestratorRegistry'] = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def __init__(self):
         self._db_path = REGISTRY_DB

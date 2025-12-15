@@ -122,7 +122,7 @@ from app.metrics.orchestrator import (
 
 # Metrics server management
 _server_started = False
-_server_lock = threading.Lock()
+_server_lock = threading.RLock()
 
 
 def start_metrics_server(port: int = 9090) -> bool:

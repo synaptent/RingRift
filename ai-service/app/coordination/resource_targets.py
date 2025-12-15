@@ -220,7 +220,7 @@ class ResourceTargetManager:
     """
 
     _instance: Optional["ResourceTargetManager"] = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def __init__(self, db_path: Optional[Path] = None, config_path: Optional[Path] = None):
         self._db_path = db_path or _DEFAULT_DB_PATH
@@ -681,7 +681,7 @@ class ResourceTargetManager:
 
 # Module-level singleton accessors
 _manager: Optional[ResourceTargetManager] = None
-_manager_lock = threading.Lock()
+_manager_lock = threading.RLock()
 
 
 def get_resource_targets() -> UtilizationTargets:

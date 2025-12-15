@@ -131,7 +131,7 @@ class EphemeralDataGuard:
     """
 
     _instance: Optional["EphemeralDataGuard"] = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = db_path or DEFAULT_GUARD_DB

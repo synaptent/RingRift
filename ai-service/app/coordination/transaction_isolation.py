@@ -81,7 +81,7 @@ class TransactionIsolation:
 
     # Class-level singleton
     _instance: Optional["TransactionIsolation"] = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def __init__(
         self,

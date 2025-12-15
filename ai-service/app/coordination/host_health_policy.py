@@ -85,7 +85,7 @@ class HealthStatus:
 
 # Global health cache
 _health_cache: Dict[str, HealthStatus] = {}
-_cache_lock = threading.Lock()
+_cache_lock = threading.RLock()
 
 
 def _get_ssh_target(host: str) -> Tuple[str, Optional[str], int]:
@@ -290,7 +290,7 @@ def get_healthy_hosts(
     # Parallel check with threading
     results: Dict[str, bool] = {}
     threads: List[threading.Thread] = []
-    results_lock = threading.Lock()
+    results_lock = threading.RLock()
 
     def check_one(host: str):
         healthy = is_host_healthy(host, force_refresh)

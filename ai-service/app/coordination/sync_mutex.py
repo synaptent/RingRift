@@ -467,7 +467,7 @@ class SyncMutex:
 
 # Global singleton instance
 _sync_mutex: Optional[SyncMutex] = None
-_mutex_lock = threading.Lock()
+_mutex_lock = threading.RLock()
 
 
 def get_sync_mutex(db_path: Optional[Path] = None) -> SyncMutex:

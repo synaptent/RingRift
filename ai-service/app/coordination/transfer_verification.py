@@ -115,7 +115,7 @@ class TransferVerifier:
     """Verifies integrity of data transfers with checksum validation."""
 
     _instance: Optional["TransferVerifier"] = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = db_path or DEFAULT_VERIFIER_DB

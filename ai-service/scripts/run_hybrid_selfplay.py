@@ -45,8 +45,8 @@ import numpy as np
 
 
 # Disk monitoring thresholds
-DISK_WARNING_THRESHOLD = 85  # Pause selfplay
-DISK_CRITICAL_THRESHOLD = 95  # Abort selfplay
+DISK_WARNING_THRESHOLD = 70  # Pause selfplay (consistent with orchestrator MAX_DISK_USAGE_PERCENT)
+DISK_CRITICAL_THRESHOLD = 80  # Abort selfplay
 
 # =============================================================================
 # Default Heuristic Weights (used when no --weights-file is specified)

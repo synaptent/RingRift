@@ -566,7 +566,7 @@ class DurationScheduler:
 
 # Global singleton
 _scheduler: Optional[DurationScheduler] = None
-_scheduler_lock = threading.Lock()
+_scheduler_lock = threading.RLock()
 
 
 def get_scheduler(db_path: Optional[Path] = None) -> DurationScheduler:

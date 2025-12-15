@@ -453,7 +453,7 @@ class QueueMonitor:
 
 # Global singleton
 _monitor: Optional[QueueMonitor] = None
-_monitor_lock = threading.Lock()
+_monitor_lock = threading.RLock()
 
 
 def get_queue_monitor(db_path: Optional[Path] = None) -> QueueMonitor:

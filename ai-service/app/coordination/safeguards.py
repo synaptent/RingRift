@@ -175,7 +175,7 @@ class SpawnRateTracker:
     def __init__(self, config: SafeguardConfig):
         self.config = config
         self._spawns: deque = deque()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def record_spawn(self) -> None:
         """Record a spawn event."""
@@ -316,7 +316,7 @@ class Safeguards:
     """
 
     _instance: Optional['Safeguards'] = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     @classmethod
     def get_instance(cls) -> 'Safeguards':
@@ -332,7 +332,7 @@ class Safeguards:
 
         # Circuit breakers by target (node_id or task_type)
         self._circuit_breakers: Dict[str, CircuitBreaker] = {}
-        self._cb_lock = threading.Lock()
+        self._cb_lock = threading.RLock()
 
         # Spawn rate tracking
         self._global_tracker = SpawnRateTracker(self.config)
@@ -343,7 +343,7 @@ class Safeguards:
 
         # Task counts
         self._task_counts: Dict[str, Dict[str, int]] = {}  # node_id -> {task_type: count}
-        self._counts_lock = threading.Lock()
+        self._counts_lock = threading.RLock()
 
         # Block reason (for debugging)
         self._last_block_reason: str = ""

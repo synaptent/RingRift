@@ -481,7 +481,7 @@ class UtilizationPredictor:
 
         # Historical data: list of (timestamp, cpu_util, gpu_util, gpu_mem_util)
         self._history: List[Tuple[float, float, float, float]] = []
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
         # EMA values
         self._ema_cpu: Optional[float] = None
@@ -697,7 +697,7 @@ class ResourceOptimizer:
     """
 
     _instance: Optional["ResourceOptimizer"] = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def __new__(cls) -> "ResourceOptimizer":
         if cls._instance is None:
