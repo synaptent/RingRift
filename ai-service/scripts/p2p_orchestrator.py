@@ -388,6 +388,21 @@ AGENT_MODE_ENABLED = os.environ.get("RINGRIFT_P2P_AGENT_MODE", "").lower() in {"
 # Falls back to COORDINATOR_URL if not set
 ARBITER_URL = os.environ.get("RINGRIFT_ARBITER_URL", "") or COORDINATOR_URL
 
+# Dynamic voter management settings
+# All GPU nodes are eligible voters; system maintains TARGET active voters
+DYNAMIC_VOTER_ENABLED = os.environ.get("RINGRIFT_DYNAMIC_VOTERS", "1").lower() in {"1", "true", "yes"}
+DYNAMIC_VOTER_TARGET = int(os.environ.get("RINGRIFT_VOTER_TARGET", "7") or 7)  # Target number of active voters
+DYNAMIC_VOTER_MIN = int(os.environ.get("RINGRIFT_VOTER_MIN", "5") or 5)  # Minimum voters before promoting
+DYNAMIC_VOTER_MAX_QUORUM = int(os.environ.get("RINGRIFT_VOTER_MAX_QUORUM", "4") or 4)  # Cap quorum size
+VOTER_HEALTH_THRESHOLD = float(os.environ.get("RINGRIFT_VOTER_HEALTH_THRESHOLD", "0.7") or 0.7)  # Min response rate
+VOTER_PROMOTION_UPTIME = int(os.environ.get("RINGRIFT_VOTER_PROMOTION_UPTIME", "300") or 300)  # Min uptime for promotion
+VOTER_DEMOTION_FAILURES = int(os.environ.get("RINGRIFT_VOTER_DEMOTION_FAILURES", "5") or 5)  # Consecutive failures before demotion
+
+# Health-based leadership settings
+LEADER_HEALTH_CHECK_INTERVAL = 30  # seconds between health checks
+LEADER_MIN_RESPONSE_RATE = float(os.environ.get("RINGRIFT_LEADER_MIN_RESPONSE_RATE", "0.6") or 0.6)  # 60% response rate
+LEADER_DEGRADED_STEPDOWN_DELAY = 60  # seconds to wait before stepping down when degraded
+
 # Git auto-update settings
 GIT_UPDATE_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL", "300") or 300)  # seconds
 GIT_REMOTE_NAME = "origin"       # Git remote to check
@@ -1996,6 +2011,164 @@ class P2POrchestrator:
                 print(f"[P2P] Partition healed: restored original voters {', '.join(original)}")
                 return True
         return False
+
+    def _get_eligible_voters(self) -> List[str]:
+        """Get list of nodes eligible to be voters (GPU nodes with good health)."""
+        with self.peers_lock:
+            peers = dict(self.peers)
+
+        eligible = []
+        now = time.time()
+
+        for node_id, peer in peers.items():
+            # Skip retired or NAT-blocked without relay
+            if getattr(peer, "retired", False):
+                continue
+
+            # Must be alive
+            if not peer.is_alive():
+                continue
+
+            # Must have GPU (CUDA or MPS)
+            has_gpu = getattr(peer, "has_gpu", False)
+            gpu_name = str(getattr(peer, "gpu_name", "") or "")
+            if not has_gpu and "GH200" not in gpu_name and "H100" not in gpu_name and "A10" not in gpu_name:
+                # Also include high-reliability CPU nodes (AWS staging)
+                if "aws" not in node_id.lower():
+                    continue
+
+            # Must have been up for minimum time
+            first_seen = getattr(peer, "first_seen", 0) or peer.last_heartbeat
+            if now - first_seen < VOTER_PROMOTION_UPTIME:
+                continue
+
+            # Check health score (response rate)
+            failures = getattr(peer, "consecutive_failures", 0)
+            if failures >= VOTER_DEMOTION_FAILURES:
+                continue
+
+            eligible.append(node_id)
+
+        # Always include self if we have GPU
+        if self.node_id not in eligible:
+            self_gpu = getattr(self, "has_gpu", False) or bool(GPU_INFO)
+            if self_gpu or "aws" in self.node_id.lower() or "lambda" in self.node_id.lower():
+                eligible.append(self.node_id)
+
+        return sorted(eligible)
+
+    def _manage_dynamic_voters(self) -> bool:
+        """Manage dynamic voter pool - promote/demote voters as needed.
+
+        Returns True if voter set was changed.
+        """
+        if not DYNAMIC_VOTER_ENABLED:
+            return False
+
+        # Don't override env-configured voters
+        if (os.environ.get("RINGRIFT_P2P_VOTERS") or "").strip():
+            return False
+
+        current_voters = list(getattr(self, "voter_node_ids", []) or [])
+        eligible = self._get_eligible_voters()
+
+        # Count how many current voters are healthy
+        with self.peers_lock:
+            peers = dict(self.peers)
+
+        healthy_voters = []
+        unhealthy_voters = []
+
+        for voter_id in current_voters:
+            if voter_id == self.node_id:
+                healthy_voters.append(voter_id)
+                continue
+            peer = peers.get(voter_id)
+            if peer and peer.is_alive():
+                failures = getattr(peer, "consecutive_failures", 0)
+                if failures < VOTER_DEMOTION_FAILURES:
+                    healthy_voters.append(voter_id)
+                else:
+                    unhealthy_voters.append(voter_id)
+            else:
+                unhealthy_voters.append(voter_id)
+
+        changed = False
+        new_voters = healthy_voters.copy()
+
+        # Demote unhealthy voters
+        if unhealthy_voters:
+            print(f"[P2P] Dynamic voters: demoting unhealthy voters: {unhealthy_voters}")
+            changed = True
+
+        # Promote new voters if below target
+        if len(new_voters) < DYNAMIC_VOTER_TARGET:
+            candidates = [n for n in eligible if n not in new_voters]
+            # Sort by reliability (fewer failures = better)
+            candidates.sort(key=lambda n: getattr(peers.get(n), "consecutive_failures", 0) if peers.get(n) else 999)
+
+            needed = DYNAMIC_VOTER_TARGET - len(new_voters)
+            for candidate in candidates[:needed]:
+                new_voters.append(candidate)
+                print(f"[P2P] Dynamic voters: promoting {candidate} to voter")
+                changed = True
+
+        if changed and new_voters:
+            new_voters = sorted(set(new_voters))
+            self.voter_node_ids = new_voters
+            # Cap quorum size for resilience
+            self.voter_quorum_size = min(DYNAMIC_VOTER_MAX_QUORUM, len(new_voters) // 2 + 1)
+            self.voter_config_source = "dynamic"
+            print(
+                f"[P2P] Dynamic voter set updated: {len(new_voters)} voters, "
+                f"quorum={self.voter_quorum_size} ({', '.join(new_voters)})"
+            )
+            return True
+
+        return False
+
+    def _check_leader_health(self) -> bool:
+        """Check leader health based on peer response rates.
+
+        Returns True if health is good, False if degraded.
+        """
+        if self.role != NodeRole.LEADER:
+            return True
+
+        with self.peers_lock:
+            peers = list(self.peers.values())
+
+        if not peers:
+            return True
+
+        # Calculate response rate (peers that responded recently)
+        now = time.time()
+        alive_count = sum(1 for p in peers if p.is_alive() and not getattr(p, "retired", False))
+        total_count = sum(1 for p in peers if not getattr(p, "retired", False))
+
+        if total_count == 0:
+            return True
+
+        response_rate = alive_count / total_count
+
+        # Track degraded state
+        if not hasattr(self, "_leader_degraded_since"):
+            self._leader_degraded_since = 0.0
+
+        if response_rate < LEADER_MIN_RESPONSE_RATE:
+            if self._leader_degraded_since == 0.0:
+                self._leader_degraded_since = now
+                print(f"[P2P] Leader health degraded: {response_rate:.1%} response rate (min: {LEADER_MIN_RESPONSE_RATE:.0%})")
+            elif now - self._leader_degraded_since > LEADER_DEGRADED_STEPDOWN_DELAY:
+                print(f"[P2P] Leader health critically degraded for {LEADER_DEGRADED_STEPDOWN_DELAY}s, stepping down")
+                self._leader_degraded_since = 0.0
+                return False
+        else:
+            if self._leader_degraded_since > 0:
+                print(f"[P2P] Leader health recovered: {response_rate:.1%} response rate")
+            self._leader_degraded_since = 0.0
+
+        return True
 
     async def _acquire_voter_lease_quorum(self, lease_id: str, duration: int) -> Optional[float]:
         """Acquire/renew an exclusive leader lease from a quorum of voters.
@@ -16083,6 +16256,22 @@ print(json.dumps({{
                 # Self-healing: check if partition healed and restore original voters
                 if hasattr(self, "_original_voters"):
                     self._restore_original_voters()
+
+                # Dynamic voter management: promote/demote voters based on health
+                # Only the leader manages voters to ensure consistency
+                if self.role == NodeRole.LEADER:
+                    self._manage_dynamic_voters()
+
+                # Health-based leadership: step down if we can't reach enough peers
+                if self.role == NodeRole.LEADER and not self._check_leader_health():
+                    print(f"[P2P] Stepping down due to degraded health")
+                    self.role = NodeRole.FOLLOWER
+                    self.leader_id = None
+                    self.leader_lease_id = ""
+                    self.leader_lease_expires = 0.0
+                    self._release_voter_grant_if_self()
+                    self._save_state()
+                    continue  # Skip leader duties this cycle
 
                 # LEARNED LESSONS - Lease renewal to maintain leadership
                 if self.role == NodeRole.LEADER:
