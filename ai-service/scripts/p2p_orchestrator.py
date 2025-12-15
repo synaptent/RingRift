@@ -15875,19 +15875,28 @@ print(json.dumps({{
                 target_selfplay = min(MAX_SELFPLAY_PER_NODE, target_selfplay + cpu_bonus)
 
             # Utilization-aware tuning targeting 60-80%
-            if gpu_percent > 85 or gpu_mem_percent > 85:
-                target_selfplay = max(2, target_selfplay - 4)
-            elif gpu_percent < 60 and current_jobs > 0:
-                # Scale up when GPU underutilized
-                scale_up_jobs = min(4, int((60 - gpu_percent) / 15))
-                target_selfplay = min(MAX_SELFPLAY_HIGH_END, target_selfplay + scale_up_jobs)
+            # Check resource headroom independently - only scale up if BOTH have capacity
+            gpu_overloaded = gpu_percent > 85 or gpu_mem_percent > 85
+            cpu_overloaded = cpu_percent > 80
+            gpu_has_headroom = gpu_percent < 75 and gpu_mem_percent < 75
+            cpu_has_headroom = cpu_percent < 75
 
-            if cpu_percent > 80:
+            # Scale DOWN if either resource is overloaded
+            if gpu_overloaded:
+                target_selfplay = max(2, target_selfplay - 4)
+            if cpu_overloaded:
                 target_selfplay = max(2, target_selfplay - 2)
-            elif cpu_percent < 60 and current_jobs > 0:
-                # Scale up when CPU underutilized
-                scale_up_jobs = min(3, int((60 - cpu_percent) / 20))
-                target_selfplay = min(MAX_SELFPLAY_PER_NODE, target_selfplay + scale_up_jobs)
+
+            # Scale UP only if BOTH resources have headroom (neither bottlenecked)
+            if not gpu_overloaded and not cpu_overloaded and current_jobs > 0:
+                # GPU underutilized and CPU has headroom
+                if gpu_percent < 60 and cpu_has_headroom:
+                    scale_up_jobs = min(4, int((60 - gpu_percent) / 15))
+                    target_selfplay = min(MAX_SELFPLAY_HIGH_END, target_selfplay + scale_up_jobs)
+                # CPU underutilized and GPU has headroom
+                if cpu_percent < 60 and gpu_has_headroom:
+                    scale_up_jobs = min(3, int((60 - cpu_percent) / 20))
+                    target_selfplay = min(MAX_SELFPLAY_PER_NODE, target_selfplay + scale_up_jobs)
         else:
             # CPU-only nodes
             if cpu_count >= 32:
