@@ -295,6 +295,12 @@ class DurationScheduler:
         if expected_duration is None:
             expected_duration = self.estimate_duration(task_type, host=host)
 
+        # Sanity check: cap expected_duration at 24 hours max
+        # This guards against callers accidentally passing PIDs or other large values
+        MAX_DURATION_SECONDS = 24 * 3600  # 24 hours
+        if expected_duration > MAX_DURATION_SECONDS:
+            expected_duration = self.estimate_duration(task_type, host=host)
+
         expected_end = now + expected_duration
 
         conn.execute(

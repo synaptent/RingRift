@@ -3072,11 +3072,17 @@ class TrainingScheduler:
             return None
 
         # Duration-aware scheduling: check if training can be scheduled now
-        # This avoids starting training during peak hours or when resources are busy
+        # Skip peak hours check for dedicated training cluster - always allow training
+        # Only check for host availability (concurrent task limits)
         if HAS_COORDINATION:
             import socket
+            from app.coordination.duration_scheduler import get_scheduler
             node_id = socket.gethostname()
-            can_schedule, schedule_reason = can_schedule_task("training", node_id)
+            scheduler = get_scheduler()
+            # Use can_schedule_now with avoid_peak_hours=False for dedicated cluster
+            can_schedule, schedule_reason = scheduler.can_schedule_now(
+                "training", node_id, avoid_peak_hours=False
+            )
             if not can_schedule:
                 if self.config.verbose:
                     print(f"[Training] Deferred by duration scheduler: {schedule_reason}")
@@ -3260,8 +3266,62 @@ class TrainingScheduler:
                 self._release_training_lock()
                 return False
 
-            # Prefer consolidated database if it exists, otherwise use largest
+            # Auto-consolidate databases if consolidated DB is stale or missing
             consolidated_db = games_dir / "consolidated_training_v2.db"
+            consolidation_max_age = 6 * 3600  # 6 hours
+
+            should_consolidate = False
+            if not consolidated_db.exists():
+                should_consolidate = True
+                print(f"[Training] Consolidated DB missing, will merge databases")
+            elif time.time() - consolidated_db.stat().st_mtime > consolidation_max_age:
+                should_consolidate = True
+                print(f"[Training] Consolidated DB stale (>{consolidation_max_age/3600:.0f}h old), will refresh")
+
+            if should_consolidate:
+                # Find all selfplay DBs to merge (exclude quarantine, corrupted, etc.)
+                merge_dbs = []
+                for db_path in game_dbs:
+                    db_str = str(db_path)
+                    # Skip quarantine, corrupted, backup, and the consolidated DB itself
+                    if any(skip in db_str for skip in ['quarantine', 'corrupted', 'backup', 'consolidated']):
+                        continue
+                    # Only include selfplay/merged databases
+                    if 'selfplay' in db_path.name or 'merged' in db_path.name or 'training' in db_path.name:
+                        merge_dbs.append(db_path)
+
+                if len(merge_dbs) > 1:
+                    print(f"[Training] Consolidating {len(merge_dbs)} databases...")
+                    merge_cmd = [
+                        sys.executable,
+                        str(AI_SERVICE_ROOT / "scripts" / "merge_game_dbs.py"),
+                        "--output", str(consolidated_db),
+                        "--dedupe-by-game-id",
+                    ]
+                    for db in merge_dbs:
+                        merge_cmd.extend(["--db", str(db)])
+
+                    try:
+                        merge_process = await asyncio.create_subprocess_exec(
+                            *merge_cmd,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            cwd=AI_SERVICE_ROOT,
+                        )
+                        stdout, stderr = await asyncio.wait_for(
+                            merge_process.communicate(),
+                            timeout=1800  # 30 min max for consolidation
+                        )
+                        if merge_process.returncode == 0:
+                            print(f"[Training] Database consolidation complete")
+                        else:
+                            print(f"[Training] Consolidation failed: {stderr.decode()[:500]}")
+                    except asyncio.TimeoutError:
+                        print(f"[Training] Consolidation timed out, using largest DB instead")
+                    except Exception as e:
+                        print(f"[Training] Consolidation error: {e}")
+
+            # Prefer consolidated database if it exists, otherwise use largest
             if consolidated_db.exists():
                 largest_db = consolidated_db
                 print(f"[Training] Using consolidated database: {largest_db}")
@@ -3285,6 +3345,10 @@ class TrainingScheduler:
                 "--board-type", board_type,
                 "--num-players", str(num_players),
                 "--sample-every", "2",
+                # Quality filters - only train on good data
+                "--require-completed",  # Only games that completed normally
+                "--min-moves", "10",    # Filter out trivially short games
+                "--exclude-recovery",   # Exclude error recovery games
             ]
             if encoder_version != "default":
                 export_cmd.extend(["--encoder-version", encoder_version])
@@ -5788,45 +5852,56 @@ class UnifiedAILoop:
         Returns number of hosts where selfplay was started.
         """
         import asyncio
-        import subprocess
 
-        # GH200 hosts that should be running selfplay
-        gh200_hosts = [f"lambda-gh200-{c}" for c in "abcdefghijkl"]
+        # Get GH200 hosts from the loaded state (use IP addresses for SSH)
+        gh200_hosts = []
+        if hasattr(self, 'data_collector') and self.data_collector:
+            for host_state in self.data_collector.state.hosts.values():
+                # Only check GH200 hosts (selfplay role)
+                if 'gh200' in host_state.name.lower():
+                    gh200_hosts.append((
+                        host_state.name,
+                        f"{host_state.ssh_user}@{host_state.ssh_host}"
+                    ))
+
+        if not gh200_hosts:
+            return 0
+
         idle_hosts = []
 
         # Check each host for selfplay processes
-        async def check_host(host: str) -> tuple[str, int]:
+        async def check_host(name: str, ssh_target: str) -> tuple[str, str, int]:
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    "ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", host,
+                    "ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", ssh_target,
                     "ps aux | grep -E 'selfplay|hybrid' | grep -v grep | wc -l",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.DEVNULL
                 )
                 stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
                 count = int(stdout.decode().strip() or "0")
-                return (host, count)
+                return (name, ssh_target, count)
             except Exception:
-                return (host, -1)  # -1 means unreachable
+                return (name, ssh_target, -1)  # -1 means unreachable
 
         # Check all hosts in parallel
-        results = await asyncio.gather(*[check_host(h) for h in gh200_hosts])
+        results = await asyncio.gather(*[check_host(n, s) for n, s in gh200_hosts])
 
-        for host, count in results:
+        for name, ssh_target, count in results:
             if count == 0:  # Idle host
-                idle_hosts.append(host)
+                idle_hosts.append((name, ssh_target))
             elif count == -1:
-                print(f"[Utilization] {host}: unreachable")
+                print(f"[Utilization] {name}: unreachable")
 
         if not idle_hosts:
             print("[Utilization] No idle hosts found")
             return 0
 
-        print(f"[Utilization] Found {len(idle_hosts)} idle hosts: {idle_hosts}")
+        print(f"[Utilization] Found {len(idle_hosts)} idle hosts: {[n for n, _ in idle_hosts]}")
 
         # Start selfplay on idle hosts
         started = 0
-        for host in idle_hosts[:3]:  # Limit to 3 hosts per cycle to avoid overwhelming
+        for name, ssh_target in idle_hosts[:3]:  # Limit to 3 hosts per cycle to avoid overwhelming
             try:
                 cmd = f'''cd ~/ringrift/ai-service && source venv/bin/activate && \\
                     mkdir -p data/selfplay/auto_$(date +%s) && \\
@@ -5840,19 +5915,120 @@ class UnifiedAILoop:
                     done && echo "Started selfplay"'''
 
                 proc = await asyncio.create_subprocess_exec(
-                    "ssh", "-o", "ConnectTimeout=10", host, cmd,
+                    "ssh", "-o", "ConnectTimeout=10", ssh_target, cmd,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
                 await asyncio.wait_for(proc.communicate(), timeout=30)
 
                 if proc.returncode == 0:
-                    print(f"[Utilization] Started selfplay on {host}")
+                    print(f"[Utilization] Started selfplay on {name}")
                     started += 1
             except Exception as e:
-                print(f"[Utilization] Failed to start selfplay on {host}: {e}")
+                print(f"[Utilization] Failed to start selfplay on {name}: {e}")
 
         return started
+
+    async def _periodic_health_recovery(self):
+        """Automatic health recovery - runs periodically to fix common issues.
+
+        Checks and fixes:
+        1. Idle hosts without selfplay
+        2. Stale rsync temp files
+        3. Stuck training processes
+        4. Database lock cleanup
+        """
+        import asyncio
+        import glob
+
+        print("[HealthRecovery] Running periodic health check and recovery...")
+        issues_fixed = 0
+
+        # 1. Check for idle hosts and start selfplay
+        started = await self._spawn_selfplay_on_idle_hosts()
+        if started > 0:
+            print(f"[HealthRecovery] Started selfplay on {started} idle hosts")
+            issues_fixed += started
+
+        # 2. Clean up stale rsync temp files (older than 1 hour)
+        try:
+            synced_dir = AI_SERVICE_ROOT / "data" / "games" / "synced"
+            if synced_dir.exists():
+                now = time.time()
+                for host_dir in synced_dir.iterdir():
+                    if host_dir.is_dir():
+                        for temp_file in host_dir.glob(".*.db.*"):
+                            file_age = now - temp_file.stat().st_mtime
+                            if file_age > 3600:  # Older than 1 hour
+                                temp_file.unlink()
+                                print(f"[HealthRecovery] Removed stale temp file: {temp_file.name}")
+                                issues_fixed += 1
+        except Exception as e:
+            print(f"[HealthRecovery] Error cleaning temp files: {e}")
+
+        # 3. Check for stuck training (running > 4 hours without progress)
+        if hasattr(self, 'training_scheduler') and self.training_scheduler:
+            ts = self.training_scheduler
+            if ts._training_process and ts.state.training_in_progress:
+                training_duration = time.time() - ts.state.training_started_at
+                if training_duration > 14400:  # 4 hours
+                    print(f"[HealthRecovery] Training stuck for {training_duration/3600:.1f}h, killing...")
+                    try:
+                        ts._training_process.kill()
+                        ts._training_process = None
+                        ts.state.training_in_progress = False
+                        ts._release_training_lock()
+                        issues_fixed += 1
+                    except Exception as e:
+                        print(f"[HealthRecovery] Failed to kill stuck training: {e}")
+
+        # 4. Check database lock timeouts
+        try:
+            coordination_db = AI_SERVICE_ROOT / "data" / "coordination.db"
+            if coordination_db.exists():
+                import sqlite3
+                conn = sqlite3.connect(str(coordination_db), timeout=5)
+                cursor = conn.cursor()
+                # Clear stale locks older than 2 hours
+                cursor.execute("""
+                    DELETE FROM locks
+                    WHERE acquired_at < datetime('now', '-2 hours')
+                """)
+                deleted = cursor.rowcount
+                conn.commit()
+                conn.close()
+                if deleted > 0:
+                    print(f"[HealthRecovery] Cleared {deleted} stale database locks")
+                    issues_fixed += deleted
+        except Exception:
+            pass  # Non-critical
+
+        if issues_fixed > 0:
+            print(f"[HealthRecovery] Fixed {issues_fixed} issues")
+        else:
+            print("[HealthRecovery] All systems healthy")
+
+        return issues_fixed
+
+    async def _health_recovery_loop(self):
+        """Background loop that runs periodic health recovery every 5 minutes."""
+        recovery_interval = 300  # 5 minutes
+
+        print("[HealthRecovery] Recovery loop started (interval=5min)")
+
+        while self._running:
+            try:
+                await self._periodic_health_recovery()
+            except Exception as e:
+                print(f"[HealthRecovery] Error in recovery loop: {e}")
+
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=recovery_interval)
+                break
+            except asyncio.TimeoutError:
+                pass
+
+        print("[HealthRecovery] Recovery loop stopped")
 
     async def _handle_scale_down_selfplay(self, signal: 'FeedbackSignal') -> bool:
         """Handle SCALE_DOWN_SELFPLAY signals - reduce concurrent selfplay to avoid resource contention."""
@@ -7339,6 +7515,7 @@ class UnifiedAILoop:
                 self._nas_loop(),
                 self._per_loop(),
                 self._cross_process_event_loop(),
+                self._health_recovery_loop(),  # Automatic issue detection and healing
             )
         finally:
             # Stop P2P on shutdown

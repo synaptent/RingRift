@@ -29,11 +29,11 @@ def log(msg: str):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
 
-def check_p2p_health(port: int = 8770) -> Optional[dict]:
+def check_p2p_health(port: int = 8770, timeout: int = 30) -> Optional[dict]:
     """Check if local P2P orchestrator is healthy."""
     try:
         url = f"http://localhost:{port}/health"
-        with urllib.request.urlopen(url, timeout=5) as response:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
             return json.loads(response.read().decode())
     except Exception:
         return None
@@ -65,22 +65,49 @@ def is_p2p_running() -> bool:
         return False
 
 
+def is_systemd_service_available() -> bool:
+    """Check if ringrift-p2p.service is available."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-enabled", "ringrift-p2p.service"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def stop_p2p():
     """Stop any running P2P orchestrator."""
     try:
-        # Try graceful kill first
-        subprocess.run(["pkill", "-f", "p2p_orchestrator"], timeout=5)
-        time.sleep(2)
-        # Force kill if still running
-        if is_p2p_running():
-            subprocess.run(["pkill", "-9", "-f", "p2p_orchestrator"], timeout=5)
-            time.sleep(1)
+        if is_systemd_service_available():
+            # Use systemctl for systemd-managed service
+            subprocess.run(["sudo", "systemctl", "stop", "ringrift-p2p.service"], timeout=30)
+            time.sleep(2)
+        else:
+            # Fallback to pkill
+            subprocess.run(["pkill", "-f", "p2p_orchestrator"], timeout=5)
+            time.sleep(2)
+            if is_p2p_running():
+                subprocess.run(["pkill", "-9", "-f", "p2p_orchestrator"], timeout=5)
+                time.sleep(1)
     except Exception as e:
         log(f"Warning: Error stopping P2P: {e}")
 
 
 def start_p2p(node_id: str, port: int, peers: List[str], ringrift_path: str):
     """Start the P2P orchestrator."""
+    if is_systemd_service_available():
+        # Use systemctl for systemd-managed service
+        log("Starting P2P via systemctl")
+        try:
+            subprocess.run(["sudo", "systemctl", "start", "ringrift-p2p.service"], timeout=30)
+            return True
+        except Exception as e:
+            log(f"Error starting P2P via systemctl: {e}")
+            return False
+
+    # Fallback to direct start
     script_path = os.path.join(ringrift_path, "ai-service", "scripts", "p2p_orchestrator.py")
 
     if not os.path.exists(script_path):
