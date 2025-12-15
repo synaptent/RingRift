@@ -3,6 +3,35 @@ Automated Model Registry for RingRift AI.
 
 Provides comprehensive model version tracking, metadata storage,
 promotion workflows, and comparison tools.
+
+This module handles the MODEL LIFECYCLE:
+- Track models from development → staging → production → archived
+- Store training configurations and performance metrics
+- Support promotion workflows with comparison tools
+- Query models by stage, performance, or board type
+
+Works with model_versioning.py which handles CHECKPOINT INTEGRITY:
+- Architecture version validation
+- SHA256 checksums for weight verification
+- Migration from legacy checkpoint formats
+
+Typical usage:
+    from app.training.model_registry import ModelRegistry, ModelStage
+    from app.training.model_versioning import save_versioned_checkpoint
+
+    # Register a new model after training
+    registry = ModelRegistry()
+    model_id = registry.register_model(
+        board_type="square8",
+        num_players=2,
+        stage=ModelStage.DEVELOPMENT,
+    )
+
+    # Save checkpoint with integrity verification
+    save_versioned_checkpoint(model, path, model_id=model_id)
+
+    # Later: promote to production after evaluation
+    registry.promote_model(model_id, ModelStage.PRODUCTION)
 """
 
 import json

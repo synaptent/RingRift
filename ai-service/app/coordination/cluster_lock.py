@@ -1,31 +1,48 @@
 #!/usr/bin/env python3
-"""Unified cluster-wide coordination and resource management.
+"""
+DEPRECATED: This module is deprecated. Use app.coordination.task_coordinator instead.
 
-This module provides:
-1. Global cluster lock - prevents multiple orchestrators from running
-2. Load-based gating - checks system load before spawning tasks
-3. Process registry - tracks running tasks across the cluster
-4. Resource limits - enforces max concurrent processes per host
+The task_coordinator provides superior functionality using SQLite for coordination
+instead of JSON files, with proper rate limiting and cluster-wide task management.
 
-Usage:
+Migration:
+    # OLD (deprecated)
     from app.coordination.cluster_lock import (
         acquire_orchestrator_lock,
-        release_orchestrator_lock,
         can_spawn_task,
         register_task,
-        get_cluster_status,
     )
 
-    # Acquire exclusive orchestrator lock
-    if not acquire_orchestrator_lock("my_orchestrator"):
-        print("Another orchestrator is running, exiting")
-        sys.exit(0)
+    # NEW (canonical)
+    from app.coordination.task_coordinator import (
+        TaskCoordinator,
+        TaskType,
+        atomic_write_json,  # Utility functions are preserved here
+        safe_read_json,
+    )
 
-    # Check before spawning
-    if can_spawn_task(host="lambda_h100", task_type="selfplay"):
-        register_task(host="lambda_h100", task_type="selfplay", pid=12345)
-        # spawn task...
+    coordinator = TaskCoordinator.get_instance()
+    if coordinator.can_spawn_task(TaskType.SELFPLAY, node_id="node-1"):
+        coordinator.register_task(task_id, TaskType.SELFPLAY, node_id="node-1")
+
+This file is kept for backwards compatibility but will be removed in a future version.
+
+---
+Original docstring:
+
+Unified cluster-wide coordination and resource management.
 """
+import warnings
+
+warnings.warn(
+    "cluster_lock.py is deprecated. Use app.coordination.task_coordinator instead. "
+    "The task_coordinator provides SQLite-based coordination with proper rate limiting.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+# Re-export utilities from task_coordinator for backwards compatibility
+from app.coordination.task_coordinator import atomic_write_json, safe_read_json
 
 import fcntl
 import json

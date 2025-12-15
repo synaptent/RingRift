@@ -420,7 +420,8 @@ class DistributedMetrics:
         metrics = DistributedMetrics()
         for batch in loader:
             loss = compute_loss(batch)
-            metrics.add("loss", loss.item())
+            # Pass detached tensor - add() handles .item() conversion
+            metrics.add("loss", loss.detach())
             metrics.add("accuracy", compute_accuracy(batch))
 
         # After epoch, get averaged metrics across all processes
@@ -433,15 +434,20 @@ class DistributedMetrics:
         self._sums: dict[str, float] = {}
         self._counts: dict[str, int] = {}
 
-    def add(self, name: str, value: float, count: int = 1) -> None:
+    def add(self, name: str, value: "float | torch.Tensor", count: int = 1) -> None:
         """
         Add a metric value.
 
         Args:
             name: Metric name.
-            value: Metric value (will be multiplied by count for averaging).
+            value: Metric value (float or tensor). Tensors are converted to float.
+                   The value will be multiplied by count for averaging.
             count: Number of samples this value represents.
         """
+        # Convert tensor to float if needed (single .item() call)
+        if isinstance(value, torch.Tensor):
+            value = value.item()
+
         if name not in self._sums:
             self._sums[name] = 0.0
             self._counts[name] = 0
@@ -767,15 +773,16 @@ class DistributedTrainer:
                 )
                 self.optimizer.step()
 
-                # Track metrics
-                self.metrics.add('train_loss', loss.item(), features.size(0))
-                self.metrics.add('value_loss', value_loss.item(), 1)
-                self.metrics.add('policy_loss', policy_loss.item(), 1)
+                # Track metrics - pass detached tensors (add() handles .item() conversion)
+                self.metrics.add('train_loss', loss.detach(), features.size(0))
+                self.metrics.add('value_loss', value_loss.detach(), 1)
+                self.metrics.add('policy_loss', policy_loss.detach(), 1)
 
                 if batch_idx % 10 == 0 and self.is_main:
+                    # Single .item() call for logging (acceptable every 10 batches)
                     logger.info(
                         f"Epoch {epoch+1}, Batch {batch_idx}: "
-                        f"loss={loss.item():.4f}"
+                        f"loss={loss.detach().item():.4f}"
                     )
 
             # Reduce metrics across all ranks
@@ -843,7 +850,8 @@ class DistributedTrainer:
                 )
                 loss = value_loss + (policy_weight * policy_loss)
 
-                self.metrics.add('val_loss', loss.item(), features.size(0))
+                # Pass detached tensor (add() handles .item() conversion)
+                self.metrics.add('val_loss', loss.detach(), features.size(0))
 
         return self.metrics.reduce_and_reset(device=self.device)
 

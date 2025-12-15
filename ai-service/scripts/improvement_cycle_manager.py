@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""Improvement Cycle Manager - Bridges P2P orchestrator with AI training loop.
+"""
+DEPRECATED: This module is deprecated. Use scripts/unified_ai_loop.py instead.
+
+The unified_ai_loop.py provides all functionality with:
+- Proper cluster coordination and distributed locking
+- Event-driven data flow via cross-process events
+- Data quality validation and training gates
+- Feedback loop integration and curriculum rebalancing
+- Health monitoring with Prometheus metrics
+
+To migrate:
+    python scripts/unified_ai_loop.py --foreground --verbose
+
+---
+Improvement Cycle Manager - Bridges P2P orchestrator with AI training loop.
 
 This module integrates with the p2p_orchestrator to coordinate:
 1. Diverse selfplay scheduling with varied AI opponents

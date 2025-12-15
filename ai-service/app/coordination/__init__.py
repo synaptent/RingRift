@@ -90,8 +90,8 @@ from app.coordination.cross_process_events import (
     bridge_to_cross_process,
 )
 
-# Health check exports
-from app.coordination.health_check import (
+# Host health policy exports (renamed from health_check.py for clarity)
+from app.coordination.host_health_policy import (
     HealthStatus,
     check_host_health,
     is_host_healthy,

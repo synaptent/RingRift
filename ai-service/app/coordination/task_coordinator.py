@@ -30,7 +30,9 @@ import json
 import logging
 import os
 import signal
+import socket
 import sqlite3
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field, asdict
@@ -40,6 +42,79 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Set, Callable
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================
+# Atomic File Operations (merged from cluster_lock.py)
+# ============================================
+
+
+def atomic_write_json(filepath: Path, data: Any, indent: int = 2) -> None:
+    """Write JSON data to file atomically.
+
+    Uses write-to-temp-then-rename pattern to prevent corruption
+    if process crashes during write.
+
+    Args:
+        filepath: Target file path
+        data: Data to serialize as JSON
+        indent: JSON indentation (default 2)
+    """
+    filepath = Path(filepath)
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write to temp file in same directory (for atomic rename)
+    fd, temp_path = tempfile.mkstemp(
+        dir=filepath.parent,
+        prefix=f".{filepath.name}.",
+        suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, 'w') as f:
+            json.dump(data, f, indent=indent)
+            f.flush()
+            os.fsync(f.fileno())  # Ensure data hits disk
+
+        # Atomic rename (POSIX guarantees atomicity)
+        os.rename(temp_path, filepath)
+    except Exception:
+        # Clean up temp file on error
+        try:
+            os.unlink(temp_path)
+        except Exception:
+            pass
+        raise
+
+
+def safe_read_json(filepath: Path, default: Any = None) -> Any:
+    """Safely read JSON file with fallback on corruption.
+
+    Args:
+        filepath: File to read
+        default: Value to return if file doesn't exist or is corrupt
+
+    Returns:
+        Parsed JSON data or default value
+    """
+    filepath = Path(filepath)
+    if not filepath.exists():
+        return default
+
+    try:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Failed to read {filepath}: {e}")
+        # Attempt to read backup if it exists
+        backup = filepath.with_suffix(filepath.suffix + '.bak')
+        if backup.exists():
+            try:
+                with open(backup, 'r') as f:
+                    logger.info(f"Recovered from backup: {backup}")
+                    return json.load(f)
+            except Exception:
+                pass
+        return default
 
 
 # ============================================

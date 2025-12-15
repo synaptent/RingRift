@@ -49,6 +49,33 @@ except ImportError:
     HAS_LEGACY_COORDINATION = False
     print("[WARN] Legacy cluster coordination module not available")
 
+# Import new coordination features
+try:
+    from app.coordination import (
+        # Orchestrator role management
+        OrchestratorRole,
+        acquire_orchestrator_role,
+        release_orchestrator_role,
+        # Pre-spawn health check
+        pre_spawn_check,
+        is_host_healthy,
+        # Sync mutex for rsync operations
+        sync_lock,
+        # Queue backpressure
+        QueueType,
+        should_throttle_production,
+        get_throttle_factor,
+        report_queue_depth,
+        # Bandwidth management
+        request_bandwidth,
+        release_bandwidth,
+        TransferPriority,
+    )
+    HAS_NEW_COORDINATION = True
+except ImportError:
+    HAS_NEW_COORDINATION = False
+    print("[WARN] New coordination features not available")
+
 # Import enhanced ClusterCoordinator (preferred)
 try:
     from app.distributed.cluster_coordinator import (
@@ -896,9 +923,19 @@ def save_state(state: ClusterState):
 def acquire_lock() -> bool:
     """Acquire lockfile to prevent multiple instances.
 
-    Uses enhanced ClusterCoordinator if available, falls back to legacy then local lock.
+    Uses new OrchestratorRole if available, falls back to enhanced ClusterCoordinator,
+    then legacy coordination, then local lockfile.
     """
-    # Prefer enhanced ClusterCoordinator
+    # Prefer new OrchestratorRole system (SQLite-backed with heartbeat)
+    if HAS_NEW_COORDINATION:
+        if acquire_orchestrator_role(OrchestratorRole.CLUSTER_ORCHESTRATOR):
+            log("Acquired CLUSTER_ORCHESTRATOR role via new coordination system")
+            return True
+        else:
+            log("Another cluster orchestrator is already running (via OrchestratorRole)", "WARN")
+            return False
+
+    # Fallback to enhanced ClusterCoordinator
     if HAS_ENHANCED_COORDINATION:
         coordinator = ClusterCoordinator()
         if coordinator.is_role_held(TaskRole.ORCHESTRATOR):
@@ -933,6 +970,13 @@ def acquire_lock() -> bool:
 
 def release_lock():
     """Release lockfile."""
+    # Release new OrchestratorRole
+    if HAS_NEW_COORDINATION:
+        try:
+            release_orchestrator_role()
+        except Exception as e:
+            log(f"Error releasing orchestrator role: {e}", "WARN")
+
     # Release legacy unified coordination lock
     if HAS_LEGACY_COORDINATION:
         release_orchestrator_lock()
@@ -945,7 +989,31 @@ def release_lock():
 
 
 def check_host_can_spawn(host_name: str, ssh_host: str, task_type: str = "selfplay") -> bool:
-    """Check if a host can accept new tasks using coordination module."""
+    """Check if a host can accept new tasks using coordination module.
+
+    Uses new coordination features if available:
+    - Pre-spawn health check
+    - Queue backpressure monitoring
+    - Legacy coordination as fallback
+    """
+    # Check backpressure first (new coordination)
+    if HAS_NEW_COORDINATION and task_type == "selfplay":
+        if should_throttle_production(QueueType.TRAINING_DATA):
+            throttle_factor = get_throttle_factor(QueueType.TRAINING_DATA)
+            log(f"Backpressure active: throttle factor {throttle_factor:.1f}, may skip spawn", "WARN")
+            # Probabilistically skip based on throttle factor
+            import random
+            if random.random() > throttle_factor:
+                log(f"Skipping spawn on {host_name} due to backpressure", "WARN")
+                return False
+
+    # Pre-spawn health check (new coordination)
+    if HAS_NEW_COORDINATION:
+        can_spawn, reason = pre_spawn_check(ssh_host, task_type)
+        if not can_spawn:
+            log(f"Pre-spawn check failed for {host_name}: {reason}", "WARN")
+            return False
+
     # Prefer enhanced ClusterCoordinator
     if HAS_ENHANCED_COORDINATION:
         coordinator = ClusterCoordinator()
@@ -966,6 +1034,10 @@ def sync_to_mac_studio(hosts: List[HostConfig], dry_run: bool = False) -> bool:
 
     Uses this machine as a relay: pulls data from cloud hosts, then pushes to Mac Studio.
     This avoids storing large amounts of data on the laptop.
+
+    Uses new coordination features if available:
+    - sync_lock() for cross-process mutex on rsync operations
+    - bandwidth allocation for rate limiting
     """
     log("Starting data sync to Mac Studio...")
 
@@ -1004,52 +1076,94 @@ def sync_to_mac_studio(hosts: List[HostConfig], dry_run: bool = False) -> bool:
         try:
             log(f"Syncing from {host.name} to Mac Studio...")
 
-            # Create temp directory for relay
-            import tempfile
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                # Pull from cloud host
-                rsync_src = [
-                    "rsync", "-avz", "--progress",
-                    "-e", f"ssh -p {host.ssh_port} -o ConnectTimeout=15"
-                ]
+            # Use sync_lock to prevent concurrent rsync to same host
+            if HAS_NEW_COORDINATION:
+                sync_context = sync_lock(host.ssh_host, "rsync", wait=True, wait_timeout=60)
+            else:
+                from contextlib import nullcontext
+                sync_context = nullcontext(True)
 
-                # Try to sync .db files
-                db_cmd = rsync_src + [
-                    f"{host.ssh_user}@{host.ssh_host}:{host.ringrift_path}/data/games/*.db",
-                    f"{tmp_dir}/"
-                ]
-
-                if dry_run:
-                    log(f"  [DRY-RUN] Would sync from {host.name}")
+            with sync_context as lock_acquired:
+                if HAS_NEW_COORDINATION and not lock_acquired:
+                    log(f"  {host.name}: Could not acquire sync lock, skipping", "WARN")
                     continue
 
-                result = subprocess.run(db_cmd, capture_output=True, text=True, timeout=300)
+                # Request bandwidth allocation
+                bwlimit_arg = []
+                bandwidth_alloc = None
+                if HAS_NEW_COORDINATION:
+                    bandwidth_alloc = request_bandwidth(host.ssh_host, estimated_mb=500, priority=TransferPriority.NORMAL)
+                    if bandwidth_alloc.granted:
+                        bwlimit_arg = [f"--bwlimit={bandwidth_alloc.bwlimit_kbps}"]
+                        log(f"  {host.name}: Bandwidth allocated: {bandwidth_alloc.bwlimit_kbps} KB/s")
 
-                # Check if any files were synced
-                synced_files = list(Path(tmp_dir).glob("*.db"))
-                if not synced_files:
-                    log(f"  {host.name}: No .db files found")
-                    continue
+                try:
+                    # Create temp directory for relay
+                    import tempfile
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        # Pull from cloud host
+                        rsync_src = [
+                            "rsync", "-avz", "--progress"
+                        ] + bwlimit_arg + [
+                            "-e", f"ssh -p {host.ssh_port} -o ConnectTimeout=15"
+                        ]
 
-                # Push to Mac Studio
-                dest_subdir = f"{mac_studio_sync_dir}/{host.name}"
-                subprocess.run(
-                    ["ssh", MAC_STUDIO_HOST, f"mkdir -p {dest_subdir}"],
-                    capture_output=True, timeout=30
-                )
+                        # Try to sync .db files
+                        db_cmd = rsync_src + [
+                            f"{host.ssh_user}@{host.ssh_host}:{host.ringrift_path}/data/games/*.db",
+                            f"{tmp_dir}/"
+                        ]
 
-                push_cmd = [
-                    "rsync", "-avz", "--progress",
-                    f"{tmp_dir}/",
-                    f"{MAC_STUDIO_HOST}:{dest_subdir}/"
-                ]
-                result = subprocess.run(push_cmd, capture_output=True, text=True, timeout=300)
+                        if dry_run:
+                            log(f"  [DRY-RUN] Would sync from {host.name}")
+                            continue
 
-                if result.returncode == 0:
-                    log(f"  {host.name}: Synced {len(synced_files)} file(s) to Mac Studio")
-                    synced_count += 1
-                else:
-                    log(f"  {host.name}: Failed to push to Mac Studio: {result.stderr}", "WARN")
+                        start_time = time.time()
+                        result = subprocess.run(db_cmd, capture_output=True, text=True, timeout=300)
+                        transfer_duration = time.time() - start_time
+
+                        # Check if any files were synced
+                        synced_files = list(Path(tmp_dir).glob("*.db"))
+                        if not synced_files:
+                            log(f"  {host.name}: No .db files found")
+                            continue
+
+                        # Calculate bytes transferred for bandwidth tracking
+                        bytes_transferred = sum(f.stat().st_size for f in synced_files)
+
+                        # Push to Mac Studio
+                        dest_subdir = f"{mac_studio_sync_dir}/{host.name}"
+                        subprocess.run(
+                            ["ssh", MAC_STUDIO_HOST, f"mkdir -p {dest_subdir}"],
+                            capture_output=True, timeout=30
+                        )
+
+                        push_cmd = [
+                            "rsync", "-avz", "--progress"
+                        ] + bwlimit_arg + [
+                            f"{tmp_dir}/",
+                            f"{MAC_STUDIO_HOST}:{dest_subdir}/"
+                        ]
+                        result = subprocess.run(push_cmd, capture_output=True, text=True, timeout=300)
+
+                        if result.returncode == 0:
+                            log(f"  {host.name}: Synced {len(synced_files)} file(s) to Mac Studio")
+                            synced_count += 1
+                        else:
+                            log(f"  {host.name}: Failed to push to Mac Studio: {result.stderr}", "WARN")
+
+                finally:
+                    # Release bandwidth allocation with transfer stats
+                    if HAS_NEW_COORDINATION and bandwidth_alloc and bandwidth_alloc.granted:
+                        try:
+                            release_bandwidth(
+                                bandwidth_alloc.allocation_id,
+                                bytes_transferred=bytes_transferred,
+                                duration_seconds=transfer_duration
+                            )
+                        except NameError:
+                            # Variables not defined if early exit
+                            release_bandwidth(bandwidth_alloc.allocation_id)
 
         except subprocess.TimeoutExpired:
             log(f"  {host.name}: Sync timeout", "WARN")

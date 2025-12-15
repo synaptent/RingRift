@@ -53,6 +53,20 @@ try:
 except ImportError:
     HAS_COORDINATION = False
 
+# New coordination features: sync_lock, bandwidth management
+try:
+    from app.coordination import (
+        # Sync mutex for rsync coordination
+        sync_lock,
+        # Bandwidth management
+        request_bandwidth,
+        release_bandwidth,
+        TransferPriority,
+    )
+    HAS_NEW_COORDINATION = True
+except ImportError:
+    HAS_NEW_COORDINATION = False
+
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 SYNCED_DIR = AI_SERVICE_ROOT / "data" / "games" / "synced"
 MERGED_DB = AI_SERVICE_ROOT / "data" / "games" / "merged_training.db"
@@ -70,6 +84,9 @@ SSH_OPTS = f"-i {SSH_KEY} -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
 
 def sync_from_worker(worker: Dict, pattern: str = "*.db") -> Tuple[bool, int, str]:
     """Sync database files from a worker node.
+
+    Uses sync_lock and bandwidth management when available for coordinated
+    rsync operations across the cluster.
 
     Returns:
         (success, bytes_transferred, message)
@@ -90,31 +107,92 @@ def sync_from_worker(worker: Dict, pattern: str = "*.db") -> Tuple[bool, int, st
         str(local_dir) + "/"
     ]
 
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
-        )
+    # Use new coordination if available: sync_lock + bandwidth
+    if HAS_NEW_COORDINATION:
+        bandwidth_alloc = None
+        try:
+            # Acquire sync lock to prevent concurrent rsync operations
+            with sync_lock(source_host=host, target_host="localhost", operation="data_sync"):
+                # Request bandwidth allocation (estimate ~100MB for DB sync)
+                bandwidth_alloc = request_bandwidth(
+                    source_host=host,
+                    target_host="localhost",
+                    estimated_bytes=100 * 1024 * 1024,  # 100MB estimate
+                    priority=TransferPriority.NORMAL,
+                )
 
-        if result.returncode == 0:
-            # Parse bytes transferred from rsync output
-            bytes_transferred = 0
-            for line in result.stdout.split("\n"):
-                if "total size is" in line:
-                    try:
-                        bytes_transferred = int(line.split("total size is")[1].split()[0].replace(",", ""))
-                    except:
-                        pass
-            return True, bytes_transferred, f"Synced from {name}"
-        else:
-            return False, 0, f"rsync failed: {result.stderr[:200]}"
+                if bandwidth_alloc and not bandwidth_alloc.granted:
+                    return False, 0, f"Bandwidth not available for {name}"
 
-    except subprocess.TimeoutExpired:
-        return False, 0, f"Timeout syncing from {name}"
-    except Exception as e:
-        return False, 0, f"Error: {e}"
+                start_time = time.time()
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout
+                )
+                transfer_duration = time.time() - start_time
+
+                if result.returncode == 0:
+                    # Parse bytes transferred from rsync output
+                    bytes_transferred = 0
+                    for line in result.stdout.split("\n"):
+                        if "total size is" in line:
+                            try:
+                                bytes_transferred = int(line.split("total size is")[1].split()[0].replace(",", ""))
+                            except:
+                                pass
+
+                    # Release bandwidth with actual transfer stats
+                    if bandwidth_alloc and bandwidth_alloc.granted:
+                        release_bandwidth(
+                            bandwidth_alloc.allocation_id,
+                            bytes_transferred=bytes_transferred,
+                            duration_seconds=transfer_duration
+                        )
+
+                    return True, bytes_transferred, f"Synced from {name}"
+                else:
+                    return False, 0, f"rsync failed: {result.stderr[:200]}"
+
+        except subprocess.TimeoutExpired:
+            return False, 0, f"Timeout syncing from {name}"
+        except Exception as e:
+            return False, 0, f"Error: {e}"
+        finally:
+            # Ensure bandwidth is released even on error
+            if bandwidth_alloc and bandwidth_alloc.granted:
+                try:
+                    release_bandwidth(bandwidth_alloc.allocation_id)
+                except Exception:
+                    pass
+    else:
+        # Fallback: no coordination
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+
+            if result.returncode == 0:
+                # Parse bytes transferred from rsync output
+                bytes_transferred = 0
+                for line in result.stdout.split("\n"):
+                    if "total size is" in line:
+                        try:
+                            bytes_transferred = int(line.split("total size is")[1].split()[0].replace(",", ""))
+                        except:
+                            pass
+                return True, bytes_transferred, f"Synced from {name}"
+            else:
+                return False, 0, f"rsync failed: {result.stderr[:200]}"
+
+        except subprocess.TimeoutExpired:
+            return False, 0, f"Timeout syncing from {name}"
+        except Exception as e:
+            return False, 0, f"Error: {e}"
 
 
 def count_games_in_db(db_path: Path) -> int:

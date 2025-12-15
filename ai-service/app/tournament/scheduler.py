@@ -1,4 +1,24 @@
-"""Tournament scheduling for AI agent matchups."""
+"""Tournament scheduling for AI agent matchups.
+
+NOTE: This module is currently NOT integrated into any orchestrator.
+It provides well-designed tournament scheduling (round-robin, Swiss system)
+that could be integrated with:
+- app/tournament/runner.py for match execution
+- scripts/run_diverse_tournaments.py for orchestration
+- app/training/auto_tournament.py for automated evaluation
+
+To integrate, import and use RoundRobinScheduler or SwissScheduler:
+
+    from app.tournament.scheduler import (
+        RoundRobinScheduler,
+        SwissScheduler,
+        Match,
+        MatchStatus,
+    )
+
+    scheduler = RoundRobinScheduler(board_type=BoardType.SQUARE8)
+    matches = scheduler.generate_matches(agent_ids=["model_a", "model_b", "model_c"])
+"""
 from __future__ import annotations
 
 import itertools

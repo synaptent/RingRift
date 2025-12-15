@@ -101,6 +101,31 @@ except ImportError:
     TaskCoordinator = None
     TaskType = None
 
+# New coordination features: OrchestratorRole, backpressure, sync_lock, bandwidth
+try:
+    from app.coordination import (
+        # Orchestrator role management (SQLite-backed with heartbeat)
+        OrchestratorRole,
+        acquire_orchestrator_role,
+        release_orchestrator_role,
+        # Queue backpressure
+        QueueType,
+        should_throttle_production,
+        should_stop_production,
+        get_throttle_factor,
+        report_queue_depth,
+        # Sync mutex for rsync coordination
+        sync_lock,
+        # Bandwidth management
+        request_bandwidth,
+        release_bandwidth,
+        TransferPriority,
+    )
+    HAS_NEW_COORDINATION = True
+except ImportError:
+    HAS_NEW_COORDINATION = False
+    OrchestratorRole = None
+
 # Import centralized Elo service (canonical ELO operations)
 try:
     from app.training.elo_service import (
@@ -114,6 +139,64 @@ except ImportError:
     EloService = None
     get_elo_service = None
     CANONICAL_ELO_DB_PATH = None
+
+# Import hot data buffer for in-memory game caching (reduces DB roundtrips)
+try:
+    from app.training.hot_data_buffer import (
+        HotDataBuffer,
+        GameRecord,
+        create_hot_buffer,
+    )
+    HAS_HOT_BUFFER = True
+except ImportError:
+    HAS_HOT_BUFFER = False
+    HotDataBuffer = None
+    GameRecord = None
+    create_hot_buffer = None
+
+# Import adaptive controller for plateau detection and dynamic scaling
+try:
+    from app.training.adaptive_controller import (
+        AdaptiveController,
+        IterationResult,
+        create_adaptive_controller,
+    )
+    HAS_ADAPTIVE_CONTROLLER = True
+except ImportError:
+    HAS_ADAPTIVE_CONTROLLER = False
+    AdaptiveController = None
+    IterationResult = None
+    create_adaptive_controller = None
+
+# Import value calibration for model prediction quality analysis
+try:
+    from app.training.value_calibration import (
+        ValueCalibrator,
+        CalibrationTracker,
+        CalibrationReport,
+    )
+    HAS_VALUE_CALIBRATION = True
+except ImportError:
+    HAS_VALUE_CALIBRATION = False
+    ValueCalibrator = None
+    CalibrationTracker = None
+    CalibrationReport = None
+
+# Import temperature scheduling for exploration/exploitation control
+try:
+    from app.training.temperature_scheduling import (
+        TemperatureScheduler,
+        TemperatureConfig,
+        ScheduleType,
+        create_scheduler as create_temp_scheduler,
+    )
+    HAS_TEMPERATURE_SCHEDULING = True
+except ImportError:
+    HAS_TEMPERATURE_SCHEDULING = False
+    TemperatureScheduler = None
+    TemperatureConfig = None
+    ScheduleType = None
+    create_temp_scheduler = None
 
 # Import pipeline feedback controller for closed-loop integration
 try:
@@ -140,9 +223,23 @@ except ImportError:
     CrossProcessEventQueue = None
     CrossProcessEvent = None
 
-# Import pre-spawn health checks for remote hosts
+# Import holdout validation for overfitting detection during promotion
 try:
-    from app.coordination.health_check import (
+    from scripts.holdout_validation import (
+        evaluate_model_on_holdout,
+        EvaluationResult,
+        OVERFIT_THRESHOLD,
+    )
+    HAS_HOLDOUT_VALIDATION = True
+except ImportError:
+    HAS_HOLDOUT_VALIDATION = False
+    evaluate_model_on_holdout = None
+    EvaluationResult = None
+    OVERFIT_THRESHOLD = 0.15  # Default fallback
+
+# Import pre-spawn health policy for remote hosts (renamed from health_check.py)
+try:
+    from app.coordination.host_health_policy import (
         is_host_healthy,
         check_host_health,
         get_healthy_hosts,
@@ -369,6 +466,67 @@ if HAS_PROMETHEUS:
         'ringrift_overall_health',
         'Overall system health (1=healthy, 0.5=degraded, 0=unhealthy)',
         []
+    )
+
+    # Cross-process event metrics
+    CROSS_PROCESS_EVENTS_BRIDGED = Counter(
+        'ringrift_cross_process_events_bridged_total',
+        'Total cross-process events bridged to local event bus',
+        ['event_type', 'source']
+    )
+    CROSS_PROCESS_POLL_ERRORS = Counter(
+        'ringrift_cross_process_poll_errors_total',
+        'Total errors when polling cross-process event queue',
+        []
+    )
+
+    # Data quality metrics
+    DATA_QUALITY_SCORE = Gauge(
+        'ringrift_data_quality_score',
+        'Current data quality score (0-1)',
+        []
+    )
+    DATA_QUALITY_DRAW_RATE = Gauge(
+        'ringrift_data_quality_draw_rate',
+        'Current draw rate in training data',
+        []
+    )
+    DATA_QUALITY_TIMEOUT_RATE = Gauge(
+        'ringrift_data_quality_timeout_rate',
+        'Current timeout/move-limit rate in training data',
+        []
+    )
+    DATA_QUALITY_CHECKS = Counter(
+        'ringrift_data_quality_checks_total',
+        'Total data quality checks performed',
+        []
+    )
+    DATA_QUALITY_BLOCKED_TRAINING = Counter(
+        'ringrift_data_quality_blocked_training_total',
+        'Training runs blocked due to data quality issues',
+        ['reason']
+    )
+
+    # Holdout validation metrics
+    HOLDOUT_EVALUATIONS = Counter(
+        'ringrift_holdout_evaluations_total',
+        'Total holdout evaluations performed',
+        ['config', 'result']  # result: passed, failed_overfit, skipped
+    )
+    HOLDOUT_LOSS = Gauge(
+        'ringrift_holdout_loss',
+        'Holdout loss for most recent evaluation',
+        ['config']
+    )
+    HOLDOUT_OVERFIT_GAP = Gauge(
+        'ringrift_holdout_overfit_gap',
+        'Gap between holdout loss and training loss (positive = overfitting)',
+        ['config']
+    )
+    PROMOTION_BLOCKED_OVERFIT = Counter(
+        'ringrift_promotion_blocked_overfit_total',
+        'Promotions blocked due to overfitting detection',
+        ['config']
     )
 
 
@@ -943,6 +1101,11 @@ class UnifiedLoopState:
     per_last_rebuild: float = 0.0
     per_buffer_size: int = 0
 
+    # Calibration state (config_key -> last calibration report dict)
+    calibration_reports: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    last_calibration_time: float = 0.0
+    current_temperature_preset: str = "default"
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert state to dictionary for serialization."""
         return {
@@ -1022,24 +1185,32 @@ class UnifiedLoopState:
 class StreamingDataCollector:
     """Collects game data from remote hosts with 60-second incremental sync."""
 
-    def __init__(self, config: DataIngestionConfig, state: UnifiedLoopState, event_bus: EventBus):
+    def __init__(
+        self,
+        config: DataIngestionConfig,
+        state: UnifiedLoopState,
+        event_bus: EventBus,
+        hot_buffer: Optional["HotDataBuffer"] = None,
+    ):
         self.config = config
         self.state = state
         self.event_bus = event_bus
+        self.hot_buffer = hot_buffer
         self._known_game_ids: Set[str] = set()
+
+    def set_hot_buffer(self, hot_buffer: "HotDataBuffer") -> None:
+        """Set or update the hot buffer for in-memory game caching."""
+        self.hot_buffer = hot_buffer
+        print(f"[DataCollector] Hot buffer attached (max_size={hot_buffer.max_size})")
 
     async def sync_host(self, host: HostState) -> int:
         """Sync games from a single host. Returns count of new games."""
         if not host.enabled:
             return 0
 
-        # Pre-spawn health check - fail fast if host is unhealthy
-        if HAS_PRE_SPAWN_HEALTH:
-            if not is_host_healthy(host.ssh_host):
-                host.consecutive_failures += 1
-                if host.consecutive_failures <= 1:  # Only log first failure
-                    print(f"[DataCollector] Skipping {host.name}: host unhealthy (cached check)")
-                return 0
+        # Skip pre-spawn health check for data collection - the SSH call below
+        # will fail fast if host is unreachable. The health check uses IP addresses
+        # but host lookup uses names, causing false negatives.
 
         # Circuit breaker check - prevent repeated failures
         if HAS_CIRCUIT_BREAKER:
@@ -1113,7 +1284,11 @@ class StreamingDataCollector:
             return 0
 
     async def _incremental_sync(self, host: HostState):
-        """Perform incremental rsync of new data."""
+        """Perform incremental rsync of new data.
+
+        Uses sync_lock and bandwidth management when available for coordinated
+        data transfers across the cluster.
+        """
         ssh_target = f"{host.ssh_user}@{host.ssh_host}"
         local_dir = AI_SERVICE_ROOT / "data" / "games" / "synced" / host.name
         local_dir.mkdir(parents=True, exist_ok=True)
@@ -1121,12 +1296,58 @@ class StreamingDataCollector:
         # Rsync with append mode for incremental transfer
         cmd = f'rsync -avz --progress -e "ssh -o ConnectTimeout=10" {ssh_target}:~/ringrift/ai-service/data/games/*.db {local_dir}/'
 
-        process = await asyncio.create_subprocess_shell(
-            cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await asyncio.wait_for(process.communicate(), timeout=300)
+        # Use new coordination if available: sync_lock + bandwidth
+        if HAS_NEW_COORDINATION:
+            bandwidth_alloc = None
+            try:
+                # Acquire sync lock to prevent concurrent rsync operations
+                with sync_lock(source_host=host.ssh_host, target_host="localhost", operation="data_sync"):
+                    # Request bandwidth allocation (estimate ~50MB for DB sync)
+                    bandwidth_alloc = request_bandwidth(
+                        source_host=host.ssh_host,
+                        target_host="localhost",
+                        estimated_bytes=50 * 1024 * 1024,  # 50MB estimate
+                        priority=TransferPriority.NORMAL,
+                    )
+
+                    if bandwidth_alloc and not bandwidth_alloc.granted:
+                        print(f"[DataCollector] Bandwidth not available for {host.name}")
+                        return
+
+                    start_time = time.time()
+                    process = await asyncio.create_subprocess_shell(
+                        cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    await asyncio.wait_for(process.communicate(), timeout=300)
+                    transfer_duration = time.time() - start_time
+
+                    # Release bandwidth with actual transfer stats
+                    if bandwidth_alloc and bandwidth_alloc.granted:
+                        release_bandwidth(
+                            bandwidth_alloc.allocation_id,
+                            bytes_transferred=50 * 1024 * 1024,  # Estimate
+                            duration_seconds=transfer_duration
+                        )
+            except Exception as e:
+                print(f"[DataCollector] Sync error for {host.name}: {e}")
+                raise
+            finally:
+                # Ensure bandwidth is released even on error
+                if bandwidth_alloc and bandwidth_alloc.granted:
+                    try:
+                        release_bandwidth(bandwidth_alloc.allocation_id)
+                    except Exception:
+                        pass
+        else:
+            # Fallback: no coordination
+            process = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await asyncio.wait_for(process.communicate(), timeout=300)
 
     async def _full_sync(self, host: HostState):
         """Perform full sync (same as incremental for now)."""
@@ -1222,7 +1443,61 @@ class StreamingDataCollector:
         self.state.total_data_syncs += 1
         self.state.total_games_pending += total_new
 
+        # Update per-config game counts from synced databases
+        if total_new > 0:
+            self._update_per_config_game_counts(total_new)
+
         return total_new
+
+    def _update_per_config_game_counts(self, new_games: int) -> None:
+        """Update per-config games_since_training counters.
+
+        Distributes new games across configs based on what's in synced databases.
+        Falls back to proportional distribution if db parsing fails.
+        """
+        synced_dir = AI_SERVICE_ROOT / "data" / "games" / "synced"
+        if not synced_dir.exists():
+            # Fallback: distribute to square8_2p (most common)
+            if "square8_2p" in self.state.configs:
+                self.state.configs["square8_2p"].games_since_training += new_games
+            return
+
+        # Count games per config from database filenames
+        config_counts: Dict[str, int] = {}
+        total_counted = 0
+
+        for db_path in synced_dir.rglob("*.db"):
+            try:
+                db_name = db_path.stem.lower()
+                # Parse config from filename patterns like "selfplay_square8_2p.db"
+                config_key = None
+                for ck in self.state.configs.keys():
+                    if ck.replace("_", "") in db_name.replace("_", "") or ck in db_name:
+                        config_key = ck
+                        break
+
+                if config_key:
+                    conn = sqlite3.connect(str(db_path))
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM games")
+                    count = cursor.fetchone()[0]
+                    conn.close()
+                    config_counts[config_key] = config_counts.get(config_key, 0) + count
+                    total_counted += count
+            except Exception:
+                pass
+
+        # Distribute new games proportionally based on existing counts
+        if total_counted > 0:
+            for config_key, count in config_counts.items():
+                if config_key in self.state.configs:
+                    proportion = count / total_counted
+                    added = int(new_games * proportion)
+                    self.state.configs[config_key].games_since_training += added
+        else:
+            # Fallback: distribute to square8_2p
+            if "square8_2p" in self.state.configs:
+                self.state.configs["square8_2p"].games_since_training += new_games
 
 
 # =============================================================================
@@ -1522,11 +1797,15 @@ class TrainingScheduler:
                 print(f"[Training] BLOCKED by data quality gate: parity failure rate "
                       f"{parity_failure_rate:.1%} exceeds threshold "
                       f"{self.feedback_config.max_parity_failure_rate:.1%}")
+                if HAS_PROMETHEUS:
+                    DATA_QUALITY_BLOCKED_TRAINING.labels(reason="parity_failure").inc()
                 return False
 
             # Check if data is quarantined
             if self.feedback.should_quarantine_data():
                 print(f"[Training] BLOCKED by data quality gate: data quarantined due to quality issues")
+                if HAS_PROMETHEUS:
+                    DATA_QUALITY_BLOCKED_TRAINING.labels(reason="quarantined").inc()
                 return False
 
             # Check data quality score
@@ -1534,6 +1813,8 @@ class TrainingScheduler:
                 print(f"[Training] BLOCKED by data quality gate: data quality score "
                       f"{self.feedback.state.data_quality_score:.2f} below threshold "
                       f"{self.feedback_config.min_data_quality_score:.2f}")
+                if HAS_PROMETHEUS:
+                    DATA_QUALITY_BLOCKED_TRAINING.labels(reason="low_score").inc()
                 return False
 
             print(f"[Training] Data quality gate PASSED: parity_failure_rate={parity_failure_rate:.1%}, "
@@ -2318,6 +2599,45 @@ class UnifiedAILoop:
         else:
             self._task_id = None
 
+        # New coordination: acquire UNIFIED_LOOP role (SQLite-backed with heartbeat)
+        self._has_orchestrator_role = False
+        if HAS_NEW_COORDINATION and OrchestratorRole is not None:
+            try:
+                if acquire_orchestrator_role(OrchestratorRole.UNIFIED_LOOP):
+                    self._has_orchestrator_role = True
+                    print("[UnifiedLoop] Acquired UNIFIED_LOOP role via new coordination system")
+                else:
+                    print("[UnifiedLoop] WARNING: Another unified loop already holds the role")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to acquire new orchestrator role: {e}")
+
+        # Hot data buffer - caches recent games in memory to reduce DB roundtrips
+        self.hot_buffer: Optional[HotDataBuffer] = None
+        if HAS_HOT_BUFFER and getattr(config, 'use_hot_buffer', True):
+            try:
+                self.hot_buffer = create_hot_buffer(
+                    max_size=getattr(config, 'hot_buffer_size', 1000),
+                    max_memory_mb=getattr(config, 'hot_buffer_memory_mb', 500),
+                )
+                print(f"[UnifiedLoop] Hot data buffer initialized (max_size={self.hot_buffer.max_size})")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize hot buffer: {e}")
+
+        # Adaptive controller - plateau detection and dynamic game scaling
+        self.adaptive_ctrl: Optional[AdaptiveController] = None
+        if HAS_ADAPTIVE_CONTROLLER and getattr(config, 'use_adaptive_control', True):
+            try:
+                state_path = AI_SERVICE_ROOT / config.log_dir / "adaptive_controller_state.json"
+                self.adaptive_ctrl = create_adaptive_controller(
+                    plateau_threshold=getattr(config, 'plateau_threshold', 5),
+                    min_games=getattr(config, 'min_selfplay_games', 50),
+                    max_games=getattr(config, 'max_selfplay_games', 200),
+                    state_path=state_path,
+                )
+                print(f"[UnifiedLoop] Adaptive controller initialized (plateau_threshold={self.adaptive_ctrl.plateau_threshold})")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize adaptive controller: {e}")
+
         # State management
         self._state_path = AI_SERVICE_ROOT / config.log_dir / "unified_loop_state.json"
         self._running = False
@@ -2708,6 +3028,13 @@ class UnifiedAILoop:
                                   f"draw_rate={quality_stats.get('draw_rate', 0):.1%}, "
                                   f"timeout_rate={quality_stats.get('timeout_rate', 0):.1%}, "
                                   f"sampled={quality_stats.get('total_sampled', 0)} games")
+
+                            # Update Prometheus metrics
+                            if HAS_PROMETHEUS:
+                                DATA_QUALITY_SCORE.set(quality_score)
+                                DATA_QUALITY_DRAW_RATE.set(quality_stats.get("draw_rate", 0))
+                                DATA_QUALITY_TIMEOUT_RATE.set(quality_stats.get("timeout_rate", 0))
+                                DATA_QUALITY_CHECKS.inc()
                         except Exception as qe:
                             print(f"[DataQuality] Error computing quality: {qe}")
 
@@ -3291,12 +3618,21 @@ class UnifiedAILoop:
                         ))
                         print(f"[CrossProcess] Bridged {cp_event.event_type} from {cp_event.source}@{cp_event.hostname}")
 
+                        # Update Prometheus metrics
+                        if HAS_PROMETHEUS:
+                            CROSS_PROCESS_EVENTS_BRIDGED.labels(
+                                event_type=cp_event.event_type,
+                                source=cp_event.source
+                            ).inc()
+
                     # Acknowledge the event
                     event_queue.ack(subscriber_id, cp_event.event_id)
                     last_event_id = max(last_event_id, cp_event.event_id)
 
             except Exception as e:
                 print(f"[CrossProcess] Error polling events: {e}")
+                if HAS_PROMETHEUS:
+                    CROSS_PROCESS_POLL_ERRORS.inc()
 
             # Poll every 5 seconds
             try:
@@ -3355,6 +3691,10 @@ class UnifiedAILoop:
         self.model_promoter.state = self.state
         self.adaptive_curriculum.state = self.state
 
+        # Wire hot buffer to data collector for in-memory game caching
+        if self.hot_buffer is not None:
+            self.data_collector.set_hot_buffer(self.hot_buffer)
+
         # Clear stale health cache on startup
         if HAS_PRE_SPAWN_HEALTH and clear_health_cache:
             cleared = clear_health_cache()
@@ -3408,6 +3748,14 @@ class UnifiedAILoop:
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to unregister task: {e}")
 
+        # Release new orchestrator role (SQLite-backed)
+        if self._has_orchestrator_role and HAS_NEW_COORDINATION:
+            try:
+                release_orchestrator_role()
+                print("[UnifiedLoop] Released UNIFIED_LOOP role")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to release orchestrator role: {e}")
+
 
 # =============================================================================
 # Config Validation
@@ -3433,17 +3781,17 @@ def validate_config(config: UnifiedLoopConfig) -> Tuple[bool, List[str]]:
         errors.append(f"Elo database directory not found: {elo_db_path.parent}")
 
     # Validate thresholds
-    if config.data_ingestion.training_threshold_games < 100:
-        warnings.append(f"Training threshold ({config.data_ingestion.training_threshold_games}) is very low")
+    if config.training.trigger_threshold_games < 100:
+        warnings.append(f"Training threshold ({config.training.trigger_threshold_games}) is very low")
 
-    if config.evaluation.elo_threshold_for_promotion < 10:
-        warnings.append(f"Elo promotion threshold ({config.evaluation.elo_threshold_for_promotion}) is very low")
+    if config.promotion.elo_threshold < 10:
+        warnings.append(f"Elo promotion threshold ({config.promotion.elo_threshold}) is very low")
 
     # Validate intervals
-    if config.data_ingestion.sync_interval_seconds < 10:
+    if config.data_ingestion.poll_interval_seconds < 10:
         errors.append("Sync interval must be at least 10 seconds")
 
-    if config.evaluation.shadow_tournament_interval_seconds < 60:
+    if config.evaluation.shadow_interval_seconds < 60:
         warnings.append("Shadow tournament interval less than 60s may cause high load")
 
     # Validate log directory

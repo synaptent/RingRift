@@ -5,12 +5,41 @@ This module provides explicit architecture versioning and validation for model
 checkpoints. It prevents silent fallback to fresh weights on architecture
 mismatch by failing explicitly with informative errors.
 
-Key Features:
+This module handles CHECKPOINT INTEGRITY:
 - Architecture version tracking with semantic versioning
 - SHA256 checksum for weight integrity verification
 - Full metadata storage with each checkpoint (config, training info)
 - Migration utilities for legacy .pth files
 - Backwards compatible loading with deprecation warnings
+
+Works with model_registry.py which handles MODEL LIFECYCLE:
+- Track models across development → staging → production stages
+- Store training configurations and performance metrics
+- Support promotion workflows
+
+Typical usage:
+    from app.training.model_versioning import (
+        save_versioned_checkpoint,
+        load_versioned_checkpoint,
+        VersionMismatchError,
+    )
+
+    # Save checkpoint with full metadata
+    save_versioned_checkpoint(
+        model=network,
+        path="models/my_model.pth",
+        architecture_version="2.1.0",
+        metadata={"board_type": "square8", "training_epochs": 100},
+    )
+
+    # Load with version validation
+    try:
+        state_dict, metadata = load_versioned_checkpoint(
+            path="models/my_model.pth",
+            expected_version="2.1.0",
+        )
+    except VersionMismatchError as e:
+        print(f"Cannot load: {e}")
 """
 
 import hashlib

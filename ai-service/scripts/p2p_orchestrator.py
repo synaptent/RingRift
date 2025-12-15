@@ -108,6 +108,30 @@ except ImportError:
     def check_before_spawn(task_type, node_id):
         return True, ""
 
+# New coordination features: OrchestratorRole, backpressure, sync_lock, bandwidth
+try:
+    from app.coordination import (
+        # Orchestrator role management (SQLite-backed with heartbeat)
+        OrchestratorRole,
+        acquire_orchestrator_role,
+        release_orchestrator_role,
+        # Queue backpressure
+        QueueType,
+        should_throttle_production,
+        should_stop_production,
+        get_throttle_factor,
+        # Sync mutex for data transfer coordination
+        sync_lock,
+        # Bandwidth management
+        request_bandwidth,
+        release_bandwidth,
+        TransferPriority,
+    )
+    HAS_NEW_COORDINATION = True
+except ImportError:
+    HAS_NEW_COORDINATION = False
+    OrchestratorRole = None
+
 # ============================================
 # Configuration
 # ============================================
@@ -1457,6 +1481,21 @@ class P2POrchestrator:
             msg = "Agent mode: deferring to coordinator"
             print(f"[P2P] BLOCKED spawn ({reason}): {msg}")
             return False, msg
+
+        # Check 4: Backpressure (new coordination) - if training queue is saturated,
+        # don't spawn more selfplay jobs that would produce more data
+        if HAS_NEW_COORDINATION and "selfplay" in reason.lower():
+            if should_stop_production(QueueType.TRAINING_DATA):
+                msg = "Backpressure: training queue at STOP level"
+                print(f"[P2P] BLOCKED spawn ({reason}): {msg}")
+                return False, msg
+            if should_throttle_production(QueueType.TRAINING_DATA):
+                throttle = get_throttle_factor(QueueType.TRAINING_DATA)
+                import random
+                if random.random() > throttle:
+                    msg = f"Backpressure: throttled (factor={throttle:.2f})"
+                    print(f"[P2P] BLOCKED spawn ({reason}): {msg}")
+                    return False, msg
 
         return True, "All safeguards passed"
 

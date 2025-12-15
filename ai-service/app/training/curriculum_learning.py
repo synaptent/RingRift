@@ -1,32 +1,38 @@
 """
+DEPRECATED: This module is deprecated. Use app.training.curriculum instead.
+
+All functionality from this module has been merged into the canonical
+curriculum.py module:
+
+    from app.training.curriculum import (
+        CurriculumStage,
+        StageConfig,
+        DEFAULT_STAGES,
+        STAGE_ORDER,
+        estimate_position_complexity,
+        filter_samples_by_complexity,
+        get_sample_weights_by_complexity,
+    )
+
+This file is kept for backwards compatibility but will be removed in
+a future version.
+
+---
+Original docstring:
+
 Curriculum Learning for RingRift AI Training.
 
 Implements progressive difficulty training where the model starts with
 simpler positions/games and gradually advances to harder ones.
-
-Curriculum Stages:
-1. Early game basics - first 10 moves, simple positions
-2. Midgame tactics - moves 10-30, moderate complexity
-3. Complex positions - full games, difficult positions
-4. Adversarial positions - positions where the model struggles
-
-The curriculum automatically advances based on model performance,
-ensuring the model masters each stage before moving on.
-
-Usage:
-    from app.training.curriculum_learning import CurriculumManager
-
-    curriculum = CurriculumManager(board_type="square8", num_players=2)
-
-    # Get training batch appropriate for current stage
-    batch = curriculum.get_training_batch(all_samples)
-
-    # Update after training epoch
-    curriculum.update_progress(val_loss, val_accuracy)
-
-    # Check current stage
-    print(f"Stage: {curriculum.current_stage}")
 """
+import warnings
+
+warnings.warn(
+    "curriculum_learning.py is deprecated. Use app.training.curriculum instead. "
+    "All stage-based curriculum features have been merged into the canonical module.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from __future__ import annotations
 

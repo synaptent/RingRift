@@ -797,6 +797,9 @@ class P2PIntegrationManager:
                     # Trigger sync if needed
                     # This would implement sync logic based on data manifest
 
+                    # Reconcile Elo ratings across cluster
+                    await self._reconcile_elo()
+
                 await asyncio.sleep(self.config.sync_interval_seconds)
 
             except asyncio.CancelledError:
@@ -804,6 +807,113 @@ class P2PIntegrationManager:
             except Exception as e:
                 logger.error(f"Sync loop error: {e}")
                 await asyncio.sleep(60)
+
+    async def _reconcile_elo(self) -> Dict[str, Any]:
+        """Reconcile Elo ratings across cluster nodes.
+
+        Uses Mac Studio as authoritative source and propagates to other nodes.
+        Returns reconciliation status.
+        """
+        result = {
+            "checked_nodes": 0,
+            "synced_nodes": 0,
+            "errors": [],
+        }
+
+        try:
+            # Get authoritative Elo from local DB or primary source
+            from app.tournament.unified_elo_db import EloDatabase
+            from pathlib import Path
+
+            ai_service_root = Path(__file__).resolve().parents[2]
+            local_elo_db = ai_service_root / "data" / "unified_elo.db"
+
+            if not local_elo_db.exists():
+                logger.warning("Local Elo database not found, skipping reconciliation")
+                return result
+
+            # Get cluster nodes
+            cluster_status = await self.client.get_cluster_status()
+            nodes = cluster_status.get("nodes", [])
+
+            for node in nodes:
+                if not node.get("is_alive", False):
+                    continue
+
+                result["checked_nodes"] += 1
+                host = node.get("host", "")
+
+                try:
+                    # Fetch Elo leaderboard from node
+                    node_elo = await self._fetch_node_elo(host, node.get("port", 8770))
+                    if node_elo:
+                        # Compare and detect divergence
+                        diverged = await self._check_elo_divergence(local_elo_db, node_elo)
+                        if diverged:
+                            logger.info(f"Elo divergence detected on {host}, syncing...")
+                            synced = await self._sync_elo_to_node(host, local_elo_db)
+                            if synced:
+                                result["synced_nodes"] += 1
+                except Exception as e:
+                    result["errors"].append(f"{host}: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Elo reconciliation error: {e}")
+            result["errors"].append(str(e))
+
+        return result
+
+    async def _fetch_node_elo(self, host: str, port: int) -> Optional[Dict]:
+        """Fetch Elo leaderboard from a cluster node."""
+        import urllib.request
+        import urllib.error
+
+        url = f"http://{host}:{port}/api/elo/leaderboard"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "RingRift/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                import json
+                return json.loads(resp.read().decode())
+        except Exception:
+            return None
+
+    async def _check_elo_divergence(self, local_db: Path, node_elo: Dict, threshold: float = 50.0) -> bool:
+        """Check if node Elo ratings have diverged from local."""
+        from app.tournament.unified_elo_db import EloDatabase
+
+        try:
+            elo_db = EloDatabase(local_db)
+            leaderboard = elo_db.get_leaderboard()
+
+            local_models = {m.model_id: m.rating for m in leaderboard}
+            node_models = {m.get("model_id"): m.get("elo", 1500) for m in node_elo.get("leaderboard", [])}
+
+            for model_id, local_elo in local_models.items():
+                if model_id in node_models:
+                    if abs(local_elo - node_models[model_id]) > threshold:
+                        return True
+
+            return False
+        except Exception:
+            return False
+
+    async def _sync_elo_to_node(self, host: str, local_db: Path) -> bool:
+        """Sync Elo database to a remote node via SCP."""
+        import subprocess
+
+        try:
+            cmd = [
+                "scp",
+                "-o", "ConnectTimeout=10",
+                "-o", "StrictHostKeyChecking=no",
+                str(local_db),
+                f"ubuntu@{host}:~/ringrift/ai-service/data/unified_elo.db"
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            return result.returncode == 0
+        except Exception as e:
+            logger.error(f"Error syncing Elo to {host}: {e}")
+            return False
 
     # ==========================================
     # Status & Reporting

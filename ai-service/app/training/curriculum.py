@@ -6,6 +6,9 @@ Implements iterative self-play training with:
 - Model evaluation and promotion
 - Historical data mixing
 - Board-type-specific training
+- Position complexity estimation (merged from curriculum_learning.py)
+- Stage-based sample filtering (merged from curriculum_learning.py)
+- Adaptive difficulty adjustment (merged from curriculum_learning.py)
 
 Canonical curriculum runs
 -------------------------
@@ -57,10 +60,12 @@ run's ``config.json`` for later analysis.
 
 import json
 import logging
+import random
 import shutil
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -71,6 +76,215 @@ from app.training.config import TrainConfig
 from app.training.significance import wilson_lower_bound
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Position Complexity & Stage-Based Curriculum (merged from curriculum_learning.py)
+# =============================================================================
+
+
+class CurriculumStage(Enum):
+    """Curriculum learning stages in order of difficulty."""
+    EARLY_GAME = "early_game"       # First 10 moves
+    MIDGAME = "midgame"             # Moves 10-30
+    LATE_GAME = "late_game"         # Moves 30+
+    FULL_GAME = "full_game"         # All positions
+    ADVERSARIAL = "adversarial"     # Hard positions
+
+
+@dataclass
+class StageConfig:
+    """Configuration for a curriculum stage."""
+    name: str
+    min_move: int
+    max_move: int
+    complexity_range: Tuple[float, float]  # (min, max) complexity score
+    target_accuracy: float  # Accuracy needed to advance
+    min_epochs: int  # Minimum epochs before advancing
+    sample_weight: float = 1.0  # Weight for mixing stages
+
+
+# Default stage configurations
+DEFAULT_STAGES = {
+    CurriculumStage.EARLY_GAME: StageConfig(
+        name="Early Game",
+        min_move=0,
+        max_move=10,
+        complexity_range=(0.0, 0.3),
+        target_accuracy=0.70,
+        min_epochs=5,
+        sample_weight=1.0,
+    ),
+    CurriculumStage.MIDGAME: StageConfig(
+        name="Midgame",
+        min_move=10,
+        max_move=30,
+        complexity_range=(0.3, 0.6),
+        target_accuracy=0.60,
+        min_epochs=10,
+        sample_weight=1.0,
+    ),
+    CurriculumStage.LATE_GAME: StageConfig(
+        name="Late Game",
+        min_move=30,
+        max_move=999,
+        complexity_range=(0.6, 0.8),
+        target_accuracy=0.55,
+        min_epochs=10,
+        sample_weight=1.0,
+    ),
+    CurriculumStage.FULL_GAME: StageConfig(
+        name="Full Game",
+        min_move=0,
+        max_move=999,
+        complexity_range=(0.0, 1.0),
+        target_accuracy=0.55,
+        min_epochs=20,
+        sample_weight=1.0,
+    ),
+    CurriculumStage.ADVERSARIAL: StageConfig(
+        name="Adversarial",
+        min_move=0,
+        max_move=999,
+        complexity_range=(0.8, 1.0),
+        target_accuracy=0.50,
+        min_epochs=10,
+        sample_weight=2.0,  # Higher weight for hard positions
+    ),
+}
+
+# Stage progression order
+STAGE_ORDER = [
+    CurriculumStage.EARLY_GAME,
+    CurriculumStage.MIDGAME,
+    CurriculumStage.LATE_GAME,
+    CurriculumStage.FULL_GAME,
+    CurriculumStage.ADVERSARIAL,
+]
+
+
+def estimate_position_complexity(
+    move_idx: int,
+    total_moves: int,
+    piece_count: int = 0,
+    branching_factor: float = 0.0,
+) -> float:
+    """Estimate complexity score for a position.
+
+    Args:
+        move_idx: Move number in the game
+        total_moves: Total moves in the game
+        piece_count: Number of pieces on board (optional)
+        branching_factor: Average legal moves available (optional)
+
+    Returns:
+        Complexity score in [0, 1]
+    """
+    # Base complexity from game phase
+    if total_moves == 0:
+        phase_complexity = 0.0
+    else:
+        progress = move_idx / max(total_moves, 1)
+        # Complexity peaks in midgame (around 40-60% through game)
+        phase_complexity = 1.0 - abs(progress - 0.5) * 2
+
+    # Adjust for move number (early game is simpler)
+    move_complexity = min(move_idx / 30, 1.0)
+
+    # Combine factors
+    complexity = 0.5 * phase_complexity + 0.5 * move_complexity
+
+    # Boost complexity if high branching factor provided
+    if branching_factor > 0:
+        branch_factor = min(branching_factor / 100, 1.0)
+        complexity = 0.7 * complexity + 0.3 * branch_factor
+
+    return min(max(complexity, 0.0), 1.0)
+
+
+def filter_samples_by_complexity(
+    samples: List[Dict[str, Any]],
+    stage: CurriculumStage,
+    stages: Optional[Dict[CurriculumStage, StageConfig]] = None,
+) -> List[Dict[str, Any]]:
+    """Filter training samples appropriate for a curriculum stage.
+
+    Args:
+        samples: List of training samples with 'move_idx' and 'total_moves'
+        stage: Stage to filter for
+        stages: Custom stage configurations (uses DEFAULT_STAGES if None)
+
+    Returns:
+        Filtered samples
+    """
+    stages = stages or DEFAULT_STAGES
+    config = stages[stage]
+
+    filtered = []
+    for sample in samples:
+        move_idx = sample.get("move_idx", 0)
+        total_moves = sample.get("total_moves", 100)
+
+        # Check move range
+        if not (config.min_move <= move_idx <= config.max_move):
+            continue
+
+        # Check complexity range
+        complexity = estimate_position_complexity(move_idx, total_moves)
+        if not (config.complexity_range[0] <= complexity <= config.complexity_range[1]):
+            continue
+
+        filtered.append(sample)
+
+    return filtered
+
+
+def get_sample_weights_by_complexity(
+    samples: List[Dict[str, Any]],
+    stage: CurriculumStage,
+    stages: Optional[Dict[CurriculumStage, StageConfig]] = None,
+) -> np.ndarray:
+    """Get sample weights based on curriculum stage complexity.
+
+    Weights are higher for samples matching current stage's complexity.
+
+    Args:
+        samples: Training samples
+        stage: Current curriculum stage
+        stages: Custom stage configurations
+
+    Returns:
+        Array of weights for each sample
+    """
+    stages = stages or DEFAULT_STAGES
+    config = stages[stage]
+    weights = np.ones(len(samples))
+
+    for i, sample in enumerate(samples):
+        move_idx = sample.get("move_idx", 0)
+        total_moves = sample.get("total_moves", 100)
+        complexity = estimate_position_complexity(move_idx, total_moves)
+
+        # Higher weight if complexity is in target range
+        min_c, max_c = config.complexity_range
+        if min_c <= complexity <= max_c:
+            weights[i] = config.sample_weight
+        else:
+            # Gradual falloff for out-of-range complexity
+            if complexity < min_c:
+                weights[i] = max(0.1, 1.0 - (min_c - complexity) * 2)
+            else:
+                weights[i] = max(0.1, 1.0 - (complexity - max_c) * 2)
+
+    # Normalize weights
+    weights = weights / weights.sum() * len(weights)
+
+    return weights
+
+
+# =============================================================================
+# Generation-Based Curriculum Configuration
+# =============================================================================
 
 
 @dataclass

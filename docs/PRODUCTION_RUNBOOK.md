@@ -173,21 +173,36 @@ ssh ubuntu@ringrift.ai "pm2 restart ringrift-ai"
 
 ### Rate Limiting Issues
 
-Rate limit configuration:
+Rate limit configuration (defaults → current load test values):
 
-| Limiter                  | Limit         | Window            |
-| ------------------------ | ------------- | ----------------- |
-| Sandbox AI               | 1000 requests | per minute        |
-| Authenticated API        | 200 requests  | per minute        |
-| Anonymous API            | 50 requests   | per minute        |
-| Game API                 | 2000 requests | per minute per IP |
-| WebSocket connections    | 500           | per minute per IP |
-| Game creation (per user) | 20 games      | per 10 minutes    |
-| Game creation (per IP)   | 500 games     | per 10 minutes    |
+| Limiter                  | Default       | Load Test | Window            |
+| ------------------------ | ------------- | --------- | ----------------- |
+| Sandbox AI               | 1000 requests | 10000     | per minute        |
+| Authenticated API        | 200 requests  | 2000      | per minute        |
+| Anonymous API            | 50 requests   | 50        | per minute        |
+| Game API                 | 200 requests  | 2000      | per minute per IP |
+| WebSocket connections    | 10            | 500       | per minute per IP |
+| Game creation (per user) | 20 games      | 20        | per 10 minutes    |
+| Game creation (per IP)   | 50 games      | 500       | per 10 minutes    |
 
-If hitting limits, check logs for `"Adaptive rate limit exceeded"` messages.
+If hitting limits, check logs for `"Adaptive rate limit exceeded"` or `"Rate limit exceeded"` messages.
 
-**Load Testing Note:** The WebSocket and game creation per-IP limits were increased from defaults (10 and 50) to support load testing where all VUs originate from a single IP.
+**Load Testing Configuration:**
+
+To support load testing where all k6 VUs originate from a single IP, the following `.env` variables are set:
+
+```bash
+RATE_LIMIT_WS_POINTS=500
+RATE_LIMIT_WS_DURATION=60
+RATE_LIMIT_GAME_CREATE_IP_POINTS=500
+RATE_LIMIT_GAME_CREATE_IP_DURATION=600
+RATE_LIMIT_GAME_POINTS=2000
+RATE_LIMIT_API_AUTH_POINTS=2000
+RATE_LIMIT_SANDBOX_AI_POINTS=10000
+RATE_LIMIT_BYPASS_ENABLED=true
+```
+
+The `RATE_LIMIT_BYPASS_ENABLED=true` setting allows loadtest users (matching `loadtest.*@loadtest\.local`) to bypass per-user rate limits entirely.
 
 ### Circuit Breaker Tripped
 
@@ -207,15 +222,38 @@ AI service may consume significant memory (~400-800MB). If memory grows:
 
 ### WebSocket Connection Limits
 
-Current system limits that affect WebSocket capacity:
+System limits that affect WebSocket capacity (defaults → tuned values):
 
-| Limit                        | Current Value | Effect                           |
-| ---------------------------- | ------------- | -------------------------------- |
-| ulimit -n (file descriptors) | 1024          | Limits total open connections    |
-| nginx worker_connections     | 768           | Max connections per nginx worker |
-| proxy_read_timeout           | 60s (default) | May timeout long-lived WebSocket |
+| Limit                        | Default | Tuned | Effect                           |
+| ---------------------------- | ------- | ----- | -------------------------------- |
+| ulimit -n (file descriptors) | 1024    | 65535 | Limits total open connections    |
+| nginx worker_connections     | 768     | 4096  | Max connections per nginx worker |
+| proxy_read_timeout           | 60s     | 300s  | WebSocket idle timeout           |
+| proxy_send_timeout           | 60s     | 300s  | WebSocket send timeout           |
 
-**Observed Capacity:** ~400 concurrent WebSocket connections before 500 errors appear.
+**System Tuning Applied (2025-12-14):**
+
+In `/etc/security/limits.conf`:
+
+```
+ubuntu soft nofile 65535
+ubuntu hard nofile 65535
+```
+
+In `/etc/nginx/conf.d/websocket-tuning.conf`:
+
+```nginx
+proxy_read_timeout 300s;
+proxy_send_timeout 300s;
+```
+
+In `/etc/nginx/nginx.conf` events block:
+
+```nginx
+worker_connections 4096;
+```
+
+**Note:** Requires `sudo systemctl reload nginx` and new SSH session (or server reboot) for ulimit changes to take effect.
 
 **To increase capacity**, add to `/etc/security/limits.conf`:
 
@@ -253,6 +291,10 @@ RATE_LIMIT_WS_POINTS=500              # Default: 10
 RATE_LIMIT_WS_DURATION=60
 RATE_LIMIT_GAME_CREATE_IP_POINTS=500  # Default: 50
 RATE_LIMIT_GAME_CREATE_IP_DURATION=600
+RATE_LIMIT_GAME_POINTS=2000           # Default: 200
+RATE_LIMIT_API_AUTH_POINTS=2000       # Default: 200
+RATE_LIMIT_SANDBOX_AI_POINTS=10000    # Default: 1000
+RATE_LIMIT_BYPASS_ENABLED=true        # Bypass for loadtest users
 ```
 
 ### AI Difficulty Ladder
@@ -276,11 +318,13 @@ Think times by difficulty:
 
 ## Version History
 
-| Date       | Change                                      |
-| ---------- | ------------------------------------------- |
-| 2025-12-15 | Initial runbook created                     |
-| 2025-12-15 | Added AI timeout fix (5s → 30s)             |
-| 2025-12-15 | Added sandbox AI rate limiter (1000/min)    |
-| 2025-12-15 | Fixed minimax time check (1000 → 100 nodes) |
-| 2025-12-15 | Increased WS/game rate limits for load test |
-| 2025-12-15 | Documented WebSocket capacity limits        |
+| Date       | Change                                                        |
+| ---------- | ------------------------------------------------------------- |
+| 2025-12-15 | Initial runbook created                                       |
+| 2025-12-15 | Added AI timeout fix (5s → 30s)                               |
+| 2025-12-15 | Added sandbox AI rate limiter (1000/min)                      |
+| 2025-12-15 | Fixed minimax time check (1000 → 100 nodes)                   |
+| 2025-12-15 | Increased WS/game rate limits for load test                   |
+| 2025-12-15 | Documented WebSocket capacity limits                          |
+| 2025-12-15 | Complete load test rate limit config (sandbox AI 10k, bypass) |
+| 2025-12-15 | Applied system tuning (ulimit 65535, nginx 4096 workers)      |

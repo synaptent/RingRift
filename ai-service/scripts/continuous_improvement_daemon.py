@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""Continuous AI Improvement Daemon - Self-healing, cyclical training loop.
+"""
+DEPRECATED: This module is deprecated. Use scripts/unified_ai_loop.py instead.
+
+The unified_ai_loop.py provides all functionality with:
+- Proper cluster coordination and distributed locking
+- Event-driven data flow via cross-process events
+- Data quality validation and training gates
+- Feedback loop integration and curriculum rebalancing
+- Health monitoring with Prometheus metrics
+
+To migrate:
+    python scripts/unified_ai_loop.py --foreground --verbose
+
+---
+Continuous AI Improvement Daemon - Self-healing, cyclical training loop.
 
 This daemon orchestrates the complete AI improvement cycle:
 1. Balanced selfplay generation across all board types
@@ -122,6 +136,31 @@ except ImportError:
     HAS_TASK_COORDINATOR = False
     TaskCoordinator = None
     TaskType = None
+
+# New coordination features: OrchestratorRole, backpressure, sync_lock
+try:
+    from app.coordination import (
+        # Orchestrator role management (SQLite-backed with heartbeat)
+        OrchestratorRole,
+        acquire_orchestrator_role,
+        release_orchestrator_role,
+        # Queue backpressure
+        QueueType,
+        should_throttle_production,
+        should_stop_production,
+        get_throttle_factor,
+        report_queue_depth,
+        # Sync mutex for rsync operations
+        sync_lock,
+        # Bandwidth management
+        request_bandwidth,
+        release_bandwidth,
+        TransferPriority,
+    )
+    HAS_NEW_COORDINATION = True
+except ImportError:
+    HAS_NEW_COORDINATION = False
+    OrchestratorRole = None
 
 # Import optimized hyperparameters
 try:
@@ -1308,6 +1347,20 @@ async def run_balanced_selfplay(state: DaemonState, duration_minutes: int = 10) 
     if DISABLE_LOCAL_TASKS:
         print("[Daemon] Skipping local selfplay (RINGRIFT_DISABLE_LOCAL_TASKS=true)")
         return 0
+
+    # Check backpressure before spawning selfplay (new coordination)
+    if HAS_NEW_COORDINATION:
+        if should_stop_production(QueueType.TRAINING_DATA):
+            print("[Daemon] Skipping selfplay: training queue at STOP backpressure level")
+            return 0
+        if should_throttle_production(QueueType.TRAINING_DATA):
+            throttle_factor = get_throttle_factor(QueueType.TRAINING_DATA)
+            print(f"[Daemon] Backpressure active: throttle factor {throttle_factor:.2f}")
+            # Skip selfplay probabilistically based on throttle factor
+            import random
+            if random.random() > throttle_factor:
+                print("[Daemon] Skipping selfplay due to backpressure (probabilistic)")
+                return 0
 
     total_games = 0
 
@@ -3003,6 +3056,18 @@ async def run_daemon(foreground: bool = False) -> None:
         except Exception as e:
             print(f"[Daemon] Warning: Lock acquisition failed: {e}")
 
+    # New coordination: acquire IMPROVEMENT_DAEMON role (SQLite-backed with heartbeat)
+    has_new_role = False
+    if HAS_NEW_COORDINATION and OrchestratorRole is not None:
+        try:
+            if acquire_orchestrator_role(OrchestratorRole.IMPROVEMENT_DAEMON):
+                has_new_role = True
+                print("[Daemon] Acquired IMPROVEMENT_DAEMON role via new coordination system")
+            else:
+                print("[Daemon] WARNING: Another improvement daemon already holds the role")
+        except Exception as e:
+            print(f"[Daemon] Warning: Failed to acquire new orchestrator role: {e}")
+
     # Task coordination - global limits across all orchestrators
     tc_task_id = None
     task_coordinator = None
@@ -3070,6 +3135,14 @@ async def run_daemon(foreground: bool = False) -> None:
                 print("[Daemon] Unregistered from task coordinator")
             except Exception as e:
                 print(f"[Daemon] Warning: Task coordinator unregister failed: {e}")
+
+        # Release new orchestrator role (SQLite-backed)
+        if has_new_role and HAS_NEW_COORDINATION:
+            try:
+                release_orchestrator_role()
+                print("[Daemon] Released IMPROVEMENT_DAEMON role")
+            except Exception as e:
+                print(f"[Daemon] Warning: Failed to release new orchestrator role: {e}")
 
         # Release lock and save state
         if lock_context is not None:

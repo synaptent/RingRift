@@ -2019,7 +2019,7 @@ def train_model(
 
             # Training
             model.train()
-            train_loss = 0.0
+            train_loss = torch.tensor(0.0, device=device)  # Accumulate on GPU to avoid per-batch .item() sync
             train_batches = 0
             if dist_metrics is not None:
                 dist_metrics.reset()
@@ -2154,38 +2154,43 @@ def train_model(
                 scaler.step(optimizer)
                 scaler.update()
 
-                train_loss += loss.item()
+                # Accumulate loss without .item() to avoid GPU sync per batch
+                # Detach to prevent gradient accumulation, but keep on GPU
+                train_loss += loss.detach()
                 train_batches += 1
 
-                # Track metrics for distributed reduction
+                # Track metrics for distributed reduction (uses detached tensor)
                 if dist_metrics is not None:
                     dist_metrics.add(
                         'train_loss',
-                        loss.item(),
+                        loss.detach(),
                         features.size(0),
                     )
 
+                # Logging every 10 batches - sync is acceptable here for monitoring
                 if i % 10 == 0 and (not distributed or is_main_process()):
+                    # Only call .item() for logging, not accumulation
                     logger.info(
                         f"Epoch {epoch+1}, Batch {i}: "
-                        f"Loss={loss.item():.4f} "
-                        f"(Val={value_loss.item():.4f}, "
-                        f"Pol={policy_loss.item():.4f})"
+                        f"Loss={loss.detach().item():.4f} "
+                        f"(Val={value_loss.detach().item():.4f}, "
+                        f"Pol={policy_loss.detach().item():.4f})"
                     )
 
-            # Compute average training loss
+            # Compute average training loss - call .item() only at end of epoch
             if distributed and dist_metrics is not None:
                 # Synchronize metrics across all processes
                 train_metrics = dist_metrics.reduce_and_reset(device=device)
                 avg_train_loss = train_metrics.get('train_loss', 0.0)
             elif train_batches > 0:
-                avg_train_loss = train_loss / train_batches
+                # Single .item() call at end of epoch for accumulated tensor
+                avg_train_loss = (train_loss / train_batches).item()
             else:
                 avg_train_loss = 0.0
 
             # Validation
             model.eval()
-            val_loss = 0.0
+            val_loss = torch.tensor(0.0, device=device)  # Accumulate on GPU
             val_batches = 0
             if dist_metrics is not None:
                 dist_metrics.reset()
@@ -2292,21 +2297,22 @@ def train_model(
                         policy_log_probs, policy_targets
                     )
                     loss = v_loss + (config.policy_weight * p_loss)
-                    val_loss += loss.item()
+                    # Accumulate on GPU without .item() sync
+                    val_loss += loss.detach()
                     val_batches += 1
 
-                    # Track metrics for distributed reduction
+                    # Track metrics for distributed reduction (detached tensor)
                     if dist_metrics is not None:
                         dist_metrics.add(
-                            'val_loss', loss.item(), features.size(0)
+                            'val_loss', loss.detach(), features.size(0)
                         )
 
-            # Compute average validation loss
+            # Compute average validation loss - single .item() at end
             if distributed and dist_metrics is not None:
                 val_metrics = dist_metrics.reduce_and_reset(device=device)
                 avg_val_loss = val_metrics.get('val_loss', 0.0)
             elif val_batches > 0:
-                avg_val_loss = val_loss / val_batches
+                avg_val_loss = (val_loss / val_batches).item()
             else:
                 avg_val_loss = 0.0
 

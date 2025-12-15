@@ -157,6 +157,24 @@ except ImportError:
     TaskCoordinator = None
     TaskType = None
 
+# New coordination features - OrchestratorRole and backpressure
+try:
+    from app.coordination import (
+        OrchestratorRole,
+        acquire_orchestrator_role,
+        release_orchestrator_role,
+        QueueType,
+        should_throttle_production,
+        get_throttle_factor,
+        sync_lock,
+        request_bandwidth,
+        release_bandwidth,
+        TransferPriority,
+    )
+    HAS_NEW_COORDINATION = True
+except ImportError:
+    HAS_NEW_COORDINATION = False
+
 # Pipeline feedback controller for closed-loop adaptation
 try:
     from app.integration.pipeline_feedback import (
@@ -809,6 +827,18 @@ class PipelineOrchestrator:
             self.log(f"Using P2P backend with leader: {p2p_leader_url}")
         else:
             self.log("Using SSH backend")
+
+        # New coordination: acquire PIPELINE_ORCHESTRATOR role
+        self._has_orchestrator_role = False
+        if HAS_NEW_COORDINATION:
+            try:
+                if acquire_orchestrator_role(OrchestratorRole.PIPELINE_ORCHESTRATOR):
+                    self._has_orchestrator_role = True
+                    self.log("Acquired PIPELINE_ORCHESTRATOR role via new coordination system")
+                else:
+                    self.log("WARNING: Another pipeline orchestrator is already running", "WARN")
+            except Exception as e:
+                self.log(f"Warning: Failed to acquire orchestrator role: {e}", "WARN")
 
         # Task coordination - prevents runaway spawning across orchestrators
         self.task_coordinator: Optional[TaskCoordinator] = None
@@ -2990,6 +3020,14 @@ python scripts/run_ai_tournament.py \\
 
     def _cleanup(self) -> None:
         """Cleanup resources and unregister from task coordinator."""
+        # Release orchestrator role (new coordination)
+        if HAS_NEW_COORDINATION and self._has_orchestrator_role:
+            try:
+                release_orchestrator_role()
+                self.log("Released PIPELINE_ORCHESTRATOR role")
+            except Exception as e:
+                self.log(f"Warning: Failed to release orchestrator role: {e}", "WARN")
+
         # Unregister from task coordinator
         if self.task_coordinator and self._task_id:
             try:

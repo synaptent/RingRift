@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Pre-spawn health check for remote hosts.
+"""Host health policy for pre-spawn checks.
+
+RENAMED from health_check.py for clarity - this module provides POLICY decisions
+about whether hosts are healthy enough to receive jobs, distinct from
+app/distributed/health_checks.py which performs the actual distributed probing.
 
 This module provides fast, cached health checks for remote hosts before
 spawning tasks. It integrates with the coordination system to prevent
@@ -12,7 +16,7 @@ Features:
 - Integration with coordination safeguards
 
 Usage:
-    from app.coordination.health_check import (
+    from app.coordination.host_health_policy import (
         check_host_health,
         is_host_healthy,
         get_healthy_hosts,
