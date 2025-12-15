@@ -204,6 +204,37 @@ AI service may consume significant memory (~400-800MB). If memory grows:
 1. Check for stuck searches: Long-running minimax/MCTS
 2. Restart AI service: `pm2 restart ringrift-ai`
 
+### WebSocket Connection Limits
+
+Current system limits that affect WebSocket capacity:
+
+| Limit                        | Current Value | Effect                           |
+| ---------------------------- | ------------- | -------------------------------- |
+| ulimit -n (file descriptors) | 1024          | Limits total open connections    |
+| nginx worker_connections     | 768           | Max connections per nginx worker |
+| proxy_read_timeout           | 60s (default) | May timeout long-lived WebSocket |
+
+**Observed Capacity:** ~400 concurrent WebSocket connections before 500 errors appear.
+
+**To increase capacity**, add to `/etc/security/limits.conf`:
+
+```
+ubuntu soft nofile 65535
+ubuntu hard nofile 65535
+```
+
+And in `/etc/nginx/nginx.conf`:
+
+```nginx
+events {
+    worker_connections 4096;
+}
+http {
+    proxy_read_timeout 300;
+    proxy_send_timeout 300;
+}
+```
+
 ## Configuration
 
 ### Environment Variables
@@ -251,3 +282,4 @@ Think times by difficulty:
 | 2025-12-15 | Added sandbox AI rate limiter (1000/min)    |
 | 2025-12-15 | Fixed minimax time check (1000 → 100 nodes) |
 | 2025-12-15 | Increased WS/game rate limits for load test |
+| 2025-12-15 | Documented WebSocket capacity limits        |

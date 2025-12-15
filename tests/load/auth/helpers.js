@@ -47,10 +47,10 @@ export function getVUCredentials(vuOverride) {
     };
   }
 
-  // Single-user fallback mode
+  // Single-user fallback mode - use same password as pool mode for consistency
   return {
     email: __ENV.LOADTEST_EMAIL || 'loadtest_user_1@loadtest.local',
-    password: __ENV.LOADTEST_PASSWORD || 'TestPassword123!',
+    password: __ENV.LOADTEST_PASSWORD || 'LoadTestK6Pass123',
     userIndex: 1,
   };
 }
