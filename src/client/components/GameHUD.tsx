@@ -1851,91 +1851,97 @@ function GameHUDFromViewModel({
       {/* Victory progress indicator - shows ring elimination and territory progress */}
       <VictoryProgressIndicator victoryProgress={victoryProgress} players={players} />
       <PhaseIndicator phase={phase} isMyTurn={isMyTurn} isSpectator={isSpectator} />
-      {phaseHelpTopic && (
-        <div className="mt-1 flex items-center text-[11px] text-slate-300">
-          <button
-            type="button"
-            onClick={() => showTopic(phaseHelpTopic)}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-600 bg-slate-900/80 hover:border-slate-300 hover:text-slate-50 transition-colors"
-            aria-label="Learn more about this phase"
-            data-testid={`hud-phase-help-${phase.phaseKey}`}
-          >
-            <span className="text-xs">?</span>
-            <span>Phase rules</span>
-          </button>
-        </div>
-      )}
-      <SubPhaseDetails detail={subPhaseDetail} />
-
-      {/* High-level decision time-pressure cue for the current phase */}
-      {decisionPhase && decisionSeverity && (
-        <div className="mt-1 flex items-center text-[11px] text-slate-200">
-          <span
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${
-              decisionSeverity === 'critical'
-                ? 'bg-red-900/80 border-red-400/80 text-red-50 animate-pulse'
-                : decisionSeverity === 'warning'
-                  ? 'bg-amber-900/80 border-amber-400/80 text-amber-50'
-                  : 'bg-emerald-900/70 border-emerald-400/80 text-emerald-50'
-            }`}
-            data-testid="hud-decision-time-pressure"
-            data-severity={decisionSeverity}
-          >
-            <span aria-hidden="true" className="text-xs">
-              ⏱
-            </span>
-            <span className="truncate">
-              {decisionPhase.isLocalActor
-                ? `Your decision timer: ${formatMsAsClock(decisionPhase.timeRemainingMs ?? 0)}`
-                : `Time left for ${decisionPhase.actingPlayerName}'s decision: ${formatMsAsClock(
-                    decisionPhase.timeRemainingMs ?? 0
-                  )}`}
-            </span>
-          </span>
-        </div>
-      )}
-
-      {/* Decision-specific status chip (e.g. ring elimination prompt) */}
-      {decisionPhase?.statusChip && (
-        <div className="mt-2 inline-flex items-center gap-2">
-          <span
-            className={
-              decisionPhase.statusChip.tone === 'attention'
-                ? 'px-3 py-1 rounded-full bg-amber-500 text-slate-950 text-[11px] font-semibold shadow-sm shadow-amber-500/40 border border-amber-300'
-                : 'px-3 py-1 rounded-full bg-sky-900/60 text-sky-100 text-[11px] font-medium border border-sky-500/60'
-            }
-            data-testid="hud-decision-status-chip"
-          >
-            {decisionPhase.statusChip.text}
-          </span>
-          {decisionPhase.canSkip && (
-            <span
-              className="px-2 py-0.5 rounded-full bg-slate-800/80 border border-slate-600 text-[10px] uppercase tracking-wide text-slate-200"
-              data-testid="hud-decision-skip-hint"
-            >
-              Skip available
-            </span>
-          )}
-          {phase.phaseKey === 'territory_processing' && (
+      {/* Phase help button zone - min-height prevents layout shift */}
+      <div className="min-h-[24px] flex items-end">
+        {phaseHelpTopic && (
+          <div className="mt-1 flex items-center text-[11px] text-slate-300">
             <button
               type="button"
-              onClick={handleTerritoryHelp}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-600 bg-slate-900/80 text-[11px] text-slate-200 hover:border-slate-300 hover:text-slate-50 transition-colors"
-              aria-label="Learn more about territory processing"
-              data-testid="hud-territory-help"
+              onClick={() => showTopic(phaseHelpTopic)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-600 bg-slate-900/80 hover:border-slate-300 hover:text-slate-50 transition-colors"
+              aria-label="Learn more about this phase"
+              data-testid={`hud-phase-help-${phase.phaseKey}`}
             >
-              ?
+              <span className="text-xs">?</span>
+              <span>Phase rules</span>
             </button>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
+      <SubPhaseDetails detail={subPhaseDetail} />
 
-      {pieRuleSummary && (
-        <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-900/60 border border-amber-500/60 text-[11px] text-amber-100">
-          <span className="font-semibold uppercase tracking-wide">Pie rule</span>
-          <span className="text-amber-100/90">{pieRuleSummary}</span>
-        </div>
-      )}
+      {/* Dynamic alerts zone - min-height prevents layout shift when chips appear/disappear */}
+      <div className="min-h-[28px] flex flex-col justify-end">
+        {/* High-level decision time-pressure cue for the current phase */}
+        {decisionPhase && decisionSeverity && (
+          <div className="mt-1 flex items-center text-[11px] text-slate-200">
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${
+                decisionSeverity === 'critical'
+                  ? 'bg-red-900/80 border-red-400/80 text-red-50 animate-pulse'
+                  : decisionSeverity === 'warning'
+                    ? 'bg-amber-900/80 border-amber-400/80 text-amber-50'
+                    : 'bg-emerald-900/70 border-emerald-400/80 text-emerald-50'
+              }`}
+              data-testid="hud-decision-time-pressure"
+              data-severity={decisionSeverity}
+            >
+              <span aria-hidden="true" className="text-xs">
+                ⏱
+              </span>
+              <span className="truncate">
+                {decisionPhase.isLocalActor
+                  ? `Your decision timer: ${formatMsAsClock(decisionPhase.timeRemainingMs ?? 0)}`
+                  : `Time left for ${decisionPhase.actingPlayerName}'s decision: ${formatMsAsClock(
+                      decisionPhase.timeRemainingMs ?? 0
+                    )}`}
+              </span>
+            </span>
+          </div>
+        )}
+
+        {/* Decision-specific status chip (e.g. ring elimination prompt) */}
+        {decisionPhase?.statusChip && (
+          <div className="mt-2 inline-flex items-center gap-2">
+            <span
+              className={
+                decisionPhase.statusChip.tone === 'attention'
+                  ? 'px-3 py-1 rounded-full bg-amber-500 text-slate-950 text-[11px] font-semibold shadow-sm shadow-amber-500/40 border border-amber-300'
+                  : 'px-3 py-1 rounded-full bg-sky-900/60 text-sky-100 text-[11px] font-medium border border-sky-500/60'
+              }
+              data-testid="hud-decision-status-chip"
+            >
+              {decisionPhase.statusChip.text}
+            </span>
+            {decisionPhase.canSkip && (
+              <span
+                className="px-2 py-0.5 rounded-full bg-slate-800/80 border border-slate-600 text-[10px] uppercase tracking-wide text-slate-200"
+                data-testid="hud-decision-skip-hint"
+              >
+                Skip available
+              </span>
+            )}
+            {phase.phaseKey === 'territory_processing' && (
+              <button
+                type="button"
+                onClick={handleTerritoryHelp}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-600 bg-slate-900/80 text-[11px] text-slate-200 hover:border-slate-300 hover:text-slate-50 transition-colors"
+                aria-label="Learn more about territory processing"
+                data-testid="hud-territory-help"
+              >
+                ?
+              </button>
+            )}
+          </div>
+        )}
+
+        {pieRuleSummary && (
+          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-900/60 border border-amber-500/60 text-[11px] text-amber-100">
+            <span className="font-semibold uppercase tracking-wide">Pie rule</span>
+            <span className="text-amber-100/90">{pieRuleSummary}</span>
+          </div>
+        )}
+      </div>
 
       {/* Game Progress */}
       <div className="mt-3">

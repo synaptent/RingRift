@@ -1081,6 +1081,15 @@ def run_self_play_soak(
             flush=True,
         )
 
+    # Player bias mitigation via swap_sides probability
+    swap_sides_probability = getattr(args, "swap_sides_probability", 0.5)
+    if swap_sides_probability > 0 and num_players == 2:
+        print(
+            f"[player-balance] swap_sides probability: {swap_sides_probability:.0%} "
+            f"(helps balance P1/P2 win rates)",
+            flush=True,
+        )
+
     # Memory management options
     intra_game_gc_interval = getattr(args, "intra_game_gc_interval", 0)
     streaming_record = getattr(args, "streaming_record", False)
@@ -1470,8 +1479,29 @@ def run_self_play_soak(
                         skipped = True
                         break
 
+                    move = None  # Initialize for conditional selection below
+
+                    # Player balance: force swap_sides with probability for 2-player games
+                    # This helps balance training data between P1 and P2 perspectives
+                    swap_sides_move = None
+                    if (
+                        swap_sides_probability > 0
+                        and num_players == 2
+                        and current_player == 2
+                        and move_count <= 2  # swap_sides only offered in first few moves
+                    ):
+                        swap_sides_move = next(
+                            (m for m in legal_moves if m.type == MoveType.SWAP_SIDES),
+                            None
+                        )
+                        if swap_sides_move and game_rng.random() < swap_sides_probability:
+                            move = swap_sides_move
+                            # Skip the rest of move selection
+                        else:
+                            swap_sides_move = None  # Don't force swap
+
                     # Opening diversity: randomly select from legal moves for first N moves
-                    if opening_random_moves > 0 and move_count < opening_random_moves:
+                    if move is None and opening_random_moves > 0 and move_count < opening_random_moves:
                         if opening_top_k > 0:
                             # Semi-intelligent: sample from top-K AI moves
                             if profile_timing:
@@ -1497,7 +1527,7 @@ def run_self_play_soak(
                         else:
                             # Purely random: select any legal move
                             move = game_rng.choice(legal_moves)
-                    else:
+                    elif move is None:
                         # Normal AI selection
                         if profile_timing:
                             t_sel_start = time.time()
@@ -3182,6 +3212,17 @@ def _parse_args() -> argparse.Namespace:
             "moves instead of purely random. This maintains some move quality while "
             "adding diversity. Set to 0 (default) for purely random opening moves. "
             "Recommended: 3-5 if you want semi-intelligent opening diversity."
+        ),
+    )
+    parser.add_argument(
+        "--swap-sides-probability",
+        type=float,
+        default=0.5,
+        help=(
+            "Probability that Player 2 will use swap_sides (pie rule) when offered. "
+            "This helps balance training data by ensuring more games start from both "
+            "perspectives. Default: 0.5 (50%% chance). Set to 0 to let AI decide, "
+            "set to 1.0 to always swap. Recommended: 0.5 for balanced training."
         ),
     )
     return parser.parse_args()

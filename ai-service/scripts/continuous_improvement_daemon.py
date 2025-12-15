@@ -1070,6 +1070,19 @@ async def run_single_selfplay_job(
     async with semaphore:
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
+        # Opening randomization: more moves for larger boards and more players
+        opening_random = {
+            ("square8", 2): 4,
+            ("square8", 3): 6,
+            ("square8", 4): 8,
+            ("square19", 2): 6,
+            ("square19", 3): 9,
+            ("square19", 4): 12,
+            ("hexagonal", 2): 6,
+            ("hexagonal", 3): 9,
+            ("hexagonal", 4): 12,
+        }.get((board_type, num_players), 4)
+
         cmd = [
             sys.executable, "scripts/run_self_play_soak.py",
             "--board-type", board_type,
@@ -1078,7 +1091,11 @@ async def run_single_selfplay_job(
             "--engine-mode", engine_mode,
             "--log-jsonl", str(output_file),
             "--max-moves", "10000",
+            "--opening-random-moves", str(opening_random),
         ]
+        # Add swap-sides probability for 2-player games to balance P1/P2 win rates
+        if num_players == 2:
+            cmd.extend(["--swap-sides-probability", "0.5"])
 
         success, output = await run_command_async(cmd, timeout=timeout)
 
