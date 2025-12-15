@@ -42,7 +42,7 @@ sys.path.insert(0, str(AI_SERVICE_ROOT))
 
 MODELS_DIR = AI_SERVICE_ROOT / "models"
 ARCHIVE_DIR = AI_SERVICE_ROOT / "models" / "archive"
-ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
+ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "elo_leaderboard.db"  # Canonical Elo database
 
 # Default thresholds
 DEFAULT_MIN_ELO = 1400  # Prune models below this Elo
@@ -79,9 +79,10 @@ def get_model_elo_stats(db_path: Path) -> Dict[str, ModelStats]:
 
     try:
         # Get all NN model ratings from elo_ratings table
+        # Schema: model_id, board_type, num_players, rating, games_played, wins, losses, draws, last_update
         cursor.execute("""
             SELECT
-                participant_id,
+                model_id,
                 board_type,
                 num_players,
                 rating,
@@ -91,27 +92,31 @@ def get_model_elo_stats(db_path: Path) -> Dict[str, ModelStats]:
                 draws,
                 last_update
             FROM elo_ratings
-            WHERE participant_id LIKE 'nn:%' OR participant_id LIKE '%.pth%'
-               OR participant_id LIKE 'ringrift_%' OR participant_id LIKE 'sq%'
-               OR participant_id LIKE 'hex%' OR participant_id LIKE 'v%'
+            WHERE model_id LIKE 'nn:%' OR model_id LIKE '%.pth%'
+               OR model_id LIKE 'ringrift_%' OR model_id LIKE 'sq%'
+               OR model_id LIKE 'hex%' OR model_id LIKE 'v%'
         """)
 
         for row in cursor.fetchall():
-            participant_id, board_type, num_players, elo, games, wins, losses, draws, last_played = row
+            model_id, board_type, num_players, elo, games, wins, losses, draws, last_played = row
 
-            # Extract model filename from participant_id
+            # Extract model filename from model_id
             # Format is typically: nn:path/to/model.pth or just model_name
-            if participant_id.startswith("nn:"):
-                model_path = participant_id[3:]
+            if model_id.startswith("nn:"):
+                model_path = model_id[3:]
                 filename = Path(model_path).name
             else:
-                filename = participant_id
+                filename = model_id
                 model_path = str(MODELS_DIR / filename)
 
-            # Check if file exists
+            # Check if file exists (try with and without .pth extension)
             full_path = MODELS_DIR / filename
             if not full_path.exists():
-                continue
+                # Try adding .pth extension
+                full_path = MODELS_DIR / f"{filename}.pth"
+                if not full_path.exists():
+                    continue
+                filename = f"{filename}.pth"
 
             # Get file stats
             try:
@@ -167,7 +172,7 @@ def get_canonical_models() -> Set[str]:
         try:
             # Get top model for each board_type/num_players combo
             cursor.execute("""
-                SELECT participant_id, board_type, num_players, rating as elo
+                SELECT model_id, board_type, num_players, rating as elo
                 FROM elo_ratings
                 WHERE games_played >= 10
                 ORDER BY board_type, num_players, rating DESC
@@ -175,15 +180,15 @@ def get_canonical_models() -> Set[str]:
 
             seen_configs = set()
             for row in cursor.fetchall():
-                participant_id, board_type, num_players, elo = row
+                model_id, board_type, num_players, elo = row
                 config_key = f"{board_type}_{num_players}p"
                 if config_key not in seen_configs:
                     seen_configs.add(config_key)
                     # Extract filename
-                    if participant_id.startswith("nn:"):
-                        filename = Path(participant_id[3:]).name
+                    if model_id.startswith("nn:"):
+                        filename = Path(model_id[3:]).name
                     else:
-                        filename = participant_id
+                        filename = model_id
                     canonical.add(filename)
                     print(f"  Canonical for {config_key}: {filename} (Elo: {elo:.0f})")
 

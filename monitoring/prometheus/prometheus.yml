@@ -29,6 +29,7 @@ global:
 # all matching files.
 rule_files:
   - '/etc/prometheus/alerts.yml'
+  - '/etc/prometheus/alerting-rules.yaml' # AI cluster alerts (Elo regression, training, etc.)
   # Additional rule files can be added here
   # - '/etc/prometheus/rules/*.yml'
 
