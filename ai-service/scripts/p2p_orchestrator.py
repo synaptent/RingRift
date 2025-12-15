@@ -18775,6 +18775,10 @@ print(json.dumps({{
         # Add automatic data management loop (export triggers, training triggers, data sync)
         tasks.append(asyncio.create_task(self._data_management_loop()))
 
+        # Add model sync loop (syncs NN/NNUE models across cluster)
+        if HAS_MODEL_SYNC:
+            tasks.append(asyncio.create_task(self._model_sync_loop()))
+
         # Best-effort bootstrap from seed peers before running elections. This
         # helps newly started cloud nodes quickly learn about the full cluster.
         try:
