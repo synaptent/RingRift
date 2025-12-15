@@ -69,13 +69,17 @@ def filter_games(db_path: Path, dry_run: bool = True, delete: bool = False) -> d
     if not db_path.exists():
         print(f"Database not found: {db_path}")
         return stats
-    
-    conn = sqlite3.connect(db_path)
-    
-    # Get total games
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM games")
-    stats['total_games'] = cursor.fetchone()[0]
+
+    try:
+        conn = sqlite3.connect(db_path)
+
+        # Get total games
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM games")
+        stats['total_games'] = cursor.fetchone()[0]
+    except sqlite3.DatabaseError as e:
+        print(f"ERROR: Database corrupted or malformed: {db_path} - {e}")
+        return stats
     
     # Get timeout games
     timeout_games = get_timeout_games(conn)
