@@ -395,7 +395,7 @@ try:
     )
     # Also import load_remote_hosts for scanning
     if HAS_HOSTS_FOR_SYNC:
-        from app.distributed.hosts import load_remote_hosts
+        from app.distributed.hosts import load_remote_hosts, filter_ready_hosts
     HAS_MODEL_SYNC = True
 except ImportError:
     HAS_MODEL_SYNC = False
@@ -404,6 +404,7 @@ except ImportError:
     ClusterModelState = None
     HAS_HOSTS_FOR_SYNC = False
     load_remote_hosts = None
+    filter_ready_hosts = None
 
 # ============================================
 # Configuration
