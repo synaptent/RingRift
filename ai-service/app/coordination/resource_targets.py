@@ -36,11 +36,27 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+import yaml
 
 
 # Default coordination DB path
 _DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "coordination.db"
+_DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "unified_loop.yaml"
+
+
+def _load_config_targets(config_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Load resource_targets from config file."""
+    path = config_path or _DEFAULT_CONFIG_PATH
+    try:
+        if path.exists():
+            with open(path) as f:
+                config = yaml.safe_load(f) or {}
+            return config.get("resource_targets", {})
+    except Exception as e:
+        print(f"[ResourceTargets] Config load error: {e}")
+    return {}
 
 
 class HostTier(Enum):
@@ -185,14 +201,62 @@ class ResourceTargetManager:
     _instance: Optional["ResourceTargetManager"] = None
     _lock = threading.Lock()
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Optional[Path] = None, config_path: Optional[Path] = None):
         self._db_path = db_path or _DEFAULT_DB_PATH
-        self._targets = UtilizationTargets()
+        self._config_path = config_path or _DEFAULT_CONFIG_PATH
+        self._targets = self._load_targets_from_config()
+        self._tier_overrides = self._load_tier_overrides_from_config()
         self._host_targets: Dict[str, HostTargets] = {}
         self._utilization_history: Dict[str, List[Tuple[float, float, float]]] = {}
         self._backpressure_factor: float = 1.0
         self._last_adaptive_update: float = 0.0
         self._init_db()
+
+    def _load_targets_from_config(self) -> UtilizationTargets:
+        """Load utilization targets from config file."""
+        config = _load_config_targets(self._config_path)
+
+        # Build targets from config, with defaults
+        return UtilizationTargets(
+            cpu_min=config.get("cpu_min", 60.0),
+            cpu_target=config.get("cpu_target", 70.0),
+            cpu_max=config.get("cpu_max", 80.0),
+            cpu_critical=config.get("cpu_critical", 90.0),
+            gpu_min=config.get("gpu_min", 60.0),
+            gpu_target=config.get("gpu_target", 75.0),
+            gpu_max=config.get("gpu_max", 85.0),
+            gpu_critical=config.get("gpu_critical", 95.0),
+            memory_warn=config.get("memory_max", 75.0),
+            memory_critical=config.get("memory_critical", 85.0),
+            disk_warn=config.get("disk_warn", 80.0),
+            disk_critical=config.get("disk_critical", 90.0),
+            jobs_per_core=config.get("jobs_per_core", 0.5),
+            max_jobs_per_node=config.get("max_jobs_per_node", 48),
+            max_selfplay_cluster=config.get("max_selfplay_cluster", 500),
+            throughput_min=config.get("throughput_min", 500),
+            throughput_target=config.get("throughput_target", 1000),
+            throughput_max=config.get("throughput_max", 2000),
+        )
+
+    def _load_tier_overrides_from_config(self) -> Dict[HostTier, Dict[str, Any]]:
+        """Load tier-specific overrides from config file."""
+        config = _load_config_targets(self._config_path)
+        tier_config = config.get("tier_overrides", {})
+
+        # Merge with defaults
+        overrides = dict(TIER_ADJUSTMENTS)  # Start with defaults
+
+        for tier_name, tier_values in tier_config.items():
+            try:
+                tier = HostTier[tier_name.upper()]
+                if tier in overrides:
+                    # Merge values
+                    for key, value in tier_values.items():
+                        overrides[tier][key] = value
+            except KeyError:
+                print(f"[ResourceTargets] Unknown tier: {tier_name}")
+
+        return overrides
 
     @classmethod
     def get_instance(cls, db_path: Optional[Path] = None) -> "ResourceTargetManager":
@@ -260,23 +324,33 @@ class ResourceTargetManager:
             elif any(x in host_lower for x in ["4090", "a6000", "mac-pro"]):
                 tier = HostTier.MID_TIER
 
-        adj = TIER_ADJUSTMENTS[tier]
+        # Get tier adjustments (from config or defaults)
+        adj = self._tier_overrides.get(tier, TIER_ADJUSTMENTS[tier])
         base = self._targets
 
         # Apply backpressure reduction
         bp_factor = self._backpressure_factor
 
+        # Config can override specific targets per tier
+        cpu_target = adj.get("cpu_target", base.cpu_target + adj.get("cpu_boost", 0.0))
+        gpu_target = adj.get("gpu_target", base.gpu_target + adj.get("gpu_boost", 0.0))
+        max_jobs = adj.get("max_jobs_per_node", int(base.max_jobs_per_node * adj.get("job_multiplier", 1.0)))
+
+        # Handle CPU-only tier (no GPU targets)
+        gpu_min = adj.get("gpu_min", base.gpu_min + adj.get("gpu_boost", 0.0))
+        gpu_max = adj.get("gpu_max", base.gpu_max + adj.get("gpu_boost", 0.0))
+
         return HostTargets(
             host=host,
             tier=tier,
-            cpu_min=(base.cpu_min + adj["cpu_boost"]) * bp_factor,
-            cpu_target=(base.cpu_target + adj["cpu_boost"]) * bp_factor,
-            cpu_max=base.cpu_max + adj["cpu_boost"],
-            gpu_min=(base.gpu_min + adj["gpu_boost"]) * bp_factor,
-            gpu_target=(base.gpu_target + adj["gpu_boost"]) * bp_factor,
-            gpu_max=base.gpu_max + adj["gpu_boost"],
-            max_jobs=int(base.max_jobs_per_node * adj["job_multiplier"]),
-            max_selfplay=int(32 * adj["job_multiplier"]),
+            cpu_min=(base.cpu_min + adj.get("cpu_boost", 0.0)) * bp_factor,
+            cpu_target=cpu_target * bp_factor,
+            cpu_max=base.cpu_max + adj.get("cpu_boost", 0.0),
+            gpu_min=gpu_min * bp_factor,
+            gpu_target=gpu_target * bp_factor,
+            gpu_max=gpu_max,
+            max_jobs=max_jobs,
+            max_selfplay=int(32 * adj.get("job_multiplier", 1.0)),
             max_training=1 if tier in (HostTier.HIGH_END, HostTier.MID_TIER) else 0,
         )
 

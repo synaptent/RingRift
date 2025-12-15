@@ -167,6 +167,29 @@ except ImportError:
     HAS_COORDINATION = False
     OrchestratorRole = None
 
+# Resource optimizer for cooperative cluster-wide utilization targeting
+try:
+    from app.coordination.resource_optimizer import (
+        ResourceOptimizer,
+        NodeResources,
+        ClusterState,
+        OptimizationResult,
+        ScaleAction,
+        get_resource_optimizer,
+        get_optimal_concurrency,
+        get_cluster_utilization as get_optimizer_cluster_utilization,
+    )
+    HAS_RESOURCE_OPTIMIZER = True
+except ImportError:
+    HAS_RESOURCE_OPTIMIZER = False
+    ResourceOptimizer = None
+    NodeResources = None
+    ClusterState = None
+    OptimizationResult = None
+    ScaleAction = None
+    get_resource_optimizer = None
+    get_optimal_concurrency = None
+
 # Unified execution framework for local and remote commands
 try:
     from app.execution.executor import (
@@ -578,6 +601,48 @@ if HAS_PROMETHEUS:
         'ringrift_overall_health',
         'Overall system health (1=healthy, 0.5=degraded, 0=unhealthy)',
         []
+    )
+
+    # Cluster utilization metrics (for 60-80% target tracking)
+    CLUSTER_CPU_UTILIZATION = Gauge(
+        'ringrift_cluster_cpu_utilization_percent',
+        'Average cluster CPU utilization percentage',
+        []
+    )
+    CLUSTER_GPU_UTILIZATION = Gauge(
+        'ringrift_cluster_gpu_utilization_percent',
+        'Average cluster GPU utilization percentage',
+        []
+    )
+    CLUSTER_MEMORY_UTILIZATION = Gauge(
+        'ringrift_cluster_memory_utilization_percent',
+        'Average cluster memory utilization percentage',
+        []
+    )
+    CLUSTER_TOTAL_JOBS = Gauge(
+        'ringrift_cluster_total_jobs',
+        'Total number of jobs running across the cluster',
+        []
+    )
+    CLUSTER_BACKPRESSURE = Gauge(
+        'ringrift_cluster_backpressure_factor',
+        'Backpressure factor (1.0=none, 0.0=full throttle)',
+        []
+    )
+    HOST_CPU_UTILIZATION = Gauge(
+        'ringrift_host_cpu_utilization_percent',
+        'Per-host CPU utilization percentage',
+        ['host']
+    )
+    HOST_GPU_UTILIZATION = Gauge(
+        'ringrift_host_gpu_utilization_percent',
+        'Per-host GPU utilization percentage',
+        ['host']
+    )
+    HOST_JOBS_RUNNING = Gauge(
+        'ringrift_host_jobs_running',
+        'Number of jobs running on each host',
+        ['host']
     )
 
     # Cross-process event metrics
@@ -3150,6 +3215,18 @@ class UnifiedAILoop:
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize execution backend: {e}")
 
+        # Resource optimizer - cooperative cluster-wide utilization targeting (60-80%)
+        self.resource_optimizer: Optional[ResourceOptimizer] = None
+        if HAS_RESOURCE_OPTIMIZER:
+            try:
+                self.resource_optimizer = get_resource_optimizer()
+                # Set orchestrator ID for tracking
+                import os
+                os.environ.setdefault("RINGRIFT_ORCHESTRATOR", "unified_ai_loop")
+                print("[UnifiedLoop] Resource optimizer initialized (target: 60-80% utilization)")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize resource optimizer: {e}")
+
         # State management
         self._state_path = AI_SERVICE_ROOT / config.log_dir / "unified_loop_state.json"
         self._running = False
@@ -3196,6 +3273,67 @@ class UnifiedAILoop:
 
         # Update training progress metrics (for dashboard compatibility)
         self._update_training_progress_metrics()
+
+        # Update cluster utilization metrics (feedback from P2P orchestrator)
+        self._update_cluster_utilization_metrics()
+
+    def _update_cluster_utilization_metrics(self):
+        """Update metrics from unified resource targets (P2P feedback loop).
+
+        Integrates with both resource_targets (per-host decisions) and
+        resource_optimizer (cluster-wide PID-controlled optimization) to
+        maintain 60-80% CPU/GPU utilization for optimal training throughput.
+        """
+        if not HAS_COORDINATION:
+            return
+
+        try:
+            summary = get_cluster_summary()
+
+            # Log utilization status periodically
+            if self.config.verbose:
+                print(f"[Utilization] Hosts: {summary['active_hosts']}, "
+                      f"CPU: {summary['avg_cpu']:.1f}%, GPU: {summary['avg_gpu']:.1f}%, "
+                      f"Memory: {summary['avg_memory']:.1f}%, "
+                      f"Jobs: {summary['total_jobs']}, "
+                      f"Backpressure: {summary['backpressure_factor']:.2f}")
+
+            # Adjust backpressure based on training queue depth
+            targets = get_resource_targets()
+
+            # If cluster is underutilized, signal to produce more data
+            if summary['active_hosts'] > 0:
+                avg_cpu = summary['avg_cpu']
+                avg_gpu = summary['avg_gpu']
+
+                # Check if cluster is significantly underutilized
+                if avg_cpu < targets.cpu_min and avg_gpu < targets.gpu_min:
+                    # Relax backpressure to allow more production
+                    set_backpressure(1.0)
+                elif avg_cpu > targets.cpu_max or avg_gpu > targets.gpu_max:
+                    # Apply mild backpressure to prevent overload
+                    factor = 0.7 if avg_cpu > targets.cpu_critical or avg_gpu > targets.gpu_critical else 0.85
+                    set_backpressure(factor)
+
+            # Use resource optimizer for PID-controlled recommendations
+            if HAS_RESOURCE_OPTIMIZER and self.resource_optimizer:
+                try:
+                    recommendation = self.resource_optimizer.get_optimization_recommendation()
+
+                    # Log significant recommendations (60-80% target range)
+                    if recommendation.action.value != "none" and recommendation.confidence > 0.3:
+                        in_target = targets.cpu_min <= summary['avg_cpu'] <= targets.cpu_max
+                        status = "IN TARGET" if in_target else "OUT OF TARGET"
+                        print(f"[ResourceOptimizer] {status} | {recommendation.action.value.upper()}: "
+                              f"{recommendation.reason} (confidence: {recommendation.confidence:.0%})")
+
+                except Exception as e:
+                    if self.config.verbose:
+                        print(f"[ResourceOptimizer] Error getting recommendation: {e}")
+
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[Utilization] Error getting cluster summary: {e}")
 
     def _update_training_progress_metrics(self):
         """Update metrics for the training progress dashboard."""
@@ -4413,6 +4551,160 @@ class UnifiedAILoop:
             except asyncio.TimeoutError:
                 pass
 
+    async def _utilization_optimization_loop(self):
+        """Actively optimize cluster utilization toward 60-80% target.
+
+        This loop coordinates with the resource optimizer to:
+        1. Collect utilization metrics from all hosts
+        2. Calculate optimal job distribution
+        3. Emit scaling recommendations
+        4. Provide feedback metrics for self-improvement
+        """
+        if not HAS_RESOURCE_OPTIMIZER or self.resource_optimizer is None:
+            print("[Utilization] Resource optimizer not available - skipping")
+            return
+
+        optimization_interval = 30  # Check every 30 seconds
+        last_recommendation_time = 0.0
+        recommendation_cooldown = 60.0  # Don't spam recommendations
+        consecutive_optimal = 0
+        consecutive_suboptimal = 0
+
+        print("[Utilization] Optimization loop started (target: 60-80%)")
+
+        while self._running:
+            try:
+                # Collect utilization from backend workers
+                if self.backend is not None:
+                    try:
+                        workers = await self.backend.get_available_workers()
+                        for w in workers:
+                            # Report to shared optimizer
+                            resources = NodeResources(
+                                node_id=w.name,
+                                cpu_percent=w.cpu_percent,
+                                memory_percent=w.memory_percent,
+                                active_jobs=w.active_jobs,
+                                has_gpu=bool(w.metadata.get("gpu")),
+                                gpu_name=w.metadata.get("gpu", ""),
+                            )
+                            self.resource_optimizer.report_node_resources(resources)
+                    except Exception as e:
+                        if self.config.verbose:
+                            print(f"[Utilization] Backend worker query error: {e}")
+
+                # Get cluster state
+                cluster_state = self.resource_optimizer.get_cluster_state()
+
+                # Check if within target range (60-80%)
+                cpu_in_range = 60 <= cluster_state.total_cpu_util <= 80
+                gpu_in_range = cluster_state.gpu_node_count == 0 or 60 <= cluster_state.total_gpu_util <= 80
+
+                if cpu_in_range and gpu_in_range:
+                    consecutive_optimal += 1
+                    consecutive_suboptimal = 0
+                    if consecutive_optimal == 6 and self.config.verbose:  # ~3 min in optimal
+                        print(f"[Utilization] Optimal: CPU={cluster_state.total_cpu_util:.1f}%, GPU={cluster_state.total_gpu_util:.1f}%")
+                else:
+                    consecutive_suboptimal += 1
+                    consecutive_optimal = 0
+
+                # Get optimization recommendation
+                now = time.time()
+                if consecutive_suboptimal >= 3 and now - last_recommendation_time >= recommendation_cooldown:
+                    rec = self.resource_optimizer.get_optimization_recommendation()
+
+                    if rec.action != ScaleAction.NONE:
+                        print(
+                            f"[Utilization] {rec.action.value}: {rec.reason} "
+                            f"(confidence={rec.confidence:.2f}, adjustment={rec.adjustment})"
+                        )
+
+                        # Apply recommendation via P2P if available
+                        if self.p2p is not None and rec.action == ScaleAction.SCALE_UP:
+                            try:
+                                # Request P2P to scale selfplay
+                                await self._request_p2p_scale(
+                                    direction="up",
+                                    magnitude=abs(rec.adjustment),
+                                    reason=rec.reason,
+                                )
+                            except Exception as e:
+                                print(f"[Utilization] P2P scale request failed: {e}")
+
+                        elif self.p2p is not None and rec.action == ScaleAction.SCALE_DOWN:
+                            try:
+                                await self._request_p2p_scale(
+                                    direction="down",
+                                    magnitude=abs(rec.adjustment),
+                                    reason=rec.reason,
+                                )
+                            except Exception as e:
+                                print(f"[Utilization] P2P scale request failed: {e}")
+
+                        # Record the action
+                        self.resource_optimizer.record_optimization_action(rec)
+                        last_recommendation_time = now
+
+                # Update feedback metrics for self-improvement
+                if self.feedback is not None:
+                    try:
+                        metrics = self.resource_optimizer.get_metrics_dict()
+                        # Emit utilization efficiency signal
+                        efficiency = 1.0 if (cpu_in_range and gpu_in_range) else 0.5
+                        self.feedback.record_metric("utilization_efficiency", efficiency)
+                        self.feedback.record_metric("cluster_cpu_util", cluster_state.total_cpu_util / 100)
+                        self.feedback.record_metric("cluster_gpu_util", cluster_state.total_gpu_util / 100)
+                    except Exception as e:
+                        if self.config.verbose:
+                            print(f"[Utilization] Feedback metrics error: {e}")
+
+                # Prometheus metrics
+                if HAS_PROMETHEUS:
+                    LOOP_CYCLES_TOTAL.labels(loop="utilization").inc()
+
+            except Exception as e:
+                print(f"[Utilization] Error: {e}")
+                if HAS_PROMETHEUS:
+                    LOOP_ERRORS_TOTAL.labels(loop="utilization", error_type=type(e).__name__).inc()
+
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=optimization_interval)
+                break
+            except asyncio.TimeoutError:
+                pass
+
+        print("[Utilization] Optimization loop stopped")
+
+    async def _request_p2p_scale(self, direction: str, magnitude: int, reason: str) -> None:
+        """Request P2P orchestrator to scale selfplay jobs.
+
+        Args:
+            direction: "up" or "down"
+            magnitude: Number of jobs to add/remove
+            reason: Reason for scaling
+        """
+        if self.p2p is None:
+            return
+
+        try:
+            if direction == "up":
+                # Request more selfplay capacity
+                result = await self.p2p.request_scale_up(jobs=magnitude, reason=reason)
+                if result.get("success"):
+                    print(f"[Utilization] P2P scale-up accepted: +{magnitude} jobs")
+            else:
+                # Request reduced selfplay capacity
+                result = await self.p2p.request_scale_down(jobs=magnitude, reason=reason)
+                if result.get("success"):
+                    print(f"[Utilization] P2P scale-down accepted: -{magnitude} jobs")
+        except AttributeError:
+            # P2P integration may not have these methods yet
+            if self.config.verbose:
+                print(f"[Utilization] P2P integration doesn't support scaling API")
+        except Exception as e:
+            print(f"[Utilization] P2P scale request error: {e}")
+
     async def get_backend_workers(self) -> List[Dict[str, Any]]:
         """Query available workers from the execution backend.
 
@@ -5072,6 +5364,7 @@ class UnifiedAILoop:
                 self._curriculum_loop(),
                 self._metrics_loop(),
                 self._health_check_loop(),
+                self._utilization_optimization_loop(),  # Active 60-80% targeting
                 self._hp_tuning_sync_loop(),
                 self._external_drive_sync_loop(),
                 self._pbt_loop(),

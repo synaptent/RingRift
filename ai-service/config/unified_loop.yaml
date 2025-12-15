@@ -236,13 +236,60 @@ cluster:
 
   # Auto-scaling for underutilized hosts
   auto_scale_interval: 12 # Check every 12 iterations (1 hour)
-  underutilized_cpu_threshold: 30 # CPU % below this is underutilized
+  underutilized_cpu_threshold: 60 # CPU % below this is underutilized (aligned with resource_targets.cpu_min)
   underutilized_python_jobs: 10 # Fewer jobs than this is underutilized
   scale_up_games_per_host: 50 # Games to start on underutilized host
 
   # Adaptive game count
   adaptive_games_min: 30
   adaptive_games_max: 150
+
+# Resource utilization targets (60-80% optimal range for sustained throughput)
+# These targets are used by ResourceTargetManager for cluster-wide coordination
+resource_targets:
+  # CPU utilization targets (%)
+  cpu_min: 60 # Below this, scale up jobs
+  cpu_target: 70 # Ideal operating point
+  cpu_max: 80 # Above this, throttle new jobs
+  cpu_critical: 90 # Emergency throttle threshold
+
+  # GPU utilization targets (%)
+  gpu_min: 60 # Below this, prioritize GPU work
+  gpu_target: 75 # Ideal operating point (slightly higher than CPU)
+  gpu_max: 85 # Above this, defer non-critical GPU work
+  gpu_critical: 95 # Emergency threshold
+
+  # Memory utilization targets (%)
+  memory_min: 40 # Below this, can spawn more workers
+  memory_target: 60 # Ideal operating point
+  memory_max: 75 # Above this, stop spawning
+  memory_critical: 85 # Emergency threshold
+
+  # Job scaling parameters
+  jobs_per_core: 0.5 # Base jobs per CPU core
+  max_jobs_per_node: 48 # Hard cap per node
+  scale_up_increment: 4 # Add jobs in increments
+  scale_down_increment: 2 # Remove jobs in increments
+  hysteresis_band: 5.0 # % band to prevent oscillation
+
+  # Per-tier overrides (HIGH_END, MID_TIER, LOW_TIER, CPU_ONLY)
+  tier_overrides:
+    HIGH_END:
+      cpu_target: 75
+      gpu_target: 80
+      max_jobs_per_node: 64
+    MID_TIER:
+      cpu_target: 70
+      gpu_target: 75
+      max_jobs_per_node: 32
+    LOW_TIER:
+      cpu_target: 65
+      max_jobs_per_node: 16
+    CPU_ONLY:
+      gpu_min: 0
+      gpu_target: 0
+      gpu_max: 0
+      max_jobs_per_node: 24
 
 # SSH execution settings (shared across all orchestrators)
 ssh:

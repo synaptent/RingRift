@@ -173,6 +173,22 @@ from app.coordination.resource_targets import (
     reset_resource_targets,
 )
 
+# Resource optimizer exports (PID-controlled cluster-wide optimization)
+from app.coordination.resource_optimizer import (
+    ResourceOptimizer,
+    ResourceType,
+    ScaleAction,
+    NodeResources,
+    ClusterState,
+    OptimizationResult,
+    PIDController,
+    get_resource_optimizer,
+    get_optimal_concurrency,
+    get_cluster_utilization,
+    # Note: should_scale_up/down/record_utilization also exist here
+    # but we prefer the resource_targets versions for per-host decisions
+)
+
 __all__ = [
     # Task Coordinator (canonical)
     "TaskCoordinator",
@@ -287,4 +303,15 @@ __all__ = [
     "get_cluster_summary",
     "set_backpressure",
     "reset_resource_targets",
+    # Resource Optimizer (cluster-wide PID control)
+    "ResourceOptimizer",
+    "ResourceType",
+    "ScaleAction",
+    "NodeResources",
+    "ClusterState",
+    "OptimizationResult",
+    "PIDController",
+    "get_resource_optimizer",
+    "get_optimal_concurrency",
+    "get_cluster_utilization",
 ]

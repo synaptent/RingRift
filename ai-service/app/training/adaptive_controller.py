@@ -7,15 +7,37 @@ convergence detection and performance trends. It implements:
 2. Dynamic scaling: More selfplay games when improving, fewer when stable
 3. Early stopping: Confidence-based evaluation termination
 4. Win rate tracking: Historical analysis for trend detection
+
+Event Integration:
+- Emits PLATEAU_DETECTED when training stalls
+- Emits HYPERPARAMETER_UPDATED when game counts change
+- Can subscribe to TRAINING_COMPLETED, EVALUATION_FAILED for automatic updates
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import statistics
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
+
+logger = logging.getLogger(__name__)
+
+# Event system integration (optional - graceful fallback if not available)
+try:
+    from app.distributed.data_events import (
+        DataEventType,
+        get_event_bus,
+        emit_plateau_detected,
+        emit_hyperparameter_updated,
+    )
+    HAS_EVENT_SYSTEM = True
+except ImportError:
+    HAS_EVENT_SYSTEM = False
+    logger.debug("Event system not available - AdaptiveController running standalone")
 
 
 @dataclass
@@ -40,6 +62,8 @@ class AdaptiveController:
         max_eval_games: Maximum evaluation games
         history: List of iteration results
         base_win_rate: Win rate threshold considered as "improvement"
+        config_name: Configuration identifier for event tagging
+        enable_events: Whether to emit events (default True if event system available)
     """
 
     plateau_threshold: int = 5
@@ -49,6 +73,11 @@ class AdaptiveController:
     max_eval_games: int = 200
     base_win_rate: float = 0.55
     history: List[IterationResult] = field(default_factory=list)
+    config_name: str = "default"
+    enable_events: bool = True
+    _last_game_count: int = field(default=0, repr=False)
+    _last_eval_count: int = field(default=0, repr=False)
+    _plateau_emitted: bool = field(default=False, repr=False)
 
     def record_iteration(
         self,
@@ -66,6 +95,136 @@ class AdaptiveController:
             games_played=games_played,
             eval_games=eval_games,
         ))
+        # Reset plateau emitted flag if we got a promotion
+        if promoted:
+            self._plateau_emitted = False
+
+    async def record_iteration_async(
+        self,
+        iteration: int,
+        win_rate: float,
+        promoted: bool,
+        games_played: int,
+        eval_games: int,
+    ) -> None:
+        """Record iteration result and emit events if appropriate.
+
+        Async version that checks for plateau and emits events.
+        """
+        self.record_iteration(iteration, win_rate, promoted, games_played, eval_games)
+
+        # Check for plateau and emit if detected
+        if not self.should_continue():
+            await self.emit_plateau_if_detected()
+
+        # Check if game counts changed and emit
+        await self.emit_game_count_update()
+
+    async def emit_plateau_if_detected(self) -> bool:
+        """Emit PLATEAU_DETECTED event if we've hit the plateau threshold.
+
+        Returns True if event was emitted, False otherwise.
+        Only emits once per plateau period.
+        """
+        if not HAS_EVENT_SYSTEM or not self.enable_events:
+            return False
+
+        if self._plateau_emitted:
+            return False
+
+        plateau_count = self.get_plateau_count()
+        if plateau_count >= self.plateau_threshold:
+            stats = self.get_statistics()
+            await emit_plateau_detected(
+                config=self.config_name,
+                iterations_without_improvement=plateau_count,
+                avg_win_rate=stats.get("avg_win_rate", 0.0),
+                recommended_action="Consider hyperparameter search or curriculum adjustment",
+                source="adaptive_controller",
+            )
+            self._plateau_emitted = True
+            logger.info(
+                f"Plateau detected for {self.config_name}: "
+                f"{plateau_count} iterations without improvement"
+            )
+            return True
+        return False
+
+    async def emit_game_count_update(self) -> bool:
+        """Emit HYPERPARAMETER_UPDATED if game counts have changed.
+
+        Returns True if event was emitted, False otherwise.
+        """
+        if not HAS_EVENT_SYSTEM or not self.enable_events:
+            return False
+
+        new_games = self.compute_games()
+        new_eval = self.compute_eval_games()
+
+        if new_games == self._last_game_count and new_eval == self._last_eval_count:
+            return False
+
+        old_games = self._last_game_count
+        old_eval = self._last_eval_count
+        self._last_game_count = new_games
+        self._last_eval_count = new_eval
+
+        # Only emit if this isn't the initial computation
+        if old_games == 0 and old_eval == 0:
+            return False
+
+        await emit_hyperparameter_updated(
+            config=self.config_name,
+            parameter="adaptive_game_counts",
+            old_value={"games": old_games, "eval_games": old_eval},
+            new_value={"games": new_games, "eval_games": new_eval},
+            reason=f"Trend-based adjustment (trend_factor={self._compute_trend_factor():.2f})",
+            source="adaptive_controller",
+        )
+        logger.debug(
+            f"Game counts updated for {self.config_name}: "
+            f"games {old_games}->{new_games}, eval {old_eval}->{new_eval}"
+        )
+        return True
+
+    def setup_event_subscriptions(
+        self,
+        on_training_completed: Optional[Callable] = None,
+        on_evaluation_failed: Optional[Callable] = None,
+    ) -> None:
+        """Set up subscriptions to relevant events.
+
+        Args:
+            on_training_completed: Optional custom handler for training completion
+            on_evaluation_failed: Optional custom handler for evaluation failures
+        """
+        if not HAS_EVENT_SYSTEM:
+            logger.warning("Event system not available - cannot set up subscriptions")
+            return
+
+        bus = get_event_bus()
+
+        # Subscribe to training completion to track iterations
+        async def handle_training_completed(event):
+            payload = event.payload
+            if payload.get("config") == self.config_name:
+                if on_training_completed:
+                    await on_training_completed(event)
+                logger.debug(f"Training completed for {self.config_name}")
+
+        bus.subscribe(DataEventType.TRAINING_COMPLETED, handle_training_completed)
+
+        # Subscribe to evaluation failures for tracking
+        async def handle_evaluation_failed(event):
+            payload = event.payload
+            if payload.get("config") == self.config_name:
+                if on_evaluation_failed:
+                    await on_evaluation_failed(event)
+                logger.debug(f"Evaluation failed for {self.config_name}")
+
+        bus.subscribe(DataEventType.EVALUATION_FAILED, handle_evaluation_failed)
+
+        logger.info(f"Event subscriptions set up for AdaptiveController({self.config_name})")
 
     def should_continue(self) -> bool:
         """Determine if the improvement loop should continue.
@@ -212,16 +371,23 @@ class AdaptiveController:
             "min_eval_games": self.min_eval_games,
             "max_eval_games": self.max_eval_games,
             "base_win_rate": self.base_win_rate,
+            "config_name": self.config_name,
+            "enable_events": self.enable_events,
             "history": [asdict(r) for r in self.history],
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(state, indent=2))
 
     @classmethod
-    def load(cls, path: Path) -> "AdaptiveController":
-        """Load controller state from JSON file."""
+    def load(cls, path: Path, config_name: Optional[str] = None) -> "AdaptiveController":
+        """Load controller state from JSON file.
+
+        Args:
+            path: Path to JSON state file
+            config_name: Override config name (useful when loading shared state)
+        """
         if not path.exists():
-            return cls()
+            return cls(config_name=config_name or "default")
 
         try:
             state = json.loads(path.read_text())
@@ -235,6 +401,8 @@ class AdaptiveController:
                 min_eval_games=state.get("min_eval_games", 50),
                 max_eval_games=state.get("max_eval_games", 200),
                 base_win_rate=state.get("base_win_rate", 0.55),
+                config_name=config_name or state.get("config_name", "default"),
+                enable_events=state.get("enable_events", True),
                 history=history,
             )
         except (json.JSONDecodeError, TypeError, KeyError):
@@ -246,23 +414,42 @@ def create_adaptive_controller(
     plateau_threshold: int = 5,
     min_games: int = 50,
     max_games: int = 200,
+    config_name: str = "default",
+    enable_events: bool = True,
+    setup_subscriptions: bool = False,
     state_path: Optional[Path] = None,
 ) -> AdaptiveController:
     """Factory function to create an adaptive controller.
 
     If state_path is provided and exists, loads existing state.
     Otherwise creates a new controller with the given parameters.
+
+    Args:
+        plateau_threshold: Iterations without improvement before stopping
+        min_games: Minimum selfplay games per iteration
+        max_games: Maximum selfplay games per iteration
+        config_name: Configuration identifier for event tagging
+        enable_events: Whether to emit events
+        setup_subscriptions: Whether to set up event subscriptions
+        state_path: Path to persist/load state
     """
     if state_path and state_path.exists():
-        controller = AdaptiveController.load(state_path)
+        controller = AdaptiveController.load(state_path, config_name=config_name)
         # Update parameters (allows reconfiguration)
         controller.plateau_threshold = plateau_threshold
         controller.min_games = min_games
         controller.max_games = max_games
-        return controller
+        controller.enable_events = enable_events
+    else:
+        controller = AdaptiveController(
+            plateau_threshold=plateau_threshold,
+            min_games=min_games,
+            max_games=max_games,
+            config_name=config_name,
+            enable_events=enable_events,
+        )
 
-    return AdaptiveController(
-        plateau_threshold=plateau_threshold,
-        min_games=min_games,
-        max_games=max_games,
-    )
+    if setup_subscriptions:
+        controller.setup_event_subscriptions()
+
+    return controller

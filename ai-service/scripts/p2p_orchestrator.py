@@ -133,11 +133,20 @@ try:
         should_scale_down,
         get_target_job_count,
         record_utilization,
+        # Resource optimizer for cluster-wide PID-controlled optimization
+        ResourceOptimizer,
+        NodeResources,
+        get_resource_optimizer,
+        get_optimal_concurrency,
+        get_cluster_utilization,
     )
     HAS_NEW_COORDINATION = True
+    # Get targets from unified source
+    _unified_targets = get_resource_targets()
 except ImportError:
     HAS_NEW_COORDINATION = False
     OrchestratorRole = None
+    _unified_targets = None
 
 # P2P-integrated monitoring management
 try:
@@ -177,8 +186,13 @@ MIN_MEMORY_GB_FOR_TASKS = int(os.environ.get("RINGRIFT_P2P_MIN_MEMORY_GB", "64")
 LOAD_MAX_FOR_NEW_JOBS = int(os.environ.get("RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS", "85") or 85)          # Stop starting
 
 # GPU utilization targeting for efficient resource usage
-TARGET_GPU_UTIL_MIN = int(os.environ.get("RINGRIFT_P2P_TARGET_GPU_UTIL_MIN", "60") or 60)  # Scale up below this
-TARGET_GPU_UTIL_MAX = int(os.environ.get("RINGRIFT_P2P_TARGET_GPU_UTIL_MAX", "90") or 90)  # Don't add jobs above this
+# Use unified targets from resource_targets.py if available, fallback to env vars
+if _unified_targets is not None:
+    TARGET_GPU_UTIL_MIN = int(_unified_targets.gpu_min)  # 60% from unified config
+    TARGET_GPU_UTIL_MAX = int(_unified_targets.gpu_max + 5)  # 85% + 5% buffer = 90%
+else:
+    TARGET_GPU_UTIL_MIN = int(os.environ.get("RINGRIFT_P2P_TARGET_GPU_UTIL_MIN", "60") or 60)
+    TARGET_GPU_UTIL_MAX = int(os.environ.get("RINGRIFT_P2P_TARGET_GPU_UTIL_MAX", "90") or 90)
 GH200_MIN_SELFPLAY = int(os.environ.get("RINGRIFT_P2P_GH200_MIN_SELFPLAY", "20") or 20)    # Min selfplay for GH200
 GH200_MAX_SELFPLAY = int(os.environ.get("RINGRIFT_P2P_GH200_MAX_SELFPLAY", "100") or 100)  # Max selfplay for GH200
 
@@ -12534,6 +12548,71 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         except Exception as e:
             return web.json_response([{"error": str(e)}])
 
+    async def handle_resource_optimizer(self, request: web.Request) -> web.Response:
+        """GET /resource/optimizer - Resource optimizer state and recommendations.
+
+        Returns cluster-wide utilization state, PID-controlled optimization
+        recommendations, and target utilization ranges (60-80%).
+        """
+        try:
+            if not HAS_NEW_COORDINATION:
+                return web.json_response({
+                    "error": "Resource optimizer not available",
+                    "available": False,
+                })
+
+            optimizer = get_resource_optimizer()
+            cluster_state = optimizer.get_cluster_state()
+            recommendation = optimizer.get_optimization_recommendation()
+            metrics = optimizer.get_metrics_dict()
+
+            return web.json_response({
+                "available": True,
+                "cluster_state": {
+                    "total_cpu_util": round(cluster_state.total_cpu_util, 1),
+                    "total_gpu_util": round(cluster_state.total_gpu_util, 1),
+                    "total_memory_util": round(cluster_state.total_memory_util, 1),
+                    "gpu_node_count": cluster_state.gpu_node_count,
+                    "cpu_node_count": cluster_state.cpu_node_count,
+                    "total_jobs": cluster_state.total_jobs,
+                    "nodes": [n.to_dict() for n in cluster_state.nodes],
+                },
+                "recommendation": recommendation.to_dict(),
+                "targets": {
+                    "min": TARGET_GPU_UTIL_MIN,
+                    "max": TARGET_GPU_UTIL_MAX,
+                    "optimal": (TARGET_GPU_UTIL_MIN + TARGET_GPU_UTIL_MAX) // 2,
+                },
+                "metrics": metrics,
+                "in_target_range": {
+                    "cpu": TARGET_GPU_UTIL_MIN <= cluster_state.total_cpu_util <= TARGET_GPU_UTIL_MAX,
+                    "gpu": TARGET_GPU_UTIL_MIN <= cluster_state.total_gpu_util <= TARGET_GPU_UTIL_MAX
+                           if cluster_state.gpu_node_count > 0 else True,
+                },
+            })
+        except Exception as e:
+            return web.json_response({"error": str(e), "available": False}, status=500)
+
+    async def handle_resource_utilization_history(self, request: web.Request) -> web.Response:
+        """GET /resource/history - Resource utilization history for graphing.
+
+        Query params:
+            node_id: Specific node (optional, defaults to cluster average)
+            hours: Hours of history (default: 1)
+        """
+        try:
+            if not HAS_NEW_COORDINATION:
+                return web.json_response([])
+
+            node_id = request.query.get("node_id")
+            hours = float(request.query.get("hours", "1"))
+
+            optimizer = get_resource_optimizer()
+            history = optimizer.get_utilization_history(node_id=node_id, hours=hours)
+            return web.json_response(history)
+        except Exception as e:
+            return web.json_response([])
+
     async def handle_webhook_test(self, request: web.Request) -> web.Response:
         """POST /webhook/test - Test webhook notification.
 
@@ -14283,6 +14362,30 @@ print(json.dumps({{
         self.self_info.training_jobs = training
         self.self_info.role = self.role
         self.self_info.last_heartbeat = time.time()
+
+        # Report to unified resource optimizer for cluster-wide coordination
+        if HAS_NEW_COORDINATION:
+            try:
+                optimizer = get_resource_optimizer()
+                node_resources = NodeResources(
+                    node_id=self.node_id,
+                    cpu_percent=usage["cpu_percent"],
+                    gpu_percent=usage["gpu_percent"],
+                    memory_percent=usage["memory_percent"],
+                    disk_percent=usage["disk_percent"],
+                    gpu_memory_percent=usage["gpu_memory_percent"],
+                    cpu_count=int(getattr(self.self_info, "cpu_count", 0) or 0),
+                    memory_gb=float(getattr(self.self_info, "memory_gb", 0) or 0),
+                    has_gpu=bool(getattr(self.self_info, "has_gpu", False)),
+                    gpu_name=str(getattr(self.self_info, "gpu_name", "") or ""),
+                    active_jobs=selfplay + training,
+                    selfplay_jobs=selfplay,
+                    training_jobs=training,
+                    orchestrator="p2p_orchestrator",
+                )
+                optimizer.report_node_resources(node_resources)
+            except Exception:
+                pass  # Don't fail heartbeat if optimizer unavailable
 
     async def _send_heartbeat_to_peer(self, peer_host: str, peer_port: int, scheme: str = "http") -> Optional[NodeInfo]:
         """Send heartbeat to a peer and return their info."""
@@ -17125,6 +17228,8 @@ print(json.dumps({{
         app.router.add_post('/rollback/auto', self.handle_rollback_auto)
         app.router.add_get('/autoscale/metrics', self.handle_autoscale_metrics)
         app.router.add_get('/autoscale/recommendations', self.handle_autoscale_recommendations)
+        app.router.add_get('/resource/optimizer', self.handle_resource_optimizer)
+        app.router.add_get('/resource/history', self.handle_resource_utilization_history)
         app.router.add_post('/webhook/test', self.handle_webhook_test)
         app.router.add_get('/trends/summary', self.handle_trends_summary)
         app.router.add_get('/trends/history', self.handle_trends_history)
