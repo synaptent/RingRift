@@ -167,3 +167,77 @@ groups:
         annotations:
           summary: 'Low MCTS search depth detected'
           description: 'Average search depth is only {{ $value | printf "%.1f" }} - may indicate resource constraints or slow evaluation'
+
+      # Data Quality Issues
+      - alert: HighShortGameRate
+        expr: |
+          ringrift_data_quality_short_rate > 15
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'High short game rate for {{ $labels.board_type }}_{{ $labels.num_players }}p'
+          description: '{{ $value | printf "%.1f" }}% of games are under 10 moves - may indicate degenerate training data'
+
+      - alert: DataQualityIssuesDetected
+        expr: |
+          ringrift_data_quality_issues > 3
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Multiple data quality issues detected'
+          description: '{{ $value }} data quality issues found - check /data/quality/issues endpoint'
+
+      # Training Efficiency
+      - alert: LowTrainingEfficiency
+        expr: |
+          ringrift_elo_per_gpu_hour < 0.5
+        for: 6h
+        labels:
+          severity: info
+        annotations:
+          summary: 'Low training efficiency for {{ $labels.board_type }}_{{ $labels.num_players }}p'
+          description: 'Only {{ $value | printf "%.2f" }} Elo/GPU-hour - consider adjusting hyperparameters'
+
+      - alert: HighTrainingCost
+        expr: |
+          ringrift_training_cost_usd > 100
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: 'High training cost for {{ $labels.board_type }}_{{ $labels.num_players }}p'
+          description: 'Estimated cost is ${{ $value | printf "%.2f" }} - monitor for budget'
+
+      # Rollback Recommendations
+      - alert: RollbackRecommended
+        expr: |
+          ringrift_rollback_candidates > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Model rollback recommended'
+          description: '{{ $value }} config(s) have rollback recommendations - check /rollback/status'
+
+      # Autoscaling
+      - alert: LowClusterThroughput
+        expr: |
+          ringrift_cluster_games_per_hour < 20
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Low cluster throughput'
+          description: 'Only {{ $value | printf "%.0f" }} games/hour - consider scaling up workers'
+
+      - alert: ScaleUpRecommended
+        expr: |
+          ringrift_autoscale_suggested_workers > (count(ringrift_node_alive == 1) + 1)
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: 'Scale-up recommended'
+          description: 'Autoscaler suggests {{ $value }} workers - current cluster may be undersized'

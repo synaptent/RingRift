@@ -19,31 +19,41 @@ from datetime import datetime
 def get_timeout_games(conn: sqlite3.Connection) -> list[tuple]:
     """Get all timeout game IDs."""
     cursor = conn.cursor()
-    
+
+    # Check what columns exist
+    cursor.execute("PRAGMA table_info(games)")
+    columns = {row[1] for row in cursor.fetchall()}
+
+    has_num_moves = 'num_moves' in columns
+    has_total_moves = 'total_moves' in columns
+    moves_col = 'num_moves' if has_num_moves else ('total_moves' if has_total_moves else None)
+
     # Games with explicit timeout status
     cursor.execute("""
-        SELECT game_id, board_type, num_players, num_moves, termination_reason
-        FROM games 
+        SELECT game_id, board_type, num_players, termination_reason
+        FROM games
         WHERE termination_reason LIKE '%timeout%'
            OR termination_reason LIKE '%move_limit%'
            OR termination_reason LIKE '%max_moves%'
     """)
-    explicit_timeouts = cursor.fetchall()
-    
+    explicit_timeouts = [(r[0], r[1], r[2], 0, r[3]) for r in cursor.fetchall()]
+
     # Games with NULL termination but high move counts (likely timeouts)
     # Default move limits: square8=200, square19=400, hexagonal=300
-    cursor.execute("""
-        SELECT game_id, board_type, num_players, num_moves, termination_reason
-        FROM games 
-        WHERE termination_reason IS NULL
-          AND (
-            (board_type = 'square8' AND num_moves >= 195)
-            OR (board_type = 'square19' AND num_moves >= 395)
-            OR (board_type = 'hexagonal' AND num_moves >= 295)
-          )
-    """)
-    implicit_timeouts = cursor.fetchall()
-    
+    implicit_timeouts = []
+    if moves_col:
+        cursor.execute(f"""
+            SELECT game_id, board_type, num_players, {moves_col}, termination_reason
+            FROM games
+            WHERE termination_reason IS NULL
+              AND (
+                (board_type = 'square8' AND {moves_col} >= 195)
+                OR (board_type = 'square19' AND {moves_col} >= 395)
+                OR (board_type = 'hexagonal' AND {moves_col} >= 295)
+              )
+        """)
+        implicit_timeouts = cursor.fetchall()
+
     return explicit_timeouts + implicit_timeouts
 
 
