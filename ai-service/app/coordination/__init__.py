@@ -155,6 +155,24 @@ from app.coordination.bandwidth_manager import (
     bandwidth_allocation,
 )
 
+# Resource targets exports (unified utilization targets)
+from app.coordination.resource_targets import (
+    ResourceTargetManager,
+    UtilizationTargets,
+    HostTargets,
+    HostTier,
+    get_resource_targets,
+    get_host_targets,
+    should_scale_up,
+    should_scale_down,
+    get_target_job_count,
+    get_utilization_score,
+    record_utilization,
+    get_cluster_summary,
+    set_backpressure,
+    reset_resource_targets,
+)
+
 __all__ = [
     # Task Coordinator (canonical)
     "TaskCoordinator",
@@ -254,4 +272,19 @@ __all__ = [
     "get_optimal_transfer_time",
     "get_bandwidth_stats",
     "bandwidth_allocation",
+    # Resource Targets
+    "ResourceTargetManager",
+    "UtilizationTargets",
+    "HostTargets",
+    "HostTier",
+    "get_resource_targets",
+    "get_host_targets",
+    "should_scale_up",
+    "should_scale_down",
+    "get_target_job_count",
+    "get_utilization_score",
+    "record_utilization",
+    "get_cluster_summary",
+    "set_backpressure",
+    "reset_resource_targets",
 ]

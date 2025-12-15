@@ -53,7 +53,6 @@ from app.execution.executor import (
     SSHExecutor,
     ExecutorPool,
     run_command,
-    run_command_async,
     run_ssh_command,
     run_ssh_command_async,
 )
@@ -83,7 +82,6 @@ __all__ = [
     "SSHExecutor",
     "ExecutorPool",
     "run_command",
-    "run_command_async",
     "run_ssh_command",
     "run_ssh_command_async",
     # High-level backends

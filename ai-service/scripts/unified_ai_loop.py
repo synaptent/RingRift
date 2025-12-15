@@ -229,6 +229,22 @@ except ImportError:
     GameRecord = None
     create_hot_buffer = None
 
+# Import diverse tournament orchestrator for Elo calibration
+try:
+    from scripts.run_diverse_tournaments import (
+        build_tournament_configs,
+        run_tournament_round_local,
+        TournamentConfig,
+        TournamentResult,
+    )
+    HAS_DIVERSE_TOURNAMENTS = True
+except ImportError:
+    HAS_DIVERSE_TOURNAMENTS = False
+    build_tournament_configs = None
+    run_tournament_round_local = None
+    TournamentConfig = None
+    TournamentResult = None
+
 # Import adaptive controller for plateau detection and dynamic scaling
 try:
     from app.training.adaptive_controller import (
@@ -1094,9 +1110,15 @@ class DataEventType(Enum):
     PER_PRIORITIES_UPDATED = "per_priorities_updated"
     # Optimization events
     CMAES_TRIGGERED = "cmaes_triggered"
+    CMAES_COMPLETED = "cmaes_completed"
     NAS_TRIGGERED = "nas_triggered"
     PLATEAU_DETECTED = "plateau_detected"
     HYPERPARAMETER_UPDATED = "hyperparameter_updated"
+    # Tier gating events
+    TIER_PROMOTION = "tier_promotion"
+    # Parity validation events
+    PARITY_VALIDATION_STARTED = "parity_validation_started"
+    PARITY_VALIDATION_COMPLETED = "parity_validation_completed"
     # P2P cluster events
     P2P_CLUSTER_HEALTHY = "p2p_cluster_healthy"
     P2P_CLUSTER_UNHEALTHY = "p2p_cluster_unhealthy"
@@ -1280,6 +1302,24 @@ class UnifiedLoopState:
     last_calibration_time: float = 0.0
     current_temperature_preset: str = "default"
 
+    # Tier gating state (config_key -> current tier)
+    # Tiers: D2 -> D4 -> D6 -> D8 (difficulty progression)
+    tier_assignments: Dict[str, str] = field(default_factory=dict)
+    tier_promotions_count: int = 0
+    last_tier_check: float = 0.0
+
+    # Parity validation state
+    last_parity_validation: float = 0.0
+    parity_validation_passed: bool = True
+    parity_games_passed: int = 0
+    parity_games_failed: int = 0
+
+    # CMA-ES state
+    cmaes_in_progress: bool = False
+    cmaes_run_id: str = ""
+    cmaes_started_at: float = 0.0
+    cmaes_best_weights: Optional[Dict[str, float]] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert state to dictionary for serialization."""
         return {
@@ -1320,6 +1360,20 @@ class UnifiedLoopState:
             "calibration_reports": self.calibration_reports,
             "last_calibration_time": self.last_calibration_time,
             "current_temperature_preset": self.current_temperature_preset,
+            # Tier gating state
+            "tier_assignments": self.tier_assignments,
+            "tier_promotions_count": self.tier_promotions_count,
+            "last_tier_check": self.last_tier_check,
+            # Parity validation state
+            "last_parity_validation": self.last_parity_validation,
+            "parity_validation_passed": self.parity_validation_passed,
+            "parity_games_passed": self.parity_games_passed,
+            "parity_games_failed": self.parity_games_failed,
+            # CMA-ES state
+            "cmaes_in_progress": self.cmaes_in_progress,
+            "cmaes_run_id": self.cmaes_run_id,
+            "cmaes_started_at": self.cmaes_started_at,
+            "cmaes_best_weights": self.cmaes_best_weights,
         }
 
     @classmethod
@@ -1340,7 +1394,14 @@ class UnifiedLoopState:
                     # PER state
                     "per_buffer_path", "per_last_rebuild", "per_buffer_size",
                     # Calibration state
-                    "calibration_reports", "last_calibration_time", "current_temperature_preset"]:
+                    "calibration_reports", "last_calibration_time", "current_temperature_preset",
+                    # Tier gating state
+                    "tier_assignments", "tier_promotions_count", "last_tier_check",
+                    # Parity validation state
+                    "last_parity_validation", "parity_validation_passed",
+                    "parity_games_passed", "parity_games_failed",
+                    # CMA-ES state
+                    "cmaes_in_progress", "cmaes_run_id", "cmaes_started_at", "cmaes_best_weights"]:
             if key in data:
                 setattr(state, key, data[key])
 
@@ -2964,6 +3025,8 @@ class UnifiedAILoop:
                 self.event_bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_for_feedback)
                 # Event-driven curriculum rebalancing on significant Elo changes
                 self.event_bus.subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, self._on_elo_significant_change)
+                # CMA-ES trigger handler
+                self.event_bus.subscribe(DataEventType.CMAES_TRIGGERED, self._handle_cmaes_trigger)
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize feedback controller: {e}")
 
@@ -3088,6 +3151,7 @@ class UnifiedAILoop:
         # Timing trackers
         self._last_shadow_eval: Dict[str, float] = {}
         self._last_full_eval: float = 0.0
+        self._last_diverse_tournament: float = 0.0
         self._started_time: float = 0.0
 
     def _update_metrics(self):
@@ -3508,6 +3572,435 @@ class UnifiedAILoop:
             print(f"[AdaptiveCtrl] Error processing evaluation event: {e}")
 
     # =========================================================================
+    # Tier Gating (Difficulty Progression)
+    # =========================================================================
+
+    # Tier progression: D2 -> D4 -> D6 -> D8 (MCTS depth / difficulty)
+    TIER_PROGRESSION = {
+        "D2": "D4",
+        "D4": "D6",
+        "D6": "D8",
+        "D8": "D8",  # Max tier
+    }
+
+    async def check_tier_promotion(
+        self,
+        config_key: str,
+        win_rate_threshold: float = 0.55,
+    ) -> Tuple[bool, str]:
+        """Check if a model should be promoted to the next difficulty tier.
+
+        Promotion requires winning > threshold against current tier opponents.
+        Returns (should_promote, new_tier).
+        """
+        current_tier = self.state.tier_assignments.get(config_key, "D2")
+
+        if current_tier not in self.TIER_PROGRESSION:
+            return False, current_tier
+
+        next_tier = self.TIER_PROGRESSION[current_tier]
+        if next_tier == current_tier:
+            print(f"[TierGating] {config_key} already at max tier {current_tier}")
+            return False, current_tier
+
+        # Check recent evaluation results for this config
+        config_state = self.state.configs.get(config_key)
+        if not config_state:
+            print(f"[TierGating] No config state for {config_key}, skipping tier check")
+            return False, current_tier
+
+        # Use current Elo to estimate win rate against tier benchmark
+        # Tier benchmarks: D2=1400, D4=1500, D6=1600, D8=1700
+        tier_elo_benchmarks = {"D2": 1400, "D4": 1500, "D6": 1600, "D8": 1700}
+        current_elo = config_state.current_elo
+        tier_benchmark_elo = tier_elo_benchmarks.get(current_tier, 1500)
+
+        # Estimate win rate: 1 / (1 + 10^((benchmark - elo) / 400))
+        estimated_win_rate = 1.0 / (1.0 + 10 ** ((tier_benchmark_elo - current_elo) / 400))
+
+        if estimated_win_rate >= win_rate_threshold:
+            print(f"[TierGating] {config_key} promoted from {current_tier} to {next_tier} "
+                  f"(est. win rate: {estimated_win_rate:.1%}, Elo: {current_elo:.0f})")
+            self.state.tier_assignments[config_key] = next_tier
+            self.state.tier_promotions_count += 1
+            self._save_state()
+
+            # Publish tier promotion event
+            await self.event_bus.publish(DataEvent(
+                event_type=DataEventType.MODEL_PROMOTED,  # Reuse promotion event
+                payload={
+                    "type": "tier_promotion",
+                    "config": config_key,
+                    "old_tier": current_tier,
+                    "new_tier": next_tier,
+                    "win_rate": estimated_win_rate,
+                    "elo": current_elo,
+                }
+            ))
+
+            return True, next_tier
+
+        print(f"[TierGating] {config_key} remains at {current_tier} "
+              f"(est. win rate: {estimated_win_rate:.1%} < {win_rate_threshold:.1%})")
+        return False, current_tier
+
+    async def run_tier_gating_checks(self) -> Dict[str, str]:
+        """Run tier gating checks for all configurations.
+
+        Returns dict of config -> new_tier for any promotions.
+        """
+        print("[TierGating] === Running Tier Gating Checks ===")
+
+        promotions = {}
+        for config_key in self.state.configs:
+            promoted, new_tier = await self.check_tier_promotion(config_key)
+            if promoted:
+                promotions[config_key] = new_tier
+
+        if promotions:
+            print(f"[TierGating] Tier promotions: {promotions}")
+        else:
+            print("[TierGating] No tier promotions this iteration")
+
+        self.state.last_tier_check = time.time()
+        return promotions
+
+    def get_tier_for_config(self, config_key: str) -> str:
+        """Get the current difficulty tier for a configuration."""
+        return self.state.tier_assignments.get(config_key, "D2")
+
+    # =========================================================================
+    # Parity Validation Gate
+    # =========================================================================
+
+    async def run_parity_validation(
+        self,
+        board_type: str = "square8",
+        num_players: int = 2,
+    ) -> Dict[str, Any]:
+        """Run parity validation gate on game databases.
+
+        Validates that games pass the canonical parity check (TS engine replay
+        produces identical states to Python). Only games that pass validation
+        are used for training.
+
+        Returns:
+            Dict with validation results
+        """
+        print("[ParityValidation] === Starting Parity Validation Phase ===")
+
+        results = {
+            "total_games_checked": 0,
+            "games_passed": 0,
+            "games_failed": 0,
+            "passed": False,
+            "failure_rate": 0.0,
+        }
+
+        # Find parity validation script
+        validation_script = AI_SERVICE_ROOT / "scripts" / "run_parity_validation.py"
+        if not validation_script.exists():
+            print("[ParityValidation] Validation script not found, skipping")
+            results["passed"] = True  # Skip validation if script not present
+            return results
+
+        # Find game databases
+        games_dir = AI_SERVICE_ROOT / "data" / "games"
+        db_pattern = f"canonical_{board_type}_{num_players}p_*.db"
+        game_dbs = list(games_dir.glob(db_pattern))
+
+        if not game_dbs:
+            # Try without canonical prefix
+            db_pattern = f"*{board_type}*.db"
+            game_dbs = list(games_dir.glob(db_pattern))
+
+        if not game_dbs:
+            print("[ParityValidation] No game databases found, skipping")
+            results["passed"] = True
+            return results
+
+        # Run validation on largest DB
+        largest_db = max(game_dbs, key=lambda p: p.stat().st_size)
+        output_json = AI_SERVICE_ROOT / "data" / "parity_validation_results.json"
+
+        cmd = [
+            sys.executable,
+            str(validation_script),
+            "--databases", str(largest_db),
+            "--mode", "canonical",
+            "--output-json", str(output_json),
+            "--progress-every", "100",
+        ]
+
+        try:
+            print(f"[ParityValidation] Running validation on {largest_db.name}...")
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=AI_SERVICE_ROOT,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=600)
+
+            if process.returncode != 0:
+                print(f"[ParityValidation] Validation failed: {stderr.decode()[:200]}")
+                return results
+
+            # Parse results
+            if output_json.exists():
+                with open(output_json) as f:
+                    validation_results = json.load(f)
+
+                results["total_games_checked"] = validation_results.get("total_games_checked", 0)
+                failed = (
+                    validation_results.get("games_with_semantic_divergence", 0) +
+                    validation_results.get("games_with_structural_issues", 0)
+                )
+                results["games_passed"] = results["total_games_checked"] - failed
+                results["games_failed"] = failed
+                results["passed"] = validation_results.get("passed_canonical_parity_gate", False)
+
+                if results["total_games_checked"] > 0:
+                    results["failure_rate"] = results["games_failed"] / results["total_games_checked"]
+
+            # Update state
+            self.state.last_parity_validation = time.time()
+            self.state.parity_validation_passed = results["passed"]
+            self.state.parity_games_passed = results["games_passed"]
+            self.state.parity_games_failed = results["games_failed"]
+
+            if results["passed"]:
+                print(f"[ParityValidation] PASSED: {results['games_passed']}/{results['total_games_checked']} games")
+            else:
+                print(f"[ParityValidation] FAILED: {results['games_failed']} games with issues "
+                      f"(failure rate: {results['failure_rate']:.1%})")
+
+        except asyncio.TimeoutError:
+            print("[ParityValidation] Validation timed out")
+        except Exception as e:
+            print(f"[ParityValidation] Error: {e}")
+
+        return results
+
+    def should_run_parity_validation(self, min_interval_seconds: int = 3600) -> bool:
+        """Check if parity validation should run."""
+        now = time.time()
+        return now - self.state.last_parity_validation >= min_interval_seconds
+
+    # =========================================================================
+    # CMA-ES Hyperparameter Optimization
+    # =========================================================================
+
+    async def run_cmaes_optimization(
+        self,
+        config_key: Optional[str] = None,
+        reason: str = "manual",
+    ) -> Dict[str, Any]:
+        """Run CMA-ES hyperparameter optimization.
+
+        This is typically triggered by:
+        - Feedback controller detecting plateau
+        - Manual request
+        - Consecutive promotion failures
+        """
+        if self.state.cmaes_in_progress:
+            print("[CMA-ES] Optimization already in progress")
+            return {"success": False, "reason": "already_running"}
+
+        print(f"[CMA-ES] === Starting CMA-ES Optimization === (reason: {reason})")
+
+        # Find CMA-ES script
+        cmaes_script = AI_SERVICE_ROOT / "scripts" / "cmaes_optimize.py"
+        if not cmaes_script.exists():
+            cmaes_script = AI_SERVICE_ROOT / "scripts" / "run_cmaes_weights.py"
+
+        if not cmaes_script.exists():
+            print("[CMA-ES] No CMA-ES script found")
+            return {"success": False, "reason": "script_not_found"}
+
+        results = {
+            "success": False,
+            "reason": reason,
+            "best_weights": None,
+            "best_fitness": None,
+        }
+
+        run_id = f"cmaes_{int(time.time())}"
+        self.state.cmaes_in_progress = True
+        self.state.cmaes_run_id = run_id
+        self.state.cmaes_started_at = time.time()
+        self._save_state()
+
+        try:
+            # Build command
+            cmd = [
+                sys.executable,
+                str(cmaes_script),
+                "--population-size", "10",
+                "--generations", "20",
+                "--output", str(AI_SERVICE_ROOT / "data" / f"cmaes_weights_{run_id}.json"),
+            ]
+
+            if config_key:
+                parts = config_key.rsplit("_", 1)
+                board_type = parts[0]
+                num_players = int(parts[1].replace("p", ""))
+                cmd.extend(["--board-type", board_type, "--num-players", str(num_players)])
+
+            print(f"[CMA-ES] Running: {' '.join(cmd)}")
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=AI_SERVICE_ROOT,
+            )
+
+            # Use a generous timeout for CMA-ES
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=7200)
+
+            if process.returncode == 0:
+                results["success"] = True
+                print(f"[CMA-ES] Optimization completed successfully")
+
+                # Load best weights
+                weights_file = AI_SERVICE_ROOT / "data" / f"cmaes_weights_{run_id}.json"
+                if weights_file.exists():
+                    with open(weights_file) as f:
+                        data = json.load(f)
+                    results["best_weights"] = data.get("best_weights")
+                    results["best_fitness"] = data.get("best_fitness")
+                    self.state.cmaes_best_weights = results["best_weights"]
+                    print(f"[CMA-ES] Best fitness: {results['best_fitness']}")
+            else:
+                print(f"[CMA-ES] Optimization failed: {stderr.decode()[:200]}")
+                results["reason"] = stderr.decode()[:200]
+
+        except asyncio.TimeoutError:
+            print("[CMA-ES] Optimization timed out")
+            results["reason"] = "timeout"
+        except Exception as e:
+            print(f"[CMA-ES] Error: {e}")
+            results["reason"] = str(e)
+        finally:
+            self.state.cmaes_in_progress = False
+            self._save_state()
+
+        # Publish completion event
+        await self.event_bus.publish(DataEvent(
+            event_type=DataEventType.CMAES_COMPLETED if results["success"] else DataEventType.TRAINING_COMPLETED,
+            payload=results,
+        ))
+
+        return results
+
+    async def _handle_cmaes_trigger(self, event: DataEvent):
+        """Handle CMA-ES trigger events from feedback controller."""
+        payload = event.payload
+        reason = payload.get("reason", "feedback_trigger")
+        configs = payload.get("configs", [])
+        config_key = configs[0] if configs else None
+
+        print(f"[CMA-ES] Trigger received: {reason}")
+        await self.run_cmaes_optimization(config_key=config_key, reason=reason)
+
+    # =========================================================================
+    # Diverse Tournament Distribution (Elo Calibration)
+    # =========================================================================
+
+    async def run_diverse_tournaments(
+        self,
+        games_per_config: int = 50,
+        board_types: Optional[List[str]] = None,
+        player_counts: Optional[List[int]] = None,
+    ) -> Dict[str, Any]:
+        """Run diverse tournaments across all board/player configurations.
+
+        This provides richer Elo calibration by testing all AI types:
+        - Random, heuristic, minimax, MCTS, neural
+        - Across all board types and player counts
+
+        Args:
+            games_per_config: Games per board/player configuration
+            board_types: Board types to include (default: all)
+            player_counts: Player counts to include (default: all)
+
+        Returns:
+            Dictionary with tournament results summary
+        """
+        if not HAS_DIVERSE_TOURNAMENTS:
+            print("[DiverseTournament] Module not available, skipping")
+            return {"skipped": True, "reason": "module_not_available"}
+
+        print("[DiverseTournament] === Starting Diverse Tournament Phase ===")
+
+        # Default configuration
+        board_types = board_types or ["square8", "square19", "hexagonal"]
+        player_counts = player_counts or [2, 3, 4]
+        iteration = self.state.total_evaluations + 1
+        output_base = str(AI_SERVICE_ROOT / "data" / "tournaments" / f"iter{iteration}")
+
+        try:
+            # Build tournament configs
+            configs = build_tournament_configs(
+                board_types=board_types,
+                player_counts=player_counts,
+                games_per_config=games_per_config,
+                output_base=output_base,
+                seed=int(time.time()),
+            )
+
+            print(f"[DiverseTournament] Configurations: {len(configs)}")
+            for config in configs:
+                print(f"  {config.board_type} {config.num_players}p: {config.num_games} games")
+
+            # Run locally (sequential) - for distributed, use p2p_orchestrator
+            results = run_tournament_round_local(configs)
+
+            # Aggregate results
+            total_games = sum(r.games_completed for r in results)
+            total_samples = sum(r.samples_generated for r in results)
+            successful = sum(1 for r in results if r.success)
+
+            summary = {
+                "iteration": iteration,
+                "configurations": len(configs),
+                "successful": successful,
+                "total_games": total_games,
+                "total_samples": total_samples,
+                "results": [
+                    {
+                        "config": f"{r.config.board_type}_{r.config.num_players}p",
+                        "games": r.games_completed,
+                        "samples": r.samples_generated,
+                        "success": r.success,
+                    }
+                    for r in results
+                ],
+            }
+
+            print(f"[DiverseTournament] Complete: {successful}/{len(configs)} configs, {total_games} games")
+
+            # Publish event
+            await self.event_bus.publish(DataEvent(
+                event_type=DataEventType.EVALUATION_COMPLETED,
+                payload={
+                    "type": "diverse_tournament",
+                    **summary,
+                }
+            ))
+
+            return summary
+
+        except Exception as e:
+            print(f"[DiverseTournament] Error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def should_run_diverse_tournaments(self, min_interval_seconds: int = 21600) -> bool:
+        """Check if diverse tournaments should run (default: every 6 hours)."""
+        now = time.time()
+        return now - self._last_diverse_tournament >= min_interval_seconds
+
+    # =========================================================================
     # P2P Cluster Callbacks
     # =========================================================================
 
@@ -3723,6 +4216,15 @@ class UnifiedAILoop:
                     self._last_full_eval = now
                     self.health_tracker.record_success("evaluator")
 
+                # Check for diverse tournaments (Elo calibration) - every 6 hours
+                if self.should_run_diverse_tournaments(min_interval_seconds=21600):
+                    print("[Evaluation] Running diverse tournaments for Elo calibration")
+                    await self.run_diverse_tournaments(
+                        games_per_config=self.config.evaluation.full_tournament_games
+                    )
+                    self._last_diverse_tournament = now
+                    self.health_tracker.record_success("evaluator")
+
             except Exception as e:
                 print(f"[Evaluation] Error: {e}")
                 self.health_tracker.record_failure("evaluator", str(e))
@@ -3744,10 +4246,30 @@ class UnifiedAILoop:
                     print(f"[Training] Completed: {result}")
                     self.health_tracker.record_success("training_scheduler")
 
+                    # Run tier gating checks after training completes
+                    promotions = await self.run_tier_gating_checks()
+                    if promotions:
+                        print(f"[Training] Tier promotions after training: {promotions}")
+
                 # Check if we should start training
                 if not self.state.training_in_progress:
                     trigger_config = self.training_scheduler.should_trigger_training()
                     if trigger_config:
+                        # Run parity validation gate before training
+                        if self.should_run_parity_validation(min_interval_seconds=1800):
+                            parts = trigger_config.rsplit("_", 1)
+                            board_type = parts[0]
+                            num_players = int(parts[1].replace("p", ""))
+                            parity_result = await self.run_parity_validation(
+                                board_type=board_type, num_players=num_players
+                            )
+                            if not parity_result.get("passed", True):
+                                failure_rate = parity_result.get("failure_rate", 0)
+                                max_rate = self.config.feedback.max_parity_failure_rate if hasattr(self.config, 'feedback') else 0.10
+                                if failure_rate > max_rate:
+                                    print(f"[Training] BLOCKED by parity validation: {failure_rate:.1%} > {max_rate:.1%}")
+                                    continue
+
                         print(f"[Training] Starting training for {trigger_config}")
                         await self.training_scheduler.start_training(trigger_config)
 

@@ -126,6 +126,13 @@ try:
         request_bandwidth,
         release_bandwidth,
         TransferPriority,
+        # Resource targets for unified utilization management
+        get_resource_targets,
+        get_host_targets,
+        should_scale_up,
+        should_scale_down,
+        get_target_job_count,
+        record_utilization,
     )
     HAS_NEW_COORDINATION = True
 except ImportError:

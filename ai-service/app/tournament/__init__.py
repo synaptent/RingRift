@@ -52,6 +52,13 @@ from app.training.elo_service import (
     get_match_history,
     get_rating_history,
 )
+from .orchestrator import (
+    TournamentOrchestrator,
+    TournamentSummary,
+    EvaluationResult,
+    run_quick_evaluation,
+    run_elo_calibration,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +94,12 @@ __all__ = [
     "get_database_stats",
     "get_match_history",
     "get_rating_history",
+    # Tournament orchestrator
+    "TournamentOrchestrator",
+    "TournamentSummary",
+    "EvaluationResult",
+    "run_quick_evaluation",
+    "run_elo_calibration",
 ]
 
 

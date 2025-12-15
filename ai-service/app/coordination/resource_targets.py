@@ -1,0 +1,617 @@
+"""Unified resource utilization targets for cluster orchestration.
+
+This module provides consistent utilization targets across all orchestrators
+(unified_ai_loop, p2p_orchestrator, cluster_orchestrator) to achieve stable
+60-80% CPU/GPU utilization for optimal AI training throughput.
+
+Key principles:
+1. Single source of truth for utilization targets
+2. Host-specific adjustments based on capability
+3. Adaptive targets based on training pipeline health
+4. Backpressure-aware throttling
+
+Usage:
+    from app.coordination import (
+        get_resource_targets,
+        get_host_targets,
+        should_scale_up,
+        should_scale_down,
+        get_utilization_score,
+    )
+
+    targets = get_resource_targets()
+    if should_scale_up("lambda-h100", current_gpu=45):
+        # Add more jobs
+        pass
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import threading
+import time
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+
+# Default coordination DB path
+_DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "coordination.db"
+
+
+class HostTier(Enum):
+    """Host capability tiers for target adjustment."""
+
+    HIGH_END = "high_end"       # H100, H200, GH200, Mac Studio
+    MID_TIER = "mid_tier"       # RTX 4090, A6000, Mac Pro
+    LOW_TIER = "low_tier"       # Consumer GPUs, older Macs
+    CPU_ONLY = "cpu_only"       # No GPU acceleration
+
+
+@dataclass
+class UtilizationTargets:
+    """Target utilization ranges for resource optimization.
+
+    Targets 60-80% utilization as the optimal operating range:
+    - Below 60%: Scale up (underutilized, wasting capacity)
+    - 60-80%: Optimal range (stable, efficient)
+    - Above 80%: Scale down (risk of throttling/OOM)
+    """
+
+    # CPU targets (percentage)
+    cpu_min: float = 60.0           # Scale up below this
+    cpu_target: float = 70.0        # Ideal operating point
+    cpu_max: float = 80.0           # Scale down above this
+    cpu_critical: float = 90.0      # Emergency stop
+
+    # GPU targets (percentage)
+    gpu_min: float = 60.0           # Scale up below this
+    gpu_target: float = 75.0        # Ideal operating point
+    gpu_max: float = 85.0           # Scale down above this
+    gpu_critical: float = 95.0      # Emergency stop
+
+    # Memory targets (percentage)
+    memory_warn: float = 75.0       # Reduce jobs
+    memory_critical: float = 90.0   # Stop spawning
+
+    # Disk targets (percentage)
+    disk_warn: float = 80.0         # Trigger cleanup
+    disk_critical: float = 90.0     # Stop all data-producing tasks
+
+    # Job concurrency targets
+    jobs_per_core: float = 0.5      # Target 50% core utilization from jobs
+    max_jobs_per_node: int = 48     # Hard cap per node
+    max_selfplay_cluster: int = 500 # Hard cap cluster-wide
+
+    # Throughput targets (games per hour)
+    throughput_min: int = 500       # Scale up below this
+    throughput_target: int = 1000   # Cluster-wide target
+    throughput_max: int = 2000      # Scale down above this
+
+
+@dataclass
+class HostTargets:
+    """Per-host adjusted targets based on capability tier."""
+
+    host: str
+    tier: HostTier
+
+    # Adjusted targets
+    cpu_min: float
+    cpu_target: float
+    cpu_max: float
+
+    gpu_min: float
+    gpu_target: float
+    gpu_max: float
+
+    max_jobs: int
+    max_selfplay: int
+    max_training: int
+
+    # Current state tracking
+    last_cpu: float = 0.0
+    last_gpu: float = 0.0
+    last_memory: float = 0.0
+    last_jobs: int = 0
+    last_update: float = 0.0
+
+
+# Host tier classification based on known hosts
+HOST_TIER_MAP: Dict[str, HostTier] = {
+    # High-end (>= 80GB VRAM, modern architecture)
+    "lambda-h100": HostTier.HIGH_END,
+    "lambda-h200": HostTier.HIGH_END,
+    "gh200": HostTier.HIGH_END,
+    "mac-studio": HostTier.HIGH_END,
+    "mac-studio-ultra": HostTier.HIGH_END,
+
+    # Mid-tier (24-48GB VRAM)
+    "rtx4090": HostTier.MID_TIER,
+    "a6000": HostTier.MID_TIER,
+    "mac-pro": HostTier.MID_TIER,
+    "aws-g5": HostTier.MID_TIER,
+
+    # Low-tier (<24GB VRAM)
+    "rtx3090": HostTier.LOW_TIER,
+    "m1-pro": HostTier.LOW_TIER,
+    "m1-max": HostTier.LOW_TIER,
+    "vast-rtx3090": HostTier.LOW_TIER,
+
+    # CPU only
+    "aws-c5": HostTier.CPU_ONLY,
+    "local": HostTier.CPU_ONLY,
+}
+
+# Tier-specific target adjustments
+TIER_ADJUSTMENTS: Dict[HostTier, Dict[str, float]] = {
+    HostTier.HIGH_END: {
+        "cpu_boost": 5.0,      # Can run 5% higher CPU
+        "gpu_boost": 5.0,      # Can run 5% higher GPU
+        "job_multiplier": 1.5, # 50% more jobs
+    },
+    HostTier.MID_TIER: {
+        "cpu_boost": 0.0,
+        "gpu_boost": 0.0,
+        "job_multiplier": 1.0,
+    },
+    HostTier.LOW_TIER: {
+        "cpu_boost": -5.0,     # Run 5% lower CPU
+        "gpu_boost": -5.0,     # Run 5% lower GPU
+        "job_multiplier": 0.7, # 30% fewer jobs
+    },
+    HostTier.CPU_ONLY: {
+        "cpu_boost": 0.0,
+        "gpu_boost": 0.0,
+        "job_multiplier": 0.5, # Half as many jobs (no GPU acceleration)
+    },
+}
+
+
+class ResourceTargetManager:
+    """Manages unified resource utilization targets across the cluster.
+
+    Thread-safe singleton that provides:
+    - Consistent targets for all orchestrators
+    - Host-specific adjustments
+    - Adaptive targets based on pipeline health
+    - Utilization history tracking
+    """
+
+    _instance: Optional["ResourceTargetManager"] = None
+    _lock = threading.Lock()
+
+    def __init__(self, db_path: Optional[Path] = None):
+        self._db_path = db_path or _DEFAULT_DB_PATH
+        self._targets = UtilizationTargets()
+        self._host_targets: Dict[str, HostTargets] = {}
+        self._utilization_history: Dict[str, List[Tuple[float, float, float]]] = {}
+        self._backpressure_factor: float = 1.0
+        self._last_adaptive_update: float = 0.0
+        self._init_db()
+
+    @classmethod
+    def get_instance(cls, db_path: Optional[Path] = None) -> "ResourceTargetManager":
+        """Get or create the singleton instance."""
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls(db_path)
+            return cls._instance
+
+    @classmethod
+    def reset_instance(cls) -> None:
+        """Reset singleton for testing."""
+        with cls._lock:
+            cls._instance = None
+
+    def _init_db(self) -> None:
+        """Initialize database tables for target persistence."""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with sqlite3.connect(str(self._db_path)) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS resource_targets (
+                    id INTEGER PRIMARY KEY,
+                    targets_json TEXT NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS utilization_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    host TEXT NOT NULL,
+                    cpu_percent REAL NOT NULL,
+                    gpu_percent REAL NOT NULL,
+                    memory_percent REAL NOT NULL,
+                    job_count INTEGER NOT NULL,
+                    recorded_at REAL NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_util_host_time
+                ON utilization_history(host, recorded_at)
+            """)
+            conn.commit()
+
+    def get_targets(self) -> UtilizationTargets:
+        """Get current utilization targets."""
+        return self._targets
+
+    def get_host_targets(self, host: str) -> HostTargets:
+        """Get adjusted targets for a specific host."""
+        if host not in self._host_targets:
+            self._host_targets[host] = self._compute_host_targets(host)
+        return self._host_targets[host]
+
+    def _compute_host_targets(self, host: str) -> HostTargets:
+        """Compute tier-adjusted targets for a host."""
+        # Determine host tier
+        tier = HOST_TIER_MAP.get(host, HostTier.LOW_TIER)
+
+        # Check for tier patterns in host name
+        if tier == HostTier.LOW_TIER:
+            host_lower = host.lower()
+            if any(x in host_lower for x in ["h100", "h200", "gh200", "studio-ultra"]):
+                tier = HostTier.HIGH_END
+            elif any(x in host_lower for x in ["4090", "a6000", "mac-pro"]):
+                tier = HostTier.MID_TIER
+
+        adj = TIER_ADJUSTMENTS[tier]
+        base = self._targets
+
+        # Apply backpressure reduction
+        bp_factor = self._backpressure_factor
+
+        return HostTargets(
+            host=host,
+            tier=tier,
+            cpu_min=(base.cpu_min + adj["cpu_boost"]) * bp_factor,
+            cpu_target=(base.cpu_target + adj["cpu_boost"]) * bp_factor,
+            cpu_max=base.cpu_max + adj["cpu_boost"],
+            gpu_min=(base.gpu_min + adj["gpu_boost"]) * bp_factor,
+            gpu_target=(base.gpu_target + adj["gpu_boost"]) * bp_factor,
+            gpu_max=base.gpu_max + adj["gpu_boost"],
+            max_jobs=int(base.max_jobs_per_node * adj["job_multiplier"]),
+            max_selfplay=int(32 * adj["job_multiplier"]),
+            max_training=1 if tier in (HostTier.HIGH_END, HostTier.MID_TIER) else 0,
+        )
+
+    def should_scale_up(
+        self,
+        host: str,
+        current_cpu: float,
+        current_gpu: float = 0.0,
+        current_jobs: int = 0,
+    ) -> Tuple[bool, str]:
+        """Check if a host should scale up (add jobs).
+
+        Returns: (should_scale_up, reason)
+        """
+        targets = self.get_host_targets(host)
+
+        # Check GPU first (if available)
+        if current_gpu > 0 and current_gpu < targets.gpu_min:
+            gpu_gap = targets.gpu_target - current_gpu
+            return True, f"GPU underutilized: {current_gpu:.1f}% < {targets.gpu_min:.1f}% (gap: {gpu_gap:.1f}%)"
+
+        # Check CPU
+        if current_cpu < targets.cpu_min:
+            cpu_gap = targets.cpu_target - current_cpu
+            return True, f"CPU underutilized: {current_cpu:.1f}% < {targets.cpu_min:.1f}% (gap: {cpu_gap:.1f}%)"
+
+        # Check job count headroom
+        if current_jobs < targets.max_jobs * 0.8:
+            return True, f"Job headroom available: {current_jobs} < {int(targets.max_jobs * 0.8)}"
+
+        return False, "Within target range"
+
+    def should_scale_down(
+        self,
+        host: str,
+        current_cpu: float,
+        current_gpu: float = 0.0,
+        current_memory: float = 0.0,
+    ) -> Tuple[bool, int, str]:
+        """Check if a host should scale down (remove jobs).
+
+        Returns: (should_scale_down, reduction_count, reason)
+        """
+        targets = self.get_host_targets(host)
+        base = self._targets
+
+        # Critical memory - emergency reduction
+        if current_memory >= base.memory_critical:
+            return True, 10, f"CRITICAL memory: {current_memory:.1f}% >= {base.memory_critical:.1f}%"
+
+        # Critical GPU - emergency reduction
+        if current_gpu >= base.gpu_critical:
+            return True, 6, f"CRITICAL GPU: {current_gpu:.1f}% >= {base.gpu_critical:.1f}%"
+
+        # Critical CPU - emergency reduction
+        if current_cpu >= base.cpu_critical:
+            return True, 4, f"CRITICAL CPU: {current_cpu:.1f}% >= {base.cpu_critical:.1f}%"
+
+        # High memory - moderate reduction
+        if current_memory >= base.memory_warn:
+            return True, 3, f"High memory: {current_memory:.1f}% >= {base.memory_warn:.1f}%"
+
+        # High GPU - moderate reduction
+        if current_gpu > targets.gpu_max:
+            reduction = max(1, int((current_gpu - targets.gpu_target) / 10))
+            return True, reduction, f"GPU overloaded: {current_gpu:.1f}% > {targets.gpu_max:.1f}%"
+
+        # High CPU - moderate reduction
+        if current_cpu > targets.cpu_max:
+            reduction = max(1, int((current_cpu - targets.cpu_target) / 10))
+            return True, reduction, f"CPU overloaded: {current_cpu:.1f}% > {targets.cpu_max:.1f}%"
+
+        return False, 0, "Within target range"
+
+    def get_target_job_count(
+        self,
+        host: str,
+        cpu_cores: int,
+        current_cpu: float,
+        current_gpu: float = 0.0,
+    ) -> int:
+        """Calculate the target number of jobs for a host.
+
+        Uses a feedback-based approach to converge on optimal job count.
+        """
+        targets = self.get_host_targets(host)
+        base = self._targets
+
+        # Base job count from core count
+        base_jobs = int(cpu_cores * base.jobs_per_core)
+
+        # Adjust based on current utilization
+        if current_gpu > 0:
+            # GPU node: target GPU utilization
+            gpu_gap = targets.gpu_target - current_gpu
+            adjustment = int(gpu_gap / 15)  # ~15% GPU per job
+        else:
+            # CPU node: target CPU utilization
+            cpu_gap = targets.cpu_target - current_cpu
+            adjustment = int(cpu_gap / 10)  # ~10% CPU per job
+
+        target_jobs = base_jobs + adjustment
+
+        # Apply limits
+        target_jobs = max(1, min(target_jobs, targets.max_jobs))
+
+        # Apply backpressure reduction
+        target_jobs = int(target_jobs * self._backpressure_factor)
+
+        return max(1, target_jobs)
+
+    def get_utilization_score(
+        self,
+        host: str,
+        current_cpu: float,
+        current_gpu: float = 0.0,
+    ) -> float:
+        """Calculate a 0-100 utilization score for load balancing.
+
+        Score interpretation:
+        - 0-40: Underutilized (should receive more work)
+        - 40-70: Optimal (balanced load)
+        - 70-100: Overloaded (should shed load)
+        """
+        targets = self.get_host_targets(host)
+
+        # Calculate CPU score
+        if current_cpu <= targets.cpu_min:
+            cpu_score = (current_cpu / targets.cpu_min) * 40
+        elif current_cpu <= targets.cpu_max:
+            cpu_score = 40 + ((current_cpu - targets.cpu_min) / (targets.cpu_max - targets.cpu_min)) * 30
+        else:
+            cpu_score = 70 + min(30, (current_cpu - targets.cpu_max) / 10 * 30)
+
+        # Calculate GPU score (if available)
+        if current_gpu > 0:
+            if current_gpu <= targets.gpu_min:
+                gpu_score = (current_gpu / targets.gpu_min) * 40
+            elif current_gpu <= targets.gpu_max:
+                gpu_score = 40 + ((current_gpu - targets.gpu_min) / (targets.gpu_max - targets.gpu_min)) * 30
+            else:
+                gpu_score = 70 + min(30, (current_gpu - targets.gpu_max) / 10 * 30)
+
+            # Weighted average (GPU-heavy for GPU nodes)
+            return cpu_score * 0.3 + gpu_score * 0.7
+
+        return cpu_score
+
+    def record_utilization(
+        self,
+        host: str,
+        cpu_percent: float,
+        gpu_percent: float,
+        memory_percent: float,
+        job_count: int,
+    ) -> None:
+        """Record utilization metrics for adaptive target tuning."""
+        now = time.time()
+
+        # Update host targets state
+        if host in self._host_targets:
+            ht = self._host_targets[host]
+            ht.last_cpu = cpu_percent
+            ht.last_gpu = gpu_percent
+            ht.last_memory = memory_percent
+            ht.last_jobs = job_count
+            ht.last_update = now
+
+        # Record to history (in memory, periodic DB flush)
+        if host not in self._utilization_history:
+            self._utilization_history[host] = []
+
+        history = self._utilization_history[host]
+        history.append((now, cpu_percent, gpu_percent))
+
+        # Keep last hour in memory
+        cutoff = now - 3600
+        self._utilization_history[host] = [(t, c, g) for t, c, g in history if t > cutoff]
+
+        # Periodic DB flush (every 5 minutes)
+        if now - self._last_adaptive_update > 300:
+            self._flush_history_to_db()
+            self._update_adaptive_targets()
+            self._last_adaptive_update = now
+
+    def _flush_history_to_db(self) -> None:
+        """Flush utilization history to database."""
+        try:
+            with sqlite3.connect(str(self._db_path)) as conn:
+                # Delete old records (keep 24 hours)
+                cutoff = time.time() - 86400
+                conn.execute(
+                    "DELETE FROM utilization_history WHERE recorded_at < ?",
+                    (cutoff,)
+                )
+                conn.commit()
+        except Exception as e:
+            print(f"[ResourceTargets] DB flush error: {e}")
+
+    def _update_adaptive_targets(self) -> None:
+        """Update targets based on historical utilization patterns."""
+        # Check training pipeline backpressure
+        try:
+            from app.coordination.queue_monitor import get_throttle_factor, QueueType
+            self._backpressure_factor = get_throttle_factor(QueueType.TRAINING_DATA)
+        except Exception:
+            self._backpressure_factor = 1.0
+
+        # Invalidate cached host targets to pick up new backpressure
+        self._host_targets.clear()
+
+    def set_backpressure(self, factor: float) -> None:
+        """Manually set backpressure factor (0.0-1.0)."""
+        self._backpressure_factor = max(0.0, min(1.0, factor))
+        self._host_targets.clear()
+
+    def get_cluster_summary(self) -> Dict:
+        """Get summary of cluster utilization state."""
+        total_cpu = 0.0
+        total_gpu = 0.0
+        total_memory = 0.0
+        total_jobs = 0
+        host_count = 0
+
+        for host, targets in self._host_targets.items():
+            if targets.last_update > time.time() - 120:  # Updated in last 2 min
+                total_cpu += targets.last_cpu
+                total_gpu += targets.last_gpu
+                total_memory += targets.last_memory
+                total_jobs += targets.last_jobs
+                host_count += 1
+
+        if host_count == 0:
+            return {
+                "active_hosts": 0,
+                "avg_cpu": 0.0,
+                "avg_gpu": 0.0,
+                "avg_memory": 0.0,
+                "total_jobs": 0,
+                "backpressure_factor": self._backpressure_factor,
+                "targets": asdict(self._targets),
+            }
+
+        return {
+            "active_hosts": host_count,
+            "avg_cpu": total_cpu / host_count,
+            "avg_gpu": total_gpu / host_count,
+            "avg_memory": total_memory / host_count,
+            "total_jobs": total_jobs,
+            "backpressure_factor": self._backpressure_factor,
+            "targets": asdict(self._targets),
+        }
+
+
+# Module-level singleton accessors
+_manager: Optional[ResourceTargetManager] = None
+_manager_lock = threading.Lock()
+
+
+def get_resource_targets() -> UtilizationTargets:
+    """Get current utilization targets."""
+    return ResourceTargetManager.get_instance().get_targets()
+
+
+def get_host_targets(host: str) -> HostTargets:
+    """Get adjusted targets for a specific host."""
+    return ResourceTargetManager.get_instance().get_host_targets(host)
+
+
+def should_scale_up(
+    host: str,
+    current_cpu: float,
+    current_gpu: float = 0.0,
+    current_jobs: int = 0,
+) -> Tuple[bool, str]:
+    """Check if a host should scale up."""
+    return ResourceTargetManager.get_instance().should_scale_up(
+        host, current_cpu, current_gpu, current_jobs
+    )
+
+
+def should_scale_down(
+    host: str,
+    current_cpu: float,
+    current_gpu: float = 0.0,
+    current_memory: float = 0.0,
+) -> Tuple[bool, int, str]:
+    """Check if a host should scale down."""
+    return ResourceTargetManager.get_instance().should_scale_down(
+        host, current_cpu, current_gpu, current_memory
+    )
+
+
+def get_target_job_count(
+    host: str,
+    cpu_cores: int,
+    current_cpu: float,
+    current_gpu: float = 0.0,
+) -> int:
+    """Calculate target job count for a host."""
+    return ResourceTargetManager.get_instance().get_target_job_count(
+        host, cpu_cores, current_cpu, current_gpu
+    )
+
+
+def get_utilization_score(host: str, current_cpu: float, current_gpu: float = 0.0) -> float:
+    """Calculate utilization score for load balancing."""
+    return ResourceTargetManager.get_instance().get_utilization_score(
+        host, current_cpu, current_gpu
+    )
+
+
+def record_utilization(
+    host: str,
+    cpu_percent: float,
+    gpu_percent: float,
+    memory_percent: float,
+    job_count: int,
+) -> None:
+    """Record utilization metrics."""
+    ResourceTargetManager.get_instance().record_utilization(
+        host, cpu_percent, gpu_percent, memory_percent, job_count
+    )
+
+
+def get_cluster_summary() -> Dict:
+    """Get cluster utilization summary."""
+    return ResourceTargetManager.get_instance().get_cluster_summary()
+
+
+def set_backpressure(factor: float) -> None:
+    """Set backpressure factor (0.0-1.0)."""
+    ResourceTargetManager.get_instance().set_backpressure(factor)
+
+
+def reset_resource_targets() -> None:
+    """Reset singleton for testing."""
+    ResourceTargetManager.reset_instance()
