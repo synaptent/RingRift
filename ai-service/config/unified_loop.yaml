@@ -125,6 +125,32 @@ cmaes:
   auto_propagate: true # Auto-inject weights to selfplay
   weights_config_path: 'config/heuristic_weights.json'
   restart_selfplay_on_update: true
+  # SAFEGUARD: Limit CMAES workers to prevent process sprawl
+  max_parallel_workers: 4 # Max parallel evaluation workers
+  evaluation_timeout_seconds: 300 # Kill stuck evaluations
+  enabled: false # DISABLED - run manually when needed
+
+# Process safeguards (prevent uncoordinated sprawl)
+safeguards:
+  # Global process limits per host
+  max_python_processes_per_host: 20
+  max_selfplay_processes: 2 # Only 2 selfplay at a time
+  max_tournament_processes: 1 # Only 1 tournament at a time
+  max_training_processes: 1 # Only 1 training at a time
+
+  # Coordination
+  single_orchestrator: true # Only ONE unified_ai_loop runs cluster-wide
+  orchestrator_host: 'lambda-h100' # Master orchestrator host
+  kill_orphans_on_start: true # Kill orphaned processes on startup
+
+  # Health checks
+  process_watchdog: true # Monitor and kill stuck processes
+  watchdog_interval_seconds: 60
+  max_process_age_hours: 4 # Kill processes older than this
+
+  # Subprocess limits
+  max_subprocess_depth: 2 # Prevent infinite subprocess spawning
+  subprocess_timeout_seconds: 3600 # 1 hour max for any subprocess
 
 # Board/player configurations to track
 configurations:
