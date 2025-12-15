@@ -423,10 +423,10 @@ def _parse_moves(moves_data: List[Any], initial_state: GameState) -> List[Move]:
                     type=move_type,
                     player=player,
                     to=to_pos,
-                    position_from=from_pos,
+                    from_pos=from_pos,  # Fixed: was position_from which is invalid field name
                     timestamp=datetime.now(),
-                    thinkTime=move_data.get("thinkTime", 0),
-                    moveNumber=i,
+                    think_time=move_data.get("thinkTime", 0),
+                    move_number=i,
                 )
                 moves.append(move)
 
