@@ -50,7 +50,22 @@ from .core import (
     CaptureDirectionChoiceResponse,
 )
 
+# Multi-task learning heads for auxiliary predictions
+from .multitask_heads import (
+    AuxiliaryTask,
+    TaskConfig,
+    MultiTaskConfig,
+    create_default_multitask_config,
+)
+
+# Transformer model architectures
+from .transformer_model import (
+    TransformerConfig,
+    create_model as create_transformer_model,
+)
+
 __all__ = [
+    # Core game models
     "BoardType",
     "GamePhase",
     "GameStatus",
@@ -85,4 +100,12 @@ __all__ = [
     "CaptureDirectionChoiceOption",
     "CaptureDirectionChoiceRequest",
     "CaptureDirectionChoiceResponse",
+    # Multi-task learning
+    "AuxiliaryTask",
+    "TaskConfig",
+    "MultiTaskConfig",
+    "create_default_multitask_config",
+    # Transformer models
+    "TransformerConfig",
+    "create_transformer_model",
 ]
