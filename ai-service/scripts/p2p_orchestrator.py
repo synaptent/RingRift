@@ -4455,11 +4455,12 @@ class P2POrchestrator:
                     continue
 
                 # Check peer's data manifest
-                peer_data = self.cluster_data_manifest.get(peer.node_id, {})
-                peer_training_mb = sum(
-                    f.get("size_mb", 0)
-                    for f in peer_data.get("training_files", [])
-                )
+                if not self.cluster_data_manifest:
+                    continue
+                peer_manifest = self.cluster_data_manifest.node_manifests.get(peer.node_id)
+                if not peer_manifest:
+                    continue
+                peer_training_mb = peer_manifest.training_data_size / (1024 * 1024)
 
                 if peer_training_mb > TRAINING_DATA_SYNC_THRESHOLD_MB:
                     # Request sync via existing sync mechanism
@@ -16175,7 +16176,7 @@ print(json.dumps({{
                 peer_list = [
                     {"node_id": p.node_id, "host": p.host, "port": getattr(p, "metrics_port", 9091)}
                     for p in self.peers.values()
-                    if p.node_id != self.node_id and p.status == "healthy"
+                    if p.node_id != self.node_id and p.is_healthy()
                 ]
             self.monitoring_manager.update_peers(peer_list)
 
@@ -16216,7 +16217,7 @@ print(json.dumps({{
                 peer_list = [
                     {"node_id": p.node_id, "host": p.host, "port": getattr(p, "metrics_port", 9091)}
                     for p in self.peers.values()
-                    if p.node_id != self.node_id and p.status == "healthy"
+                    if p.node_id != self.node_id and p.is_healthy()
                 ]
             self.monitoring_manager.update_peers(peer_list)
             await self.monitoring_manager.reload_config()
