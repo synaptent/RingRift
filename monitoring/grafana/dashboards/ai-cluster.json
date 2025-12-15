@@ -2276,6 +2276,42 @@
         "query": "100.78.101.123",
         "skipUrlSync": false,
         "type": "textbox"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "description": "Filter by board type",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Board Type",
+        "multi": true,
+        "name": "board_type",
+        "options": [
+          { "selected": true, "text": "All", "value": "$__all" },
+          { "selected": false, "text": "square8", "value": "square8" },
+          { "selected": false, "text": "square19", "value": "square19" },
+          { "selected": false, "text": "hexagonal", "value": "hexagonal" }
+        ],
+        "query": "square8,square19,hexagonal",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "description": "Filter by number of players",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Players",
+        "multi": true,
+        "name": "num_players",
+        "options": [
+          { "selected": true, "text": "All", "value": "$__all" },
+          { "selected": false, "text": "2", "value": "2" },
+          { "selected": false, "text": "3", "value": "3" },
+          { "selected": false, "text": "4", "value": "4" }
+        ],
+        "query": "2,3,4",
+        "skipUrlSync": false,
+        "type": "custom"
       }
     ]
   },
