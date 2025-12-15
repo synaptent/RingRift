@@ -63,6 +63,7 @@ if _spec and _spec.loader:
             AI_MOVE_LATENCY = _metrics_base.AI_MOVE_LATENCY
             AI_INSTANCE_CACHE_SIZE = _metrics_base.AI_INSTANCE_CACHE_SIZE
             AI_INSTANCE_CACHE_LOOKUPS = _metrics_base.AI_INSTANCE_CACHE_LOOKUPS
+            PYTHON_INVARIANT_VIOLATIONS = _metrics_base.PYTHON_INVARIANT_VIOLATIONS
             observe_ai_move_start = _metrics_base.observe_ai_move_start
 
 from app.metrics.orchestrator import (
@@ -175,6 +176,7 @@ __all__ = [
     "AI_MOVE_LATENCY",
     "AI_INSTANCE_CACHE_SIZE",
     "AI_INSTANCE_CACHE_LOOKUPS",
+    "PYTHON_INVARIANT_VIOLATIONS",
     "observe_ai_move_start",
     # Selfplay metrics
     "SELFPLAY_GAMES_TOTAL",

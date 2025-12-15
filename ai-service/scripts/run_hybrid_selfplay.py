@@ -167,15 +167,16 @@ try:
     from app.coordination import (
         TaskCoordinator,
         TaskType,
-        can_spawn,
         register_running_task,
         record_task_completion,
     )
+    from app.coordination.helpers import can_spawn_safe as can_spawn
     HAS_COORDINATION = True
 except ImportError:
     HAS_COORDINATION = False
     TaskCoordinator = None
     TaskType = None
+    can_spawn = None
 
 # Configure logging
 logging.basicConfig(
