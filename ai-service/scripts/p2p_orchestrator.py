@@ -19514,7 +19514,7 @@ print(json.dumps({{
 
         runner = web.AppRunner(app)
         await runner.setup()
-        site = web.TCPSite(runner, self.host, self.port)
+        site = web.TCPSite(runner, self.host, self.port, reuse_address=True)
         await site.start()
 
         print(f"[P2P] HTTP server started on {self.host}:{self.port}")
