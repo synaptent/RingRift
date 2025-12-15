@@ -54,6 +54,9 @@ class FeedbackAction(Enum):
     PROMOTION_FAILED = "promotion_failed"
     PROMOTION_SUCCEEDED = "promotion_succeeded"
     URGENT_RETRAINING = "urgent_retraining"
+    # Utilization-related actions (target 60-80% CPU/GPU)
+    SCALE_UP_SELFPLAY = "scale_up_selfplay"
+    SCALE_DOWN_SELFPLAY = "scale_down_selfplay"
 
 
 @dataclass
@@ -305,6 +308,7 @@ class PipelineFeedbackController:
             'canonical-selfplay': self._on_selfplay_complete,
             'cmaes': self._on_cmaes_complete,
             'promotion': self._on_promotion_complete,
+            'utilization': self._on_utilization_complete,
         }
 
         handler = handlers.get(stage)
@@ -551,6 +555,62 @@ class PipelineFeedbackController:
                     reason=f"5+ consecutive promotion failures, trying hyperparameter optimization"
                 ))
                 self.state.last_cmaes_trigger = time.time()
+
+    async def _on_utilization_complete(self, result: Dict[str, Any]):
+        """Handle utilization report - adjust selfplay rate for optimal throughput.
+
+        This feedback helps maintain 60-80% CPU/GPU utilization for maximum
+        AI training throughput. Underutilization wastes capacity; overutilization
+        causes throttling and OOM errors.
+        """
+        cpu_util = result.get('cpu_util', 0.0)
+        gpu_util = result.get('gpu_util', 0.0)
+        in_target_range = result.get('in_target_range', True)
+        total_jobs = result.get('total_jobs', 0)
+
+        # Track utilization history
+        if not hasattr(self.state, 'utilization_history'):
+            self.state.utilization_history = []
+
+        self.state.utilization_history.append({
+            'timestamp': time.time(),
+            'cpu_util': cpu_util,
+            'gpu_util': gpu_util,
+        })
+        # Keep last 100 samples
+        if len(self.state.utilization_history) > 100:
+            self.state.utilization_history = self.state.utilization_history[-100:]
+
+        if not in_target_range:
+            # Determine which direction is needed
+            if cpu_util < 60 or gpu_util < 60:
+                # Underutilized - increase selfplay to generate more data
+                self._emit_signal(FeedbackSignal(
+                    source_stage='utilization',
+                    target_stage='selfplay',
+                    action=FeedbackAction.SCALE_UP_SELFPLAY,
+                    magnitude=min(1.0, (60 - min(cpu_util, gpu_util)) / 30),  # 0-1 based on gap
+                    reason=f"Underutilized: CPU={cpu_util:.1f}%, GPU={gpu_util:.1f}% (target 60-80%)",
+                    metadata={
+                        'cpu_util': cpu_util,
+                        'gpu_util': gpu_util,
+                        'total_jobs': total_jobs,
+                    }
+                ))
+            elif cpu_util > 80 or gpu_util > 80:
+                # Overutilized - reduce selfplay to prevent throttling
+                self._emit_signal(FeedbackSignal(
+                    source_stage='utilization',
+                    target_stage='selfplay',
+                    action=FeedbackAction.SCALE_DOWN_SELFPLAY,
+                    magnitude=min(1.0, (max(cpu_util, gpu_util) - 80) / 20),
+                    reason=f"Overutilized: CPU={cpu_util:.1f}%, GPU={gpu_util:.1f}% (target 60-80%)",
+                    metadata={
+                        'cpu_util': cpu_util,
+                        'gpu_util': gpu_util,
+                        'total_jobs': total_jobs,
+                    }
+                ))
 
     # =========================================================================
     # Trigger Checks
