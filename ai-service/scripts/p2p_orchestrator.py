@@ -1269,6 +1269,7 @@ class P2POrchestrator:
         # Node state
         self.role = NodeRole.FOLLOWER
         self.leader_id: Optional[str] = None
+        self.verbose = bool(os.environ.get("RINGRIFT_P2P_VERBOSE", "").strip())
         self.peers: Dict[str, NodeInfo] = {}
         self.local_jobs: Dict[str, ClusterJob] = {}
 
