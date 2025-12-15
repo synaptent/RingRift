@@ -743,6 +743,61 @@ def get_regression_elo_threshold() -> float:
     return getattr(cfg, 'regression_elo_threshold', 30.0)
 
 
+def get_promotion_elo_threshold() -> float:
+    """Get the Elo gain required for automatic model promotion.
+
+    CANONICAL SOURCE: Use this instead of hardcoding values like 20.0.
+    Scripts (model_promotion_manager) should use this function.
+    Default: 20.0 Elo points
+    """
+    cfg = get_config()
+    return getattr(cfg, 'promotion_elo_threshold', 20.0)
+
+
+def get_promotion_min_games() -> int:
+    """Get the minimum games required before a model can be promoted.
+
+    CANONICAL SOURCE: Use this instead of hardcoding values like 50.
+    Scripts (model_promotion_manager) should use this function.
+    Default: 50 games
+    """
+    cfg = get_config()
+    return getattr(cfg, 'promotion_min_games', 50)
+
+
+def get_promotion_check_interval() -> int:
+    """Get the interval between auto-promotion checks in seconds.
+
+    CANONICAL SOURCE: Use this instead of hardcoding values like 300.
+    Scripts (model_promotion_manager) should use this function.
+    Default: 300 seconds (5 minutes)
+    """
+    cfg = get_config()
+    return getattr(cfg, 'promotion_check_interval', 300)
+
+
+def get_rollback_elo_threshold() -> float:
+    """Get the Elo drop threshold for triggering automatic rollback.
+
+    CANONICAL SOURCE: Use this instead of hardcoding values like 50.0.
+    Scripts (model_promotion_manager) should use this function.
+    Default: 50.0 Elo points
+    """
+    cfg = get_config()
+    return getattr(cfg, 'rollback_elo_threshold', 50.0)
+
+
+def get_rollback_min_games() -> int:
+    """Get the minimum games before rollback can be considered.
+
+    CANONICAL SOURCE: Use this instead of hardcoding values like 20.
+    Scripts (model_promotion_manager) should use this function.
+    Default: 20 games
+    """
+    cfg = get_config()
+    return getattr(cfg, 'rollback_min_games', 20)
+
+
 # Constants for backwards compatibility
 # These should be deprecated in favor of get_config()
 def _get_legacy_threshold() -> int:

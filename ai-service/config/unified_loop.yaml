@@ -277,6 +277,45 @@ resource_targets:
   scale_down_increment: 2 # Remove jobs in increments
   hysteresis_band: 5.0 # % band to prevent oscillation
 
+  # PID controller tuning for utilization targeting
+  # These parameters control how aggressively the system adjusts workload
+  # to maintain target utilization (60-80% range)
+  pid:
+    # Proportional gain: How strongly to react to current error
+    # Higher = faster response but more oscillation
+    # Range: 0.1 - 1.0, Default: 0.3
+    kp: 0.3
+
+    # Integral gain: Eliminates steady-state error over time
+    # Higher = faster correction of persistent offsets but risk of windup
+    # Range: 0.01 - 0.2, Default: 0.05
+    ki: 0.05
+
+    # Derivative gain: Dampens oscillation by predicting future error
+    # Higher = more damping but amplifies noise
+    # Range: 0.0 - 0.3, Default: 0.1
+    kd: 0.1
+
+    # Anti-windup integral clamp (prevents integral term runaway)
+    integral_clamp: 100.0
+
+    # Minimum time between PID updates (seconds)
+    # Lower values = more responsive but noisier
+    min_update_interval: 30.0
+
+    # Smoothing factor for output (0 = no smoothing, 1 = full smoothing)
+    # Helps reduce sudden job count changes
+    output_smoothing: 0.3
+
+    # Enable gain scheduling (adjust gains based on error magnitude)
+    gain_scheduling: true
+    # When error > threshold, multiply gains by this factor for faster response
+    large_error_threshold: 15.0 # % deviation from target
+    large_error_gain_multiplier: 1.5 # Increase gains for large errors
+    # When error < threshold, reduce gains for stability
+    small_error_threshold: 5.0 # % deviation from target
+    small_error_gain_multiplier: 0.7 # Reduce gains for small errors
+
   # Per-tier overrides (HIGH_END, MID_TIER, LOW_TIER, CPU_ONLY)
   tier_overrides:
     HIGH_END:

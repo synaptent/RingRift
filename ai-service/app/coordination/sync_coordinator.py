@@ -1,0 +1,838 @@
+#!/usr/bin/env python3
+"""Smart Sync Coordinator for unified cluster-wide data management.
+
+This module provides centralized coordination for data synchronization across
+all distributed hosts, preventing data silos and ensuring efficient transfers.
+
+Features:
+1. Data freshness tracking across all hosts
+2. Priority-based sync scheduling (hosts with most unsynced data first)
+3. Bandwidth-aware transfer balancing
+4. Single dashboard view of cluster data state
+5. Automatic failover and recovery
+6. Integration with existing sync_mutex and bandwidth_manager
+
+Goals:
+- Prevent data silos by ensuring all hosts have fresh data
+- Maximize training data availability
+- Minimize sync latency for high-priority data
+- Provide visibility into cluster-wide data state
+
+Usage:
+    from app.coordination.sync_coordinator import (
+        SyncCoordinator,
+        get_sync_coordinator,
+        get_cluster_data_status,
+        schedule_priority_sync,
+        get_sync_recommendations,
+    )
+
+    # Get cluster-wide status
+    status = get_cluster_data_status()
+    print(f"Hosts with stale data: {status.stale_hosts}")
+
+    # Schedule priority sync for hosts with most unsynced data
+    await schedule_priority_sync()
+
+    # Get recommendations for sync operations
+    recommendations = get_sync_recommendations()
+    for rec in recommendations:
+        print(f"{rec.host}: {rec.action} - {rec.reason}")
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import logging
+import os
+import socket
+import sqlite3
+import threading
+import time
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
+logger = logging.getLogger(__name__)
+
+# Default paths
+AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_COORDINATOR_DB = AI_SERVICE_ROOT / "data" / "coordination" / "sync_coordinator.db"
+HOST_CONFIG_PATH = AI_SERVICE_ROOT / "config" / "remote_hosts.yaml"
+
+# Thresholds
+STALE_DATA_THRESHOLD_SECONDS = 1800  # 30 minutes - data older than this is stale
+CRITICAL_STALE_THRESHOLD_SECONDS = 3600  # 1 hour - urgent sync needed
+MAX_SYNC_QUEUE_SIZE = 20
+FRESHNESS_CHECK_INTERVAL = 60  # Check freshness every minute
+SYNC_PRIORITY_WEIGHTS = {
+    "games_behind": 1.0,      # Weight per game behind
+    "time_since_sync": 0.01,  # Weight per second since last sync
+    "host_priority": 10.0,    # Weight for high-priority hosts
+}
+
+
+class SyncPriority(Enum):
+    """Priority levels for sync operations."""
+    CRITICAL = "critical"    # Data loss imminent (ephemeral hosts)
+    HIGH = "high"            # Significant data gap
+    NORMAL = "normal"        # Regular maintenance sync
+    LOW = "low"              # Background sync
+    BACKGROUND = "background"  # Best effort
+
+
+class HostType(Enum):
+    """Types of hosts with different sync strategies."""
+    EPHEMERAL = "ephemeral"  # Vast.ai - can terminate anytime
+    PERSISTENT = "persistent"  # AWS, Lambda - stable
+    LOCAL = "local"          # Local machine
+    ARCHIVE = "archive"      # External drive / archival storage
+
+
+class SyncAction(Enum):
+    """Recommended sync actions."""
+    SYNC_NOW = "sync_now"
+    SCHEDULE_SYNC = "schedule_sync"
+    SKIP = "skip"
+    VERIFY_DATA = "verify_data"
+    RECOVER_MANIFEST = "recover_manifest"
+
+
+@dataclass
+class HostDataState:
+    """Data state for a single host."""
+    host: str
+    host_type: HostType
+    last_sync_time: float = 0.0
+    last_sync_games: int = 0
+    total_games: int = 0
+    estimated_unsynced_games: int = 0
+    last_heartbeat: float = 0.0
+    is_reachable: bool = True
+    sync_in_progress: bool = False
+    sync_failures_24h: int = 0
+    last_error: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def seconds_since_sync(self) -> float:
+        return time.time() - self.last_sync_time if self.last_sync_time > 0 else float('inf')
+
+    @property
+    def is_stale(self) -> bool:
+        return self.seconds_since_sync > STALE_DATA_THRESHOLD_SECONDS
+
+    @property
+    def is_critical(self) -> bool:
+        # Ephemeral hosts are always critical if they have unsynced data
+        if self.host_type == HostType.EPHEMERAL and self.estimated_unsynced_games > 0:
+            return True
+        return self.seconds_since_sync > CRITICAL_STALE_THRESHOLD_SECONDS
+
+    @property
+    def sync_priority_score(self) -> float:
+        """Calculate priority score for sync scheduling. Higher = more urgent."""
+        score = 0.0
+
+        # Games behind weight
+        score += self.estimated_unsynced_games * SYNC_PRIORITY_WEIGHTS["games_behind"]
+
+        # Time since sync weight
+        score += self.seconds_since_sync * SYNC_PRIORITY_WEIGHTS["time_since_sync"]
+
+        # Host type multiplier
+        if self.host_type == HostType.EPHEMERAL:
+            score *= 3.0  # Ephemeral hosts get 3x priority
+        elif self.host_type == HostType.PERSISTENT:
+            score *= 1.5  # Persistent hosts get 1.5x priority
+
+        # Penalty for recent failures
+        if self.sync_failures_24h > 0:
+            score *= 0.8 ** self.sync_failures_24h  # Exponential backoff
+
+        return score
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "host": self.host,
+            "host_type": self.host_type.value,
+            "last_sync_time": datetime.fromtimestamp(self.last_sync_time).isoformat() if self.last_sync_time > 0 else None,
+            "seconds_since_sync": round(self.seconds_since_sync, 1),
+            "total_games": self.total_games,
+            "estimated_unsynced_games": self.estimated_unsynced_games,
+            "is_stale": self.is_stale,
+            "is_critical": self.is_critical,
+            "sync_priority_score": round(self.sync_priority_score, 2),
+            "is_reachable": self.is_reachable,
+            "sync_in_progress": self.sync_in_progress,
+            "sync_failures_24h": self.sync_failures_24h,
+        }
+
+
+@dataclass
+class SyncRecommendation:
+    """A recommended sync action for a host."""
+    host: str
+    action: SyncAction
+    priority: SyncPriority
+    reason: str
+    estimated_games: int = 0
+    estimated_duration_seconds: int = 0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "host": self.host,
+            "action": self.action.value,
+            "priority": self.priority.value,
+            "reason": self.reason,
+            "estimated_games": self.estimated_games,
+            "estimated_duration_seconds": self.estimated_duration_seconds,
+        }
+
+
+@dataclass
+class ClusterDataStatus:
+    """Overall cluster data synchronization status."""
+    total_hosts: int
+    healthy_hosts: int
+    stale_hosts: List[str]
+    critical_hosts: List[str]
+    syncing_hosts: List[str]
+    unreachable_hosts: List[str]
+    total_games_cluster: int
+    estimated_unsynced_games: int
+    last_full_sync_time: float
+    recommendations: List[SyncRecommendation]
+    host_states: Dict[str, HostDataState]
+
+    @property
+    def cluster_health_score(self) -> float:
+        """0-100 score of cluster data health."""
+        if self.total_hosts == 0:
+            return 100.0
+
+        # Base score from healthy hosts
+        health_ratio = self.healthy_hosts / self.total_hosts
+        score = health_ratio * 70  # Max 70 points for host health
+
+        # Penalty for stale data
+        stale_ratio = len(self.stale_hosts) / self.total_hosts if self.total_hosts > 0 else 0
+        score -= stale_ratio * 20
+
+        # Penalty for critical hosts
+        critical_ratio = len(self.critical_hosts) / self.total_hosts if self.total_hosts > 0 else 0
+        score -= critical_ratio * 30
+
+        # Bonus for recent full sync
+        time_since_full = time.time() - self.last_full_sync_time if self.last_full_sync_time > 0 else float('inf')
+        if time_since_full < 1800:  # Within 30 min
+            score += 30
+        elif time_since_full < 3600:  # Within 1 hour
+            score += 20
+        elif time_since_full < 7200:  # Within 2 hours
+            score += 10
+
+        return max(0, min(100, score))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "total_hosts": self.total_hosts,
+            "healthy_hosts": self.healthy_hosts,
+            "stale_hosts": self.stale_hosts,
+            "critical_hosts": self.critical_hosts,
+            "syncing_hosts": self.syncing_hosts,
+            "unreachable_hosts": self.unreachable_hosts,
+            "total_games_cluster": self.total_games_cluster,
+            "estimated_unsynced_games": self.estimated_unsynced_games,
+            "cluster_health_score": round(self.cluster_health_score, 1),
+            "last_full_sync_time": datetime.fromtimestamp(self.last_full_sync_time).isoformat() if self.last_full_sync_time > 0 else None,
+            "recommendations": [r.to_dict() for r in self.recommendations],
+            "host_states": {k: v.to_dict() for k, v in self.host_states.items()},
+        }
+
+
+class SyncCoordinator:
+    """Centralized coordinator for cluster-wide data synchronization.
+
+    This class provides:
+    1. Unified view of data state across all hosts
+    2. Priority-based sync scheduling
+    3. Bandwidth-aware transfer management
+    4. Automatic recovery from sync failures
+    """
+
+    _instance: Optional["SyncCoordinator"] = None
+    _lock = threading.Lock()
+
+    def __init__(self, db_path: Optional[Path] = None):
+        self.db_path = db_path or DEFAULT_COORDINATOR_DB
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._local = threading.local()
+        self._host_states: Dict[str, HostDataState] = {}
+        self._sync_queue: List[SyncRecommendation] = []
+        self._callbacks: List[Callable[[SyncRecommendation], None]] = []
+        self._last_full_sync_time: float = 0.0
+        self._init_db()
+        self._load_host_config()
+        self._load_state()
+
+    @classmethod
+    def get_instance(cls, db_path: Optional[Path] = None) -> "SyncCoordinator":
+        """Get or create singleton instance."""
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls(db_path)
+            return cls._instance
+
+    @classmethod
+    def reset_instance(cls) -> None:
+        """Reset singleton for testing."""
+        with cls._lock:
+            if cls._instance is not None:
+                cls._instance._save_state()
+            cls._instance = None
+
+    # =========================================================================
+    # Database Management
+    # =========================================================================
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get thread-local database connection."""
+        if not hasattr(self._local, "conn") or self._local.conn is None:
+            self._local.conn = sqlite3.connect(
+                str(self.db_path),
+                timeout=10,
+                check_same_thread=False
+            )
+            self._local.conn.row_factory = sqlite3.Row
+        return self._local.conn
+
+    def _init_db(self) -> None:
+        """Initialize database schema."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Host state table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS host_state (
+                host TEXT PRIMARY KEY,
+                host_type TEXT NOT NULL,
+                last_sync_time REAL DEFAULT 0,
+                last_sync_games INTEGER DEFAULT 0,
+                total_games INTEGER DEFAULT 0,
+                estimated_unsynced INTEGER DEFAULT 0,
+                last_heartbeat REAL DEFAULT 0,
+                is_reachable INTEGER DEFAULT 1,
+                sync_failures_24h INTEGER DEFAULT 0,
+                last_error TEXT DEFAULT '',
+                metadata TEXT DEFAULT '{}'
+            )
+        """)
+
+        # Sync history table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sync_history (
+                sync_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                host TEXT NOT NULL,
+                started_at REAL NOT NULL,
+                completed_at REAL,
+                games_synced INTEGER DEFAULT 0,
+                bytes_transferred INTEGER DEFAULT 0,
+                success INTEGER DEFAULT 0,
+                error_message TEXT DEFAULT '',
+                duration_seconds REAL DEFAULT 0
+            )
+        """)
+
+        # Create indexes
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_sync_history_host
+            ON sync_history(host, started_at DESC)
+        """)
+
+        # Coordinator state table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS coordinator_state (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at REAL
+            )
+        """)
+
+        conn.commit()
+
+    def _load_state(self) -> None:
+        """Load state from database."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Load host states
+        cursor.execute("SELECT * FROM host_state")
+        for row in cursor.fetchall():
+            host = row["host"]
+            self._host_states[host] = HostDataState(
+                host=host,
+                host_type=HostType(row["host_type"]),
+                last_sync_time=row["last_sync_time"] or 0,
+                last_sync_games=row["last_sync_games"] or 0,
+                total_games=row["total_games"] or 0,
+                estimated_unsynced_games=row["estimated_unsynced"] or 0,
+                last_heartbeat=row["last_heartbeat"] or 0,
+                is_reachable=bool(row["is_reachable"]),
+                sync_failures_24h=row["sync_failures_24h"] or 0,
+                last_error=row["last_error"] or "",
+                metadata=json.loads(row["metadata"] or "{}"),
+            )
+
+        # Load coordinator state
+        cursor.execute("SELECT value FROM coordinator_state WHERE key = 'last_full_sync_time'")
+        row = cursor.fetchone()
+        if row:
+            self._last_full_sync_time = float(row["value"])
+
+        logger.info(f"[SyncCoordinator] Loaded state for {len(self._host_states)} hosts")
+
+    def _save_state(self) -> None:
+        """Save state to database."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        for host, state in self._host_states.items():
+            cursor.execute("""
+                INSERT OR REPLACE INTO host_state
+                (host, host_type, last_sync_time, last_sync_games, total_games,
+                 estimated_unsynced, last_heartbeat, is_reachable, sync_failures_24h,
+                 last_error, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                host,
+                state.host_type.value,
+                state.last_sync_time,
+                state.last_sync_games,
+                state.total_games,
+                state.estimated_unsynced_games,
+                state.last_heartbeat,
+                1 if state.is_reachable else 0,
+                state.sync_failures_24h,
+                state.last_error,
+                json.dumps(state.metadata),
+            ))
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO coordinator_state (key, value, updated_at)
+            VALUES ('last_full_sync_time', ?, ?)
+        """, (str(self._last_full_sync_time), time.time()))
+
+        conn.commit()
+
+    def _load_host_config(self) -> None:
+        """Load host configuration from YAML."""
+        try:
+            import yaml
+            if HOST_CONFIG_PATH.exists():
+                with open(HOST_CONFIG_PATH) as f:
+                    config = yaml.safe_load(f)
+
+                # Add standard hosts (dict format: {host_name: {config...}})
+                standard_hosts = config.get("standard_hosts", {})
+                if isinstance(standard_hosts, dict):
+                    for host_name, host_config in standard_hosts.items():
+                        if host_name and host_name not in self._host_states:
+                            host_type = HostType.PERSISTENT
+                            if "vast" in host_name.lower():
+                                host_type = HostType.EPHEMERAL
+                            self._host_states[host_name] = HostDataState(
+                                host=host_name,
+                                host_type=host_type,
+                                metadata=host_config if isinstance(host_config, dict) else {},
+                            )
+
+                # Add vast hosts (ephemeral) - also dict format
+                vast_hosts = config.get("vast_hosts", {})
+                if isinstance(vast_hosts, dict):
+                    for host_name, host_config in vast_hosts.items():
+                        if host_name and host_name not in self._host_states:
+                            self._host_states[host_name] = HostDataState(
+                                host=host_name,
+                                host_type=HostType.EPHEMERAL,
+                                metadata=host_config if isinstance(host_config, dict) else {},
+                            )
+
+                standard_count = len(standard_hosts) if isinstance(standard_hosts, dict) else 0
+                vast_count = len(vast_hosts) if isinstance(vast_hosts, dict) else 0
+                logger.info(f"[SyncCoordinator] Loaded {standard_count} standard hosts, "
+                           f"{vast_count} vast hosts from config")
+        except Exception as e:
+            logger.warning(f"[SyncCoordinator] Failed to load host config: {e}")
+
+    # =========================================================================
+    # Host State Management
+    # =========================================================================
+
+    def register_host(
+        self,
+        host: str,
+        host_type: HostType = HostType.PERSISTENT,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Register a host for sync coordination."""
+        if host not in self._host_states:
+            self._host_states[host] = HostDataState(
+                host=host,
+                host_type=host_type,
+                metadata=metadata or {},
+            )
+            self._save_state()
+            logger.info(f"[SyncCoordinator] Registered host: {host} ({host_type.value})")
+
+    def update_host_state(
+        self,
+        host: str,
+        total_games: Optional[int] = None,
+        estimated_unsynced: Optional[int] = None,
+        is_reachable: Optional[bool] = None,
+        heartbeat: bool = False,
+    ) -> None:
+        """Update the data state for a host."""
+        if host not in self._host_states:
+            self.register_host(host)
+
+        state = self._host_states[host]
+
+        if total_games is not None:
+            state.total_games = total_games
+
+        if estimated_unsynced is not None:
+            state.estimated_unsynced_games = estimated_unsynced
+
+        if is_reachable is not None:
+            state.is_reachable = is_reachable
+
+        if heartbeat:
+            state.last_heartbeat = time.time()
+
+        self._save_state()
+
+    def record_sync_start(self, host: str) -> int:
+        """Record that a sync operation has started."""
+        if host in self._host_states:
+            self._host_states[host].sync_in_progress = True
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO sync_history (host, started_at)
+            VALUES (?, ?)
+        """, (host, time.time()))
+        conn.commit()
+
+        return cursor.lastrowid
+
+    def record_sync_complete(
+        self,
+        host: str,
+        sync_id: int,
+        games_synced: int,
+        bytes_transferred: int = 0,
+        success: bool = True,
+        error_message: str = "",
+    ) -> None:
+        """Record that a sync operation has completed."""
+        now = time.time()
+
+        if host in self._host_states:
+            state = self._host_states[host]
+            state.sync_in_progress = False
+            state.last_sync_time = now
+
+            if success:
+                state.last_sync_games = games_synced
+                state.estimated_unsynced_games = max(0, state.estimated_unsynced_games - games_synced)
+                state.last_error = ""
+            else:
+                state.sync_failures_24h += 1
+                state.last_error = error_message
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Get start time for duration calculation
+        cursor.execute("SELECT started_at FROM sync_history WHERE sync_id = ?", (sync_id,))
+        row = cursor.fetchone()
+        started_at = row["started_at"] if row else now
+        duration = now - started_at
+
+        cursor.execute("""
+            UPDATE sync_history
+            SET completed_at = ?, games_synced = ?, bytes_transferred = ?,
+                success = ?, error_message = ?, duration_seconds = ?
+            WHERE sync_id = ?
+        """, (now, games_synced, bytes_transferred, 1 if success else 0,
+              error_message, duration, sync_id))
+        conn.commit()
+
+        self._save_state()
+
+        if success:
+            logger.info(f"[SyncCoordinator] Sync completed for {host}: {games_synced} games in {duration:.1f}s")
+        else:
+            logger.warning(f"[SyncCoordinator] Sync failed for {host}: {error_message}")
+
+    def record_games_generated(self, host: str, games: int) -> None:
+        """Record that games were generated on a host (increases unsynced count)."""
+        if host not in self._host_states:
+            self.register_host(host)
+
+        state = self._host_states[host]
+        state.total_games += games
+        state.estimated_unsynced_games += games
+        state.last_heartbeat = time.time()
+
+        # Don't save on every game - batch saves
+        # self._save_state()
+
+    # =========================================================================
+    # Cluster Status
+    # =========================================================================
+
+    def get_cluster_status(self) -> ClusterDataStatus:
+        """Get overall cluster data synchronization status."""
+        stale_hosts = []
+        critical_hosts = []
+        syncing_hosts = []
+        unreachable_hosts = []
+        healthy_hosts = 0
+        total_games = 0
+        total_unsynced = 0
+
+        for host, state in self._host_states.items():
+            total_games += state.total_games
+            total_unsynced += state.estimated_unsynced_games
+
+            if not state.is_reachable:
+                unreachable_hosts.append(host)
+            elif state.sync_in_progress:
+                syncing_hosts.append(host)
+            elif state.is_critical:
+                critical_hosts.append(host)
+            elif state.is_stale:
+                stale_hosts.append(host)
+            else:
+                healthy_hosts += 1
+
+        recommendations = self.get_sync_recommendations()
+
+        return ClusterDataStatus(
+            total_hosts=len(self._host_states),
+            healthy_hosts=healthy_hosts,
+            stale_hosts=stale_hosts,
+            critical_hosts=critical_hosts,
+            syncing_hosts=syncing_hosts,
+            unreachable_hosts=unreachable_hosts,
+            total_games_cluster=total_games,
+            estimated_unsynced_games=total_unsynced,
+            last_full_sync_time=self._last_full_sync_time,
+            recommendations=recommendations,
+            host_states=dict(self._host_states),
+        )
+
+    def get_host_state(self, host: str) -> Optional[HostDataState]:
+        """Get the data state for a specific host."""
+        return self._host_states.get(host)
+
+    # =========================================================================
+    # Sync Scheduling
+    # =========================================================================
+
+    def get_sync_recommendations(self, max_recommendations: int = 5) -> List[SyncRecommendation]:
+        """Get prioritized sync recommendations for the cluster."""
+        recommendations = []
+
+        # Score and sort hosts by sync priority
+        scored_hosts = [
+            (host, state, state.sync_priority_score)
+            for host, state in self._host_states.items()
+            if state.is_reachable and not state.sync_in_progress
+        ]
+        scored_hosts.sort(key=lambda x: x[2], reverse=True)
+
+        for host, state, score in scored_hosts[:max_recommendations]:
+            # Determine action and priority
+            if state.is_critical:
+                action = SyncAction.SYNC_NOW
+                priority = SyncPriority.CRITICAL
+                reason = f"Critical: {state.estimated_unsynced_games} unsynced games, {state.seconds_since_sync/60:.0f}min since sync"
+            elif state.is_stale:
+                action = SyncAction.SYNC_NOW
+                priority = SyncPriority.HIGH
+                reason = f"Stale: {state.seconds_since_sync/60:.0f}min since last sync"
+            elif state.estimated_unsynced_games > 100:
+                action = SyncAction.SCHEDULE_SYNC
+                priority = SyncPriority.NORMAL
+                reason = f"{state.estimated_unsynced_games} games waiting to sync"
+            elif state.estimated_unsynced_games > 0:
+                action = SyncAction.SCHEDULE_SYNC
+                priority = SyncPriority.LOW
+                reason = f"{state.estimated_unsynced_games} games to sync"
+            else:
+                continue  # No recommendation needed
+
+            # Estimate duration based on historical data
+            estimated_duration = self._estimate_sync_duration(host, state.estimated_unsynced_games)
+
+            recommendations.append(SyncRecommendation(
+                host=host,
+                action=action,
+                priority=priority,
+                reason=reason,
+                estimated_games=state.estimated_unsynced_games,
+                estimated_duration_seconds=estimated_duration,
+            ))
+
+        return recommendations
+
+    def get_next_sync_target(self) -> Optional[str]:
+        """Get the highest priority host that should be synced next."""
+        recommendations = self.get_sync_recommendations(max_recommendations=1)
+        if recommendations and recommendations[0].action in (SyncAction.SYNC_NOW, SyncAction.SCHEDULE_SYNC):
+            return recommendations[0].host
+        return None
+
+    def _estimate_sync_duration(self, host: str, games: int) -> int:
+        """Estimate sync duration based on historical data."""
+        if games == 0:
+            return 0
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Get average sync rate for this host
+        cursor.execute("""
+            SELECT AVG(games_synced / NULLIF(duration_seconds, 0)) as games_per_second
+            FROM sync_history
+            WHERE host = ? AND success = 1 AND duration_seconds > 0
+            ORDER BY completed_at DESC
+            LIMIT 10
+        """, (host,))
+        row = cursor.fetchone()
+
+        if row and row["games_per_second"]:
+            games_per_second = row["games_per_second"]
+            return int(games / games_per_second)
+
+        # Default: assume 10 games per second
+        return games // 10
+
+    def record_full_sync_complete(self) -> None:
+        """Record that a full cluster sync has completed."""
+        self._last_full_sync_time = time.time()
+        self._save_state()
+        logger.info("[SyncCoordinator] Full cluster sync completed")
+
+    # =========================================================================
+    # Cleanup
+    # =========================================================================
+
+    def cleanup_old_history(self, days: int = 7) -> int:
+        """Remove sync history older than specified days."""
+        cutoff = time.time() - (days * 86400)
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM sync_history WHERE completed_at < ?", (cutoff,))
+        deleted = cursor.rowcount
+        conn.commit()
+
+        if deleted > 0:
+            logger.info(f"[SyncCoordinator] Cleaned up {deleted} old sync history records")
+
+        return deleted
+
+    def reset_failure_counts(self) -> None:
+        """Reset 24-hour failure counts (called daily)."""
+        for state in self._host_states.values():
+            state.sync_failures_24h = 0
+        self._save_state()
+
+
+# =============================================================================
+# Module-level convenience functions
+# =============================================================================
+
+_coordinator: Optional[SyncCoordinator] = None
+
+
+def get_sync_coordinator() -> SyncCoordinator:
+    """Get the singleton sync coordinator."""
+    return SyncCoordinator.get_instance()
+
+
+def get_cluster_data_status() -> ClusterDataStatus:
+    """Get overall cluster data synchronization status."""
+    return get_sync_coordinator().get_cluster_status()
+
+
+def get_sync_recommendations(max_recommendations: int = 5) -> List[SyncRecommendation]:
+    """Get prioritized sync recommendations."""
+    return get_sync_coordinator().get_sync_recommendations(max_recommendations)
+
+
+def get_next_sync_target() -> Optional[str]:
+    """Get the highest priority host to sync next."""
+    return get_sync_coordinator().get_next_sync_target()
+
+
+def register_host(
+    host: str,
+    host_type: HostType = HostType.PERSISTENT,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Register a host for sync coordination."""
+    get_sync_coordinator().register_host(host, host_type, metadata)
+
+
+def update_host_state(
+    host: str,
+    total_games: Optional[int] = None,
+    estimated_unsynced: Optional[int] = None,
+    is_reachable: Optional[bool] = None,
+    heartbeat: bool = False,
+) -> None:
+    """Update the data state for a host."""
+    get_sync_coordinator().update_host_state(
+        host, total_games, estimated_unsynced, is_reachable, heartbeat
+    )
+
+
+def record_sync_start(host: str) -> int:
+    """Record that a sync operation has started."""
+    return get_sync_coordinator().record_sync_start(host)
+
+
+def record_sync_complete(
+    host: str,
+    sync_id: int,
+    games_synced: int,
+    bytes_transferred: int = 0,
+    success: bool = True,
+    error_message: str = "",
+) -> None:
+    """Record that a sync operation has completed."""
+    get_sync_coordinator().record_sync_complete(
+        host, sync_id, games_synced, bytes_transferred, success, error_message
+    )
+
+
+def record_games_generated(host: str, games: int) -> None:
+    """Record that games were generated on a host."""
+    get_sync_coordinator().record_games_generated(host, games)
+
+
+def reset_sync_coordinator() -> None:
+    """Reset the coordinator singleton."""
+    SyncCoordinator.reset_instance()

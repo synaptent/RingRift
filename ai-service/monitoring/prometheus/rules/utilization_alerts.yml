@@ -1,0 +1,159 @@
+# Prometheus alerting rules for cluster utilization optimization
+# Target utilization: 60-80% for both CPU and GPU
+groups:
+  - name: cluster_utilization_alerts
+    rules:
+      # Alert when CPU utilization is too low (wasting resources)
+      - alert: CPUUnderutilized
+        expr: ringrift_cluster_cpu_utilization_percent < 60
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Cluster CPU underutilized'
+          description: 'CPU utilization is {{ $value | printf "%.1f" }}% (target: 60-80%). Consider increasing selfplay parallelism or reducing cluster size.'
+
+      # Alert when CPU utilization is too high (performance degradation)
+      - alert: CPUOverutilized
+        expr: ringrift_cluster_cpu_utilization_percent > 80
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Cluster CPU overutilized'
+          description: 'CPU utilization is {{ $value | printf "%.1f" }}% (target: 60-80%). Consider reducing selfplay parallelism or adding more nodes.'
+
+      # Critical: CPU severely overloaded
+      - alert: CPUCriticallyOverloaded
+        expr: ringrift_cluster_cpu_utilization_percent > 95
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Cluster CPU critically overloaded'
+          description: 'CPU utilization is {{ $value | printf "%.1f" }}%. Immediate action required to prevent system instability.'
+
+      # Alert when GPU utilization is too low (wasting expensive resources)
+      - alert: GPUUnderutilized
+        expr: ringrift_cluster_gpu_utilization_percent < 60
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Cluster GPU underutilized'
+          description: 'GPU utilization is {{ $value | printf "%.1f" }}% (target: 60-80%). Consider increasing batch sizes or training parallelism.'
+
+      # Alert when GPU utilization is too high
+      - alert: GPUOverutilized
+        expr: ringrift_cluster_gpu_utilization_percent > 80
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Cluster GPU overutilized'
+          description: 'GPU utilization is {{ $value | printf "%.1f" }}% (target: 60-80%). Consider reducing batch sizes or adding GPU capacity.'
+
+      # Critical: GPU severely overloaded
+      - alert: GPUCriticallyOverloaded
+        expr: ringrift_cluster_gpu_utilization_percent > 95
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Cluster GPU critically overloaded'
+          description: 'GPU utilization is {{ $value | printf "%.1f" }}%. May cause OOM errors or training instability.'
+
+  - name: utilization_optimization_alerts
+    rules:
+      # Alert when backpressure is applied for too long
+      - alert: ProlongedBackpressure
+        expr: ringrift_cluster_backpressure_factor < 0.8
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Prolonged backpressure active'
+          description: 'Backpressure factor is {{ $value | printf "%.2f" }} for over 1 hour. System may be capacity constrained.'
+
+      # Alert when no jobs are running (cluster idle)
+      - alert: ClusterIdle
+        expr: ringrift_cluster_total_jobs == 0
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: 'Cluster is idle'
+          description: 'No selfplay or training jobs running for 15+ minutes. Check if orchestrator is running.'
+
+      # Alert on low selfplay throughput
+      - alert: LowSelfplayThroughput
+        expr: |
+          sum(rate(ringrift_selfplay_games_total[30m])) * 60 < 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Low selfplay throughput'
+          description: 'Selfplay rate is {{ $value | printf "%.1f" }} games/min (expected: 10+). Check for bottlenecks.'
+
+      # Alert when utilization is consistently outside optimal range
+      - alert: SuboptimalUtilization
+        expr: |
+          (
+            ringrift_cluster_cpu_utilization_percent < 60 or
+            ringrift_cluster_cpu_utilization_percent > 80 or
+            ringrift_cluster_gpu_utilization_percent < 60 or
+            ringrift_cluster_gpu_utilization_percent > 80
+          ) and ringrift_cluster_total_jobs > 0
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Suboptimal cluster utilization'
+          description: 'Cluster utilization outside 60-80% target for 2+ hours. CPU: {{ $value | printf "%.1f" }}%. Auto-tuning may need adjustment.'
+
+  - name: utilization_efficiency_alerts
+    rules:
+      # Alert on imbalanced CPU vs GPU utilization (indicates bottleneck)
+      - alert: CPUGPUImbalance
+        expr: |
+          abs(ringrift_cluster_cpu_utilization_percent - ringrift_cluster_gpu_utilization_percent) > 30
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: 'CPU/GPU utilization imbalance'
+          description: 'CPU ({{ printf "%.1f" (index (printf "%f" ringrift_cluster_cpu_utilization_percent) 0) }}%) and GPU utilization differ by >30%. May indicate a bottleneck.'
+
+      # Alert when all nodes are at low utilization
+      - alert: ClusterWideUnderutilization
+        expr: |
+          avg(ringrift_cluster_cpu_utilization) < 0.4 and
+          avg(ringrift_cluster_gpu_utilization) < 0.4 and
+          sum(ringrift_cluster_node_up) > 1
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Cluster-wide underutilization'
+          description: 'All nodes are running below 40% utilization. Consider scaling down to save costs.'
+
+      # Alert when memory is becoming constrained
+      - alert: HighMemoryUtilization
+        expr: ringrift_cluster_memory_utilization_percent > 85
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'High cluster memory usage'
+          description: 'Memory utilization is {{ $value | printf "%.1f" }}%. May cause swapping and performance degradation.'
+
+      # Alert on memory critical
+      - alert: CriticalMemoryUtilization
+        expr: ringrift_cluster_memory_utilization_percent > 95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Critical cluster memory usage'
+          description: 'Memory utilization is {{ $value | printf "%.1f" }}%. Risk of OOM kills.'

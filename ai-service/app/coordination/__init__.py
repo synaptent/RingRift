@@ -189,6 +189,27 @@ from app.coordination.resource_optimizer import (
     # but we prefer the resource_targets versions for per-host decisions
 )
 
+# Sync coordinator exports (unified cluster-wide data sync management)
+from app.coordination.sync_coordinator import (
+    SyncCoordinator,
+    HostDataState,
+    HostType,
+    SyncPriority,
+    SyncAction,
+    SyncRecommendation,
+    ClusterDataStatus,
+    get_sync_coordinator,
+    get_cluster_data_status,
+    get_sync_recommendations,
+    get_next_sync_target,
+    register_host,
+    update_host_state,
+    record_sync_start,
+    record_sync_complete,
+    record_games_generated,
+    reset_sync_coordinator,
+)
+
 __all__ = [
     # Task Coordinator (canonical)
     "TaskCoordinator",
@@ -314,4 +335,22 @@ __all__ = [
     "get_resource_optimizer",
     "get_optimal_concurrency",
     "get_cluster_utilization",
+    # Sync Coordinator (unified data sync management)
+    "SyncCoordinator",
+    "HostDataState",
+    "HostType",
+    "SyncPriority",
+    "SyncAction",
+    "SyncRecommendation",
+    "ClusterDataStatus",
+    "get_sync_coordinator",
+    "get_cluster_data_status",
+    "get_sync_recommendations",
+    "get_next_sync_target",
+    "register_host",
+    "update_host_state",
+    "record_sync_start",
+    "record_sync_complete",
+    "record_games_generated",
+    "reset_sync_coordinator",
 ]

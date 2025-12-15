@@ -191,6 +191,12 @@ class PIDController:
 
     Uses proportional, integral, and derivative control to smoothly
     adjust workloads toward the target utilization.
+
+    Supports:
+    - Config-driven parameter tuning
+    - Gain scheduling (adjust gains based on error magnitude)
+    - Output smoothing (reduce sudden changes)
+    - Minimum update interval (prevent excessive updates)
     """
 
     def __init__(
@@ -199,15 +205,96 @@ class PIDController:
         ki: float = PID_KI,
         kd: float = PID_KD,
         setpoint: float = TARGET_UTIL_OPTIMAL,
+        integral_clamp: float = 100.0,
+        min_update_interval: float = 30.0,
+        output_smoothing: float = 0.3,
+        gain_scheduling: bool = True,
+        large_error_threshold: float = 15.0,
+        large_error_gain_multiplier: float = 1.5,
+        small_error_threshold: float = 5.0,
+        small_error_gain_multiplier: float = 0.7,
     ):
+        # Base gains
+        self.kp_base = kp
+        self.ki_base = ki
+        self.kd_base = kd
+        self.setpoint = setpoint
+
+        # Current effective gains (may be adjusted by gain scheduling)
         self.kp = kp
         self.ki = ki
         self.kd = kd
-        self.setpoint = setpoint
 
+        # Anti-windup
+        self.integral_clamp = integral_clamp
+
+        # Update throttling
+        self.min_update_interval = min_update_interval
+
+        # Output smoothing
+        self.output_smoothing = output_smoothing
+        self._prev_output = 0.0
+
+        # Gain scheduling
+        self.gain_scheduling = gain_scheduling
+        self.large_error_threshold = large_error_threshold
+        self.large_error_gain_multiplier = large_error_gain_multiplier
+        self.small_error_threshold = small_error_threshold
+        self.small_error_gain_multiplier = small_error_gain_multiplier
+
+        # Internal state
         self._integral = 0.0
         self._prev_error = 0.0
         self._last_update = 0.0
+
+    @classmethod
+    def from_config(cls, config: dict, setpoint: float = TARGET_UTIL_OPTIMAL) -> "PIDController":
+        """Create a PIDController from config dictionary.
+
+        Args:
+            config: PID config dict (from unified_loop.yaml resource_targets.pid)
+            setpoint: Target utilization percentage
+
+        Returns:
+            Configured PIDController instance
+        """
+        return cls(
+            kp=config.get("kp", PID_KP),
+            ki=config.get("ki", PID_KI),
+            kd=config.get("kd", PID_KD),
+            setpoint=setpoint,
+            integral_clamp=config.get("integral_clamp", 100.0),
+            min_update_interval=config.get("min_update_interval", 30.0),
+            output_smoothing=config.get("output_smoothing", 0.3),
+            gain_scheduling=config.get("gain_scheduling", True),
+            large_error_threshold=config.get("large_error_threshold", 15.0),
+            large_error_gain_multiplier=config.get("large_error_gain_multiplier", 1.5),
+            small_error_threshold=config.get("small_error_threshold", 5.0),
+            small_error_gain_multiplier=config.get("small_error_gain_multiplier", 0.7),
+        )
+
+    def _apply_gain_scheduling(self, error_magnitude: float) -> None:
+        """Adjust gains based on error magnitude.
+
+        Large errors get higher gains for faster response.
+        Small errors get lower gains for stability.
+        """
+        if not self.gain_scheduling:
+            return
+
+        if error_magnitude > self.large_error_threshold:
+            # Large error: increase gains for faster response
+            multiplier = self.large_error_gain_multiplier
+        elif error_magnitude < self.small_error_threshold:
+            # Small error: reduce gains for stability
+            multiplier = self.small_error_gain_multiplier
+        else:
+            # Normal range: use base gains
+            multiplier = 1.0
+
+        self.kp = self.kp_base * multiplier
+        self.ki = self.ki_base * multiplier
+        self.kd = self.kd_base * multiplier
 
     def update(self, current_value: float, dt: Optional[float] = None) -> float:
         """Calculate PID output for current utilization.
@@ -220,32 +307,77 @@ class PIDController:
             Control output (positive = need more work, negative = reduce)
         """
         now = time.time()
+
+        # Throttle updates
+        if self._last_update > 0:
+            elapsed = now - self._last_update
+            if elapsed < self.min_update_interval:
+                return self._prev_output
+
         if dt is None:
             dt = max(0.1, now - self._last_update) if self._last_update > 0 else 1.0
         self._last_update = now
 
         # Error: how far from target
         error = self.setpoint - current_value
+        error_magnitude = abs(error)
+
+        # Apply gain scheduling based on error magnitude
+        self._apply_gain_scheduling(error_magnitude)
 
         # Proportional term
         p_term = self.kp * error
 
         # Integral term (anti-windup: clamp to prevent runaway)
         self._integral += error * dt
-        self._integral = max(-100, min(100, self._integral))  # Clamp
+        self._integral = max(-self.integral_clamp, min(self.integral_clamp, self._integral))
         i_term = self.ki * self._integral
 
         # Derivative term
         d_term = self.kd * (error - self._prev_error) / dt if dt > 0 else 0
         self._prev_error = error
 
-        return p_term + i_term + d_term
+        # Raw output
+        raw_output = p_term + i_term + d_term
+
+        # Apply output smoothing (exponential moving average)
+        if self.output_smoothing > 0:
+            smoothed_output = (
+                self.output_smoothing * self._prev_output +
+                (1 - self.output_smoothing) * raw_output
+            )
+        else:
+            smoothed_output = raw_output
+
+        self._prev_output = smoothed_output
+        return smoothed_output
 
     def reset(self) -> None:
         """Reset controller state."""
         self._integral = 0.0
         self._prev_error = 0.0
         self._last_update = 0.0
+        self._prev_output = 0.0
+        # Reset gains to base values
+        self.kp = self.kp_base
+        self.ki = self.ki_base
+        self.kd = self.kd_base
+
+    def get_state(self) -> dict:
+        """Get current controller state for monitoring.
+
+        Returns:
+            Dictionary with controller state
+        """
+        return {
+            "kp_effective": self.kp,
+            "ki_effective": self.ki,
+            "kd_effective": self.kd,
+            "integral": self._integral,
+            "prev_error": self._prev_error,
+            "prev_output": self._prev_output,
+            "setpoint": self.setpoint,
+        }
 
 
 class ResourceOptimizer:
@@ -277,9 +409,16 @@ class ResourceOptimizer:
         self._db_path = COORDINATION_DB_PATH
         self._db_lock = threading.RLock()
 
+        # Load PID config from unified_loop.yaml if available
+        pid_config = self._load_pid_config()
+
         # PID controllers for each resource type
-        self._pid_cpu = PIDController(setpoint=TARGET_UTIL_OPTIMAL)
-        self._pid_gpu = PIDController(setpoint=TARGET_UTIL_OPTIMAL)
+        if pid_config:
+            self._pid_cpu = PIDController.from_config(pid_config, setpoint=TARGET_UTIL_OPTIMAL)
+            self._pid_gpu = PIDController.from_config(pid_config, setpoint=TARGET_UTIL_OPTIMAL)
+        else:
+            self._pid_cpu = PIDController(setpoint=TARGET_UTIL_OPTIMAL)
+            self._pid_gpu = PIDController(setpoint=TARGET_UTIL_OPTIMAL)
 
         # Local node ID (for identifying this orchestrator's reports)
         self._node_id = os.environ.get("RINGRIFT_NODE_ID", "")
@@ -301,6 +440,40 @@ class ResourceOptimizer:
             f"ResourceOptimizer initialized: node={self._node_id}, "
             f"target={TARGET_UTIL_MIN}-{TARGET_UTIL_MAX}%"
         )
+
+    def _load_pid_config(self) -> Optional[dict]:
+        """Load PID controller config from unified_loop.yaml.
+
+        Returns:
+            PID config dict or None if not found
+        """
+        try:
+            import yaml
+
+            # Try to find unified_loop.yaml
+            config_paths = [
+                Path(__file__).parent.parent.parent / "config" / "unified_loop.yaml",
+                Path("config/unified_loop.yaml"),
+                Path("/etc/ringrift/unified_loop.yaml"),
+            ]
+
+            for config_path in config_paths:
+                if config_path.exists():
+                    with open(config_path) as f:
+                        config = yaml.safe_load(f)
+
+                    pid_config = config.get("resource_targets", {}).get("pid", {})
+                    if pid_config:
+                        logger.info(f"Loaded PID config from {config_path}: kp={pid_config.get('kp')}, "
+                                   f"ki={pid_config.get('ki')}, kd={pid_config.get('kd')}")
+                        return pid_config
+
+            logger.debug("No PID config found, using defaults")
+            return None
+
+        except Exception as e:
+            logger.warning(f"Failed to load PID config: {e}")
+            return None
 
     def _init_db(self) -> None:
         """Initialize the coordination database."""
@@ -890,9 +1063,9 @@ class ResourceOptimizer:
         # Get current cluster utilization
         cluster_state = self.get_cluster_state()
         current_util = (
-            cluster_state.avg_gpu_percent
+            cluster_state.total_gpu_util
             if cluster_state.gpu_node_count > 0
-            else cluster_state.avg_cpu_percent
+            else cluster_state.total_cpu_util
         )
 
         # Calculate approved rate based on utilization
@@ -1106,9 +1279,9 @@ class ResourceOptimizer:
 
         # Use GPU utilization for GPU-heavy cluster, otherwise CPU
         if cluster_state.gpu_node_count > 0:
-            current_util = cluster_state.avg_gpu_percent
+            current_util = cluster_state.total_gpu_util
         else:
-            current_util = cluster_state.avg_cpu_percent
+            current_util = cluster_state.total_cpu_util
 
         # Calculate recommended rate adjustment
         if current_util < TARGET_UTIL_MIN:
@@ -1139,32 +1312,43 @@ class ResourceOptimizer:
 
         # Calculate status
         cpu_status = "optimal"
-        if cluster_state.avg_cpu_percent < TARGET_UTIL_MIN:
+        if cluster_state.total_cpu_util < TARGET_UTIL_MIN:
             cpu_status = "underutilized"
-        elif cluster_state.avg_cpu_percent > TARGET_UTIL_MAX:
+        elif cluster_state.total_cpu_util > TARGET_UTIL_MAX:
             cpu_status = "overutilized"
 
         gpu_status = "optimal"
         if cluster_state.gpu_node_count > 0:
-            if cluster_state.avg_gpu_percent < TARGET_UTIL_MIN:
+            if cluster_state.total_gpu_util < TARGET_UTIL_MIN:
                 gpu_status = "underutilized"
-            elif cluster_state.avg_gpu_percent > TARGET_UTIL_MAX:
+            elif cluster_state.total_gpu_util > TARGET_UTIL_MAX:
                 gpu_status = "overutilized"
         else:
             gpu_status = "no_gpu"
 
+        # Determine overall status
+        overall_status = "optimal"
+        if cpu_status == "underutilized" or gpu_status == "underutilized":
+            overall_status = "below"
+        elif cpu_status == "overutilized" or gpu_status == "overutilized":
+            overall_status = "above"
+
         return {
             "timestamp": time.time(),
-            "active_nodes": cluster_state.active_nodes,
-            "total_jobs": cluster_state.total_selfplay_jobs + cluster_state.total_training_jobs,
+            "active_nodes": cluster_state.cpu_node_count,
+            "total_jobs": cluster_state.total_jobs,
+            "cpu_util": cluster_state.total_cpu_util,
+            "gpu_util": cluster_state.total_gpu_util,
+            "status": overall_status,
+            "current_rate": self.get_current_selfplay_rate(),
             "cpu": {
-                "avg_percent": cluster_state.avg_cpu_percent,
+                "avg_percent": cluster_state.total_cpu_util,
                 "status": cpu_status,
                 "target_min": TARGET_UTIL_MIN,
                 "target_max": TARGET_UTIL_MAX,
             },
             "gpu": {
-                "avg_percent": cluster_state.avg_gpu_percent,
+                "avg_percent": cluster_state.total_gpu_util,
                 "status": gpu_status,
                 "gpu_nodes": cluster_state.gpu_node_count,
                 "target_min": TARGET_UTIL_MIN,
@@ -1176,13 +1360,13 @@ class ResourceOptimizer:
 
     def _get_recommendation(self, cluster_state: "ClusterState") -> str:
         """Generate a recommendation based on current state."""
-        if cluster_state.active_nodes == 0:
+        if cluster_state.cpu_node_count == 0:
             return "No active nodes - check cluster connectivity"
 
         util = (
-            cluster_state.avg_gpu_percent
+            cluster_state.total_gpu_util
             if cluster_state.gpu_node_count > 0
-            else cluster_state.avg_cpu_percent
+            else cluster_state.total_cpu_util
         )
 
         if util < TARGET_UTIL_MIN:

@@ -60,6 +60,69 @@ try:
 except ImportError:
     HAS_EVENT_BUS = False
 
+# Prometheus metrics for observability
+try:
+    from prometheus_client import Counter, Gauge, Histogram, start_http_server
+    HAS_PROMETHEUS = True
+
+    # Tournament metrics
+    TOURNAMENTS_TOTAL = Counter(
+        'shadow_tournaments_total',
+        'Total tournaments run',
+        ['tournament_type', 'config', 'success']
+    )
+    TOURNAMENT_DURATION = Histogram(
+        'shadow_tournament_duration_seconds',
+        'Tournament duration in seconds',
+        ['tournament_type', 'config'],
+        buckets=[10, 30, 60, 120, 300, 600, 1200]
+    )
+    TOURNAMENT_WIN_RATE = Gauge(
+        'shadow_tournament_win_rate',
+        'Win rate from last tournament',
+        ['config']
+    )
+    TOURNAMENT_ELO = Gauge(
+        'shadow_tournament_elo_estimate',
+        'Elo estimate from last tournament',
+        ['config']
+    )
+    GAMES_PLAYED_TOTAL = Counter(
+        'shadow_tournament_games_total',
+        'Total games played in tournaments',
+        ['config']
+    )
+    REGRESSION_DETECTED = Counter(
+        'shadow_tournament_regressions_total',
+        'Total regressions detected',
+        ['config']
+    )
+    SERVICE_UP = Gauge(
+        'shadow_tournament_service_up',
+        'Whether the shadow tournament service is running'
+    )
+except ImportError:
+    HAS_PROMETHEUS = False
+
+# Try to import HealthRegistry for distributed health awareness
+try:
+    from app.distributed.health_registry import HealthRegistry, register_health
+    HAS_HEALTH_REGISTRY = True
+except ImportError:
+    HAS_HEALTH_REGISTRY = False
+
+# Try to import canonical config
+try:
+    from app.config.unified_config import (
+        get_shadow_tournament_interval,
+        get_full_tournament_interval,
+        get_tournament_games_per_matchup,
+        get_regression_elo_threshold,
+    )
+    HAS_UNIFIED_CONFIG = True
+except ImportError:
+    HAS_UNIFIED_CONFIG = False
+
 
 # Board/player configurations
 ALL_CONFIGS = [
@@ -69,12 +132,33 @@ ALL_CONFIGS = [
 ]
 
 
+def _get_default_shadow_interval() -> int:
+    """Get default shadow interval from canonical config or fallback."""
+    if HAS_UNIFIED_CONFIG:
+        return get_shadow_tournament_interval()
+    return 300  # 5 minutes fallback
+
+
+def _get_default_full_interval() -> int:
+    """Get default full interval from canonical config or fallback."""
+    if HAS_UNIFIED_CONFIG:
+        return get_full_tournament_interval()
+    return 3600  # 1 hour fallback
+
+
+def _get_default_games() -> int:
+    """Get default games per matchup from canonical config or fallback."""
+    if HAS_UNIFIED_CONFIG:
+        return get_tournament_games_per_matchup()
+    return 20  # fallback
+
+
 @dataclass
 class TournamentConfig:
     """Configuration for shadow tournaments."""
-    shadow_interval_seconds: int = 300  # OPTIMIZED: 5 minutes (was 15 min / 900s)
+    shadow_interval_seconds: int = field(default_factory=_get_default_shadow_interval)
     shadow_games: int = 15  # OPTIMIZED: 15 games (was 10) for better signal
-    full_interval_seconds: int = 3600  # 1 hour
+    full_interval_seconds: int = field(default_factory=_get_default_full_interval)
     full_games: int = 50
     include_baselines: bool = True
     baseline_models: List[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100"])
@@ -104,9 +188,10 @@ class EvaluationResult:
 class ShadowTournamentService:
     """Continuous lightweight model evaluation service."""
 
-    def __init__(self, config: TournamentConfig, http_port: int = 8771):
+    def __init__(self, config: TournamentConfig, http_port: int = 8771, prometheus_port: int = 8772):
         self.config = config
         self.http_port = http_port
+        self.prometheus_port = prometheus_port
         self._running = False
         self._shutdown_event = asyncio.Event()
         self._last_shadow: Dict[str, float] = {}
@@ -115,9 +200,13 @@ class ShadowTournamentService:
         self._known_checkpoints: Set[str] = set()
         self._results_history: List[EvaluationResult] = []
         self._elo_baselines: Dict[str, float] = {}  # Baseline Elo for regression detection
-        self._regression_threshold: float = 30.0  # Alert if Elo drops by this much
+        # Use canonical config for regression threshold if available
+        self._regression_threshold: float = (
+            get_regression_elo_threshold() if HAS_UNIFIED_CONFIG else 30.0
+        )
         self._app: Optional[Any] = None
         self._http_runner: Optional[Any] = None
+        self._health_registered = False
 
     async def run_shadow_tournament(
         self,
@@ -198,6 +287,22 @@ class ShadowTournamentService:
             self._results_history.append(result)
             self._last_shadow[config_key] = time.time()
 
+            # Record Prometheus metrics
+            if HAS_PROMETHEUS:
+                TOURNAMENTS_TOTAL.labels(
+                    tournament_type="shadow",
+                    config=config_key,
+                    success=str(success).lower()
+                ).inc()
+                TOURNAMENT_DURATION.labels(
+                    tournament_type="shadow",
+                    config=config_key
+                ).observe(duration)
+                if success:
+                    TOURNAMENT_WIN_RATE.labels(config=config_key).set(result.win_rate)
+                    TOURNAMENT_ELO.labels(config=config_key).set(result.elo_estimate)
+                    GAMES_PLAYED_TOTAL.labels(config=config_key).inc(result.games_played)
+
             # Emit event
             if HAS_EVENT_BUS:
                 await emit_evaluation_completed(
@@ -228,6 +333,14 @@ class ShadowTournamentService:
             )
             self._results_history.append(result)
 
+            # Record failure metric
+            if HAS_PROMETHEUS:
+                TOURNAMENTS_TOTAL.labels(
+                    tournament_type="shadow",
+                    config=config_key,
+                    success="false"
+                ).inc()
+
             if HAS_EVENT_BUS:
                 await emit_error("shadow_tournament", f"Timeout for {config_key}", source="shadow_tournament_service")
 
@@ -250,6 +363,15 @@ class ShadowTournamentService:
                 error=str(e),
             )
             self._results_history.append(result)
+
+            # Record failure metric
+            if HAS_PROMETHEUS:
+                TOURNAMENTS_TOTAL.labels(
+                    tournament_type="shadow",
+                    config=config_key,
+                    success="false"
+                ).inc()
+
             return result
 
     async def run_parallel_shadow_tournaments(
@@ -326,6 +448,9 @@ class ShadowTournamentService:
                         regression = self.check_regression(result)
                         if regression:
                             print(f"[ShadowTournament] ⚠️  REGRESSION: {result.config} dropped {regression['drop']:.0f} Elo")
+                            # Record regression metric
+                            if HAS_PROMETHEUS:
+                                REGRESSION_DETECTED.labels(config=result.config).inc()
 
         print(f"[ShadowTournament] Parallel evaluation complete: {len([r for r in results if r.success])}/{len(results)} succeeded")
         return results
@@ -388,6 +513,23 @@ class ShadowTournamentService:
 
             self._last_full = time.time()
 
+            # Record Prometheus metrics for full tournament
+            if HAS_PROMETHEUS:
+                TOURNAMENTS_TOTAL.labels(
+                    tournament_type="full",
+                    config="all",
+                    success=str(success).lower()
+                ).inc()
+                TOURNAMENT_DURATION.labels(
+                    tournament_type="full",
+                    config="all"
+                ).observe(duration)
+                for result in results:
+                    if result.success:
+                        TOURNAMENT_WIN_RATE.labels(config=result.config).set(result.win_rate)
+                        TOURNAMENT_ELO.labels(config=result.config).set(result.elo_estimate)
+                        GAMES_PLAYED_TOTAL.labels(config=result.config).inc(result.games_played)
+
             if HAS_EVENT_BUS:
                 for result in results:
                     await emit_evaluation_completed(
@@ -416,6 +558,14 @@ class ShadowTournamentService:
                     error=str(e),
                 )
                 results.append(result)
+
+            # Record failure metric
+            if HAS_PROMETHEUS:
+                TOURNAMENTS_TOTAL.labels(
+                    tournament_type="full",
+                    config="all",
+                    success="false"
+                ).inc()
 
             if HAS_EVENT_BUS:
                 await emit_error("full_tournament", str(e), source="shadow_tournament_service")
@@ -523,6 +673,28 @@ class ShadowTournamentService:
               f"full every {self.config.full_interval_seconds}s, "
               f"max_concurrent={self.config.concurrent_tournaments}")
 
+        # Start Prometheus metrics server
+        if HAS_PROMETHEUS:
+            try:
+                start_http_server(self.prometheus_port)
+                SERVICE_UP.set(1)
+                print(f"[ShadowTournament] Prometheus metrics on port {self.prometheus_port}")
+            except Exception as e:
+                print(f"[ShadowTournament] Failed to start Prometheus server: {e}")
+
+        # Register with HealthRegistry for distributed health awareness
+        if HAS_HEALTH_REGISTRY and not self._health_registered:
+            try:
+                register_health(
+                    component="shadow_tournament_service",
+                    check_fn=lambda: {"status": "healthy" if self._running else "stopped"},
+                    interval_seconds=30,
+                )
+                self._health_registered = True
+                print("[ShadowTournament] Registered with HealthRegistry")
+            except Exception as e:
+                print(f"[ShadowTournament] Failed to register health: {e}")
+
         # Start HTTP API
         await self._setup_http()
 
@@ -558,12 +730,19 @@ class ShadowTournamentService:
 
         # Cleanup HTTP
         await self._cleanup_http()
+
+        # Update Prometheus metric on shutdown
+        if HAS_PROMETHEUS:
+            SERVICE_UP.set(0)
+
         print("[ShadowTournament] Stopped")
 
     def stop(self):
         """Request graceful shutdown."""
         self._running = False
         self._shutdown_event.set()
+        if HAS_PROMETHEUS:
+            SERVICE_UP.set(0)
 
     def check_regression(self, result: EvaluationResult) -> Optional[Dict[str, Any]]:
         """Check if result shows regression from baseline."""

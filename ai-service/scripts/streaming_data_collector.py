@@ -127,6 +127,43 @@ except ImportError:
     HAS_CIRCUIT_BREAKER = False
     CircuitOpenError = Exception  # Fallback
 
+# Try to import ManifestReplicator for distributed manifest
+try:
+    from app.distributed.manifest_replication import (
+        ManifestReplicator,
+        ReplicaHost,
+        create_replicator_from_config,
+    )
+    HAS_MANIFEST_REPLICATION = True
+except ImportError:
+    HAS_MANIFEST_REPLICATION = False
+
+# Try to import P2P fallback sync
+try:
+    from app.distributed.p2p_sync_client import (
+        P2PFallbackSync,
+        P2PSyncClient,
+    )
+    HAS_P2P_FALLBACK = True
+except ImportError:
+    HAS_P2P_FALLBACK = False
+
+# Try to import robust data sync for WAL and Elo replication
+try:
+    from app.distributed.data_sync_robust import (
+        WriteAheadLog,
+        EloReplicator,
+        StorageType,
+        classify_host_storage,
+        create_elo_replicator,
+    )
+    HAS_ROBUST_SYNC = True
+except ImportError:
+    HAS_ROBUST_SYNC = False
+    WriteAheadLog = None
+    EloReplicator = None
+    StorageType = None
+
 
 @dataclass
 class HostConfig:
@@ -139,6 +176,9 @@ class HostConfig:
     remote_db_path: str = "~/ringrift/ai-service/data/games"
     enabled: bool = True
     role: str = "selfplay"
+    # Ephemeral storage support (RAM disk hosts like Vast.ai)
+    storage_type: str = "persistent"  # "persistent", "ephemeral", "ram"
+    is_ephemeral: bool = False  # True for RAM disk hosts (data lost on termination)
 
 
 @dataclass
@@ -157,6 +197,7 @@ class HostSyncState:
 class CollectorConfig:
     """Configuration for the data collector."""
     poll_interval_seconds: int = 60
+    ephemeral_poll_interval_seconds: int = 15  # Aggressive sync for RAM disk hosts
     sync_method: str = "incremental"  # "incremental" or "full"
     deduplication: bool = True
     min_games_per_sync: int = 10
@@ -173,6 +214,12 @@ class CollectorConfig:
     retry_base_delay_seconds: float = 5.0
     dead_letter_enabled: bool = True
     dead_letter_dir: str = "data/dead_letter"
+    # Write-ahead log for crash recovery
+    wal_enabled: bool = True
+    wal_db_path: str = "data/sync_wal.db"
+    # Elo database replication
+    elo_replication_enabled: bool = True
+    elo_replication_interval_seconds: int = 60
 
 
 class DataManifest:
@@ -425,6 +472,10 @@ class StreamingDataCollector:
         hosts: List[HostConfig],
         manifest: DataManifest,
         http_port: int = 8772,
+        manifest_replicator: Optional[Any] = None,
+        p2p_fallback: Optional[Any] = None,
+        wal: Optional[Any] = None,
+        elo_replicator: Optional[Any] = None,
     ):
         self.config = config
         self.hosts = {h.name: h for h in hosts}
@@ -437,6 +488,27 @@ class StreamingDataCollector:
         self._http_runner: Optional[Any] = None
         self._last_cycle_time: float = 0.0
         self._last_cycle_games: int = 0
+        self._manifest_replicator = manifest_replicator
+        self._p2p_fallback = p2p_fallback
+        self._wal = wal
+        self._elo_replicator = elo_replicator
+
+        # Track sync method statistics
+        self._sync_stats = {"ssh": 0, "p2p_http": 0, "failed": 0}
+
+        # Classify hosts by storage type for differentiated sync intervals
+        self._ephemeral_hosts: Set[str] = set()
+        self._persistent_hosts: Set[str] = set()
+        for host in hosts:
+            if getattr(host, 'is_ephemeral', False):
+                self._ephemeral_hosts.add(host.name)
+            else:
+                self._persistent_hosts.add(host.name)
+
+        # Track last sync time per category for differentiated intervals
+        self._last_ephemeral_sync: float = 0.0
+        self._last_persistent_sync: float = 0.0
+        self._last_elo_replication: float = 0.0
 
         # Load previous host states
         for host in hosts:
@@ -445,6 +517,12 @@ class StreamingDataCollector:
                 self.host_states[host.name] = state
             else:
                 self.host_states[host.name] = HostSyncState(name=host.name)
+
+        # Log ephemeral host detection
+        if self._ephemeral_hosts:
+            print(f"[Collector] Detected {len(self._ephemeral_hosts)} ephemeral hosts "
+                  f"(aggressive {config.ephemeral_poll_interval_seconds}s sync): "
+                  f"{list(self._ephemeral_hosts)}")
 
     async def _get_remote_game_count(self, host: HostConfig) -> int:
         """Get the current game count on a remote host."""
@@ -486,6 +564,20 @@ class StreamingDataCollector:
             args.append(f"-i {host.ssh_key}")
 
         return " ".join(args)
+
+    def _release_resources(self, bandwidth_allocated: bool, sync_lock_acquired: bool, host: HostConfig) -> None:
+        """Release bandwidth and sync lock resources."""
+        if bandwidth_allocated and HAS_BANDWIDTH_MANAGER:
+            try:
+                release_bandwidth(host.ssh_host)
+            except Exception as e:
+                print(f"[Collector] {host.name}: bandwidth release error: {e}")
+
+        if sync_lock_acquired and HAS_SYNC_LOCK:
+            try:
+                release_sync_lock(host.name)
+            except Exception as e:
+                print(f"[Collector] {host.name}: sync lock release error: {e}")
 
     async def _sync_host(self, host: HostConfig) -> int:
         """Sync games from a single host. Returns count of new games."""
@@ -703,7 +795,7 @@ class StreamingDataCollector:
         return valid_games
 
     async def _incremental_sync(self, host: HostConfig) -> int:
-        """Perform incremental rsync. Returns count of synced games."""
+        """Perform incremental rsync with P2P HTTP fallback. Returns count of synced games."""
         local_dir = AI_SERVICE_ROOT / self.config.local_sync_dir / host.name
         local_dir.mkdir(parents=True, exist_ok=True)
 
@@ -735,6 +827,9 @@ class StreamingDataCollector:
             except Exception as e:
                 print(f"[Collector] {host.name}: bandwidth request error: {e}")
 
+        rsync_failed = False
+        rsync_error = ""
+
         try:
             process = await asyncio.create_subprocess_shell(
                 rsync_cmd,
@@ -747,22 +842,51 @@ class StreamingDataCollector:
             )
 
             if process.returncode != 0:
-                raise RuntimeError(f"rsync failed: {stderr.decode()}")
+                rsync_failed = True
+                rsync_error = stderr.decode()[:200]
 
-        finally:
-            # Release bandwidth allocation
-            if bandwidth_allocated and HAS_BANDWIDTH_MANAGER:
-                try:
-                    release_bandwidth(host.ssh_host)
-                except Exception as e:
-                    print(f"[Collector] {host.name}: bandwidth release error: {e}")
+        except asyncio.TimeoutError:
+            rsync_failed = True
+            rsync_error = "timeout"
+        except Exception as e:
+            rsync_failed = True
+            rsync_error = str(e)[:200]
 
-            # Release sync_lock
-            if sync_lock_acquired and HAS_SYNC_LOCK:
+        # P2P HTTP fallback if rsync failed
+        if rsync_failed:
+            if self._p2p_fallback and HAS_P2P_FALLBACK:
+                print(f"[Collector] {host.name}: rsync failed ({rsync_error}), trying P2P fallback")
                 try:
-                    release_sync_lock(host.name)
+                    success, games, method = await self._p2p_fallback.sync_with_fallback(
+                        host=host.name,
+                        ssh_host=host.ssh_host,
+                        ssh_user=host.ssh_user,
+                        ssh_port=host.ssh_port,
+                        remote_db_path=host.remote_db_path,
+                        local_dir=local_dir,
+                    )
+                    if success:
+                        self._sync_stats["p2p_http"] += 1
+                        print(f"[Collector] {host.name}: P2P fallback succeeded")
+                    else:
+                        self._sync_stats["failed"] += 1
+                        self._release_resources(bandwidth_allocated, sync_lock_acquired, host)
+                        raise RuntimeError("Both rsync and P2P fallback failed")
+                except RuntimeError:
+                    raise
                 except Exception as e:
-                    print(f"[Collector] {host.name}: sync lock release error: {e}")
+                    self._sync_stats["failed"] += 1
+                    self._release_resources(bandwidth_allocated, sync_lock_acquired, host)
+                    raise RuntimeError(f"P2P fallback failed: {e}")
+            else:
+                self._sync_stats["failed"] += 1
+                self._release_resources(bandwidth_allocated, sync_lock_acquired, host)
+                raise RuntimeError(f"rsync failed and no P2P fallback: {rsync_error}")
+        else:
+            self._sync_stats["ssh"] += 1
+
+        # Release resources on success
+        self._release_resources(bandwidth_allocated, sync_lock_acquired, host)
 
         # Count and validate games in synced DBs
         total = 0
@@ -788,14 +912,31 @@ class StreamingDataCollector:
         """Full sync (same as incremental for now)."""
         return await self._incremental_sync(host)
 
-    async def run_collection_cycle(self) -> int:
-        """Run one data collection cycle. Returns total new games."""
+    async def run_collection_cycle(
+        self,
+        ephemeral_only: bool = False,
+        persistent_only: bool = False,
+    ) -> int:
+        """Run one data collection cycle. Returns total new games.
+
+        Args:
+            ephemeral_only: Only sync ephemeral (RAM disk) hosts
+            persistent_only: Only sync persistent storage hosts
+        """
         total_new = 0
         tasks = []
 
         for host in self.hosts.values():
             if not host.enabled:
                 continue
+
+            # Filter by host type if requested
+            host_is_ephemeral = host.name in self._ephemeral_hosts
+            if ephemeral_only and not host_is_ephemeral:
+                continue
+            if persistent_only and host_is_ephemeral:
+                continue
+
             state = self.host_states.get(host.name)
             if state and state.consecutive_failures >= self.config.max_consecutive_failures:
                 continue
@@ -809,10 +950,36 @@ class StreamingDataCollector:
 
         return total_new
 
+    async def run_ephemeral_sync(self) -> int:
+        """Run sync cycle for ephemeral hosts only (aggressive interval)."""
+        if not self._ephemeral_hosts:
+            return 0
+        return await self.run_collection_cycle(ephemeral_only=True)
+
+    async def run_persistent_sync(self) -> int:
+        """Run sync cycle for persistent hosts only (normal interval)."""
+        if not self._persistent_hosts:
+            return 0
+        return await self.run_collection_cycle(persistent_only=True)
+
     async def run(self):
         """Main collection loop."""
         self._running = True
         print(f"[Collector] Starting with {len(self.hosts)} hosts, {self.config.poll_interval_seconds}s interval")
+
+        # Recover manifest from replicas if needed (on startup)
+        if self._manifest_replicator:
+            try:
+                recovered = await self._manifest_replicator.recover_if_needed()
+                if recovered:
+                    print("[Collector] Recovered manifest from replica")
+                    # Reload host states after recovery
+                    for host in self.hosts.values():
+                        state = self.manifest.load_host_state(host.name)
+                        if state:
+                            self.host_states[host.name] = state
+            except Exception as e:
+                print(f"[Collector] Manifest recovery error (continuing with local): {e}")
 
         # Acquire DATA_SYNC role via OrchestratorRegistry
         has_role = False
@@ -834,12 +1001,41 @@ class StreamingDataCollector:
 
         heartbeat_interval = 30
         last_heartbeat = time.time()
+        last_replication = time.time()
+        replication_interval = 60  # Replicate manifest every minute (was 5 min)
+
+        # Differentiated sync intervals
+        ephemeral_interval = self.config.ephemeral_poll_interval_seconds  # 15s default
+        persistent_interval = self.config.poll_interval_seconds  # 60s default
+        elo_replication_interval = getattr(self.config, 'elo_replication_interval_seconds', 60)
+
+        if self._ephemeral_hosts:
+            print(f"[Collector] Ephemeral hosts ({len(self._ephemeral_hosts)}): "
+                  f"sync every {ephemeral_interval}s")
+        if self._persistent_hosts:
+            print(f"[Collector] Persistent hosts ({len(self._persistent_hosts)}): "
+                  f"sync every {persistent_interval}s")
 
         try:
             while self._running:
                 try:
                     cycle_start = time.time()
-                    new_games = await self.run_collection_cycle()
+                    new_games = 0
+
+                    # Sync ephemeral hosts more frequently (aggressive interval)
+                    if self._ephemeral_hosts and                        (cycle_start - self._last_ephemeral_sync) >= ephemeral_interval:
+                        ephemeral_games = await self.run_ephemeral_sync()
+                        new_games += ephemeral_games
+                        self._last_ephemeral_sync = cycle_start
+                        if ephemeral_games > 0:
+                            print(f"[Collector] Ephemeral sync: {ephemeral_games} games "
+                                  f"(priority hosts: {list(self._ephemeral_hosts)})")
+
+                    # Sync persistent hosts at normal interval
+                    if self._persistent_hosts and                        (cycle_start - self._last_persistent_sync) >= persistent_interval:
+                        persistent_games = await self.run_persistent_sync()
+                        new_games += persistent_games
+                        self._last_persistent_sync = cycle_start
 
                     # Track cycle metrics
                     self._last_cycle_time = time.time()
@@ -848,6 +1044,26 @@ class StreamingDataCollector:
                     if new_games > 0:
                         total = self.manifest.get_synced_count()
                         print(f"[Collector] Cycle complete: {new_games} new games (total: {total})")
+
+                        # Replicate manifest after successful sync (rate-limited)
+                        if self._manifest_replicator and (time.time() - last_replication) >= replication_interval:
+                            try:
+                                replicas = await self._manifest_replicator.replicate_async()
+                                if replicas > 0:
+                                    print(f"[Collector] Manifest replicated to {replicas} hosts")
+                                last_replication = time.time()
+                            except Exception as e:
+                                print(f"[Collector] Manifest replication error: {e}")
+
+                    # Replicate Elo database (rate-limited)
+                    if self._elo_replicator and (time.time() - self._last_elo_replication) >= elo_replication_interval:
+                        try:
+                            elo_replicas = await self._elo_replicator.replicate()
+                            if elo_replicas > 0:
+                                print(f"[Collector] Elo DB replicated to {elo_replicas} hosts")
+                            self._last_elo_replication = time.time()
+                        except Exception as e:
+                            print(f"[Collector] Elo replication error: {e}")
 
                     # Heartbeat for OrchestratorRegistry
                     if HAS_ORCHESTRATOR_REGISTRY and has_role and (time.time() - last_heartbeat) >= heartbeat_interval:
@@ -1009,15 +1225,25 @@ def load_hosts_from_yaml(path: Path) -> List[HostConfig]:
             role=host_data.get("role", "selfplay"),
         ))
 
-    # Load vast hosts
+    # Load vast hosts (ephemeral - RAM disk storage)
     for name, host_data in data.get("vast_hosts", {}).items():
+        # Determine if ephemeral based on path or explicit storage_type
+        remote_path = host_data.get("remote_path", "/dev/shm/games")
+        storage_type = host_data.get("storage_type", "")
+        is_ephemeral = (
+            storage_type == "ram" or
+            "/dev/shm" in remote_path or
+            "/run/shm" in remote_path
+        )
         hosts.append(HostConfig(
             name=name,
             ssh_host=host_data.get("host", ""),
             ssh_user=host_data.get("user", "root"),
             ssh_port=host_data.get("port", 22),
-            remote_db_path=host_data.get("remote_path", "/dev/shm/games"),
+            remote_db_path=remote_path,
             role=host_data.get("role", "selfplay"),
+            storage_type="ephemeral" if is_ephemeral else "persistent",
+            is_ephemeral=is_ephemeral,
         ))
 
     return hosts
@@ -1058,8 +1284,65 @@ def main():
     # Initialize manifest
     manifest = DataManifest(AI_SERVICE_ROOT / config.manifest_db_path)
 
+    # Initialize manifest replicator for fault tolerance
+    manifest_replicator = None
+    if HAS_MANIFEST_REPLICATION:
+        try:
+            manifest_replicator = create_replicator_from_config(
+                manifest_path=AI_SERVICE_ROOT / config.manifest_db_path,
+                hosts_config_path=AI_SERVICE_ROOT / args.hosts,
+                min_replicas=2,
+            )
+            print(f"[Collector] Manifest replication enabled with {len(manifest_replicator.replica_hosts)} replica hosts")
+        except Exception as e:
+            print(f"[Collector] Warning: Could not initialize manifest replication: {e}")
+
+    # Initialize P2P fallback sync for redundant data transfer
+    p2p_fallback = None
+    if HAS_P2P_FALLBACK:
+        try:
+            p2p_fallback = P2PFallbackSync(p2p_port=8770)
+            print("[Collector] P2P HTTP fallback enabled")
+        except Exception as e:
+            print(f"[Collector] Warning: Could not initialize P2P fallback: {e}")
+
+    # Initialize Write-Ahead Log for crash recovery
+    wal = None
+    if HAS_ROBUST_SYNC and getattr(config, 'wal_enabled', True):
+        try:
+            wal_path = AI_SERVICE_ROOT / getattr(config, 'wal_db_path', 'data/sync_wal.db')
+            wal = WriteAheadLog(wal_path)
+            print(f"[Collector] Write-ahead log enabled: {wal_path}")
+        except Exception as e:
+            print(f"[Collector] Warning: Could not initialize WAL: {e}")
+
+    # Initialize Elo database replicator
+    elo_replicator = None
+    if HAS_ROBUST_SYNC and getattr(config, 'elo_replication_enabled', True):
+        try:
+            # Load hosts config for replica selection
+            with open(AI_SERVICE_ROOT / args.hosts) as f:
+                hosts_config = yaml.safe_load(f) or {}
+            elo_replicator = create_elo_replicator(
+                data_dir=AI_SERVICE_ROOT / "data",
+                hosts_config=hosts_config,
+                min_replicas=2,
+            )
+            if elo_replicator:
+                print(f"[Collector] Elo replication enabled with "
+                      f"{len(elo_replicator.replica_hosts)} replica hosts")
+        except Exception as e:
+            print(f"[Collector] Warning: Could not initialize Elo replicator: {e}")
+
     # Create collector
-    collector = StreamingDataCollector(config, hosts, manifest, http_port=args.http_port)
+    collector = StreamingDataCollector(
+        config, hosts, manifest,
+        http_port=args.http_port,
+        manifest_replicator=manifest_replicator,
+        p2p_fallback=p2p_fallback,
+        wal=wal,
+        elo_replicator=elo_replicator,
+    )
 
     if args.dry_run:
         print("[Collector] Dry run - checking hosts...")

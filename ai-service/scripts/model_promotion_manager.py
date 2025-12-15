@@ -81,6 +81,19 @@ except ImportError:
     OrchestratorRole = None
     TaskCoordinator = None
 
+# Import canonical config helpers
+try:
+    from app.config.unified_config import (
+        get_promotion_elo_threshold,
+        get_promotion_min_games,
+        get_promotion_check_interval,
+        get_rollback_elo_threshold,
+        get_rollback_min_games,
+    )
+    HAS_UNIFIED_CONFIG = True
+except ImportError:
+    HAS_UNIFIED_CONFIG = False
+
 # Paths
 MODELS_DIR = AI_SERVICE_ROOT / "models"
 PROMOTED_DIR = MODELS_DIR / "promoted"
