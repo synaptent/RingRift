@@ -6632,6 +6632,12 @@ class P2POrchestrator:
             self._update_self_info()
             is_healthy = self.self_info.is_healthy()
 
+            # Calculate uptime and leader status
+            uptime_seconds = time.time() - getattr(self, "start_time", time.time())
+            leader_last_seen = time.time() - getattr(self, "last_leader_seen", time.time())
+            active_peers = sum(1 for p in self.peers.values()
+                             if time.time() - p.last_heartbeat < 120)
+
             response = {
                 "healthy": is_healthy,
                 "node_id": self.node_id,
@@ -6641,6 +6647,13 @@ class P2POrchestrator:
                 "cpu_percent": self.self_info.cpu_percent,
                 "selfplay_jobs": self.self_info.selfplay_jobs,
                 "training_jobs": self.self_info.training_jobs,
+                # Cluster health for alerting
+                "leader_id": self.leader_id,
+                "leader_last_seen_seconds": leader_last_seen if self.leader_id else None,
+                "active_peers": active_peers,
+                "total_peers": len(self.peers),
+                "uptime_seconds": uptime_seconds,
+                "timestamp": datetime.utcnow().isoformat(),
             }
 
             # Add cluster utilization status for cooperative 60-80% targeting
@@ -6896,6 +6909,88 @@ class P2POrchestrator:
                 "nat_blocked_nodes": nat_blocked_nodes,
                 "nodes_with_pending": list(queue_status.keys()),
                 "queues": queue_status,
+            })
+
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_gossip(self, request: web.Request) -> web.Response:
+        """POST /gossip - Receive gossip from peer and respond with our state.
+
+        GOSSIP PROTOCOL: Decentralized state sharing between nodes.
+        Each node shares its state with random peers, and information
+        propagates through the cluster without leader coordination.
+
+        Request body:
+        {
+            "sender": "node-id",
+            "sender_state": { state dict },
+            "known_states": { node_id -> state dict }
+        }
+
+        Response:
+        {
+            "sender_state": { our state },
+            "known_states": { our known states },
+            "peer_manifests": { node_id -> manifest summary }
+        }
+        """
+        try:
+            if self.auth_token and not self._is_request_authorized(request):
+                return web.json_response({"error": "unauthorized"}, status=401)
+
+            data = await request.json()
+        except Exception:
+            data = {}
+
+        try:
+            # Process incoming gossip
+            self._process_gossip_response(data)
+
+            # Prepare our response
+            now = time.time()
+            self._update_self_info()
+
+            our_state = {
+                "node_id": self.node_id,
+                "timestamp": now,
+                "version": int(now * 1000),
+                "role": self.role.value if hasattr(self.role, "value") else str(self.role),
+                "leader_id": self.leader_id,
+                "leader_lease_expires": getattr(self, "leader_lease_expires", 0),
+                "selfplay_jobs": getattr(self.self_info, "selfplay_jobs", 0),
+                "training_jobs": getattr(self.self_info, "training_jobs", 0),
+                "gpu_percent": getattr(self.self_info, "gpu_percent", 0),
+                "cpu_percent": getattr(self.self_info, "cpu_percent", 0),
+                "memory_percent": getattr(self.self_info, "memory_percent", 0),
+                "disk_percent": getattr(self.self_info, "disk_percent", 0),
+                "has_gpu": getattr(self.self_info, "has_gpu", False),
+                "gpu_name": getattr(self.self_info, "gpu_name", ""),
+                "voter_quorum_ok": self._has_voter_quorum(),
+            }
+
+            # Include manifest summary
+            local_manifest = getattr(self, "local_data_manifest", None)
+            if local_manifest:
+                our_state["manifest_summary"] = {
+                    "total_files": getattr(local_manifest, "total_files", 0),
+                    "selfplay_games": getattr(local_manifest, "selfplay_games", 0),
+                    "collected_at": getattr(local_manifest, "collected_at", 0),
+                }
+
+            # Get known states to propagate
+            known_states = self._get_gossip_known_states()
+
+            # Include peer manifests for P2P sync
+            peer_manifests = {}
+            local_manifest = getattr(self, "local_data_manifest", None)
+            if local_manifest and hasattr(local_manifest, "to_dict"):
+                peer_manifests[self.node_id] = local_manifest.to_dict()
+
+            return web.json_response({
+                "sender_state": our_state,
+                "known_states": known_states,
+                "peer_manifests": peer_manifests,
             })
 
         except Exception as e:
@@ -17937,6 +18032,280 @@ print(json.dumps({{
         self._save_state()
         print(f"[P2P] EMERGENCY COORDINATOR: {self.node_id} is now emergency leader")
 
+    async def _p2p_data_sync(self):
+        """DECENTRALIZED: Nodes sync data directly with peers without leader coordination.
+
+        P2P DATA SYNC: Each node can request data from other nodes based on what
+        it's missing. This ensures data propagates across the cluster even when:
+        - There's no leader
+        - The leader is busy or unreachable
+        - Network partitions exist between some nodes
+
+        Strategy:
+        1. Periodically check local manifest vs known peer manifests
+        2. Identify files we're missing that peers have
+        3. Request sync from the nearest/healthiest peer that has the data
+        4. Rate-limit to avoid overwhelming the network
+        """
+        now = time.time()
+
+        # Rate limit: check every 5 minutes
+        last_check = getattr(self, "_last_p2p_sync_check", 0)
+        if now - last_check < 300:
+            return
+        self._last_p2p_sync_check = now
+
+        # Skip if leader is actively managing sync (avoid conflicts)
+        if self.role == NodeRole.LEADER:
+            return  # Leader uses centralized sync
+
+        # Skip if a sync is already in progress
+        if getattr(self, "sync_in_progress", False):
+            return
+
+        # Skip if under disk pressure
+        if getattr(self.self_info, "disk_percent", 0) > 85:
+            return
+
+        # Get our local manifest (use cache for speed)
+        local_manifest = getattr(self, "local_data_manifest", None)
+        if not local_manifest:
+            try:
+                local_manifest = self._collect_local_data_manifest_cached(max_cache_age=600)
+                with self.manifest_lock:
+                    self.local_data_manifest = local_manifest
+            except Exception:
+                return
+
+        # Get local file set
+        local_files = set()
+        for file_info in getattr(local_manifest, "files", []) or []:
+            rel_path = getattr(file_info, "relative_path", "")
+            if rel_path:
+                local_files.add(rel_path)
+
+        # Check peer manifests from gossip cache
+        peer_manifests = getattr(self, "_gossip_peer_manifests", {})
+        if not peer_manifests:
+            return
+
+        # Find files we're missing that peers have
+        files_to_sync: Dict[str, List[str]] = {}  # peer_id -> [files]
+        for peer_id, peer_manifest in peer_manifests.items():
+            if peer_id == self.node_id:
+                continue
+            peer_files = getattr(peer_manifest, "files", []) or []
+            for file_info in peer_files:
+                rel_path = getattr(file_info, "relative_path", "")
+                if rel_path and rel_path not in local_files:
+                    # We're missing this file
+                    if peer_id not in files_to_sync:
+                        files_to_sync[peer_id] = []
+                    files_to_sync[peer_id].append(rel_path)
+
+        if not files_to_sync:
+            return
+
+        # Pick the peer with most files we need (efficiency)
+        best_peer = max(files_to_sync.keys(), key=lambda p: len(files_to_sync[p]))
+        files_needed = files_to_sync[best_peer]
+
+        # Limit to 10 files per sync to avoid large transfers
+        files_to_request = files_needed[:10]
+
+        # Check if peer is alive
+        with self.peers_lock:
+            peer = self.peers.get(best_peer)
+
+        if not peer or not peer.is_alive():
+            return
+
+        # Log and initiate sync
+        total_missing = sum(len(f) for f in files_to_sync.values())
+        print(f"[P2P] P2P SYNC: Missing {total_missing} files across peers, "
+              f"requesting {len(files_to_request)} from {best_peer}")
+
+        try:
+            # Create a sync job
+            import uuid
+            job = DataSyncJob(
+                job_id=f"p2p_{uuid.uuid4().hex[:8]}",
+                source_node=best_peer,
+                target_node=self.node_id,
+                files=files_to_request,
+            )
+
+            # Execute the sync
+            self.sync_in_progress = True
+            try:
+                success = await self._request_node_sync(job)
+                if success:
+                    print(f"[P2P] P2P SYNC: Completed sync of {len(files_to_request)} files from {best_peer}")
+                    # Invalidate manifest cache
+                    cache_path = self._get_manifest_cache_path()
+                    if cache_path.exists():
+                        cache_path.unlink()
+                else:
+                    print(f"[P2P] P2P SYNC: Failed to sync from {best_peer}: {job.error_message}")
+            finally:
+                self.sync_in_progress = False
+
+        except Exception as e:
+            print(f"[P2P] P2P SYNC: Error during sync: {e}")
+            self.sync_in_progress = False
+
+    async def _gossip_state_to_peers(self):
+        """DECENTRALIZED: Share node state with random peers using gossip protocol.
+
+        GOSSIP PROTOCOL: Instead of relying solely on leader to collect state,
+        nodes share information with neighbors, and it propagates through the cluster.
+
+        Benefits:
+        - Faster state propagation (O(log N) instead of O(N))
+        - Works without a leader
+        - Resilient to network partitions (state eventually converges)
+        - Reduces load on leader
+
+        Implementation:
+        1. Each node maintains local state (jobs, resources, health)
+        2. Periodically send state to K random peers (fanout)
+        3. Receive state from peers and update local view
+        4. Include version/timestamp to handle conflicts (last-write-wins)
+        """
+        now = time.time()
+
+        # Rate limit: gossip every 30 seconds
+        last_gossip = getattr(self, "_last_gossip_time", 0)
+        if now - last_gossip < 30:
+            return
+        self._last_gossip_time = now
+
+        # Prepare our state to share
+        self._update_self_info()
+        local_state = {
+            "node_id": self.node_id,
+            "timestamp": now,
+            "version": int(now * 1000),  # Millisecond version for conflict resolution
+            "role": self.role.value if hasattr(self.role, "value") else str(self.role),
+            "leader_id": self.leader_id,
+            "leader_lease_expires": getattr(self, "leader_lease_expires", 0),
+            "selfplay_jobs": getattr(self.self_info, "selfplay_jobs", 0),
+            "training_jobs": getattr(self.self_info, "training_jobs", 0),
+            "gpu_percent": getattr(self.self_info, "gpu_percent", 0),
+            "cpu_percent": getattr(self.self_info, "cpu_percent", 0),
+            "memory_percent": getattr(self.self_info, "memory_percent", 0),
+            "disk_percent": getattr(self.self_info, "disk_percent", 0),
+            "has_gpu": getattr(self.self_info, "has_gpu", False),
+            "gpu_name": getattr(self.self_info, "gpu_name", ""),
+            "voter_quorum_ok": self._has_voter_quorum(),
+        }
+
+        # Include manifest summary if available
+        local_manifest = getattr(self, "local_data_manifest", None)
+        if local_manifest:
+            local_state["manifest_summary"] = {
+                "total_files": getattr(local_manifest, "total_files", 0),
+                "selfplay_games": getattr(local_manifest, "selfplay_games", 0),
+                "collected_at": getattr(local_manifest, "collected_at", 0),
+            }
+
+        # Select K random peers to gossip with (fanout = 3)
+        GOSSIP_FANOUT = 3
+        with self.peers_lock:
+            alive_peers = [
+                p for p in self.peers.values()
+                if p.is_alive() and not getattr(p, "retired", False)
+            ]
+
+        if not alive_peers:
+            return
+
+        import random
+        peers_to_gossip = random.sample(alive_peers, min(GOSSIP_FANOUT, len(alive_peers)))
+
+        # Send gossip to selected peers
+        timeout = ClientTimeout(total=5)
+        async with get_client_session(timeout) as session:
+            for peer in peers_to_gossip:
+                try:
+                    # Include known state about other nodes (propagation)
+                    gossip_payload = {
+                        "sender": self.node_id,
+                        "sender_state": local_state,
+                        "known_states": self._get_gossip_known_states(),
+                    }
+
+                    for url in self._urls_for_peer(peer, "/gossip"):
+                        try:
+                            async with session.post(url, json=gossip_payload, headers=self._auth_headers()) as resp:
+                                if resp.status == 200:
+                                    # Process response (peer shares their state back)
+                                    response_data = await resp.json()
+                                    self._process_gossip_response(response_data)
+                                    break
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
+    def _get_gossip_known_states(self) -> Dict[str, dict]:
+        """Get known states about other nodes to propagate via gossip."""
+        known = {}
+        gossip_states = getattr(self, "_gossip_peer_states", {})
+        # Only share recent states (last 5 minutes)
+        cutoff = time.time() - 300
+        for node_id, state in gossip_states.items():
+            if state.get("timestamp", 0) > cutoff:
+                known[node_id] = state
+        return known
+
+    def _process_gossip_response(self, response: dict):
+        """Process gossip response from a peer, updating our view of the cluster."""
+        if not response:
+            return
+
+        # Initialize gossip state storage if needed
+        if not hasattr(self, "_gossip_peer_states"):
+            self._gossip_peer_states = {}
+        if not hasattr(self, "_gossip_peer_manifests"):
+            self._gossip_peer_manifests = {}
+
+        # Process sender's state
+        sender_state = response.get("sender_state", {})
+        if sender_state:
+            sender_id = sender_state.get("node_id")
+            if sender_id and sender_id != self.node_id:
+                existing = self._gossip_peer_states.get(sender_id, {})
+                # Last-write-wins conflict resolution
+                if sender_state.get("version", 0) > existing.get("version", 0):
+                    self._gossip_peer_states[sender_id] = sender_state
+
+                    # Update leader info if sender claims to know a leader
+                    if sender_state.get("leader_id") and not self.leader_id:
+                        claimed_leader = sender_state.get("leader_id")
+                        lease_expires = sender_state.get("leader_lease_expires", 0)
+                        if lease_expires > time.time():
+                            self.leader_id = claimed_leader
+                            self.last_leader_seen = time.time()
+
+        # Process known states (propagation)
+        known_states = response.get("known_states", {})
+        for node_id, state in known_states.items():
+            if node_id == self.node_id:
+                continue
+            existing = self._gossip_peer_states.get(node_id, {})
+            if state.get("version", 0) > existing.get("version", 0):
+                self._gossip_peer_states[node_id] = state
+
+        # Process manifest info for P2P sync
+        peer_manifests = response.get("peer_manifests", {})
+        for node_id, manifest_data in peer_manifests.items():
+            if node_id != self.node_id:
+                try:
+                    self._gossip_peer_manifests[node_id] = NodeDataManifest.from_dict(manifest_data)
+                except Exception:
+                    pass
+
     async def _start_monitoring_if_leader(self):
         """Start Prometheus/Grafana when we become leader (P2P monitoring resilience)."""
         if not self.monitoring_manager:
@@ -18245,6 +18614,12 @@ print(json.dumps({{
 
                 # Emergency coordinator: if voter quorum unavailable for >5min, take leadership
                 await self._check_emergency_coordinator_fallback()
+
+                # P2P data sync: nodes can sync data directly without leader
+                await self._p2p_data_sync()
+
+                # Gossip protocol: share state with random peers
+                await self._gossip_state_to_peers()
 
                 # ==== LEADER-ONLY OPERATIONS ====
                 if self.role == NodeRole.LEADER:
@@ -20666,6 +21041,9 @@ print(json.dumps({{
         app.router.add_get('/relay/peers', self.handle_relay_peers)
         app.router.add_get('/relay/status', self.handle_relay_status)
         app.router.add_post('/relay/enqueue', self.handle_relay_enqueue)
+
+        # Gossip protocol for decentralized state sharing
+        app.router.add_post('/gossip', self.handle_gossip)
 
         # Phase 2: Distributed data manifest routes
         app.router.add_get('/data_manifest', self.handle_data_manifest)
