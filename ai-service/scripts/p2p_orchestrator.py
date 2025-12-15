@@ -5148,6 +5148,113 @@ class P2POrchestrator:
         except Exception as e:
             return web.json_response({"success": False, "error": str(e)}, status=400)
 
+    async def handle_selfplay_start(self, request: web.Request) -> web.Response:
+        """POST /selfplay/start - Start GPU selfplay job on this node.
+
+        Called by leader to dispatch GPU selfplay work to worker nodes.
+        Uses run_hybrid_selfplay.py for GPU-accelerated game generation.
+        """
+        try:
+            data = await request.json()
+            board_type = data.get("board_type", "square8")
+            num_players = data.get("num_players", 2)
+            num_games = data.get("num_games", 500)
+            engine_mode = data.get("engine_mode", "gpu")
+            auto_scaled = data.get("auto_scaled", False)
+
+            job_id = f"selfplay-{self.node_id}-{int(time.time())}"
+
+            # Start the selfplay job in background
+            asyncio.create_task(self._run_gpu_selfplay_job(
+                job_id=job_id,
+                board_type=board_type,
+                num_players=num_players,
+                num_games=num_games,
+                engine_mode=engine_mode,
+            ))
+
+            print(f"[P2P] Started GPU selfplay job {job_id}: {board_type}/{num_players}p, {num_games} games")
+            return web.json_response({
+                "success": True,
+                "job_id": job_id,
+                "board_type": board_type,
+                "num_players": num_players,
+                "num_games": num_games,
+                "node_id": self.node_id,
+            })
+        except Exception as e:
+            print(f"[P2P] Failed to start selfplay: {e}")
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    async def _run_gpu_selfplay_job(
+        self, job_id: str, board_type: str, num_players: int, num_games: int, engine_mode: str
+    ):
+        """Run GPU selfplay job using run_hybrid_selfplay.py."""
+        import sys
+
+        script_path = os.path.join(self.ringrift_path, "ai-service", "scripts", "run_hybrid_selfplay.py")
+        if not os.path.exists(script_path):
+            print(f"[P2P] Selfplay script not found: {script_path}")
+            return
+
+        cmd = [
+            sys.executable,
+            script_path,
+            "--board-type", board_type,
+            "--num-players", str(num_players),
+            "--num-games", str(num_games),
+        ]
+
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
+        env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+
+            # Track the job
+            with self.jobs_lock:
+                if "selfplay" not in self.active_jobs:
+                    self.active_jobs["selfplay"] = {}
+                self.active_jobs["selfplay"][job_id] = {
+                    "job_id": job_id,
+                    "status": "running",
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "num_games": num_games,
+                    "started_at": time.time(),
+                    "pid": proc.pid,
+                }
+
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=7200)  # 2 hour max
+
+            # Update job status
+            with self.jobs_lock:
+                if job_id in self.active_jobs.get("selfplay", {}):
+                    if proc.returncode == 0:
+                        self.active_jobs["selfplay"][job_id]["status"] = "completed"
+                        print(f"[P2P] GPU selfplay job {job_id} completed successfully")
+                    else:
+                        self.active_jobs["selfplay"][job_id]["status"] = "failed"
+                        print(f"[P2P] GPU selfplay job {job_id} failed: {stderr.decode()[:500]}")
+                    del self.active_jobs["selfplay"][job_id]
+
+        except asyncio.TimeoutError:
+            print(f"[P2P] GPU selfplay job {job_id} timed out")
+            with self.jobs_lock:
+                if job_id in self.active_jobs.get("selfplay", {}):
+                    del self.active_jobs["selfplay"][job_id]
+        except Exception as e:
+            print(f"[P2P] GPU selfplay job {job_id} error: {e}")
+            with self.jobs_lock:
+                if job_id in self.active_jobs.get("selfplay", {}):
+                    del self.active_jobs["selfplay"][job_id]
+
     async def handle_cleanup_files(self, request: web.Request) -> web.Response:
         """Delete specific files from this node (for post-sync cleanup).
 
@@ -17975,6 +18082,7 @@ print(json.dumps({{
         app.router.add_post('/cleanup', self.handle_cleanup)
         app.router.add_post('/restart_stuck_jobs', self.handle_restart_stuck_jobs)
         app.router.add_post('/reduce_selfplay', self.handle_reduce_selfplay)
+        app.router.add_post('/selfplay/start', self.handle_selfplay_start)  # GPU selfplay dispatch endpoint
         app.router.add_get('/health', self.handle_health)
         app.router.add_get('/git/status', self.handle_git_status)
         app.router.add_post('/git/update', self.handle_git_update)
