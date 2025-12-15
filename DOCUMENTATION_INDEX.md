@@ -321,8 +321,9 @@ Key docs and tools for TS↔Python parity, replay analysis, and replay DB health
 | -------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | [ai-service/docs/AI_TRAINING_PLAN.md](ai-service/docs/AI_TRAINING_PLAN.md)                   | **Primary training guide**: CMA-ES, NN, NPZ pipeline |
 | [ai-service/docs/AI_TRAINING_PIPELINE_PLAN.md](ai-service/docs/AI_TRAINING_PIPELINE_PLAN.md) | Detailed training pipeline architecture              |
-| [ai-service/docs/PIPELINE_ORCHESTRATOR.md](ai-service/docs/PIPELINE_ORCHESTRATOR.md)         | Training pipeline orchestration and automation       |
-| [ai-service/docs/UNIFIED_AI_LOOP.md](ai-service/docs/UNIFIED_AI_LOOP.md)                     | **Unified AI self-improvement daemon** (Dec 2025)    |
+| [ai-service/docs/ORCHESTRATOR_SELECTION.md](ai-service/docs/ORCHESTRATOR_SELECTION.md)       | **Which script to use** - orchestrator decision tree |
+| [ai-service/docs/UNIFIED_AI_LOOP.md](ai-service/docs/UNIFIED_AI_LOOP.md)                     | **Unified AI self-improvement daemon** (canonical)   |
+| [ai-service/docs/PIPELINE_ORCHESTRATOR.md](ai-service/docs/PIPELINE_ORCHESTRATOR.md)         | CI/CD pipeline orchestration                         |
 | [ai-service/docs/DISTRIBUTED_SELFPLAY.md](ai-service/docs/DISTRIBUTED_SELFPLAY.md)           | Distributed selfplay across GPU clusters             |
 | [docs/ai/AI_TRAINING_AND_DATASETS.md](docs/ai/AI_TRAINING_AND_DATASETS.md)                   | Training datasets and GameRecord JSONL exports       |
 

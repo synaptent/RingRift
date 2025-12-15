@@ -1,5 +1,5 @@
 [Unit]
-Description=RingRift Continuous Improvement Daemon
+Description=RingRift Unified AI Improvement Loop
 After=network-online.target ringrift-p2p.service
 Wants=network-online.target ringrift-p2p.service
 
@@ -10,7 +10,7 @@ WorkingDirectory=/root/ringrift/ai-service
 Environment=PYTHONPATH=/root/ringrift/ai-service
 Environment=HOME=/root
 EnvironmentFile=-/etc/ringrift/node.conf
-ExecStart=/bin/bash -lc 'export USE_P2P_ORCHESTRATOR=true; export P2P_ORCHESTRATOR_URL="http://localhost:${P2P_PORT:-8770}"; export RINGRIFT_IMPROVEMENT_LEADER_ONLY=1; PY="/root/ringrift/ai-service/venv/bin/python"; if [ ! -x "$PY" ]; then PY="/usr/bin/python3"; fi; exec "$PY" "/root/ringrift/ai-service/scripts/continuous_improvement_daemon.py" --foreground'
+ExecStart=/bin/bash -lc 'export USE_P2P_ORCHESTRATOR=true; export P2P_ORCHESTRATOR_URL="http://localhost:${P2P_PORT:-8770}"; export RINGRIFT_IMPROVEMENT_LEADER_ONLY=1; PY="/root/ringrift/ai-service/venv/bin/python"; if [ ! -x "$PY" ]; then PY="/usr/bin/python3"; fi; exec "$PY" "/root/ringrift/ai-service/scripts/unified_ai_loop.py" --foreground'
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/ringrift/improvement_daemon.log

@@ -119,13 +119,15 @@ curl http://localhost:8770/health
 
 All compute-intensive scripts require **64GB RAM minimum**:
 
-| Script                             | Min RAM | Notes                                |
-| ---------------------------------- | ------- | ------------------------------------ |
-| `unified_ai_loop.py`               | 64GB    | Runs evaluations and training        |
-| `continuous_improvement_daemon.py` | 64GB    | Runs selfplay, training, tournaments |
-| `cluster_orchestrator.py`          | 64GB    | Filters hosts by memory              |
-| `run_diverse_tournaments.py`       | 64GB    | Filters hosts by memory              |
-| `p2p_orchestrator.py`              | 64GB    | Filters nodes by memory              |
+| Script                       | Min RAM | Notes                         |
+| ---------------------------- | ------- | ----------------------------- |
+| `unified_ai_loop.py`         | 64GB    | Runs evaluations and training |
+| `cluster_orchestrator.py`    | 64GB    | Filters hosts by memory       |
+| `run_diverse_tournaments.py` | 64GB    | Filters hosts by memory       |
+| `p2p_orchestrator.py`        | 64GB    | Filters nodes by memory       |
+
+> **Note**: `continuous_improvement_daemon.py` is deprecated. Use `unified_ai_loop.py` instead.
+> See [ORCHESTRATOR_SELECTION.md](../docs/ORCHESTRATOR_SELECTION.md) for guidance.
 
 Scripts will exit with an error message if system memory is below the threshold.
 
@@ -159,8 +161,9 @@ Services read configuration from:
 
 ## Related Documentation
 
+- [Orchestrator Selection](../docs/ORCHESTRATOR_SELECTION.md) - **Which script to use** (start here)
 - [Unified AI Loop](../docs/UNIFIED_AI_LOOP.md) - Detailed loop documentation
-- [Pipeline Orchestrator](../docs/PIPELINE_ORCHESTRATOR.md) - SSH-based orchestration
+- [Pipeline Orchestrator](../docs/PIPELINE_ORCHESTRATOR.md) - CI/CD pipeline orchestration
 - [Distributed Selfplay](../docs/DISTRIBUTED_SELFPLAY.md) - Remote host setup
 - [Cloud Infrastructure](../docs/CLOUD_TRAINING_INFRASTRUCTURE_PLAN.md) - AWS/cloud deployment
 - [Cluster Monitoring](../scripts/monitoring/README.md) - CloudWatch setup

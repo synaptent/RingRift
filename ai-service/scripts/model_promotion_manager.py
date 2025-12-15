@@ -64,18 +64,22 @@ try:
 except ImportError:
     HAS_EVENT_BUS = False
 
-# Import cluster coordination to prevent multiple promotion managers
+# Import coordination to prevent multiple promotion managers
 try:
-    from app.distributed.cluster_coordinator import (
-        ClusterCoordinator,
-        TaskRole,
-        check_and_abort_if_role_held,
+    from app.coordination import (
+        # Orchestrator role management
+        OrchestratorRole,
+        get_registry,
+        # Task coordination for spawn limits
+        TaskCoordinator,
+        TaskType,
+        can_spawn,
     )
     HAS_COORDINATION = True
 except ImportError:
     HAS_COORDINATION = False
-    ClusterCoordinator = None
-    TaskRole = None
+    OrchestratorRole = None
+    TaskCoordinator = None
 
 # Paths
 MODELS_DIR = AI_SERVICE_ROOT / "models"
@@ -342,12 +346,13 @@ class AutoPromotionTrigger:
         config_key = f"{candidate.board_type}_{candidate.num_players}p"
 
         # Check coordination - ensure no conflicting promotion in progress
-        if HAS_COORDINATION:
-            coordinator = ClusterCoordinator()
-            # Check if we can spawn promotion-related processes
-            if not coordinator.can_spawn_process("training"):
+        if HAS_COORDINATION and TaskCoordinator is not None:
+            import socket
+            node_id = socket.gethostname()
+            allowed, reason = can_spawn(TaskType.TRAINING, node_id)
+            if not allowed:
                 if verbose:
-                    print(f"[AutoPromotion] {config_key}: Promotion delayed - resource limits reached")
+                    print(f"[AutoPromotion] {config_key}: Promotion delayed - {reason}")
                 return None
 
         if verbose:
@@ -446,12 +451,13 @@ def run_auto_promotion_daemon(config: AutoPromotionConfig = None, verbose: bool 
     """
     import signal
 
-    # Check coordination - prevent multiple promotion daemons
-    if HAS_COORDINATION:
-        coordinator = ClusterCoordinator()
-        if coordinator.is_role_held(TaskRole.ORCHESTRATOR):
+    # Check coordination - warn if unified orchestrator is running
+    if HAS_COORDINATION and OrchestratorRole is not None:
+        registry = get_registry()
+        if registry.is_role_held(OrchestratorRole.UNIFIED_LOOP):
             # If unified orchestrator is running, it handles promotions
-            existing_pid = coordinator.get_role_holder_pid(TaskRole.ORCHESTRATOR)
+            holder = registry.get_role_holder(OrchestratorRole.UNIFIED_LOOP)
+            existing_pid = holder.pid if holder else "unknown"
             print(f"[AutoPromotion] WARNING: Unified orchestrator is running (PID {existing_pid})")
             print(f"[AutoPromotion] The orchestrator handles promotions - this daemon may duplicate work")
             print(f"[AutoPromotion] Consider using --full-pipeline instead of --daemon")
@@ -460,7 +466,6 @@ def run_auto_promotion_daemon(config: AutoPromotionConfig = None, verbose: bool 
     trigger = AutoPromotionTrigger(config)
 
     running = True
-    coordinator_context = None
 
     def signal_handler(sig, frame):
         nonlocal running

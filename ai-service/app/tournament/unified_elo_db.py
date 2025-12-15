@@ -1,5 +1,24 @@
 """Unified Elo database for all tournament types.
 
+.. deprecated::
+    This module is maintained for backward compatibility with existing tournament
+    scripts. For NEW code, prefer using `app.training.elo_service.EloService` which
+    provides additional features like:
+    - Training feedback signals
+    - Single-writer cluster coordination
+    - Better integration with the training pipeline
+
+    Migration example:
+        # Old way (still works)
+        from app.tournament import get_elo_database
+        db = get_elo_database()
+        db.record_match_and_update(...)
+
+        # New way (preferred for new code)
+        from app.training.elo_service import get_elo_service
+        elo = get_elo_service()
+        elo.record_match(...)
+
 Provides a single, shared Elo rating system across all tournament scripts.
 Uses composite primary key (participant_id, board_type, num_players) to track
 ratings per game configuration.

@@ -99,15 +99,6 @@ def clear_emergency_halt() -> bool:
         return True
     return False
 
-# Import cluster coordination - prevents multiple daemon instances
-try:
-    from app.distributed.cluster_coordinator import ClusterCoordinator, TaskRole, check_and_abort_if_role_held
-    HAS_COORDINATOR = True
-except ImportError:
-    HAS_COORDINATOR = False
-    ClusterCoordinator = None
-    TaskRole = None
-
 # Import health checks for component monitoring
 try:
     from app.distributed.health_checks import (
@@ -136,13 +127,16 @@ except ImportError:
     TaskCoordinator = None
     TaskType = None
 
-# New coordination features: OrchestratorRole, backpressure, sync_lock, bandwidth
+# Coordination features: OrchestratorRole, backpressure, sync_lock, bandwidth, duration
 try:
     from app.coordination import (
         # Orchestrator role management (SQLite-backed with heartbeat)
         OrchestratorRole,
         acquire_orchestrator_role,
         release_orchestrator_role,
+        is_orchestrator_role_available,
+        orchestrator_role,
+        get_registry,
         # Queue backpressure
         QueueType,
         should_throttle_production,
@@ -155,10 +149,15 @@ try:
         request_bandwidth,
         release_bandwidth,
         TransferPriority,
+        # Duration-aware scheduling
+        can_schedule_task,
+        register_running_task,
+        record_task_completion,
+        estimate_task_duration,
     )
-    HAS_NEW_COORDINATION = True
+    HAS_COORDINATION = True
 except ImportError:
-    HAS_NEW_COORDINATION = False
+    HAS_COORDINATION = False
     OrchestratorRole = None
 
 # Import centralized Elo service (canonical ELO operations)
@@ -307,6 +306,18 @@ except ImportError:
     CircuitOpenError = None
     get_host_breaker = None
     get_training_breaker = None
+
+# Import P2P cluster integration for distributed training
+try:
+    from app.integration.p2p_integration import (
+        P2PIntegrationConfig,
+        P2PIntegrationManager,
+    )
+    HAS_P2P = True
+except ImportError:
+    HAS_P2P = False
+    P2PIntegrationConfig = None
+    P2PIntegrationManager = None
 
 # Memory and local task configuration
 MIN_MEMORY_GB = 64  # Minimum RAM to run the unified loop
@@ -873,6 +884,20 @@ class FeedbackConfig:
 
 
 @dataclass
+class P2PClusterConfig:
+    """Configuration for P2P distributed cluster integration."""
+    enabled: bool = False  # Enable P2P cluster coordination
+    p2p_base_url: str = "http://localhost:8770"  # P2P orchestrator URL
+    auth_token: Optional[str] = None  # Auth token (defaults to RINGRIFT_CLUSTER_AUTH_TOKEN env)
+    model_sync_enabled: bool = True  # Auto-sync models to cluster
+    target_selfplay_games_per_hour: int = 1000  # Target selfplay rate across cluster
+    auto_scale_selfplay: bool = True  # Auto-scale selfplay workers
+    use_distributed_tournament: bool = True  # Use cluster for tournament evaluation
+    health_check_interval: int = 60  # Seconds between cluster health checks
+    sync_interval_seconds: int = 300  # Seconds between data sync with cluster
+
+
+@dataclass
 class UnifiedLoopConfig:
     """Complete configuration for the unified AI loop."""
     data_ingestion: DataIngestionConfig = field(default_factory=DataIngestionConfig)
@@ -884,6 +909,7 @@ class UnifiedLoopConfig:
     nas: NASConfig = field(default_factory=NASConfig)
     per: PERConfig = field(default_factory=PERConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
+    p2p: P2PClusterConfig = field(default_factory=P2PClusterConfig)
 
     # Host configuration
     hosts_config_path: str = "config/remote_hosts.yaml"
@@ -959,6 +985,11 @@ class UnifiedLoopConfig:
                 if hasattr(config.feedback, k):
                     setattr(config.feedback, k, v)
 
+        if "p2p" in data:
+            for k, v in data["p2p"].items():
+                if hasattr(config.p2p, k):
+                    setattr(config.p2p, k, v)
+
         for key in ["hosts_config_path", "elo_db", "data_manifest_db", "log_dir",
                     "verbose", "metrics_port", "metrics_enabled", "dry_run"]:
             if key in data:
@@ -1000,6 +1031,12 @@ class DataEventType(Enum):
     NAS_TRIGGERED = "nas_triggered"
     PLATEAU_DETECTED = "plateau_detected"
     HYPERPARAMETER_UPDATED = "hyperparameter_updated"
+    # P2P cluster events
+    P2P_CLUSTER_HEALTHY = "p2p_cluster_healthy"
+    P2P_CLUSTER_UNHEALTHY = "p2p_cluster_unhealthy"
+    P2P_NODES_DEAD = "p2p_nodes_dead"
+    P2P_SELFPLAY_SCALED = "p2p_selfplay_scaled"
+    P2P_MODEL_SYNCED = "p2p_model_synced"
 
 
 @dataclass
@@ -1338,16 +1375,15 @@ class StreamingDataCollector:
         cmd = f'rsync -avz --progress -e "ssh -o ConnectTimeout=10" {ssh_target}:~/ringrift/ai-service/data/games/*.db {local_dir}/'
 
         # Use new coordination if available: sync_lock + bandwidth
-        if HAS_NEW_COORDINATION:
+        if HAS_COORDINATION:
             bandwidth_alloc = None
             try:
                 # Acquire sync lock to prevent concurrent rsync operations
-                with sync_lock(source_host=host.ssh_host, target_host="localhost", operation="data_sync"):
+                with sync_lock(host=host.ssh_host, operation="data_sync"):
                     # Request bandwidth allocation (estimate ~50MB for DB sync)
                     bandwidth_alloc = request_bandwidth(
-                        source_host=host.ssh_host,
-                        target_host="localhost",
-                        estimated_bytes=50 * 1024 * 1024,  # 50MB estimate
+                        host=host.ssh_host,
+                        estimated_mb=50,  # 50MB estimate
                         priority=TransferPriority.NORMAL,
                     )
 
@@ -2763,7 +2799,7 @@ class UnifiedAILoop:
 
         # New coordination: acquire UNIFIED_LOOP role (SQLite-backed with heartbeat)
         self._has_orchestrator_role = False
-        if HAS_NEW_COORDINATION and OrchestratorRole is not None:
+        if HAS_COORDINATION and OrchestratorRole is not None:
             try:
                 if acquire_orchestrator_role(OrchestratorRole.UNIFIED_LOOP):
                     self._has_orchestrator_role = True
@@ -2802,6 +2838,34 @@ class UnifiedAILoop:
                 self.event_bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_for_adaptive_ctrl)
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize adaptive controller: {e}")
+
+        # P2P cluster integration - distributed training across cluster
+        self.p2p: Optional[P2PIntegrationManager] = None
+        self._p2p_started = False
+        if HAS_P2P and config.p2p.enabled:
+            try:
+                # Create P2PIntegrationConfig from our local config
+                p2p_config = P2PIntegrationConfig(
+                    p2p_base_url=config.p2p.p2p_base_url,
+                    auth_token=config.p2p.auth_token,
+                    model_sync_enabled=config.p2p.model_sync_enabled,
+                    target_selfplay_games_per_hour=config.p2p.target_selfplay_games_per_hour,
+                    auto_scale_selfplay=config.p2p.auto_scale_selfplay,
+                    use_distributed_tournament=config.p2p.use_distributed_tournament,
+                    health_check_interval=config.p2p.health_check_interval,
+                    sync_interval_seconds=config.p2p.sync_interval_seconds,
+                )
+                self.p2p = P2PIntegrationManager(p2p_config)
+
+                # Wire P2P callbacks to our event bus
+                self.p2p.register_callback("cluster_unhealthy", self._on_p2p_cluster_unhealthy)
+                self.p2p.register_callback("nodes_dead", self._on_p2p_nodes_dead)
+                self.p2p.register_callback("selfplay_scaled", self._on_p2p_selfplay_scaled)
+
+                print(f"[UnifiedLoop] P2P integration initialized (base_url={config.p2p.p2p_base_url})")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize P2P integration: {e}")
+                self.p2p = None
 
         # State management
         self._state_path = AI_SERVICE_ROOT / config.log_dir / "unified_loop_state.json"
@@ -3162,6 +3226,78 @@ class UnifiedAILoop:
 
         except Exception as e:
             print(f"[AdaptiveCtrl] Error processing evaluation event: {e}")
+
+    # =========================================================================
+    # P2P Cluster Callbacks
+    # =========================================================================
+
+    async def _on_p2p_cluster_unhealthy(self, error: Optional[str] = None):
+        """Handle cluster unhealthy event from P2P manager."""
+        print(f"[P2P] Cluster unhealthy: {error or 'unknown error'}")
+        await self.event_bus.publish(DataEvent(
+            event_type=DataEventType.P2P_CLUSTER_UNHEALTHY,
+            payload={"error": error},
+        ))
+
+    async def _on_p2p_nodes_dead(self, nodes: List[str]):
+        """Handle nodes dead event from P2P manager."""
+        print(f"[P2P] Dead nodes detected: {nodes}")
+        await self.event_bus.publish(DataEvent(
+            event_type=DataEventType.P2P_NODES_DEAD,
+            payload={"nodes": nodes},
+        ))
+
+    async def _on_p2p_selfplay_scaled(self, result: Dict[str, Any]):
+        """Handle selfplay auto-scale event from P2P manager."""
+        actions = result.get("actions", [])
+        print(f"[P2P] Selfplay scaled: {len(actions)} actions taken")
+        await self.event_bus.publish(DataEvent(
+            event_type=DataEventType.P2P_SELFPLAY_SCALED,
+            payload=result,
+        ))
+
+    async def _start_p2p(self):
+        """Start P2P integration manager if configured."""
+        if self.p2p and not self._p2p_started:
+            try:
+                await self.p2p.start()
+                self._p2p_started = True
+                print("[P2P] Integration manager started")
+            except Exception as e:
+                print(f"[P2P] Failed to start integration manager: {e}")
+
+    async def _stop_p2p(self):
+        """Stop P2P integration manager."""
+        if self.p2p and self._p2p_started:
+            try:
+                await self.p2p.stop()
+                self._p2p_started = False
+                print("[P2P] Integration manager stopped")
+            except Exception as e:
+                print(f"[P2P] Error stopping integration manager: {e}")
+
+    async def sync_model_to_cluster(self, model_id: str, model_path: Path) -> bool:
+        """Sync a trained model to the P2P cluster.
+
+        Returns True if sync successful, False otherwise.
+        """
+        if not self.p2p or not self._p2p_started:
+            return False
+
+        try:
+            result = await self.p2p.sync_model_to_cluster(model_id, model_path)
+            synced = result.get("synced_nodes", 0)
+            total = result.get("total_nodes", 0)
+            print(f"[P2P] Model {model_id} synced to {synced}/{total} nodes")
+
+            await self.event_bus.publish(DataEvent(
+                event_type=DataEventType.P2P_MODEL_SYNCED,
+                payload={"model_id": model_id, "synced_nodes": synced, "total_nodes": total},
+            ))
+            return synced > 0
+        except Exception as e:
+            print(f"[P2P] Error syncing model to cluster: {e}")
+            return False
 
     def _load_state(self):
         """Load state from checkpoint file."""
@@ -3959,22 +4095,31 @@ class UnifiedAILoop:
             print("[UnifiedLoop] Dry run complete - exiting")
             return
 
-        # Start all loops including metrics, external drive sync, and advanced training
-        await asyncio.gather(
-            self._data_collection_loop(),
-            self._evaluation_loop(),
-            self._training_loop(),
-            self._promotion_loop(),
-            self._curriculum_loop(),
-            self._metrics_loop(),
-            self._health_check_loop(),
-            self._hp_tuning_sync_loop(),
-            self._external_drive_sync_loop(),
-            self._pbt_loop(),
-            self._nas_loop(),
-            self._per_loop(),
-            self._cross_process_event_loop(),
-        )
+        # Start P2P cluster integration if configured
+        await self._start_p2p()
+        if self.p2p and self._p2p_started:
+            print(f"[UnifiedLoop] P2P cluster integration enabled")
+
+        try:
+            # Start all loops including metrics, external drive sync, and advanced training
+            await asyncio.gather(
+                self._data_collection_loop(),
+                self._evaluation_loop(),
+                self._training_loop(),
+                self._promotion_loop(),
+                self._curriculum_loop(),
+                self._metrics_loop(),
+                self._health_check_loop(),
+                self._hp_tuning_sync_loop(),
+                self._external_drive_sync_loop(),
+                self._pbt_loop(),
+                self._nas_loop(),
+                self._per_loop(),
+                self._cross_process_event_loop(),
+            )
+        finally:
+            # Stop P2P on shutdown
+            await self._stop_p2p()
 
         print("[UnifiedLoop] Shutdown complete")
 
@@ -3992,7 +4137,7 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to unregister task: {e}")
 
         # Release new orchestrator role (SQLite-backed)
-        if self._has_orchestrator_role and HAS_NEW_COORDINATION:
+        if self._has_orchestrator_role and HAS_COORDINATION:
             try:
                 release_orchestrator_role()
                 print("[UnifiedLoop] Released UNIFIED_LOOP role")
@@ -4046,8 +4191,8 @@ def validate_config(config: UnifiedLoopConfig) -> Tuple[bool, List[str]]:
             errors.append(f"Cannot create log directory: {e}")
 
     # Check coordination modules
-    if not HAS_COORDINATOR:
-        warnings.append("ClusterCoordinator not available - no inter-process coordination")
+    if not HAS_COORDINATION:
+        warnings.append("Coordination system not available - no inter-process coordination")
 
     if not HAS_PRE_SPAWN_HEALTH:
         warnings.append("Pre-spawn health checks not available")
@@ -4094,6 +4239,22 @@ def main():
     config.metrics_port = args.metrics_port
     config.metrics_enabled = not args.no_metrics
 
+    # Handle emergency halt commands
+    if args.halt:
+        set_emergency_halt("CLI --halt command")
+        print(f"[UnifiedLoop] Emergency halt flag set: {EMERGENCY_HALT_FILE}")
+        print("[UnifiedLoop] Running loops will stop at next health check interval (up to 5 min)")
+        print("[UnifiedLoop] To resume: python unified_ai_loop.py --resume")
+        return
+
+    if args.resume:
+        if clear_emergency_halt():
+            print(f"[UnifiedLoop] Emergency halt flag cleared")
+            print("[UnifiedLoop] You can now restart the loop with --start or --foreground")
+        else:
+            print("[UnifiedLoop] No emergency halt flag was set")
+        return
+
     # Validate config at startup
     if args.start or args.foreground:
         is_valid, config_errors = validate_config(config)
@@ -4122,6 +4283,10 @@ def main():
             print(f"  Health: {status_icon} {health_status} (last check: {last_health})")
         else:
             print("No state file found - daemon may not be running")
+
+        # Emergency halt status
+        if check_emergency_halt():
+            print(f"  EMERGENCY HALT: ACTIVE (use --resume to clear)")
         return
 
     if args.stop:
@@ -4139,15 +4304,16 @@ def main():
         return
 
     if args.start or args.foreground:
-        # Check for existing daemon instance using cluster coordinator
-        if HAS_COORDINATOR:
-            coordinator = ClusterCoordinator()
-            if coordinator.is_role_held(TaskRole.ORCHESTRATOR):
-                existing_pid = coordinator.get_role_holder_pid(TaskRole.ORCHESTRATOR)
-                print(f"[UnifiedLoop] ERROR: Another orchestrator instance is already running (PID {existing_pid})")
+        # Check for existing daemon instance using orchestrator registry
+        if HAS_COORDINATION:
+            registry = get_registry()
+            if registry.is_role_held(OrchestratorRole.UNIFIED_LOOP):
+                holder = registry.get_role_holder(OrchestratorRole.UNIFIED_LOOP)
+                existing_pid = holder.pid if holder else "unknown"
+                print(f"[UnifiedLoop] ERROR: Another unified loop instance is already running (PID {existing_pid})")
                 print("[UnifiedLoop] Use --stop to stop it first, or kill the existing process")
                 return
-            print(f"[UnifiedLoop] Cluster coordination enabled - acquiring ORCHESTRATOR role")
+            print("[UnifiedLoop] Coordination enabled - acquiring UNIFIED_LOOP role")
 
         # Check system memory - skip on low-memory machines to avoid OOM
         try:
@@ -4199,13 +4365,9 @@ def main():
                 print(f"Started daemon with PID {pid}")
                 return
 
-        # Run the loop with cluster coordination lock
-        if HAS_COORDINATOR:
-            with coordinator.acquire_role(TaskRole.ORCHESTRATOR, description="Unified AI improvement loop"):
-                asyncio.run(loop.run())
-        else:
-            # Fallback without coordination
-            asyncio.run(loop.run())
+        # Run the loop - role is already acquired during UnifiedLoop initialization
+        # No need for context manager here as that would cause double acquisition
+        asyncio.run(loop.run())
     else:
         parser.print_help()
 

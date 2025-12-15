@@ -1,5 +1,9 @@
 # Integration Migration Plan
 
+> **Status Update (2025-12-14)**: Migration largely complete. `continuous_improvement_daemon.py`
+> is now DEPRECATED in favor of `unified_ai_loop.py`. See [ORCHESTRATOR_SELECTION.md](ORCHESTRATOR_SELECTION.md)
+> for current guidance on which script to use.
+
 This document outlines the migration plan for consolidating duplicate components and improving integration across the RingRift AI training infrastructure.
 
 ## Current State (December 2024)
@@ -128,7 +132,8 @@ Currently only partially integrated. Full integration would enable:
 ┌─────────────────────────────────────────────────────────────┐
 │                    ORCHESTRATORS                             │
 ├─────────────────┬─────────────────┬─────────────────────────┤
-│ unified_ai_loop │ pipeline_orch   │ continuous_imp_daemon   │
+│ unified_ai_loop │ pipeline_orch   │ cluster_orchestrator    │
+│ (CANONICAL)     │ (CI/CD)         │ (distributed)           │
 └────────┬────────┴────────┬────────┴────────┬────────────────┘
          │                 │                 │
          ├─────────────────┼─────────────────┤

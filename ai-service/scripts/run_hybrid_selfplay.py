@@ -162,6 +162,21 @@ from app.db import (
     ParityValidationError,
 )
 
+# Import coordination for task limits and duration tracking
+try:
+    from app.coordination import (
+        TaskCoordinator,
+        TaskType,
+        can_spawn,
+        register_running_task,
+        record_task_completion,
+    )
+    HAS_COORDINATION = True
+except ImportError:
+    HAS_COORDINATION = False
+    TaskCoordinator = None
+    TaskType = None
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -830,22 +845,53 @@ def main():
             # Only one was specified - warn user
             logger.warning("Both --weights-file and --profile are required to load custom weights")
 
-        run_hybrid_selfplay(
-            board_type=args.board_type,
-            num_players=args.num_players,
-            num_games=args.num_games,
-            output_dir=args.output_dir,
-            max_moves=args.max_moves,
-            seed=args.seed,
-            use_numba=not args.no_numba,
-            engine_mode=args.engine_mode,
-            weights=weights,
-            mix_ratio=args.mix_ratio,
-            record_db=None if args.no_record_db else (args.record_db or None),
-            lean_db=bool(args.lean_db),
-            enforce_canonical_history=not bool(args.no_enforce_canonical_history),
-            parity_mode=args.parity_mode,
-        )
+        # Check coordination before spawning
+        task_id = None
+        start_time = time.time()
+        if HAS_COORDINATION:
+            import socket
+            node_id = socket.gethostname()
+            allowed, reason = can_spawn(TaskType.HYBRID_SELFPLAY, node_id)
+            if not allowed:
+                logger.warning(f"Coordination denied spawn: {reason}")
+                logger.info("Proceeding anyway (coordination is advisory)")
+
+            # Register task for tracking
+            task_id = f"hybrid_selfplay_{args.board_type}_{args.num_players}p_{os.getpid()}"
+            try:
+                register_running_task(task_id, "hybrid_selfplay", node_id, os.getpid())
+                logger.info(f"Registered task {task_id} with coordinator")
+            except Exception as e:
+                logger.warning(f"Failed to register task: {e}")
+
+        try:
+            run_hybrid_selfplay(
+                board_type=args.board_type,
+                num_players=args.num_players,
+                num_games=args.num_games,
+                output_dir=args.output_dir,
+                max_moves=args.max_moves,
+                seed=args.seed,
+                use_numba=not args.no_numba,
+                engine_mode=args.engine_mode,
+                weights=weights,
+                mix_ratio=args.mix_ratio,
+                record_db=None if args.no_record_db else (args.record_db or None),
+                lean_db=bool(args.lean_db),
+                enforce_canonical_history=not bool(args.no_enforce_canonical_history),
+                parity_mode=args.parity_mode,
+            )
+        finally:
+            # Record task completion for duration learning
+            if HAS_COORDINATION and task_id:
+                try:
+                    import socket
+                    node_id = socket.gethostname()
+                    config = f"{args.board_type}_{args.num_players}p"
+                    record_task_completion("hybrid_selfplay", config, node_id, start_time, time.time())
+                    logger.info(f"Recorded task completion for duration learning")
+                except Exception as e:
+                    logger.warning(f"Failed to record task completion: {e}")
 
 
 if __name__ == "__main__":

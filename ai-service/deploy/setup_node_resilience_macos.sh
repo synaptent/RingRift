@@ -269,7 +269,7 @@ cat > "$IMP_PLIST" <<EOF
   <key>ProgramArguments</key>
   <array>
     <string>${PYTHON}</string>
-    <string>${AI_SERVICE_DIR}/scripts/continuous_improvement_daemon.py</string>
+    <string>${AI_SERVICE_DIR}/scripts/unified_ai_loop.py</string>
     <string>--foreground</string>
   </array>
   <key>StandardOutPath</key>

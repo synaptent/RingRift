@@ -67,6 +67,21 @@ from app.training.generate_data import create_initial_state
 from app.db.game_replay import GameReplayDB
 from app.game_engine import GameEngine
 
+# Import coordination for task limits and duration tracking
+try:
+    from app.coordination import (
+        TaskCoordinator,
+        TaskType,
+        can_spawn,
+        register_running_task,
+        record_task_completion,
+    )
+    HAS_COORDINATION = True
+except ImportError:
+    HAS_COORDINATION = False
+    TaskCoordinator = None
+    TaskType = None
+
 # NOTE: Victory type derivation is now handled internally by the
 # BatchGameState class in gpu_parallel_games.py, which derives
 # victory_type and stalemate_tiebreaker from the final GPU state.
@@ -1065,29 +1080,60 @@ def main():
         weights = load_weights_from_profile(args.weights_file, args.profile)
         logger.info(f"Loaded weights from {args.weights_file}:{args.profile}")
 
-    run_gpu_selfplay(
-        board_type=args.board,
-        num_players=args.num_players,
-        num_games=args.num_games,
-        output_dir=args.output_dir,
-        batch_size=args.batch_size,
-        max_moves=args.max_moves,
-        weights=weights,
-        engine_mode=args.engine_mode,
-        seed=args.seed,
-        shadow_validation=args.shadow_validation,
-        shadow_sample_rate=args.shadow_sample_rate,
-        shadow_threshold=args.shadow_threshold,
-        lps_victory_rounds=args.lps_victory_rounds,
-        rings_per_player=args.rings_per_player,
-        output_db=args.output_db,
-        use_heuristic_selection=args.use_heuristic,
-        weight_noise=args.weight_noise,
-        use_policy=args.use_policy,
-        policy_model_path=args.policy_model,
-        temperature=args.temperature,
-        noise_scale=args.noise_scale,
-    )
+    # Check coordination before spawning
+    task_id = None
+    start_time = time.time()
+    if HAS_COORDINATION:
+        import socket
+        node_id = socket.gethostname()
+        allowed, reason = can_spawn(TaskType.GPU_SELFPLAY, node_id)
+        if not allowed:
+            logger.warning(f"Coordination denied spawn: {reason}")
+            logger.info("Proceeding anyway (coordination is advisory)")
+
+        # Register task for tracking
+        task_id = f"gpu_selfplay_{args.board}_{args.num_players}p_{os.getpid()}"
+        try:
+            register_running_task(task_id, "gpu_selfplay", node_id, os.getpid())
+            logger.info(f"Registered task {task_id} with coordinator")
+        except Exception as e:
+            logger.warning(f"Failed to register task: {e}")
+
+    try:
+        run_gpu_selfplay(
+            board_type=args.board,
+            num_players=args.num_players,
+            num_games=args.num_games,
+            output_dir=args.output_dir,
+            batch_size=args.batch_size,
+            max_moves=args.max_moves,
+            weights=weights,
+            engine_mode=args.engine_mode,
+            seed=args.seed,
+            shadow_validation=args.shadow_validation,
+            shadow_sample_rate=args.shadow_sample_rate,
+            shadow_threshold=args.shadow_threshold,
+            lps_victory_rounds=args.lps_victory_rounds,
+            rings_per_player=args.rings_per_player,
+            output_db=args.output_db,
+            use_heuristic_selection=args.use_heuristic,
+            weight_noise=args.weight_noise,
+            use_policy=args.use_policy,
+            policy_model_path=args.policy_model,
+            temperature=args.temperature,
+            noise_scale=args.noise_scale,
+        )
+    finally:
+        # Record task completion for duration learning
+        if HAS_COORDINATION and task_id:
+            try:
+                import socket
+                node_id = socket.gethostname()
+                config = f"{args.board}_{args.num_players}p"
+                record_task_completion("gpu_selfplay", config, node_id, start_time, time.time())
+                logger.info(f"Recorded task completion for duration learning")
+            except Exception as e:
+                logger.warning(f"Failed to record task completion: {e}")
 
 
 if __name__ == "__main__":

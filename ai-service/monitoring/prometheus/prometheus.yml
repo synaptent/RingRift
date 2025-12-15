@@ -1,0 +1,35 @@
+# Prometheus configuration for RingRift AI training pipeline
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alertmanager configuration (optional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Load rules
+rule_files:
+  - 'rules/*.yml'
+
+# Scrape configuration
+scrape_configs:
+  # Unified AI Loop metrics
+  - job_name: 'unified_ai_loop'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # Python training dashboard (if running)
+  - job_name: 'training_dashboard'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # Remote cluster nodes (optional - update with actual IPs)
+  # - job_name: 'cluster_nodes'
+  #   static_configs:
+  #     - targets: ['192.222.51.29:9090', '192.222.57.162:9090']

@@ -466,8 +466,10 @@ ai-service/
 │   │   └── recording.py            # Game recording helpers
 │   └── distributed/                # Distributed computing
 ├── scripts/                        # CLI tools (~196 scripts)
-│   ├── pipeline_orchestrator.py    # Master training pipeline
-│   ├── run_improvement_loop.py     # Continuous improvement
+│   ├── unified_ai_loop.py          # **Canonical** self-improvement loop
+│   ├── cluster_orchestrator.py     # Distributed cluster coordination
+│   ├── pipeline_orchestrator.py    # CI/CD pipeline orchestration
+│   ├── model_promotion_manager.py  # Model promotion with Elo validation
 │   ├── run_cmaes_optimization.py   # CMA-ES heuristic optimization
 │   ├── run_self_play_soak.py       # Self-play game generation
 │   ├── run_model_elo_tournament.py # Elo calibration tournaments
@@ -959,12 +961,13 @@ The TypeScript side uses the [`SeededRNG`](../src/shared/utils/rng.ts:1) class (
 
 ### Training & Pipeline
 
-| Document                                               | Description                           |
-| ------------------------------------------------------ | ------------------------------------- |
-| [Unified AI Loop](docs/UNIFIED_AI_LOOP.md)             | Single-daemon improvement coordinator |
-| [Pipeline Orchestrator](docs/PIPELINE_ORCHESTRATOR.md) | SSH-based training pipeline           |
-| [AI Training Plan](docs/AI_TRAINING_PLAN.md)           | CMA-ES and neural network training    |
-| [Distributed Selfplay](docs/DISTRIBUTED_SELFPLAY.md)   | Remote worker setup                   |
+| Document                                                 | Description                          |
+| -------------------------------------------------------- | ------------------------------------ |
+| [Orchestrator Selection](docs/ORCHESTRATOR_SELECTION.md) | **Which script to use** (start here) |
+| [Unified AI Loop](docs/UNIFIED_AI_LOOP.md)               | Canonical self-improvement daemon    |
+| [Pipeline Orchestrator](docs/PIPELINE_ORCHESTRATOR.md)   | CI/CD pipeline orchestration         |
+| [AI Training Plan](docs/AI_TRAINING_PLAN.md)             | CMA-ES and neural network training   |
+| [Distributed Selfplay](docs/DISTRIBUTED_SELFPLAY.md)     | Remote worker setup                  |
 
 ### Infrastructure & Deployment
 

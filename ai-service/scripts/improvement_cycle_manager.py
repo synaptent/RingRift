@@ -8,6 +8,18 @@ The unified_ai_loop.py provides all functionality with:
 - Data quality validation and training gates
 - Feedback loop integration and curriculum rebalancing
 - Health monitoring with Prometheus metrics
+- Emergency halt mechanism (--halt / --resume CLI commands)
+
+Features migrated/available elsewhere:
+- A/B testing: Use scripts/model_promotion_manager.py with --min-games and --significance
+- Ensemble creation: Not yet migrated (manual process if needed)
+- Curriculum learning: Handled by unified_ai_loop.py curriculum_rebalancer_loop
+- Rollback: Use scripts/model_promotion_manager.py (has check_for_elo_regression)
+- Health monitoring: unified_ai_loop.py _health_check_loop
+
+Features NOT migrated (use other scripts):
+- P2P orchestrator integration: Use scripts/p2p_orchestrator.py directly
+- CMA-ES weight integration: Use scripts/cmaes_weight_optimizer.py
 
 To migrate:
     python scripts/unified_ai_loop.py --foreground --verbose
@@ -48,18 +60,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.models import BoardType
 from app.config.unified_config import get_config
 
-# Import cluster coordination to prevent multiple managers running simultaneously
+# Import coordination to prevent multiple managers running simultaneously
 try:
-    from app.distributed.cluster_coordinator import (
-        ClusterCoordinator,
-        TaskRole,
-        check_and_abort_if_role_held,
+    from app.coordination import (
+        TaskCoordinator,
+        TaskType,
+        can_spawn,
     )
     HAS_COORDINATION = True
 except ImportError:
     HAS_COORDINATION = False
-    ClusterCoordinator = None
-    TaskRole = None
+    TaskCoordinator = None
+    TaskType = None
 
 
 # =============================================================================
@@ -956,15 +968,13 @@ class ImprovementCycleManager:
 
         config = f"{board_type}_{num_players}p"
 
-        # Check coordination - prevent spawning if HP tuning role is already held
-        if HAS_COORDINATION:
-            coordinator = ClusterCoordinator()
-            if coordinator.is_role_held(TaskRole.HP_TUNING):
-                existing_pid = coordinator.get_role_holder_pid(TaskRole.HP_TUNING)
-                print(f"[ImprovementManager] {config}: HP tuning blocked - another HP job running (PID {existing_pid})")
-                return False
-            if not coordinator.can_spawn_process("training"):
-                print(f"[ImprovementManager] {config}: HP tuning blocked - training process limit reached")
+        # Check coordination - prevent spawning if training task limit reached
+        if HAS_COORDINATION and TaskCoordinator is not None:
+            import socket
+            node_id = socket.gethostname()
+            allowed, reason = can_spawn(TaskType.TRAINING, node_id)
+            if not allowed:
+                print(f"[ImprovementManager] {config}: HP tuning blocked - {reason}")
                 return False
 
         script_path = Path(self.ringrift_path) / "ai-service" / "scripts" / "hyperparameter_ab_testing.py"
@@ -986,10 +996,16 @@ class ImprovementCycleManager:
             process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             print(f"[ImprovementManager] {config}: Started hyperparameter experiment for '{param}' (PID {process.pid})")
 
-            # Register process with coordinator for tracking
-            if HAS_COORDINATION:
-                coordinator = ClusterCoordinator()
-                coordinator.register_process(process.pid, "training", parent_pid=os.getpid())
+            # Register task with coordinator for tracking
+            if HAS_COORDINATION and TaskCoordinator is not None:
+                try:
+                    import socket
+                    node_id = socket.gethostname()
+                    tc = TaskCoordinator.get_instance()
+                    task_id = f"hp_{config}_{process.pid}"
+                    tc.register_task(task_id, TaskType.TRAINING, node_id, process.pid)
+                except Exception as e:
+                    print(f"[ImprovementManager] {config}: Warning: Failed to register task: {e}")
 
             return True
         except Exception as e:
@@ -1409,15 +1425,13 @@ class ImprovementCycleManager:
         """
         config = f"{board_type}_{num_players}p"
 
-        # Check coordination - prevent triggering if training role already held
-        if HAS_COORDINATION:
-            coordinator = ClusterCoordinator()
-            if coordinator.is_role_held(TaskRole.TRAINING):
-                existing_pid = coordinator.get_role_holder_pid(TaskRole.TRAINING)
-                print(f"[ImprovementManager] {config}: Training trigger blocked - another training job running (PID {existing_pid})")
-                return False
-            if not coordinator.can_spawn_process("training"):
-                print(f"[ImprovementManager] {config}: Training trigger blocked - training process limit reached")
+        # Check coordination - prevent triggering if training task limit reached
+        if HAS_COORDINATION and TaskCoordinator is not None:
+            import socket
+            node_id = socket.gethostname()
+            allowed, reason = can_spawn(TaskType.TRAINING, node_id)
+            if not allowed:
+                print(f"[ImprovementManager] {config}: Training trigger blocked - {reason}")
                 return False
 
         cycle = self._ensure_cycle_state(board_type, num_players)

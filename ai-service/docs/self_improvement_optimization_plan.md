@@ -1,5 +1,14 @@
 # Self-Improvement Loop Optimization Plan
 
+> **STATUS: COMPLETED/MIGRATED**
+>
+> This optimization plan has been implemented. The features described here have been
+> migrated to `scripts/unified_ai_loop.py`, which is now the canonical self-improvement
+> loop implementation. See [ORCHESTRATOR_SELECTION.md](ORCHESTRATOR_SELECTION.md) for
+> current script guidance.
+>
+> The `continuous_improvement_daemon.py` referenced below is DEPRECATED.
+
 ## Current State Analysis
 
 ### Feedback Latency: 95-190 minutes

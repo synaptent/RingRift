@@ -1419,17 +1419,18 @@ def main():
     except (OSError, AttributeError):
         pass  # getloadavg not available on all platforms
 
-    # Check ClusterCoordinator for exclusive tournament access
+    # Check coordination for exclusive tournament access
     try:
-        from app.distributed.cluster_coordinator import ClusterCoordinator, TaskRole
-        coordinator = ClusterCoordinator()
-        if not args.leaderboard_only and coordinator.is_role_held(TaskRole.TOURNAMENT):
-            holder_pid = coordinator.get_role_holder_pid(TaskRole.TOURNAMENT)
+        from app.coordination import OrchestratorRole, get_registry
+        registry = get_registry()
+        if not args.leaderboard_only and registry.is_role_held(OrchestratorRole.TOURNAMENT_RUNNER):
+            holder = registry.get_role_holder(OrchestratorRole.TOURNAMENT_RUNNER)
+            holder_pid = holder.pid if holder else "unknown"
             print(f"[Tournament] ERROR: Another tournament is already running (PID {holder_pid})")
             print("[Tournament] Wait for it to complete or kill it first")
             return
     except ImportError:
-        pass  # Coordinator not available, continue without check
+        pass  # Coordination not available, continue without check
     # === END SAFEGUARDS ===
 
     # Quick mode: reduce games for fast shadow evaluation

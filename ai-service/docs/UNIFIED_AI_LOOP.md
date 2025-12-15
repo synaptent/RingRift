@@ -55,7 +55,34 @@ python scripts/unified_ai_loop.py --stop
 
 # Use custom config
 python scripts/unified_ai_loop.py --config config/unified_loop.yaml
+
+# Emergency halt (stops all loops at next health check, up to 5 min)
+python scripts/unified_ai_loop.py --halt
+
+# Resume after emergency halt
+python scripts/unified_ai_loop.py --resume
 ```
+
+### Emergency Halt
+
+The unified loop supports an emergency halt mechanism for safely stopping all operations:
+
+```bash
+# Trigger emergency halt
+python scripts/unified_ai_loop.py --halt
+
+# Check if halt is active (shown in --status output)
+python scripts/unified_ai_loop.py --status
+
+# Clear halt flag to allow restart
+python scripts/unified_ai_loop.py --resume
+```
+
+The halt flag is stored at `data/coordination/EMERGENCY_HALT`. When set:
+
+- Running loops will stop at the next health check interval (every 5 minutes)
+- New instances will refuse to start
+- The flag persists across restarts until explicitly cleared
 
 ### Systemd Service
 
