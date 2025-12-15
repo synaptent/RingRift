@@ -28,7 +28,10 @@ training:
   min_interval_seconds: 1200 # 20 min minimum (reduced from 30)
   max_concurrent_jobs: 1 # Only one training job at a time
   prefer_gpu_hosts: true # Schedule training on GPU hosts
-  training_script: 'scripts/train_nnue.py'
+  # V3 training scripts (unified pipeline)
+  nn_training_script: 'scripts/run_nn_training_baseline.py'
+  export_script: 'scripts/export_replay_dataset.py'
+  hex_encoder_version: 'v3' # Use HexStateEncoderV3 (16 channels x 4 = 64)
   # Additional options
   warm_start: true # Continue from previous checkpoint if available
   validation_split: 0.1 # Hold out 10% for validation

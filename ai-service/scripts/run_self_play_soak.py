@@ -1071,6 +1071,16 @@ def run_self_play_soak(
             flush=True,
         )
 
+    # Opening diversity options
+    opening_random_moves = getattr(args, "opening_random_moves", 4)
+    opening_top_k = getattr(args, "opening_top_k", 0)
+    if opening_random_moves > 0:
+        print(
+            f"[opening-diversity] Enabled: first {opening_random_moves} moves will be "
+            f"{'randomly selected' if opening_top_k == 0 else f'sampled from top-{opening_top_k} AI moves'}",
+            flush=True,
+        )
+
     # Memory management options
     intra_game_gc_interval = getattr(args, "intra_game_gc_interval", 0)
     streaming_record = getattr(args, "streaming_record", False)
@@ -1308,6 +1318,8 @@ def run_self_play_soak(
                     clear_model_cache()
 
             game_seed = None if base_seed is None else base_seed + game_idx
+            # RNG for opening diversity (deterministic per-game if seed provided)
+            game_rng = random.Random(game_seed) if game_seed is not None else random.Random()
             try:
                 if profile_timing:
                     t0 = time.time()
@@ -1457,11 +1469,41 @@ def run_self_play_soak(
                         termination_reason = "no_ai_for_current_player"
                         skipped = True
                         break
-                    if profile_timing:
-                        t_sel_start = time.time()
-                    move = ai.select_move(state)
-                    if profile_timing:
-                        timing_totals["move_select"] += time.time() - t_sel_start
+
+                    # Opening diversity: randomly select from legal moves for first N moves
+                    if opening_random_moves > 0 and move_count < opening_random_moves:
+                        if opening_top_k > 0:
+                            # Semi-intelligent: sample from top-K AI moves
+                            if profile_timing:
+                                t_sel_start = time.time()
+                            ai_move = ai.select_move(state)
+                            if profile_timing:
+                                timing_totals["move_select"] += time.time() - t_sel_start
+
+                            # Get AI's move rankings if available
+                            ranked_moves = getattr(ai, "get_ranked_moves", None)
+                            if ranked_moves and callable(ranked_moves):
+                                try:
+                                    top_moves = ranked_moves(state, top_k=opening_top_k)
+                                    if top_moves:
+                                        move = game_rng.choice(top_moves)
+                                    else:
+                                        move = game_rng.choice(legal_moves)
+                                except Exception:
+                                    move = game_rng.choice(legal_moves)
+                            else:
+                                # Fallback: random from legal moves
+                                move = game_rng.choice(legal_moves)
+                        else:
+                            # Purely random: select any legal move
+                            move = game_rng.choice(legal_moves)
+                    else:
+                        # Normal AI selection
+                        if profile_timing:
+                            t_sel_start = time.time()
+                        move = ai.select_move(state)
+                        if profile_timing:
+                            timing_totals["move_select"] += time.time() - t_sel_start
 
                     if not move:
                         termination_reason = "ai_returned_no_move"
@@ -3118,6 +3160,28 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Emit data events for pipeline integration (NEW_GAMES_AVAILABLE). "
             "Useful for triggering downstream processing in the unified AI loop."
+        ),
+    )
+    parser.add_argument(
+        "--opening-random-moves",
+        type=int,
+        default=4,
+        help=(
+            "Number of moves at game start to select randomly from legal moves "
+            "instead of using AI selection. This increases opening diversity "
+            "and prevents games from always starting with identical sequences. "
+            "Default: 4. Set to 0 to disable. Recommended: 4-8 for 2p, 6-12 for 3-4p."
+        ),
+    )
+    parser.add_argument(
+        "--opening-top-k",
+        type=int,
+        default=0,
+        help=(
+            "If > 0, during opening phase select randomly from top-K AI-recommended "
+            "moves instead of purely random. This maintains some move quality while "
+            "adding diversity. Set to 0 (default) for purely random opening moves. "
+            "Recommended: 3-5 if you want semi-intelligent opening diversity."
         ),
     )
     return parser.parse_args()

@@ -298,7 +298,11 @@ class TrainingConfig:
     min_interval_seconds: int = 1800  # 30 minutes minimum between training
     max_concurrent_jobs: int = 1
     prefer_gpu_hosts: bool = True
-    training_script: str = "scripts/train_nnue.py"
+    nnue_training_script: str = "scripts/train_nnue.py"
+    nn_training_script: str = "scripts/run_nn_training_baseline.py"
+    export_script: str = "scripts/export_replay_dataset.py"
+    # Encoder version for hex boards: "v3" uses HexStateEncoderV3 (16 channels)
+    hex_encoder_version: str = "v3"
 
 
 @dataclass
@@ -828,7 +832,11 @@ class TrainingScheduler:
         return None
 
     async def start_training(self, config_key: str) -> bool:
-        """Start a training run for the given configuration."""
+        """Start a training run for the given configuration.
+
+        For hex boards, exports data with V3 encoder first, then trains.
+        For square boards, uses existing data or exports with default encoder.
+        """
         # Skip local training if disabled
         if DISABLE_LOCAL_TASKS:
             print(f"[Training] Skipping local training (RINGRIFT_DISABLE_LOCAL_TASKS=true)")
@@ -854,15 +862,68 @@ class TrainingScheduler:
             # Use v3 for all board types (best architecture with spatial policy heads)
             model_version = "v3"
 
-            # Start training process
-            cmd = [
+            # Find game database
+            games_dir = AI_SERVICE_ROOT / "data" / "games"
+            game_dbs = list(games_dir.glob("*.db"))
+            if not game_dbs:
+                print(f"[Training] No game databases found")
+                self.state.training_in_progress = False
+                return False
+
+            largest_db = max(game_dbs, key=lambda p: p.stat().st_size)
+
+            # Export training data with appropriate encoder
+            training_dir = AI_SERVICE_ROOT / "data" / "training"
+            training_dir.mkdir(parents=True, exist_ok=True)
+            data_path = training_dir / f"unified_{config_key}.npz"
+
+            # Determine encoder version (v3 for hex, default for square)
+            encoder_version = self.config.hex_encoder_version if board_type == "hexagonal" else "default"
+
+            export_cmd = [
                 sys.executable,
-                str(AI_SERVICE_ROOT / self.config.training_script),
+                str(AI_SERVICE_ROOT / self.config.export_script),
+                "--db", str(largest_db),
+                "--output", str(data_path),
                 "--board-type", board_type,
                 "--num-players", str(num_players),
+                "--sample-every", "2",
+            ]
+            if encoder_version != "default":
+                export_cmd.extend(["--encoder-version", encoder_version])
+
+            print(f"[Training] Exporting data for {config_key} (encoder: {encoder_version})...")
+            export_process = await asyncio.create_subprocess_exec(
+                *export_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=AI_SERVICE_ROOT,
+            )
+            await export_process.wait()
+
+            if export_process.returncode != 0:
+                print(f"[Training] Export failed for {config_key}")
+                self.state.training_in_progress = False
+                return False
+
+            # Start NN training process
+            timestamp = int(time.time())
+            model_id = f"{config_key}_v3_{timestamp}"
+            run_dir = AI_SERVICE_ROOT / "logs" / "unified_training" / model_id
+
+            cmd = [
+                sys.executable,
+                str(AI_SERVICE_ROOT / self.config.nn_training_script),
+                "--board", board_type,
+                "--num-players", str(num_players),
+                "--data-path", str(data_path),
+                "--run-dir", str(run_dir),
+                "--model-id", model_id,
                 "--model-version", model_version,
+                "--epochs", "100",
             ]
 
+            print(f"[Training] Starting training for {model_id}...")
             self._training_process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
