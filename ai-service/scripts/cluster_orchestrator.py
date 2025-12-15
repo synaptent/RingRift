@@ -33,6 +33,22 @@ import yaml
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Import unified cluster coordination
+try:
+    from app.coordination import (
+        acquire_orchestrator_lock,
+        release_orchestrator_lock,
+        can_spawn_task,
+        register_task,
+        check_emergency_halt,
+        cleanup_stale_tasks,
+        MAX_LOAD_THRESHOLD,
+    )
+    HAS_COORDINATION = True
+except ImportError:
+    HAS_COORDINATION = False
+    print("[WARN] Cluster coordination module not available, using local lock only")
+
 LOG_DIR = Path(__file__).parent.parent / "logs" / "orchestrator"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE = LOG_DIR / "cluster_state.json"
@@ -863,7 +879,19 @@ def save_state(state: ClusterState):
 
 
 def acquire_lock() -> bool:
-    """Acquire lockfile to prevent multiple instances."""
+    """Acquire lockfile to prevent multiple instances.
+
+    Uses unified cluster coordination if available, falls back to local lock.
+    """
+    # Use unified coordination if available
+    if HAS_COORDINATION:
+        if not acquire_orchestrator_lock("cluster_orchestrator"):
+            log("Another orchestrator is already running (via unified lock)", "WARN")
+            return False
+        log("Acquired unified orchestrator lock")
+        return True
+
+    # Fallback to local lockfile
     if LOCKFILE.exists():
         try:
             pid = int(LOCKFILE.read_text().strip())
@@ -879,10 +907,27 @@ def acquire_lock() -> bool:
 
 def release_lock():
     """Release lockfile."""
+    # Release unified coordination lock
+    if HAS_COORDINATION:
+        release_orchestrator_lock()
+
+    # Also release local lockfile
     try:
         LOCKFILE.unlink()
     except FileNotFoundError:
         pass
+
+
+def check_host_can_spawn(host_name: str, ssh_host: str, task_type: str = "selfplay") -> bool:
+    """Check if a host can accept new tasks using coordination module."""
+    if not HAS_COORDINATION:
+        return True  # No coordination, allow spawn
+
+    if check_emergency_halt():
+        log(f"Emergency halt active, blocking spawn on {host_name}", "WARN")
+        return False
+
+    return can_spawn_task(host=ssh_host, task_type=task_type)
 
 
 def sync_to_mac_studio(hosts: List[HostConfig], dry_run: bool = False) -> bool:

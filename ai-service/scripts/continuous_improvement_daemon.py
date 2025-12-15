@@ -48,6 +48,27 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
+# Import unified cluster coordination
+try:
+    from app.distributed.cluster_coordinator import (
+        ClusterCoordinator,
+        TaskRole,
+        ProcessLimits,
+        check_and_abort_if_role_held,
+    )
+    HAS_COORDINATION = True
+    _coordinator = ClusterCoordinator()
+except ImportError:
+    HAS_COORDINATION = False
+    ClusterCoordinator = None
+    TaskRole = None
+    _coordinator = None
+
+def check_emergency_halt() -> bool:
+    """Check if emergency halt flag is set."""
+    halt_file = AI_SERVICE_ROOT / "data" / "coordination" / "EMERGENCY_HALT"
+    return halt_file.exists()
+
 # Import persistent Elo database functions
 try:
     from scripts.run_model_elo_tournament import (
@@ -2896,6 +2917,15 @@ async def daemon_cycle(state: DaemonState) -> bool:
 
 async def run_daemon(foreground: bool = False) -> None:
     """Run the continuous improvement daemon."""
+    # Acquire exclusive lock to prevent multiple daemons
+    if HAS_COORDINATION and _coordinator is not None:
+        if _coordinator.is_role_held(TaskRole.ORCHESTRATOR):
+            existing_pid = _coordinator.get_role_holder_pid(TaskRole.ORCHESTRATOR)
+            print(f"[Daemon] ERROR: Another orchestrator is already running (PID {existing_pid})")
+            print("[Daemon] Kill that process first or wait for it to complete.")
+            return
+        print("[Daemon] Coordination module active - will acquire exclusive lock")
+
     # Check system memory - skip on low-memory machines to avoid OOM
     # 64GB minimum required; machines below this threshold should not run local tasks
     MIN_MEMORY_GB = 64
@@ -2936,46 +2966,74 @@ async def run_daemon(foreground: bool = False) -> None:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Main loop
-    last_leader_ok: Optional[bool] = None
-    while not shutdown_event.is_set():
-        if USE_P2P_ORCHESTRATOR and IMPROVEMENT_LEADER_ONLY:
-            leader_ok = await is_local_p2p_leader()
-            if last_leader_ok is None or leader_ok != last_leader_ok:
-                if leader_ok:
-                    print("[Daemon] Leadership gate: active (local node is effective cluster leader)")
-                else:
-                    print("[Daemon] Leadership gate: paused (local node is not effective cluster leader)")
-                last_leader_ok = leader_ok
-            if not leader_ok:
+    # Acquire orchestrator lock
+    lock_context = None
+    task_id = None
+    if HAS_COORDINATION and _coordinator is not None:
+        try:
+            lock_context = _coordinator.acquire_role(
+                TaskRole.ORCHESTRATOR,
+                blocking=False,
+                description="Continuous improvement daemon"
+            )
+            task_id = lock_context.__enter__()
+            print(f"[Daemon] Acquired orchestrator lock (task_id={task_id})")
+        except RuntimeError as e:
+            print(f"[Daemon] ERROR: Failed to acquire lock: {e}")
+            return
+        except Exception as e:
+            print(f"[Daemon] Warning: Lock acquisition failed: {e}")
+
+    try:
+        # Main loop
+        last_leader_ok: Optional[bool] = None
+        while not shutdown_event.is_set():
+            if USE_P2P_ORCHESTRATOR and IMPROVEMENT_LEADER_ONLY:
+                leader_ok = await is_local_p2p_leader()
+                if last_leader_ok is None or leader_ok != last_leader_ok:
+                    if leader_ok:
+                        print("[Daemon] Leadership gate: active (local node is effective cluster leader)")
+                    else:
+                        print("[Daemon] Leadership gate: paused (local node is not effective cluster leader)")
+                    last_leader_ok = leader_ok
+                if not leader_ok:
+                    try:
+                        await asyncio.wait_for(shutdown_event.wait(), timeout=IMPROVEMENT_LEADER_POLL_SECONDS)
+                    except asyncio.TimeoutError:
+                        pass
+                    continue
+
+            success = await daemon_cycle(state)
+
+            if not success:
+                # Exponential backoff on failure
+                delay = min(
+                    RETRY_BASE_DELAY * (2 ** state.consecutive_failures),
+                    RETRY_MAX_DELAY
+                )
+                print(f"[Daemon] Waiting {delay:.0f}s before retry...")
                 try:
-                    await asyncio.wait_for(shutdown_event.wait(), timeout=IMPROVEMENT_LEADER_POLL_SECONDS)
+                    await asyncio.wait_for(shutdown_event.wait(), timeout=delay)
                 except asyncio.TimeoutError:
                     pass
-                continue
+            else:
+                # Normal cycle interval
+                try:
+                    await asyncio.wait_for(shutdown_event.wait(), timeout=CYCLE_INTERVAL_SECONDS)
+                except asyncio.TimeoutError:
+                    pass
 
-        success = await daemon_cycle(state)
-
-        if not success:
-            # Exponential backoff on failure
-            delay = min(
-                RETRY_BASE_DELAY * (2 ** state.consecutive_failures),
-                RETRY_MAX_DELAY
-            )
-            print(f"[Daemon] Waiting {delay:.0f}s before retry...")
+    finally:
+        # Release lock and save state
+        if lock_context is not None:
             try:
-                await asyncio.wait_for(shutdown_event.wait(), timeout=delay)
-            except asyncio.TimeoutError:
-                pass
-        else:
-            # Normal cycle interval
-            try:
-                await asyncio.wait_for(shutdown_event.wait(), timeout=CYCLE_INTERVAL_SECONDS)
-            except asyncio.TimeoutError:
-                pass
+                lock_context.__exit__(None, None, None)
+                print("[Daemon] Released orchestrator lock")
+            except Exception as e:
+                print(f"[Daemon] Warning: Lock release failed: {e}")
 
-    print("[Daemon] Shutdown complete")
-    save_state(state)
+        print("[Daemon] Shutdown complete")
+        save_state(state)
 
 
 # =============================================================================

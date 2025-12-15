@@ -97,6 +97,17 @@ except ImportError:
     HAS_IMPROVEMENT_MANAGER = False
     ImprovementCycleManager = None
 
+# Task coordination safeguards - prevents runaway spawning
+try:
+    from app.coordination.safeguards import Safeguards, check_before_spawn
+    HAS_SAFEGUARDS = True
+    _safeguards = Safeguards.get_instance()
+except ImportError:
+    HAS_SAFEGUARDS = False
+    _safeguards = None
+    def check_before_spawn(task_type, node_id):
+        return True, ""
+
 # ============================================
 # Configuration
 # ============================================
@@ -169,6 +180,13 @@ GPU_IDLE_THRESHOLD = 2          # Consider GPU idle if utilization < 2%
 # and trigger a restart_stuck_jobs sweep.
 _runaway_threshold_env = (os.environ.get("RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD") or "").strip()
 RUNAWAY_SELFPLAY_PROCESS_THRESHOLD = int(_runaway_threshold_env) if _runaway_threshold_env else 0
+
+# SAFEGUARDS - Load average and rate limiting (added 2025-12-15)
+# These provide hard limits beyond the soft load_score calculation
+LOAD_AVERAGE_MAX_MULTIPLIER = float(os.environ.get("RINGRIFT_P2P_LOAD_AVG_MAX_MULT", "2.0") or 2.0)  # Max load = cpus * multiplier
+SPAWN_RATE_LIMIT_PER_MINUTE = int(os.environ.get("RINGRIFT_P2P_SPAWN_RATE_LIMIT", "5") or 5)  # Max spawns per minute
+COORDINATOR_URL = os.environ.get("RINGRIFT_COORDINATOR_URL", "")  # If set, defer to coordinator
+AGENT_MODE_ENABLED = os.environ.get("RINGRIFT_P2P_AGENT_MODE", "").lower() in {"1", "true", "yes", "on"}
 
 # Git auto-update settings
 GIT_UPDATE_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL", "300") or 300)  # seconds
@@ -398,6 +416,30 @@ class NodeInfo:
                 return score
 
         return GPU_POWER_RANKINGS.get("Unknown", 10)
+
+    def check_load_average_safe(self) -> Tuple[bool, str]:
+        """Check if system load average is safe for spawning new processes.
+
+        SAFEGUARD: Uses actual os.getloadavg() instead of just CPU percentage.
+        On a 72-core machine, load 500 is catastrophic even if CPU% looks OK.
+
+        Returns:
+            (is_safe, reason) - True if safe to spawn, with explanation
+        """
+        try:
+            load_1, load_5, load_15 = os.getloadavg()
+            cpu_count = os.cpu_count() or 1
+            max_load = cpu_count * LOAD_AVERAGE_MAX_MULTIPLIER
+
+            if load_1 > max_load:
+                return False, f"Load {load_1:.1f} > {max_load:.0f} (cpus={cpu_count} x {LOAD_AVERAGE_MAX_MULTIPLIER})"
+            if load_5 > max_load * 1.5:
+                return False, f"5min load {load_5:.1f} > {max_load * 1.5:.0f}"
+
+            return True, f"Load OK: {load_1:.1f}/{max_load:.0f}"
+        except Exception as e:
+            # If we can't check load, be conservative
+            return True, f"Load check unavailable: {e}"
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -1232,6 +1274,15 @@ class P2POrchestrator:
         self.pending_relay_acks: Set[str] = set()
         self.pending_relay_results: List[Dict[str, Any]] = []
         self.relay_command_attempts: Dict[str, int] = {}
+
+        # SAFEGUARDS - Rate limiting and coordinator integration (added 2025-12-15)
+        self.spawn_timestamps: List[float] = []  # Timestamps of recent process spawns
+        self.agent_mode = AGENT_MODE_ENABLED
+        self.coordinator_url = COORDINATOR_URL
+        self.last_coordinator_check: float = 0.0
+        self.coordinator_available: bool = False
+        print(f"[P2P] Safeguards: rate_limit={SPAWN_RATE_LIMIT_PER_MINUTE}/min, "
+              f"load_max={LOAD_AVERAGE_MAX_MULTIPLIER}x, agent_mode={self.agent_mode}")
 
         # Load persisted state
         self._load_state()
@@ -15160,15 +15211,22 @@ print(json.dumps({{
         """Return the desired selfplay concurrency for a node.
 
         This keeps job scheduling, runaway detection, and load shedding aligned.
-        Target: 60% CPU utilization across cluster.
+        Target: 50% CPU utilization across cluster (reduced from 60% for stability).
+
+        SAFEGUARD: Maximum limits reduced to prevent runaway spawning.
         """
+        # Check safeguards first
+        if HAS_SAFEGUARDS and _safeguards:
+            if _safeguards.is_emergency_active():
+                return 0
+
         # Minimum memory requirement - skip low-memory machines to avoid OOM
         memory_gb = int(getattr(node, "memory_gb", 0) or 0)
         if memory_gb > 0 and memory_gb < MIN_MEMORY_GB_FOR_TASKS:
             # Skip low-memory machines entirely
             return 0
 
-        target_selfplay = 4  # Higher baseline
+        target_selfplay = 4  # Baseline
         has_gpu = bool(getattr(node, "has_gpu", False))
         cpu_count = int(getattr(node, "cpu_count", 0) or 0)
         cpu_percent = float(getattr(node, "cpu_percent", 0.0) or 0.0)
@@ -15177,45 +15235,43 @@ print(json.dumps({{
         gpu_percent = float(getattr(node, "gpu_percent", 0.0) or 0.0)
         gpu_mem_percent = float(getattr(node, "gpu_memory_percent", 0.0) or 0.0)
 
-        # Target 60% CPU: ~2.5% CPU per job, so jobs = cores * 0.6 / 2.5 = cores * 0.24
-        # Use cores * 0.3 to slightly overshoot and let utilization-aware tuning adjust
-        TARGET_JOBS_PER_CORE = 0.35  # ~35% of cores as concurrent jobs for 60% CPU
+        # SAFEGUARD: Reduced from 0.35 to 0.20 to prevent over-spawning
+        # Target 50% CPU utilization with conservative scheduling
+        TARGET_JOBS_PER_CORE = 0.20  # ~20% of cores as concurrent jobs
+
+        # SAFEGUARD: Hard caps to prevent runaway spawning
+        MAX_SELFPLAY_PER_NODE = 32  # Reduced from 256
+        MAX_SELFPLAY_HIGH_END = 48  # For high-end nodes only
 
         if has_gpu:
             gpu_name = (getattr(node, "gpu_name", "") or "").lower()
-            # Baseline concurrency by accelerator tier (higher baselines).
+            # Baseline concurrency by accelerator tier (reduced baselines)
             if any(tag in gpu_name for tag in ("h100", "h200", "gh200", "5090")):
-                target_selfplay = 16
+                target_selfplay = 12  # Reduced from 16
             elif any(tag in gpu_name for tag in ("a100", "4090")):
-                target_selfplay = 12
+                target_selfplay = 8   # Reduced from 12
             elif any(tag in gpu_name for tag in ("3090", "a10")):
-                target_selfplay = 8
+                target_selfplay = 6   # Reduced from 8
             elif memory_gb >= 64:
-                target_selfplay = 8
+                target_selfplay = 6
 
-            # Scale aggressively with CPU cores for 60% target utilization
+            # Conservative scaling with CPU cores
             if cpu_count >= 32:
-                # Target: 35% of cores as jobs, capped by memory (3GB per job typical)
-                # GH200 (64 cores, 525GB): target 64*0.35 = 22, but can handle 64 easily
-                # Vast (384 cores, 500GB): target 384*0.35 = 134
-                # Vast (512 cores, 755GB): target 512*0.35 = 179
                 cpu_based_target = int(cpu_count * TARGET_JOBS_PER_CORE)
-                mem_cap = memory_gb // 3 if memory_gb > 0 else 128  # 3GB per job
-                # Higher caps for aggressive utilization
-                core_cap = 64 if cpu_count < 128 else min(256, int(cpu_count * 0.5))
+                mem_cap = memory_gb // 4 if memory_gb > 0 else 32  # 4GB per job (safer)
+                # SAFEGUARD: Much lower caps
+                core_cap = MAX_SELFPLAY_HIGH_END if cpu_count >= 128 else MAX_SELFPLAY_PER_NODE
                 target_selfplay = max(target_selfplay, min(cpu_based_target, mem_cap, core_cap))
             elif cpu_count > 0:
-                cpu_bonus = max(0, min(12, cpu_count // 4))
-                target_selfplay = min(32, target_selfplay + cpu_bonus)
+                cpu_bonus = max(0, min(8, cpu_count // 6))  # Reduced bonus
+                target_selfplay = min(MAX_SELFPLAY_PER_NODE, target_selfplay + cpu_bonus)
 
-            # Utilization-aware tuning (only reduce if actually overloaded).
-            if gpu_percent > 95 or gpu_mem_percent > 95:
-                target_selfplay = max(4, target_selfplay - 4)
-            if cpu_percent > 90:
-                target_selfplay = max(4, target_selfplay - 2)
-            elif cpu_percent < 50 and mem_percent < 70:
-                # Resources significantly underutilized - scale up more
-                target_selfplay = min(256, int(target_selfplay * 1.3))
+            # Utilization-aware tuning - more aggressive reduction
+            if gpu_percent > 90 or gpu_mem_percent > 90:
+                target_selfplay = max(2, target_selfplay - 6)
+            if cpu_percent > 80:
+                target_selfplay = max(2, target_selfplay - 4)
+            # REMOVED: No more "scale up more" logic that caused runaway
         else:
             # CPU-only nodes: scale aggressively with CPU cores
             if cpu_count >= 32:

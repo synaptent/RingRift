@@ -64,6 +64,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 RINGRIFT_ROOT = AI_SERVICE_ROOT.parent
 
+# Import cluster coordination - prevents multiple daemon instances
+try:
+    from app.distributed.cluster_coordinator import ClusterCoordinator, TaskRole, check_and_abort_if_role_held
+    HAS_COORDINATOR = True
+except ImportError:
+    HAS_COORDINATOR = False
+    ClusterCoordinator = None
+    TaskRole = None
+
 # Memory and local task configuration
 MIN_MEMORY_GB = 64  # Minimum RAM to run the unified loop
 DISABLE_LOCAL_TASKS = os.environ.get("RINGRIFT_DISABLE_LOCAL_TASKS", "").lower() in ("1", "true", "yes", "on")
@@ -2399,6 +2408,16 @@ def main():
         return
 
     if args.start or args.foreground:
+        # Check for existing daemon instance using cluster coordinator
+        if HAS_COORDINATOR:
+            coordinator = ClusterCoordinator()
+            if coordinator.is_role_held(TaskRole.ORCHESTRATOR):
+                existing_pid = coordinator.get_role_holder_pid(TaskRole.ORCHESTRATOR)
+                print(f"[UnifiedLoop] ERROR: Another orchestrator instance is already running (PID {existing_pid})")
+                print("[UnifiedLoop] Use --stop to stop it first, or kill the existing process")
+                return
+            print(f"[UnifiedLoop] Cluster coordination enabled - acquiring ORCHESTRATOR role")
+
         # Check system memory - skip on low-memory machines to avoid OOM
         try:
             import psutil
@@ -2449,8 +2468,13 @@ def main():
                 print(f"Started daemon with PID {pid}")
                 return
 
-        # Run the loop
-        asyncio.run(loop.run())
+        # Run the loop with cluster coordination lock
+        if HAS_COORDINATOR:
+            with coordinator.acquire_role(TaskRole.ORCHESTRATOR, description="Unified AI improvement loop"):
+                asyncio.run(loop.run())
+        else:
+            # Fallback without coordination
+            asyncio.run(loop.run())
     else:
         parser.print_help()
 

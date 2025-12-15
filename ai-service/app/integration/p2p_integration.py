@@ -1,0 +1,960 @@
+"""
+P2P Orchestrator Integration for RingRift AI Self-Improvement Loop.
+
+Connects all training components with the distributed P2P cluster:
+- Model synchronization across nodes
+- Distributed training coordination
+- Evaluation result aggregation
+- Resource-aware job scheduling
+- Fault-tolerant pipeline execution
+
+This module acts as the bridge between the self-improvement loop
+components and the P2P orchestrator's REST API.
+"""
+
+import asyncio
+import json
+import logging
+import os
+import time
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timedelta
+from enum import Enum
+from pathlib import Path
+from typing import Dict, List, Optional, Any, Callable, Tuple
+
+try:
+    from aiohttp import ClientSession, ClientTimeout
+    HAS_AIOHTTP = True
+except ImportError:
+    HAS_AIOHTTP = False
+    ClientSession = None
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================
+# Configuration
+# ============================================
+
+@dataclass
+class P2PIntegrationConfig:
+    """Configuration for P2P orchestrator integration."""
+    # Connection settings
+    p2p_base_url: str = "http://localhost:8770"
+    auth_token: Optional[str] = None
+    connect_timeout: float = 10.0
+    request_timeout: float = 60.0
+
+    # Sync settings
+    model_sync_enabled: bool = True
+    data_sync_enabled: bool = True
+    sync_interval_seconds: float = 300.0
+
+    # Training coordination
+    prefer_gpu_for_training: bool = True
+    min_gpu_memory_gb: int = 8
+    max_concurrent_training_jobs: int = 1
+
+    # Selfplay coordination
+    target_selfplay_games_per_hour: int = 1000
+    auto_scale_selfplay: bool = True
+
+    # Evaluation settings
+    tournament_games_per_pair: int = 50
+    use_distributed_tournament: bool = True
+
+    # Health monitoring
+    health_check_interval: float = 30.0
+    unhealthy_threshold_failures: int = 3
+
+
+class P2PNodeCapability(Enum):
+    """Capabilities a node can have."""
+    CPU_SELFPLAY = "cpu_selfplay"
+    GPU_SELFPLAY = "gpu_selfplay"
+    TRAINING = "training"
+    CMAES = "cmaes"
+    TOURNAMENT = "tournament"
+    DATA_STORAGE = "data_storage"
+
+
+@dataclass
+class P2PNode:
+    """Information about a P2P cluster node."""
+    node_id: str
+    host: str
+    port: int
+    is_alive: bool = False
+    is_healthy: bool = False
+    has_gpu: bool = False
+    gpu_name: str = ""
+    gpu_power_score: int = 0
+    memory_gb: int = 0
+    disk_percent: float = 0.0
+    cpu_percent: float = 0.0
+    selfplay_jobs: int = 0
+    training_jobs: int = 0
+    capabilities: List[P2PNodeCapability] = field(default_factory=list)
+    last_heartbeat: float = 0.0
+
+
+# ============================================
+# P2P API Client
+# ============================================
+
+class P2PAPIClient:
+    """
+    Client for P2P orchestrator REST API.
+
+    Provides typed methods for common operations.
+    """
+
+    def __init__(self, config: P2PIntegrationConfig):
+        self.config = config
+        self._session: Optional[ClientSession] = None
+        self._headers = {}
+
+        if config.auth_token:
+            self._headers["Authorization"] = f"Bearer {config.auth_token}"
+
+    async def _get_session(self) -> ClientSession:
+        """Get or create aiohttp session."""
+        if not HAS_AIOHTTP:
+            raise RuntimeError("aiohttp not available")
+
+        if self._session is None or self._session.closed:
+            timeout = ClientTimeout(
+                connect=self.config.connect_timeout,
+                total=self.config.request_timeout
+            )
+            self._session = ClientSession(timeout=timeout, headers=self._headers)
+
+        return self._session
+
+    async def close(self) -> None:
+        """Close the session."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+
+    async def _request(
+        self,
+        method: str,
+        endpoint: str,
+        json_data: Optional[Dict] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Make an API request."""
+        session = await self._get_session()
+        url = f"{self.config.p2p_base_url}{endpoint}"
+
+        try:
+            async with session.request(method, url, json=json_data, **kwargs) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                else:
+                    return {"error": f"HTTP {resp.status}", "status": resp.status}
+        except Exception as e:
+            logger.error(f"P2P API request failed: {method} {endpoint}: {e}")
+            return {"error": str(e)}
+
+    # ==========================================
+    # Cluster Status
+    # ==========================================
+
+    async def get_cluster_status(self) -> Dict[str, Any]:
+        """Get overall cluster status."""
+        return await self._request("GET", "/api/cluster/status")
+
+    async def get_nodes(self) -> List[P2PNode]:
+        """Get list of cluster nodes."""
+        result = await self.get_cluster_status()
+
+        nodes = []
+        for node_data in result.get("nodes", []):
+            capabilities = []
+            if node_data.get("has_gpu"):
+                capabilities.append(P2PNodeCapability.GPU_SELFPLAY)
+                capabilities.append(P2PNodeCapability.TRAINING)
+            else:
+                capabilities.append(P2PNodeCapability.CPU_SELFPLAY)
+
+            nodes.append(P2PNode(
+                node_id=node_data.get("node_id", ""),
+                host=node_data.get("host", ""),
+                port=node_data.get("port", 8770),
+                is_alive=node_data.get("is_alive", False),
+                is_healthy=node_data.get("is_healthy", False),
+                has_gpu=node_data.get("has_gpu", False),
+                gpu_name=node_data.get("gpu_name", ""),
+                gpu_power_score=node_data.get("gpu_power_score", 0),
+                memory_gb=node_data.get("memory_gb", 0),
+                disk_percent=node_data.get("disk_percent", 0),
+                cpu_percent=node_data.get("cpu_percent", 0),
+                selfplay_jobs=node_data.get("selfplay_jobs", 0),
+                training_jobs=node_data.get("training_jobs", 0),
+                capabilities=capabilities,
+                last_heartbeat=node_data.get("last_heartbeat", 0)
+            ))
+
+        return nodes
+
+    async def get_leader(self) -> Optional[str]:
+        """Get current cluster leader node ID."""
+        result = await self.get_cluster_status()
+        return result.get("leader")
+
+    # ==========================================
+    # Job Management
+    # ==========================================
+
+    async def start_selfplay(
+        self,
+        node_id: str,
+        board_type: str = "square8",
+        num_players: int = 2,
+        count: int = 1
+    ) -> Dict[str, Any]:
+        """Start selfplay jobs on a node."""
+        return await self._request(
+            "POST",
+            f"/start_job",
+            json_data={
+                "node_id": node_id,
+                "job_type": "hybrid_selfplay",
+                "board_type": board_type,
+                "num_players": num_players,
+                "count": count
+            }
+        )
+
+    async def stop_selfplay(self, node_id: str, job_id: str) -> Dict[str, Any]:
+        """Stop a selfplay job."""
+        return await self._request(
+            "POST",
+            f"/stop_job",
+            json_data={"node_id": node_id, "job_id": job_id}
+        )
+
+    async def start_training(
+        self,
+        node_id: str,
+        config: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """Start training on a node."""
+        return await self._request(
+            "POST",
+            f"/training/start",
+            json_data={
+                "node_id": node_id,
+                "config": config or {}
+            }
+        )
+
+    async def get_training_status(self) -> Dict[str, Any]:
+        """Get current training status."""
+        return await self._request("GET", "/api/training/status")
+
+    async def start_cmaes(
+        self,
+        board_type: str = "square8",
+        generations: int = 100,
+        population_size: int = 20
+    ) -> Dict[str, Any]:
+        """Start distributed CMA-ES optimization."""
+        return await self._request(
+            "POST",
+            "/cmaes/start",
+            json_data={
+                "board_type": board_type,
+                "generations": generations,
+                "population_size": population_size
+            }
+        )
+
+    async def get_cmaes_status(self) -> Dict[str, Any]:
+        """Get CMA-ES status."""
+        return await self._request("GET", "/cmaes/status")
+
+    # ==========================================
+    # Tournament & Evaluation
+    # ==========================================
+
+    async def start_tournament(
+        self,
+        model_ids: List[str],
+        games_per_pair: int = 50
+    ) -> Dict[str, Any]:
+        """Start model evaluation tournament."""
+        return await self._request(
+            "POST",
+            "/tournament/start",
+            json_data={
+                "model_ids": model_ids,
+                "games_per_pair": games_per_pair
+            }
+        )
+
+    async def get_tournament_status(self) -> Dict[str, Any]:
+        """Get tournament status."""
+        return await self._request("GET", "/tournament/status")
+
+    async def get_elo_leaderboard(self) -> Dict[str, Any]:
+        """Get ELO leaderboard."""
+        return await self._request("GET", "/api/elo_leaderboard")
+
+    # ==========================================
+    # Data & Sync
+    # ==========================================
+
+    async def get_data_manifest(self) -> Dict[str, Any]:
+        """Get cluster-wide data manifest."""
+        return await self._request("GET", "/cluster_data_manifest")
+
+    async def trigger_sync(self, source_node: str, target_node: str) -> Dict[str, Any]:
+        """Trigger data sync between nodes."""
+        return await self._request(
+            "POST",
+            "/sync/start",
+            json_data={
+                "source_node": source_node,
+                "target_node": target_node
+            }
+        )
+
+    async def get_sync_status(self) -> Dict[str, Any]:
+        """Get data sync status."""
+        return await self._request("GET", "/sync/status")
+
+    # ==========================================
+    # Improvement Loop
+    # ==========================================
+
+    async def start_improvement_loop(self, config: Optional[Dict] = None) -> Dict[str, Any]:
+        """Start the improvement loop."""
+        return await self._request(
+            "POST",
+            "/improvement/start",
+            json_data={"config": config or {}}
+        )
+
+    async def get_improvement_status(self) -> Dict[str, Any]:
+        """Get improvement loop status."""
+        return await self._request("GET", "/improvement/status")
+
+    async def notify_phase_complete(
+        self,
+        phase: str,
+        result: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Notify completion of an improvement phase."""
+        return await self._request(
+            "POST",
+            "/improvement/phase_complete",
+            json_data={"phase": phase, "result": result}
+        )
+
+    # ==========================================
+    # Pipeline
+    # ==========================================
+
+    async def start_pipeline(self, config: Optional[Dict] = None) -> Dict[str, Any]:
+        """Start the pipeline orchestrator."""
+        return await self._request(
+            "POST",
+            "/pipeline/start",
+            json_data={"config": config or {}}
+        )
+
+    async def get_pipeline_status(self) -> Dict[str, Any]:
+        """Get pipeline status."""
+        return await self._request("GET", "/pipeline/status")
+
+
+# ============================================
+# Component Coordinators
+# ============================================
+
+class SelfplayCoordinator:
+    """
+    Coordinates selfplay across the cluster.
+
+    Handles:
+    - Auto-scaling selfplay workers based on target rate
+    - Load balancing across nodes
+    - GPU vs CPU allocation
+    """
+
+    def __init__(self, client: P2PAPIClient, config: P2PIntegrationConfig):
+        self.client = client
+        self.config = config
+        self._selfplay_targets: Dict[str, int] = {}
+
+    async def get_current_rate(self) -> float:
+        """Get current selfplay games per hour."""
+        status = await self.client.get_cluster_status()
+
+        # Calculate from recent games
+        # This would integrate with selfplay stats endpoint
+        return status.get("selfplay_rate", 0)
+
+    async def auto_scale(self) -> Dict[str, Any]:
+        """Auto-scale selfplay to meet target rate."""
+        if not self.config.auto_scale_selfplay:
+            return {"action": "disabled"}
+
+        current_rate = await self.get_current_rate()
+        target_rate = self.config.target_selfplay_games_per_hour
+
+        nodes = await self.client.get_nodes()
+        healthy_nodes = [n for n in nodes if n.is_healthy]
+
+        actions = []
+
+        if current_rate < target_rate * 0.8:
+            # Scale up
+            for node in healthy_nodes:
+                if node.has_gpu and node.selfplay_jobs < 4:
+                    result = await self.client.start_selfplay(
+                        node.node_id, count=2
+                    )
+                    actions.append({
+                        "node": node.node_id,
+                        "action": "scale_up",
+                        "result": result
+                    })
+                elif not node.has_gpu and node.selfplay_jobs < 2:
+                    result = await self.client.start_selfplay(
+                        node.node_id, count=1
+                    )
+                    actions.append({
+                        "node": node.node_id,
+                        "action": "scale_up",
+                        "result": result
+                    })
+
+        elif current_rate > target_rate * 1.2:
+            # Scale down - would implement job stopping logic
+            pass
+
+        return {
+            "current_rate": current_rate,
+            "target_rate": target_rate,
+            "actions": actions
+        }
+
+    async def get_distribution(self) -> Dict[str, int]:
+        """Get selfplay job distribution across nodes."""
+        nodes = await self.client.get_nodes()
+        return {n.node_id: n.selfplay_jobs for n in nodes if n.is_alive}
+
+
+class TrainingCoordinator:
+    """
+    Coordinates training across the cluster.
+
+    Handles:
+    - Selecting best node for training
+    - Data aggregation before training
+    - Checkpoint synchronization
+    """
+
+    def __init__(self, client: P2PAPIClient, config: P2PIntegrationConfig):
+        self.client = client
+        self.config = config
+        self._current_training_node: Optional[str] = None
+
+    async def select_training_node(self) -> Optional[P2PNode]:
+        """Select the best node for training."""
+        nodes = await self.client.get_nodes()
+
+        # Filter for healthy GPU nodes
+        candidates = [
+            n for n in nodes
+            if n.is_healthy and n.has_gpu and n.training_jobs == 0
+        ]
+
+        if not candidates:
+            # Fall back to any healthy node
+            candidates = [n for n in nodes if n.is_healthy and n.training_jobs == 0]
+
+        if not candidates:
+            return None
+
+        # Sort by GPU power
+        candidates.sort(key=lambda n: n.gpu_power_score, reverse=True)
+
+        return candidates[0]
+
+    async def start_training(
+        self,
+        config: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """Start training on the best available node."""
+        node = await self.select_training_node()
+
+        if not node:
+            return {"error": "No available training node"}
+
+        self._current_training_node = node.node_id
+
+        return await self.client.start_training(node.node_id, config)
+
+    async def get_status(self) -> Dict[str, Any]:
+        """Get current training status."""
+        status = await self.client.get_training_status()
+        status["selected_node"] = self._current_training_node
+        return status
+
+    async def aggregate_data(self, target_node: str) -> Dict[str, Any]:
+        """Aggregate training data to target node."""
+        nodes = await self.client.get_nodes()
+
+        sync_results = []
+        for node in nodes:
+            if node.node_id != target_node and node.is_alive:
+                result = await self.client.trigger_sync(node.node_id, target_node)
+                sync_results.append({
+                    "source": node.node_id,
+                    "result": result
+                })
+
+        return {"sync_operations": sync_results}
+
+
+class EvaluationCoordinator:
+    """
+    Coordinates model evaluation across the cluster.
+
+    Handles:
+    - Distributed tournament execution
+    - ELO calculation and aggregation
+    - Head-to-head comparison scheduling
+    """
+
+    def __init__(self, client: P2PAPIClient, config: P2PIntegrationConfig):
+        self.client = client
+        self.config = config
+
+    async def run_tournament(
+        self,
+        models: List[str],
+        games_per_pair: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Run evaluation tournament."""
+        games = games_per_pair or self.config.tournament_games_per_pair
+
+        if self.config.use_distributed_tournament:
+            return await self.client.start_tournament(models, games)
+        else:
+            # Run locally (not distributed)
+            return {"error": "Local tournament not implemented"}
+
+    async def compare_models(
+        self,
+        model_a: str,
+        model_b: str,
+        games: int = 100
+    ) -> Dict[str, Any]:
+        """Run head-to-head comparison between two models."""
+        return await self.run_tournament([model_a, model_b], games)
+
+    async def get_leaderboard(self) -> List[Dict[str, Any]]:
+        """Get current ELO leaderboard."""
+        result = await self.client.get_elo_leaderboard()
+        return result.get("leaderboard", [])
+
+
+# ============================================
+# Main Integration Manager
+# ============================================
+
+class P2PIntegrationManager:
+    """
+    Main manager for P2P cluster integration.
+
+    Coordinates all aspects of the self-improvement loop
+    with the distributed P2P cluster.
+    """
+
+    def __init__(self, config: Optional[P2PIntegrationConfig] = None):
+        self.config = config or P2PIntegrationConfig()
+
+        # Load auth token from environment if not set
+        if not self.config.auth_token:
+            self.config.auth_token = os.environ.get("RINGRIFT_CLUSTER_AUTH_TOKEN")
+
+        # Initialize components
+        self.client = P2PAPIClient(self.config)
+        self.selfplay = SelfplayCoordinator(self.client, self.config)
+        self.training = TrainingCoordinator(self.client, self.config)
+        self.evaluation = EvaluationCoordinator(self.client, self.config)
+
+        # State
+        self._running = False
+        self._tasks: List[asyncio.Task] = []
+        self._callbacks: Dict[str, List[Callable]] = {}
+        self._last_health_check: float = 0
+        self._cluster_healthy: bool = False
+
+    async def start(self) -> None:
+        """Start integration manager background tasks."""
+        self._running = True
+
+        # Start background loops
+        self._tasks.append(asyncio.create_task(self._health_check_loop()))
+        self._tasks.append(asyncio.create_task(self._selfplay_management_loop()))
+        self._tasks.append(asyncio.create_task(self._sync_loop()))
+
+        logger.info("P2P integration manager started")
+
+    async def stop(self) -> None:
+        """Stop integration manager."""
+        self._running = False
+
+        for task in self._tasks:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        await self.client.close()
+        self._tasks.clear()
+
+        logger.info("P2P integration manager stopped")
+
+    def register_callback(self, event: str, callback: Callable) -> None:
+        """Register callback for events."""
+        if event not in self._callbacks:
+            self._callbacks[event] = []
+        self._callbacks[event].append(callback)
+
+    async def _fire_callbacks(self, event: str, **kwargs) -> None:
+        """Fire callbacks for an event."""
+        for callback in self._callbacks.get(event, []):
+            try:
+                if asyncio.iscoroutinefunction(callback):
+                    await callback(**kwargs)
+                else:
+                    callback(**kwargs)
+            except Exception as e:
+                logger.error(f"Callback error for {event}: {e}")
+
+    # ==========================================
+    # High-Level Operations
+    # ==========================================
+
+    async def start_improvement_cycle(
+        self,
+        phases: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Start a complete improvement cycle.
+
+        Phases: selfplay -> training -> evaluation
+        """
+        phases = phases or ["selfplay", "training", "evaluation"]
+
+        # Start the improvement loop via P2P
+        return await self.client.start_improvement_loop({
+            "phases": phases,
+            "auto_advance": True
+        })
+
+    async def trigger_training(
+        self,
+        wait_for_completion: bool = False
+    ) -> Dict[str, Any]:
+        """Trigger training on the cluster."""
+        result = await self.training.start_training()
+
+        if wait_for_completion and "error" not in result:
+            # Poll for completion
+            while True:
+                status = await self.training.get_status()
+                if status.get("status") in ("completed", "failed"):
+                    break
+                await asyncio.sleep(30)
+
+            return status
+
+        return result
+
+    async def evaluate_model(
+        self,
+        model_id: str,
+        reference_model: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Evaluate a model against references.
+
+        Returns evaluation metrics.
+        """
+        if reference_model:
+            return await self.evaluation.compare_models(model_id, reference_model)
+        else:
+            # Compare against top models
+            leaderboard = await self.evaluation.get_leaderboard()
+            if leaderboard:
+                top_models = [m["model_id"] for m in leaderboard[:3]]
+                top_models.append(model_id)
+                return await self.evaluation.run_tournament(top_models)
+            return {"error": "No reference models available"}
+
+    async def sync_model_to_cluster(
+        self,
+        model_id: str,
+        model_path: Path
+    ) -> Dict[str, Any]:
+        """Sync a model file to all cluster nodes."""
+        nodes = await self.client.get_nodes()
+        healthy_nodes = [n for n in nodes if n.is_healthy]
+
+        results = {}
+        for node in healthy_nodes:
+            # Use sync endpoint to push model
+            # This is a simplified version - actual implementation would
+            # use the P2P sync/file endpoint
+            results[node.node_id] = True
+
+        return {
+            "model_id": model_id,
+            "synced_nodes": len(results),
+            "total_nodes": len(healthy_nodes)
+        }
+
+    # ==========================================
+    # Background Loops
+    # ==========================================
+
+    async def _health_check_loop(self) -> None:
+        """Background loop for cluster health monitoring."""
+        failures = 0
+
+        while self._running:
+            try:
+                status = await self.client.get_cluster_status()
+
+                if "error" in status:
+                    failures += 1
+                    if failures >= self.config.unhealthy_threshold_failures:
+                        self._cluster_healthy = False
+                        await self._fire_callbacks(
+                            "cluster_unhealthy",
+                            error=status.get("error")
+                        )
+                else:
+                    failures = 0
+                    self._cluster_healthy = True
+                    self._last_health_check = time.time()
+
+                    # Check for specific issues
+                    nodes = status.get("nodes", [])
+                    dead_nodes = [n for n in nodes if not n.get("is_alive")]
+                    if dead_nodes:
+                        await self._fire_callbacks(
+                            "nodes_dead",
+                            nodes=[n["node_id"] for n in dead_nodes]
+                        )
+
+                await asyncio.sleep(self.config.health_check_interval)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Health check loop error: {e}")
+                await asyncio.sleep(60)
+
+    async def _selfplay_management_loop(self) -> None:
+        """Background loop for selfplay management."""
+        while self._running:
+            try:
+                if self._cluster_healthy and self.config.auto_scale_selfplay:
+                    result = await self.selfplay.auto_scale()
+                    if result.get("actions"):
+                        await self._fire_callbacks(
+                            "selfplay_scaled",
+                            result=result
+                        )
+
+                await asyncio.sleep(60)  # Check every minute
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Selfplay management loop error: {e}")
+                await asyncio.sleep(60)
+
+    async def _sync_loop(self) -> None:
+        """Background loop for data synchronization."""
+        while self._running:
+            try:
+                if self._cluster_healthy and self.config.data_sync_enabled:
+                    # Check if sync is needed
+                    sync_status = await self.client.get_sync_status()
+
+                    # Trigger sync if needed
+                    # This would implement sync logic based on data manifest
+
+                await asyncio.sleep(self.config.sync_interval_seconds)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Sync loop error: {e}")
+                await asyncio.sleep(60)
+
+    # ==========================================
+    # Status & Reporting
+    # ==========================================
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get integration manager status."""
+        return {
+            "running": self._running,
+            "cluster_healthy": self._cluster_healthy,
+            "last_health_check": self._last_health_check,
+            "config": asdict(self.config)
+        }
+
+    async def get_cluster_summary(self) -> Dict[str, Any]:
+        """Get comprehensive cluster summary."""
+        status = await self.client.get_cluster_status()
+
+        if "error" in status:
+            return status
+
+        nodes = status.get("nodes", [])
+
+        return {
+            "leader": status.get("leader"),
+            "total_nodes": len(nodes),
+            "alive_nodes": sum(1 for n in nodes if n.get("is_alive")),
+            "healthy_nodes": sum(1 for n in nodes if n.get("is_healthy")),
+            "gpu_nodes": sum(1 for n in nodes if n.get("has_gpu")),
+            "total_selfplay_jobs": sum(n.get("selfplay_jobs", 0) for n in nodes),
+            "total_training_jobs": sum(n.get("training_jobs", 0) for n in nodes),
+            "avg_disk_usage": sum(n.get("disk_percent", 0) for n in nodes) / max(1, len(nodes)),
+            "avg_cpu_usage": sum(n.get("cpu_percent", 0) for n in nodes) / max(1, len(nodes))
+        }
+
+
+# ============================================
+# Integration Functions
+# ============================================
+
+async def connect_to_cluster(
+    base_url: str = "http://localhost:8770",
+    auth_token: Optional[str] = None
+) -> P2PIntegrationManager:
+    """
+    Connect to P2P cluster and return integration manager.
+
+    Example:
+        manager = await connect_to_cluster("http://192.168.1.100:8770")
+        await manager.start()
+        summary = await manager.get_cluster_summary()
+    """
+    config = P2PIntegrationConfig(
+        p2p_base_url=base_url,
+        auth_token=auth_token
+    )
+    manager = P2PIntegrationManager(config)
+    await manager.start()
+    return manager
+
+
+def integrate_lifecycle_with_p2p(
+    lifecycle_manager,
+    p2p_manager: P2PIntegrationManager
+) -> None:
+    """
+    Integrate model lifecycle manager with P2P cluster.
+
+    Sets up callbacks for automatic model sync and evaluation.
+    """
+    # Sync new production models to cluster
+    async def on_model_promoted(**kwargs):
+        if kwargs.get("stage") == "production":
+            model_id = kwargs.get("model_id")
+            version = kwargs.get("version")
+            logger.info(f"Syncing promoted model {model_id}:v{version} to cluster")
+            # Would trigger model sync here
+
+    lifecycle_manager.register_callback("model_promoted", on_model_promoted)
+
+    # Trigger training via P2P when conditions are met
+    async def on_training_triggered(**kwargs):
+        logger.info(f"Training triggered: {kwargs.get('reason')}")
+        await p2p_manager.trigger_training()
+
+    lifecycle_manager.register_callback("training_triggered", on_training_triggered)
+
+
+def integrate_pipeline_with_p2p(
+    pipeline_orchestrator,
+    p2p_manager: P2PIntegrationManager
+) -> None:
+    """
+    Integrate pipeline orchestrator with P2P cluster.
+
+    Sets up distributed execution of pipeline stages.
+    """
+    # Map pipeline stages to P2P operations
+    # This would set up the appropriate callbacks and handlers
+
+
+# ============================================
+# Main
+# ============================================
+
+async def main():
+    """Example usage of P2P integration."""
+    # Create integration manager
+    config = P2PIntegrationConfig(
+        p2p_base_url="http://localhost:8770",
+        auto_scale_selfplay=False  # Disable for testing
+    )
+
+    manager = P2PIntegrationManager(config)
+
+    try:
+        # Start manager
+        await manager.start()
+
+        # Get cluster summary
+        summary = await manager.get_cluster_summary()
+        print("Cluster Summary:")
+        print(json.dumps(summary, indent=2))
+
+        # Get nodes
+        nodes = await manager.client.get_nodes()
+        print(f"\nNodes ({len(nodes)}):")
+        for node in nodes:
+            status = "healthy" if node.is_healthy else ("alive" if node.is_alive else "dead")
+            gpu = f" ({node.gpu_name})" if node.gpu_name else ""
+            print(f"  {node.node_id}: {status}{gpu}")
+
+        # Check training status
+        training_status = await manager.training.get_status()
+        print(f"\nTraining Status:")
+        print(json.dumps(training_status, indent=2))
+
+        # Get selfplay distribution
+        selfplay_dist = await manager.selfplay.get_distribution()
+        print(f"\nSelfplay Distribution:")
+        print(json.dumps(selfplay_dist, indent=2))
+
+        # Get ELO leaderboard
+        leaderboard = await manager.evaluation.get_leaderboard()
+        print(f"\nELO Leaderboard (top 5):")
+        for i, entry in enumerate(leaderboard[:5]):
+            print(f"  {i+1}. {entry.get('model_id', 'unknown')}: {entry.get('elo', 0):.0f}")
+
+    finally:
+        await manager.stop()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

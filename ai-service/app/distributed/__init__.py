@@ -67,6 +67,13 @@ from .game_collector import (
     deserialize_game_data,
     write_games_to_db,
 )
+from .cluster_coordinator import (
+    ClusterCoordinator,
+    TaskRole,
+    ProcessLimits,
+    TaskInfo,
+    check_and_abort_if_role_held,
+)
 
 __all__ = [
     # Host configuration and memory detection
@@ -118,4 +125,10 @@ __all__ = [
     "CollectedGame",
     "deserialize_game_data",
     "write_games_to_db",
+    # Cluster coordination
+    "ClusterCoordinator",
+    "TaskRole",
+    "ProcessLimits",
+    "TaskInfo",
+    "check_and_abort_if_role_held",
 ]
