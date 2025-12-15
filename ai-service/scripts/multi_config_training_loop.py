@@ -8,12 +8,16 @@ Key improvements:
 - Only counts games that have moves (required for training)
 - Supports multiple database sources per config
 - More efficient database queries
+- BALANCE MODE: Prioritizes least-represented board/player combos
+- Counts existing trained models per config for balanced training
 """
 import os
 import sys
 import time
 import sqlite3
 import subprocess
+import glob
+import re
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 
@@ -102,6 +106,49 @@ DEFAULT_EPOCHS = 5
 
 # Track last training count per config
 last_trained_counts: Dict[Tuple[str, int], int] = {k: 0 for k in THRESHOLDS}
+
+# Board type name variants for model file matching
+BOARD_VARIANTS = {
+    "square8": ["square8", "sq8"],
+    "square19": ["square19", "sq19"],
+    "hexagonal": ["hex", "hexagonal"],
+}
+
+
+def count_trained_models(board_type: str, num_players: int) -> int:
+    """Count existing trained models for a specific board/player config.
+
+    Searches the models directory for .pth files matching the config pattern.
+    Returns count of unique model files (not checkpoints).
+    """
+    models_dir = os.path.join(BASE_DIR, "models")
+    if not os.path.exists(models_dir):
+        return 0
+
+    variants = BOARD_VARIANTS.get(board_type, [board_type])
+    count = 0
+    seen_bases = set()
+
+    for variant in variants:
+        # Pattern: {variant}_{num_players}p*.pth
+        pattern = os.path.join(models_dir, f"*{variant}*{num_players}p*.pth")
+        for pth_file in glob.glob(pattern):
+            # Normalize to base model (strip checkpoint suffixes like _20251215_123456)
+            base = os.path.basename(pth_file)
+            # Remove timestamp suffixes to count unique models
+            base_clean = re.sub(r'_\d{8}_\d{6}\.pth$', '.pth', base)
+            if base_clean not in seen_bases:
+                seen_bases.add(base_clean)
+                count += 1
+
+    return count
+
+
+def get_model_counts() -> Dict[Tuple[str, int], int]:
+    """Get count of trained models for each config."""
+    return {config: count_trained_models(board_type, num_players)
+            for config in THRESHOLDS
+            for board_type, num_players in [config]}
 
 
 def find_databases(path: str) -> List[str]:
@@ -254,9 +301,10 @@ def main():
     global last_trained_counts
 
     print("=" * 60, flush=True)
-    print("Multi-Config Training Loop v2", flush=True)
+    print("Multi-Config Training Loop v3 (BALANCED)", flush=True)
     print(f"Base dir: {BASE_DIR}", flush=True)
     print("Configs: " + ", ".join(f"{bt[:3]}{np}p" for bt, np in THRESHOLDS.keys()), flush=True)
+    print("Mode: BALANCE - prioritizes least-represented combos", flush=True)
     print("=" * 60, flush=True)
 
     iteration = 0
@@ -264,9 +312,10 @@ def main():
         try:
             iteration += 1
             counts = get_config_counts()
+            model_counts = get_model_counts()
             ts = datetime.now().strftime("%H:%M:%S")
 
-            # Status line
+            # Status line with model counts
             status_parts = []
             training_candidates = []
 
@@ -275,22 +324,29 @@ def main():
                 count, db_paths = counts.get(config, (0, []))
                 last = last_trained_counts.get(config, 0)
                 new_games = count - last
+                models = model_counts.get(config, 0)
                 short = f"{board_type[:3]}{num_players}p"
 
                 if count > 0:
-                    status_parts.append(f"{short}:{count}(+{new_games}/{threshold})[{len(db_paths)}db]")
+                    # Show games and model count: hex2p:1500(+100/50)[3db]M:2
+                    status_parts.append(f"{short}:{count}(+{new_games}/{threshold})M:{models}")
 
                 # Check if ready for training
                 if new_games >= threshold and db_paths:
-                    training_candidates.append((config, db_paths, count, new_games))
+                    training_candidates.append((config, db_paths, count, new_games, models))
 
             print(f"[{ts}] iter={iteration} | {' '.join(status_parts)}", flush=True)
 
-            # Train ONE config per iteration (prioritize configs with most new games)
+            # BALANCE MODE: Prioritize configs with FEWEST trained models
+            # This ensures we balance training across all 9 board/player combinations
+            # Ties broken by most new games available
             if training_candidates:
-                training_candidates.sort(key=lambda x: x[3], reverse=True)  # Sort by new_games
-                config, db_paths, count, new_games = training_candidates[0]
+                # Sort by: (1) fewest models ASCENDING, (2) most new games DESCENDING
+                training_candidates.sort(key=lambda x: (x[4], -x[3]))
+                config, db_paths, count, new_games, models = training_candidates[0]
                 board_type, num_players = config
+                short = f"{board_type[:3]}{num_players}p"
+                print(f"[{ts}] BALANCE: Training {short} (has only {models} models, {new_games} new games)", flush=True)
                 run_training(board_type, num_players, db_paths, count)
 
             time.sleep(60)

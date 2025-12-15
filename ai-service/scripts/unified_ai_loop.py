@@ -1814,40 +1814,88 @@ class ConfigPriorityQueue:
         self._model_counts_last_update: float = 0.0
 
     def _update_trained_model_counts(self) -> None:
-        """Fetch count of trained models per config from Elo database."""
+        """Fetch count of trained models per config from filesystem and Elo database.
+
+        Uses filesystem as primary source for accuracy, supplemented by Elo DB.
+        This ensures underrepresented configs get proper priority.
+        """
         now = time.time()
-        # Update every 5 minutes
-        if now - self._model_counts_last_update < 300:
+        # Update every 2 minutes (more frequent for accurate prioritization)
+        if now - self._model_counts_last_update < 120:
             return
 
+        counts: Dict[str, int] = {}
+
+        # Initialize all configs to 0
+        for board in ["square8", "square19", "hexagonal"]:
+            for players in [2, 3, 4]:
+                counts[f"{board}_{players}p"] = 0
+
         try:
+            # Primary: Count models from filesystem (most accurate)
+            models_dir = AI_SERVICE_ROOT / "models"
+            if models_dir.exists():
+                for model_file in models_dir.glob("*.pt"):
+                    name = model_file.stem.lower()
+                    # Match patterns like square8_2p, hex_3p, square19_4p
+                    for board in ["square8", "square19", "hex"]:
+                        for players in [2, 3, 4]:
+                            patterns = [
+                                f"{board}_{players}p",
+                                f"{board}{players}p",
+                                f"{'hexagonal' if board == 'hex' else board}_{players}p",
+                            ]
+                            if any(p in name for p in patterns):
+                                config_key = f"{'hexagonal' if board == 'hex' else board}_{players}p"
+                                counts[config_key] = counts.get(config_key, 0) + 1
+                                break
+
+                # Also count .pth files
+                for model_file in models_dir.glob("*.pth"):
+                    name = model_file.stem.lower()
+                    for board in ["square8", "square19", "hex"]:
+                        for players in [2, 3, 4]:
+                            patterns = [
+                                f"{board}_{players}p",
+                                f"{board}{players}p",
+                                f"{'hexagonal' if board == 'hex' else board}_{players}p",
+                            ]
+                            if any(p in name for p in patterns):
+                                config_key = f"{'hexagonal' if board == 'hex' else board}_{players}p"
+                                counts[config_key] = counts.get(config_key, 0) + 1
+                                break
+
+            # Supplement with Elo database counts
             elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
-            if not elo_db_path.exists():
-                return
+            if elo_db_path.exists():
+                conn = sqlite3.connect(elo_db_path)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT board_type, num_players, COUNT(DISTINCT participant_id) as model_count
+                    FROM elo_ratings
+                    WHERE (participant_id LIKE 'ringrift_%' OR participant_id LIKE '%_nn_baseline%')
+                      AND participant_id NOT LIKE 'baseline_%'
+                    GROUP BY board_type, num_players
+                """)
+                for row in cursor.fetchall():
+                    config_key = f"{row[0]}_{row[1]}p"
+                    # Take max of filesystem and DB counts
+                    counts[config_key] = max(counts.get(config_key, 0), row[2])
+                conn.close()
 
-            conn = sqlite3.connect(elo_db_path)
-            cursor = conn.cursor()
-
-            # Count trained models per config (excluding baselines)
-            cursor.execute("""
-                SELECT board_type, num_players, COUNT(DISTINCT participant_id) as model_count
-                FROM elo_ratings
-                WHERE (participant_id LIKE 'ringrift_%' OR participant_id LIKE '%_nn_baseline%')
-                  AND participant_id NOT LIKE 'baseline_%'
-                GROUP BY board_type, num_players
-            """)
-
-            rows = cursor.fetchall()
-            conn.close()
-
-            self._trained_model_counts = {
-                f"{row[0]}_{row[1]}p": row[2]
-                for row in rows
-            }
+            self._trained_model_counts = counts
             self._model_counts_last_update = now
 
-        except Exception:
-            pass  # Non-critical, use cached or zero
+            # Log model counts for visibility
+            if hasattr(self, '_last_model_count_log') and now - self._last_model_count_log < 300:
+                pass  # Don't log too frequently
+            else:
+                self._last_model_count_log = now
+                sorted_counts = sorted(counts.items(), key=lambda x: x[1])
+                print(f"[Priority] Model counts: {dict(sorted_counts)}")
+        except Exception as e:
+            print(f"[Priority] Error updating model counts: {e}")
+            self._model_counts_last_update = now
 
     def calculate_priority(
         self,
@@ -1894,16 +1942,38 @@ class ConfigPriorityQueue:
         if time_since_promotion < 3600:  # Within last hour
             score += 30  # Bonus for recent success
 
-        # Factor 6: HUGE bonus for configs with few/no trained models
-        # This ensures under-represented configs get priority attention
+        # Factor 6: MASSIVE bonus for configs with few/no trained models
+        # Uses inverse weighting: fewer models = much higher priority
+        # This ensures under-represented configs get absolute priority
         self._update_trained_model_counts()
         model_count = self._trained_model_counts.get(config_key, 0)
+
+        # Get max model count across all configs for relative scoring
+        max_model_count = max(self._trained_model_counts.values()) if self._trained_model_counts else 1
+        max_model_count = max(max_model_count, 1)  # Avoid division by zero
+
+        # Inverse model count scoring: configs with fewer models get MUCH higher priority
+        # Formula: base_score * (max_models / (current_models + 1))
+        # This creates strong pressure to balance model counts
         if model_count == 0:
-            score += 500  # Highest priority - no trained models at all
-        elif model_count <= 2:
-            score += 300  # Very high priority - only 1-2 models
-        elif model_count <= 5:
-            score += 100  # High priority - few models
+            score += 1000  # Highest priority - no trained models at all
+        elif model_count == 1:
+            score += 800   # Critical - only 1 model
+        elif model_count <= 3:
+            score += 600   # Very high priority - 2-3 models
+        elif model_count <= 6:
+            score += 400   # High priority - 4-6 models
+        elif model_count <= 10:
+            score += 200   # Medium priority - 7-10 models
+        else:
+            # Low priority for configs with many models
+            # Inverse weight: configs with 16 models get ~30 points, with 10 get ~50
+            inverse_weight = (max_model_count / (model_count + 1)) * 50
+            score += inverse_weight
+
+        # Additional penalty for over-represented configs to create balance pressure
+        if max_model_count > 0 and model_count > max_model_count * 0.8:
+            score -= 100  # Penalty for configs that already have most models
 
         return score
 
