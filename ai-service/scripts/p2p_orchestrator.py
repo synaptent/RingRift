@@ -256,6 +256,26 @@ except ImportError:
     HAS_P2P_MONITORING = False
     MonitoringManager = None
 
+# Model sync across cluster
+try:
+    from scripts.sync_models import (
+        scan_cluster as scan_cluster_models,
+        sync_missing_models,
+        ClusterModelState,
+        HOSTS_MODULE_AVAILABLE as HAS_HOSTS_FOR_SYNC,
+    )
+    # Also import load_remote_hosts for scanning
+    if HAS_HOSTS_FOR_SYNC:
+        from app.distributed.hosts import load_remote_hosts
+    HAS_MODEL_SYNC = True
+except ImportError:
+    HAS_MODEL_SYNC = False
+    scan_cluster_models = None
+    sync_missing_models = None
+    ClusterModelState = None
+    HAS_HOSTS_FOR_SYNC = False
+    load_remote_hosts = None
+
 # ============================================
 # Configuration
 # ============================================
@@ -4577,6 +4597,85 @@ class P2POrchestrator:
                 break
             except Exception as e:
                 print(f"[P2P] Data management loop error: {e}")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(60)
+
+    async def _model_sync_loop(self):
+        """Background loop for syncing NN/NNUE models across the cluster.
+
+        LEARNED LESSONS - Model distribution:
+        - Training nodes produce new models that need distribution
+        - All GPU nodes should have access to latest models for selfplay
+        - Use sync_models.py infrastructure for hash-based deduplication
+        - Only leader runs this to avoid conflicts
+        """
+        print(f"[P2P] Model sync loop started (interval: {MODEL_SYNC_INTERVAL}s)")
+
+        while self.running:
+            try:
+                await asyncio.sleep(MODEL_SYNC_INTERVAL)
+
+                if not self._is_leader():
+                    continue
+
+                if not HAS_MODEL_SYNC or not HAS_HOSTS_FOR_SYNC:
+                    if self.verbose:
+                        print("[P2P] Model sync skipped: sync_models module not available")
+                    continue
+
+                print("[P2P] Running model sync check...")
+
+                # Run sync in a thread pool to avoid blocking the event loop
+                loop = asyncio.get_event_loop()
+
+                def do_model_sync():
+                    try:
+                        # Load remote hosts
+                        hosts = load_remote_hosts()
+                        if not hosts:
+                            return 0, 0, ["No remote hosts configured"]
+
+                        # Scan cluster for model inventory
+                        state = scan_cluster_models(hosts, max_workers=5)
+
+                        # Calculate current total
+                        total_models = len(state.all_nn_models) + len(state.all_nnue_models)
+
+                        # Sync missing models with deduplication
+                        collected, distributed, errors = sync_missing_models(
+                            state, hosts, dry_run=False, collect_first=True
+                        )
+
+                        # Save state for future reference
+                        state.save()
+
+                        return collected, distributed, errors, total_models, len(hosts)
+
+                    except Exception as e:
+                        return 0, 0, [str(e)], 0, 0
+
+                result = await loop.run_in_executor(None, do_model_sync)
+
+                if len(result) == 5:
+                    collected, distributed, errors, total_models, num_hosts = result
+
+                    if collected > 0 or distributed > 0:
+                        print(f"[P2P] Model sync: collected {collected}, distributed {distributed} "
+                              f"({total_models} total models across {num_hosts} hosts)")
+
+                    if errors:
+                        for err in errors[:3]:
+                            print(f"[P2P] Model sync error: {err}")
+                else:
+                    collected, distributed, errors = result[:3]
+                    if errors:
+                        print(f"[P2P] Model sync failed: {errors[0]}")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[P2P] Model sync loop error: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(60)

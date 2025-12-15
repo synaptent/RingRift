@@ -78,9 +78,27 @@ THRESHOLDS: Dict[Tuple[str, int], int] = {
     ("hexagonal", 4): 50,
 }
 
-MAX_EXPORT_GAMES = 100
-SAMPLE_EVERY = 5
-TRAINING_EPOCHS = 5
+# Export settings per config type (games with more moves need higher sample_every)
+# Format: (board_type, num_players) -> (max_games, sample_every, epochs)
+EXPORT_SETTINGS: Dict[Tuple[str, int], Tuple[int, int, int]] = {
+    # Square8: ~100-200 moves per game
+    ("square8", 2): (100, 5, 5),
+    ("square8", 3): (100, 5, 5),
+    ("square8", 4): (100, 5, 5),
+    # Square19: ~300-500 moves per game
+    ("square19", 2): (50, 20, 5),
+    ("square19", 3): (50, 20, 5),
+    ("square19", 4): (50, 20, 5),
+    # Hexagonal: ~800-1200 moves per game - need aggressive sampling
+    ("hexagonal", 2): (30, 50, 5),
+    ("hexagonal", 3): (30, 50, 5),
+    ("hexagonal", 4): (30, 50, 5),
+}
+
+# Default settings if config not found
+DEFAULT_MAX_GAMES = 50
+DEFAULT_SAMPLE_EVERY = 20
+DEFAULT_EPOCHS = 5
 
 # Track last training count per config
 last_trained_counts: Dict[Tuple[str, int], int] = {k: 0 for k in THRESHOLDS}
@@ -153,7 +171,13 @@ def run_training(board_type: str, num_players: int, db_path: str, current_count:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     short = f"{board_type[:3]}{num_players}p"
 
-    print(f"[{ts}] Training {short} from {os.path.basename(db_path)}...", flush=True)
+    # Get config-specific export settings
+    max_games, sample_every, epochs = EXPORT_SETTINGS.get(
+        key, (DEFAULT_MAX_GAMES, DEFAULT_SAMPLE_EVERY, DEFAULT_EPOCHS)
+    )
+
+    print(f"[{ts}] Training {short} from {os.path.basename(db_path)} "
+          f"(max_games={max_games}, sample_every={sample_every})...", flush=True)
 
     # Export training data
     npz = os.path.join(BASE_DIR, f"data/training/selfplay_{short}_{ts}.npz")
@@ -163,16 +187,19 @@ def run_training(board_type: str, num_players: int, db_path: str, current_count:
         "--board-type", board_type,
         "--num-players", str(num_players),
         "--output", npz,
-        "--sample-every", str(SAMPLE_EVERY),
-        "--max-games", str(MAX_EXPORT_GAMES),
+        "--sample-every", str(sample_every),
+        "--max-games", str(max_games),
     ]
 
     print(f"  Exporting {short}...", flush=True)
     env = os.environ.copy()
     env["PYTHONPATH"] = BASE_DIR
 
+    # Longer timeout for hex games (1000+ moves per game)
+    export_timeout = 1800 if board_type == "hexagonal" else 600
+
     try:
-        r = subprocess.run(exp_cmd, capture_output=True, text=True, timeout=600, env=env)
+        r = subprocess.run(exp_cmd, capture_output=True, text=True, timeout=export_timeout, env=env)
         if r.returncode != 0:
             print(f"  Export failed: {r.stderr[:500] if r.stderr else r.stdout[:500]}", flush=True)
             last_trained_counts[key] = current_count  # Skip to avoid repeated failures
@@ -182,7 +209,7 @@ def run_training(board_type: str, num_players: int, db_path: str, current_count:
             last_trained_counts[key] = current_count
             return False
     except subprocess.TimeoutExpired:
-        print(f"  Export timeout after 600s", flush=True)
+        print(f"  Export timeout after {export_timeout}s", flush=True)
         last_trained_counts[key] = current_count
         return False
 
@@ -200,10 +227,10 @@ def run_training(board_type: str, num_players: int, db_path: str, current_count:
         "--num-players", str(num_players),
         "--run-dir", run_dir,
         "--data-path", npz,
-        "--epochs", str(TRAINING_EPOCHS),
+        "--epochs", str(epochs),
     ]
 
-    print(f"  Training {short} for {TRAINING_EPOCHS} epochs...", flush=True)
+    print(f"  Training {short} for {epochs} epochs...", flush=True)
     try:
         r = subprocess.run(train_cmd, capture_output=True, text=True, timeout=900, env=env)
         if r.returncode != 0:
