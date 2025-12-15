@@ -2109,7 +2109,7 @@ class P2POrchestrator:
 
         # Always include self if we have GPU
         if self.node_id not in eligible:
-            self_gpu = getattr(self, "has_gpu", False) or bool(GPU_INFO)
+            self_gpu = getattr(self, "has_gpu", False)
             if self_gpu or "aws" in self.node_id.lower() or "lambda" in self.node_id.lower():
                 eligible.append(self.node_id)
 
