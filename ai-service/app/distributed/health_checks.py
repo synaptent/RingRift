@@ -32,6 +32,22 @@ from typing import Any, Dict, List, Optional, Tuple
 # Path setup
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 
+# Unified resource checking utilities (80% max utilization)
+try:
+    from app.utils.resource_guard import LIMITS as RESOURCE_LIMITS
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    RESOURCE_LIMITS = None
+
+# Resource thresholds - aligned with 80% max utilization (2025-12-16)
+MEMORY_WARNING_THRESHOLD = 70.0  # Below 80% limit
+MEMORY_CRITICAL_THRESHOLD = 80.0  # At limit
+DISK_WARNING_THRESHOLD = 65.0  # Below 70% limit
+DISK_CRITICAL_THRESHOLD = 70.0  # At disk limit (tighter than other resources)
+CPU_WARNING_THRESHOLD = 70.0  # Below 80% limit
+CPU_CRITICAL_THRESHOLD = 80.0  # At limit
+
 
 @dataclass
 class ComponentHealth:
@@ -337,7 +353,10 @@ class HealthChecker:
             )
 
     def check_resources(self) -> ComponentHealth:
-        """Check system resource health."""
+        """Check system resource health.
+
+        Uses thresholds aligned with 80% max utilization policy (70% for disk).
+        """
         name = "resources"
 
         try:
@@ -347,18 +366,23 @@ class HealthChecker:
 
             issues = []
 
-            if mem.percent > 90:
+            # Memory thresholds - 80% max
+            if mem.percent > MEMORY_CRITICAL_THRESHOLD:
                 issues.append(f"Memory critical: {mem.percent:.1f}%")
-            elif mem.percent > 80:
+            elif mem.percent > MEMORY_WARNING_THRESHOLD:
                 issues.append(f"Memory high: {mem.percent:.1f}%")
 
-            if disk.percent > 95:
+            # Disk thresholds - 70% max (tighter because cleanup takes time)
+            if disk.percent > DISK_CRITICAL_THRESHOLD:
                 issues.append(f"Disk critical: {disk.percent:.1f}%")
-            elif disk.percent > 85:
+            elif disk.percent > DISK_WARNING_THRESHOLD:
                 issues.append(f"Disk high: {disk.percent:.1f}%")
 
-            if cpu_percent > 95:
+            # CPU thresholds - 80% max
+            if cpu_percent > CPU_CRITICAL_THRESHOLD:
                 issues.append(f"CPU critical: {cpu_percent:.1f}%")
+            elif cpu_percent > CPU_WARNING_THRESHOLD:
+                issues.append(f"CPU high: {cpu_percent:.1f}%")
 
             details = {
                 "memory_percent": mem.percent,
