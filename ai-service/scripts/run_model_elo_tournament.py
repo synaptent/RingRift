@@ -677,29 +677,37 @@ def discover_models(
     for f in models_dir.glob("*.pth"):
         name = f.stem
 
-        # Extract version info
+        # Check if it matches the board/player pattern FIRST (for performance)
+        if not (pattern in name or "ringrift_v" in name):
+            continue
+
+        # Extract version info from filename or checkpoint metadata
         version = "unknown"
-        if "ringrift_v5" in name:
+        if "ringrift_v5" in name or "_v5_" in name or name.endswith("_v5"):
             version = "v5"
-        elif "ringrift_v4" in name:
+        elif "ringrift_v4" in name or "_v4_" in name or name.endswith("_v4"):
             version = "v4"
-        elif "ringrift_v3" in name:
+        elif "ringrift_v3" in name or "_v3_" in name or name.endswith("_v3"):
             version = "v3"
         elif "nn_baseline" in name:
             version = "baseline"
 
-        # Check if it matches the board/player pattern
-        if pattern in name or "ringrift_v" in name:
-            models.append({
-                "model_id": name,
-                "model_path": str(f),
-                "board_type": board_type,
-                "num_players": num_players,
-                "version": version,
-                "size_mb": f.stat().st_size / (1024 * 1024),
-                "created_at": f.stat().st_mtime,
-                "model_type": "nn",
-            })
+        # Only read checkpoint metadata for specific models where we need to confirm version
+        # Skip for performance - reading 2000+ checkpoints is too slow
+        # The actual model architecture is detected when loaded for play
+        pass
+
+        # Add matching model
+        models.append({
+            "model_id": name,
+            "model_path": str(f),
+            "board_type": board_type,
+            "num_players": num_players,
+            "version": version,
+            "size_mb": f.stat().st_size / (1024 * 1024),
+            "created_at": f.stat().st_mtime,
+            "model_type": "nn",
+        })
 
     # Also discover NNUE models if requested
     if include_nnue:
