@@ -1,5 +1,6 @@
 #!/bin/bash
-# Start GPU selfplay on all cluster nodes with priority on hex and square19
+# Start DIVERSE selfplay on all cluster nodes with priority on hex and square19
+# Uses run_diverse_selfplay.py for high-quality varied AI matchups
 # Run from ai-service directory
 
 set -e
@@ -37,35 +38,35 @@ VAST_HOSTS=(
 SSH_OPTS="-o ConnectTimeout=10 -o StrictHostKeyChecking=no -o BatchMode=yes"
 
 echo "=============================================="
-echo "Starting Cluster Selfplay - Priority: hex/square19"
+echo "Starting Cluster DIVERSE Selfplay - Priority: hex/square19"
 echo "=============================================="
 
-# Selfplay command - runs all 9 board/player combinations with priority weighting
-# Focus on hex and square19 which have 0 valid games
-SELFPLAY_CMD='cd ~/ringrift/ai-service && source venv/bin/activate && nohup python3 scripts/run_gpu_selfplay.py \
-    --all-configs \
-    --num-games 10000 \
-    --batch-size 256 \
-    --priority-weighted \
-    --output-dir data/games/gpu_selfplay \
-    > logs/gpu_selfplay_$(hostname)_$(date +%Y%m%d_%H%M%S).log 2>&1 &'
+# Diverse selfplay command - uses varied AI matchups (NNUE, NN-MCTS, NN-Minimax, heuristic)
+# This generates higher quality training data than GPU-only selfplay
+SELFPLAY_CMD='cd ~/ringrift/ai-service && source venv/bin/activate && \
+    export OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 && \
+    nohup python3 scripts/run_diverse_selfplay.py \
+    --priority-configs \
+    --games-per-matchup 100 \
+    --output-dir data/games \
+    > logs/diverse_selfplay_$(hostname)_$(date +%Y%m%d_%H%M%S).log 2>&1 &'
 
-# Alternative: run specific hex/sq19 configs only
+# Alternative: run specific hex/sq19 configs only with diverse AI
 HEX_SQ19_CMD='cd ~/ringrift/ai-service && source venv/bin/activate && \
-    mkdir -p data/games/gpu_selfplay logs && \
+    export OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 && \
+    mkdir -p data/games logs && \
     for config in "hexagonal:2" "hexagonal:3" "hexagonal:4" "square19:2" "square19:3" "square19:4"; do \
         board=$(echo $config | cut -d: -f1); \
         players=$(echo $config | cut -d: -f2); \
-        nohup python3 scripts/run_gpu_selfplay.py \
+        nohup python3 scripts/run_diverse_selfplay.py \
             --board $board \
-            --num-players $players \
-            --num-games 5000 \
-            --batch-size 128 \
-            --output-dir data/games/gpu_selfplay/${board}_${players}p \
-            > logs/gpu_selfplay_${board}_${players}p_$(hostname).log 2>&1 & \
+            --players $players \
+            --games-per-matchup 100 \
+            --output-dir data/games \
+            > logs/diverse_selfplay_${board}_${players}p_$(hostname).log 2>&1 & \
         sleep 1; \
     done; \
-    echo "Started 6 selfplay jobs for hex and square19"'
+    echo "Started 6 diverse selfplay jobs for hex and square19"'
 
 echo ""
 echo "Starting selfplay on GH200 nodes..."

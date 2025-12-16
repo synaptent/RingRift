@@ -23807,11 +23807,11 @@ print(json.dumps({{
                         job_type = JobType.CPU_SELFPLAY
                         task_type_str = "CPU-only (hybrid mode)"
                     elif node.has_gpu and is_high_end_gpu and not is_apple_gpu and not gpu_seems_unavailable:
-                        # High-end CUDA GPUs: Use pure GPU selfplay with CPU validation
-                        # This maximizes GPU parallel throughput (10-100x speedup)
-                        # CPU validation runs automatically after completion
-                        job_type = JobType.GPU_SELFPLAY
-                        task_type_str = "GPU-parallel (validated)"
+                        # High-end CUDA GPUs: Use HYBRID selfplay for quality + speed
+                        # CHANGED: Prioritize diverse/quality selfplay over raw GPU throughput
+                        # HYBRID uses CPU rules (quality) + GPU evaluation (speed)
+                        job_type = JobType.HYBRID_SELFPLAY
+                        task_type_str = "HYBRID (quality-first)"
                     elif node.has_gpu and not is_apple_gpu and not gpu_seems_unavailable:
                         # Mid-tier GPUs: Use hybrid (CPU rules + GPU eval)
                         job_type = JobType.HYBRID_SELFPLAY
@@ -24441,58 +24441,30 @@ print(json.dumps({{
                 return job
 
             elif job_type == JobType.GPU_SELFPLAY:
-                # GPU-accelerated parallel selfplay using run_gpu_selfplay.py
-                # Only start on nodes with GPU (check done in _manage_cluster_jobs)
-                # NOTE: run_gpu_selfplay uses CUDA; avoid scheduling on Apple MPS nodes.
-                gpu_name_upper = (self.self_info.gpu_name or "").upper()
-                if "MPS" in gpu_name_upper or "APPLE" in gpu_name_upper:
-                    return await self._start_local_job(
-                        JobType.SELFPLAY,
-                        board_type=board_type,
-                        num_players=num_players,
-                        engine_mode="mixed",
-                    )
+                # DIVERSE selfplay using run_diverse_selfplay.py for high-quality training data
+                # Uses varied AI matchups (NNUE, NN-MCTS, NN-Minimax, heuristic)
+                # NOTE: Renamed from GPU_SELFPLAY but job type kept for backwards compatibility
 
-                if "H100" in gpu_name_upper or "H200" in gpu_name_upper:
-                    batch_size = 64
-                elif "5090" in gpu_name_upper or "4090" in gpu_name_upper or "A100" in gpu_name_upper:
-                    batch_size = 32
-                else:
-                    batch_size = 16
-
-                # run_gpu_selfplay expects --board (square8/square19/hex/hexagonal).
+                # run_diverse_selfplay expects --board (square8/square19/hexagonal).
                 board_arg = {
                     "square8": "square8",
                     "square19": "square19",
                     "hexagonal": "hexagonal",
-                    "hex": "hex",
+                    "hex": "hexagonal",
                 }.get(board_type, "square8")
 
-                # Normalize engine_mode to GPU runner's supported values.
-                # run_gpu_selfplay.py supports: random-only, heuristic-only, nnue-guided
-                # Map NN-based modes (nn-only, best-vs-pool, etc.) to nnue-guided
-                nn_modes = {"nn-only", "best-vs-pool", "nn-vs-mcts", "nn-vs-minimax", "nn-vs-descent", "tournament-varied"}
-                if engine_mode in ("random-only", "heuristic-only", "nnue-guided"):
-                    gpu_engine_mode = engine_mode
-                elif engine_mode in nn_modes:
-                    gpu_engine_mode = "nnue-guided"  # Use neural network evaluation
-                else:
-                    gpu_engine_mode = "heuristic-only"  # Fallback for mcts-only, descent-only, minimax-only
-
-                num_games = 3000
+                # Games per matchup - diverse selfplay generates multiple matchup types
+                games_per_matchup = 100
                 if board_arg == "square19":
-                    num_games = 1500
-                elif board_arg in ("hex", "hexagonal"):
-                    num_games = 500
+                    games_per_matchup = 50  # Square19 games are longer
+                elif board_arg == "hexagonal":
+                    games_per_matchup = 100
 
                 output_dir = Path(
                     self.ringrift_path,
                     "ai-service",
                     "data",
-                    "selfplay",
-                    "p2p_gpu",
-                    f"{board_type}_{num_players}p",
-                    job_id,
+                    "games",
                 )
                 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -24502,12 +24474,10 @@ print(json.dumps({{
 
                 cmd = [
                     python_exec,
-                    f"{self.ringrift_path}/ai-service/scripts/run_gpu_selfplay.py",
+                    f"{self.ringrift_path}/ai-service/scripts/run_diverse_selfplay.py",
                     "--board", board_arg,
-                    "--engine-mode", gpu_engine_mode,
-                    "--num-games", str(num_games),
-                    "--num-players", str(num_players),
-                    "--batch-size", str(batch_size),
+                    "--players", str(num_players),
+                    "--games-per-matchup", str(games_per_matchup),
                     "--output-dir", str(output_dir),
                 ]
 
