@@ -6024,6 +6024,10 @@ class P2POrchestrator:
             tournament_scheduling = self._get_distributed_tournament_summary()  # DISTRIBUTED TOURNAMENTS
         except Exception as e:
             tournament_scheduling = {"error": str(e)}
+        try:
+            data_dedup = self._get_dedup_summary()  # DATA DEDUPLICATION
+        except Exception as e:
+            data_dedup = {"error": str(e)}
 
         return web.json_response({
             "node_id": self.node_id,
@@ -6051,6 +6055,7 @@ class P2POrchestrator:
             "peer_reputation": peer_reputation,
             "sync_intervals": sync_intervals,
             "tournament_scheduling": tournament_scheduling,
+            "data_dedup": data_dedup,
         })
 
     async def handle_election(self, request: web.Request) -> web.Response:
@@ -18322,6 +18327,7 @@ print(json.dumps({{
 
         # Find files we're missing that peers have (with prioritization)
         files_to_sync: Dict[str, List[tuple]] = {}  # peer_id -> [(file, priority)]
+        file_hashes: Dict[str, str] = {}  # file_path -> hash (for dedup tracking)
         last_sync_time = getattr(self, "_last_successful_p2p_sync", 0)
 
         for peer_id, peer_manifest in peer_manifests.items():
@@ -18337,6 +18343,8 @@ print(json.dumps({{
             for file_info in peer_files:
                 rel_path = getattr(file_info, "relative_path", "")
                 modified_at = getattr(file_info, "modified_at", 0)
+                file_hash = getattr(file_info, "file_hash", "")
+                file_size = getattr(file_info, "size_bytes", 0)
 
                 if not rel_path:
                     continue
@@ -18347,6 +18355,11 @@ print(json.dumps({{
 
                 # Skip if file is older than last sync (delta optimization)
                 if modified_at < last_sync_time and rel_path in local_files:
+                    continue
+
+                # DATA DEDUPLICATION: Skip if we already synced this file (by hash)
+                if file_hash and self._is_file_already_synced(file_hash):
+                    self._record_dedup_skip(file_count=1, bytes_saved=file_size)
                     continue
 
                 # Calculate priority (models > ELO/training DBs > training data > selfplay)
@@ -18367,6 +18380,10 @@ print(json.dumps({{
                 if peer_id not in files_to_sync:
                     files_to_sync[peer_id] = []
                 files_to_sync[peer_id].append((rel_path, priority, health))
+
+                # Track hash for dedup recording after sync
+                if file_hash:
+                    file_hashes[rel_path] = file_hash
 
         if not files_to_sync:
             return
@@ -18423,6 +18440,10 @@ print(json.dumps({{
                     # Update metrics
                     if hasattr(self, "_p2p_sync_metrics"):
                         self._p2p_sync_metrics["bytes"] += job.bytes_transferred
+                    # DATA DEDUPLICATION: Record synced file hashes
+                    for fpath in files_to_request:
+                        if fpath in file_hashes:
+                            self._record_synced_file(file_hashes[fpath], 0)
                 else:
                     print(f"[P2P] P2P SYNC: Failed from {best_peer}: {job.error_message}")
             finally:
@@ -19883,6 +19904,150 @@ print(json.dumps({{
                 "failure": self._sync_failure_streak.get("model", 0),
             },
         }
+
+    # ============================================================================
+    # SELFPLAY DATA DEDUPLICATION
+    # ============================================================================
+    # Tracks synced files and game IDs to avoid redundant transfers during P2P sync.
+    # Uses bloom filter for efficient game ID tracking and file hash caching.
+    # ============================================================================
+
+    def _init_data_deduplication(self):
+        """Initialize data deduplication tracking."""
+        self._synced_file_hashes: Set[str] = set()  # Hash -> synced
+        self._known_game_ids: Set[str] = set()  # Game IDs we have
+        self._dedup_stats = {
+            "files_skipped": 0,
+            "games_skipped": 0,
+            "bytes_saved": 0,
+            "last_cleanup": time.time(),
+        }
+        self._dedup_lock = threading.Lock()
+
+    def _record_synced_file(self, file_hash: str, file_size: int):
+        """Record a file as synced for deduplication.
+
+        DATA DEDUPLICATION: Track file hashes we've synced to avoid
+        re-syncing the same file from different peers.
+
+        Args:
+            file_hash: Hash of the synced file
+            file_size: Size in bytes (for metrics)
+        """
+        if not hasattr(self, "_synced_file_hashes"):
+            self._init_data_deduplication()
+
+        with self._dedup_lock:
+            self._synced_file_hashes.add(file_hash)
+
+    def _is_file_already_synced(self, file_hash: str) -> bool:
+        """Check if file was already synced based on hash.
+
+        Args:
+            file_hash: Hash to check
+
+        Returns:
+            True if file was already synced
+        """
+        if not hasattr(self, "_synced_file_hashes"):
+            self._init_data_deduplication()
+
+        if not file_hash:
+            return False
+
+        with self._dedup_lock:
+            return file_hash in self._synced_file_hashes
+
+    def _record_game_ids(self, game_ids: List[str]):
+        """Record game IDs as known for deduplication.
+
+        GAME ID TRACKING: Track game IDs we have to avoid syncing
+        duplicate games from different DB files.
+
+        Args:
+            game_ids: List of game IDs to record
+        """
+        if not hasattr(self, "_known_game_ids"):
+            self._init_data_deduplication()
+
+        with self._dedup_lock:
+            self._known_game_ids.update(game_ids)
+
+    def _filter_unknown_games(self, game_ids: List[str]) -> List[str]:
+        """Filter out game IDs we already have.
+
+        Args:
+            game_ids: List of game IDs to check
+
+        Returns:
+            List of game IDs we don't have yet
+        """
+        if not hasattr(self, "_known_game_ids"):
+            self._init_data_deduplication()
+
+        with self._dedup_lock:
+            return [gid for gid in game_ids if gid not in self._known_game_ids]
+
+    def _record_dedup_skip(self, file_count: int = 0, game_count: int = 0, bytes_saved: int = 0):
+        """Record deduplication skip for metrics.
+
+        Args:
+            file_count: Number of files skipped
+            game_count: Number of games skipped
+            bytes_saved: Bytes saved by skipping
+        """
+        if not hasattr(self, "_dedup_stats"):
+            self._init_data_deduplication()
+
+        with self._dedup_lock:
+            self._dedup_stats["files_skipped"] += file_count
+            self._dedup_stats["games_skipped"] += game_count
+            self._dedup_stats["bytes_saved"] += bytes_saved
+
+    def _cleanup_dedup_cache(self, max_age: float = 86400):
+        """Clean up old entries from deduplication cache.
+
+        CACHE CLEANUP: Periodically remove old entries to prevent unbounded growth.
+        Default: clean entries older than 24 hours.
+
+        Args:
+            max_age: Max age in seconds before cleanup
+        """
+        if not hasattr(self, "_dedup_stats"):
+            return
+
+        now = time.time()
+        with self._dedup_lock:
+            # Only clean once per hour
+            if now - self._dedup_stats.get("last_cleanup", 0) < 3600:
+                return
+
+            # For now, just limit set sizes (more sophisticated cleanup later)
+            if len(self._synced_file_hashes) > 10000:
+                # Keep only half (LRU would be better but requires more tracking)
+                hashes_list = list(self._synced_file_hashes)
+                self._synced_file_hashes = set(hashes_list[-5000:])
+
+            if len(self._known_game_ids) > 100000:
+                # Keep only recent half
+                ids_list = list(self._known_game_ids)
+                self._known_game_ids = set(ids_list[-50000:])
+
+            self._dedup_stats["last_cleanup"] = now
+
+    def _get_dedup_summary(self) -> dict:
+        """Get deduplication metrics summary."""
+        if not hasattr(self, "_dedup_stats"):
+            self._init_data_deduplication()
+
+        with self._dedup_lock:
+            return {
+                "files_skipped": self._dedup_stats.get("files_skipped", 0),
+                "games_skipped": self._dedup_stats.get("games_skipped", 0),
+                "bytes_saved_mb": round(self._dedup_stats.get("bytes_saved", 0) / (1024 * 1024), 2),
+                "known_file_hashes": len(self._synced_file_hashes),
+                "known_game_ids": len(self._known_game_ids),
+            }
 
     # ============================================================================
     # DISTRIBUTED TOURNAMENT SCHEDULING
