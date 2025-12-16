@@ -196,10 +196,10 @@ export class BoardManager {
   private generateValidPositions(): Set<string> {
     const positions = new Set<string>();
 
-    if (this.boardType === 'hexagonal') {
+    if (this.boardType === 'hexagonal' || this.boardType === 'hex8') {
       // Generate hexagonal board positions
-      // size=13 means radius 12 (positions from -12 to 12)
-      // This gives 3*12^2 + 3*12 + 1 = 469 positions
+      // For hexagonal: size=13 means radius 12, giving 469 positions
+      // For hex8: size=9 means radius 4, giving 61 positions
       const radius = this.size - 1;
       for (let q = -radius; q <= radius; q++) {
         const r1 = Math.max(-radius, -q - radius);
@@ -230,7 +230,7 @@ export class BoardManager {
   getNeighbors(position: Position, adjacencyType?: AdjacencyType): Position[] {
     const adjType = adjacencyType || this.config.movementAdjacency;
 
-    if (this.boardType === 'hexagonal' || adjType === 'hexagonal') {
+    if (this.boardType === 'hexagonal' || this.boardType === 'hex8' || adjType === 'hexagonal') {
       return this.getHexagonalNeighbors(position);
     } else if (adjType === 'moore') {
       return this.getMooreNeighbors(position);
@@ -321,7 +321,7 @@ export class BoardManager {
   }
 
   calculateDistance(pos1: Position, pos2: Position): number {
-    if (this.boardType === 'hexagonal') {
+    if (this.boardType === 'hexagonal' || this.boardType === 'hex8') {
       // Hexagonal distance using cube coordinates
       const dx = Math.abs(pos1.x - pos2.x);
       const dy = Math.abs(pos1.y - pos2.y);
@@ -748,9 +748,9 @@ export class BoardManager {
   getEdgePositions(): Position[] {
     const allPositions = this.getAllPositions();
 
-    if (this.boardType === 'hexagonal') {
+    if (this.boardType === 'hexagonal' || this.boardType === 'hex8') {
       // Hexagonal edge positions
-      // size=13 means radius 12, so edge is at distance 12
+      // size=13 means radius 12, so edge is at distance 12 (hex8: radius 4)
       const radius = this.size - 1;
       return allPositions.filter((pos) => {
         const distance = Math.max(Math.abs(pos.x), Math.abs(pos.y), Math.abs(pos.z || 0));
@@ -768,7 +768,7 @@ export class BoardManager {
     const allPositions = this.getAllPositions();
     const center = Math.floor(this.size / 2);
 
-    if (this.boardType === 'hexagonal') {
+    if (this.boardType === 'hexagonal' || this.boardType === 'hex8') {
       // Hexagonal center positions
       return allPositions.filter((pos) => {
         const distance = Math.max(Math.abs(pos.x), Math.abs(pos.y), Math.abs(pos.z || 0));
@@ -784,8 +784,8 @@ export class BoardManager {
   }
 
   isOnEdge(position: Position): boolean {
-    if (this.boardType === 'hexagonal') {
-      // size=13 means radius 12, so edge is at distance 12
+    if (this.boardType === 'hexagonal' || this.boardType === 'hex8') {
+      // size=13 means radius 12, so edge is at distance 12 (hex8: radius 4)
       const radius = this.size - 1;
       const distance = Math.max(
         Math.abs(position.x),
@@ -806,7 +806,7 @@ export class BoardManager {
   isInCenter(position: Position): boolean {
     const center = Math.floor(this.size / 2);
 
-    if (this.boardType === 'hexagonal') {
+    if (this.boardType === 'hexagonal' || this.boardType === 'hex8') {
       const distance = Math.max(
         Math.abs(position.x),
         Math.abs(position.y),

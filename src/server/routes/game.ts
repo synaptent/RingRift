@@ -2408,7 +2408,7 @@ router.get(
  *         name: boardType
  *         schema:
  *           type: string
- *           enum: [square8, square19, hexagonal]
+ *           enum: [square8, square19, hex8, hexagonal]
  *         description: Filter by board type
  *       - in: query
  *         name: maxPlayers

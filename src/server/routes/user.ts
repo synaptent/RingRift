@@ -784,7 +784,7 @@ export function formatPlayerForDisplay<T extends { username: string } | null | u
  *         name: boardType
  *         schema:
  *           type: string
- *           enum: [all, square8, square19, hexagonal]
+ *           enum: [all, square8, square19, hex8, hexagonal]
  *           default: all
  *         description: Filter by board type (only show players who have played on this board)
  *       - in: query

@@ -251,7 +251,7 @@ export interface TerritoryBorderOptions {
 
 function isValidPosition(position: Position, board: BoardState): boolean {
   const size = board.size;
-  if (board.type === 'hexagonal') {
+  if (board.type === 'hexagonal' || board.type === 'hex8') {
     const radius = size - 1;
     const q = position.x;
     const r = position.y;
@@ -406,7 +406,7 @@ function getMooreNeighbors(board: BoardState, position: Position): Position[] {
   const neighbors: Position[] = [];
 
   // Moore adjacency is only meaningful on square boards
-  if (board.type === 'hexagonal') {
+  if (board.type === 'hexagonal' || board.type === 'hex8') {
     return neighbors;
   }
 

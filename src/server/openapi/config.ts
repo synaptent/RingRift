@@ -521,7 +521,7 @@ Rate limit headers are included in responses:
           properties: {
             boardType: {
               type: 'string',
-              enum: ['square8', 'square19', 'hexagonal'],
+              enum: ['square8', 'square19', 'hex8', 'hexagonal'],
               description: 'Board type',
               example: 'square8',
             },
@@ -565,7 +565,7 @@ Rate limit headers are included in responses:
             },
             boardType: {
               type: 'string',
-              enum: ['square8', 'square19', 'hexagonal'],
+              enum: ['square8', 'square19', 'hex8', 'hexagonal'],
             },
             maxPlayers: {
               type: 'integer',

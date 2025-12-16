@@ -71,7 +71,7 @@ export const HEX_DIRECTIONS: Direction[] = [
  * 6 standard cube-coordinate directions.
  */
 export function getMovementDirectionsForBoardType(boardType: BoardType): Direction[] {
-  if (boardType === 'hexagonal') {
+  if (boardType === 'hexagonal' || boardType === 'hex8') {
     return HEX_DIRECTIONS;
   }
   return SQUARE_MOORE_DIRECTIONS;
@@ -240,7 +240,7 @@ export function getPathPositions(from: Position, to: Position): Position[] {
  * - Hex boards: cube-coordinate distance
  */
 export function calculateDistance(boardType: BoardType, from: Position, to: Position): number {
-  if (boardType === 'hexagonal') {
+  if (boardType === 'hexagonal' || boardType === 'hex8') {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dz = (to.z || 0) - (from.z || 0);
@@ -359,7 +359,7 @@ export function validateCaptureSegmentOnBoard(
   const dy = target.y - from.y;
   const dz = (target.z || 0) - (from.z || 0);
 
-  if (boardType === 'hexagonal') {
+  if (boardType === 'hexagonal' || boardType === 'hex8') {
     // In cube coordinates, moving along an axis means exactly two
     // coordinates change (the third is implied by x + y + z = 0).
     const coordChanges = [dx !== 0, dy !== 0, dz !== 0].filter(Boolean).length;

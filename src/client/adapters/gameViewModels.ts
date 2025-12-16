@@ -1460,7 +1460,7 @@ export function toBoardViewModel(
         cells.push(cell);
       }
     }
-  } else if (board.type === 'hexagonal') {
+  } else if (board.type === 'hexagonal' || board.type === 'hex8') {
     // Hex board: iterate over all positions in stacks, markers, collapsedSpaces
     const allKeys = new Set<string>();
     for (const key of board.stacks.keys()) allKeys.add(key);

@@ -366,7 +366,7 @@ const StackFromViewModel: React.FC<{
   const { rings, stackHeight, capHeight } = stack;
 
   const isSquare8 = boardType === 'square8';
-  const isHex = boardType === 'hexagonal';
+  const isHex = boardType === 'hexagonal' || boardType === 'hex8';
 
   const verticalOffsetClasses = 'translate-y-[3px] md:translate-y-[4px]';
 
@@ -774,7 +774,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
           positions.push({ position: pos, key: positionToString(pos) });
         }
       }
-    } else if (effectiveBoardType === 'hexagonal') {
+    } else if (effectiveBoardType === 'hexagonal' || effectiveBoardType === 'hex8') {
       const radius = effectiveSize - 1;
       for (let q = -radius; q <= radius; q++) {
         const r1 = Math.max(-radius, -q - radius);
@@ -806,7 +806,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
       // Hex board navigation - map arrow keys to approximate hex directions
       // Using cube coordinates where q + r + s = 0
-      if (effectiveBoardType === 'hexagonal') {
+      if (effectiveBoardType === 'hexagonal' || effectiveBoardType === 'hex8') {
         const radius = effectiveSize - 1;
         let newQ = current.x;
         let newR = current.y;
@@ -1181,7 +1181,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
     const edges: MovementGrid['edges'] = [];
     const addedEdges = new Set<string>();
 
-    const isHex = effectiveBoardType === 'hexagonal';
+    const isHex = effectiveBoardType === 'hexagonal' || effectiveBoardType === 'hex8';
 
     if (isHex) {
       // Hex adjacency: 6 neighbors using cube coordinates
@@ -2404,7 +2404,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
     if (effectiveBoardType === 'square19') {
       return renderSquareBoard(19);
     }
-    if (effectiveBoardType === 'hexagonal') {
+    if (effectiveBoardType === 'hexagonal' || effectiveBoardType === 'hex8') {
       // Hex board has boardGeometryRef and overlay inside renderHexBoard()
       // for tighter alignment with the actual cell grid (no padding interference)
       return (
@@ -2419,6 +2419,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
   // Mobile viewport scroll handling (W3-12):
   // - Square8: 8×44px cells + 7×2px gaps = 366px fits in 375px viewport
   // - Square19: 19×44px + 18×2px = 872px requires horizontal scroll
+  // - Hex8: 9×44px = 396px fits in most mobile viewports
+  // - Hexagonal (radius-12): large board requires scroll
   // - board-scroll-container provides touch-friendly scrolling for oversized boards
   // - board-container prevents text selection during drag
   const needsScroll = effectiveBoardType === 'square19' || effectiveBoardType === 'hexagonal';
@@ -2427,7 +2429,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
       ? '8x8'
       : effectiveBoardType === 'square19'
         ? '19x19'
-        : 'Hexagonal';
+        : effectiveBoardType === 'hex8'
+          ? 'Hex 8'
+          : 'Hexagonal';
 
   return (
     <div

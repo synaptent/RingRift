@@ -504,7 +504,7 @@ export function enumeratePlacementPositions(state: GameState, player: number): P
   const size = board.size;
 
   // Different iteration for hexagonal vs square boards
-  if (boardType === 'hexagonal') {
+  if (boardType === 'hexagonal' || boardType === 'hex8') {
     // Hexagonal board uses axial coordinates with radius = size
     const radius = size;
     for (let q = -radius; q <= radius; q++) {

@@ -299,7 +299,7 @@ function generateValidPositions(board: BoardState): Set<string> {
   const positions = new Set<string>();
   const size = board.size;
 
-  if (board.type === 'hexagonal') {
+  if (board.type === 'hexagonal' || board.type === 'hex8') {
     const radius = size - 1;
     for (let q = -radius; q <= radius; q++) {
       const r1 = Math.max(-radius, -q - radius);
@@ -321,7 +321,7 @@ function generateValidPositions(board: BoardState): Set<string> {
 
 function isValidPosition(position: Position, board: BoardState): boolean {
   const size = board.size;
-  if (board.type === 'hexagonal') {
+  if (board.type === 'hexagonal' || board.type === 'hex8') {
     const radius = size - 1;
     const q = position.x;
     const r = position.y;

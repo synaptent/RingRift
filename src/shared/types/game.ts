@@ -996,7 +996,7 @@ export const BOARD_CONFIGS = {
     type: 'square' as const,
   },
   hex8: {
-    size: 9, // Radius of hex8 board (radius = 4, size = 2*4+1 = 9)
+    size: 5, // Hex8 board: radius = 4, so size = radius + 1 = 5
     totalSpaces: 61, // 3r² + 3r + 1 = 3(16) + 12 + 1 = 61 for r=4
     ringsPerPlayer: 18, // Same as square8
     lineLength: 4, // Minimum line length for collapse (hex)

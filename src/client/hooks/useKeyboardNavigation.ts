@@ -53,7 +53,7 @@ function getAllPositions(boardType: BoardType, size: number): Position[] {
         positions.push({ x, y });
       }
     }
-  } else if (boardType === 'hexagonal') {
+  } else if (boardType === 'hexagonal' || boardType === 'hex8') {
     const radius = size - 1;
     for (let q = -radius; q <= radius; q++) {
       const r1 = Math.max(-radius, -q - radius);
@@ -90,7 +90,7 @@ function findNeighbor(
   }
 
   // Hex board navigation - map arrow keys to approximate hex directions
-  if (boardType === 'hexagonal') {
+  if (boardType === 'hexagonal' || boardType === 'hex8') {
     const radius = size - 1;
     let newQ = current.x;
     let newR = current.y;

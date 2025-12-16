@@ -96,7 +96,7 @@ export function findLinesForPlayer(
 }
 
 function getLineDirections(boardType: string): Position[] {
-  if (boardType === 'hexagonal') {
+  if (boardType === 'hexagonal' || boardType === 'hex8') {
     // 6 directions for hexagonal
     return [
       { x: 1, y: 0, z: -1 }, // East
@@ -127,7 +127,7 @@ function findLineInDirection(
   board: BoardState
 ): Position[] {
   const line: Position[] = [startPosition];
-  const isHex = board.type === 'hexagonal';
+  const isHex = board.type === 'hexagonal' || board.type === 'hex8';
 
   // Helper to step one cell in the given direction
   const step = (current: Position, sign: 1 | -1): Position => {
@@ -184,7 +184,7 @@ function findLineInDirection(
 function isValidPosition(position: Position, board: BoardState): boolean {
   // We can check bounds based on board size
   const size = board.size;
-  if (board.type === 'hexagonal') {
+  if (board.type === 'hexagonal' || board.type === 'hex8') {
     const radius = size - 1;
     const q = position.x;
     const r = position.y;

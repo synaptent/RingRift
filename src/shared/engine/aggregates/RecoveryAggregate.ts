@@ -1052,7 +1052,7 @@ export function applyRecoverySlide(
  * Hex boards use 6 hex-adjacent directions.
  */
 function getAdjacencyDirections(boardType: string): Position[] {
-  if (boardType === 'hexagonal') {
+  if (boardType === 'hexagonal' || boardType === 'hex8') {
     // 6 hex-adjacent directions
     return [
       { x: 1, y: 0, z: -1 },
@@ -1082,11 +1082,12 @@ function getAdjacencyDirections(boardType: string): Position[] {
  */
 function isAdjacent(from: Position, to: Position, boardType: string): boolean {
   const directions = getAdjacencyDirections(boardType);
+  const isHex = boardType === 'hexagonal' || boardType === 'hex8';
   return directions.some(
     (d) =>
       from.x + d.x === to.x &&
       from.y + d.y === to.y &&
-      (boardType !== 'hexagonal' || (from.z || 0) + (d.z || 0) === (to.z || 0))
+      (!isHex || (from.z || 0) + (d.z || 0) === (to.z || 0))
   );
 }
 
@@ -1110,7 +1111,7 @@ function addPositions(a: Position, b: Position): Position {
  */
 function isValidPosition(position: Position, board: BoardState): boolean {
   const size = board.size;
-  if (board.type === 'hexagonal') {
+  if (board.type === 'hexagonal' || board.type === 'hex8') {
     const radius = size - 1;
     const q = position.x;
     const r = position.y;
@@ -1263,7 +1264,7 @@ function collectLinePositionsInDirection(
  * since we check both directions from each point.
  */
 function getLineDirections(boardType: string): Position[] {
-  if (boardType === 'hexagonal') {
+  if (boardType === 'hexagonal' || boardType === 'hex8') {
     return [
       { x: 1, y: 0, z: -1 },
       { x: 1, y: -1, z: 0 },

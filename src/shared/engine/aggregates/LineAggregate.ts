@@ -164,7 +164,7 @@ export interface LineDecisionApplicationOutcome {
  * Exported for testing purposes. Production code should use findAllLines().
  */
 export function getLineDirections(boardType: string): Position[] {
-  if (boardType === 'hexagonal') {
+  if (boardType === 'hexagonal' || boardType === 'hex8') {
     // 3 directions for hexagonal (in cube coordinates)
     return [
       { x: 1, y: 0, z: -1 }, // East
@@ -187,7 +187,7 @@ export function getLineDirections(boardType: string): Position[] {
  */
 function isValidBoardPosition(position: Position, board: BoardState): boolean {
   const size = board.size;
-  if (board.type === 'hexagonal') {
+  if (board.type === 'hexagonal' || board.type === 'hex8') {
     const radius = size - 1;
     const q = position.x;
     const r = position.y;
@@ -238,7 +238,7 @@ export function findLineInDirection(
   board: BoardState
 ): Position[] {
   const line: Position[] = [startPosition];
-  const isHex = board.type === 'hexagonal';
+  const isHex = board.type === 'hexagonal' || board.type === 'hex8';
 
   // Helper to step one cell in the given direction
   const step = (current: Position, sign: 1 | -1): Position => {
