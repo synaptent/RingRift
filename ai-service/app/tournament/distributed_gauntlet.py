@@ -643,7 +643,7 @@ class DistributedNNGauntlet:
             import aiohttp
             from aiohttp import ClientTimeout
 
-            timeout = ClientTimeout(total=10)
+            timeout = ClientTimeout(total=30)  # Allow more time for large clusters
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(f"{p2p_url}/status") as resp:
                     if resp.status != 200:
@@ -693,8 +693,11 @@ class DistributedNNGauntlet:
             max_workers = self.config.reserved_workers * 2  # Allow some extra
             return workers[:max_workers]
 
+        except asyncio.TimeoutError:
+            logger.error("[Gauntlet] Worker discovery timed out - P2P may be under heavy load")
+            return []
         except Exception as e:
-            logger.error(f"[Gauntlet] Failed to discover workers: {e}")
+            logger.error(f"[Gauntlet] Failed to discover workers: {type(e).__name__}: {e}")
             return []
 
     async def _execute_tasks_distributed(
