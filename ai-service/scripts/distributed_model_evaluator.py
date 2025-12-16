@@ -38,7 +38,7 @@ AI_SERVICE_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
 from app.models import BoardType, AIType, AIConfig, GameStatus
-from app.models.discovery import discover_models, ModelInfo
+from app.models.discovery import discover_models, ModelInfo as DiscoveryModelInfo
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,42 +82,11 @@ def get_hostname() -> str:
     return socket.gethostname()
 
 
-def detect_board_type(model_path: Path) -> Optional[str]:
-    """Detect board type from model filename or sidecar metadata.
-
-    Returns: "square8", "square19", "hexagonal", or None if unknown.
-    """
-    name = model_path.stem.lower()
-
-    # Try sidecar JSON first (future-proof)
-    sidecar = model_path.with_suffix(".json")
-    if sidecar.exists():
-        try:
-            with open(sidecar) as f:
-                meta = json.load(f)
-                if "board_type" in meta:
-                    return meta["board_type"]
-        except Exception:
-            pass
-
-    # Pattern matching on filename
-    if any(p in name for p in ["sq8", "square8", "_8x8"]):
-        return "square8"
-    elif any(p in name for p in ["sq19", "square19", "_19x19"]):
-        return "square19"
-    elif any(p in name for p in ["hex", "hexagonal"]):
-        return "hexagonal"
-
-    # Default heuristics for common model naming patterns
-    if "ringrift_v" in name and "sq" not in name and "hex" not in name:
-        # Legacy ringrift_v* models are typically square8
-        return "square8"
-
-    return None
-
-
 def discover_all_models(models_dir: Path, board_filter: Optional[str] = None) -> Dict[str, List[Tuple[Path, str]]]:
     """Discover all NN and NNUE models, grouped by type.
+
+    Uses the unified discovery API from app.models.discovery for consistent
+    board type detection across sidecar JSON, checkpoint metadata, and filename.
 
     Args:
         models_dir: Directory to scan
@@ -126,33 +95,35 @@ def discover_all_models(models_dir: Path, board_filter: Optional[str] = None) ->
     Returns:
         Dict with "nn" and "nnue" keys, each containing list of (path, board_type) tuples
     """
-    models = {"nn": [], "nnue": []}
+    result = {"nn": [], "nnue": []}
 
-    # NN models (.pth files)
-    for f in models_dir.glob("*.pth"):
-        if not f.stem.startswith("."):
-            board_type = detect_board_type(f)
-            if board_type is None:
-                logger.warning(f"Unknown board type for {f.name}, skipping")
-                continue
-            if board_filter and board_type != board_filter:
-                continue
-            models["nn"].append((f, board_type))
+    # Use unified discovery API
+    all_models = discover_models(
+        models_dir=models_dir,
+        board_type=board_filter,
+        include_unknown=False,  # Skip models with unknown board type
+    )
 
-    # NNUE models (.pt files)
-    nnue_dir = models_dir / "nnue"
-    if nnue_dir.exists():
-        for f in nnue_dir.glob("*.pt"):
-            if not f.stem.startswith("."):
-                board_type = detect_board_type(f)
-                if board_type is None:
-                    logger.warning(f"Unknown board type for {f.name}, skipping")
-                    continue
-                if board_filter and board_type != board_filter:
-                    continue
-                models["nnue"].append((f, board_type))
+    for model_info in all_models:
+        path = Path(model_info.path)
+        board_type = model_info.board_type
 
-    return models
+        if model_info.model_type == "nn":
+            result["nn"].append((path, board_type))
+        elif model_info.model_type == "nnue":
+            result["nnue"].append((path, board_type))
+
+    # Log any skipped models (unknown board type)
+    unknown_models = discover_models(
+        models_dir=models_dir,
+        board_type=None,
+        include_unknown=True,
+    )
+    for m in unknown_models:
+        if m.board_type == "unknown":
+            logger.warning(f"Unknown board type for {m.name}, skipping")
+
+    return result
 
 
 def play_single_game(

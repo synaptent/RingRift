@@ -40,6 +40,14 @@ import torch.nn as nn
 if TYPE_CHECKING:
     from app.training.model_registry import ModelRecord, ModelStage
 
+# Import sidecar reading from unified discovery API
+try:
+    from app.models.discovery import read_model_sidecar
+    HAS_SIDECAR_SUPPORT = True
+except ImportError:
+    HAS_SIDECAR_SUPPORT = False
+    read_model_sidecar = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -311,6 +319,7 @@ class ModelLoader:
         model.to(self._device)
         model.eval()
 
+        # Build ModelInfo with optional sidecar metadata
         info = ModelInfo(
             model_id=model_id or f"nnue_{board_type}_{num_players}p",
             model_type="nnue",
@@ -318,6 +327,18 @@ class ModelLoader:
             num_players=num_players,
             path=str(path),
         )
+
+        # Augment with sidecar metadata if available
+        if HAS_SIDECAR_SUPPORT and read_model_sidecar is not None:
+            try:
+                sidecar = read_model_sidecar(path)
+                if sidecar:
+                    info.elo = sidecar.get("elo", info.elo)
+                    info.architecture = sidecar.get("architecture_version", info.architecture)
+                    info.version = sidecar.get("version", info.version)
+                    logger.debug(f"Loaded sidecar metadata for {path.name}")
+            except Exception as e:
+                logger.debug(f"Could not read sidecar for {path.name}: {e}")
 
         # Cache model
         if self._cache and cache_key:

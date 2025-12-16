@@ -41,6 +41,7 @@ AI_SERVICE_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
 from app.models import BoardType
+from app.models.discovery import discover_models as unified_discover_models
 
 RESULTS_FILE = AI_SERVICE_ROOT / "data" / "baseline_gauntlet_results.json"
 
@@ -64,36 +65,36 @@ def discover_models(
     nn_only: bool = False,
     nnue_only: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Discover all models for the given board/player config."""
+    """Discover all models for the given board/player config.
+
+    Uses the unified discovery API from app.models.discovery for consistent
+    board type detection across sidecar JSON, checkpoint metadata, and filename.
+    """
+    # Determine model_type filter
+    model_type = None
+    if nn_only:
+        model_type = "nn"
+    elif nnue_only:
+        model_type = "nnue"
+
+    # Use unified discovery API
+    discovered = unified_discover_models(
+        models_dir=models_dir,
+        board_type=board_type,
+        num_players=num_players,
+        model_type=model_type,
+        include_unknown=False,
+    )
+
+    # Convert to legacy dict format for backward compatibility
     models = []
-
-    # NN models (.pth files)
-    if not nnue_only:
-        for f in models_dir.glob("*.pth"):
-            name = f.stem.lower()
-            # Filter by board type
-            if board_type == "square8" and "sq8" in name or "square8" in name:
-                if f"_{num_players}p" in name or f"_{num_players}p" not in name:
-                    models.append({
-                        "path": str(f),
-                        "name": f.stem,
-                        "type": "nn",
-                        "size_mb": f.stat().st_size / (1024 * 1024),
-                    })
-
-    # NNUE models (.pt files)
-    if not nn_only:
-        nnue_dir = models_dir / "nnue"
-        if nnue_dir.exists():
-            for f in nnue_dir.glob("*.pt"):
-                name = f.stem.lower()
-                if board_type in name or f"nnue_{board_type}" in name:
-                    models.append({
-                        "path": str(f),
-                        "name": f.stem,
-                        "type": "nnue",
-                        "size_mb": f.stat().st_size / (1024 * 1024),
-                    })
+    for m in discovered:
+        models.append({
+            "path": m.path,
+            "name": m.name,
+            "type": m.model_type,
+            "size_mb": m.size_bytes / (1024 * 1024) if m.size_bytes else 0,
+        })
 
     return models
 
