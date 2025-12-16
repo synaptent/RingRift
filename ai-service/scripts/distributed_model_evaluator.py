@@ -68,6 +68,7 @@ CLUSTER_NODES = [
 class ModelScore:
     model_path: str
     model_type: str  # "nn" or "nnue"
+    board_type: str  # "square8", "square19", "hexagonal"
     vs_random: float
     vs_heuristic: float
     composite_score: float
@@ -80,21 +81,75 @@ def get_hostname() -> str:
     return socket.gethostname()
 
 
-def discover_all_models(models_dir: Path) -> Dict[str, List[Path]]:
-    """Discover all NN and NNUE models."""
+def detect_board_type(model_path: Path) -> Optional[str]:
+    """Detect board type from model filename or sidecar metadata.
+
+    Returns: "square8", "square19", "hexagonal", or None if unknown.
+    """
+    name = model_path.stem.lower()
+
+    # Try sidecar JSON first (future-proof)
+    sidecar = model_path.with_suffix(".json")
+    if sidecar.exists():
+        try:
+            with open(sidecar) as f:
+                meta = json.load(f)
+                if "board_type" in meta:
+                    return meta["board_type"]
+        except Exception:
+            pass
+
+    # Pattern matching on filename
+    if any(p in name for p in ["sq8", "square8", "_8x8"]):
+        return "square8"
+    elif any(p in name for p in ["sq19", "square19", "_19x19"]):
+        return "square19"
+    elif any(p in name for p in ["hex", "hexagonal"]):
+        return "hexagonal"
+
+    # Default heuristics for common model naming patterns
+    if "ringrift_v" in name and "sq" not in name and "hex" not in name:
+        # Legacy ringrift_v* models are typically square8
+        return "square8"
+
+    return None
+
+
+def discover_all_models(models_dir: Path, board_filter: Optional[str] = None) -> Dict[str, List[Tuple[Path, str]]]:
+    """Discover all NN and NNUE models, grouped by type.
+
+    Args:
+        models_dir: Directory to scan
+        board_filter: Optional filter like "square8" to only return matching models
+
+    Returns:
+        Dict with "nn" and "nnue" keys, each containing list of (path, board_type) tuples
+    """
     models = {"nn": [], "nnue": []}
 
     # NN models (.pth files)
     for f in models_dir.glob("*.pth"):
         if not f.stem.startswith("."):
-            models["nn"].append(f)
+            board_type = detect_board_type(f)
+            if board_type is None:
+                logger.warning(f"Unknown board type for {f.name}, skipping")
+                continue
+            if board_filter and board_type != board_filter:
+                continue
+            models["nn"].append((f, board_type))
 
     # NNUE models (.pt files)
     nnue_dir = models_dir / "nnue"
     if nnue_dir.exists():
         for f in nnue_dir.glob("*.pt"):
             if not f.stem.startswith("."):
-                models["nnue"].append(f)
+                board_type = detect_board_type(f)
+                if board_type is None:
+                    logger.warning(f"Unknown board type for {f.name}, skipping")
+                    continue
+                if board_filter and board_type != board_filter:
+                    continue
+                models["nnue"].append((f, board_type))
 
     return models
 
@@ -115,6 +170,8 @@ def play_single_game(
     try:
         # Enable neural demo AI for NN model evaluation
         os.environ["AI_ENGINE_NEURAL_DEMO_ENABLED"] = "true"
+        # Disable torch.compile for environments without C compiler
+        os.environ["RINGRIFT_DISABLE_TORCH_COMPILE"] = "1"
 
         from app.game_engine import GameEngine
         from app.main import _create_ai_instance
@@ -183,14 +240,22 @@ def play_single_game(
 def evaluate_model(
     model_path: str,
     model_type: str,
+    board_type_str: str = "square8",
     num_games: int = 10,
     search_depth: int = DEFAULT_SEARCH_DEPTH,
 ) -> ModelScore:
     """Evaluate a single model against baselines.
 
     Args:
+        model_path: Path to the model file
+        model_type: "nn" or "nnue"
+        board_type_str: Board type string ("square8", "square19", "hexagonal")
+        num_games: Number of games per baseline
         search_depth: Minimax search depth (2=fast ~10s/game, 4=accurate ~45s/game)
     """
+    # Convert board type string to enum
+    board_type = BoardType(board_type_str)
+
     wins_random = 0
     wins_heuristic = 0
     games_random = 0
@@ -203,6 +268,7 @@ def evaluate_model(
         # vs Random
         winner = play_single_game(
             model_path, model_type, "random",
+            board_type=board_type,
             model_plays_first=model_first, search_depth=search_depth
         )
         if winner is not None:
@@ -213,6 +279,7 @@ def evaluate_model(
         # vs Heuristic
         winner = play_single_game(
             model_path, model_type, "heuristic",
+            board_type=board_type,
             model_plays_first=model_first, search_depth=search_depth
         )
         if winner is not None:
@@ -229,6 +296,7 @@ def evaluate_model(
     return ModelScore(
         model_path=model_path,
         model_type=model_type,
+        board_type=board_type_str,
         vs_random=vs_random,
         vs_heuristic=vs_heuristic,
         composite_score=composite,
@@ -239,12 +307,12 @@ def evaluate_model(
 
 def evaluate_model_wrapper(args: Tuple) -> ModelScore:
     """Wrapper for parallel evaluation."""
-    model_path, model_type, num_games, search_depth = args
-    return evaluate_model(model_path, model_type, num_games, search_depth)
+    model_path, model_type, board_type, num_games, search_depth = args
+    return evaluate_model(model_path, model_type, board_type, num_games, search_depth)
 
 
 def run_distributed_evaluation(
-    models: List[Tuple[str, str]],  # (path, type)
+    models: List[Tuple[str, str, str]],  # (path, type, board_type)
     parallel_workers: int = PARALLEL_WORKERS,
     games_per_baseline: int = GAMES_PER_BASELINE,
     search_depth: int = DEFAULT_SEARCH_DEPTH,
@@ -252,13 +320,14 @@ def run_distributed_evaluation(
     """Run parallel evaluation across all models.
 
     Args:
+        models: List of (path, model_type, board_type) tuples
         search_depth: Minimax search depth (2=fast, 4=accurate).
                      For 500 models with depth=2: ~30 min
                      For 500 models with depth=4: ~2 hours
     """
     logger.info(f"Evaluating {len(models)} models with {parallel_workers} workers (depth={search_depth})")
 
-    args_list = [(path, mtype, games_per_baseline, search_depth) for path, mtype in models]
+    args_list = [(path, mtype, btype, games_per_baseline, search_depth) for path, mtype, btype in models]
     results = []
 
     with ProcessPoolExecutor(max_workers=parallel_workers) as executor:
@@ -344,20 +413,28 @@ def run_evaluation_cycle(
     workers: int = PARALLEL_WORKERS,
     games: int = GAMES_PER_BASELINE,
     depth: int = DEFAULT_SEARCH_DEPTH,
+    board_filter: Optional[str] = None,
 ):
     """Run a complete evaluation and pruning cycle.
 
     Args:
         depth: Minimax search depth. Use 2 for fast (~1hr for 500 models),
                4 for accurate (~3hr for 500 models).
+        board_filter: Optional filter to only evaluate models for specific board type
+                      ("square8", "square19", "hexagonal")
     """
     models_dir = AI_SERVICE_ROOT / "models"
 
-    # Discover models
-    discovered = discover_all_models(models_dir)
+    # Discover models with board type detection
+    discovered = discover_all_models(models_dir, board_filter=board_filter)
     total_count = len(discovered["nn"]) + len(discovered["nnue"])
 
+    # Log breakdown by board type
+    board_counts = {}
+    for path, btype in discovered["nn"] + discovered["nnue"]:
+        board_counts[btype] = board_counts.get(btype, 0) + 1
     logger.info(f"Found {total_count} models (NN: {len(discovered['nn'])}, NNUE: {len(discovered['nnue'])})")
+    logger.info(f"Board types: {board_counts}")
 
     # Check threshold
     if total_count < threshold and not force:
@@ -371,12 +448,12 @@ def run_evaluation_cycle(
     est_minutes = (batches * games * 2 * time_per_game) / 60
     logger.info(f"Estimated time: {est_minutes:.0f} minutes ({games_total} games, {workers} workers, depth={depth})")
 
-    # Prepare model list
+    # Prepare model list with board types
     models = []
-    for path in discovered["nn"]:
-        models.append((str(path), "nn"))
-    for path in discovered["nnue"]:
-        models.append((str(path), "nnue"))
+    for path, board_type in discovered["nn"]:
+        models.append((str(path), "nn", board_type))
+    for path, board_type in discovered["nnue"]:
+        models.append((str(path), "nnue", board_type))
 
     # Run evaluation
     scores = run_distributed_evaluation(models, workers, games, depth)
@@ -402,6 +479,7 @@ def run_daemon(
     workers: int = PARALLEL_WORKERS,
     games: int = GAMES_PER_BASELINE,
     depth: int = FAST_SEARCH_DEPTH,  # Use fast depth by default for daemon
+    board_filter: Optional[str] = None,
 ):
     """Run as daemon, checking periodically."""
     logger.info(f"Starting evaluation daemon (interval: {interval_seconds}s, depth={depth})")
@@ -409,7 +487,10 @@ def run_daemon(
     while True:
         try:
             logger.info("Running scheduled evaluation cycle...")
-            run_evaluation_cycle(threshold=threshold, workers=workers, games=games, depth=depth)
+            run_evaluation_cycle(
+                threshold=threshold, workers=workers, games=games,
+                depth=depth, board_filter=board_filter
+            )
         except Exception as e:
             logger.error(f"Evaluation cycle failed: {e}")
 
@@ -428,6 +509,9 @@ Examples:
   # Accurate evaluation (~2 hours for 500 models on 100 workers)
   python scripts/distributed_model_evaluator.py --run --depth 4 --workers 100
 
+  # Evaluate only square8 models
+  python scripts/distributed_model_evaluator.py --run --fast --board square8
+
   # Run as daemon with fast evaluation every hour
   python scripts/distributed_model_evaluator.py --daemon --fast --workers 100
         """
@@ -442,6 +526,8 @@ Examples:
     parser.add_argument("--games", type=int, default=GAMES_PER_BASELINE, help="Games per baseline")
     parser.add_argument("--depth", type=int, default=DEFAULT_SEARCH_DEPTH, help="Minimax search depth (2=fast, 4=accurate)")
     parser.add_argument("--fast", action="store_true", help="Use fast mode (depth=2, ~3x faster)")
+    parser.add_argument("--board", type=str, choices=["square8", "square19", "hexagonal"],
+                       help="Only evaluate models for specific board type")
 
     args = parser.parse_args()
 
@@ -449,9 +535,10 @@ Examples:
     workers = args.workers
     games = args.games
     depth = FAST_SEARCH_DEPTH if args.fast else args.depth
+    board_filter = args.board
 
     if args.daemon:
-        run_daemon(args.interval, threshold, workers, games, depth)
+        run_daemon(args.interval, threshold, workers, games, depth, board_filter)
     elif args.run or args.dry_run:
         run_evaluation_cycle(
             dry_run=args.dry_run,
@@ -460,6 +547,7 @@ Examples:
             workers=workers,
             games=games,
             depth=depth,
+            board_filter=board_filter,
         )
     else:
         parser.print_help()

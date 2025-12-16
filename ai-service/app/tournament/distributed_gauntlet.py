@@ -636,6 +636,9 @@ class DistributedNNGauntlet:
         Returns:
             List of worker info dicts with node_id, host, port
         """
+        # Timeout for considering a peer "alive" (90 seconds)
+        ALIVE_TIMEOUT = 90
+
         try:
             import aiohttp
             from aiohttp import ClientTimeout
@@ -652,22 +655,36 @@ class DistributedNNGauntlet:
             # Find workers that are alive and have capacity
             workers = []
             peers = data.get("peers", {})
+            now = time.time()
 
             for node_id, peer_info in peers.items():
-                # Skip nodes that are down
-                if not peer_info.get("is_alive", False):
+                # Compute aliveness from last_heartbeat timestamp
+                # Status response has last_heartbeat as Unix timestamp, not is_alive flag
+                last_heartbeat = peer_info.get("last_heartbeat", 0)
+                is_alive = (now - last_heartbeat) < ALIVE_TIMEOUT
+
+                if not is_alive:
+                    logger.debug(f"[Gauntlet] Skipping {node_id}: last heartbeat {now - last_heartbeat:.0f}s ago")
+                    continue
+
+                # Get host - try multiple fields (IP address of the node)
+                host = peer_info.get("host") or peer_info.get("ip") or peer_info.get("address", "")
+                if not host:
+                    logger.debug(f"[Gauntlet] Skipping {node_id}: no host/IP address")
                     continue
 
                 # Prefer nodes with GPUs but accept CPU-only for gauntlet
                 # (gauntlet games are lighter than training)
                 workers.append({
                     "node_id": node_id,
-                    "host": peer_info.get("host", ""),
+                    "host": host,
                     "port": peer_info.get("port", 8770),
                     "has_gpu": peer_info.get("has_gpu", False),
                     "gpu_name": peer_info.get("gpu_name", ""),
                     "selfplay_jobs": peer_info.get("selfplay_jobs", 0),
                 })
+
+            logger.info(f"[Gauntlet] Found {len(workers)} alive workers from {len(peers)} peers")
 
             # Sort by GPU power, then by current load
             workers.sort(key=lambda w: (-1 if w["has_gpu"] else 0, w["selfplay_jobs"]))

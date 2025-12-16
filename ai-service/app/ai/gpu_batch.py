@@ -145,7 +145,14 @@ def compile_model(
         - Compilation happens on first forward pass (lazy)
         - MPS has limited torch.compile() support (will skip gracefully)
         - Requires PyTorch 2.0+
+        - Set RINGRIFT_DISABLE_TORCH_COMPILE=1 to skip compilation
     """
+    # Check for env var to disable compilation
+    import os
+    if os.environ.get("RINGRIFT_DISABLE_TORCH_COMPILE", "").lower() in ("1", "true", "yes"):
+        logger.debug("Skipping torch.compile() (RINGRIFT_DISABLE_TORCH_COMPILE set)")
+        return model
+
     # Check PyTorch version
     torch_version = tuple(int(x) for x in torch.__version__.split(".")[:2])
     if torch_version < (2, 0):

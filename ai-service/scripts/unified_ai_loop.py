@@ -3247,6 +3247,7 @@ class ModelPruningService:
                 str(evaluator_script),
                 "--run",
                 "--force",
+                "--fast",  # Use fast mode (depth=2) for quicker evaluation
                 "--threshold", str(self.config.threshold),
                 "--workers", str(self.config.parallel_workers),
                 "--games", str(self.config.games_per_baseline),

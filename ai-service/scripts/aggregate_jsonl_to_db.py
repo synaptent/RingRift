@@ -383,66 +383,55 @@ def _create_placeholder_state(
 
 
 def _parse_moves(moves_data: List[Any], initial_state: GameState) -> List[Move]:
-    """Parse moves from JSONL format to Move objects."""
+    """Parse moves from JSONL format to Move objects.
+
+    IMPORTANT: This function preserves ALL move fields from the JSONL data,
+    including capture_target, captured_stacks, capture_chain, formed_lines,
+    collapsed_markers, etc. These fields are required for proper game replay.
+
+    Using Move.model_validate() ensures all fields are preserved through
+    Pydantic's alias handling (e.g., "captureTarget" -> capture_target).
+    """
     moves = []
 
     for i, move_data in enumerate(moves_data):
         try:
             if isinstance(move_data, dict):
-                # Handle dictionary format
-                move_type_str = move_data.get("type", "place_ring")
-                player = move_data.get("player", 1)
-                to_data = move_data.get("to", {"x": 0, "y": 0})
-                from_data = move_data.get("from")
+                # Ensure required fields have defaults
+                if "id" not in move_data:
+                    move_data["id"] = f"move-{i}"
+                if "type" not in move_data:
+                    move_data["type"] = "place_ring"
+                if "player" not in move_data:
+                    move_data["player"] = 1
 
-                # Parse position
-                if isinstance(to_data, dict):
-                    to_pos = Position(x=to_data.get("x", 0), y=to_data.get("y", 0))
-                else:
-                    to_pos = Position(x=0, y=0)
-
-                from_pos = None
-                if from_data and isinstance(from_data, dict):
-                    from_pos = Position(x=from_data.get("x", 0), y=from_data.get("y", 0))
-
-                # Map move type string to enum
-                try:
-                    move_type = MoveType(move_type_str)
-                except ValueError:
-                    # Try common aliases
-                    move_type_map = {
-                        "place": MoveType.PLACE_RING,
-                        "move": MoveType.MOVE_STACK,
-                        "capture": MoveType.CAPTURE,
-                        "pass": MoveType.NO_MOVEMENT,
-                    }
-                    move_type = move_type_map.get(move_type_str.lower(), MoveType.PLACE_RING)
-
-                move = Move(
-                    id=move_data.get("id", f"move-{i}"),
-                    type=move_type,
-                    player=player,
-                    to=to_pos,
-                    from_pos=from_pos,  # Fixed: was position_from which is invalid field name
-                    timestamp=datetime.now(),
-                    think_time=move_data.get("thinkTime", 0),
-                    move_number=i,
-                )
+                # Use model_validate to preserve ALL fields including:
+                # - capture_target/captureTarget
+                # - captured_stacks/capturedStacks
+                # - capture_chain/captureChain
+                # - overtaken_rings/overtakenRings
+                # - formed_lines/formedLines
+                # - collapsed_markers/collapsedMarkers
+                # - claimed_territory/claimedTerritory
+                # - stack_moved/stackMoved
+                # - minimum_distance/minimumDistance
+                # - actual_distance/actualDistance
+                # - marker_left/markerLeft
+                # - placed_on_stack/placedOnStack
+                # - placement_count/placementCount
+                # - line_index/lineIndex
+                # - recovery_option/recoveryOption
+                # - recovery_mode/recoveryMode
+                # - collapse_positions/collapsePositions
+                # - extraction_stacks/extractionStacks
+                move = Move.model_validate(move_data)
                 moves.append(move)
 
             elif isinstance(move_data, str):
                 # Handle string format (e.g., "P1:PLACE(3,4)")
-                # Simplified parsing - just create placeholder
-                move = Move(
-                    id=f"move-{i}",
-                    type=MoveType.PLACE_RING,
-                    player=1,
-                    to=Position(x=0, y=0),
-                    timestamp=datetime.now(),
-                    thinkTime=0,
-                    moveNumber=i,
-                )
-                moves.append(move)
+                # This format lacks required data for replay - skip these
+                logger.debug(f"Skipping string-format move {i}: {move_data[:50]}")
+                continue
 
         except Exception as e:
             logger.debug(f"Failed to parse move {i}: {e}")

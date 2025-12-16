@@ -33,8 +33,13 @@ def init_db():
 def aggregate():
     conn = init_db()
     total_imported = 0
-    
-    for jsonl_file in glob.glob(os.path.join(DATA_DIR, "*.jsonl")):
+
+    # Find all JSONL files recursively
+    jsonl_files = glob.glob(os.path.join(DATA_DIR, "*.jsonl"))
+    jsonl_files += glob.glob(os.path.join(DATA_DIR, "**", "*.jsonl"), recursive=True)
+    jsonl_files = list(set(jsonl_files))  # Deduplicate
+
+    for jsonl_file in jsonl_files:
         imported = 0
         with open(jsonl_file) as f:
             for line in f:
