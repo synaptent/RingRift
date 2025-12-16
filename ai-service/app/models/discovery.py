@@ -307,12 +307,17 @@ def discover_models(
             if info is None:
                 if include_unknown:
                     # Create placeholder with unknown board type
+                    try:
+                        size_bytes = f.stat().st_size
+                    except (FileNotFoundError, OSError):
+                        # File was deleted/moved during discovery
+                        continue
                     info = ModelInfo(
                         path=str(f),
                         name=f.stem,
                         model_type="nn",
                         board_type="unknown",
-                        size_bytes=f.stat().st_size,
+                        size_bytes=size_bytes,
                     )
                 else:
                     continue
@@ -346,12 +351,17 @@ def discover_models(
                 info = get_model_info(f, "nnue")
                 if info is None:
                     if include_unknown:
+                        try:
+                            size_bytes = f.stat().st_size
+                        except (FileNotFoundError, OSError):
+                            # File was deleted/moved during discovery
+                            continue
                         info = ModelInfo(
                             path=str(f),
                             name=f.stem,
                             model_type="nnue",
                             board_type="unknown",
-                            size_bytes=f.stat().st_size,
+                            size_bytes=size_bytes,
                         )
                     else:
                         continue
