@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""Cluster Health Monitor - Alerts when nodes go offline or cluster issues detected.
+"""Cluster Health Monitor - Unified health checking for RingRift cluster.
 
-Monitors P2P orchestrator health endpoints and sends alerts via:
+Consolidates cluster_health_check.py, cluster_alert.py into a single script.
+Reads hosts from distributed_hosts.yaml for a single source of truth.
+
+Monitors:
+- Node connectivity via HTTP health endpoints (with Tailscale fallback)
+- Disk, memory, CPU usage
+- Leader status and peer count
+
+Alerts via:
 - Console output (for cron/systemd)
 - Webhook (Discord, Slack, etc.)
-- Optional: email
 
 Usage:
     # One-shot check (for cron):
@@ -22,26 +29,60 @@ import json
 import os
 import sys
 import time
+import yaml
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-# Known cluster nodes with their health endpoints
-CLUSTER_NODES = {
-    "lambda-gh200-i": "http://192.222.50.112:8770/health",
-    "lambda-gh200-k": "http://192.222.51.150:8770/health",
-    "lambda-gh200-l": "http://192.222.51.233:8770/health",
-    "lambda-2xh100": "http://192.222.53.22:8770/health",
-}
+# Config file location
+SCRIPT_DIR = Path(__file__).parent
+AI_SERVICE_ROOT = SCRIPT_DIR.parent
+CONFIG_PATH = AI_SERVICE_ROOT / "config" / "distributed_hosts.yaml"
 
-# Tailscale fallback addresses
-TAILSCALE_FALLBACK = {
-    "lambda-gh200-i": "http://100.99.27.56:8770/health",
-    "lambda-gh200-k": "http://100.96.142.42:8770/health",
-    "lambda-gh200-l": "http://100.76.145.60:8770/health",
-    "lambda-2xh100": "http://100.78.101.123:8770/health",
-}
+HEALTH_PORT = 8770
+
+
+def load_cluster_nodes() -> Dict[str, Dict[str, str]]:
+    """Load cluster nodes from distributed_hosts.yaml.
+
+    Returns dict mapping node_name -> {"primary": url, "tailscale": url}
+    """
+    if not CONFIG_PATH.exists():
+        print(f"Warning: Config not found: {CONFIG_PATH}", file=sys.stderr)
+        return {}
+
+    try:
+        with open(CONFIG_PATH) as f:
+            config = yaml.safe_load(f)
+
+        nodes = {}
+        for name, cfg in config.get('hosts', {}).items():
+            # Skip stopped/disabled hosts
+            if cfg.get('status') in ('stopped', 'disabled', 'setup'):
+                continue
+
+            urls = {}
+            # Primary IP (ssh_host)
+            if cfg.get('ssh_host'):
+                urls['primary'] = f"http://{cfg['ssh_host']}:{HEALTH_PORT}/health"
+
+            # Tailscale fallback
+            if cfg.get('tailscale_ip'):
+                urls['tailscale'] = f"http://{cfg['tailscale_ip']}:{HEALTH_PORT}/health"
+
+            if urls:
+                nodes[name] = urls
+
+        return nodes
+    except Exception as e:
+        print(f"Error loading config: {e}", file=sys.stderr)
+        return {}
+
+
+# Load nodes from config
+CLUSTER_NODES = load_cluster_nodes()
 
 # Alert thresholds
 THRESHOLDS = {
@@ -78,21 +119,27 @@ def check_node_health(node_id: str, url: str, timeout: int = 10) -> Dict[str, An
 
 def check_node_with_fallback(node_id: str) -> Dict[str, Any]:
     """Check node health with Tailscale fallback."""
-    primary_url = CLUSTER_NODES.get(node_id)
+    node_urls = CLUSTER_NODES.get(node_id, {})
+
+    # Try primary URL first
+    primary_url = node_urls.get("primary")
     if primary_url:
         result = check_node_health(node_id, primary_url)
         if result["status"] in ("healthy", "unhealthy"):
             return result
 
     # Try Tailscale fallback
-    fallback_url = TAILSCALE_FALLBACK.get(node_id)
+    fallback_url = node_urls.get("tailscale")
     if fallback_url:
         result = check_node_health(node_id, fallback_url)
         if result["status"] in ("healthy", "unhealthy"):
             result["via_tailscale"] = True
             return result
 
-    return result
+    # Return last result or create error
+    if primary_url or fallback_url:
+        return result
+    return {"status": "no_urls", "data": None, "error": "No URLs configured"}
 
 
 def should_alert(alert_key: str) -> bool:
@@ -235,8 +282,13 @@ def main():
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     args = parser.parse_args()
 
-    print(f"RingRift Cluster Health Monitor")
-    print(f"Monitoring {len(CLUSTER_NODES)} nodes")
+    # Reload nodes at startup
+    global CLUSTER_NODES
+    CLUSTER_NODES = load_cluster_nodes()
+
+    print(f"RingRift Cluster Health Monitor (unified)")
+    print(f"Config: {CONFIG_PATH}")
+    print(f"Monitoring {len(CLUSTER_NODES)} active nodes")
     print(f"Webhook: {'configured' if args.webhook else 'not configured'}")
     print("-" * 40)
 

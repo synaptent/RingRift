@@ -690,6 +690,9 @@ class JobType(str, Enum):
     DISTRIBUTED_TOURNAMENT_COORDINATOR = "distributed_tournament_coordinator"
     DISTRIBUTED_TOURNAMENT_WORKER = "distributed_tournament_worker"
     IMPROVEMENT_LOOP = "improvement_loop"
+    # CPU-intensive data processing jobs
+    DATA_EXPORT = "data_export"  # NPZ export (CPU-intensive, route to high-CPU nodes)
+    DATA_AGGREGATION = "data_aggregation"  # JSONL aggregation (CPU-intensive)
 
 
 @dataclass
@@ -824,6 +827,37 @@ class NodeInfo:
 
         return GPU_POWER_RANKINGS.get("Unknown", 10)
 
+    def cpu_power_score(self) -> int:
+        """Get CPU processing power score based on core count and node type.
+
+        Higher score = more CPU power = better for CPU-intensive tasks like
+        NPZ export, data aggregation, and CMA-ES.
+
+        Vast nodes typically have very high CPU counts (256-512 cores) and are
+        ideal for CPU-intensive work, freeing GPU nodes for training/selfplay.
+        """
+        if not self.cpu_count or self.cpu_count <= 0:
+            return 0
+
+        # Base score is simply the CPU count
+        score = self.cpu_count
+
+        # Bonus for vast nodes (they're optimized for high CPU throughput)
+        # Lambda nodes have high GPU power but limited CPU relative to vast
+        node_id_lower = self.node_id.lower()
+        if "vast" in node_id_lower:
+            # Vast nodes get 50% bonus - they're ideal for CPU tasks
+            score = int(score * 1.5)
+        elif "lambda" in node_id_lower:
+            # Lambda nodes should prioritize GPU work, not CPU-intensive tasks
+            # Reduce their CPU score to prefer vast nodes for CPU work
+            score = int(score * 0.5)
+        elif "aws" in node_id_lower and "cpu" in node_id_lower:
+            # AWS CPU-optimized instances get a small bonus
+            score = int(score * 1.2)
+
+        return score
+
     def check_load_average_safe(self) -> Tuple[bool, str]:
         """Check if system load average is safe for spawning new processes.
 
@@ -855,6 +889,7 @@ class NodeInfo:
         # Derived metrics (not persisted as dataclass fields).
         d["load_score"] = self.get_load_score()
         d["gpu_power_score"] = self.gpu_power_score()
+        d["cpu_power_score"] = self.cpu_power_score()
         d["is_cpu_only_node"] = self.is_cpu_only_node()
         d["is_cuda_gpu_node"] = self.is_gpu_node()
         return d
@@ -4492,6 +4527,57 @@ class P2POrchestrator:
         result.sort(key=lambda x: x["gpu_power_score"], reverse=True)
         return result
 
+    # ============================================
+    # CPU Node Priority for Data Processing
+    # ============================================
+
+    def _get_cpu_primary_nodes(self, count: int = 3) -> List[NodeInfo]:
+        """Get the top N nodes by CPU power for CPU-intensive tasks.
+
+        Returns nodes sorted by CPU processing power (highest first).
+        These nodes should receive CPU-intensive work like NPZ export,
+        data aggregation, etc. Vast nodes are strongly preferred.
+        """
+        with self.peers_lock:
+            all_nodes = list(self.peers.values())
+            all_nodes.append(self.self_info)
+
+        # Filter to only alive and healthy nodes with CPU info
+        cpu_nodes = [
+            node for node in all_nodes
+            if node.is_alive() and node.is_healthy() and node.cpu_power_score() > 0
+        ]
+
+        # Sort by CPU power score (descending) - vast nodes will rank highest
+        cpu_nodes.sort(key=lambda n: (-n.cpu_power_score(), n.get_load_score()))
+
+        # Return top N
+        return cpu_nodes[:count]
+
+    def _get_cpu_nodes_ranked(self) -> List[Dict[str, Any]]:
+        """Get all nodes with their CPU power rankings for dashboard display."""
+        with self.peers_lock:
+            all_nodes = list(self.peers.values())
+            all_nodes.append(self.self_info)
+
+        result = []
+        for node in all_nodes:
+            if node.cpu_count and node.cpu_count > 0:
+                result.append({
+                    "node_id": node.node_id,
+                    "cpu_count": node.cpu_count,
+                    "cpu_power_score": node.cpu_power_score(),
+                    "cpu_percent": node.cpu_percent,
+                    "memory_gb": node.memory_gb,
+                    "is_alive": node.is_alive(),
+                    "is_healthy": node.is_healthy(),
+                    "has_gpu": node.has_gpu,
+                })
+
+        # Sort by CPU power score (descending)
+        result.sort(key=lambda x: x["cpu_power_score"], reverse=True)
+        return result
+
     def _should_sync_to_node(self, node: NodeInfo) -> bool:
         """Check if we should sync data TO this node based on disk space."""
         # Don't sync to nodes with critical disk usage
@@ -5413,6 +5499,8 @@ class P2POrchestrator:
 
             # --- PART 1b: Export NPZ from aggregated DB for training ---
             # Only run if we have a decent sized aggregated DB and not already exporting
+            # LEARNED LESSONS: NPZ export is CPU-intensive. Route to high-CPU nodes
+            # (vast nodes have 256-512 CPUs vs lambda's 64) to free GPU nodes for training.
             if jsonl_db_path.exists() and not getattr(self, "_npz_export_running", False):
                 try:
                     conn = sqlite3.connect(str(jsonl_db_path), timeout=5)
@@ -5435,29 +5523,56 @@ class P2POrchestrator:
 
                     if should_export:
                         self._npz_export_running = True
-                        export_script = Path(self.ringrift_path) / "ai-service" / "scripts" / "export_replay_dataset.py"
-                        if export_script.exists():
-                            print(f"[P2P] Starting NPZ export ({game_count} games) -> {npz_output}")
-                            cmd = [
-                                sys.executable, str(export_script),
-                                "--db", str(jsonl_db_path),
-                                "--board-type", "square8",
-                                "--num-players", "2",
-                                "--output", str(npz_output),
-                                "--encoder-version", "v3",
-                                "--max-games", "5000",  # Limit for faster export
-                            ]
-                            subprocess.Popen(
-                                cmd,
-                                env=env,
-                                stdout=open("/tmp/npz_export.log", "w"),
-                                stderr=subprocess.STDOUT,
-                                cwd=str(Path(self.ringrift_path) / "ai-service"),
-                            )
-                            # Reset flag after 30 minutes (export is slow)
-                            asyncio.get_event_loop().call_later(
-                                1800, lambda: setattr(self, "_npz_export_running", False)
-                            )
+
+                        # Find best CPU node for export (prefer vast nodes)
+                        cpu_nodes = self._get_cpu_primary_nodes(count=3)
+                        export_node = None
+                        for node in cpu_nodes:
+                            # Skip nodes that are already very loaded
+                            if node.get_load_score() < 80 and node.cpu_percent < 90:
+                                export_node = node
+                                break
+
+                        if export_node and export_node.node_id != self.node_id:
+                            # Dispatch to high-CPU node
+                            print(f"[P2P] Dispatching NPZ export ({game_count} games) to {export_node.node_id} "
+                                  f"(cpu_power={export_node.cpu_power_score()}, cpus={export_node.cpu_count})")
+                            asyncio.create_task(self._dispatch_export_job(
+                                node=export_node,
+                                input_path=str(jsonl_db_path),
+                                output_path=str(npz_output),
+                                board_type="square8",
+                                num_players=2,
+                                encoder_version="v3",
+                                max_games=5000,
+                                is_jsonl=False,
+                            ))
+                        else:
+                            # Fall back to local export if no suitable CPU node
+                            export_script = Path(self.ringrift_path) / "ai-service" / "scripts" / "export_replay_dataset.py"
+                            if export_script.exists():
+                                print(f"[P2P] Starting local NPZ export ({game_count} games) -> {npz_output}")
+                                cmd = [
+                                    sys.executable, str(export_script),
+                                    "--db", str(jsonl_db_path),
+                                    "--board-type", "square8",
+                                    "--num-players", "2",
+                                    "--output", str(npz_output),
+                                    "--encoder-version", "v3",
+                                    "--max-games", "5000",
+                                ]
+                                subprocess.Popen(
+                                    cmd,
+                                    env=env,
+                                    stdout=open("/tmp/npz_export.log", "w"),
+                                    stderr=subprocess.STDOUT,
+                                    cwd=str(Path(self.ringrift_path) / "ai-service"),
+                                )
+
+                        # Reset flag after 30 minutes (export is slow)
+                        asyncio.get_event_loop().call_later(
+                            1800, lambda: setattr(self, "_npz_export_running", False)
+                        )
                 except Exception as e:
                     print(f"[P2P] NPZ export check error: {e}")
 
@@ -6326,6 +6441,17 @@ class P2POrchestrator:
             job_id = data.get("job_id")
             cuda_visible_devices = data.get("cuda_visible_devices")
 
+            # Extra params for DATA_EXPORT jobs
+            export_params = None
+            if job_type == JobType.DATA_EXPORT:
+                export_params = {
+                    "input_path": data.get("input_path"),
+                    "output_path": data.get("output_path"),
+                    "encoder_version": data.get("encoder_version", "v3"),
+                    "max_games": data.get("max_games", 5000),
+                    "is_jsonl": data.get("is_jsonl", False),
+                }
+
             job = await self._start_local_job(
                 job_type,
                 board_type=board_type,
@@ -6333,6 +6459,7 @@ class P2POrchestrator:
                 engine_mode=engine_mode,
                 job_id=job_id,
                 cuda_visible_devices=cuda_visible_devices,
+                export_params=export_params,
             )
 
             if job:
@@ -23108,6 +23235,7 @@ print(json.dumps({{
         engine_mode: str = "descent-only",
         job_id: Optional[str] = None,
         cuda_visible_devices: Optional[str] = None,
+        export_params: Optional[Dict[str, Any]] = None,
     ) -> Optional[ClusterJob]:
         """Start a job on the local node.
 
@@ -23617,9 +23745,167 @@ print(json.dumps({{
                 self._save_state()
                 return job
 
+            elif job_type == JobType.DATA_EXPORT:
+                # CPU-intensive data export job (NPZ creation)
+                # These jobs should be routed to high-CPU nodes (vast nodes preferred)
+                if not export_params:
+                    print(f"[P2P] DATA_EXPORT job requires export_params")
+                    return None
+
+                input_path = export_params.get("input_path")
+                output_path = export_params.get("output_path")
+                encoder_version = export_params.get("encoder_version", "v3")
+                max_games = export_params.get("max_games", 5000)
+                is_jsonl = export_params.get("is_jsonl", False)
+
+                if not input_path or not output_path:
+                    print(f"[P2P] DATA_EXPORT requires input_path and output_path")
+                    return None
+
+                # Ensure output directory exists
+                output_dir = Path(output_path).parent
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                # Use venv python if available
+                venv_python = Path(self.ringrift_path, "ai-service", "venv", "bin", "python")
+                python_exec = str(venv_python) if venv_python.exists() else "python3"
+
+                if is_jsonl:
+                    # Use jsonl_to_npz.py for JSONL input (GPU selfplay data)
+                    export_script = f"{self.ringrift_path}/ai-service/scripts/jsonl_to_npz.py"
+                    cmd = [
+                        python_exec,
+                        export_script,
+                        "--input", str(input_path),
+                        "--output", str(output_path),
+                        "--board-type", board_type,
+                        "--num-players", str(num_players),
+                        "--gpu-selfplay",
+                        "--max-games", str(max_games),
+                    ]
+                    if encoder_version and encoder_version != "default":
+                        cmd.extend(["--encoder-version", encoder_version])
+                else:
+                    # Use export_replay_dataset.py for DB input
+                    export_script = f"{self.ringrift_path}/ai-service/scripts/export_replay_dataset.py"
+                    cmd = [
+                        python_exec,
+                        export_script,
+                        "--db", str(input_path),
+                        "--output", str(output_path),
+                        "--board-type", board_type,
+                        "--num-players", str(num_players),
+                        "--max-games", str(max_games),
+                        "--require-completed",
+                        "--min-moves", "10",
+                    ]
+                    if encoder_version and encoder_version != "default":
+                        cmd.extend(["--encoder-version", encoder_version])
+
+                # Start export process
+                env = os.environ.copy()
+                env["PYTHONPATH"] = f"{self.ringrift_path}/ai-service"
+                env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+
+                log_path = output_dir / f"export_{job_id}.log"
+                log_handle = open(log_path, "w")
+                try:
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdout=log_handle,
+                        stderr=subprocess.STDOUT,
+                        env=env,
+                        cwd=f"{self.ringrift_path}/ai-service",
+                    )
+                finally:
+                    log_handle.close()
+
+                job = ClusterJob(
+                    job_id=job_id,
+                    job_type=job_type,
+                    node_id=self.node_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    engine_mode="export",
+                    pid=proc.pid,
+                    started_at=time.time(),
+                    status="running",
+                )
+
+                with self.jobs_lock:
+                    self.local_jobs[job_id] = job
+
+                print(f"[P2P] Started DATA_EXPORT job {job_id} (PID {proc.pid}): {input_path} -> {output_path}")
+                self._save_state()
+                return job
+
         except Exception as e:
             print(f"[P2P] Failed to start job: {e}")
         return None
+
+    async def _dispatch_export_job(
+        self,
+        node: NodeInfo,
+        input_path: str,
+        output_path: str,
+        board_type: str,
+        num_players: int,
+        encoder_version: str = "v3",
+        max_games: int = 5000,
+        is_jsonl: bool = False,
+    ):
+        """Dispatch a CPU-intensive export job to a high-CPU node.
+
+        CPU-intensive jobs like NPZ export should run on vast nodes
+        (256-512 CPUs) rather than lambda nodes (64 CPUs) to free
+        GPU resources for training/selfplay.
+        """
+        try:
+            job_id = f"export_{board_type}_{num_players}p_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+
+            payload = {
+                "job_id": job_id,
+                "job_type": JobType.DATA_EXPORT.value,
+                "board_type": board_type,
+                "num_players": num_players,
+                "input_path": input_path,
+                "output_path": output_path,
+                "encoder_version": encoder_version,
+                "max_games": max_games,
+                "is_jsonl": is_jsonl,
+            }
+
+            # NAT-blocked nodes need relay command
+            if getattr(node, "nat_blocked", False):
+                cmd_id = await self._enqueue_relay_command_for_peer(node, "start_job", payload)
+                if cmd_id:
+                    print(f"[P2P] Enqueued relay export job for {node.node_id}: {job_id}")
+                else:
+                    print(f"[P2P] Relay queue full for {node.node_id}; export not dispatched")
+                return
+
+            timeout = ClientTimeout(total=30)
+            async with get_client_session(timeout) as session:
+                last_err: Optional[str] = None
+                for url in self._urls_for_peer(node, "/start_job"):
+                    try:
+                        async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
+                            if resp.status == 200:
+                                result = await resp.json()
+                                if result.get("success"):
+                                    print(f"[P2P] Export job dispatched to {node.node_id}: {job_id}")
+                                    return
+                                last_err = result.get("error", "unknown")
+                            else:
+                                last_err = f"http_{resp.status}"
+                    except Exception as e:
+                        last_err = str(e)
+
+                if last_err:
+                    print(f"[P2P] Export job dispatch failed to {node.node_id}: {last_err}")
+
+        except Exception as e:
+            print(f"[P2P] Failed to dispatch export job to {node.node_id}: {e}")
 
     async def _request_remote_job(
         self,

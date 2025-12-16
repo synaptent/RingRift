@@ -28,56 +28,45 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # Database sources for each config - databases that have games WITH moves
 # Format: (board_type, num_players) -> list of database paths
+# Updated to use verified canonical DBs with game_moves table
 CONFIG_DATABASES: Dict[Tuple[str, int], List[str]] = {
     ("square8", 2): [
-        "data/games/selfplay.db",
-        "data/selfplay/p2p/square8_2p",  # Directory with multiple DBs
+        "data/canonical/canonical_square8_2p.db",
+        "data/selfplay/5090_imports/5090_quad_selfplay.db",
+        "data/selfplay/mcts_nn_v5/square8_2p.db",
+        "data/selfplay/fallback",  # Directory with fallback DBs
+        "data/selfplay/vast_sync",  # Directory with synced DBs
     ],
     ("square8", 3): [
-        "data/games/selfplay.db",
-        "data/selfplay/p2p/square8_3p",
+        "data/selfplay/vast_sync/ssh1_4060ti/p2p/square8_3p",
+        "data/selfplay/vast_sync/ssh1_4060ti/p2p_hybrid/square8_3p",
+        "data/selfplay/vast_sync/ssh2_2060s/p2p_hybrid/square8_3p",
     ],
     ("square8", 4): [
-        "data/games/selfplay.db",
-        "data/selfplay/p2p/square8_4p",
-        "data/selfplay/diverse/square8_4p.db",
+        "data/selfplay/vast_sync",  # Look for square8_4p in subdirs
     ],
     ("square19", 2): [
         "data/selfplay/diverse/square19_2p.db",
-        "data/games/square19_diverse.db",  # Cross-AI diverse games
-        "data/selfplay/p2p/square19_2p",
-        "data/games/selfplay.db",
+        "data/selfplay/diverse_synced/square19_2p.db",
     ],
     ("square19", 3): [
-        "data/games/selfplay.db",  # Primary consolidated DB
         "data/selfplay/diverse/square19_3p.db",
-        "data/games/square19_diverse.db",  # Cross-AI diverse games
-        "data/selfplay/p2p/square19_3p",
+        "data/selfplay/diverse_synced/square19_3p.db",
+        "data/selfplay/vast_sync/ssh1_4060ti/p2p/square19_3p",
+        "data/selfplay/vast_sync/ssh1_4060ti/p2p_hybrid/square19_3p",
     ],
     ("square19", 4): [
-        "data/games/selfplay.db",  # Primary consolidated DB
         "data/selfplay/diverse/square19_4p.db",
-        "data/games/square19_diverse.db",  # Cross-AI diverse games
-        "data/games/new_square19_4p.db",
-        "data/selfplay/p2p/square19_4p",
+        "data/selfplay/diverse_synced/square19_4p.db",
     ],
     ("hexagonal", 2): [
-        "data/games/selfplay.db",  # Primary consolidated DB
-        "data/selfplay/diverse/hex_2p.db",
-        "data/games/hexagonal_diverse.db",  # Cross-AI diverse games
-        "data/selfplay/p2p/hexagonal_2p",
+        "data/selfplay/vast_sync",  # Look for hexagonal_2p in subdirs
     ],
     ("hexagonal", 3): [
-        "data/games/selfplay.db",  # Primary consolidated DB
-        "data/selfplay/diverse/hex_3p.db",
-        "data/games/hexagonal_diverse.db",  # Cross-AI diverse games
-        "data/selfplay/p2p/hexagonal_3p",
+        "data/selfplay/vast_sync/ssh1_4060ti/p2p/hexagonal_3p",
     ],
     ("hexagonal", 4): [
-        "data/games/selfplay.db",  # Primary consolidated DB
-        "data/selfplay/diverse/hex_4p.db",
-        "data/games/hexagonal_diverse.db",  # Cross-AI diverse games
-        "data/selfplay/p2p/hexagonal_4p",
+        "data/selfplay/vast_sync",  # Look for hexagonal_4p in subdirs
     ],
 }
 
@@ -186,17 +175,32 @@ def count_games_with_moves(db_path: str, board_type: str, num_players: int) -> i
     try:
         conn = sqlite3.connect(db_path, timeout=10)
         cur = conn.cursor()
-        # Only count games that have associated moves
-        cur.execute("""
-            SELECT COUNT(DISTINCT g.game_id)
-            FROM games g
-            INNER JOIN game_moves gm ON g.game_id = gm.game_id
-            WHERE g.board_type = ? AND g.num_players = ?
-            AND COALESCE(g.excluded_from_training, 0) = 0
-        """, (board_type, num_players))
-        result = cur.fetchone()
+
+        # Check if game_moves table exists
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'")
+        if not cur.fetchone():
+            conn.close()
+            return 0
+
+        # Try with different board type name variants
+        variants = BOARD_VARIANTS.get(board_type, [board_type])
+        total = 0
+        for variant in variants:
+            try:
+                # Try query without excluded_from_training first (more compatible)
+                cur.execute("""
+                    SELECT COUNT(DISTINCT g.game_id)
+                    FROM games g
+                    INNER JOIN game_moves gm ON g.game_id = gm.game_id
+                    WHERE g.board_type = ? AND g.num_players = ?
+                """, (variant, num_players))
+                result = cur.fetchone()
+                if result and result[0] > 0:
+                    total += result[0]
+            except Exception:
+                pass
         conn.close()
-        return result[0] if result else 0
+        return total
     except Exception as e:
         return 0
 
