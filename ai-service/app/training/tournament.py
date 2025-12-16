@@ -266,6 +266,7 @@ class Tournament:
         # Initialize game state
         state = self._create_initial_state()
         move_count = 0
+        termination_reason = None
 
         while state.game_status == GameStatus.ACTIVE and move_count < self.max_moves:
             current_player = state.current_player
@@ -273,6 +274,7 @@ class Tournament:
 
             if ai is None:
                 logger.error(f"No AI for player {current_player}")
+                termination_reason = "no_ai"
                 break
 
             move = ai.select_move(state)
@@ -281,12 +283,51 @@ class Tournament:
                 # No moves available - game engine should handle this
                 # via forced elimination or LPS checks
                 logger.warning(f"No move from P{current_player}, breaking")
+                termination_reason = "no_moves"
                 break
 
             state = GameEngine.apply_move(state, move)
             move_count += 1
 
-        return state.winner, state
+        # Determine winner if game ended without one (2025-12-16 fix)
+        winner = state.winner
+        if winner is None and state.game_status == GameStatus.ACTIVE:
+            # Game exited without natural completion - determine winner by tiebreaker
+            if move_count >= self.max_moves:
+                termination_reason = "max_moves"
+
+            # Use ring count + territory as tiebreaker
+            winner = self._determine_winner_by_tiebreaker(state)
+            if winner is not None:
+                logger.info(f"Determined winner P{winner} via tiebreaker ({termination_reason})")
+
+        return winner, state
+
+    def _determine_winner_by_tiebreaker(self, state: GameState) -> Optional[int]:
+        """Determine winner using tiebreaker rules when no natural victory.
+
+        Tiebreaker priority (2025-12-16):
+        1. Most eliminated rings
+        2. Most territory spaces
+        3. Fewest rings in hand (committed more to board)
+        """
+        best_player = None
+        best_score = (-1, -1, float('inf'))  # (elim_rings, territory, -rings_in_hand)
+
+        for player in state.players:
+            elim_rings = state.board.eliminated_rings.get(str(player.player_number), 0)
+            territory = 0
+            for p_id in state.board.collapsed_spaces.values():
+                if p_id == player.player_number:
+                    territory += 1
+            rings_in_hand = player.rings_in_hand
+
+            score = (elim_rings, territory, -rings_in_hand)
+            if score > best_score:
+                best_score = score
+                best_player = player.player_number
+
+        return best_player
 
     def _update_elo(self, winner_label: Optional[str]) -> None:
         """Update Elo-like ratings for candidate (A) and best (B)."""

@@ -381,7 +381,6 @@ class TournamentRunner:
 
         # Determine rankings based on elimination order or ring counts
         rankings = self._compute_rankings(state, match.agent_ids)
-        winner = rankings[0] if state.winner is not None else None
 
         # Determine termination reason
         if state.game_status == GameStatus.COMPLETED:
@@ -390,6 +389,17 @@ class TournamentRunner:
             termination_reason = "max_moves"
         else:
             termination_reason = "no_moves"
+
+        # Always determine a winner - use ranking[0] if no natural winner (2025-12-16 fix)
+        # This ensures all games have a definite outcome for ELO updates
+        if state.winner is not None:
+            winner = rankings[0]
+        elif rankings:
+            # No natural winner but we have computed rankings via tiebreaker
+            winner = rankings[0]
+            logger.info(f"Game ended via {termination_reason}, winner by tiebreaker: {winner}")
+        else:
+            winner = None
 
         duration = time.time() - start_time
 

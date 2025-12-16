@@ -316,6 +316,14 @@ class EloDatabase:
 
             CREATE INDEX IF NOT EXISTS idx_rating_history_participant
             ON rating_history(participant_id, board_type, num_players, timestamp DESC);
+
+            -- Unique index on game_id for deduplication (2025-12-16)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_match_game_id
+            ON match_history(game_id) WHERE game_id IS NOT NULL;
+
+            -- Index for composite key deduplication fallback
+            CREATE INDEX IF NOT EXISTS idx_match_dedupe_key
+            ON match_history(participant_a, participant_b, board_type, num_players, timestamp);
         """)
         conn.commit()
 
@@ -627,6 +635,10 @@ class EloDatabase:
         """
         timestamp = time.time()
 
+        # Always generate game_id if not provided (2025-12-16 fix for deduplication)
+        if game_id is None:
+            game_id = str(uuid.uuid4())
+
         # Determine winner (participant with ranking 0)
         winner_id = None
         for pid, rank in zip(participant_ids, rankings):
@@ -700,7 +712,10 @@ class EloDatabase:
         k_factor: float = 32.0,
         game_id: Optional[str] = None,
     ) -> Tuple[int, Dict[str, float]]:
-        """Record a match and update Elo ratings.
+        """Record a match and update Elo ratings atomically.
+
+        Uses IMMEDIATE transaction to prevent race conditions between
+        reading current ratings and writing new ones. (2025-12-16 fix)
 
         Args:
             participant_ids: List of participant IDs in the match
@@ -718,94 +733,161 @@ class EloDatabase:
         Returns:
             Tuple of (match_id, dict of participant_id -> new_rating)
         """
-        # Ensure all participants are registered
+        # Generate game_id for deduplication if not provided
+        if game_id is None:
+            game_id = str(uuid.uuid4())
+
+        # Ensure all participants are registered (outside main transaction)
         for pid in participant_ids:
             self.ensure_participant(pid)
 
-        # Record the match
-        match_id = self.record_match(
-            participant_ids=participant_ids,
-            rankings=rankings,
-            board_type=board_type,
-            num_players=num_players,
-            tournament_id=tournament_id,
-            game_length=game_length,
-            duration_sec=duration_sec,
-            worker=worker,
-            metadata=metadata,
-            game_id=game_id,
-        )
-
-        # Get current ratings
-        ratings = self.get_ratings_batch(participant_ids, board_type, num_players)
-
-        # Calculate new ratings using EloCalculator
-        calculator = EloCalculator(k_factor=k_factor)
-
-        # Load current ratings into calculator
-        for pid, rating in ratings.items():
-            elo_rating = calculator.get_rating(pid)
-            elo_rating.rating = rating.rating
-            elo_rating.games_played = rating.games_played
-            elo_rating.wins = rating.wins
-            elo_rating.losses = rating.losses
-            elo_rating.draws = rating.draws
-
-        # Sort participants by ranking for the multiplayer update
-        sorted_participants = sorted(
-            zip(participant_ids, rankings),
-            key=lambda x: x[1]
-        )
-        ordered_ids = [pid for pid, _ in sorted_participants]
-
-        # Update ratings
-        if len(participant_ids) == 2:
-            # Two-player match
-            result = 1.0 if rankings[0] < rankings[1] else (0.5 if rankings[0] == rankings[1] else 0.0)
-            calculator.update_ratings(participant_ids[0], participant_ids[1], result)
-        else:
-            # Multiplayer match
-            calculator.update_multiplayer_ratings(ordered_ids)
-
-        # Update database with new ratings
-        new_ratings = {}
-        updated_ratings = []
         conn = self._get_connection()
         now = time.time()
 
-        for pid in participant_ids:
-            old_rating = ratings[pid].rating
-            elo_rating = calculator.get_rating(pid)
-            new_rating = elo_rating.rating
+        try:
+            # Use IMMEDIATE transaction to acquire write lock early
+            # This prevents TOCTOU race conditions
+            conn.execute("BEGIN IMMEDIATE")
 
-            updated = UnifiedEloRating(
-                participant_id=pid,
-                board_type=board_type,
-                num_players=num_players,
-                rating=new_rating,
-                games_played=elo_rating.games_played,
-                wins=elo_rating.wins,
-                losses=elo_rating.losses,
-                draws=elo_rating.draws,
+            # Get current ratings INSIDE the transaction
+            ratings = {}
+            for pid in participant_ids:
+                cursor = conn.execute("""
+                    SELECT participant_id, rating, games_played, wins, losses, draws, rating_deviation
+                    FROM elo_ratings
+                    WHERE participant_id = ? AND board_type = ? AND num_players = ?
+                """, (pid, board_type, num_players))
+                row = cursor.fetchone()
+                if row:
+                    ratings[pid] = UnifiedEloRating(
+                        participant_id=row[0],
+                        board_type=board_type,
+                        num_players=num_players,
+                        rating=row[1],
+                        games_played=row[2],
+                        wins=row[3],
+                        losses=row[4],
+                        draws=row[5],
+                        rating_deviation=row[6] if row[6] else 350.0,
+                    )
+                else:
+                    # Create default rating
+                    ratings[pid] = UnifiedEloRating(
+                        participant_id=pid,
+                        board_type=board_type,
+                        num_players=num_players,
+                    )
+
+            # Calculate new ratings using EloCalculator
+            calculator = EloCalculator(k_factor=k_factor)
+
+            # Load current ratings into calculator
+            for pid, rating in ratings.items():
+                elo_rating = calculator.get_rating(pid)
+                elo_rating.rating = rating.rating
+                elo_rating.games_played = rating.games_played
+                elo_rating.wins = rating.wins
+                elo_rating.losses = rating.losses
+                elo_rating.draws = rating.draws
+
+            # Sort participants by ranking for the multiplayer update
+            sorted_participants = sorted(
+                zip(participant_ids, rankings),
+                key=lambda x: x[1]
             )
-            updated_ratings.append(updated)
-            new_ratings[pid] = new_rating
+            ordered_ids = [pid for pid, _ in sorted_participants]
 
-            # Record rating history
-            conn.execute("""
-                INSERT INTO rating_history
-                (participant_id, board_type, num_players, rating, rating_change,
-                 games_played, timestamp, match_id, tournament_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            # Update ratings in calculator
+            if len(participant_ids) == 2:
+                # Two-player match
+                result = 1.0 if rankings[0] < rankings[1] else (0.5 if rankings[0] == rankings[1] else 0.0)
+                calculator.update_ratings(participant_ids[0], participant_ids[1], result)
+            else:
+                # Multiplayer match
+                calculator.update_multiplayer_ratings(ordered_ids)
+
+            # Determine winner (participant with ranking 0)
+            winner_id = None
+            for pid, rank in zip(participant_ids, rankings):
+                if rank == 0:
+                    winner_id = pid
+                    break
+
+            # Insert match record
+            col_a, col_b = self.match_columns
+            model_a = participant_ids[0] if len(participant_ids) > 0 else None
+            model_b = participant_ids[1] if len(participant_ids) > 1 else None
+
+            cursor = conn.execute(f"""
+                INSERT INTO match_history
+                ({col_a}, {col_b}, participant_ids, rankings, winner,
+                 board_type, num_players, game_length, duration_sec, timestamp,
+                 tournament_id, game_id, worker, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                pid, board_type, num_players, new_rating, new_rating - old_rating,
-                elo_rating.games_played, now, match_id, tournament_id,
+                model_a,
+                model_b,
+                json.dumps(participant_ids),
+                json.dumps(rankings),
+                winner_id,
+                board_type,
+                num_players,
+                game_length,
+                duration_sec,
+                now,
+                tournament_id,
+                game_id,
+                worker,
+                json.dumps(metadata) if metadata else None,
             ))
+            match_id = cursor.lastrowid
 
-        conn.commit()
-        self.update_ratings_batch(updated_ratings)
+            # Update ratings and record history
+            new_ratings = {}
+            for pid in participant_ids:
+                old_rating = ratings[pid].rating
+                elo_rating = calculator.get_rating(pid)
+                new_rating = elo_rating.rating
+                new_ratings[pid] = new_rating
 
-        return match_id, new_ratings
+                # Update or insert elo_ratings
+                conn.execute("""
+                    INSERT INTO elo_ratings
+                    (participant_id, board_type, num_players, rating, games_played,
+                     wins, losses, draws, rating_deviation, last_update)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(participant_id, board_type, num_players)
+                    DO UPDATE SET
+                        rating = excluded.rating,
+                        games_played = excluded.games_played,
+                        wins = excluded.wins,
+                        losses = excluded.losses,
+                        draws = excluded.draws,
+                        last_update = excluded.last_update
+                """, (
+                    pid, board_type, num_players, new_rating,
+                    elo_rating.games_played, elo_rating.wins, elo_rating.losses,
+                    elo_rating.draws, ratings[pid].calculated_rd, now,
+                ))
+
+                # Record rating history
+                conn.execute("""
+                    INSERT INTO rating_history
+                    (participant_id, board_type, num_players, rating, rating_change,
+                     games_played, timestamp, match_id, tournament_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    pid, board_type, num_players, new_rating, new_rating - old_rating,
+                    elo_rating.games_played, now, match_id, tournament_id,
+                ))
+
+            conn.execute("COMMIT")
+            return match_id, new_ratings
+
+        except Exception as e:
+            conn.execute("ROLLBACK")
+            logger.error(f"Failed to record match: {e}")
+            raise
 
     def record_two_player_result(
         self,

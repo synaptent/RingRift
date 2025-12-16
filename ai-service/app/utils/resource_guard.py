@@ -581,6 +581,242 @@ def require_resources(
         return guard.ok
 
 
+# ============================================
+# Async Resource Limiter
+# ============================================
+
+class AsyncResourceLimiter:
+    """Async resource limiter with automatic exponential backoff.
+
+    Provides both sync and async interfaces for waiting on resources.
+
+    Usage:
+        limiter = AsyncResourceLimiter()
+
+        # Async
+        await limiter.wait_for_resources_async("training")
+
+        # Sync
+        limiter.wait_for_resources_sync("selfplay")
+
+        # Context manager
+        async with limiter.acquire("my_task"):
+            await do_work()
+    """
+
+    MIN_BACKOFF_SECONDS = 5.0
+    MAX_BACKOFF_SECONDS = 300.0
+    BACKOFF_MULTIPLIER = 1.5
+
+    def __init__(
+        self,
+        disk_required_gb: float = 2.0,
+        mem_required_gb: float = 1.0,
+        gpu_required_gb: float = 0.0,
+        max_concurrent_tasks: int = 0,
+    ):
+        self.disk_required_gb = disk_required_gb
+        self.mem_required_gb = mem_required_gb
+        self.gpu_required_gb = gpu_required_gb
+        self.max_concurrent_tasks = max_concurrent_tasks
+        self._active_tasks: dict = {}
+        self._backoff_seconds = self.MIN_BACKOFF_SECONDS
+
+    def _check_resources(self) -> tuple:
+        """Check if resources are available.
+
+        Returns:
+            Tuple of (ok, list_of_issues)
+        """
+        issues = []
+
+        if not check_disk_space(self.disk_required_gb, log_warning=False):
+            disk_pct, _, _ = get_disk_usage()
+            issues.append(f"Disk: {disk_pct:.1f}%")
+
+        if not check_memory(self.mem_required_gb, log_warning=False):
+            mem_pct, _, _ = get_memory_usage()
+            issues.append(f"Memory: {mem_pct:.1f}%")
+
+        if not check_cpu(log_warning=False):
+            cpu_pct, _, _ = get_cpu_usage()
+            issues.append(f"CPU: {cpu_pct:.1f}%")
+
+        if self.gpu_required_gb > 0:
+            if not check_gpu_memory(self.gpu_required_gb, log_warning=False):
+                gpu_pct, _, _ = get_gpu_memory_usage()
+                issues.append(f"GPU: {gpu_pct:.1f}%")
+
+        if self.max_concurrent_tasks > 0:
+            if len(self._active_tasks) >= self.max_concurrent_tasks:
+                issues.append(f"Tasks: {len(self._active_tasks)}/{self.max_concurrent_tasks}")
+
+        return len(issues) == 0, issues
+
+    async def wait_for_resources_async(
+        self,
+        task_name: str = "unknown",
+        max_wait_seconds: float = 600.0,
+    ) -> bool:
+        """Async wait until resources are available.
+
+        Args:
+            task_name: Name for logging
+            max_wait_seconds: Maximum wait time
+
+        Returns:
+            True if resources available, False if timeout
+        """
+        import asyncio
+
+        total_waited = 0.0
+        backoff = self.MIN_BACKOFF_SECONDS
+
+        while total_waited < max_wait_seconds:
+            ok, issues = self._check_resources()
+
+            if ok:
+                self._backoff_seconds = self.MIN_BACKOFF_SECONDS
+                return True
+
+            logger.warning(
+                f"[ResourceLimiter] Task '{task_name}' backing off for {backoff:.0f}s. "
+                f"Issues: {', '.join(issues)}"
+            )
+
+            await asyncio.sleep(backoff)
+            total_waited += backoff
+            backoff = min(backoff * self.BACKOFF_MULTIPLIER, self.MAX_BACKOFF_SECONDS)
+
+        logger.error(f"[ResourceLimiter] Task '{task_name}' timed out after {max_wait_seconds}s")
+        return False
+
+    def wait_for_resources_sync(
+        self,
+        task_name: str = "unknown",
+        max_wait_seconds: float = 600.0,
+    ) -> bool:
+        """Sync wait until resources are available.
+
+        Args:
+            task_name: Name for logging
+            max_wait_seconds: Maximum wait time
+
+        Returns:
+            True if resources available, False if timeout
+        """
+        total_waited = 0.0
+        backoff = self.MIN_BACKOFF_SECONDS
+
+        while total_waited < max_wait_seconds:
+            ok, issues = self._check_resources()
+
+            if ok:
+                self._backoff_seconds = self.MIN_BACKOFF_SECONDS
+                return True
+
+            logger.warning(
+                f"[ResourceLimiter] Task '{task_name}' backing off for {backoff:.0f}s. "
+                f"Issues: {', '.join(issues)}"
+            )
+
+            time.sleep(backoff)
+            total_waited += backoff
+            backoff = min(backoff * self.BACKOFF_MULTIPLIER, self.MAX_BACKOFF_SECONDS)
+
+        logger.error(f"[ResourceLimiter] Task '{task_name}' timed out after {max_wait_seconds}s")
+        return False
+
+    def acquire(self, task_name: str):
+        """Async context manager to acquire resources.
+
+        Usage:
+            async with limiter.acquire("my_task"):
+                await do_work()
+        """
+        return _AsyncResourceContext(self, task_name)
+
+    def _register_task(self, task_name: str) -> None:
+        self._active_tasks[task_name] = time.time()
+
+    def _unregister_task(self, task_name: str) -> None:
+        self._active_tasks.pop(task_name, None)
+
+
+class _AsyncResourceContext:
+    """Async context manager for resource acquisition."""
+
+    def __init__(self, limiter: AsyncResourceLimiter, task_name: str):
+        self.limiter = limiter
+        self.task_name = task_name
+
+    async def __aenter__(self):
+        await self.limiter.wait_for_resources_async(self.task_name)
+        self.limiter._register_task(self.task_name)
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self.limiter._unregister_task(self.task_name)
+        if self.limiter.gpu_required_gb > 0:
+            clear_gpu_memory()
+        return False
+
+
+# ============================================
+# Decorator for Resource-Aware Functions
+# ============================================
+
+def respect_resource_limits(
+    task_name: Optional[str] = None,
+    disk_gb: float = 2.0,
+    mem_gb: float = 1.0,
+    gpu_gb: float = 0.0,
+    max_wait_seconds: float = 600.0,
+):
+    """Decorator that waits for resources before executing function.
+
+    Usage:
+        @respect_resource_limits(task_name="training", gpu_gb=4.0)
+        async def train_model():
+            ...
+
+        @respect_resource_limits(disk_gb=5.0)
+        def save_data():
+            ...
+    """
+    import functools
+    import asyncio
+
+    def decorator(func):
+        limiter = AsyncResourceLimiter(
+            disk_required_gb=disk_gb,
+            mem_required_gb=mem_gb,
+            gpu_required_gb=gpu_gb,
+        )
+
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            name = task_name or func.__name__
+            if limiter.wait_for_resources_sync(name, max_wait_seconds):
+                return func(*args, **kwargs)
+            else:
+                raise RuntimeError(f"Resources not available for {name} after {max_wait_seconds}s")
+
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            name = task_name or func.__name__
+            if await limiter.wait_for_resources_async(name, max_wait_seconds):
+                return await func(*args, **kwargs)
+            else:
+                raise RuntimeError(f"Resources not available for {name} after {max_wait_seconds}s")
+
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
+
+    return decorator
+
+
 if __name__ == "__main__":
     # Print status when run directly
     print_resource_status()
