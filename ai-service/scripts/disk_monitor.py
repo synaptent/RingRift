@@ -330,6 +330,75 @@ def _dir_size_bytes(path: Path) -> int:
     return total
 
 
+def _get_game_ids_from_db(db_path: Path) -> set:
+    """Get set of game_ids from a SQLite database."""
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        cur = conn.cursor()
+        cur.execute("SELECT game_id FROM games")
+        ids = {row[0] for row in cur.fetchall()}
+        conn.close()
+        return ids
+    except Exception:
+        return set()
+
+
+def deduplicate_synced_databases(
+    ringrift_path: str,
+    *,
+    dry_run: bool = False,
+) -> List[CleanupResult]:
+    """Remove duplicate databases in synced/ that already exist in selfplay.db.
+
+    Strategy: Games that have been merged into selfplay.db are safe to remove
+    from the intermediate synced/ directories. This preserves unique data while
+    removing redundant copies.
+    """
+    results: List[CleanupResult] = []
+    games_dir = Path(ringrift_path) / "ai-service" / "data" / "games"
+    selfplay_db = games_dir / "selfplay.db"
+    synced_dir = games_dir / "synced"
+
+    if not synced_dir.exists() or not selfplay_db.exists():
+        return results
+
+    # Get all game_ids already in selfplay.db
+    print("  Checking selfplay.db for existing games...")
+    canonical_ids = _get_game_ids_from_db(selfplay_db)
+    print(f"  Found {len(canonical_ids)} games in selfplay.db")
+
+    # Scan synced/ subdirectories for duplicate databases
+    for host_dir in synced_dir.iterdir():
+        if not host_dir.is_dir():
+            continue
+
+        for db_file in host_dir.rglob("*.db"):
+            try:
+                db_ids = _get_game_ids_from_db(db_file)
+                if not db_ids:
+                    continue
+
+                # Check overlap with canonical DB
+                overlap = db_ids & canonical_ids
+                overlap_pct = len(overlap) / len(db_ids) * 100 if db_ids else 0
+
+                # If >90% of games already exist in selfplay.db, this is a duplicate
+                if overlap_pct >= 90:
+                    size = db_file.stat().st_size
+                    if not dry_run:
+                        db_file.unlink()
+                    results.append(CleanupResult(
+                        path=str(db_file),
+                        size_bytes=size,
+                        deleted=not dry_run,
+                        reason=f"duplicate_db_{overlap_pct:.0f}%_overlap",
+                    ))
+            except (OSError, PermissionError, sqlite3.Error):
+                continue
+
+    return results
+
+
 def cleanup_old_synced_game_bundles(
     ringrift_path: str,
     *,
@@ -338,49 +407,51 @@ def cleanup_old_synced_game_bundles(
 ) -> List[CleanupResult]:
     """Prune large synced game bundle directories under ai-service/data/games.
 
-    These directories are derived artifacts (often multi-GB) created by cluster
-    sync/collection scripts. Keeping a small number for debugging is useful,
-    but allowing them to accumulate can brick nodes via disk pressure.
+    Strategy:
+    1. First deduplicate - remove DBs whose games are already in selfplay.db
+    2. Then prune empty or old directories
 
-    Handles:
-    - synced_* directories (pattern match)
-    - synced/ directory (host subdirectories inside)
+    This is safer than blindly deleting and preserves unique data.
     """
     results: List[CleanupResult] = []
     games_dir = Path(ringrift_path) / "ai-service" / "data" / "games"
     if not games_dir.exists():
         return results
 
-    # Handle synced_* pattern directories
-    candidates = [
-        p for p in games_dir.glob("synced_*")
-        if p.is_dir()
-    ]
+    # Step 1: Deduplicate first
+    print("Deduplicating synced databases...")
+    results.extend(deduplicate_synced_databases(ringrift_path, dry_run=dry_run))
 
-    # Also handle the synced/ directory itself with per-host subdirs
+    # Step 2: Remove empty directories after dedup
     synced_dir = games_dir / "synced"
     if synced_dir.exists() and synced_dir.is_dir():
-        # Get subdirectories sorted by mtime (oldest first for deletion)
-        host_dirs = [p for p in synced_dir.iterdir() if p.is_dir()]
-        host_dirs.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0)
+        for host_dir in list(synced_dir.iterdir()):
+            if not host_dir.is_dir():
+                continue
+            # Check if directory is now empty or nearly empty after dedup
+            remaining_files = list(host_dir.rglob("*"))
+            remaining_size = sum(f.stat().st_size for f in remaining_files if f.is_file())
 
-        # Keep only the newest `keep_latest` per-host dirs
-        if len(host_dirs) > keep_latest:
-            for host_dir in host_dirs[:-keep_latest] if keep_latest else host_dirs:
+            # Remove if empty or <1MB remaining
+            if remaining_size < 1024 * 1024:
                 try:
                     size = _dir_size_bytes(host_dir)
                     if not dry_run:
                         shutil.rmtree(host_dir)
-                    results.append(
-                        CleanupResult(
-                            path=str(host_dir),
-                            size_bytes=size,
-                            deleted=not dry_run,
-                            reason="synced_host_dir_prune",
-                        )
-                    )
+                    results.append(CleanupResult(
+                        path=str(host_dir),
+                        size_bytes=size,
+                        deleted=not dry_run,
+                        reason="empty_after_dedup",
+                    ))
                 except (OSError, PermissionError):
                     continue
+
+    # Handle synced_* pattern directories (old style)
+    candidates = [
+        p for p in games_dir.glob("synced_*")
+        if p.is_dir()
+    ]
 
     if not candidates:
         return results
