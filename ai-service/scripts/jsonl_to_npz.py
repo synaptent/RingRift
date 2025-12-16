@@ -5,15 +5,16 @@ This script converts game records from JSONL format (produced by run_self_play_s
 into compressed NumPy arrays (.npz) suitable for direct neural network training.
 
 The script replays each game from its initial_state using the moves list,
-extracting proper 56-channel features at each position using NeuralNetAI's
-feature extraction (matching the format expected by app.training.train).
+extracting features at each position using the appropriate encoder:
+- Hexagonal boards: HexStateEncoder (v2, 40 channels) or HexStateEncoderV3 (v3, 64 channels)
+- Square boards: NeuralNetAI (56 channels)
 
 **Checkpointing**: The script saves intermediate chunks to disk every N games
 (default: 100) to prevent data loss on interruption. Use --checkpoint-dir to
 enable this feature. Chunks are merged at the end into the final NPZ file.
 
 Output NPZ format (compatible with train.py):
-- features: (N, 56, H, W) float32 - Full feature channels
+- features: (N, C, H, W) float32 - Full feature channels (C depends on encoder)
 - globals: (N, 20) float32 - Global features
 - values: (N,) float32 - Game outcomes (-1 to +1)
 - policy_indices: (N,) object - Sparse action indices per sample
@@ -85,6 +86,7 @@ from app.models import AIConfig, BoardType, GameState, Move, MoveType, Position
 from app.game_engine import GameEngine
 from app.ai.neural_net import NeuralNetAI, INVALID_MOVE_INDEX, encode_move_for_board
 from app.rules.serialization import deserialize_game_state
+from app.training.encoding import HexStateEncoder, HexStateEncoderV3
 
 
 # Phase transition moves for completing turns
@@ -403,8 +405,46 @@ def _move_type_from_str(type_str: str) -> Optional[MoveType]:
         return None
 
 
-def build_encoder(board_type: BoardType) -> NeuralNetAI:
-    """Build a NeuralNetAI instance for feature extraction."""
+class HexEncoderWrapper:
+    """Wrapper for HexStateEncoder/V3 to provide _extract_features interface."""
+
+    def __init__(self, encoder, board_size: int = 25):
+        self._encoder = encoder
+        self.board_size = board_size
+
+    def _extract_features(self, state: GameState):
+        """Extract features using the hex encoder's encode method."""
+        return self._encoder.encode(state)
+
+
+def build_encoder(board_type: BoardType, encoder_version: str = "v2"):
+    """Build an encoder instance for feature extraction.
+
+    For hexagonal boards, uses HexStateEncoder (v2, 10 channels) or
+    HexStateEncoderV3 (v3, 16 channels) for proper compatibility with
+    HexNeuralNet_v2 (40 total channels) or HexNeuralNet_v3 (64 total).
+
+    For square boards, uses NeuralNetAI (14 base channels).
+
+    Args:
+        board_type: The board type
+        encoder_version: "v2" for 10-channel hex encoder (40 total),
+                        "v3" for 16-channel hex encoder (64 total)
+
+    Returns:
+        An encoder with _extract_features(state) method
+    """
+    if board_type == BoardType.HEXAGONAL:
+        # Use proper hex encoders for compatible training data
+        if encoder_version == "v3":
+            hex_encoder = HexStateEncoderV3()
+            logger.info("Using HexStateEncoderV3 (16 base channels -> 64 total)")
+        else:
+            hex_encoder = HexStateEncoder()
+            logger.info("Using HexStateEncoder (10 base channels -> 40 total)")
+        return HexEncoderWrapper(hex_encoder, board_size=25)
+
+    # For square boards, use NeuralNetAI (14 base channels)
     config = AIConfig(
         difficulty=5,
         think_time=0,
@@ -966,6 +1006,7 @@ def convert_jsonl_to_npz(
     checkpoint_dir: Optional[Path] = None,
     checkpoint_interval: int = 100,
     resume: bool = False,
+    encoder_version: str = "v2",
 ) -> ConversionStats:
     """Convert JSONL files to NPZ training data.
 
@@ -983,7 +1024,7 @@ def convert_jsonl_to_npz(
         resume: Resume from existing checkpoint
     """
     board_type = BOARD_TYPE_MAP.get(board_type_str, BoardType.SQUARE8)
-    encoder = build_encoder(board_type)
+    encoder = build_encoder(board_type, encoder_version=encoder_version)
 
     # Initialize checkpoint manager
     checkpoint_mgr = CheckpointManager(
@@ -1201,6 +1242,15 @@ def main():
         help="Enable GPU selfplay mode: auto-inject phase transitions for simplified move format",
     )
     parser.add_argument(
+        "--encoder-version",
+        type=str,
+        default="v2",
+        choices=["v2", "v3"],
+        help="Encoder version for hexagonal boards: v2 (10 base channels -> 40 total, "
+             "compatible with HexNeuralNet_v2) or v3 (16 base channels -> 64 total, "
+             "compatible with HexNeuralNet_v3). Default: v2",
+    )
+    parser.add_argument(
         "--checkpoint-dir",
         type=str,
         help="Directory for checkpoint chunks (enables incremental saves to prevent data loss)",
@@ -1243,6 +1293,7 @@ def main():
         checkpoint_dir=Path(args.checkpoint_dir) if args.checkpoint_dir else None,
         checkpoint_interval=args.checkpoint_interval,
         resume=args.resume,
+        encoder_version=args.encoder_version,
     )
 
     logger.info("")

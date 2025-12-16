@@ -6848,6 +6848,8 @@ class UnifiedAILoop:
                     self.health_tracker.record_success("data_collector")
                     if new_games > 0:
                         print(f"[DataCollection] External sync detected {new_games} new games (total: {current_count})")
+                        # Update per-config game counts for training scheduler
+                        self.data_collector._update_per_config_game_counts(new_games)
                 else:
                     # Internal sync mode: actively pull from hosts
                     new_games = await self.data_collector.run_collection_cycle()

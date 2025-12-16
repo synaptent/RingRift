@@ -19839,6 +19839,304 @@ print(json.dumps({{
             },
         }
 
+    # ============================================================================
+    # DISTRIBUTED TOURNAMENT SCHEDULING
+    # ============================================================================
+    # Allows tournaments to be scheduled and coordinated via gossip protocol
+    # without requiring a leader. Uses consensus to elect tournament coordinator.
+    # ============================================================================
+
+    def _init_distributed_tournament_scheduling(self):
+        """Initialize distributed tournament scheduling state."""
+        self._tournament_proposals: Dict[str, dict] = {}  # proposal_id -> proposal
+        self._tournament_votes: Dict[str, Dict[str, str]] = {}  # proposal_id -> {node_id: vote}
+        self._active_tournaments_gossip: Dict[str, dict] = {}  # tournament_id -> state
+        self._last_tournament_check = 0
+        self._tournament_coordination_lock = threading.Lock()
+
+    def _propose_tournament(self, board_type: str = "square8", num_players: int = 2,
+                           agent_ids: List[str] = None, games_per_pairing: int = 2) -> dict:
+        """Create a tournament proposal for gossip-based coordination.
+
+        DISTRIBUTED TOURNAMENT: Instead of requiring leader, any node can propose
+        a tournament. The proposal is shared via gossip, and nodes vote to elect
+        a coordinator.
+
+        Args:
+            board_type: Board type for tournament
+            num_players: Number of players per game
+            agent_ids: List of agent IDs to include
+            games_per_pairing: Games per agent pairing
+
+        Returns:
+            Proposal dict with unique ID
+        """
+        import uuid
+        if not hasattr(self, "_tournament_proposals"):
+            self._init_distributed_tournament_scheduling()
+
+        proposal_id = f"tourney_prop_{uuid.uuid4().hex[:8]}"
+        now = time.time()
+
+        proposal = {
+            "proposal_id": proposal_id,
+            "proposer": self.node_id,
+            "board_type": board_type,
+            "num_players": num_players,
+            "agent_ids": agent_ids or [],
+            "games_per_pairing": games_per_pairing,
+            "proposed_at": now,
+            "status": "proposed",
+            "coordinator": None,  # Elected via consensus
+            "votes": {self.node_id: "approve"},  # Proposer auto-approves
+        }
+
+        with self._tournament_coordination_lock:
+            self._tournament_proposals[proposal_id] = proposal
+
+        print(f"[P2P] TOURNAMENT: Created proposal {proposal_id} for {len(agent_ids or [])} agents")
+        return proposal
+
+    def _vote_on_tournament_proposal(self, proposal_id: str, vote: str = "approve") -> bool:
+        """Vote on a tournament proposal.
+
+        DISTRIBUTED VOTING: Nodes vote on proposals. A proposal is approved
+        when majority of alive peers approve. The coordinator is the highest-ID
+        node among approvers.
+
+        Args:
+            proposal_id: ID of proposal to vote on
+            vote: "approve" or "reject"
+
+        Returns:
+            True if vote was recorded
+        """
+        if not hasattr(self, "_tournament_proposals"):
+            self._init_distributed_tournament_scheduling()
+
+        with self._tournament_coordination_lock:
+            if proposal_id not in self._tournament_proposals:
+                return False
+
+            proposal = self._tournament_proposals[proposal_id]
+            if proposal["status"] != "proposed":
+                return False
+
+            proposal["votes"][self.node_id] = vote
+            return True
+
+    def _get_tournament_gossip_state(self) -> dict:
+        """Get tournament state for gossip propagation.
+
+        TOURNAMENT GOSSIP: Share active tournament info via gossip so nodes
+        can coordinate without leader.
+
+        Returns:
+            Dict with proposals and active tournaments
+        """
+        if not hasattr(self, "_tournament_proposals"):
+            self._init_distributed_tournament_scheduling()
+
+        now = time.time()
+
+        with self._tournament_coordination_lock:
+            # Only share recent proposals (last 10 min)
+            active_proposals = {
+                pid: p for pid, p in self._tournament_proposals.items()
+                if now - p.get("proposed_at", 0) < 600 and p.get("status") == "proposed"
+            }
+
+        # Get active distributed tournaments
+        active_tournaments = {}
+        for tid, state in getattr(self, "distributed_tournament_state", {}).items():
+            if hasattr(state, "status") and state.status == "running":
+                active_tournaments[tid] = {
+                    "job_id": tid,
+                    "coordinator": self.node_id,  # We're coordinating if we have it
+                    "progress": state.completed_matches / max(1, state.total_matches),
+                    "status": state.status,
+                }
+
+        return {
+            "proposals": list(active_proposals.values()),
+            "active": active_tournaments,
+            "last_update": now,
+        }
+
+    def _process_tournament_gossip(self, node_id: str, tournament_state: dict):
+        """Process tournament info received via gossip.
+
+        GOSSIP PROCESSING: When receiving tournament state from peers,
+        - Record their proposals and votes
+        - Check if any proposals reached consensus
+        - Start tournaments that we're elected to coordinate
+
+        Args:
+            node_id: ID of node that sent this state
+            tournament_state: Tournament state from gossip
+        """
+        if not hasattr(self, "_tournament_proposals"):
+            self._init_distributed_tournament_scheduling()
+
+        if not tournament_state or not isinstance(tournament_state, dict):
+            return
+
+        now = time.time()
+
+        # Process proposals from gossip
+        for proposal in tournament_state.get("proposals", []):
+            if not isinstance(proposal, dict):
+                continue
+
+            proposal_id = proposal.get("proposal_id")
+            if not proposal_id:
+                continue
+
+            with self._tournament_coordination_lock:
+                if proposal_id not in self._tournament_proposals:
+                    # New proposal from peer - add it and auto-approve
+                    self._tournament_proposals[proposal_id] = proposal.copy()
+                    self._tournament_proposals[proposal_id]["votes"][self.node_id] = "approve"
+                else:
+                    # Merge votes
+                    existing = self._tournament_proposals[proposal_id]
+                    for voter, vote in proposal.get("votes", {}).items():
+                        if voter not in existing["votes"]:
+                            existing["votes"][voter] = vote
+
+    def _check_tournament_consensus(self):
+        """Check if any tournament proposals have reached consensus.
+
+        CONSENSUS CHECK: A proposal is approved when majority of alive peers approve.
+        The coordinator is elected as the highest-ID approving voter node.
+        """
+        if not hasattr(self, "_tournament_proposals"):
+            return
+
+        now = time.time()
+
+        # Get alive peer count for quorum
+        with self.peers_lock:
+            alive_peers = [p for p in self.peers.values() if p.is_alive()]
+        alive_count = len(alive_peers) + 1  # +1 for self
+
+        quorum = (alive_count // 2) + 1
+
+        with self._tournament_coordination_lock:
+            for proposal_id, proposal in list(self._tournament_proposals.items()):
+                if proposal.get("status") != "proposed":
+                    continue
+
+                # Count votes
+                approve_votes = [
+                    voter for voter, vote in proposal.get("votes", {}).items()
+                    if vote == "approve"
+                ]
+
+                if len(approve_votes) >= quorum:
+                    # Consensus reached! Elect coordinator (highest ID)
+                    coordinator = max(approve_votes)
+                    proposal["status"] = "approved"
+                    proposal["coordinator"] = coordinator
+
+                    print(f"[P2P] TOURNAMENT: Proposal {proposal_id} approved! "
+                          f"Coordinator: {coordinator} ({len(approve_votes)}/{alive_count} votes)")
+
+                    # If we're the coordinator, start the tournament
+                    if coordinator == self.node_id:
+                        asyncio.create_task(self._start_tournament_from_proposal(proposal))
+
+                # Expire old proposals
+                elif now - proposal.get("proposed_at", 0) > 600:
+                    proposal["status"] = "expired"
+
+    async def _start_tournament_from_proposal(self, proposal: dict):
+        """Start a tournament from an approved proposal.
+
+        COORDINATOR DUTIES: When elected as coordinator, start the tournament
+        and manage match distribution to workers.
+
+        Args:
+            proposal: Approved proposal dict
+        """
+        import uuid
+
+        job_id = f"tournament_{uuid.uuid4().hex[:8]}"
+        agent_ids = proposal.get("agent_ids", [])
+
+        if len(agent_ids) < 2:
+            print(f"[P2P] TOURNAMENT: Cannot start - need at least 2 agents")
+            return
+
+        # Create round-robin pairings
+        pairings = []
+        for i, a1 in enumerate(agent_ids):
+            for a2 in agent_ids[i+1:]:
+                for game_num in range(proposal.get("games_per_pairing", 2)):
+                    pairings.append({
+                        "agent1": a1,
+                        "agent2": a2,
+                        "game_num": game_num,
+                        "status": "pending",
+                    })
+
+        state = DistributedTournamentState(
+            job_id=job_id,
+            board_type=proposal.get("board_type", "square8"),
+            num_players=proposal.get("num_players", 2),
+            agent_ids=agent_ids,
+            games_per_pairing=proposal.get("games_per_pairing", 2),
+            total_matches=len(pairings),
+            pending_matches=pairings,
+            status="running",
+            started_at=time.time(),
+            last_update=time.time(),
+        )
+
+        # Find workers
+        with self.peers_lock:
+            workers = [p.node_id for p in self.peers.values() if p.is_healthy()]
+        state.worker_nodes = workers
+
+        if not state.worker_nodes:
+            print(f"[P2P] TOURNAMENT: No workers available for {job_id}")
+            return
+
+        self.distributed_tournament_state[job_id] = state
+
+        print(f"[P2P] TOURNAMENT: Started {job_id} from proposal {proposal.get('proposal_id')}: "
+              f"{len(agent_ids)} agents, {len(pairings)} matches, {len(workers)} workers")
+
+        # Launch coordinator task
+        asyncio.create_task(self._run_distributed_tournament(job_id))
+
+    def _get_distributed_tournament_summary(self) -> dict:
+        """Get summary of distributed tournament scheduling for status endpoint."""
+        if not hasattr(self, "_tournament_proposals"):
+            self._init_distributed_tournament_scheduling()
+
+        with self._tournament_coordination_lock:
+            pending_proposals = sum(
+                1 for p in self._tournament_proposals.values()
+                if p.get("status") == "proposed"
+            )
+            approved_proposals = sum(
+                1 for p in self._tournament_proposals.values()
+                if p.get("status") == "approved"
+            )
+
+        active_tournaments = sum(
+            1 for s in getattr(self, "distributed_tournament_state", {}).values()
+            if hasattr(s, "status") and s.status == "running"
+        )
+
+        return {
+            "pending_proposals": pending_proposals,
+            "approved_proposals": approved_proposals,
+            "active_tournaments": active_tournaments,
+            "enabled": True,
+        }
+
     async def _start_monitoring_if_leader(self):
         """Start Prometheus/Grafana when we become leader (P2P monitoring resilience)."""
         if not self.monitoring_manager:
