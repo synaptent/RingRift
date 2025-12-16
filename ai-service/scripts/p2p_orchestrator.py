@@ -76,6 +76,32 @@ except ImportError:
 SOCKS_PROXY = os.environ.get("RINGRIFT_SOCKS_PROXY", "")
 
 
+class AsyncLockWrapper:
+    """Async context manager wrapper for threading locks.
+
+    This allows using threading.RLock in async code without blocking the event loop.
+    The lock acquisition/release happens in a thread pool, preventing event loop starvation
+    when many concurrent requests try to acquire the same lock.
+
+    Usage:
+        # Instead of: with self.peers_lock:
+        async with AsyncLockWrapper(self.peers_lock):
+            # ... critical section
+    """
+
+    def __init__(self, lock: threading.RLock):
+        self._lock = lock
+
+    async def __aenter__(self):
+        # Acquire lock in thread pool to avoid blocking event loop
+        await asyncio.get_event_loop().run_in_executor(None, self._lock.acquire)
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self._lock.release()
+        return False
+
+
 def get_client_session(timeout: ClientTimeout = None) -> ClientSession:
     """Create an aiohttp ClientSession with optional SOCKS proxy support."""
     if SOCKS_PROXY and HAS_SOCKS:
@@ -6142,7 +6168,8 @@ class P2POrchestrator:
             # Preserve local reachability diagnostics: a peer can be "alive" (it can
             # send us heartbeats) while still being unreachable for inbound HTTP
             # (e.g. NAT/firewall). Our outbound heartbeat failures track that.
-            with self.peers_lock:
+            # Use AsyncLockWrapper to avoid blocking event loop under high load
+            async with AsyncLockWrapper(self.peers_lock):
                 existing = self.peers.get(peer_info.node_id)
                 if existing:
                     peer_info.consecutive_failures = int(getattr(existing, "consecutive_failures", 0) or 0)
@@ -6193,7 +6220,7 @@ class P2POrchestrator:
         """Return cluster status."""
         self._update_self_info()
 
-        with self.peers_lock:
+        async with AsyncLockWrapper(self.peers_lock):
             peers_snapshot = list(self.peers.values())
 
         conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
@@ -6218,7 +6245,7 @@ class P2POrchestrator:
             ]
         )
 
-        with self.jobs_lock:
+        async with AsyncLockWrapper(self.jobs_lock):
             jobs = {k: v.to_dict() for k, v in self.local_jobs.items()}
 
         # Get improvement cycle manager status
@@ -6564,7 +6591,7 @@ class P2POrchestrator:
             data = await request.json()
             job_id = data.get("job_id")
 
-            with self.jobs_lock:
+            async with AsyncLockWrapper(self.jobs_lock):
                 if job_id in self.local_jobs:
                     job = self.local_jobs[job_id]
                     try:
@@ -6594,7 +6621,7 @@ class P2POrchestrator:
 
             # Try to kill by job_id first
             if job_id:
-                with self.jobs_lock:
+                async with AsyncLockWrapper(self.jobs_lock):
                     if job_id in self.local_jobs:
                         job = self.local_jobs[job_id]
                         try:
@@ -7024,14 +7051,14 @@ class P2POrchestrator:
                 peer_info.host = real_ip
 
             # Store in peers list (they're part of the cluster even if not directly reachable)
-            with self.peers_lock:
+            async with AsyncLockWrapper(self.peers_lock):
                 self.peers[peer_info.node_id] = peer_info
 
             print(f"[P2P] Relay heartbeat from {peer_info.node_id} (real IP: {real_ip})")
 
             # Apply relay ACKs/results and return any queued commands.
             commands_to_send: List[Dict[str, Any]] = []
-            with self.relay_lock:
+            async with AsyncLockWrapper(self.relay_lock):
                 queue = list(self.relay_command_queue.get(peer_info.node_id, []))
                 now = time.time()
                 queue = [
@@ -7063,7 +7090,7 @@ class P2POrchestrator:
 
             # Return cluster state so they can see all peers
             self._update_self_info()
-            with self.peers_lock:
+            async with AsyncLockWrapper(self.peers_lock):
                 peers = {k: v.to_dict() for k, v in self.peers.items()}
 
             effective_leader = self._get_leader_peer()
@@ -7147,7 +7174,7 @@ class P2POrchestrator:
                 return web.json_response({"error": "unauthorized"}, status=401)
             self._update_self_info()
             effective_leader = self._get_leader_peer()
-            with self.peers_lock:
+            async with AsyncLockWrapper(self.peers_lock):
                 all_peers = {k: v.to_dict() for k, v in self.peers.items()}
 
             # Separate NAT-blocked and directly reachable
@@ -24412,10 +24439,12 @@ print(json.dumps({{
 
         runner = web.AppRunner(app)
         await runner.setup()
-        site = web.TCPSite(runner, self.host, self.port, reuse_address=True)
+        # Increase backlog to handle burst of connections from many nodes
+        # Default is ~128, which can overflow when many vast nodes heartbeat simultaneously
+        site = web.TCPSite(runner, self.host, self.port, reuse_address=True, backlog=1024)
         await site.start()
 
-        print(f"[P2P] HTTP server started on {self.host}:{self.port}")
+        print(f"[P2P] HTTP server started on {self.host}:{self.port} (backlog=1024)")
 
         # Start background tasks
         tasks = [

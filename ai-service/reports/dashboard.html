@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RingRift AI Training Dashboard</title>
+    <meta charset="utf-8">
+    <meta http-equiv="refresh" content="60">
+    <style>
+        body { font-family: -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee; }
+        h1 { color: #00d4ff; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333; }
+        th { background: #16213e; color: #00d4ff; }
+        tr:hover { background: #1f2f4f; }
+        .metric { font-size: 24px; font-weight: bold; color: #00d4ff; }
+        .card { background: #16213e; padding: 20px; border-radius: 8px; margin: 10px 0; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        .highlight { color: #00ff88; }
+        .warning { color: #ffaa00; }
+    </style>
+</head>
+<body>
+    <h1>🎮 RingRift AI Training Dashboard</h1>
+    <p>Last updated: 2025-12-16 08:27:57 UTC</p>
+    
+    <div class="grid">
+        <div class="card">
+            <div class="metric">166</div>
+            <div>Total Models</div>
+        </div>
+        <div class="card">
+            <div class="metric">7,884</div>
+            <div>Holdout Games</div>
+        </div>
+        <div class="card">
+            <div class="metric">1744</div>
+            <div>Best ELO</div>
+        </div>
+    </div>
+    
+    <h2>Per-Config Status</h2>
+    <table>
+        <tr><th>Config</th><th>Models</th><th>ELO Best</th><th>ELO Avg</th><th>ELO Games</th><th>Holdout</th><th>Promoted</th></tr>
+        <tr>
+            <td>square8_2p</td>
+            <td>79</td>
+            <td class="highlight">1744</td>
+            <td>1500</td>
+            <td>5306</td>
+            <td>4,647</td>
+            <td>-</td>
+        </tr>
+        <tr>
+            <td>square8_3p</td>
+            <td>6</td>
+            <td class="highlight">1741</td>
+            <td>1513</td>
+            <td>1276</td>
+            <td>2,061</td>
+            <td>ringrift_v4_sq8_2p_202512</td>
+        </tr>
+        <tr>
+            <td>square8_4p</td>
+            <td>14</td>
+            <td class="">1530</td>
+            <td>1500</td>
+            <td>18</td>
+            <td>831</td>
+            <td>-</td>
+        </tr>
+        <tr>
+            <td>square19_2p</td>
+            <td>10</td>
+            <td class="">1568</td>
+            <td>1500</td>
+            <td>8</td>
+            <td>163</td>
+            <td>-</td>
+        </tr>
+        <tr>
+            <td>square19_3p</td>
+            <td>4</td>
+            <td class="">-</td>
+            <td>-</td>
+            <td>0</td>
+            <td>55</td>
+            <td>-</td>
+        </tr>
+        <tr>
+            <td>square19_4p</td>
+            <td>16</td>
+            <td class="">-</td>
+            <td>-</td>
+            <td>0</td>
+            <td>29</td>
+            <td>-</td>
+        </tr>
+        <tr>
+            <td>hexagonal_2p</td>
+            <td>12</td>
+            <td class="">-</td>
+            <td>-</td>
+            <td>0</td>
+            <td>39</td>
+            <td>-</td>
+        </tr>
+        <tr>
+            <td>hexagonal_3p</td>
+            <td>17</td>
+            <td class="">-</td>
+            <td>-</td>
+            <td>0</td>
+            <td>53</td>
+            <td>-</td>
+        </tr>
+        <tr>
+            <td>hexagonal_4p</td>
+            <td>8</td>
+            <td class="">-</td>
+            <td>-</td>
+            <td>0</td>
+            <td>6</td>
+            <td>-</td>
+        </tr>
+    </table>
+</body>
+</html>

@@ -609,6 +609,53 @@ def collect_model_from_host(
             release_sync_lock(host.name)
 
 
+def load_cluster_cull_manifests(hosts: Dict[str, HostConfig]) -> Set[str]:
+    """Load cull manifests from all hosts and merge them.
+
+    Returns combined set of all culled model IDs across the cluster.
+    This ensures culled models don't get re-synced.
+    """
+    culled_ids: Set[str] = set()
+
+    # Load local manifest
+    local_manifest = LOCAL_MODELS_DIR / "cull_manifest.json"
+    if local_manifest.exists():
+        try:
+            with open(local_manifest, "r") as f:
+                data = json.load(f)
+                culled_ids.update(data.get("archived_ids", []))
+                logger.debug(f"Loaded {len(data.get('archived_ids', []))} culled models from local manifest")
+        except Exception as e:
+            logger.warning(f"Failed to load local cull manifest: {e}")
+
+    # Load remote manifests
+    for host_name, host in hosts.items():
+        try:
+            executor = get_ssh_executor()
+            if not executor:
+                continue
+
+            # Try to fetch cull_manifest.json
+            remote_path = f"{host.work_dir}/ai-service/models/cull_manifest.json"
+            local_tmp = Path(f"/tmp/cull_manifest_{host_name}.json")
+
+            result = executor.scp_from(remote_path, str(local_tmp), host=host, timeout=10)
+            if result.returncode == 0 and local_tmp.exists():
+                with open(local_tmp, "r") as f:
+                    data = json.load(f)
+                    remote_culled = set(data.get("archived_ids", []))
+                    culled_ids.update(remote_culled)
+                    logger.debug(f"Loaded {len(remote_culled)} culled models from {host_name}")
+                local_tmp.unlink()
+        except Exception as e:
+            logger.debug(f"Could not load cull manifest from {host_name}: {e}")
+
+    if culled_ids:
+        logger.info(f"[Sync] Loaded {len(culled_ids)} culled models from cluster manifests - will skip during sync")
+
+    return culled_ids
+
+
 def sync_missing_models(
     state: ClusterModelState,
     hosts: Dict[str, HostConfig],
@@ -630,6 +677,9 @@ def sync_missing_models(
     distributed = 0
     errors = []
 
+    # Load culled models from cluster manifests to skip during sync
+    culled_models = load_cluster_cull_manifests(hosts)
+
     local_inv = state.host_inventories.get("local")
     if not local_inv:
         return 0, 0, ["No local inventory found"]
@@ -638,6 +688,11 @@ def sync_missing_models(
     if collect_first:
         models_to_collect_nn = state.all_nn_models - local_inv.nn_models
         models_to_collect_nnue = state.all_nnue_models - local_inv.nnue_models
+
+        # Filter out culled models - don't re-sync them
+        if culled_models:
+            models_to_collect_nn = {m for m in models_to_collect_nn if m not in culled_models}
+            models_to_collect_nnue = {m for m in models_to_collect_nnue if m not in culled_models}
 
         if models_to_collect_nn or models_to_collect_nnue:
             logger.info(f"Collecting {len(models_to_collect_nn)} NN, {len(models_to_collect_nnue)} NNUE models to local...")
@@ -689,6 +744,11 @@ def sync_missing_models(
 
         missing_nn = local_nn - inv.nn_models
         missing_nnue = local_nnue - inv.nnue_models
+
+        # Filter out culled models - don't distribute them
+        if culled_models:
+            missing_nn = {m for m in missing_nn if m not in culled_models}
+            missing_nnue = {m for m in missing_nnue if m not in culled_models}
 
         if not missing_nn and not missing_nnue:
             logger.info(f"  {host_name}: up to date")

@@ -253,6 +253,76 @@ class DistributedNNGauntlet:
         """Count total models for a config."""
         return len(self.get_models_by_elo(config_key))
 
+    def discover_and_register_models(self, config_key: str) -> int:
+        """Scan models directory and register untracked models in Elo database.
+
+        This ensures all .pth files are tracked for gauntlet evaluation.
+
+        Args:
+            config_key: Config like "square8_2p"
+
+        Returns:
+            Number of newly registered models
+        """
+        import re
+
+        parts = config_key.split("_")
+        board_type = parts[0]
+        num_players = int(parts[1].replace("p", ""))
+
+        # Get currently registered models
+        registered = set(m[0] for m in self.get_models_by_elo(config_key))
+
+        # Scan models directory for matching .pth files
+        # Map board types to their filename prefixes
+        # e.g., config "square8_2p" matches files like "sq8_2p_*", "square8_2p_*"
+        board_prefixes = {
+            "square8": ["sq8", "square8"],
+            "square19": ["sq19", "square19"],
+            "hexagonal": ["hex", "hexagonal"],
+        }
+        prefixes = board_prefixes.get(board_type, [board_type])
+        patterns = [f"{prefix}_{num_players}p" for prefix in prefixes]
+
+        new_models = []
+        for pth_file in self.model_dir.glob("*.pth"):
+            model_id = pth_file.stem
+            # Check if matches any pattern
+            matches = any(model_id.startswith(p) or f"_{p}_" in model_id for p in patterns)
+            if matches and model_id not in registered:
+                new_models.append(model_id)
+
+        if not new_models:
+            return 0
+
+        # Register new models with default rating
+        DEFAULT_RATING = 1200.0
+        DEFAULT_RD = 350.0
+
+        conn = self._get_db_connection()
+        try:
+            cursor = conn.execute("PRAGMA table_info(elo_ratings)")
+            columns = {row[1] for row in cursor.fetchall()}
+            id_col = "model_id" if "model_id" in columns else "participant_id"
+
+            for model_id in new_models:
+                try:
+                    conn.execute(f"""
+                        INSERT OR IGNORE INTO elo_ratings
+                        ({id_col}, board_type, num_players, rating, games_played,
+                         wins, losses, draws, rating_deviation, last_update)
+                        VALUES (?, ?, ?, ?, 0, 0, 0, 0, ?, datetime('now'))
+                    """, (model_id, board_type, num_players, DEFAULT_RATING, DEFAULT_RD))
+                except Exception as e:
+                    logger.warning(f"[Gauntlet] Failed to register {model_id}: {e}")
+
+            conn.commit()
+            logger.info(f"[Gauntlet] Registered {len(new_models)} new models for {config_key}")
+        finally:
+            conn.close()
+
+        return len(new_models)
+
     def select_baselines(self, config_key: str) -> List[str]:
         """Select 4 fixed baseline models for gauntlet comparison.
 
@@ -352,6 +422,11 @@ class DistributedNNGauntlet:
             GauntletResult with evaluation outcomes
         """
         self._init_gauntlet_tables()
+
+        # Discover and register any new models from the models directory
+        new_count = self.discover_and_register_models(config_key)
+        if new_count > 0:
+            logger.info(f"[Gauntlet] Discovered {new_count} new models for {config_key}")
 
         run_id = str(uuid.uuid4())[:8]
         self._current_run = GauntletResult(
@@ -664,6 +739,11 @@ class DistributedNNGauntlet:
             GauntletResult with evaluation outcomes
         """
         self._init_gauntlet_tables()
+
+        # Discover and register any new models from the models directory
+        new_count = self.discover_and_register_models(config_key)
+        if new_count > 0:
+            logger.info(f"[Gauntlet] Discovered {new_count} new models for {config_key}")
 
         p2p_url = p2p_url or os.environ.get("RINGRIFT_P2P_URL", "http://localhost:8770")
 

@@ -271,6 +271,10 @@ class ModelCullingController:
         # Update last cull time
         self._last_cull[config_key] = time.time()
 
+        # Export cull manifest so sync respects the culled models
+        if archived:
+            self.export_cull_manifest()
+
         # Count all kept models: top quartile + uncertainty-protected
         all_kept = to_keep + protected_by_uncertainty
 
@@ -415,6 +419,81 @@ class ModelCullingController:
             return {"total_archived": total, "by_config": by_config}
         finally:
             conn.close()
+
+
+    def export_cull_manifest(self) -> Path:
+        """Export list of archived model IDs to a manifest file.
+
+        This manifest is used by sync_models.py to skip re-syncing culled models.
+        The manifest is synced between nodes before model sync.
+
+        Returns:
+            Path to the manifest file
+        """
+        manifest_path = self.model_dir / "cull_manifest.json"
+
+        conn = self._get_db_connection()
+        try:
+            cursor = conn.execute("PRAGMA table_info(elo_ratings)")
+            columns = {row[1] for row in cursor.fetchall()}
+
+            if "archived_at" not in columns:
+                # No archived models
+                manifest = {"archived_models": [], "updated_at": time.time()}
+            else:
+                id_col = "model_id" if "model_id" in columns else "participant_id"
+                cursor = conn.execute(f"""
+                    SELECT {id_col}, board_type, num_players, archived_at, archive_reason
+                    FROM elo_ratings
+                    WHERE archived_at IS NOT NULL AND archived_at > 0
+                """)
+
+                archived = []
+                for row in cursor.fetchall():
+                    archived.append({
+                        "model_id": row[0],
+                        "board_type": row[1],
+                        "num_players": row[2],
+                        "archived_at": row[3],
+                        "reason": row[4],
+                    })
+
+                manifest = {
+                    "archived_models": archived,
+                    "archived_ids": [m["model_id"] for m in archived],
+                    "updated_at": time.time(),
+                    "total_count": len(archived),
+                }
+
+            # Write manifest
+            import json
+            with open(manifest_path, "w") as f:
+                json.dump(manifest, f, indent=2)
+
+            logger.info(f"[Culling] Exported cull manifest with {len(manifest.get('archived_ids', []))} models")
+            return manifest_path
+
+        finally:
+            conn.close()
+
+    def load_cull_manifest(self) -> Set[str]:
+        """Load archived model IDs from manifest file.
+
+        Returns:
+            Set of archived model IDs
+        """
+        manifest_path = self.model_dir / "cull_manifest.json"
+        if not manifest_path.exists():
+            return set()
+
+        try:
+            import json
+            with open(manifest_path, "r") as f:
+                manifest = json.load(f)
+            return set(manifest.get("archived_ids", []))
+        except Exception as e:
+            logger.warning(f"[Culling] Failed to load cull manifest: {e}")
+            return set()
 
 
 def get_culling_controller(
