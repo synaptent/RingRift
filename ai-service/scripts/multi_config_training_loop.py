@@ -28,66 +28,57 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # Database sources for each config - databases that have games WITH moves
 # Format: (board_type, num_players) -> list of database paths
-# Updated to use verified canonical DBs with game_moves table
+# Uses canonical selfplay.db and diverse_synced per-config DBs
 # NOTE: selfplay_stats.db is for monitoring ONLY (no game_moves table)
+# NOTE: jsonl_converted_*.db have NO game_moves table - don't use for training
 CONFIG_DATABASES: Dict[Tuple[str, int], List[str]] = {
+    # Square8 configs - use selfplay.db (canonical, has moves)
     ("square8", 2): [
-        # Large multi-config DBs (filter by board_type/num_players in query)
-        "data/games/vast_training.db",  # 4668 games, 2.4M moves total
-        "data/games/lambda_h100_sync.db",  # 1193 games
-        "data/games/mac_sync/mac_studio_selfplay.db",  # 3567 games, 488K moves
-        # Dedicated square8 2p DBs
-        "data/canonical/canonical_square8_2p.db",  # 108 games
-        "data/selfplay/cluster_h100/5090_imports/5090_quad_selfplay.db",  # 964 games
-        "data/selfplay/aggregated/2xh100/mcts_nn_v5/square8_2p.db",  # 601 games
-        # Remote sync (new canonical selfplay)
-        "data/selfplay/remote_sync",
+        "data/games/selfplay.db",  # Canonical DB with game_moves
     ],
     ("square8", 3): [
-        "data/games/vast_training.db",  # 10739 games
-        "data/games/lambda_h100_sync.db",  # 2659 games
-        "data/selfplay/remote_sync",
+        "data/games/selfplay.db",
     ],
     ("square8", 4): [
-        "data/games/lambda_h100_sync.db",  # 2136 games
-        "data/selfplay/remote_sync",
+        "data/games/selfplay.db",
     ],
+    # Square19 configs - use diverse_synced per-config DBs
     ("square19", 2): [
-        "data/selfplay/cluster_h100/diverse/square19_2p.db",  # 100 games, 63K moves
-        "data/selfplay/remote_sync",
+        "data/games/selfplay.db",
+        "data/selfplay/diverse_synced/square19_2p.db",  # 72 games with moves
     ],
     ("square19", 3): [
-        "data/games/lambda_h100_sync.db",  # 323 games
-        "data/selfplay/cluster_h100/diverse/square19_3p.db",  # 100 games, 69K moves
-        "data/selfplay/remote_sync",
+        "data/games/selfplay.db",
+        "data/selfplay/diverse_synced/square19_3p.db",  # 50 games with moves
     ],
     ("square19", 4): [
-        "data/selfplay/remote_sync",
+        "data/games/selfplay.db",
+        "data/selfplay/diverse_synced/square19_4p.db",  # 46 games with moves
     ],
+    # Hexagonal configs - use selfplay.db
     ("hexagonal", 2): [
-        "data/games/mac_sync/mac_studio_selfplay.db",  # 10 games
-        "data/selfplay/remote_sync",
+        "data/games/selfplay.db",
     ],
     ("hexagonal", 3): [
-        "data/games/lambda_h100_sync.db",  # 302 games
-        "data/selfplay/remote_sync",
+        "data/games/selfplay.db",
     ],
     ("hexagonal", 4): [
-        "data/selfplay/remote_sync",
+        "data/games/selfplay.db",
     ],
 }
 
 # Training thresholds - trigger training when this many NEW games are available
+# Set low initially to trigger training quickly, adjust based on game generation rate
 THRESHOLDS: Dict[Tuple[str, int], int] = {
-    ("square8", 2): 500,
-    ("square8", 3): 200,
-    ("square8", 4): 200,
-    ("square19", 2): 50,  # Lower thresholds for configs with less data
-    ("square19", 3): 50,
-    ("square19", 4): 50,
-    ("hexagonal", 2): 50,
-    ("hexagonal", 3): 50,
-    ("hexagonal", 4): 50,
+    ("square8", 2): 100,   # Square8 has most data, can use higher threshold
+    ("square8", 3): 50,
+    ("square8", 4): 50,
+    ("square19", 2): 30,   # Square19/hex have fewer games, lower thresholds
+    ("square19", 3): 30,
+    ("square19", 4): 30,
+    ("hexagonal", 2): 30,
+    ("hexagonal", 3): 30,
+    ("hexagonal", 4): 30,
 }
 
 # Export settings per config: (max_games, sample_every, epochs)
