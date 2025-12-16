@@ -122,14 +122,18 @@ class AsyncLockWrapper:
 
     def __init__(self, lock: threading.RLock):
         self._lock = lock
+        self._acquired = False
 
     async def __aenter__(self):
         # Acquire lock in thread pool to avoid blocking event loop
         await asyncio.get_event_loop().run_in_executor(None, self._lock.acquire)
+        self._acquired = True
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        self._lock.release()
+        if self._acquired:
+            self._lock.release()
+            self._acquired = False
         return False
 
 
