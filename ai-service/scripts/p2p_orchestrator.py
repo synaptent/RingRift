@@ -50,6 +50,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 import yaml
 
+# Shared database integrity utilities
+from app.db.integrity import (
+    check_database_integrity,
+    check_and_repair_databases,
+)
+
 # HTTP server imports
 try:
     from aiohttp import web, ClientSession, ClientTimeout
@@ -142,91 +148,8 @@ def check_disk_has_capacity(threshold: float = None) -> Tuple[bool, float]:
     return (current < threshold, current)
 
 
-def check_database_integrity(db_path: Path) -> Tuple[bool, str]:
-    """Check SQLite database integrity.
-
-    Args:
-        db_path: Path to the SQLite database file
-
-    Returns:
-        Tuple of (is_healthy: bool, error_message: str or "ok")
-    """
-    try:
-        conn = sqlite3.connect(str(db_path), timeout=10.0)
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA integrity_check")
-        result = cursor.fetchone()
-        conn.close()
-        if result and result[0] == "ok":
-            return True, "ok"
-        else:
-            return False, result[0] if result else "unknown error"
-    except sqlite3.DatabaseError as e:
-        return False, str(e)
-    except Exception as e:
-        return False, f"check failed: {e}"
-
-
-def check_and_repair_databases(
-    data_dir: Path = None,
-    auto_remove: bool = True,
-    min_size_bytes: int = 1024 * 1024  # Only check DBs > 1MB
-) -> Dict[str, Any]:
-    """Scan for corrupted SQLite databases and remove them.
-
-    Args:
-        data_dir: Directory to scan (defaults to RINGRIFT_PATH/ai-service/data/games)
-        auto_remove: Whether to automatically remove corrupted DBs
-        min_size_bytes: Minimum file size to check (smaller files are skipped)
-
-    Returns:
-        Dict with counts: checked, healthy, corrupted, removed
-    """
-    if data_dir is None:
-        data_dir = Path(os.environ.get("RINGRIFT_PATH", "~/ringrift")).expanduser() / "ai-service" / "data" / "games"
-    results = {
-        "checked": 0,
-        "healthy": 0,
-        "corrupted": 0,
-        "removed": 0,
-        "corrupted_files": [],
-    }
-
-    if not data_dir.exists():
-        return results
-
-    corrupted_dir = data_dir / "corrupted"
-
-    for db_path in data_dir.glob("*.db"):
-        # Skip small files (likely empty/test DBs)
-        try:
-            if db_path.stat().st_size < min_size_bytes:
-                continue
-        except OSError:
-            continue
-
-        results["checked"] += 1
-        is_healthy, error_msg = check_database_integrity(db_path)
-
-        if is_healthy:
-            results["healthy"] += 1
-        else:
-            results["corrupted"] += 1
-            results["corrupted_files"].append(str(db_path))
-            print(f"[P2P] DB CORRUPTED: {db_path.name} - {error_msg}")
-
-            if auto_remove:
-                try:
-                    corrupted_dir.mkdir(parents=True, exist_ok=True)
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    backup_path = corrupted_dir / f"{db_path.stem}_{timestamp}.db.corrupted"
-                    db_path.rename(backup_path)
-                    results["removed"] += 1
-                    print(f"[P2P] Moved corrupted DB to {backup_path}")
-                except Exception as move_err:
-                    print(f"[P2P] Failed to move corrupted DB: {move_err}")
-
-    return results
+# Note: check_database_integrity and check_and_repair_databases are now imported
+# from app.db.integrity to avoid code duplication with unified_ai_loop.py
 
 
 async def peer_request(

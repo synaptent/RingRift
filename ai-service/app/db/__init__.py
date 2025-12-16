@@ -15,6 +15,12 @@ from app.db.parity_validator import (
     get_parity_mode,
     is_parity_validation_enabled,
 )
+from app.db.integrity import (
+    check_database_integrity,
+    check_and_repair_databases,
+    recover_corrupted_database,
+    get_database_stats,
+)
 
 __all__ = [
     "GameReplayDB",
@@ -30,4 +36,9 @@ __all__ = [
     "ParityMode",
     "get_parity_mode",
     "is_parity_validation_enabled",
+    # Database integrity
+    "check_database_integrity",
+    "check_and_repair_databases",
+    "recover_corrupted_database",
+    "get_database_stats",
 ]

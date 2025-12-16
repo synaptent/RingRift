@@ -1912,23 +1912,23 @@ class ConfigPriorityQueue:
                                 counts[config_key] = counts.get(config_key, 0) + 1
                                 break
 
-            # Supplement with Elo database counts
-            elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
-            if elo_db_path.exists():
-                conn = sqlite3.connect(elo_db_path)
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT board_type, num_players, COUNT(DISTINCT participant_id) as model_count
-                    FROM elo_ratings
-                    WHERE (participant_id LIKE 'ringrift_%' OR participant_id LIKE '%_nn_baseline%')
-                      AND participant_id NOT LIKE 'baseline_%'
-                    GROUP BY board_type, num_players
-                """)
-                for row in cursor.fetchall():
-                    config_key = f"{row[0]}_{row[1]}p"
-                    # Take max of filesystem and DB counts
-                    counts[config_key] = max(counts.get(config_key, 0), row[2])
-                conn.close()
+            # Supplement with Elo database counts via centralized service
+            if get_elo_service is not None:
+                try:
+                    elo_svc = get_elo_service()
+                    rows = elo_svc.execute_query("""
+                        SELECT board_type, num_players, COUNT(DISTINCT participant_id) as model_count
+                        FROM elo_ratings
+                        WHERE (participant_id LIKE 'ringrift_%' OR participant_id LIKE '%_nn_baseline%')
+                          AND participant_id NOT LIKE 'baseline_%'
+                        GROUP BY board_type, num_players
+                    """)
+                    for row in rows:
+                        config_key = f"{row[0]}_{row[1]}p"
+                        # Take max of filesystem and DB counts
+                        counts[config_key] = max(counts.get(config_key, 0), row[2])
+                except Exception as e:
+                    print(f"[Priority] Elo service query failed: {e}")
 
             self._trained_model_counts = counts
             self._model_counts_last_update = now
@@ -3889,24 +3889,21 @@ class TrainingScheduler:
                 if skipped_invalid > 0:
                     print(f"[Training] Skipped {skipped_invalid} invalid/empty databases")
 
-                # Elo-based quality filter: get models with sufficient Elo
+                # Elo-based quality filter: get models with sufficient Elo via centralized service
                 high_elo_models = set()
                 min_model_elo = 1300  # Minimum Elo to include games from this model
-                elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
-                if elo_db_path.exists():
+                if get_elo_service is not None:
                     try:
-                        elo_conn = sqlite3.connect(elo_db_path)
-                        elo_cursor = elo_conn.cursor()
-                        elo_cursor.execute("""
+                        elo_svc = get_elo_service()
+                        rows = elo_svc.execute_query("""
                             SELECT participant_id, rating FROM elo_ratings
                             WHERE rating >= ? AND games_played >= 5
                         """, (min_model_elo,))
-                        for row in elo_cursor.fetchall():
+                        for row in rows:
                             high_elo_models.add(row[0])
                             # Also add without prefix variations
                             if row[0].startswith("nn:"):
                                 high_elo_models.add(row[0][3:])
-                        elo_conn.close()
                         print(f"[Training] Elo filter: {len(high_elo_models)} models with Elo >= {min_model_elo}")
                     except Exception as e:
                         print(f"[Training] Elo filter skipped: {e}")
@@ -4274,24 +4271,19 @@ class ModelPromoter:
         candidates = []
 
         try:
-            # Query Elo database for candidates
-            elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
-            if not elo_db_path.exists():
+            # Query Elo database for candidates via centralized service
+            if get_elo_service is None:
                 return []
 
-            conn = sqlite3.connect(elo_db_path)
-            cursor = conn.cursor()
+            elo_svc = get_elo_service()
 
             # Find models that beat current best by threshold
-            cursor.execute("""
+            rows = elo_svc.execute_query("""
                 SELECT participant_id, board_type, num_players, rating, games_played
                 FROM elo_ratings
                 WHERE games_played >= ?
                 ORDER BY board_type, num_players, rating DESC
             """, (self.config.min_games,))
-
-            rows = cursor.fetchall()
-            conn.close()
 
             # Group by config and find candidates
             by_config: Dict[str, List[Tuple]] = {}
@@ -4471,25 +4463,20 @@ class AdaptiveCurriculum:
             return {}
 
         try:
-            # Query Elo by config
-            elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
-            if not elo_db_path.exists():
+            # Query Elo by config via centralized service
+            if get_elo_service is None:
                 return {}
 
-            conn = sqlite3.connect(elo_db_path)
-            cursor = conn.cursor()
+            elo_svc = get_elo_service()
 
             # Get best Elo for each config
             # Include both ringrift_* models and *_nn_baseline* models
-            cursor.execute("""
+            rows = elo_svc.execute_query("""
                 SELECT board_type, num_players, MAX(rating) as best_elo
                 FROM elo_ratings
                 WHERE (participant_id LIKE 'ringrift_%' OR participant_id LIKE '%_nn_baseline%')
                 GROUP BY board_type, num_players
             """)
-
-            rows = cursor.fetchall()
-            conn.close()
 
             if not rows:
                 return {}
@@ -5567,36 +5554,34 @@ class UnifiedAILoop:
             # Update model promotions gauge from state counter
             MODEL_PROMOTIONS.set(self.state.total_promotions)
 
-            # Update Elo and win rates from Elo database
-            elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
-            if elo_db_path.exists():
-                conn = sqlite3.connect(elo_db_path)
-                cursor = conn.cursor()
+            # Update Elo and win rates from Elo database via centralized service
+            if get_elo_service is not None:
+                try:
+                    elo_svc = get_elo_service()
 
-                # Get best Elo for each config (both ringrift_* and *_nn_baseline* models)
-                cursor.execute("""
-                    SELECT board_type, num_players, participant_id, rating, games_played
-                    FROM elo_ratings
-                    WHERE (participant_id LIKE 'ringrift_%' OR participant_id LIKE '%_nn_baseline%')
-                    ORDER BY board_type, num_players, rating DESC
-                """)
+                    # Get best Elo for each config (both ringrift_* and *_nn_baseline* models)
+                    rows = elo_svc.execute_query("""
+                        SELECT board_type, num_players, participant_id, rating, games_played
+                        FROM elo_ratings
+                        WHERE (participant_id LIKE 'ringrift_%' OR participant_id LIKE '%_nn_baseline%')
+                        ORDER BY board_type, num_players, rating DESC
+                    """)
 
-                rows = cursor.fetchall()
-                seen_configs: Set[str] = set()
+                    seen_configs: Set[str] = set()
 
-                for row in rows:
-                    config_key = f"{row[0]}_{row[1]}p"
-                    if config_key not in seen_configs:
-                        seen_configs.add(config_key)
-                        MODEL_ELO.labels(config=config_key, model="best").set(row[3])
+                    for row in rows:
+                        config_key = f"{row[0]}_{row[1]}p"
+                        if config_key not in seen_configs:
+                            seen_configs.add(config_key)
+                            MODEL_ELO.labels(config=config_key, model="best").set(row[3])
 
-                        # Estimate win rate from Elo (simplified)
-                        # Win rate ≈ 1 / (1 + 10^((1500 - elo) / 400))
-                        elo = row[3]
-                        estimated_win_rate = 1.0 / (1.0 + 10 ** ((1500 - elo) / 400))
-                        MODEL_WIN_RATE.labels(config=config_key).set(estimated_win_rate)
-
-                conn.close()
+                            # Estimate win rate from Elo (simplified)
+                            # Win rate ≈ 1 / (1 + 10^((1500 - elo) / 400))
+                            elo = row[3]
+                            estimated_win_rate = 1.0 / (1.0 + 10 ** ((1500 - elo) / 400))
+                            MODEL_WIN_RATE.labels(config=config_key).set(estimated_win_rate)
+                except Exception as e:
+                    print(f"[Metrics] Elo service query failed: {e}")
 
             # Update max iteration from training runs directory
             runs_dir = AI_SERVICE_ROOT / "runs"

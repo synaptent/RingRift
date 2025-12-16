@@ -217,6 +217,36 @@ class EloService:
 
         return True, "No conflicting role held"
 
+    def execute_query(
+        self,
+        query: str,
+        params: Tuple = ()
+    ) -> List[sqlite3.Row]:
+        """Execute a read-only query and return results.
+
+        This provides a centralized way to run custom queries against the Elo
+        database while benefiting from connection pooling and thread-safety.
+
+        Args:
+            query: SQL query string (should be read-only SELECT)
+            params: Query parameters tuple
+
+        Returns:
+            List of sqlite3.Row objects (supports both index and name access)
+
+        Example:
+            elo = get_elo_service()
+            rows = elo.execute_query(
+                "SELECT participant_id, rating FROM elo_ratings WHERE rating > ?",
+                (1300,)
+            )
+            for row in rows:
+                print(f"{row['participant_id']}: {row['rating']}")
+        """
+        conn = self._get_connection()
+        cursor = conn.execute(query, params)
+        return cursor.fetchall()
+
     def _init_db(self):
         """Initialize database schema with all required tables."""
         with self._transaction() as conn:
