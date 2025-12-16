@@ -17,6 +17,9 @@ LOCAL_DIR="/Users/armand/Development/RingRift/ai-service/data/games"
 SCRIPT_DIR="/Users/armand/Development/RingRift/ai-service/scripts"
 LOG_FILE="/tmp/ringrift_sync.log"
 
+# Disk usage thresholds (consistent with p2p_orchestrator.py and unified_ai_loop.py)
+MAX_DISK_USAGE_PERCENT=${RINGRIFT_MAX_DISK_PERCENT:-70}
+
 # Node configurations: name:ip:remote_path
 declare -a NODES=(
     "vast-3060ti:100.117.81.49:/root/ringrift/ai-service/data/games"
@@ -32,6 +35,14 @@ log() {
 }
 
 mkdir -p "$LOCAL_DIR"
+
+# Check disk usage before syncing
+DISK_USAGE=$(df -P "$LOCAL_DIR" 2>/dev/null | awk 'NR==2 {gsub(/%/, ""); print $5}')
+if [[ "$DISK_USAGE" -ge "$MAX_DISK_USAGE_PERCENT" ]]; then
+    log "[ERROR] Disk usage ${DISK_USAGE}% exceeds limit ${MAX_DISK_USAGE_PERCENT}% - aborting sync"
+    log "[INFO] Run disk cleanup: python scripts/disk_monitor.py --force"
+    exit 1
+fi
 
 log "Starting data sync from ${#NODES[@]} nodes..."
 
