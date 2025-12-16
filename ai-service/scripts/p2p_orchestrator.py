@@ -18365,7 +18365,7 @@ print(json.dumps({{
                                 break
 
                 # Check for dead peers
-                self._check_dead_peers()
+                await self._check_dead_peers_async()
 
                 # Self-healing: detect network partition and trigger Tailscale-priority mode
                 if self._detect_network_partition():
@@ -19022,6 +19022,87 @@ print(json.dumps({{
         self.role = NodeRole.FOLLOWER
         self._save_state()
         return True
+
+    async def _check_dead_peers_async(self):
+        """Check for peers that have stopped responding (async version).
+
+        This version uses AsyncLockWrapper to avoid blocking the event loop
+        when acquiring the peers_lock.
+        """
+        now = time.time()
+        dead_peers = []
+        peers_to_purge = []
+
+        async with AsyncLockWrapper(self.peers_lock):
+            for node_id, info in self.peers.items():
+                if not info.is_alive() and node_id != self.node_id:
+                    dead_peers.append(node_id)
+                    # Retire long-dead peers so they don't pollute active scheduling.
+                    try:
+                        dead_for = now - float(getattr(info, "last_heartbeat", 0.0) or 0.0)
+                    except Exception:
+                        dead_for = float("inf")
+                    if not getattr(info, "retired", False) and dead_for >= PEER_RETIRE_AFTER_SECONDS:
+                        info.retired = True
+                        info.retired_at = now
+                        print(f"[P2P] Retiring peer {node_id} (offline for {int(dead_for)}s)")
+                elif info.is_alive() and getattr(info, "retired", False):
+                    # Peer came back: clear retirement.
+                    info.retired = False
+                    info.retired_at = 0.0
+
+            for node_id in dead_peers:
+                info = self.peers.get(node_id)
+                if info and getattr(info, "retired", False):
+                    continue
+                print(f"[P2P] Peer {node_id} is dead (no heartbeat for {PEER_TIMEOUT}s)")
+
+            # Auto-purge very old retired peers
+            for node_id, info in self.peers.items():
+                if getattr(info, "retired", False):
+                    retired_at = getattr(info, "retired_at", 0.0) or 0.0
+                    if retired_at > 0 and (now - retired_at) >= PEER_PURGE_AFTER_SECONDS:
+                        peers_to_purge.append(node_id)
+
+            for node_id in peers_to_purge:
+                del self.peers[node_id]
+                print(f"[P2P] Auto-purged stale peer: {node_id} (retired for >{PEER_PURGE_AFTER_SECONDS}s)")
+
+        # Clear stale leader IDs after restarts/partitions
+        if self.leader_id and not self._is_leader_lease_valid():
+            print(f"[P2P] Clearing stale/expired leader lease: leader_id={self.leader_id}")
+            self.leader_id = None
+            self.leader_lease_id = ""
+            self.leader_lease_expires = 0.0
+            self.last_lease_renewal = 0.0
+            self.role = NodeRole.FOLLOWER
+            asyncio.create_task(self._start_election())
+
+        # If leader is dead, start election
+        if self.leader_id and self.leader_id != self.node_id:
+            async with AsyncLockWrapper(self.peers_lock):
+                leader = self.peers.get(self.leader_id)
+                peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
+            if leader:
+                conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
+                if not self._is_leader_eligible(leader, conflict_keys):
+                    reason = "dead" if not leader.is_alive() else "ineligible"
+                    print(f"[P2P] Leader {self.leader_id} is {reason}, starting election")
+                    self.leader_id = None
+                    self.leader_lease_id = ""
+                    self.leader_lease_expires = 0.0
+                    self.last_lease_renewal = 0.0
+                    self.role = NodeRole.FOLLOWER
+                    asyncio.create_task(self._start_election())
+
+        # If we're leaderless, periodically retry elections
+        if not self.leader_id and not self.election_in_progress:
+            now = time.time()
+            backoff_seconds = max(LEADER_LEASE_RENEW_INTERVAL, ELECTION_TIMEOUT * 3)
+            last_attempt = float(getattr(self, "last_election_attempt", 0.0) or 0.0)
+            if now - last_attempt >= backoff_seconds:
+                self.last_election_attempt = now
+                asyncio.create_task(self._start_election())
 
     def _check_dead_peers(self):
         """Check for peers that have stopped responding."""
