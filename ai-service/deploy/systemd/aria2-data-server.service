@@ -1,0 +1,31 @@
+[Unit]
+Description=RingRift Aria2 Data Server
+Documentation=https://github.com/an0mium/RingRift
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+Environment=PYTHONPATH=/home/ubuntu/ringrift/ai-service
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python scripts/aria2_data_sync.py serve --port 8766
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/data
+ReadWritePaths=/home/ubuntu/ringrift/ai-service/logs
+
+# Resource limits
+MemoryMax=2G
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
