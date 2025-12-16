@@ -197,7 +197,11 @@ def reserve_games_from_db(
     holdout_percent: int = DEFAULT_HOLDOUT_PERCENT,
     dry_run: bool = False,
 ) -> List[HoldoutGame]:
-    """Reserve games from a SQLite game database for holdout."""
+    """Reserve games from a SQLite game database for holdout.
+
+    Supports both legacy schema (game_state column) and v7 schema
+    (separate game_moves and game_initial_state tables).
+    """
     if not db_path.exists():
         return []
 
@@ -208,14 +212,33 @@ def reserve_games_from_db(
         game_conn = sqlite3.connect(db_path)
         game_conn.row_factory = sqlite3.Row
 
-        # Query all games - filter locally since holdout_games is in different db
+        # Check which schema we have
+        cursor = game_conn.execute("PRAGMA table_info(games)")
+        columns = {col[1] for col in cursor.fetchall()}
+        has_game_state = "game_state" in columns
+        has_total_moves = "total_moves" in columns
+
+        # Check for v7 schema tables
+        cursor = game_conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {row[0] for row in cursor.fetchall()}
+        has_game_moves = "game_moves" in tables
+        has_initial_state = "game_initial_state" in tables
+
+        # Query games based on schema
         try:
-            cursor = game_conn.execute("""
-                SELECT game_id, board_type, num_players, game_state
-                FROM games
-            """)
-        except sqlite3.OperationalError as e:
-            # Table may not exist or have different schema
+            if has_game_state:
+                # Legacy schema
+                cursor = game_conn.execute("""
+                    SELECT game_id, board_type, num_players, game_state
+                    FROM games
+                """)
+            else:
+                # v7 schema - just get metadata, we'll fetch moves separately
+                cursor = game_conn.execute("""
+                    SELECT game_id, board_type, num_players, total_moves
+                    FROM games
+                """)
+        except sqlite3.OperationalError:
             game_conn.close()
             return []
 
@@ -236,15 +259,49 @@ def reserve_games_from_db(
             if not is_holdout_game(game_id, holdout_percent):
                 continue
 
-            # Parse game state to count positions
+            # Get position count and game data based on schema
             num_positions = 0
-            game_data = row["game_state"]
-            if game_data:
-                try:
-                    state = json.loads(game_data)
-                    num_positions = len(state.get("moveHistory", []))
-                except json.JSONDecodeError:
-                    pass
+            game_data = None
+
+            if has_game_state:
+                # Legacy schema
+                game_data = row["game_state"]
+                if game_data:
+                    try:
+                        state = json.loads(game_data)
+                        num_positions = len(state.get("moveHistory", []))
+                    except json.JSONDecodeError:
+                        pass
+            elif has_total_moves:
+                # v7 schema - use total_moves from games table
+                num_positions = row["total_moves"] or 0
+
+                # Reconstruct game_data from v7 tables for evaluation later
+                if has_game_moves and has_initial_state:
+                    try:
+                        # Get initial state
+                        init_row = game_conn.execute(
+                            "SELECT state_json FROM game_initial_state WHERE game_id = ?",
+                            (game_id,)
+                        ).fetchone()
+
+                        # Get moves
+                        moves_cursor = game_conn.execute(
+                            "SELECT move_json FROM game_moves WHERE game_id = ? ORDER BY move_index",
+                            (game_id,)
+                        )
+                        moves = [json.loads(m[0]) for m in moves_cursor]
+
+                        # Build game_data structure
+                        game_data = json.dumps({
+                            "initialState": json.loads(init_row[0]) if init_row else {},
+                            "moveHistory": moves,
+                            "board_type": row["board_type"],
+                            "num_players": row["num_players"],
+                        })
+                    except Exception:
+                        # If reconstruction fails, still reserve but without game_data
+                        pass
 
             holdout = HoldoutGame(
                 game_id=game_id,

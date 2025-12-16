@@ -1404,6 +1404,7 @@ class P2POrchestrator:
         host: str = "0.0.0.0",
         port: int = DEFAULT_PORT,
         known_peers: List[str] = None,
+        relay_peers: List[str] = None,
         ringrift_path: str = None,
         advertise_host: Optional[str] = None,
         advertise_port: Optional[int] = None,
@@ -1415,6 +1416,8 @@ class P2POrchestrator:
         self.host = host
         self.port = port
         self.known_peers = known_peers or []
+        # Peers that should always receive relay heartbeats (for NAT-blocked nodes)
+        self.relay_peers: Set[str] = set(relay_peers or [])
         self.ringrift_path = ringrift_path or self._detect_ringrift_path()
 
         # Storage configuration: "disk" uses ai-service/data, "ramdrive" uses /dev/shm
@@ -1697,6 +1700,8 @@ class P2POrchestrator:
         print(f"[P2P] RingRift path: {self.ringrift_path}")
         print(f"[P2P] Version: {self.build_version}")
         print(f"[P2P] Known peers: {self.known_peers}")
+        if self.relay_peers:
+            print(f"[P2P] Relay peers (forced relay mode): {list(self.relay_peers)}")
         if self.auth_token:
             print(f"[P2P] Auth: enabled via {AUTH_TOKEN_ENV}")
         else:
@@ -17891,9 +17896,11 @@ print(json.dumps({{
                         continue
 
                     # Use relay heartbeat for HTTPS endpoints (they're proxies/relays)
-                    if scheme == "https":
-                        # HTTPS endpoint = relay/proxy, use relay heartbeat
-                        relay_url = f"https://{host}" if port == 443 else f"https://{host}:{port}"
+                    # or for explicitly configured relay peers (--relay-peers flag)
+                    use_relay = scheme == "https" or peer_addr in self.relay_peers
+                    if use_relay:
+                        # Relay/proxy endpoint, use relay heartbeat
+                        relay_url = f"{scheme}://{host}" if port in (80, 443) else f"{scheme}://{host}:{port}"
                         result = await self._send_relay_heartbeat(relay_url)
                         if result.get("success"):
                             # Relay heartbeat already updates peers and leader
@@ -24483,6 +24490,7 @@ def main():
         help=f"Port to advertise to peers (or set {ADVERTISE_PORT_ENV})",
     )
     parser.add_argument("--peers", help="Comma-separated list of known peers (host[:port] or http(s)://host[:port])")
+    parser.add_argument("--relay-peers", help="Comma-separated list of peers to use relay heartbeats with (for NAT-blocked nodes)")
     parser.add_argument("--ringrift-path", help="Path to RingRift installation")
     parser.add_argument("--auth-token", help=f"Shared auth token (or set {AUTH_TOKEN_ENV})")
     parser.add_argument("--require-auth", action="store_true", help="Require auth token to be set")
@@ -24495,11 +24503,16 @@ def main():
     if args.peers:
         known_peers = [p.strip() for p in args.peers.split(',')]
 
+    relay_peers = []
+    if args.relay_peers:
+        relay_peers = [p.strip() for p in args.relay_peers.split(',')]
+
     orchestrator = P2POrchestrator(
         node_id=args.node_id,
         host=args.host,
         port=args.port,
         known_peers=known_peers,
+        relay_peers=relay_peers,
         ringrift_path=args.ringrift_path,
         advertise_host=args.advertise_host,
         advertise_port=args.advertise_port,
