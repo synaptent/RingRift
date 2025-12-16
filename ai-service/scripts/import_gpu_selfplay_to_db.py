@@ -31,19 +31,51 @@ from app.models import BoardType, GameState, Move, MoveType, Position
 from app.training.generate_data import create_initial_state
 
 
-def parse_position(pos_dict: Dict[str, Any]) -> Position:
-    """Parse a position dict into a Position object."""
-    return Position(
-        x=pos_dict["x"],
-        y=pos_dict["y"],
-        z=pos_dict.get("z"),
-    )
+def parse_position(pos_dict: Dict[str, Any], board_type: BoardType = None) -> Position:
+    """Parse a position dict into a Position object.
+
+    For hexagonal boards, converts GPU array indices (0-24) to canonical
+    axial coordinates (-12 to 12). GPU selfplay uses array-based indexing
+    while the canonical game engine uses axial coordinates.
+
+    Args:
+        pos_dict: Position dict with 'x', 'y', and optional 'z' keys
+        board_type: Board type (HEXAGONAL triggers coordinate conversion)
+
+    Returns:
+        Position with coordinates in canonical space
+    """
+    x = pos_dict["x"]
+    y = pos_dict["y"]
+    z = pos_dict.get("z")
+
+    # Convert GPU array indices to canonical axial coordinates for hex boards
+    if board_type == BoardType.HEXAGONAL:
+        # GPU uses array indices 0-24, canonical uses axial coords -12 to 12
+        HEX_RADIUS = 12
+        x = x - HEX_RADIUS
+        y = y - HEX_RADIUS
+        # Compute z from axial constraint: x + y + z = 0
+        z = -x - y
+
+    return Position(x=x, y=y, z=z)
 
 
-def parse_move(move_dict: Dict[str, Any], move_number: int, timestamp: str) -> Optional[Move]:
+def parse_move(
+    move_dict: Dict[str, Any],
+    move_number: int,
+    timestamp: str,
+    board_type: BoardType = None,
+) -> Optional[Move]:
     """Parse a move dict into a Move object.
 
     Returns None for unknown or bookkeeping-only move types (e.g. unknown_6/NO_ACTION).
+
+    Args:
+        move_dict: Move data from GPU JSONL
+        move_number: Sequential move number
+        timestamp: Move timestamp
+        board_type: Board type for coordinate conversion (HEXAGONAL converts GPU→axial)
     """
     move_type_str = str(move_dict.get("type") or "").strip()
     if not move_type_str:
@@ -61,12 +93,12 @@ def parse_move(move_dict: Dict[str, Any], move_number: int, timestamp: str) -> O
     except Exception as exc:
         raise ValueError(f"Unknown MoveType for GPU import: {move_type_str!r}") from exc
 
-    # Parse positions
-    from_pos = parse_position(move_dict["from"]) if "from" in move_dict else None
-    to_pos = parse_position(move_dict["to"]) if "to" in move_dict else None
+    # Parse positions with coordinate conversion for hex boards
+    from_pos = parse_position(move_dict["from"], board_type) if "from" in move_dict else None
+    to_pos = parse_position(move_dict["to"], board_type) if "to" in move_dict else None
     capture_target_dict = move_dict.get("capture_target") or move_dict.get("captureTarget")
     capture_target = (
-        parse_position(capture_target_dict)
+        parse_position(capture_target_dict, board_type)
         if isinstance(capture_target_dict, dict)
         else None
     )
@@ -372,14 +404,14 @@ def import_game(
             num_players=num_players,
         )
 
-    # Parse moves
+    # Parse moves with coordinate conversion for hex boards
     moves_data = game_record.get("moves", [])
     timestamp = game_record.get("timestamp", datetime.now().isoformat())
 
     moves: List[Move] = []
     for i, move_dict in enumerate(moves_data):
         try:
-            move = parse_move(move_dict, i + 1, timestamp)
+            move = parse_move(move_dict, i + 1, timestamp, board_type)
             if move is not None:  # Skip unknown/bookkeeping move types
                 moves.append(move)
         except Exception as e:
