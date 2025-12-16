@@ -370,3 +370,115 @@ def test_compute_had_any_action_returns_true_after_place_ring():
 
     # PLACE_RING is a real action, so had_any_action should be True
     assert compute_had_any_action_this_turn(state) is True
+
+
+# -----------------------------------------------------------------------------
+# Regression test for forced_elimination → current_player parity (RR-PARITY-FIX-2025-12-16)
+# -----------------------------------------------------------------------------
+
+def test_forced_elimination_rotates_player_correctly():
+    """
+    After FORCED_ELIMINATION, current_player must advance to the next non-eliminated player.
+    
+    This is a regression test for the TS↔Python parity divergence fixed in RR-PARITY-FIX-2025-12-16.
+    
+    Root cause:
+    - TypeScript uses `computeNextNonEliminatedPlayer(gameState, move.player, numPlayers)` to compute
+      the next player after forced_elimination, starting from `move.player`.
+    - Python was using `_rotate_to_next_active_player()` which starts from `game_state.current_player`.
+    - When `move.player != game_state.current_player` (which can happen in certain edge cases),
+      the two engines would disagree on the next player.
+    
+    Fix:
+    - Python now uses `_end_turn()` which properly handles the turn rotation to match TS semantics.
+    
+    Per RR-CANON-R070: forced_elimination is the 7th and final phase of a turn.
+    After FE, the turn ends and rotates to the next player.
+    """
+    state = _make_minimal_state(GamePhase.FORCED_ELIMINATION, current_player=1)
+    
+    # Ensure player 1 has stacks (needed for FE to be valid)
+    from app.models import RingStack
+    stack_pos = Position(x=3, y=3)
+    state.board.stacks[stack_pos.to_key()] = RingStack(
+        position=stack_pos,
+        rings=[1, 1],
+        stackHeight=2,
+        capHeight=2,
+        controllingPlayer=1,
+    )
+    
+    # Create a FORCED_ELIMINATION move from player 1
+    move = Move(
+        id="fe1",
+        type=MoveType.FORCED_ELIMINATION,
+        player=1,
+        to=stack_pos,
+        timestamp=datetime.now(),
+        thinkTime=0,
+        moveNumber=1,
+    )
+    
+    inp = PhaseTransitionInput(game_state=state, last_move=move, trace_mode=False)
+    advance_phases(inp)
+    
+    # After player 1's FE, it should be player 2's turn in RING_PLACEMENT
+    assert state.current_player == 2, (
+        f"Expected current_player=2 after player 1's FE, got {state.current_player}"
+    )
+    assert state.current_phase == GamePhase.RING_PLACEMENT, (
+        f"Expected phase=RING_PLACEMENT after FE, got {state.current_phase}"
+    )
+
+
+def test_forced_elimination_skips_eliminated_players():
+    """
+    FORCED_ELIMINATION rotation must skip players who are permanently eliminated.
+    
+    Per RR-CANON-R201: Players without ANY rings (controlled, buried, or in hand) are permanently
+    eliminated and must be skipped during turn rotation.
+    
+    This test ensures the rotation after FE properly skips eliminated players.
+    """
+    state = _make_minimal_state(GamePhase.FORCED_ELIMINATION, current_player=1)
+    
+    # Make player 2 eliminated (no rings in hand, no stacks)
+    p2 = next(p for p in state.players if p.player_number == 2)
+    p2.rings_in_hand = 0
+    p2.eliminated_rings = 18  # All rings eliminated
+    
+    # Player 1 still has a stack (needed for FE)
+    from app.models import RingStack
+    stack_pos = Position(x=3, y=3)
+    state.board.stacks[stack_pos.to_key()] = RingStack(
+        position=stack_pos,
+        rings=[1, 1],
+        stackHeight=2,
+        capHeight=2,
+        controllingPlayer=1,
+    )
+    
+    move = Move(
+        id="fe1",
+        type=MoveType.FORCED_ELIMINATION,
+        player=1,
+        to=stack_pos,
+        timestamp=datetime.now(),
+        thinkTime=0,
+        moveNumber=1,
+    )
+    
+    inp = PhaseTransitionInput(game_state=state, last_move=move, trace_mode=False)
+    advance_phases(inp)
+    
+    # In a 2-player game with player 2 eliminated, player 1 should get the next turn.
+    # But since player 1 just finished their turn, and player 2 is eliminated,
+    # the game should either:
+    # 1. Rotate back to player 1 (if player 1 still has material), or
+    # 2. End in victory if player 1 caused player 2's elimination
+    #
+    # With our minimal state setup, player 1 should get the next turn since player 2
+    # has no material.
+    assert state.current_player == 1, (
+        f"Expected current_player=1 (rotation skips eliminated player 2), got {state.current_player}"
+    )
