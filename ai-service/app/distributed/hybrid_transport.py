@@ -1,15 +1,24 @@
-"""Hybrid Transport Layer - HTTP with SSH Fallback.
+"""Hybrid Transport Layer - Multi-Protocol Fallback.
 
 Provides seamless communication with cluster nodes by automatically
-falling back to SSH when HTTP fails. This makes the P2P network
-self-healing for Vast.ai instances with userland Tailscale.
+falling back through multiple transport protocols. This makes the P2P
+network self-healing for hard-to-reach nodes like Vast.ai instances.
 
-Architecture:
-    HTTP Request
+Architecture (API requests):
+    HTTP Request (direct)
         ↓ (fail)
-    Tailscale IP Retry
+    Tailscale IP (mesh network)
         ↓ (fail)
-    SSH Transport Fallback
+    Cloudflare Zero Trust (tunnel)
+        ↓ (fail)
+    SSH Transport (port forward)
+        ↓
+    Success or Final Failure
+
+Architecture (large file transfers):
+    aria2 (multi-source parallel download)
+        ↓ (fail)
+    rsync over SSH
         ↓
     Success or Final Failure
 
@@ -18,8 +27,18 @@ Usage:
 
     transport = HybridTransport()
 
-    # Automatically tries HTTP, then Tailscale, then SSH
+    # Automatically tries HTTP → Tailscale → Cloudflare → SSH
     result = await transport.send_heartbeat(node_id, self_info)
+
+    # Configure cloudflare tunnel for a node
+    transport.configure_cloudflare(node_id, "ringrift-node.tunnel.example.com")
+
+    # Large file transfer via aria2
+    success, path = await transport.download_file(
+        node_id,
+        urls=["http://node1/model.pth", "http://node2/model.pth"],
+        local_path="/tmp/model.pth"
+    )
 """
 
 from __future__ import annotations
@@ -427,6 +446,17 @@ class HybridTransport:
         else:
             state.record_tailscale_failure()
 
+        # Try Cloudflare Zero Trust tunnel
+        if state.should_try_cloudflare():
+            success, response = await self._try_cloudflare(
+                node_id, path, method, payload, timeout
+            )
+            if success:
+                state.record_cloudflare_success()
+                return True, response
+            else:
+                state.record_cloudflare_failure()
+
         # Try SSH fallback for Vast nodes
         if node_id.startswith("vast-") and command_type:
             # Mark SSH as potentially available for Vast nodes
@@ -566,11 +596,83 @@ class HybridTransport:
                 "preferred_transport": state.preferred_transport.value,
                 "http_failures": state.http_consecutive_failures,
                 "http_last_success": state.http_last_success,
+                "tailscale_failures": state.tailscale_consecutive_failures,
+                "cloudflare_available": state.cloudflare_tunnel is not None,
+                "cloudflare_failures": state.cloudflare_consecutive_failures,
+                "aria2_available": state.aria2_available,
                 "ssh_available": state.ssh_available,
                 "ssh_successes": state.ssh_consecutive_successes,
                 "ssh_last_success": state.ssh_last_success,
             }
         return stats
+
+    def configure_cloudflare(self, node_id: str, tunnel_hostname: str) -> None:
+        """Configure Cloudflare Zero Trust tunnel for a node.
+
+        Args:
+            node_id: Target node identifier
+            tunnel_hostname: Cloudflare tunnel hostname (e.g., 'node.tunnel.example.com')
+        """
+        state = self._get_state(node_id)
+        state.cloudflare_tunnel = tunnel_hostname
+        state.cloudflare_consecutive_failures = 0
+        logger.info(f"[Transport] {node_id}: Configured Cloudflare tunnel {tunnel_hostname}")
+
+    def configure_aria2(self, node_id: str, available: bool = True) -> None:
+        """Configure aria2 availability for a node.
+
+        Args:
+            node_id: Target node identifier
+            available: Whether aria2 is available for this node
+        """
+        state = self._get_state(node_id)
+        state.aria2_available = available
+        logger.info(f"[Transport] {node_id}: aria2 {'enabled' if available else 'disabled'}")
+
+    async def download_file(
+        self,
+        node_id: str,
+        urls: List[str],
+        local_path: str,
+    ) -> Tuple[bool, Optional[str]]:
+        """Download a file using aria2 with multi-source parallel download.
+
+        Best for large files like model checkpoints where multiple nodes
+        may have copies.
+
+        Args:
+            node_id: Primary node identifier (for tracking)
+            urls: List of URLs to download from (aria2 will use all)
+            local_path: Local path to save the file
+
+        Returns:
+            Tuple of (success, local_path or None)
+        """
+        state = self._get_state(node_id)
+
+        # Try aria2 first if available
+        if state.should_try_aria2() or len(urls) > 1:
+            success, path = await self._try_aria2(node_id, urls, local_path)
+            if success:
+                return True, path
+
+        # Fallback to simple HTTP download from first URL
+        if urls:
+            try:
+                from aiohttp import ClientSession, ClientTimeout
+                timeout = ClientTimeout(total=300, connect=10)
+                async with ClientSession(timeout=timeout) as session:
+                    async with session.get(urls[0]) as resp:
+                        if resp.status == 200:
+                            Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+                            with open(local_path, "wb") as f:
+                                async for chunk in resp.content.iter_chunked(1024 * 1024):
+                                    f.write(chunk)
+                            return True, local_path
+            except Exception as e:
+                logger.debug(f"HTTP download failed: {e}")
+
+        return False, None
 
     async def probe_all_transports(
         self,
@@ -601,6 +703,13 @@ class HybridTransport:
         start = time.time()
         success, _ = await self._try_tailscale(node_id, port, "/health", "GET", None, 10)
         results["tailscale"] = (success, (time.time() - start) * 1000)
+
+        # Probe Cloudflare
+        state = self._get_state(node_id)
+        if state.cloudflare_tunnel:
+            start = time.time()
+            success, _ = await self._try_cloudflare(node_id, "/health", "GET", None, 10)
+            results["cloudflare"] = (success, (time.time() - start) * 1000)
 
         # Probe SSH
         ssh = await self._get_ssh_transport()
@@ -663,6 +772,7 @@ async def diagnose_node_connectivity(
         "best_latency_ms": round(best_latency, 1) if best_transport else None,
         "recommendation": (
             "SSH recommended" if best_transport == "ssh" else
+            "Cloudflare tunnel recommended" if best_transport == "cloudflare" else
             "Tailscale recommended" if best_transport == "tailscale" else
             "HTTP working normally" if best_transport == "http" else
             "Node unreachable via all transports"
