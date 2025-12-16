@@ -43,6 +43,20 @@ from typing import Any, Dict, List, Optional, Tuple
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Unified resource checking utilities (80% max utilization)
+try:
+    from app.utils.resource_guard import (
+        get_disk_usage as unified_get_disk_usage,
+        get_gpu_memory_usage as unified_get_gpu_usage,
+        LIMITS as RESOURCE_LIMITS,
+    )
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    unified_get_disk_usage = None
+    unified_get_gpu_usage = None
+    RESOURCE_LIMITS = None
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [Monitor] %(levelname)s: %(message)s',
@@ -216,8 +230,22 @@ def check_gpu_utilization() -> Optional[int]:
 
 
 def check_disk_usage() -> Tuple[float, float]:
-    """Check disk usage. Returns (percent_used, free_gb)."""
+    """Check disk usage. Returns (percent_used, free_gb).
+
+    Uses unified resource_guard utilities when available for consistent
+    80% max utilization enforcement across the codebase.
+    """
     data_dir = AI_SERVICE_ROOT / "data"
+
+    # Use unified utilities when available
+    if HAS_RESOURCE_GUARD and unified_get_disk_usage is not None:
+        try:
+            percent, free_gb, _ = unified_get_disk_usage(str(data_dir))
+            return percent, free_gb
+        except Exception:
+            pass  # Fall through to original implementation
+
+    # Fallback to original implementation
     try:
         total, used, free = shutil.disk_usage(str(data_dir))
         percent = (used / total) * 100

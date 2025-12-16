@@ -43,6 +43,17 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+# Unified resource checking utilities (80% max utilization)
+try:
+    from app.utils.resource_guard import (
+        get_disk_usage as unified_get_disk_usage,
+        LIMITS as RESOURCE_LIMITS,
+    )
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    unified_get_disk_usage = None
+    RESOURCE_LIMITS = None
 
 # Disk monitoring thresholds - 70% limit enforced as of 2025-12-15
 DISK_WARNING_THRESHOLD = 65  # Pause selfplay
@@ -106,7 +117,20 @@ def load_weights_from_profile(
 
 
 def get_disk_usage_percent(path: str = "/") -> int:
-    """Get disk usage percentage for the filesystem containing path."""
+    """Get disk usage percentage for the filesystem containing path.
+
+    Uses unified resource_guard utilities when available for consistent
+    80% max utilization enforcement across the codebase.
+    """
+    # Use unified utilities when available
+    if HAS_RESOURCE_GUARD and unified_get_disk_usage is not None:
+        try:
+            percent, _, _ = unified_get_disk_usage(path)
+            return int(percent)
+        except Exception:
+            pass  # Fall through to original implementation
+
+    # Fallback to original implementation
     try:
         total, used, free = shutil.disk_usage(path)
         return int((used / total) * 100)

@@ -83,6 +83,20 @@ HAS_SYNC_LOCK = has_sync_lock()
 HAS_BANDWIDTH_MANAGER = has_bandwidth_manager()
 TransferPriority = get_transfer_priorities()
 
+# Unified resource checking utilities (80% max utilization)
+try:
+    from app.utils.resource_guard import (
+        get_disk_usage as unified_get_disk_usage,
+        check_disk_space as unified_check_disk,
+        LIMITS as RESOURCE_LIMITS,
+    )
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    unified_get_disk_usage = None
+    unified_check_disk = None
+    RESOURCE_LIMITS = None
+
 # Wrapper functions for backwards compatibility
 def acquire_sync_lock(host: str, timeout: float = 30.0) -> bool:
     return acquire_sync_lock_safe(host, timeout)
@@ -113,13 +127,29 @@ MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70")
 def check_disk_usage(path: Path = None) -> tuple[bool, float]:
     """Check if disk has capacity for syncing.
 
+    Uses unified resource_guard utilities when available for consistent
+    80% max utilization enforcement (70% for disk).
+
     Args:
         path: Path to check disk usage for. Defaults to ROOT.
 
     Returns:
         Tuple of (has_capacity, current_usage_percent)
     """
-    check_path = path or ROOT
+    check_path = str(path) if path else str(ROOT)
+
+    # Use unified utilities when available
+    if HAS_RESOURCE_GUARD and unified_get_disk_usage is not None:
+        try:
+            percent, _, _ = unified_get_disk_usage(check_path)
+            has_capacity = percent < MAX_DISK_USAGE_PERCENT
+            if not has_capacity:
+                logger.warning(f"Disk usage {percent:.1f}% exceeds limit {MAX_DISK_USAGE_PERCENT}%")
+            return has_capacity, percent
+        except Exception:
+            pass  # Fall through to original implementation
+
+    # Fallback to original implementation
     try:
         usage = shutil.disk_usage(check_path)
         percent = 100.0 * usage.used / usage.total

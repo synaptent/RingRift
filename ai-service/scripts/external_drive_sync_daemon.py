@@ -110,6 +110,18 @@ HAS_ORCHESTRATOR_REGISTRY = has_coordination()
 OrchestratorRole = get_orchestrator_roles()
 get_registry = get_registry_safe
 
+# Unified resource checking utilities (80% max utilization)
+try:
+    from app.utils.resource_guard import (
+        get_disk_usage as unified_get_disk_usage,
+        LIMITS as RESOURCE_LIMITS,
+    )
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    unified_get_disk_usage = None
+    RESOURCE_LIMITS = None
+
 # Wrapper functions for backwards compatibility
 def request_bandwidth(host: str, mbps: float = 100.0, priority=None):
     return request_bandwidth_safe(host, mbps, priority)
@@ -132,6 +144,9 @@ MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70")
 def check_disk_has_capacity(path: Path, threshold: float = None) -> Tuple[bool, float]:
     """Check if disk has capacity for more data.
 
+    Uses unified resource_guard utilities when available for consistent
+    80% max utilization enforcement (70% for disk).
+
     Args:
         path: Path to check disk usage for
         threshold: Max disk usage percentage (defaults to MAX_DISK_USAGE_PERCENT)
@@ -140,6 +155,17 @@ def check_disk_has_capacity(path: Path, threshold: float = None) -> Tuple[bool, 
         Tuple of (has_capacity, current_usage_percent)
     """
     threshold = threshold if threshold is not None else MAX_DISK_USAGE_PERCENT
+    check_path = str(path)
+
+    # Use unified utilities when available
+    if HAS_RESOURCE_GUARD and unified_get_disk_usage is not None:
+        try:
+            percent, _, _ = unified_get_disk_usage(check_path)
+            return percent < threshold, percent
+        except Exception:
+            pass  # Fall through to original implementation
+
+    # Fallback to original implementation
     try:
         usage = shutil.disk_usage(path)
         percent = (usage.used / usage.total) * 100
