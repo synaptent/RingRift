@@ -6002,15 +6002,24 @@ class P2POrchestrator:
                 if peer and peer.is_alive():
                     voters_alive += 1
 
-        # Get P2P sync metrics
+        # Get P2P sync metrics (with error handling for new features)
         p2p_sync_metrics = getattr(self, "_p2p_sync_metrics", {})
         gossip_metrics = self._get_gossip_metrics_summary()
         distributed_training = self._get_distributed_training_summary()
         cluster_elo = self._get_cluster_elo_summary()
         node_recovery = self._get_node_recovery_metrics()
-        leader_consensus = self._get_cluster_leader_consensus()
-        peer_reputation = self._get_cluster_peer_reputation()
-        sync_intervals = self._get_sync_interval_summary()  # ADAPTIVE SYNC INTERVALS
+        try:
+            leader_consensus = self._get_cluster_leader_consensus()
+        except Exception as e:
+            leader_consensus = {"error": str(e)}
+        try:
+            peer_reputation = self._get_cluster_peer_reputation()
+        except Exception as e:
+            peer_reputation = {"error": str(e)}
+        try:
+            sync_intervals = self._get_sync_interval_summary()  # ADAPTIVE SYNC INTERVALS
+        except Exception as e:
+            sync_intervals = {"error": str(e)}
 
         return web.json_response({
             "node_id": self.node_id,
@@ -19702,25 +19711,39 @@ print(json.dumps({{
         """
         now = time.time()
 
-        # Check training activity
+        # Check training activity (with defensive checks)
         training_active = False
-        with self.training_lock:
-            for job in self.training_jobs.values():
-                if job.status == "running":
-                    training_active = True
-                    break
+        training_lock = getattr(self, "training_lock", None)
+        training_jobs = getattr(self, "training_jobs", {})
+        if training_lock and training_jobs:
+            try:
+                with training_lock:
+                    for job in training_jobs.values():
+                        if getattr(job, "status", None) == "running":
+                            training_active = True
+                            break
+            except Exception:
+                pass
 
         # Check selfplay activity (count active jobs)
         selfplay_count = 0
-        with self.jobs_lock:
-            for job in self.selfplay_jobs.values():
-                if job.status == "running":
-                    selfplay_count += 1
+        jobs_lock = getattr(self, "jobs_lock", None)
+        selfplay_jobs = getattr(self, "selfplay_jobs", {})
+        if jobs_lock and selfplay_jobs:
+            try:
+                with jobs_lock:
+                    for job in selfplay_jobs.values():
+                        if getattr(job, "status", None) == "running":
+                            selfplay_count += 1
+            except Exception:
+                pass
 
         # Check recent data generation from gossip
         recent_data = False
-        gossip_states = getattr(self, "_gossip_node_states", {})
+        gossip_states = getattr(self, "_gossip_node_states", {}) or {}
         for node_id, state in gossip_states.items():
+            if not isinstance(state, dict):
+                continue
             last_game = state.get("last_game_time", 0)
             if now - last_game < 300:  # Game in last 5 min
                 recent_data = True
