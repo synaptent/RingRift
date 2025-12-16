@@ -1,0 +1,15 @@
+[Unit]
+Description=RingRift Elo Database Sync Worker
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python scripts/elo_db_sync.py --mode worker --coordinator lambda-h100 --interval 300
+Restart=always
+RestartSec=10
+Environment=PYTHONPATH=/home/ubuntu/ringrift/ai-service
+
+[Install]
+WantedBy=multi-user.target
