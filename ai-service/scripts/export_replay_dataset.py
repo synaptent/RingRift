@@ -69,6 +69,7 @@ from app.training.encoding import HexStateEncoder, HexStateEncoderV3, get_encode
 BOARD_TYPE_MAP: Dict[str, BoardType] = {
     "square8": BoardType.SQUARE8,
     "square19": BoardType.SQUARE19,
+    "hex8": BoardType.HEX8,
     "hexagonal": BoardType.HEXAGONAL,
 }
 
@@ -107,12 +108,13 @@ def build_encoder(board_type: BoardType, encoder_version: str = "default") -> Ne
     encoder.board_size = {
         BoardType.SQUARE8: 8,
         BoardType.SQUARE19: 19,
+        BoardType.HEX8: 9,
         BoardType.HEXAGONAL: 25,
     }.get(board_type, 8)
 
     # For hex boards, ALWAYS attach a specialized encoder to ensure consistent
     # feature shapes. Default to v3 (newest, 16 channels).
-    if board_type == BoardType.HEXAGONAL:
+    if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
         effective_version = encoder_version if encoder_version in ("v2", "v3") else "v3"
         encoder._hex_encoder = get_encoder_for_board_type(board_type, effective_version)
         encoder._hex_encoder_version = effective_version
@@ -762,7 +764,7 @@ def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--board-type",
         type=str,
-        choices=["square8", "square19", "hexagonal"],
+        choices=["square8", "square19", "hex8", "hexagonal"],
         required=True,
         help="Board type to filter games by.",
     )

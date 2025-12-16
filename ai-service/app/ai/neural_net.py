@@ -620,8 +620,11 @@ def _infer_board_size(board: Union[BoardState, GameState]) -> int:
     if board_type == BoardType.SQUARE19:
         return 19
     if board_type == BoardType.HEXAGONAL:
-        radius = board.size - 1
-        return 2 * radius + 1
+        radius = board.size - 1  # board.size=13 → radius=12
+        return 2 * radius + 1    # → bounding box = 25
+    if board_type == BoardType.HEX8:
+        radius = board.size - 1  # board.size=5 → radius=4
+        return 2 * radius + 1    # → bounding box = 9
 
     # Defensive fallback: use board.size but guard against unsupported sizes
     size = getattr(board, "size", 8)
@@ -662,8 +665,10 @@ def _to_canonical_xy(board: BoardState, pos: Position) -> tuple[int, int]:
     if board.type in (BoardType.SQUARE8, BoardType.SQUARE19):
         return pos.x, pos.y
 
-    if board.type == BoardType.HEXAGONAL:
-        radius = board.size - 1
+    if board.type in (BoardType.HEXAGONAL, BoardType.HEX8):
+        # Hex boards use cube coordinates where x,y in [-radius, radius]
+        # Map to bounding box [0, 2*radius+1) via cx = x + radius
+        radius = board.size - 1  # HEXAGONAL: 12, HEX8: 4
         cx = pos.x + radius
         cy = pos.y + radius
         return cx, cy
@@ -694,8 +699,10 @@ def _from_canonical_xy(
     if board.type in (BoardType.SQUARE8, BoardType.SQUARE19):
         return Position(x=cx, y=cy)
 
-    if board.type == BoardType.HEXAGONAL:
-        radius = board.size - 1
+    if board.type in (BoardType.HEXAGONAL, BoardType.HEX8):
+        # Inverse of _to_canonical_xy for hex boards
+        # Map from bounding box [0, 2*radius+1) back to cube coords [-radius, radius]
+        radius = board.size - 1  # HEXAGONAL: 12, HEX8: 4
         x = cx - radius
         y = cy - radius
         z = -x - y
@@ -5240,33 +5247,41 @@ class ActionEncoderHex:
     ) -> None:
         # Spatial dimension of the hex bounding box (2N+1 for side N).
         self.board_size = board_size
+
+        # Compute layout constants based on board_size
+        self.max_dist = board_size - 1  # max distance on hex board
+        self.placement_span = board_size * board_size * 3
+        self.movement_base = self.placement_span
+        self.movement_span = board_size * board_size * NUM_HEX_DIRS * self.max_dist
+        self.special_base = self.movement_base + self.movement_span
+
         # Hex-specific action space dimension.
-        self.policy_size = policy_size or P_HEX
+        self.policy_size = policy_size or (self.special_base + 1)
 
     def _encode_canonical_xy(
         self,
         board: BoardState,
         pos: Position,
     ) -> Optional[tuple[int, int]]:
-        """Return (cx, cy) in [0, 21)×[0, 21) or None if off-grid."""
+        """Return (cx, cy) in [0, board_size)×[0, board_size) or None if off-grid."""
         cx, cy = _to_canonical_xy(board, pos)
-        if not (0 <= cx < HEX_BOARD_SIZE and 0 <= cy < HEX_BOARD_SIZE):
+        if not (0 <= cx < self.board_size and 0 <= cy < self.board_size):
             return None
         return cx, cy
 
     def encode_move(self, move: Move, board: BoardState) -> int:
         """Map a hex move into a [0, policy_size) index.
 
-        This encoder is only valid for BoardType.HEXAGONAL boards of the
-        canonical radius (size == 13, radius == 12). For any non-hex geometry or
-        geometries that do not match the canonical frame, the move is
+        This encoder supports both HEXAGONAL (radius-12) and HEX8 (radius-4)
+        board types. The board size must match the encoder's configured
+        board_size. For non-hex geometries or size mismatches, the move is
         treated as unrepresentable and INVALID_MOVE_INDEX is returned.
         """
-        if board.type != BoardType.HEXAGONAL:
+        if board.type not in (BoardType.HEXAGONAL, BoardType.HEX8):
             return INVALID_MOVE_INDEX
 
-        # Defensive guard: only support the canonical N=12 hex for now.
-        if _infer_board_size(board) != HEX_BOARD_SIZE:
+        # Verify board size matches encoder configuration
+        if _infer_board_size(board) != self.board_size:
             return INVALID_MOVE_INDEX
 
         # --- Placements ---
@@ -5276,7 +5291,7 @@ class ActionEncoderHex:
                 return INVALID_MOVE_INDEX
             cx, cy = canon
 
-            pos_idx = cy * HEX_BOARD_SIZE + cx
+            pos_idx = cy * self.board_size + cx
             count = move.placement_count or 1
             if count < 1 or count > 3:
                 return INVALID_MOVE_INDEX
@@ -5304,7 +5319,7 @@ class ActionEncoderHex:
             dx = to_cx - from_cx
             dy = to_cy - from_cy
             dist = max(abs(dx), abs(dy))
-            if dist == 0 or dist > HEX_MAX_DIST:
+            if dist == 0 or dist > self.max_dist:
                 return INVALID_MOVE_INDEX
 
             dir_x = dx // dist
@@ -5315,12 +5330,12 @@ class ActionEncoderHex:
                 # Direction not representable in our 6-direction scheme.
                 return INVALID_MOVE_INDEX
 
-            from_idx = from_cy * HEX_BOARD_SIZE + from_cx
-            return HEX_MOVEMENT_BASE + from_idx * (NUM_HEX_DIRS * HEX_MAX_DIST) + dir_idx * HEX_MAX_DIST + (dist - 1)
+            from_idx = from_cy * self.board_size + from_cx
+            return self.movement_base + from_idx * (NUM_HEX_DIRS * self.max_dist) + dir_idx * self.max_dist + (dist - 1)
 
         # --- Special ---
         if move.type == MoveType.SKIP_PLACEMENT:
-            return HEX_SPECIAL_BASE
+            return self.special_base
 
         return INVALID_MOVE_INDEX
 
@@ -5337,19 +5352,19 @@ class ActionEncoderHex:
         """
         board = game_state.board
 
-        if board.type != BoardType.HEXAGONAL:
+        if board.type not in (BoardType.HEXAGONAL, BoardType.HEX8):
             return None
-        if _infer_board_size(board) != HEX_BOARD_SIZE:
+        if _infer_board_size(board) != self.board_size:
             return None
         if index < 0 or index >= self.policy_size:
             return None
 
         # --- Placements ---
-        if index < HEX_PLACEMENT_SPAN:
+        if index < self.placement_span:
             count_idx = index % 3
             pos_idx = index // 3
-            cy = pos_idx // HEX_BOARD_SIZE
-            cx = pos_idx % HEX_BOARD_SIZE
+            cy = pos_idx // self.board_size
+            cx = pos_idx % self.board_size
 
             pos = _from_canonical_xy(board, cx, cy)
             if pos is None or not BoardGeometry.is_within_bounds(pos, board.type, board.size):
@@ -5372,19 +5387,19 @@ class ActionEncoderHex:
             return Move(**move_data)
 
         # --- Movement / capture ---
-        if index < HEX_SPECIAL_BASE:
-            offset = index - HEX_MOVEMENT_BASE
+        if index < self.special_base:
+            offset = index - self.movement_base
 
-            dist_idx = offset % HEX_MAX_DIST
+            dist_idx = offset % self.max_dist
             dist = dist_idx + 1
-            offset //= HEX_MAX_DIST
+            offset //= self.max_dist
 
             dir_idx = offset % NUM_HEX_DIRS
             offset //= NUM_HEX_DIRS
 
             from_idx = offset
-            from_cy = from_idx // HEX_BOARD_SIZE
-            from_cx = from_idx % HEX_BOARD_SIZE
+            from_cy = from_idx // self.board_size
+            from_cx = from_idx % self.board_size
 
             from_pos = _from_canonical_xy(board, from_cx, from_cy)
             if from_pos is None or not BoardGeometry.is_within_bounds(from_pos, board.type, board.size):
@@ -5419,7 +5434,7 @@ class ActionEncoderHex:
             return Move(**move_data)
 
         # --- Special ---
-        if index == HEX_SPECIAL_BASE:
+        if index == self.special_base:
             move_data = {
                 "id": "decoded",
                 "type": MoveType.SKIP_PLACEMENT,

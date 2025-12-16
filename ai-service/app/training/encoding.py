@@ -274,9 +274,9 @@ class HexStateEncoder:
         """
         board = state.board
 
-        if board.type != BoardType.HEXAGONAL:
+        if board.type not in (BoardType.HEXAGONAL, BoardType.HEX8):
             raise ValueError(
-                f"HexStateEncoder requires HEXAGONAL board type, "
+                f"HexStateEncoder requires HEXAGONAL or HEX8 board type, "
                 f"got {board.type}"
             )
 
@@ -764,9 +764,9 @@ class HexStateEncoderV3:
         """
         board = state.board
 
-        if board.type != BoardType.HEXAGONAL:
+        if board.type not in (BoardType.HEXAGONAL, BoardType.HEX8):
             raise ValueError(
-                f"HexStateEncoderV3 requires HEXAGONAL board type, "
+                f"HexStateEncoderV3 requires HEXAGONAL or HEX8 board type, "
                 f"got {board.type}"
             )
 

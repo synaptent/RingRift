@@ -40,6 +40,7 @@ from app.ai.neural_net import (
     HexNeuralNet_v2,
     HexNeuralNet_v3,
     HEX_BOARD_SIZE,
+    HEX8_BOARD_SIZE,
     P_HEX,
     MAX_PLAYERS,
     multi_player_value_loss,
@@ -1355,12 +1356,15 @@ def train_model(
         # the feature encoder. With the default size parameter 13
         # (see create_initial_state), this yields a 25×25 grid.
         board_size = HEX_BOARD_SIZE  # 25
+    elif config.board_type == BoardType.HEX8:
+        # For hex8 (radius-4), the bounding box is 2*4+1 = 9.
+        board_size = HEX8_BOARD_SIZE  # 9
     else:
-        # Default to 8×8.
+        # Default to 8×8 (square8).
         board_size = 8
 
-    # Determine whether to use HexNeuralNet for hexagonal boards
-    use_hex_model = config.board_type == BoardType.HEXAGONAL
+    # Determine whether to use HexNeuralNet for hexagonal boards (including hex8)
+    use_hex_model = config.board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
 
     # Determine effective policy head size.
     policy_size: int
@@ -1503,7 +1507,8 @@ def train_model(
                     data_path_str,
                 )
         elif use_hex_model:
-            policy_size = P_HEX
+            # Use board-specific policy size (4500 for HEX8, 91876 for HEXAGONAL)
+            policy_size = get_policy_size_for_board(config.board_type)
             if not distributed or is_main_process():
                 logger.info(
                     "Using board-default hex policy_size=%d for board_type=%s",
