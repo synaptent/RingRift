@@ -455,3 +455,19 @@ p2p_daemon:
   auto_restart_failed_jobs: true
   max_job_restarts: 3
   restart_backoff_seconds: 60
+
+# Model pruning - Automated model count management
+# When model count exceeds threshold, runs distributed gauntlet evaluation
+# and keeps only top quartile performers (archives the rest)
+model_pruning:
+  enabled: true # Enable automatic model pruning
+  threshold: 100 # Trigger pruning when model count exceeds this
+  check_interval_seconds: 3600 # Check model count every hour
+  top_quartile_keep: 0.25 # Keep top 25% of models
+  games_per_baseline: 10 # Games per baseline for evaluation
+  parallel_workers: 50 # Parallel evaluation workers
+  archive_models: true # Archive pruned models instead of deleting
+  # Execution settings
+  prefer_high_cpu_hosts: true # Schedule on high-CPU hosts (vast.ai)
+  evaluation_timeout_seconds: 7200 # 2 hour timeout for full evaluation
+  dry_run: false # If true, log what would be pruned but don't act
