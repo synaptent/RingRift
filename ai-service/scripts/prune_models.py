@@ -79,10 +79,10 @@ def get_model_elo_stats(db_path: Path) -> Dict[str, ModelStats]:
 
     try:
         # Get all NN model ratings from elo_ratings table
-        # Schema: model_id, board_type, num_players, rating, games_played, wins, losses, draws, last_update
+        # Schema: participant_id, board_type, num_players, rating, games_played, wins, losses, draws, last_update
         cursor.execute("""
             SELECT
-                model_id,
+                participant_id,
                 board_type,
                 num_players,
                 rating,
@@ -92,9 +92,9 @@ def get_model_elo_stats(db_path: Path) -> Dict[str, ModelStats]:
                 draws,
                 last_update
             FROM elo_ratings
-            WHERE model_id LIKE 'nn:%' OR model_id LIKE '%.pth%'
-               OR model_id LIKE 'ringrift_%' OR model_id LIKE 'sq%'
-               OR model_id LIKE 'hex%' OR model_id LIKE 'v%'
+            WHERE participant_id LIKE 'nn:%' OR participant_id LIKE '%.pth%'
+               OR participant_id LIKE 'ringrift_%' OR participant_id LIKE 'sq%'
+               OR participant_id LIKE 'hex%' OR participant_id LIKE 'v%'
         """)
 
         for row in cursor.fetchall():
