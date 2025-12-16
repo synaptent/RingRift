@@ -59,13 +59,19 @@ class SafeguardConfig:
     max_spawns_per_window: int = 30     # Max spawns in window
     backpressure_threshold: float = 0.8 # Slow down at 80% of limit
 
-    # Resource thresholds - 70% disk limit enforced as of 2025-12-15
+    # Resource thresholds - unified at 80% max utilization (enforced 2025-12-16)
+    # Disk is tighter at 70% because cleanup takes time
     disk_critical_percent: float = 70.0
     disk_warning_percent: float = 65.0
-    memory_critical_percent: float = 95.0
-    memory_warning_percent: float = 85.0
-    cpu_critical_percent: float = 98.0
-    load_critical_multiplier: float = 2.0  # load > cpus * this = critical
+    # Memory/CPU at 80% to leave headroom for spikes
+    memory_critical_percent: float = 80.0
+    memory_warning_percent: float = 70.0
+    cpu_critical_percent: float = 80.0
+    cpu_warning_percent: float = 70.0
+    # GPU at 80% for CUDA memory safety
+    gpu_critical_percent: float = 80.0
+    gpu_warning_percent: float = 70.0
+    load_critical_multiplier: float = 1.5  # load > cpus * this = critical (tightened)
 
     # Emergency settings
     emergency_file: str = "/tmp/ringrift_coordination/EMERGENCY_HALT"

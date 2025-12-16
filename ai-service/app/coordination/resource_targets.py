@@ -99,23 +99,24 @@ class UtilizationTargets:
     - Above 80%: Scale down (risk of throttling/OOM)
     """
 
-    # CPU targets (percentage)
-    cpu_min: float = 60.0           # Scale up below this
-    cpu_target: float = 70.0        # Ideal operating point
-    cpu_max: float = 80.0           # Scale down above this
-    cpu_critical: float = 90.0      # Emergency stop
+    # CPU targets (percentage) - max 80% enforced 2025-12-16
+    cpu_min: float = 50.0           # Scale up below this
+    cpu_target: float = 65.0        # Ideal operating point
+    cpu_max: float = 80.0           # Scale down above this (HARD LIMIT)
+    cpu_critical: float = 80.0      # Emergency stop (same as max)
 
-    # GPU targets (percentage)
-    gpu_min: float = 60.0           # Scale up below this
-    gpu_target: float = 75.0        # Ideal operating point
-    gpu_max: float = 85.0           # Scale down above this
-    gpu_critical: float = 95.0      # Emergency stop
+    # GPU targets (percentage) - max 80% enforced 2025-12-16
+    gpu_min: float = 50.0           # Scale up below this
+    gpu_target: float = 65.0        # Ideal operating point
+    gpu_max: float = 80.0           # Scale down above this (HARD LIMIT)
+    gpu_critical: float = 80.0      # Emergency stop (same as max)
 
-    # Memory targets (percentage)
-    memory_warn: float = 75.0       # Reduce jobs
-    memory_critical: float = 90.0   # Stop spawning
+    # Memory targets (percentage) - max 80% enforced 2025-12-16
+    memory_warn: float = 70.0       # Reduce jobs
+    memory_critical: float = 80.0   # Stop spawning (HARD LIMIT)
 
     # Disk targets (percentage) - 70% limit enforced as of 2025-12-15
+    # Tighter than 80% because cleanup takes time
     disk_warn: float = 65.0         # Trigger cleanup
     disk_critical: float = 70.0     # Stop all data-producing tasks
 
