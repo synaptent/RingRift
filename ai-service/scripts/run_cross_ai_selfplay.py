@@ -179,7 +179,7 @@ def play_game(
     board_type: str,
     num_players: int,
     matchup: MatchupConfig,
-    max_moves: int = 500,
+    max_moves: int = 2000,
     seed: Optional[int] = None,
 ) -> Optional[GameResult]:
     """Play a single game with the specified matchup."""
@@ -319,7 +319,7 @@ def run_balanced_selfplay(
     games_per_config: int,
     matchup_type: str,
     output_dir: Path,
-    max_moves: int = 500,
+    max_moves: int = 2000,
     prioritize_underrepresented: bool = False,
     target_games: Optional[int] = None,
 ):

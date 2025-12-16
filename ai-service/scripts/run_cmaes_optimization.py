@@ -506,7 +506,7 @@ def play_single_game(
     baseline_weights: HeuristicWeights,
     candidate_plays_first: bool,
     board_type: BoardType = BoardType.SQUARE8,
-    max_moves: int = 500,
+    max_moves: int = 2000,
     *,
     randomness: float = 0.0,
     rng_seed_base: Optional[int] = None,
@@ -544,7 +544,7 @@ def evaluate_fitness(
     *,
     opponent_mode: str = "baseline-only",
     incumbent_weights: Optional[HeuristicWeights] = None,
-    max_moves: int = 500,
+    max_moves: int = 2000,
     debug_hook: Optional[Callable[[Dict[str, Any]], None]] = None,
     eval_mode: str = "initial-only",
     state_pool_id: Optional[str] = None,
@@ -1228,7 +1228,7 @@ def evaluate_fitness_gpu(
     board_type: BoardType,
     games_per_eval: int,
     batch_size: int = 64,
-    max_moves: int = 500,
+    max_moves: int = 2000,
     seed: Optional[int] = None,
 ) -> Tuple[float, Dict[str, Any]]:
     """GPU-accelerated fitness evaluation using ParallelGameRunner.

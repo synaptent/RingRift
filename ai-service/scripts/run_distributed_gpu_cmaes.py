@@ -196,7 +196,7 @@ def run_worker_server(port: int, board_size: int, num_players: int):
         num_games: int = 50
         board_size: int = 8
         num_players: int = 2
-        max_moves: int = 500
+        max_moves: int = 2000
 
     class TaskResponse(BaseModel):
         task_id: str
@@ -265,7 +265,7 @@ class DistributedCoordinator:
         board_size: int = 8,
         num_players: int = 2,
         games_per_eval: int = 50,
-        max_moves: int = 500,
+        max_moves: int = 2000,
         baseline_weights: Optional[Dict[str, float]] = None,
     ):
         self.worker_urls = worker_urls
@@ -376,7 +376,7 @@ def run_distributed_cmaes(
     games_per_eval: int,
     output_dir: str,
     sigma: float = 0.5,
-    max_moves: int = 500,
+    max_moves: int = 2000,
     baseline_weights: Optional[Dict[str, float]] = None,
     seed: int = 42,
 ) -> Dict[str, Any]:

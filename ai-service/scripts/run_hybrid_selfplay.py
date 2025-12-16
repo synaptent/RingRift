@@ -246,15 +246,27 @@ def run_hybrid_selfplay(
     board_type_key = board_type.lower()
     board_size = {"square8": 8, "square19": 19, "hex": 25, "hexagonal": 25}.get(board_type_key, 8)
 
-    # Auto-calculate max_moves based on board type if not specified
-    # Larger boards need more moves (multiple actions per turn are counted)
+    # Auto-calculate max_moves based on board type and player count if not specified
+    # Larger boards and more players need more moves to reach natural game end
     if max_moves is None:
-        max_moves_defaults = {
-            "square8": 10000,   # Allow games to complete naturally
-            "square19": 10000,  # Allow games to complete naturally
-            "hex": 10000,       # Allow games to complete naturally
+        max_moves_table = {
+            # (board_type, num_players): max_moves
+            ("square8", 2): 500,
+            ("square8", 3): 800,
+            ("square8", 4): 1200,
+            ("square19", 2): 1200,
+            ("square19", 3): 1600,
+            ("square19", 4): 2000,
+            ("hex", 2): 1200,
+            ("hex", 3): 1600,
+            ("hex", 4): 2000,
+            ("hexagonal", 2): 1200,
+            ("hexagonal", 3): 1600,
+            ("hexagonal", 4): 2000,
         }
-        max_moves = max_moves_defaults.get(board_type.lower(), 10000)
+        key = (board_type.lower(), num_players)
+        max_moves = max_moves_table.get(key, 2000)
+        logger.info(f"Auto-adjusted max_moves to {max_moves} for {board_type} {num_players}p")
     board_type_enum_map = {
         "square8": BoardType.SQUARE8,
         "square19": BoardType.SQUARE19,

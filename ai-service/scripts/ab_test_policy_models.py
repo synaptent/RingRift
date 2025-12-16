@@ -362,7 +362,7 @@ def run_ab_test(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     think_time_ms: int = 500,
-    max_moves: int = 500,
+    max_moves: int = 2000,
 ) -> ABTestResults:
     """Run A/B test between two policy models."""
     logger.info(f"Starting A/B test:")

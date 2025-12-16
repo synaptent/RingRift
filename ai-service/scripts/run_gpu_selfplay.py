@@ -822,15 +822,15 @@ def run_gpu_selfplay(
             ("square8", 2): 500,
             ("square8", 3): 800,
             ("square8", 4): 1200,
-            ("square19", 2): 1000,
-            ("square19", 3): 1500,
+            ("square19", 2): 1200,
+            ("square19", 3): 1600,
             ("square19", 4): 2000,
-            ("hex", 2): 800,
-            ("hex", 3): 1200,
-            ("hex", 4): 1500,
-            ("hexagonal", 2): 800,
-            ("hexagonal", 3): 1200,
-            ("hexagonal", 4): 1500,
+            ("hex", 2): 1200,
+            ("hex", 3): 1600,
+            ("hex", 4): 2000,
+            ("hexagonal", 2): 1200,
+            ("hexagonal", 3): 1600,
+            ("hexagonal", 4): 2000,
         }
         key = (board_type.lower(), num_players)
         if key in max_moves_table:

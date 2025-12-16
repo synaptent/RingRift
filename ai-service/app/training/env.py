@@ -60,19 +60,19 @@ logger = logging.getLogger(__name__)
 
 THEORETICAL_MAX_MOVES: Dict[BoardType, Dict[int, int]] = {
     BoardType.SQUARE8: {
-        2: 400,   # ~100 max observed * 4x headroom (all 2p games complete)
-        3: 600,   # ~120 max observed * 5x headroom (accounts for longer games)
-        4: 800,   # extrapolated with additional headroom
+        2: 500,   # ~100 max observed * 5x headroom (all 2p games complete)
+        3: 800,   # ~120 max observed * 6x headroom (accounts for longer games)
+        4: 1200,  # extrapolated with additional headroom
     },
     BoardType.SQUARE19: {
-        2: 2000,  # larger board, more phases - 4x headroom
-        3: 3000,  # additional headroom for multiplayer
-        4: 4000,
+        2: 1200,  # larger board, more phases
+        3: 1600,  # additional headroom for multiplayer
+        4: 2000,
     },
     BoardType.HEXAGONAL: {
-        2: 2000,  # similar to Square19 scale
-        3: 3000,
-        4: 4000,
+        2: 1200,  # similar to Square19 scale
+        3: 1600,
+        4: 2000,
     },
 }
 
