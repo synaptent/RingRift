@@ -208,19 +208,16 @@ def reserve_games_from_db(
         game_conn = sqlite3.connect(db_path)
         game_conn.row_factory = sqlite3.Row
 
-        # Get games not already in holdout
-        cursor = game_conn.execute("""
-            SELECT game_id, board_type, num_players, game_state
-            FROM games
-            WHERE game_id NOT IN (SELECT game_id FROM holdout_games)
-        """)
-
-        # This won't work since holdout_games is in different db
-        # Query all games and filter locally
-        cursor = game_conn.execute("""
-            SELECT game_id, board_type, num_players, game_state
-            FROM games
-        """)
+        # Query all games - filter locally since holdout_games is in different db
+        try:
+            cursor = game_conn.execute("""
+                SELECT game_id, board_type, num_players, game_state
+                FROM games
+            """)
+        except sqlite3.OperationalError as e:
+            # Table may not exist or have different schema
+            game_conn.close()
+            return []
 
         # Get existing holdout game IDs
         existing = set(
