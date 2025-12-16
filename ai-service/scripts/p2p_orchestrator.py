@@ -7709,20 +7709,21 @@ class P2POrchestrator:
             player_configs = []
 
             # Model agent (player 0)
+            # Use mcts_25 for fast gauntlet evaluation (25 simulations = ~0.15s/move)
             if model_id == "random_ai":
                 player_configs.append({"ai_type": "random", "difficulty": 1})
             else:
                 model_path = model_dir / f"{model_id}.pth"
                 if model_path.exists():
-                    # Use high difficulty MCTS with neural guidance
+                    # Use MCTS with neural guidance - 25 sims for speed
                     player_configs.append({
-                        "ai_type": "mcts_100",
-                        "difficulty": 7,
+                        "ai_type": "mcts_25",
+                        "difficulty": 5,
                         "nn_model_id": model_id,
                     })
                 else:
                     # Model file not found, use MCTS fallback
-                    player_configs.append({"ai_type": "mcts_100", "difficulty": 5})
+                    player_configs.append({"ai_type": "mcts_25", "difficulty": 4})
 
             # Baseline agent (player 1)
             if baseline_id == "random_ai":
@@ -7731,12 +7732,12 @@ class P2POrchestrator:
                 baseline_path = model_dir / f"{baseline_id}.pth"
                 if baseline_path.exists():
                     player_configs.append({
-                        "ai_type": "mcts_100",
-                        "difficulty": 7,
+                        "ai_type": "mcts_25",
+                        "difficulty": 5,
                         "nn_model_id": baseline_id,
                     })
                 else:
-                    player_configs.append({"ai_type": "mcts_100", "difficulty": 5})
+                    player_configs.append({"ai_type": "mcts_25", "difficulty": 4})
 
             # Add random players for 3p/4p games
             while len(player_configs) < num_players:
