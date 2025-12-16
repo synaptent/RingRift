@@ -308,55 +308,116 @@ def estimate_architecture_cost(arch: Architecture) -> Tuple[int, int]:
 def evaluate_architecture(arch: Architecture, quick_eval: bool = True) -> float:
     """Evaluate an architecture's performance.
 
-    In production, this would:
-    1. Build the model with the specified architecture
-    2. Train for a fixed number of steps
-    3. Evaluate on validation set
-    4. Return validation metric
-
-    For now, simulates evaluation based on architecture properties.
+    Uses actual training when RINGRIFT_NAS_REAL_TRAINING=1 is set,
+    otherwise uses simulated evaluation for development/testing.
     """
+    import os
+    use_real_training = os.environ.get("RINGRIFT_NAS_REAL_TRAINING", "0") == "1"
+
     p = arch.params
 
     # Estimate cost
     flops, param_count = estimate_architecture_cost(arch)
     arch.flops = flops
     arch.param_count = param_count
+    arch.latency_ms = flops / 1e9  # Rough estimate
+
+    if use_real_training:
+        return _evaluate_architecture_real(arch, quick_eval)
+    else:
+        return _evaluate_architecture_simulated(arch)
+
+
+def _evaluate_architecture_real(arch: Architecture, quick_eval: bool = True) -> float:
+    """Evaluate architecture with actual training."""
+    import subprocess
+    import tempfile
+    import os
+
+    p = arch.params
+    board_type = os.environ.get("RINGRIFT_NAS_BOARD", "square8")
+    num_players = int(os.environ.get("RINGRIFT_NAS_PLAYERS", "2"))
+    epochs = 3 if quick_eval else 10
+    max_samples = 10000 if quick_eval else 50000
+
+    # Create temp directory for this evaluation
+    with tempfile.TemporaryDirectory(prefix=f"nas_{arch.arch_id}_") as tmpdir:
+        # Build training command with architecture params
+        cmd = [
+            sys.executable, str(AI_SERVICE_ROOT / "scripts" / "run_nn_training_baseline.py"),
+            "--board", board_type,
+            "--num-players", str(num_players),
+            "--run-dir", tmpdir,
+            "--epochs", str(epochs),
+            "--demo",  # Use demo mode for faster evaluation
+            "--learning-rate", str(p.get("learning_rate", 0.001)),
+            "--batch-size", str(int(p.get("batch_size", 256))),
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 min timeout per eval
+                cwd=str(AI_SERVICE_ROOT),
+                env={**os.environ, "PYTHONPATH": str(AI_SERVICE_ROOT)},
+            )
+
+            if result.returncode != 0:
+                logger.warning(f"Training failed for {arch.arch_id}: {result.stderr[:200]}")
+                arch.performance = 0.3  # Low score for failed training
+                arch.evaluated = True
+                return arch.performance
+
+            # Parse training report
+            report_path = Path(tmpdir) / "nn_training_report.json"
+            if report_path.exists():
+                with open(report_path) as f:
+                    report = json.load(f)
+                # Use validation loss as performance metric (inverted - lower is better)
+                val_loss = report.get("metrics", {}).get("final_loss")
+                if val_loss is not None:
+                    # Convert loss to performance score (0.3 to 0.95)
+                    arch.performance = max(0.3, min(0.95, 1.0 - val_loss))
+                else:
+                    arch.performance = 0.5  # Neutral if no loss reported
+            else:
+                arch.performance = 0.5
+
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Training timeout for {arch.arch_id}")
+            arch.performance = 0.3
+        except Exception as e:
+            logger.warning(f"Training error for {arch.arch_id}: {e}")
+            arch.performance = 0.3
+
+    arch.evaluated = True
+    return arch.performance
+
+
+def _evaluate_architecture_simulated(arch: Architecture) -> float:
+    """Simulated evaluation for testing (original implementation)."""
+    p = arch.params
 
     # Simulate performance based on architecture choices
-    # More parameters generally = better performance (with diminishing returns)
-    capacity_score = math.log10(max(param_count, 1000)) / 7  # Normalize to ~0-1
-
-    # Depth helps (more res blocks)
+    capacity_score = math.log10(max(arch.param_count, 1000)) / 7
     depth_score = min(p.get("num_res_blocks", 10) / 20, 1.0)
-
-    # Attention helps for complex positions
     attention_bonus = 0.05 if p.get("use_attention", False) else 0
-
-    # SE blocks help with feature recalibration
     se_bonus = 0.03 if p.get("use_se_block", False) else 0
-
-    # GELU/Swish slightly better than ReLU
     activation_bonus = 0.02 if p.get("activation", "relu") in ["gelu", "swish"] else 0
-
-    # Dropout helps with generalization
     dropout = p.get("dropout", 0.0)
     dropout_bonus = 0.02 if 0.05 <= dropout <= 0.2 else 0
 
-    # Combine scores with noise
     base_performance = 0.4 + 0.3 * capacity_score + 0.2 * depth_score
     bonuses = attention_bonus + se_bonus + activation_bonus + dropout_bonus
     noise = np.random.normal(0, 0.03)
 
     performance = base_performance + bonuses + noise
-    performance = max(0.3, min(0.95, performance))  # Clip to valid range
-
-    # Estimate latency (rough approximation)
-    arch.latency_ms = flops / 1e9  # Assume ~1 GFLOP/ms
+    performance = max(0.3, min(0.95, performance))
 
     arch.performance = performance
     arch.evaluated = True
-
     return performance
 
 

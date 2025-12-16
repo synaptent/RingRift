@@ -1,8 +1,7 @@
 {
   "version": "1.0.0",
   "description": "Optimized hyperparameters per board/player configuration",
-  "last_updated": "2025-12-15T01:00:00Z",
-
+  "last_updated": "2025-12-16T08:49:57.019443Z",
   "defaults": {
     "learning_rate": 0.0003,
     "batch_size": 256,
@@ -16,7 +15,6 @@
     "value_weight": 1.0,
     "policy_weight": 1.0
   },
-
   "configs": {
     "square8_2p": {
       "optimized": true,
@@ -39,31 +37,64 @@
       "notes": "Optimized via HP tuning on H100. Trial 1 achieved best val_loss=0.4325, combined_score=1.0"
     },
     "square8_3p": {
-      "optimized": false,
-      "confidence": "none",
-      "tuning_method": null,
-      "last_tuned": null,
-      "tuning_trials": 0,
-      "hyperparameters": null,
-      "notes": "Not yet tuned - using defaults"
+      "optimized": true,
+      "confidence": "medium",
+      "tuning_method": "real_training",
+      "last_tuned": "2025-12-16T08:49:40.213273Z",
+      "tuning_trials": 20,
+      "hyperparameters": {
+        "learning_rate": 2.7809976566769204e-5,
+        "batch_size": 1024,
+        "hidden_dim": 768,
+        "num_hidden_layers": 2,
+        "weight_decay": 9.862426977660002e-5,
+        "dropout": 0.20335953705873472,
+        "value_weight": 2.327463990410481,
+        "policy_weight": 0.9348098649223986
+      },
+      "notes": "Tuned with 20 trials on 2025-12-16",
+      "best_val_loss": null,
+      "best_elo_score": null
     },
     "square8_4p": {
-      "optimized": false,
-      "confidence": "none",
-      "tuning_method": null,
-      "last_tuned": null,
-      "tuning_trials": 0,
-      "hyperparameters": null,
-      "notes": "Not yet tuned - using defaults"
+      "optimized": true,
+      "confidence": "medium",
+      "tuning_method": "real_training",
+      "last_tuned": "2025-12-16T08:49:46.273606Z",
+      "tuning_trials": 20,
+      "hyperparameters": {
+        "learning_rate": 0.0001839257440437172,
+        "batch_size": 512,
+        "hidden_dim": 128,
+        "num_hidden_layers": 4,
+        "weight_decay": 2.6885872715727515e-6,
+        "dropout": 0.4463267493669642,
+        "value_weight": 2.0656056059696244,
+        "policy_weight": 1.5556782572633034
+      },
+      "notes": "Tuned with 20 trials on 2025-12-16",
+      "best_val_loss": null,
+      "best_elo_score": null
     },
     "square19_2p": {
-      "optimized": false,
-      "confidence": "none",
-      "tuning_method": null,
-      "last_tuned": null,
-      "tuning_trials": 0,
-      "hyperparameters": null,
-      "notes": "Not yet tuned - using defaults. May need larger batch size due to board complexity."
+      "optimized": true,
+      "confidence": "low",
+      "tuning_method": "real_training",
+      "last_tuned": "2025-12-16T08:49:57.018501Z",
+      "tuning_trials": 15,
+      "hyperparameters": {
+        "learning_rate": 6.284539319956945e-5,
+        "batch_size": 512,
+        "hidden_dim": 128,
+        "num_hidden_layers": 5,
+        "weight_decay": 5.305127930250306e-6,
+        "dropout": 0.04720267691675317,
+        "value_weight": 1.2971565876273885,
+        "policy_weight": 0.6150359507616192
+      },
+      "notes": "Tuned with 15 trials on 2025-12-16",
+      "best_val_loss": null,
+      "best_elo_score": null
     },
     "square19_3p": {
       "optimized": false,
@@ -111,17 +142,48 @@
       "notes": "Not yet tuned - using defaults"
     }
   },
-
   "tuning_config": {
     "search_space": {
-      "learning_rate": { "type": "float", "low": 1e-5, "high": 1e-2, "log_scale": true },
-      "batch_size": { "type": "categorical", "choices": [128, 256, 512, 1024, 2048] },
-      "hidden_dim": { "type": "categorical", "choices": [128, 256, 384, 512, 768] },
-      "num_hidden_layers": { "type": "int", "low": 2, "high": 6 },
-      "weight_decay": { "type": "float", "low": 1e-6, "high": 1e-2, "log_scale": true },
-      "dropout": { "type": "float", "low": 0.0, "high": 0.5 },
-      "value_weight": { "type": "float", "low": 0.5, "high": 2.5 },
-      "policy_weight": { "type": "float", "low": 0.5, "high": 2.5 }
+      "learning_rate": {
+        "type": "float",
+        "low": 1e-5,
+        "high": 0.01,
+        "log_scale": true
+      },
+      "batch_size": {
+        "type": "categorical",
+        "choices": [128, 256, 512, 1024, 2048]
+      },
+      "hidden_dim": {
+        "type": "categorical",
+        "choices": [128, 256, 384, 512, 768]
+      },
+      "num_hidden_layers": {
+        "type": "int",
+        "low": 2,
+        "high": 6
+      },
+      "weight_decay": {
+        "type": "float",
+        "low": 1e-6,
+        "high": 0.01,
+        "log_scale": true
+      },
+      "dropout": {
+        "type": "float",
+        "low": 0.0,
+        "high": 0.5
+      },
+      "value_weight": {
+        "type": "float",
+        "low": 0.5,
+        "high": 2.5
+      },
+      "policy_weight": {
+        "type": "float",
+        "low": 0.5,
+        "high": 2.5
+      }
     },
     "_batch_size_note": "Batch sizes 1024-2048 optimal for H100 (80GB), use 128-512 for smaller GPUs",
     "evaluation": {

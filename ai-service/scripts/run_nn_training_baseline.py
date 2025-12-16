@@ -163,6 +163,54 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "output. Default: v2."
         ),
     )
+    # Hyperparameter overrides (from config/hyperparameters.json or CLI)
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=None,
+        help="Learning rate override (default: from config preset).",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Batch size override (default: from config preset).",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=None,
+        help="Weight decay override (default: from config preset).",
+    )
+    parser.add_argument(
+        "--policy-weight",
+        type=float,
+        default=None,
+        help="Policy loss weight override (default: 1.0).",
+    )
+    parser.add_argument(
+        "--value-weight",
+        type=float,
+        default=None,
+        help="Value loss weight override (default: 1.0).",
+    )
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=None,
+        help="Early stopping patience in epochs (0=disabled).",
+    )
+    parser.add_argument(
+        "--warmup-epochs",
+        type=int,
+        default=None,
+        help="Number of warmup epochs for learning rate.",
+    )
+    parser.add_argument(
+        "--use-optimized-hyperparams",
+        action="store_true",
+        help="Load optimized hyperparameters from config/hyperparameters.json.",
+    )
     return parser.parse_args(argv)
 
 
@@ -219,6 +267,50 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.epochs is not None:
         train_cfg.epochs_per_iter = max(1, int(args.epochs))
 
+    # Load optimized hyperparameters from config file if requested
+    hp_source = "preset"
+    if args.use_optimized_hyperparams:
+        try:
+            from app.config.hyperparameters import get_hyperparameters, is_optimized
+            board_name = args.board.replace("sq8", "square8").replace("sq19", "square19").replace("hex", "hexagonal")
+            hp = get_hyperparameters(board_name, num_players)
+            optimized = is_optimized(board_name, num_players)
+            hp_source = "optimized" if optimized else "defaults"
+
+            # Apply hyperparameters from config
+            train_cfg.learning_rate = hp.get("learning_rate", train_cfg.learning_rate)
+            train_cfg.batch_size = hp.get("batch_size", train_cfg.batch_size)
+            train_cfg.weight_decay = hp.get("weight_decay", train_cfg.weight_decay)
+            train_cfg.policy_weight = hp.get("policy_weight", train_cfg.policy_weight)
+            train_cfg.early_stopping_patience = hp.get("early_stopping_patience", 5)
+            train_cfg.warmup_epochs = hp.get("warmup_epochs", train_cfg.warmup_epochs)
+
+            print(f"[HP] Loaded {hp_source} hyperparameters for {board_name}_{num_players}p")
+            print(f"[HP]   lr={train_cfg.learning_rate:.6f}, batch={train_cfg.batch_size}, "
+                  f"wd={train_cfg.weight_decay:.2e}, policy_w={train_cfg.policy_weight:.2f}")
+        except Exception as e:
+            print(f"[HP] Warning: Failed to load hyperparameters: {e}")
+
+    # Apply CLI hyperparameter overrides (highest priority)
+    if args.learning_rate is not None:
+        train_cfg.learning_rate = args.learning_rate
+        hp_source = "cli"
+    if args.batch_size is not None:
+        train_cfg.batch_size = args.batch_size
+        hp_source = "cli"
+    if args.weight_decay is not None:
+        train_cfg.weight_decay = args.weight_decay
+        hp_source = "cli"
+    if args.policy_weight is not None:
+        train_cfg.policy_weight = args.policy_weight
+    if args.early_stopping_patience is not None:
+        train_cfg.early_stopping_patience = args.early_stopping_patience
+    if args.warmup_epochs is not None:
+        train_cfg.warmup_epochs = args.warmup_epochs
+
+    # Store value_weight for later use (not in TrainConfig by default)
+    value_weight = args.value_weight if args.value_weight is not None else 1.0
+
     if args.demo:
         # Demo / tiny mode:
         #
@@ -265,15 +357,23 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Run training. The current train_model implementation does not surface
     # final loss/metrics directly, so we record structural metadata and stub
     # metrics. Future tasks (A3+) can thread richer metrics through.
+    early_stop = 1 if args.demo else train_cfg.early_stopping_patience
+    warmup = 0 if args.demo else train_cfg.warmup_epochs
+    lr_sched = "none" if args.demo else train_cfg.lr_scheduler
+
+    print(f"[Training] Starting with lr={train_cfg.learning_rate:.6f}, "
+          f"batch={train_cfg.batch_size}, epochs={train_cfg.epochs_per_iter}, "
+          f"early_stop={early_stop}, warmup={warmup}, scheduler={lr_sched}")
+
     train_model(
         config=train_cfg,
         data_path=data_path,
         save_path=save_path,
-        early_stopping_patience=1 if args.demo else 5,
+        early_stopping_patience=early_stop,
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=train_cfg.epochs_per_iter,
-        warmup_epochs=0,
-        lr_scheduler="none",
+        warmup_epochs=warmup,
+        lr_scheduler=lr_sched,
         multi_player=use_multi_player,
         num_players=num_players,
         model_version=args.model_version,
@@ -295,8 +395,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             "epochs_per_iter": train_cfg.epochs_per_iter,
             "batch_size": train_cfg.batch_size,
             "learning_rate": train_cfg.learning_rate,
+            "weight_decay": train_cfg.weight_decay,
+            "policy_weight": train_cfg.policy_weight,
+            "early_stopping_patience": early_stop,
+            "warmup_epochs": warmup,
+            "lr_scheduler": lr_sched,
             "seed": train_cfg.seed,
             "model_version": args.model_version,
+            "hyperparameter_source": hp_source,
         },
         # Metrics are intentionally minimal for this baseline demo. We do not
         # currently plumb the final validation loss out of train_model; this

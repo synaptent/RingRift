@@ -12,6 +12,13 @@ Key improvements:
 - BALANCE MODE: Prioritizes least-represented board/player combos
 - Counts existing trained models per config for balanced training
 - ADAPTIVE CURRICULUM: Prioritizes configs with lower ELO (weaker models)
+- OPTIMIZED HYPERPARAMETERS: Uses tuned hyperparameters from config/hyperparameters.json
+
+Version: v7 (OPTIMIZED HP + ADAPTIVE CURRICULUM)
+
+Environment Variables:
+    RINGRIFT_ENABLE_AUTO_HP_TUNING: Set to "1" to enable automatic HP tuning (default: disabled)
+    RINGRIFT_MIN_GAMES_FOR_HP_TUNING: Min games before HP tuning is considered (default: 500)
 """
 import os
 import sys
@@ -22,11 +29,41 @@ import glob
 import re
 import json
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional, Set
+from pathlib import Path
+from typing import Dict, List, Tuple, Optional, Set, Any
+
+# Try to import advanced training features
+try:
+    from app.training.feedback_accelerator import (
+        get_feedback_accelerator,
+        FeedbackAccelerator,
+    )
+    HAS_FEEDBACK_ACCELERATOR = True
+except ImportError:
+    HAS_FEEDBACK_ACCELERATOR = False
+
+try:
+    from app.config.hyperparameters import (
+        get_hyperparameters,
+        is_optimized,
+        needs_tuning,
+        get_hyperparameter_info,
+        get_all_configs as get_all_hp_configs,
+    )
+    HAS_HYPERPARAMETERS = True
+except ImportError:
+    HAS_HYPERPARAMETERS = False
 
 # Base paths - auto-detect from script location or use env var
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.environ.get("RINGRIFT_BASE_DIR", os.path.dirname(SCRIPT_DIR))
+
+# HP tuning settings
+ENABLE_AUTO_HP_TUNING = os.environ.get("RINGRIFT_ENABLE_AUTO_HP_TUNING", "0") == "1"
+MIN_GAMES_FOR_HP_TUNING = int(os.environ.get("RINGRIFT_MIN_GAMES_FOR_HP_TUNING", "500"))
+
+# Track HP tuning recommendations
+_hp_tuning_recommendations: Dict[Tuple[str, int], bool] = {}
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # Database sources for each config - databases that have games WITH moves
@@ -200,6 +237,149 @@ def get_config_elo(board_type: str, num_players: int) -> float:
         pass
 
     return 1500.0  # Default ELO
+
+
+def check_nas_results(board_type: str, num_players: int) -> Optional[Dict[str, Any]]:
+    """Check if there are NAS results available for this config.
+
+    Returns best architecture params if found, None otherwise.
+    """
+    nas_dir = Path(BASE_DIR) / "logs" / "nas"
+    if not nas_dir.exists():
+        return None
+
+    # Look for best_architecture.json files
+    best_arch = None
+    best_perf = 0.0
+
+    for run_dir in nas_dir.iterdir():
+        if not run_dir.is_dir():
+            continue
+
+        best_file = run_dir / "best_architecture.json"
+        if not best_file.exists():
+            continue
+
+        try:
+            with open(best_file) as f:
+                data = json.load(f)
+
+            # Check if this is for our config
+            state_file = run_dir / "nas_state.json"
+            if state_file.exists():
+                with open(state_file) as f:
+                    state = json.load(f)
+                if state.get("board_type") != board_type or state.get("num_players") != num_players:
+                    continue
+
+            if data.get("performance", 0) > best_perf:
+                best_perf = data["performance"]
+                best_arch = data.get("params")
+
+        except Exception:
+            continue
+
+    return best_arch
+
+
+def check_nas_recommendation(board_type: str, num_players: int) -> Optional[str]:
+    """Check if NAS should be recommended for this config.
+
+    Returns recommendation message if NAS is recommended.
+    """
+    config_key = f"{board_type}_{num_players}p"
+
+    # Check if ELO has plateaued
+    if HAS_FEEDBACK_ACCELERATOR:
+        try:
+            accelerator = get_feedback_accelerator()
+            config_momentum = accelerator._configs.get(config_key)
+            if config_momentum and config_momentum.consecutive_plateaus >= 3:
+                return (
+                    f"NAS RECOMMENDED for {config_key} (ELO plateau detected). Run:\n"
+                    f"  python scripts/launch_distributed_nas.py --board {board_type} --players {num_players} --strategy evolutionary --generations 50"
+                )
+        except Exception:
+            pass
+
+    # Check for existing NAS results
+    existing_arch = check_nas_results(board_type, num_players)
+    if existing_arch:
+        return None  # Already have NAS results
+
+    # Check if this is a main config with lots of data
+    if board_type == "square8" and num_players == 2:
+        return (
+            f"NAS available for {config_key} (main config). Run:\n"
+            f"  python scripts/launch_distributed_nas.py --board {board_type} --players {num_players} --strategy evolutionary --generations 50"
+        )
+
+    return None
+
+
+def check_hp_tuning_recommendation(board_type: str, num_players: int, total_games: int) -> Optional[str]:
+    """Check if HP tuning should be recommended for a config.
+
+    Returns a recommendation message if HP tuning is recommended, None otherwise.
+    """
+    config_key = (board_type, num_players)
+
+    # Skip if already recommended this session
+    if _hp_tuning_recommendations.get(config_key):
+        return None
+
+    # Skip if HP module not available
+    if not HAS_HYPERPARAMETERS:
+        return None
+
+    # Check if config needs tuning
+    try:
+        if not needs_tuning(board_type, num_players, min_confidence="medium"):
+            return None  # Already optimized
+    except Exception:
+        return None
+
+    # Check if enough games for tuning
+    if total_games < MIN_GAMES_FOR_HP_TUNING:
+        return None
+
+    # Mark as recommended
+    _hp_tuning_recommendations[config_key] = True
+
+    recommendation = (
+        f"HP TUNING RECOMMENDED for {board_type}_{num_players}p "
+        f"({total_games} games available). Run:\n"
+        f"  python scripts/tune_hyperparameters.py --board {board_type} --players {num_players} --trials 30"
+    )
+
+    return recommendation
+
+
+def trigger_hp_tuning(board_type: str, num_players: int, trials: int = 20) -> bool:
+    """Trigger HP tuning for a config. Returns True if started successfully."""
+    if not ENABLE_AUTO_HP_TUNING:
+        return False
+
+    tune_cmd = [
+        sys.executable, os.path.join(BASE_DIR, "scripts/tune_hyperparameters.py"),
+        "--board", board_type,
+        "--players", str(num_players),
+        "--trials", str(trials),
+    ]
+
+    try:
+        # Start in background
+        subprocess.Popen(
+            tune_cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        print(f"  [HP Tuning] Started background tuning for {board_type}_{num_players}p", flush=True)
+        return True
+    except Exception as e:
+        print(f"  [HP Tuning] Failed to start: {e}", flush=True)
+        return False
 
 
 def get_all_config_elos() -> Dict[Tuple[str, int], float]:
@@ -535,7 +715,7 @@ def get_config_counts() -> Dict[Tuple[str, int], Tuple[int, List[str], int, List
 
 
 def run_training(board_type: str, num_players: int, db_paths: List[str],
-                  jsonl_paths: List[str], current_count: int) -> bool:
+                  jsonl_paths: List[str], current_count: int, iteration: int = 0) -> bool:
     """Run export and training for a config using DB and/or JSONL sources.
 
     Supports three modes:
@@ -657,18 +837,61 @@ def run_training(board_type: str, num_players: int, db_paths: List[str],
         if os.path.exists(f):
             os.remove(f)
 
-    # Run training
+    # Run training with optimized hyperparameters
     run_dir = os.path.join(BASE_DIR, f"data/training/runs/auto_{short}_{ts}")
+
+    # Get adaptive training intensity from feedback accelerator
+    epochs_multiplier = 1.0
+    lr_multiplier = 1.0
+    intensity_status = "normal"
+
+    if HAS_FEEDBACK_ACCELERATOR:
+        try:
+            config_key = f"{board_type}_{num_players}p"
+            accelerator = get_feedback_accelerator()
+            decision = accelerator.get_training_decision(config_key)
+            epochs_multiplier = decision.epochs_multiplier
+            lr_multiplier = decision.learning_rate_multiplier
+            intensity_status = decision.intensity.value
+            print(f"  [Feedback] {config_key}: intensity={intensity_status}, "
+                  f"epochs_mult={epochs_multiplier:.1f}, lr_mult={lr_multiplier:.1f}", flush=True)
+        except Exception as e:
+            print(f"  [Feedback] Warning: {e}", flush=True)
+
+    # Apply intensity multipliers
+    adjusted_epochs = max(1, int(epochs * epochs_multiplier))
+
     train_cmd = [
         sys.executable, os.path.join(BASE_DIR, "scripts/run_nn_training_baseline.py"),
         "--board", board_type,
         "--num-players", str(num_players),
         "--run-dir", run_dir,
         "--data-path", npz,
-        "--epochs", str(epochs),
+        "--epochs", str(adjusted_epochs),
+        "--use-optimized-hyperparams",  # Load tuned HP from config/hyperparameters.json
     ]
 
-    print(f"  Training {short} for {epochs} epochs...", flush=True)
+    # Apply LR multiplier if non-default
+    if lr_multiplier != 1.0 and HAS_HYPERPARAMETERS:
+        try:
+            hp = get_hyperparameters(board_type, num_players)
+            base_lr = hp.get("learning_rate", 0.001)
+            adjusted_lr = base_lr * lr_multiplier
+            train_cmd.extend(["--learning-rate", f"{adjusted_lr:.6f}"])
+        except Exception:
+            pass
+
+    # Check if this config has optimized hyperparameters
+    hp_status = "defaults"
+    if HAS_HYPERPARAMETERS:
+        try:
+            hp_info = get_hyperparameter_info(board_type, num_players)
+            if hp_info.get("optimized"):
+                hp_status = f"OPTIMIZED ({hp_info.get('tuning_method', 'unknown')})"
+        except Exception:
+            pass
+
+    print(f"  Training {short} for {adjusted_epochs} epochs (HP: {hp_status}, intensity: {intensity_status})...", flush=True)
     try:
         r = subprocess.run(train_cmd, capture_output=True, text=True, timeout=900, env=env)
         if r.returncode != 0:
@@ -682,6 +905,26 @@ def run_training(board_type: str, num_players: int, db_paths: List[str],
 
     print(f"  {short} training complete!", flush=True)
     last_trained_counts[key] = current_count
+
+    # Check if HP tuning should be recommended
+    hp_recommendation = check_hp_tuning_recommendation(board_type, num_players, current_count)
+    if hp_recommendation:
+        print(f"\n  ⚡ {hp_recommendation}\n", flush=True)
+        # Optionally trigger auto HP tuning if enabled
+        if ENABLE_AUTO_HP_TUNING:
+            trigger_hp_tuning(board_type, num_players, trials=20)
+
+    # Check for NAS results or recommendations (only occasionally)
+    if iteration % 10 == 0:  # Check every 10 training iterations
+        nas_arch = check_nas_results(board_type, num_players)
+        if nas_arch:
+            print(f"  🧬 NAS architecture available for {short}: {nas_arch.get('num_res_blocks', '?')} blocks, "
+                  f"{nas_arch.get('channels', '?')} channels", flush=True)
+        else:
+            nas_rec = check_nas_recommendation(board_type, num_players)
+            if nas_rec:
+                print(f"\n  🧬 {nas_rec}\n", flush=True)
+
     return True
 
 
@@ -689,12 +932,43 @@ def main():
     global last_trained_counts
 
     print("=" * 60, flush=True)
-    print("Multi-Config Training Loop v6 (ADAPTIVE CURRICULUM)", flush=True)
+    print("Multi-Config Training Loop v7 (OPTIMIZED HP + ADAPTIVE CURRICULUM)", flush=True)
     print(f"Base dir: {BASE_DIR}", flush=True)
     print("Configs: " + ", ".join(short_name(bt, np) for bt, np in THRESHOLDS.keys()), flush=True)
-    print("Mode: ADAPTIVE - prioritizes low-ELO configs for balanced improvement", flush=True)
-    print("Sources: DB + JSONL (tournaments, canonical selfplay)", flush=True)
-    print("Note: Excludes games marked excluded_from_training=1", flush=True)
+    print("=" * 60, flush=True)
+
+    # Show advanced features status
+    print("Advanced Features:", flush=True)
+    print(f"  - Hyperparameters: {'ENABLED' if HAS_HYPERPARAMETERS else 'disabled'}", flush=True)
+    print(f"  - Feedback Accelerator: {'ENABLED' if HAS_FEEDBACK_ACCELERATOR else 'disabled'}", flush=True)
+    print(f"  - Adaptive Curriculum: ENABLED (ELO-based)", flush=True)
+    print(f"  - Auto HP Tuning: {'ENABLED' if ENABLE_AUTO_HP_TUNING else 'disabled (set RINGRIFT_ENABLE_AUTO_HP_TUNING=1)'}", flush=True)
+
+    # Show hyperparameter status for all configs
+    if HAS_HYPERPARAMETERS:
+        try:
+            hp_configs = get_all_hp_configs()
+            optimized = [k for k, v in hp_configs.items() if v.get("optimized")]
+            needs_tune = [k for k, v in hp_configs.items() if not v.get("optimized")]
+            if optimized:
+                print(f"  HP Optimized: {', '.join(optimized)}", flush=True)
+            if needs_tune:
+                print(f"  HP Needs Tuning: {', '.join(needs_tune[:3])}{'...' if len(needs_tune) > 3 else ''}", flush=True)
+        except Exception:
+            pass
+
+    # Show feedback accelerator status
+    if HAS_FEEDBACK_ACCELERATOR:
+        try:
+            accelerator = get_feedback_accelerator()
+            curriculum_weights = accelerator.get_curriculum_weights()
+            if curriculum_weights:
+                accelerated = [k for k, v in curriculum_weights.items() if v > 1.2]
+                if accelerated:
+                    print(f"  Accelerated configs: {', '.join(accelerated)}", flush=True)
+        except Exception:
+            pass
+
     print("=" * 60, flush=True)
 
     iteration = 0
@@ -753,7 +1027,7 @@ def main():
                 sn = short_name(board_type, num_players)
                 elo = elo_scores.get(config, 1500.0)
                 print(f"[{ts}] ADAPTIVE: Training {sn} (models={models}, ELO={elo:.0f}, new_games={new_games})", flush=True)
-                run_training(board_type, num_players, db_paths, jsonl_paths, total_count)
+                run_training(board_type, num_players, db_paths, jsonl_paths, total_count, iteration)
 
             time.sleep(60)
 
