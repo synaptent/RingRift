@@ -482,12 +482,73 @@ class NodeResilience:
                 return cand
         return sys.executable or "python3"
 
+    def _check_port_available(self, port: int) -> bool:
+        """Check if a port is available for binding."""
+        import socket
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind(("0.0.0.0", port))
+                return True
+        except OSError:
+            return False
+
+    def _kill_port_holder(self, port: int) -> bool:
+        """Kill any process holding a port. Returns True if port becomes available."""
+        try:
+            # Find PIDs using the port via fuser
+            result = subprocess.run(
+                ["fuser", f"{port}/tcp"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.stdout.strip():
+                pids = result.stdout.strip().split()
+                for pid in pids:
+                    try:
+                        pid_int = int(pid.strip())
+                        logger.warning(f"Killing process {pid_int} holding port {port}")
+                        os.kill(pid_int, signal.SIGKILL)
+                    except (ValueError, ProcessLookupError):
+                        pass
+                time.sleep(1)
+                return self._check_port_available(port)
+        except Exception as e:
+            logger.debug(f"fuser check failed: {e}")
+
+        # Fallback: kill any p2p_orchestrator processes
+        try:
+            subprocess.run(
+                ["pkill", "-9", "-f", "p2p_orchestrator.py"],
+                capture_output=True,
+                timeout=5,
+            )
+            time.sleep(2)
+            return self._check_port_available(port)
+        except Exception:
+            pass
+        return False
+
     def start_p2p_orchestrator(self) -> bool:
-        """Start the P2P orchestrator if not running."""
+        """Start the P2P orchestrator if not running.
+
+        Includes retry logic with port availability checking to handle
+        race conditions where the port is briefly unavailable after crashes.
+        """
         if self.check_p2p_health():
             return True
 
         logger.info("Starting P2P orchestrator...")
+
+        # Check port availability and clear if needed
+        if not self._check_port_available(self.config.p2p_port):
+            logger.warning(f"Port {self.config.p2p_port} is in use, attempting to clear...")
+            if not self._kill_port_holder(self.config.p2p_port):
+                logger.error(f"Could not free port {self.config.p2p_port}")
+                return False
+            logger.info(f"Port {self.config.p2p_port} is now available")
+
         try:
             # Prefer systemd on full VM hosts to avoid split-brain between
             # systemd units and a directly-spawned process (which can lead to
@@ -536,10 +597,27 @@ class NodeResilience:
                 )
             finally:
                 log_handle.close()
-            time.sleep(3)
-            if proc.poll() is None and self.check_p2p_health():
-                logger.info(f"P2P orchestrator started (PID {proc.pid})")
-                return True
+
+            # Wait longer for P2P to initialize (loading state, connecting to peers)
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    logger.warning(f"P2P orchestrator exited with code {proc.returncode}")
+                    break
+                if self.check_p2p_health():
+                    logger.info(f"P2P orchestrator started (PID {proc.pid})")
+                    return True
+                time.sleep(1)
+
+            # If process is still running but not healthy, give it more time
+            if proc.poll() is None:
+                logger.info("P2P process running but not healthy yet, waiting...")
+                for _ in range(10):
+                    time.sleep(1)
+                    if self.check_p2p_health():
+                        logger.info(f"P2P orchestrator started (PID {proc.pid})")
+                        return True
+                logger.warning("P2P did not become healthy within timeout")
         except Exception as e:
             logger.error(f"Failed to start P2P orchestrator: {e}")
         return False
