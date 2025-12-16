@@ -307,94 +307,108 @@ def calculate_elo(winner_elo: float, loser_elo: float, k: float = 32, draw: bool
 
 
 def merge_matches_into_db(db_path: Path, new_matches: List[Dict]):
-    """Merge new matches into database and recalculate Elo."""
+    """Merge new matches into database and recalculate Elo.
+
+    Uses explicit transaction to ensure atomicity - if anything fails,
+    the entire batch is rolled back to prevent database corruption.
+    """
     if not new_matches:
         return 0
 
     conn = sqlite3.connect(db_path)
+    conn.isolation_level = None  # Manual transaction control
     cursor = conn.cursor()
-
-    # Get existing game_ids to avoid duplicates
-    cursor.execute("SELECT game_id FROM match_history WHERE game_id IS NOT NULL")
-    existing_game_ids = {row[0] for row in cursor.fetchall()}
-
     inserted = 0
-    for match in new_matches:
-        game_id = match.get('game_id')
-        if game_id and game_id in existing_game_ids:
-            continue
 
-        cursor.execute("""
-            INSERT INTO match_history
-            (participant_a, participant_b, board_type, num_players, winner,
-             game_length, duration_sec, timestamp, tournament_id, game_id, metadata, worker)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            match['participant_a'], match['participant_b'], match['board_type'],
-            match['num_players'], match.get('winner'), match.get('game_length'),
-            match.get('duration_sec'), match['timestamp'], match.get('tournament_id'),
-            match.get('game_id'), match.get('metadata'), match.get('worker')
-        ))
+    try:
+        cursor.execute("BEGIN IMMEDIATE")  # Lock DB for writes
 
-        # Update Elo ratings
-        p_a, p_b = match['participant_a'], match['participant_b']
-        winner = match.get('winner')
-        board_type = match['board_type']
-        num_players = match['num_players']
+        # Get existing game_ids to avoid duplicates
+        cursor.execute("SELECT game_id FROM match_history WHERE game_id IS NOT NULL")
+        existing_game_ids = {row[0] for row in cursor.fetchall()}
 
-        # Get current ratings
-        cursor.execute("""
-            SELECT rating FROM elo_ratings
-            WHERE participant_id = ? AND board_type = ? AND num_players = ?
-        """, (p_a, board_type, num_players))
-        row = cursor.fetchone()
-        elo_a = row[0] if row else 1500.0
+        for match in new_matches:
+            game_id = match.get('game_id')
+            if game_id and game_id in existing_game_ids:
+                continue
 
-        cursor.execute("""
-            SELECT rating FROM elo_ratings
-            WHERE participant_id = ? AND board_type = ? AND num_players = ?
-        """, (p_b, board_type, num_players))
-        row = cursor.fetchone()
-        elo_b = row[0] if row else 1500.0
-
-        # Calculate new ratings
-        if winner == p_a:
-            new_a, new_b = calculate_elo(elo_a, elo_b)
-            win_a, loss_a, draw_a = 1, 0, 0
-            win_b, loss_b, draw_b = 0, 1, 0
-        elif winner == p_b:
-            new_b, new_a = calculate_elo(elo_b, elo_a)
-            win_a, loss_a, draw_a = 0, 1, 0
-            win_b, loss_b, draw_b = 1, 0, 0
-        else:
-            new_a, new_b = calculate_elo(elo_a, elo_b, draw=True)
-            win_a, loss_a, draw_a = 0, 0, 1
-            win_b, loss_b, draw_b = 0, 0, 1
-
-        # Update ratings
-        now = time.time()
-        for pid, new_elo, w, l, d in [(p_a, new_a, win_a, loss_a, draw_a),
-                                       (p_b, new_b, win_b, loss_b, draw_b)]:
             cursor.execute("""
-                INSERT INTO elo_ratings
-                (participant_id, board_type, num_players, rating, games_played, wins, losses, draws, last_update)
-                VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
-                ON CONFLICT(participant_id, board_type, num_players) DO UPDATE SET
-                    rating = ?,
-                    games_played = games_played + 1,
-                    wins = wins + ?,
-                    losses = losses + ?,
-                    draws = draws + ?,
-                    last_update = ?
-            """, (pid, board_type, num_players, new_elo, w, l, d, now,
-                  new_elo, w, l, d, now))
+                INSERT INTO match_history
+                (participant_a, participant_b, board_type, num_players, winner,
+                 game_length, duration_sec, timestamp, tournament_id, game_id, metadata, worker)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                match['participant_a'], match['participant_b'], match['board_type'],
+                match['num_players'], match.get('winner'), match.get('game_length'),
+                match.get('duration_sec'), match['timestamp'], match.get('tournament_id'),
+                match.get('game_id'), match.get('metadata'), match.get('worker')
+            ))
 
-        inserted += 1
-        if game_id:
-            existing_game_ids.add(game_id)
+            # Update Elo ratings
+            p_a, p_b = match['participant_a'], match['participant_b']
+            winner = match.get('winner')
+            board_type = match['board_type']
+            num_players = match['num_players']
 
-    conn.commit()
-    conn.close()
+            # Get current ratings
+            cursor.execute("""
+                SELECT rating FROM elo_ratings
+                WHERE participant_id = ? AND board_type = ? AND num_players = ?
+            """, (p_a, board_type, num_players))
+            row = cursor.fetchone()
+            elo_a = row[0] if row else 1500.0
+
+            cursor.execute("""
+                SELECT rating FROM elo_ratings
+                WHERE participant_id = ? AND board_type = ? AND num_players = ?
+            """, (p_b, board_type, num_players))
+            row = cursor.fetchone()
+            elo_b = row[0] if row else 1500.0
+
+            # Calculate new ratings
+            if winner == p_a:
+                new_a, new_b = calculate_elo(elo_a, elo_b)
+                win_a, loss_a, draw_a = 1, 0, 0
+                win_b, loss_b, draw_b = 0, 1, 0
+            elif winner == p_b:
+                new_b, new_a = calculate_elo(elo_b, elo_a)
+                win_a, loss_a, draw_a = 0, 1, 0
+                win_b, loss_b, draw_b = 1, 0, 0
+            else:
+                new_a, new_b = calculate_elo(elo_a, elo_b, draw=True)
+                win_a, loss_a, draw_a = 0, 0, 1
+                win_b, loss_b, draw_b = 0, 0, 1
+
+            # Update ratings
+            now = time.time()
+            for pid, new_elo, w, l, d in [(p_a, new_a, win_a, loss_a, draw_a),
+                                           (p_b, new_b, win_b, loss_b, draw_b)]:
+                cursor.execute("""
+                    INSERT INTO elo_ratings
+                    (participant_id, board_type, num_players, rating, games_played, wins, losses, draws, last_update)
+                    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+                    ON CONFLICT(participant_id, board_type, num_players) DO UPDATE SET
+                        rating = ?,
+                        games_played = games_played + 1,
+                        wins = wins + ?,
+                        losses = losses + ?,
+                        draws = draws + ?,
+                        last_update = ?
+                """, (pid, board_type, num_players, new_elo, w, l, d, now,
+                      new_elo, w, l, d, now))
+
+            inserted += 1
+            if game_id:
+                existing_game_ids.add(game_id)
+
+        cursor.execute("COMMIT")
+    except Exception as e:
+        cursor.execute("ROLLBACK")
+        print(f"Error merging matches, rolled back: {e}")
+        raise
+    finally:
+        conn.close()
+
     return inserted
 
 
@@ -475,9 +489,12 @@ def pull_from_coordinator(coordinator: str, db_path: Path, port: int = DEFAULT_P
         count = cursor.fetchone()[0]
         conn.close()
 
-        # Replace local database
-        shutil.copy(temp_path, db_path)
-        os.unlink(temp_path)
+        # Replace local database atomically
+        # Use os.rename which is atomic on POSIX systems
+        backup_path = str(db_path) + '.backup'
+        if db_path.exists():
+            shutil.copy(db_path, backup_path)  # Keep backup
+        os.rename(temp_path, db_path)  # Atomic replacement
 
         print(f"Pulled database with {count} matches from {coordinator}")
         save_sync_timestamp(time.time())
