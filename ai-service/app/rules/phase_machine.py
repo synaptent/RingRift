@@ -198,8 +198,17 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
         # phase update, mirroring the TS TurnOrchestrator flow where
         # forced_elimination is followed by a victory check and then
         # turn rotation.
-        game_state.current_phase = GamePhase.FORCED_ELIMINATION
-        GameEngine._rotate_to_next_active_player(game_state)
+        #
+        # RR-PARITY-FIX-2025-12-16: Use _end_turn instead of _rotate_to_next_active_player
+        # to match TS semantics. The key difference is that TS computes the next player
+        # starting from move.player (via computeNextNonEliminatedPlayer(gameState, move.player, ...)),
+        # while _rotate_to_next_active_player starts from game_state.current_player.
+        # Using _end_turn ensures:
+        # 1. Victory is checked properly if the forced elimination ended the game
+        # 2. The rotation uses the correct starting point (current_player at the time
+        #    of the move, which should match move.player)
+        # 3. Phase transitions to ring_placement for the next player
+        GameEngine._end_turn(game_state, trace_mode=trace_mode)
 
     elif last_move.type == MoveType.PLACE_RING:
         # After placement, decide whether to enter movement or, if no

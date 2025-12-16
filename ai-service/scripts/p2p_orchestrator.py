@@ -1034,6 +1034,12 @@ class TrainingJob:
     # Metrics
     final_loss: float = 0.0
     final_accuracy: float = 0.0
+    # TRAINING CHECKPOINTING: Track checkpoint state for resume capability
+    checkpoint_path: str = ""        # Path to latest checkpoint
+    checkpoint_epoch: int = 0        # Epoch of latest checkpoint
+    checkpoint_loss: float = 0.0     # Loss at checkpoint
+    checkpoint_updated_at: float = 0.0  # When checkpoint was last saved
+    resume_from_checkpoint: bool = False  # Whether this job resumed from checkpoint
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -9508,16 +9514,47 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     return job
         return None
 
+    def _find_resumable_training_job(self, job_type: str, config_key: str) -> Optional[TrainingJob]:
+        """Find a failed/interrupted training job with a valid checkpoint.
+
+        TRAINING CHECKPOINTING: When a training job fails or is interrupted,
+        this function finds it if it has a valid checkpoint that can be resumed.
+
+        Returns:
+            TrainingJob with valid checkpoint, or None
+        """
+        with self.training_lock:
+            for job in self.training_jobs.values():
+                if (job.job_type == job_type and
+                    f"{job.board_type}_{job.num_players}p" == config_key and
+                    job.status == "failed" and
+                    job.checkpoint_path and
+                    job.checkpoint_epoch > 0):
+                    # Found a failed job with checkpoint
+                    return job
+        return None
+
     async def _dispatch_training_job(self, job_config: Dict[str, Any]) -> Optional[TrainingJob]:
         """Dispatch a training job to an appropriate worker.
 
         Finds a GPU node for NNUE training, or any available node for CMA-ES.
         Creates a TrainingJob and sends it to the worker.
+
+        TRAINING CHECKPOINTING: If a failed job with checkpoint exists for this
+        config, includes resume info in the dispatch.
         """
         job_type = job_config["job_type"]
         board_type = job_config["board_type"]
         num_players = job_config["num_players"]
         config_key = job_config["config_key"]
+
+        # TRAINING CHECKPOINTING: Check for resumable failed job
+        resumable = self._find_resumable_training_job(job_type, config_key)
+        if resumable and not job_config.get("resume_checkpoint_path"):
+            # Found a failed job with checkpoint - add resume info
+            job_config["resume_checkpoint_path"] = resumable.checkpoint_path
+            job_config["resume_epoch"] = resumable.checkpoint_epoch
+            print(f"[P2P] Found resumable job {resumable.job_id} with checkpoint at epoch {resumable.checkpoint_epoch}")
 
         # Generate job ID
         job_id = f"{job_type}_{config_key}_{int(time.time())}"
@@ -9586,6 +9623,15 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         else:
             self.games_at_last_cmaes_train[config_key] = job_config.get("total_games", 0)
 
+        # TRAINING CHECKPOINTING: Check for resumable job with checkpoint
+        resume_checkpoint = job_config.get("resume_checkpoint_path", "")
+        resume_epoch = job_config.get("resume_epoch", 0)
+        if resume_checkpoint:
+            job.checkpoint_path = resume_checkpoint
+            job.checkpoint_epoch = resume_epoch
+            job.resume_from_checkpoint = True
+            print(f"[P2P] Resuming training from checkpoint: {resume_checkpoint} (epoch {resume_epoch})")
+
         # Send to worker
         try:
             endpoint = f"/training/{job_type}/start"
@@ -9598,6 +9644,9 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "epochs": job.epochs,
                     "batch_size": job.batch_size,
                     "learning_rate": job.learning_rate,
+                    # TRAINING CHECKPOINTING: Include resume info
+                    "resume_checkpoint": resume_checkpoint,
+                    "resume_epoch": resume_epoch,
                 }
                 last_err: Optional[str] = None
                 for url in self._urls_for_peer(worker_node, endpoint):
@@ -10017,6 +10066,15 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 if data.get("error"):
                     job.status = "failed"
                     job.error_message = data["error"]
+
+                # TRAINING CHECKPOINTING: Track checkpoint progress
+                if data.get("checkpoint_path"):
+                    job.checkpoint_path = data["checkpoint_path"]
+                    job.checkpoint_updated_at = time.time()
+                if data.get("checkpoint_epoch"):
+                    job.checkpoint_epoch = int(data["checkpoint_epoch"])
+                if data.get("checkpoint_loss"):
+                    job.checkpoint_loss = float(data["checkpoint_loss"])
 
                 # Check if we should trigger evaluation after training
                 should_trigger_eval = (
