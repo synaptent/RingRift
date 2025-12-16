@@ -5097,6 +5097,153 @@ class P2POrchestrator:
 
         return total_converted
 
+    async def _convert_jsonl_to_npz_for_training(self, data_dir: Path, training_dir: Path) -> int:
+        """Convert JSONL selfplay files directly to NPZ for training.
+
+        This bypasses the DB intermediate step and creates training-ready NPZ files
+        directly from JSONL. Called periodically when JSONL backlog exists.
+
+        Returns:
+            Number of NPZ files created.
+        """
+        import json as json_module
+        import subprocess
+
+        # Configuration
+        JSONL_THRESHOLD_GAMES = 50  # Only convert when > 50 games accumulated
+        MAX_CONVERSIONS_PER_CYCLE = 3  # Limit conversions per cycle
+
+        selfplay_dir = data_dir / "selfplay"
+        canonical_dir = selfplay_dir / "canonical"
+
+        # Track converted files
+        npz_marker_file = data_dir / ".jsonl_to_npz_converted"
+        converted_files: set = set()
+        if npz_marker_file.exists():
+            try:
+                converted_files = set(npz_marker_file.read_text().strip().split("\n"))
+            except Exception:
+                pass
+
+        conversions_done = 0
+        newly_converted = []
+
+        # Board configs to check
+        board_configs = [
+            ("square8", 2), ("square8", 3), ("square8", 4),
+            ("square19", 2), ("square19", 3), ("square19", 4),
+            ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
+        ]
+
+        for board_type, num_players in board_configs:
+            if conversions_done >= MAX_CONVERSIONS_PER_CYCLE:
+                break
+
+            config_key = f"{board_type}_{num_players}p"
+
+            # Skip if already converted recently
+            if config_key in converted_files:
+                continue
+
+            # Find JSONL files for this config
+            jsonl_files = []
+            search_dirs = [canonical_dir, selfplay_dir, data_dir / "games"]
+
+            for search_dir in search_dirs:
+                if not search_dir.exists():
+                    continue
+                for jsonl_file in search_dir.rglob("*.jsonl"):
+                    if jsonl_file.stat().st_size < 100:
+                        continue
+                    jsonl_files.append(jsonl_file)
+
+            if not jsonl_files:
+                continue
+
+            # Count games matching this config (quick check - just count lines with board type)
+            game_count = 0
+            valid_files = []
+            for jsonl_file in jsonl_files:
+                try:
+                    with open(jsonl_file, 'r') as f:
+                        for line in f:
+                            if not line.strip():
+                                continue
+                            try:
+                                game = json_module.loads(line)
+                                game_board = game.get("board_type", "")
+                                game_players = game.get("num_players", 0)
+                                has_moves = "moves" in game and len(game.get("moves", [])) > 0
+
+                                # Check if matches config
+                                board_match = board_type in game_board.lower() or game_board.lower() in board_type
+                                if board_type == "hexagonal":
+                                    board_match = "hex" in game_board.lower()
+
+                                if board_match and game_players == num_players and has_moves:
+                                    game_count += 1
+                                    if jsonl_file not in valid_files:
+                                        valid_files.append(jsonl_file)
+                            except json_module.JSONDecodeError:
+                                continue
+                except Exception:
+                    continue
+
+            if game_count < JSONL_THRESHOLD_GAMES:
+                continue
+
+            if not valid_files:
+                continue
+
+            # Convert to NPZ using jsonl_to_npz.py
+            output_npz = training_dir / f"jsonl_auto_{config_key}_{int(time.time())}.npz"
+            converter_script = self.ringrift_path / "ai-service" / "scripts" / "jsonl_to_npz.py"
+
+            if not converter_script.exists():
+                print(f"[P2P] JSONL→NPZ converter not found: {converter_script}")
+                continue
+
+            cmd = [
+                sys.executable, str(converter_script),
+                "--output", str(output_npz),
+                "--board-type", board_type,
+                "--num-players", str(num_players),
+                "--sample-every", "5",
+                "--max-games", "100",
+            ]
+            for vf in valid_files[:10]:  # Limit input files
+                cmd.extend(["--input", str(vf)])
+
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(self.ringrift_path / "ai-service")
+
+            try:
+                print(f"[P2P] Converting {game_count} {config_key} JSONL games to NPZ...")
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=600, env=env,
+                    cwd=str(self.ringrift_path / "ai-service")
+                )
+                if result.returncode == 0 and output_npz.exists():
+                    print(f"[P2P] Created {output_npz.name} from JSONL")
+                    conversions_done += 1
+                    newly_converted.append(config_key)
+                else:
+                    print(f"[P2P] JSONL→NPZ conversion failed for {config_key}: {result.stderr[:200] if result.stderr else 'no error'}")
+            except subprocess.TimeoutExpired:
+                print(f"[P2P] JSONL→NPZ conversion timeout for {config_key}")
+            except Exception as e:
+                print(f"[P2P] JSONL→NPZ conversion error for {config_key}: {e}")
+
+        # Update marker file
+        if newly_converted:
+            try:
+                all_converted = converted_files | set(newly_converted)
+                npz_marker_file.write_text("\n".join(sorted(all_converted)))
+            except Exception:
+                pass
+
+        return conversions_done
+
     async def _data_management_loop(self):
         """Background loop for automatic data management.
 
@@ -5133,9 +5280,17 @@ class P2POrchestrator:
                 try:
                     converted = await self._convert_jsonl_to_db(data_dir, games_dir)
                     if converted > 0:
-                        print(f"[P2P] Local JSONL conversion: {converted} games converted")
+                        print(f"[P2P] Local JSONL→DB conversion: {converted} games converted")
                 except Exception as conv_err:
-                    print(f"[P2P] JSONL conversion error: {conv_err}")
+                    print(f"[P2P] JSONL→DB conversion error: {conv_err}")
+
+                # Also convert JSONL directly to NPZ for training (preferred path)
+                try:
+                    npz_created = await self._convert_jsonl_to_npz_for_training(data_dir, training_dir)
+                    if npz_created > 0:
+                        print(f"[P2P] Local JSONL→NPZ conversion: {npz_created} training files created")
+                except Exception as npz_err:
+                    print(f"[P2P] JSONL→NPZ conversion error: {npz_err}")
 
                 # ==== LEADER-ONLY OPERATIONS ====
                 if not self._is_leader():

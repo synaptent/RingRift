@@ -240,11 +240,15 @@ def find_jsonl_files(path: str) -> List[str]:
     return []
 
 
-def count_jsonl_games(jsonl_path: str, board_type: str, num_players: int) -> Tuple[int, Set[str]]:
+def count_jsonl_games(jsonl_path: str, board_type: str, num_players: int,
+                       max_lines: int = 10000) -> Tuple[int, Set[str]]:
     """Count games in JSONL file matching board_type and num_players.
 
     Returns (count, set of game_ids) for deduplication.
     Only counts games with canonical format (has 'moves' array).
+
+    For performance, limits to first max_lines lines (default 10000).
+    This is a reasonable estimate for large files.
     """
     if not os.path.exists(jsonl_path):
         return 0, set()
@@ -252,10 +256,15 @@ def count_jsonl_games(jsonl_path: str, board_type: str, num_players: int) -> Tup
     variants = BOARD_VARIANTS.get(board_type, [board_type])
     count = 0
     game_ids = set()
+    lines_read = 0
 
     try:
         with open(jsonl_path, 'r') as f:
             for line in f:
+                lines_read += 1
+                if lines_read > max_lines:
+                    break  # Stop after max_lines for performance
+
                 line = line.strip()
                 if not line:
                     continue
@@ -286,6 +295,81 @@ def count_jsonl_games(jsonl_path: str, board_type: str, num_players: int) -> Tup
     return count, game_ids
 
 
+# Cache for JSONL file metadata to avoid repeated parsing
+_jsonl_metadata_cache: Dict[str, Dict[Tuple[str, int], int]] = {}
+_jsonl_cache_time: Dict[str, float] = {}
+JSONL_CACHE_TTL = 300  # 5 minute cache TTL
+
+
+def get_jsonl_file_metadata(jsonl_path: str, max_lines: int = 5000) -> Dict[Tuple[str, int], Set[str]]:
+    """Parse JSONL file once and return game counts per config.
+
+    Returns dict of (board_type, num_players) -> set of game_ids.
+    Cached for 5 minutes to avoid repeated parsing.
+    """
+    # Check cache
+    cache_key = jsonl_path
+    if cache_key in _jsonl_cache_time:
+        if time.time() - _jsonl_cache_time[cache_key] < JSONL_CACHE_TTL:
+            return _jsonl_metadata_cache.get(cache_key, {})
+
+    # Parse file
+    result: Dict[Tuple[str, int], Set[str]] = {}
+
+    if not os.path.exists(jsonl_path):
+        return result
+
+    try:
+        lines_read = 0
+        with open(jsonl_path, 'r') as f:
+            for line in f:
+                lines_read += 1
+                if lines_read > max_lines:
+                    break
+
+                line = line.strip()
+                if not line:
+                    continue
+
+                try:
+                    game = json.loads(line)
+                    game_board = game.get("board_type", "")
+                    game_players = game.get("num_players", 0)
+                    game_id = game.get("game_id", "")
+                    has_moves = "moves" in game and len(game.get("moves", [])) > 0
+
+                    if not has_moves or not game_id:
+                        continue
+
+                    # Normalize board type
+                    board_type = None
+                    if "hex" in game_board.lower():
+                        board_type = "hexagonal"
+                    elif "square19" in game_board.lower() or "sq19" in game_board.lower():
+                        board_type = "square19"
+                    elif "square8" in game_board.lower() or "sq8" in game_board.lower():
+                        board_type = "square8"
+                    else:
+                        board_type = game_board
+
+                    if board_type and game_players in (2, 3, 4):
+                        key = (board_type, game_players)
+                        if key not in result:
+                            result[key] = set()
+                        result[key].add(game_id)
+
+                except json.JSONDecodeError:
+                    continue
+    except Exception:
+        pass
+
+    # Update cache
+    _jsonl_metadata_cache[cache_key] = result
+    _jsonl_cache_time[cache_key] = time.time()
+
+    return result
+
+
 def get_jsonl_counts(board_type: str, num_players: int) -> Tuple[int, List[str]]:
     """Get total JSONL game counts for a config, returning (total_count, jsonl_files_with_games)."""
     config = (board_type, num_players)
@@ -297,7 +381,10 @@ def get_jsonl_counts(board_type: str, num_players: int) -> Tuple[int, List[str]]
 
     for path in jsonl_dirs:
         for jsonl_path in find_jsonl_files(path):
-            count, game_ids = count_jsonl_games(jsonl_path, board_type, num_players)
+            # Use cached metadata
+            metadata = get_jsonl_file_metadata(jsonl_path)
+            game_ids = metadata.get(config, set())
+
             # Only count games not seen before (deduplication)
             new_ids = game_ids - seen_game_ids
             if new_ids:
