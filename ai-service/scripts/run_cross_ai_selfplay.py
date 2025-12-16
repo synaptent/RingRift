@@ -402,8 +402,9 @@ def run_balanced_selfplay(
 
         game_num += 1
 
-        # Progress logging
-        if game_num % 10 == 0:
+        # Progress logging (every game if < 20, otherwise every 10)
+        log_interval = 10 if total_games >= 20 else 1
+        if game_num % log_interval == 0 or game_num == 1:
             elapsed = time.time() - start_time
             rate = game_num / elapsed if elapsed > 0 else 0
             logger.info(f"Progress: {game_num}/{total_games} games ({rate:.2f} games/sec)")
