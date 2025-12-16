@@ -643,9 +643,11 @@ class DistributedNNGauntlet:
             import aiohttp
             from aiohttp import ClientTimeout
 
-            timeout = ClientTimeout(total=30)  # Allow more time for large clusters
+            # Use /api/cluster/status?local=1 which is faster than /status
+            # and avoids proxying to leader (local=1 flag)
+            timeout = ClientTimeout(total=45)  # Allow more time for large clusters
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(f"{p2p_url}/status") as resp:
+                async with session.get(f"{p2p_url}/api/cluster/status?local=1") as resp:
                     if resp.status != 200:
                         logger.warning(f"[Gauntlet] P2P status failed: {resp.status}")
                         return []
@@ -653,22 +655,26 @@ class DistributedNNGauntlet:
                     data = await resp.json()
 
             # Find workers that are alive and have capacity
+            # Note: /api/cluster/status returns peers as array with last_seen, not dict with last_heartbeat
             workers = []
-            peers = data.get("peers", {})
+            peers = data.get("peers", [])
             now = time.time()
 
-            for node_id, peer_info in peers.items():
-                # Compute aliveness from last_heartbeat timestamp
-                # Status response has last_heartbeat as Unix timestamp, not is_alive flag
-                last_heartbeat = peer_info.get("last_heartbeat", 0)
-                is_alive = (now - last_heartbeat) < ALIVE_TIMEOUT
+            for peer_info in peers:
+                node_id = peer_info.get("node_id", "")
+                if not node_id:
+                    continue
+
+                # Compute aliveness from last_seen timestamp
+                last_seen = peer_info.get("last_seen", 0)
+                is_alive = (now - last_seen) < ALIVE_TIMEOUT
 
                 if not is_alive:
-                    logger.debug(f"[Gauntlet] Skipping {node_id}: last heartbeat {now - last_heartbeat:.0f}s ago")
+                    logger.debug(f"[Gauntlet] Skipping {node_id}: last seen {now - last_seen:.0f}s ago")
                     continue
 
                 # Get host - try multiple fields (IP address of the node)
-                host = peer_info.get("host") or peer_info.get("ip") or peer_info.get("address", "")
+                host = peer_info.get("host") or peer_info.get("effective_host") or ""
                 if not host:
                     logger.debug(f"[Gauntlet] Skipping {node_id}: no host/IP address")
                     continue
