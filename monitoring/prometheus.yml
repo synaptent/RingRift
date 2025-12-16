@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: ringrift-p2p-monitor
+    cluster: primary
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  # P2P cluster exporter (aggregates all tunnel nodes)
+  - job_name: ringrift-p2p-cluster
+    static_configs:
+      - targets:
+          - localhost:9094
+    scrape_interval: 15s
+
+  - job_name: ringrift-unified-loop
+    static_configs:
+      - targets:
+          - localhost:9091
+
+  - job_name: ringrift-elo-metrics
+    static_configs:
+      - targets:
+          - localhost:9092
+    scrape_interval: 30s
+
+  - job_name: ringrift-data-quality
+    static_configs:
+      - targets:
+          - localhost:9093
+    scrape_interval: 60s
