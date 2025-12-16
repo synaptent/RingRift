@@ -75,6 +75,36 @@ except ImportError:
 # Get SOCKS proxy from environment (e.g., socks5://localhost:1055)
 SOCKS_PROXY = os.environ.get("RINGRIFT_SOCKS_PROXY", "")
 
+# Systemd watchdog support for service health monitoring
+# When running under systemd with WatchdogSec set, we need to periodically
+# notify systemd that the service is healthy. If we miss the deadline,
+# systemd will restart the service.
+try:
+    import sdnotify
+    SYSTEMD_NOTIFIER = sdnotify.SystemdNotifier()
+    HAS_SYSTEMD = True
+except ImportError:
+    SYSTEMD_NOTIFIER = None
+    HAS_SYSTEMD = False
+
+
+def systemd_notify_watchdog():
+    """Send watchdog ping to systemd if available."""
+    if HAS_SYSTEMD and SYSTEMD_NOTIFIER:
+        try:
+            SYSTEMD_NOTIFIER.notify("WATCHDOG=1")
+        except Exception:
+            pass  # Ignore errors - we may not be running under systemd
+
+
+def systemd_notify_ready():
+    """Notify systemd that the service is ready."""
+    if HAS_SYSTEMD and SYSTEMD_NOTIFIER:
+        try:
+            SYSTEMD_NOTIFIER.notify("READY=1")
+        except Exception:
+            pass
+
 
 class AsyncLockWrapper:
     """Async context manager wrapper for threading locks.
@@ -439,6 +469,12 @@ RETRY_DEAD_NODE_INTERVAL = 300  # Retry dead nodes every 5 minutes
 # return without manual intervention).
 PEER_RETIRE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "3600") or 3600)
 RETRY_RETIRED_NODE_INTERVAL = int(os.environ.get("RINGRIFT_P2P_RETRY_RETIRED_NODE_INTERVAL", "3600") or 3600)
+
+# STABILITY FIX: Automatically purge very old retired peers to prevent unbounded
+# growth of the peer list. This prevents stale data (including old leader claims)
+# from polluting cluster state and causing split-brain confusion.
+# Reduced from 24h to 6h to clean up stale nodes faster and prevent list bloat.
+PEER_PURGE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_PURGE_AFTER_SECONDS", "21600") or 21600)  # 6 hours
 
 # NAT/relay settings
 # Nodes that can't receive inbound connections can operate in relay mode:
@@ -6202,6 +6238,17 @@ class P2POrchestrator:
                     if getattr(existing, "retired", False):
                         peer_info.retired = True
                         peer_info.retired_at = float(getattr(existing, "retired_at", 0.0) or 0.0)
+
+                # STABILITY FIX: Correct stale leader role claims
+                # If a peer claims to be leader but we have an elected leader that's different,
+                # downgrade their role to follower to prevent split-brain confusion.
+                # This prevents stale leader info from propagating through gossip.
+                if peer_info.role == NodeRole.LEADER and peer_info.node_id != self.node_id:
+                    actual_leader = self.leader_id
+                    if actual_leader and actual_leader != peer_info.node_id:
+                        # Peer claims leader but we have a different elected leader
+                        peer_info.role = NodeRole.FOLLOWER
+
                 self.peers[peer_info.node_id] = peer_info
 
             # Return our info
@@ -6899,28 +6946,89 @@ class P2POrchestrator:
         """
         # Skip auth check for this admin cleanup operation
         try:
-            retired_peers = [
-                node_id for node_id, info in self.peers.items()
-                if getattr(info, "retired", False)
-            ]
+            async with AsyncLockWrapper(self.peers_lock):
+                retired_peers = [
+                    node_id for node_id, info in self.peers.items()
+                    if getattr(info, "retired", False)
+                ]
 
-            if not retired_peers:
-                return web.json_response({
-                    "success": True,
-                    "purged_count": 0,
-                    "message": "No retired peers to purge",
-                })
+                if not retired_peers:
+                    return web.json_response({
+                        "success": True,
+                        "purged_count": 0,
+                        "message": "No retired peers to purge",
+                    })
 
-            for node_id in retired_peers:
-                del self.peers[node_id]
-                print(f"[P2P] Purged retired peer: {node_id}")
+                for node_id in retired_peers:
+                    del self.peers[node_id]
+                    print(f"[P2P] Purged retired peer: {node_id}")
 
-            print(f"[P2P] Purged {len(retired_peers)} retired peers")
+                print(f"[P2P] Purged {len(retired_peers)} retired peers")
 
             return web.json_response({
                 "success": True,
                 "purged_count": len(retired_peers),
                 "purged_peers": retired_peers,
+            })
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_purge_stale_peers(self, request: web.Request) -> web.Response:
+        """Purge stale peers based on heartbeat age.
+
+        This is more aggressive than purge_retired - it removes any peer
+        that hasn't sent a heartbeat in the specified threshold (default 1 hour).
+
+        Query params:
+            max_age: Maximum heartbeat age in seconds (default: 3600)
+            dry_run: If 1, just report what would be purged without deleting
+        """
+        try:
+            max_age = int(request.query.get("max_age", "3600"))
+            dry_run = request.query.get("dry_run", "0") == "1"
+            now = time.time()
+
+            stale_peers = []
+            async with AsyncLockWrapper(self.peers_lock):
+                for node_id, info in self.peers.items():
+                    if node_id == self.node_id:
+                        continue  # Don't purge self
+                    last_hb = getattr(info, "last_heartbeat", 0.0) or 0.0
+                    age = now - last_hb
+                    if age >= max_age:
+                        stale_peers.append({
+                            "node_id": node_id,
+                            "age_seconds": int(age),
+                            "last_heartbeat": last_hb,
+                            "role": str(getattr(info, "role", "unknown")),
+                            "nat_blocked": getattr(info, "nat_blocked", False),
+                        })
+
+            if not stale_peers:
+                return web.json_response({
+                    "success": True,
+                    "purged_count": 0,
+                    "message": f"No peers older than {max_age}s found",
+                })
+
+            purged_ids = []
+            if not dry_run:
+                async with AsyncLockWrapper(self.peers_lock):
+                    for peer in stale_peers:
+                        node_id = peer["node_id"]
+                        if node_id in self.peers:
+                            del self.peers[node_id]
+                            purged_ids.append(node_id)
+                            print(f"[P2P] Purged stale peer: {node_id} (no heartbeat for {peer['age_seconds']}s)")
+
+            return web.json_response({
+                "success": True,
+                "purged_count": len(purged_ids) if not dry_run else 0,
+                "would_purge_count": len(stale_peers),
+                "dry_run": dry_run,
+                "max_age_seconds": max_age,
+                "stale_peers": stale_peers,
+                "purged_peers": purged_ids,
             })
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
@@ -7049,6 +7157,12 @@ class P2POrchestrator:
             real_ip = forwarded_for.split(",")[0].strip() if forwarded_for else request.remote
             if real_ip:
                 peer_info.host = real_ip
+
+            # STABILITY FIX: Correct stale leader role claims
+            if peer_info.role == NodeRole.LEADER and peer_info.node_id != self.node_id:
+                actual_leader = self.leader_id
+                if actual_leader and actual_leader != peer_info.node_id:
+                    peer_info.role = NodeRole.FOLLOWER
 
             # Store in peers list (they're part of the cluster even if not directly reachable)
             async with AsyncLockWrapper(self.peers_lock):
@@ -18140,6 +18254,9 @@ print(json.dumps({{
             except Exception as e:
                 print(f"[P2P] Heartbeat error: {e}")
 
+            # Notify systemd watchdog that we're still alive
+            systemd_notify_watchdog()
+
             await asyncio.sleep(HEARTBEAT_INTERVAL)
 
     async def _voter_heartbeat_loop(self):
@@ -18748,7 +18865,21 @@ print(json.dumps({{
                 if info and getattr(info, "retired", False):
                     continue
                 print(f"[P2P] Peer {node_id} is dead (no heartbeat for {PEER_TIMEOUT}s)")
-                # Don't remove, just mark as dead for historical tracking
+                # Don't remove immediately, just mark as dead for historical tracking
+
+            # STABILITY FIX: Auto-purge very old retired peers to prevent unbounded list growth
+            # This removes stale entries that would otherwise accumulate and cause confusion
+            # (e.g., old leader role claims that don't match current elected leader)
+            peers_to_purge = []
+            for node_id, info in self.peers.items():
+                if getattr(info, "retired", False):
+                    retired_at = getattr(info, "retired_at", 0.0) or 0.0
+                    if retired_at > 0 and (now - retired_at) >= PEER_PURGE_AFTER_SECONDS:
+                        peers_to_purge.append(node_id)
+
+            for node_id in peers_to_purge:
+                del self.peers[node_id]
+                print(f"[P2P] Auto-purged stale peer: {node_id} (retired for >{PEER_PURGE_AFTER_SECONDS}s)")
 
         # LEARNED LESSONS - Clear stale leader IDs after restarts/partitions.
         #
@@ -24351,6 +24482,7 @@ print(json.dumps({{
         app.router.add_get('/gpu/rankings', self.handle_gpu_rankings)      # GPU power rankings
         app.router.add_post('/cleanup/files', self.handle_cleanup_files)   # File-specific cleanup
         app.router.add_get('/admin/purge_retired', self.handle_purge_retired_peers)  # Purge retired peers (GET for auth bypass)
+        app.router.add_get('/admin/purge_stale', self.handle_purge_stale_peers)      # Purge stale peers by heartbeat age
 
         # Phase 3: Training pipeline routes
         app.router.add_post('/training/start', self.handle_training_start)
@@ -24445,6 +24577,9 @@ print(json.dumps({{
         await site.start()
 
         print(f"[P2P] HTTP server started on {self.host}:{self.port} (backlog=1024)")
+
+        # Notify systemd that we're ready to serve
+        systemd_notify_ready()
 
         # Start background tasks
         tasks = [

@@ -543,7 +543,12 @@ def export_replay_dataset_multi(
                     encoder, state_before, history_frames, history_length=history_length
                 )
 
-                base_features, _ = encoder._extract_features(state_before)
+                # Use the same encoder path as encode_state_with_history for consistent shapes
+                hex_encoder = getattr(encoder, "_hex_encoder", None)
+                if hex_encoder is not None:
+                    base_features, _ = hex_encoder.encode_state(state_before)
+                else:
+                    base_features, _ = encoder._extract_features(state_before)
                 history_frames.append(base_features)
                 if len(history_frames) > history_length + 1:
                     history_frames.pop(0)

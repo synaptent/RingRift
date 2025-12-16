@@ -4,7 +4,8 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
 # EnvironmentFile provides NODE_ID, P2P_PORT, COORDINATOR_URL, RINGRIFT_PATH
 EnvironmentFile=/etc/ringrift/node.conf
 
@@ -12,6 +13,7 @@ EnvironmentFile=/etc/ringrift/node.conf
 ExecStartPre=/bin/bash -c 'pid=$(lsof -ti:${P2P_PORT:-8770} 2>/dev/null | head -1); if [ -n "$pid" ]; then echo "[ringrift-p2p] Killing process $pid on port ${P2P_PORT:-8770}"; kill -9 "$pid" 2>/dev/null || true; sleep 2; fi'
 
 # Start orchestrator - auto-detect python path and set PYTHONPATH
+# Uses Cloudflare tunnel as primary coordinator + Tailscale fallbacks for resilience
 ExecStart=/bin/bash -c '\
   RINGRIFT_PATH="${RINGRIFT_PATH:-/home/ubuntu/ringrift}"; \
   export PYTHONPATH="$RINGRIFT_PATH/ai-service"; \
@@ -21,11 +23,15 @@ ExecStart=/bin/bash -c '\
   exec "$PY" scripts/p2p_orchestrator.py \
     --node-id "${NODE_ID}" \
     --port "${P2P_PORT:-8770}" \
-    --peers "${COORDINATOR_URL:-http://100.78.101.123:8770}" \
+    --peers "${COORDINATOR_URL:-https://p2p.ringrift.ai,http://100.78.101.123:8770,http://100.88.176.74:8770}" \
     --ringrift-path "$RINGRIFT_PATH"'
 
+# Watchdog: systemd will restart the service if it doesn't ping within WatchdogSec
+# The P2P orchestrator must call systemd.daemon.notify("WATCHDOG=1") periodically
+WatchdogSec=300
 Restart=always
 RestartSec=10
+TimeoutStartSec=120
 TimeoutStopSec=30
 
 # Logging

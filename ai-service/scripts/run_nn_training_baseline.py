@@ -155,12 +155,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--model-version",
         type=str,
         default="v2",
-        choices=["v2", "v3"],
+        choices=["v2", "v3", "v4"],
         help=(
             "Model architecture version to use. 'v2' is the standard "
             "RingRiftCNN_v2 with global average pooling. 'v3' is the new "
             "architecture with spatial policy heads and rank distribution "
-            "output. Default: v2."
+            "output. 'v4' is the NAS-optimized architecture with multi-head "
+            "attention (square boards only). Default: v2."
         ),
     )
     # Hyperparameter overrides (from config/hyperparameters.json or CLI)

@@ -1557,6 +1557,32 @@ def train_model(
                 f"policy_size={policy_size}, num_players={v3_num_players}, "
                 f"blocks={effective_blocks}, filters={effective_filters}"
             )
+    elif model_version == 'v4':
+        # V4 NAS-optimized architecture with multi-head attention (square boards only)
+        from app.ai.neural_net import RingRiftCNN_v4
+        v4_num_players = MAX_PLAYERS if multi_player else num_players
+        # V4 uses NAS-discovered defaults: 13 blocks, 128 filters, 4-head attention
+        v4_blocks = num_res_blocks if num_res_blocks is not None else 13
+        v4_filters = num_filters if num_filters is not None else 128
+        model = RingRiftCNN_v4(
+            board_size=board_size,
+            in_channels=14,  # 14 spatial feature channels per frame
+            global_features=20,  # Must match _extract_features() which returns 20 globals
+            history_length=config.history_length,
+            policy_size=policy_size,
+            num_players=v4_num_players,
+            num_res_blocks=v4_blocks,
+            num_filters=v4_filters,
+            num_attention_heads=4,  # NAS optimal
+            dropout=0.08,  # NAS optimal
+            initial_kernel_size=5,  # NAS optimal
+        )
+        if not distributed or is_main_process():
+            logger.info(
+                f"Initializing RingRiftCNN_v4 (NAS) with board_size={board_size}, "
+                f"policy_size={policy_size}, num_players={v4_num_players}, "
+                f"blocks={v4_blocks}, filters={v4_filters}, attention_heads=4"
+            )
     elif multi_player:
         # Multi-player mode: use RingRiftCNN_v2 with multi-player value loss
         # (dedicated RingRiftCNN_MultiPlayer not yet implemented)
