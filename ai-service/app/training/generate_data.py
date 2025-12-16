@@ -425,7 +425,7 @@ def augment_data(
     For hexagonal boards: 12 augmentations (D6 symmetry group)
     """
     # Hex boards: use D6 symmetry augmentation (12 transformations)
-    if board_type == BoardType.HEXAGONAL:
+    if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
         return augment_hex_data(
             features,
             globals_vec,
@@ -608,7 +608,9 @@ def augment_hex_data(
         List of 12 augmented (features, globals, indices, values) tuples
     """
     if hex_transform is None:
-        hex_transform = HexSymmetryTransform()
+        # Infer board size from features shape (C, H, W) where H=W=board_size
+        board_size = features.shape[1] if len(features.shape) >= 2 else 25
+        hex_transform = HexSymmetryTransform(board_size=board_size)
 
     # Convert to numpy arrays if needed
     if not isinstance(policy_indices, np.ndarray):
@@ -1800,7 +1802,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--board-type",
-        choices=["square8", "square19", "hexagonal"],
+        choices=["square8", "square19", "hex8", "hexagonal"],
         default="square8",
         help="Board type for self-play games (default: square8).",
     )
@@ -1937,6 +1939,8 @@ def _board_type_from_str(name: str) -> BoardType:
         return BoardType.SQUARE8
     if name == "square19":
         return BoardType.SQUARE19
+    if name == "hex8":
+        return BoardType.HEX8
     if name == "hexagonal":
         return BoardType.HEXAGONAL
     raise ValueError(f"Unknown board type: {name!r}")

@@ -3098,6 +3098,13 @@ class NeuralNetAI(BaseAI):
                         f"ringrift_v4_sq19_{players_for_alias}p",
                     ]
                 )
+            elif board_type == BoardType.HEX8:
+                model_id = _pick_first_existing_model_id(
+                    [
+                        f"ringrift_best_hex8_{players_for_alias}p",
+                        f"ringrift_v5_hex8_{players_for_alias}p",
+                    ]
+                )
             else:  # HEXAGONAL
                 model_id = _pick_first_existing_model_id(
                     [
@@ -3144,6 +3151,7 @@ class NeuralNetAI(BaseAI):
                     "sq19",
                     "square19",
                     "19x19",
+                    "hex8",
                     "hex",
                     "hexagonal",
                 )

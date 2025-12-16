@@ -35,6 +35,12 @@ BOARD_CONFIGS: Dict[BoardType, BoardConfig] = {
         rings_per_player=96,
         line_length=4,
     ),
+    BoardType.HEX8: BoardConfig(
+        size=9,                  # 2 * radius + 1 for radius=4
+        total_spaces=61,         # 3r² + 3r + 1 = 61 for r=4
+        rings_per_player=18,     # Same as square8
+        line_length=4,           # Standard line length for hex boards
+    ),
 }
 
 
@@ -55,7 +61,7 @@ def get_effective_line_length(board_type: BoardType, num_players: int) -> int:
     Canonical semantics (RR-CANON-R120):
     - square8 2-player: line length = 4
     - square8 3-4 player: line length = 3
-    - square19 and hexagonal: line length = 4 (all player counts)
+    - square19, hex8, and hexagonal: line length = 4 (all player counts)
     """
     # Per RR-CANON-R120: square8 2-player games require line length 4,
     # while 3-4 player games require line length 3.
@@ -65,6 +71,7 @@ def get_effective_line_length(board_type: BoardType, num_players: int) -> int:
     # For all other configurations, use the base line_length from BOARD_CONFIGS:
     # - square8 3-4p: 3
     # - square19: 4
+    # - hex8: 4
     # - hexagonal: 4
     return BOARD_CONFIGS[board_type].line_length
 
@@ -139,6 +146,7 @@ def get_rings_per_player(
     Per BOARD_CONFIGS:
     - square8: 18
     - square19: 72
+    - hex8: 18
     - hexagonal: 96
 
     Args:
@@ -157,6 +165,7 @@ def get_board_size(board_type: BoardType) -> int:
     Per BOARD_CONFIGS:
     - square8: 8
     - square19: 19
+    - hex8: 9 (bounding box for radius=4)
     - hexagonal: 13 (radius)
     """
     return BOARD_CONFIGS[board_type].size
@@ -169,6 +178,7 @@ def get_total_spaces(board_type: BoardType) -> int:
     Per BOARD_CONFIGS:
     - square8: 64
     - square19: 361
+    - hex8: 61
     - hexagonal: 469
     """
     return BOARD_CONFIGS[board_type].total_spaces
