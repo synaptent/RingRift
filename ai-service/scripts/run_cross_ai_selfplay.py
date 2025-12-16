@@ -27,10 +27,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import multiprocessing as mp
 import os
 import random
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -315,6 +317,29 @@ def prioritize_configs(counts: Dict[str, int], target_per_config: int) -> List[T
     return needed
 
 
+def _play_game_worker(args: Tuple) -> Optional[Dict]:
+    """Worker function for parallel game execution."""
+    board_type, num_players, matchup_def, max_moves, seed = args
+
+    matchup = MatchupConfig(
+        p1_difficulties=matchup_def[0],
+        p2_difficulties=matchup_def[1],
+        description=matchup_def[2],
+    )
+
+    result = play_game(
+        board_type=board_type,
+        num_players=num_players,
+        matchup=matchup,
+        max_moves=max_moves,
+        seed=seed,
+    )
+
+    if result:
+        return asdict(result)
+    return None
+
+
 def run_balanced_selfplay(
     games_per_config: int,
     matchup_type: str,
@@ -322,8 +347,13 @@ def run_balanced_selfplay(
     max_moves: int = 2000,
     prioritize_underrepresented: bool = False,
     target_games: Optional[int] = None,
+    num_workers: int = 1,
 ):
-    """Run balanced selfplay across all configurations."""
+    """Run balanced selfplay across all configurations.
+
+    Args:
+        num_workers: Number of parallel workers (default: 1 for sequential)
+    """
 
     matchups = MATCHUP_TYPES.get(matchup_type, MATCHUP_TYPES["balanced"])
 
@@ -362,52 +392,90 @@ def run_balanced_selfplay(
 
     logger.info(f"Starting balanced selfplay: {total_games} games, matchup type: {matchup_type}")
     logger.info(f"Matchups: {[m[2] for m in matchups]}")
+    logger.info(f"Workers: {num_workers}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build list of all game tasks
+    game_tasks = []
+    for config_idx, (board_type, num_players) in enumerate(weighted_configs * games_per_config):
+        if len(game_tasks) >= total_games:
+            break
+        matchup_def = random.choice(matchups)
+        seed = random.randint(0, 2**31)
+        game_tasks.append((board_type, num_players, matchup_def, max_moves, seed))
 
     game_num = 0
     start_time = time.time()
 
-    for config_idx, (board_type, num_players) in enumerate(weighted_configs * games_per_config):
-        if game_num >= total_games:
-            break
+    if num_workers > 1:
+        # Parallel execution
+        logger.info(f"Using {num_workers} parallel workers")
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            futures = {executor.submit(_play_game_worker, task): task for task in game_tasks}
 
-        config_key = f"{board_type}_{num_players}p"
+            for future in as_completed(futures):
+                task = futures[future]
+                board_type, num_players, _, _, _ = task
+                config_key = f"{board_type}_{num_players}p"
 
-        # Select matchup
-        matchup_def = random.choice(matchups)
-        matchup = MatchupConfig(
-            p1_difficulties=matchup_def[0],
-            p2_difficulties=matchup_def[1],
-            description=matchup_def[2],
-        )
+                try:
+                    result_dict = future.result()
+                    if result_dict:
+                        results_by_config[config_key].append(result_dict)
 
-        # Play game
-        seed = random.randint(0, 2**31)
-        result = play_game(
-            board_type=board_type,
-            num_players=num_players,
-            matchup=matchup,
-            max_moves=max_moves,
-            seed=seed,
-        )
+                        # Write result to JSONL (thread-safe with append)
+                        jsonl_path = output_dir / f"cross_ai_{config_key}.jsonl"
+                        with open(jsonl_path, "a") as f:
+                            f.write(json.dumps(result_dict) + "\n")
 
-        if result:
-            results_by_config[config_key].append(result)
+                except Exception as e:
+                    logger.error(f"Game failed: {e}")
 
-            # Write result to JSONL
-            jsonl_path = output_dir / f"cross_ai_{config_key}.jsonl"
-            with open(jsonl_path, "a") as f:
-                f.write(json.dumps(asdict(result)) + "\n")
+                game_num += 1
 
-        game_num += 1
+                # Progress logging
+                log_interval = max(10, total_games // 20)
+                if game_num % log_interval == 0 or game_num == 1:
+                    elapsed = time.time() - start_time
+                    rate = game_num / elapsed if elapsed > 0 else 0
+                    logger.info(f"Progress: {game_num}/{total_games} games ({rate:.2f} games/sec)")
+    else:
+        # Sequential execution (original behavior)
+        for task in game_tasks:
+            board_type, num_players, matchup_def, max_moves_t, seed = task
+            config_key = f"{board_type}_{num_players}p"
 
-        # Progress logging (every game if < 20, otherwise every 10)
-        log_interval = 10 if total_games >= 20 else 1
-        if game_num % log_interval == 0 or game_num == 1:
-            elapsed = time.time() - start_time
-            rate = game_num / elapsed if elapsed > 0 else 0
-            logger.info(f"Progress: {game_num}/{total_games} games ({rate:.2f} games/sec)")
+            matchup = MatchupConfig(
+                p1_difficulties=matchup_def[0],
+                p2_difficulties=matchup_def[1],
+                description=matchup_def[2],
+            )
+
+            result = play_game(
+                board_type=board_type,
+                num_players=num_players,
+                matchup=matchup,
+                max_moves=max_moves_t,
+                seed=seed,
+            )
+
+            if result:
+                results_by_config[config_key].append(result)
+
+                # Write result to JSONL
+                jsonl_path = output_dir / f"cross_ai_{config_key}.jsonl"
+                with open(jsonl_path, "a") as f:
+                    f.write(json.dumps(asdict(result)) + "\n")
+
+            game_num += 1
+
+            # Progress logging (every game if < 20, otherwise every 10)
+            log_interval = 10 if total_games >= 20 else 1
+            if game_num % log_interval == 0 or game_num == 1:
+                elapsed = time.time() - start_time
+                rate = game_num / elapsed if elapsed > 0 else 0
+                logger.info(f"Progress: {game_num}/{total_games} games ({rate:.2f} games/sec)")
 
     # Summary
     logger.info("=" * 50)
@@ -466,8 +534,20 @@ def main():
         type=int,
         help="Target game count per config (for prioritization)",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of parallel workers (default: 1 for sequential execution)",
+    )
 
     args = parser.parse_args()
+
+    # Limit workers to avoid resource exhaustion
+    cpu_count = mp.cpu_count()
+    max_workers = min(args.workers, cpu_count - 2, 32)  # Leave 2 CPUs free, cap at 32
+    if max_workers < 1:
+        max_workers = 1
 
     run_balanced_selfplay(
         games_per_config=args.games_per_config,
@@ -476,6 +556,7 @@ def main():
         max_moves=args.max_moves,
         prioritize_underrepresented=args.prioritize_underrepresented,
         target_games=args.target_games,
+        num_workers=max_workers,
     )
 
 

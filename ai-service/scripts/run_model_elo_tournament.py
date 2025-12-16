@@ -1439,17 +1439,27 @@ def main():
     # === PROCESS SAFEGUARDS ===
     # Limit torch.compile workers to prevent process sprawl
     import os
-    os.environ.setdefault("TORCH_COMPILE_MAX_WORKERS", "8")
-    os.environ.setdefault("OMP_NUM_THREADS", "4")
+    cpu_count = os.cpu_count() or 8
+    # Use conservative worker limits based on CPU count
+    max_torch_workers = max(2, min(cpu_count // 4, 4))
+    max_omp_threads = max(1, min(cpu_count // 8, 2))
+    os.environ.setdefault("TORCH_COMPILE_MAX_WORKERS", str(max_torch_workers))
+    os.environ.setdefault("OMP_NUM_THREADS", str(max_omp_threads))
+    os.environ.setdefault("MKL_NUM_THREADS", str(max_omp_threads))
+    os.environ.setdefault("NUMEXPR_NUM_THREADS", str(max_omp_threads))
 
-    # Check system load before starting
+    # Check system load before starting - be conservative
     try:
         load_avg = os.getloadavg()[0]
-        if load_avg > 50 and not args.leaderboard_only:
-            print(f"[Tournament] WARNING: System load is {load_avg:.1f}, which is very high")
+        load_threshold_warn = max(cpu_count * 0.5, 20)  # Warn at 50% of CPU count
+        load_threshold_error = max(cpu_count * 0.8, 40)  # Error at 80% of CPU count
+
+        if load_avg > load_threshold_warn and not args.leaderboard_only:
+            print(f"[Tournament] WARNING: System load is {load_avg:.1f} (threshold: {load_threshold_warn:.0f})")
             print("[Tournament] Consider waiting for load to decrease or use --leaderboard-only")
-            if load_avg > 100:
-                print("[Tournament] ERROR: Load too high (>100), aborting to prevent system overload")
+            if load_avg > load_threshold_error:
+                print(f"[Tournament] ERROR: Load too high (>{load_threshold_error:.0f}), aborting to prevent system overload")
+                print("[Tournament] Tip: Kill other heavy processes or wait for them to finish")
                 return
     except (OSError, AttributeError):
         pass  # getloadavg not available on all platforms
