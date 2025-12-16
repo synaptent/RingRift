@@ -2790,17 +2790,18 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     # Board type
     parser.add_argument(
         '--board-type', type=str, default=None,
-        choices=['square8', 'square19', 'hexagonal'],
+        choices=['square8', 'square19', 'hex8', 'hexagonal'],
         help='Board type for training'
     )
 
     # Model architecture version
     parser.add_argument(
         '--model-version', type=str, default=None,
-        choices=['v2', 'v3', 'hex'],
+        choices=['v2', 'v3', 'v4', 'hex'],
         help=(
             'Model architecture version: v2 (flat policy), v3 (spatial policy '
-            'heads with rank distribution), or hex (HexNeuralNet). '
+            'heads with rank distribution), v4 (NAS-optimized with attention), '
+            'or hex (HexNeuralNet). '
             'Default: board-aware (square8→v3, square19→v2, hexagonal→hex).'
         ),
     )
@@ -3030,6 +3031,7 @@ def main():
         board_type_map = {
             'square8': BoardType.SQUARE8,
             'square19': BoardType.SQUARE19,
+            'hex8': BoardType.HEX8,
             'hexagonal': BoardType.HEXAGONAL,
         }
         board_type = board_type_map.get(
@@ -3112,6 +3114,7 @@ def main():
         board_type_map = {
             'square8': BoardType.SQUARE8,
             'square19': BoardType.SQUARE19,
+            'hex8': BoardType.HEX8,
             'hexagonal': BoardType.HEXAGONAL,
         }
         config.board_type = board_type_map[args.board_type]
@@ -3127,7 +3130,7 @@ def main():
     # and we want square8 runs to default to the preferred v3 architecture.
     model_version = args.model_version
     if model_version is None:
-        if config.board_type == BoardType.HEXAGONAL:
+        if config.board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
             model_version = "hex"
         elif config.board_type == BoardType.SQUARE8:
             model_version = "v3"
