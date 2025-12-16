@@ -539,6 +539,7 @@ def run_training(board_type: str, num_players: int, db_paths: List[str],
             "--num-players", str(num_players),
             "--sample-every", str(sample_every),
             "--max-games", str(max_games),
+            "--gpu-selfplay",  # Use GPU selfplay format (simplified move sequences)
         ]
         # Add each JSONL file as --input
         for jsonl_path in jsonl_paths:

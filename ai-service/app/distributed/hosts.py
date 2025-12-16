@@ -75,6 +75,10 @@ class HostConfig:
     max_parallel_jobs: int = 1
     worker_port: int = 8765  # Default HTTP worker port
     worker_url: Optional[str] = None  # Optional explicit worker URL
+    # Cloudflare Zero Trust support
+    cloudflare_tunnel: Optional[str] = None  # Cloudflare tunnel hostname (e.g., "host.example.com")
+    cloudflare_service_token_id: Optional[str] = None  # Service token ID for non-interactive auth
+    cloudflare_service_token_secret: Optional[str] = None  # Service token secret
     properties: Dict = field(default_factory=dict)
 
     @property
@@ -133,6 +137,20 @@ class HostConfig:
         if "@" in host:
             host = host.split("@", 1)[1]
         return f"http://{host}:{self.worker_port}"
+
+    @property
+    def use_cloudflare(self) -> bool:
+        """Check if this host should use Cloudflare Zero Trust for SSH."""
+        return bool(self.cloudflare_tunnel)
+
+    @property
+    def cloudflare_ssh_target(self) -> str:
+        """Get the SSH target for Cloudflare tunnel (user@tunnel_hostname)."""
+        if not self.cloudflare_tunnel:
+            return self.ssh_target
+        if self.ssh_user:
+            return f"{self.ssh_user}@{self.cloudflare_tunnel}"
+        return self.cloudflare_tunnel
 
 
 # Global host configuration cache
@@ -218,6 +236,10 @@ def load_remote_hosts(config_path: Optional[str] = None) -> Dict[str, HostConfig
                     max_parallel_jobs=host_data.get("max_parallel_jobs", 1),
                     worker_port=host_data.get("worker_port", 8765),
                     worker_url=host_data.get("worker_url"),
+                    # Cloudflare Zero Trust fields
+                    cloudflare_tunnel=host_data.get("cloudflare_tunnel"),
+                    cloudflare_service_token_id=host_data.get("cloudflare_service_token_id"),
+                    cloudflare_service_token_secret=host_data.get("cloudflare_service_token_secret"),
                     properties=host_data,
                 )
 
@@ -517,7 +539,13 @@ def clear_memory_cache() -> None:
 
 
 class SSHExecutor:
-    """Execute commands on remote hosts via SSH."""
+    """Execute commands on remote hosts via SSH.
+
+    Supports multiple connection methods:
+    - Direct SSH (default)
+    - Tailscale IP fallback
+    - Cloudflare Zero Trust tunnels (via cloudflared access ssh)
+    """
 
     def __init__(self, host: HostConfig):
         self.host = host
@@ -529,7 +557,25 @@ class SSHExecutor:
             return ". " + cleaned[len("source ") :]
         return command
 
-    def _build_ssh_cmd(self, ssh_target: str) -> List[str]:
+    def _build_cloudflare_proxy_command(self) -> str:
+        """Build the ProxyCommand for Cloudflare Zero Trust SSH.
+
+        Returns:
+            ProxyCommand string for use with SSH -o option
+        """
+        # Base cloudflared command
+        proxy_parts = ["cloudflared", "access", "ssh", "--hostname", "%h"]
+
+        # Add service token auth if configured (for non-interactive/automated use)
+        if self.host.cloudflare_service_token_id and self.host.cloudflare_service_token_secret:
+            proxy_parts.extend([
+                "--service-token-id", self.host.cloudflare_service_token_id,
+                "--service-token-secret", self.host.cloudflare_service_token_secret,
+            ])
+
+        return " ".join(proxy_parts)
+
+    def _build_ssh_cmd(self, ssh_target: str, use_cloudflare: bool = False) -> List[str]:
         """Build the base SSH command.
 
         Options for reliable automated connections:
@@ -538,6 +584,10 @@ class SSHExecutor:
         - ServerAliveInterval: Detect dead connections
 
         For hosts not in known_hosts, run: scripts/cluster_ssh_init.py --scan
+
+        Args:
+            ssh_target: The user@host SSH target
+            use_cloudflare: If True, use Cloudflare Zero Trust ProxyCommand
         """
         cmd = [
             "ssh",
@@ -547,6 +597,12 @@ class SSHExecutor:
             "-o", "ServerAliveInterval=15",
             "-o", "ServerAliveCountMax=3",
         ]
+
+        # Add Cloudflare ProxyCommand if using Zero Trust
+        if use_cloudflare and self.host.use_cloudflare:
+            proxy_cmd = self._build_cloudflare_proxy_command()
+            cmd.extend(["-o", f"ProxyCommand={proxy_cmd}"])
+
         if self.host.ssh_port and int(self.host.ssh_port) != 22:
             cmd.extend(["-p", str(int(self.host.ssh_port))])
         # Only add key if it exists - allows fallback to ssh-agent or default keys
@@ -579,6 +635,25 @@ class SSHExecutor:
             )
         )
 
+    def _get_connection_attempts(self) -> List[Tuple[str, bool]]:
+        """Get list of (ssh_target, use_cloudflare) connection attempts to try.
+
+        Returns:
+            List of tuples: (ssh_target, use_cloudflare)
+            - First tries direct SSH via tailscale_ip, then ssh_host
+            - If Cloudflare is configured, tries that as final fallback
+        """
+        attempts = []
+        # Direct SSH attempts (tailscale first, then primary host)
+        for target in self.host.ssh_targets:
+            attempts.append((target, False))
+
+        # Cloudflare Zero Trust as final fallback if configured
+        if self.host.use_cloudflare:
+            attempts.append((self.host.cloudflare_ssh_target, True))
+
+        return attempts
+
     def run(
         self,
         command: str,
@@ -587,6 +662,11 @@ class SSHExecutor:
         cwd: Optional[str] = None,
     ) -> subprocess.CompletedProcess:
         """Run a command on the remote host.
+
+        Connection priority:
+        1. Direct SSH via tailscale_ip (if configured)
+        2. Direct SSH via ssh_host
+        3. Cloudflare Zero Trust tunnel (if configured, as fallback)
 
         Args:
             command: Command to execute
@@ -607,8 +687,8 @@ class SSHExecutor:
         full_cmd = f"cd {work_dir} && {prefix}{command}"
 
         last_result: Optional[subprocess.CompletedProcess] = None
-        for target in self.host.ssh_targets:
-            ssh_cmd = self._build_ssh_cmd(target) + [full_cmd]
+        for target, use_cloudflare in self._get_connection_attempts():
+            ssh_cmd = self._build_ssh_cmd(target, use_cloudflare=use_cloudflare) + [full_cmd]
             try:
                 result = subprocess.run(
                     ssh_cmd,
@@ -639,6 +719,8 @@ class SSHExecutor:
     ) -> subprocess.CompletedProcess:
         """Run a command asynchronously on the remote host (nohup + background).
 
+        Connection priority: same as run() - tries direct SSH first, then Cloudflare.
+
         Args:
             command: Command to execute
             log_file: Path to log file on remote host
@@ -657,8 +739,8 @@ class SSHExecutor:
         # Use nohup to detach from SSH session
         full_cmd = f"cd {work_dir} && {prefix}nohup {command} > {log_file} 2>&1 &"
         last_result: Optional[subprocess.CompletedProcess] = None
-        for target in self.host.ssh_targets:
-            ssh_cmd = self._build_ssh_cmd(target) + [full_cmd]
+        for target, use_cloudflare in self._get_connection_attempts():
+            ssh_cmd = self._build_ssh_cmd(target, use_cloudflare=use_cloudflare) + [full_cmd]
             try:
                 result = subprocess.run(
                     ssh_cmd,
@@ -688,15 +770,22 @@ class SSHExecutor:
         *,
         timeout: int = 300,
     ) -> subprocess.CompletedProcess:
-        """Copy a file from the remote host to local filesystem via scp."""
+        """Copy a file from the remote host to local filesystem via scp.
+
+        Connection priority: same as run() - tries direct SSH first, then Cloudflare.
+        """
         last_result: Optional[subprocess.CompletedProcess] = None
-        for target in self.host.ssh_targets:
+        for target, use_cloudflare in self._get_connection_attempts():
             cmd = [
                 "scp",
                 "-o", "ConnectTimeout=10",
                 "-o", "BatchMode=yes",
                 "-o", "StrictHostKeyChecking=accept-new",  # Secure TOFU
             ]
+            # Add Cloudflare ProxyCommand if using Zero Trust
+            if use_cloudflare and self.host.use_cloudflare:
+                proxy_cmd = self._build_cloudflare_proxy_command()
+                cmd.extend(["-o", f"ProxyCommand={proxy_cmd}"])
             # Only add key if it exists
             if self.host.ssh_key:
                 key_path = self.host.ssh_key_path

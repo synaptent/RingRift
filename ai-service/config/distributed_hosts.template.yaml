@@ -28,6 +28,35 @@ hosts:
     venv_activate: 'source /home/user/RingRift/ai-service/venv/bin/activate'
     memory_gb: 128 # Can run all board types
 
+  # ===========================================================================
+  # Cloudflare Zero Trust Configuration
+  # ===========================================================================
+  # Hosts behind Cloudflare Zero Trust can be accessed via cloudflared tunnels.
+  # The connection priority is:
+  #   1. Direct SSH via tailscale_ip (if configured)
+  #   2. Direct SSH via ssh_host
+  #   3. Cloudflare Zero Trust tunnel (fallback)
+  #
+  # Prerequisites:
+  #   - Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/
+  #   - Configure SSH tunnel in Cloudflare Zero Trust dashboard
+  #   - For automated/daemon use, create a service token in Access > Service Auth
+  #
+  # Example with Cloudflare Zero Trust:
+  cloudflare-host-example:
+    ssh_host: '10.0.0.50' # Internal IP (may not be directly reachable)
+    ssh_user: 'ubuntu'
+    ssh_key: '~/.ssh/id_rsa'
+    ringrift_path: '/home/ubuntu/ringrift/ai-service'
+    venv_activate: 'source /home/ubuntu/ringrift/ai-service/venv/bin/activate'
+    memory_gb: 64
+    status: 'disabled' # Change to 'ready' when configured
+
+    # Cloudflare Zero Trust settings (optional - used as fallback)
+    cloudflare_tunnel: 'ssh.example.com' # Your Cloudflare tunnel hostname
+    # For non-interactive/automated use, add service tokens:
+    # cloudflare_service_token_id: 'your-service-token-id'
+    # cloudflare_service_token_secret: 'your-service-token-secret'
 
 # Board configurations (optional, defaults are built-in)
 # Uncomment to override
