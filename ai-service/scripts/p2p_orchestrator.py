@@ -73,6 +73,15 @@ except ImportError:
     sync_elo_after_games = None
     ensure_elo_synced = None
 
+# Distributed data sync manager for model/data distribution
+try:
+    from app.distributed.data_sync import DataSyncManager, get_sync_manager
+    HAS_DATA_SYNC = True
+except ImportError:
+    HAS_DATA_SYNC = False
+    DataSyncManager = None
+    get_sync_manager = None
+
 # HTTP server imports
 try:
     from aiohttp import web, ClientSession, ClientTimeout
@@ -5715,6 +5724,19 @@ class P2POrchestrator:
                     if errors:
                         for err in errors[:3]:
                             print(f"[P2P] Model sync error: {err}")
+
+                    # Also use DataSyncManager for additional transport methods (tailscale, aria2)
+                    if HAS_DATA_SYNC and errors:
+                        try:
+                            sync_manager = get_sync_manager()
+                            # Run async sync for failed nodes using alternative transports
+                            model_results = await sync_manager.sync_best_models()
+                            success_count = sum(1 for v in model_results.values() if v)
+                            if success_count > 0:
+                                print(f"[P2P] DataSync fallback: {success_count}/{len(model_results)} additional syncs")
+                        except Exception as dsync_err:
+                            if self.verbose:
+                                print(f"[P2P] DataSync fallback error: {dsync_err}")
                 else:
                     collected, distributed, errors = result[:3]
                     if errors:

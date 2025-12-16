@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import logging
 import os
 import shutil
@@ -22,6 +23,15 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# Try to import DataSyncManager for enhanced data collection
+try:
+    from app.distributed.data_sync import DataSyncManager, get_sync_manager
+    HAS_DATA_SYNC = True
+except ImportError:
+    HAS_DATA_SYNC = False
+    DataSyncManager = None
+    get_sync_manager = None
 
 # Setup logging
 logging.basicConfig(
@@ -378,6 +388,28 @@ def monitor_and_train():
             time.sleep(POLL_INTERVAL_SECONDS)
 
 
+async def _collect_via_data_sync() -> List[Path]:
+    """Collect databases using DataSyncManager with fallback transport methods."""
+    collected = []
+    try:
+        sync_manager = get_sync_manager()
+
+        # Collect hex8 databases from all configured nodes
+        # DataSyncManager tries Tailscale, aria2, Cloudflare, and SSH in order
+        result = await sync_manager.collect_training_data(pattern="hex8*.db")
+
+        if result:
+            for db_path in result:
+                if db_path and db_path.exists():
+                    collected.append(db_path)
+                    logger.info(f"DataSync collected: {db_path}")
+
+    except Exception as e:
+        logger.warning(f"DataSync collection failed: {e}")
+
+    return collected
+
+
 def run_collection_and_training():
     """Collect data from all sources and run training."""
     # Create temp directory for synced databases
@@ -385,12 +417,37 @@ def run_collection_and_training():
     sync_dir.mkdir(parents=True, exist_ok=True)
 
     db_paths = []
+    failed_nodes = set(REMOTE_DATABASES.keys())
 
-    # Sync remote databases
-    for node_name, config in REMOTE_DATABASES.items():
-        db_path = rsync_remote_db(node_name, config, sync_dir)
-        if db_path:
-            db_paths.append(db_path)
+    # Try DataSyncManager first for better connectivity (Tailscale, aria2, etc.)
+    if HAS_DATA_SYNC:
+        logger.info("Trying DataSyncManager for enhanced data collection...")
+        collected = asyncio.run(_collect_via_data_sync())
+        if collected:
+            db_paths.extend(collected)
+            # Track which nodes succeeded via DataSync (based on filename pattern)
+            for db_path in collected:
+                # Filename format: nodename_hex8_*.db
+                stem = db_path.stem
+                for node_name in list(failed_nodes):
+                    if node_name in stem:
+                        failed_nodes.discard(node_name)
+            logger.info(f"DataSync collected {len(collected)} databases")
+
+    # Fallback to direct SSH/rsync for nodes that failed via DataSync
+    if failed_nodes:
+        logger.info(f"Falling back to SSH for {len(failed_nodes)} nodes: {failed_nodes}")
+        for node_name in list(failed_nodes):
+            if node_name in REMOTE_DATABASES:
+                config = REMOTE_DATABASES[node_name]
+                db_path = rsync_remote_db(node_name, config, sync_dir)
+                if db_path:
+                    db_paths.append(db_path)
+                    failed_nodes.discard(node_name)
+
+    # Log any nodes that still failed
+    if failed_nodes:
+        logger.warning(f"Failed to collect from nodes: {failed_nodes}")
 
     # Add local database
     if LOCAL_DB.exists():
