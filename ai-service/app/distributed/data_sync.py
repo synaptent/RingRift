@@ -33,11 +33,36 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+# Disk usage limits - 70% max enforced 2025-12-16
+MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
+
 # Configuration
 CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml"
 SYNC_STATE_PATH = Path(__file__).parent.parent.parent / "data" / "sync_state.json"
 MODELS_DIR = Path(__file__).parent.parent.parent / "models"
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
+
+
+def check_disk_usage(path: Path = None) -> Tuple[bool, float]:
+    """Check if disk has capacity for syncing.
+
+    Args:
+        path: Path to check disk usage for. Defaults to DATA_DIR.
+
+    Returns:
+        Tuple of (has_capacity, current_usage_percent)
+    """
+    check_path = path or DATA_DIR
+    try:
+        usage = shutil.disk_usage(check_path)
+        percent = 100.0 * usage.used / usage.total
+        has_capacity = percent < MAX_DISK_USAGE_PERCENT
+        if not has_capacity:
+            logger.warning(f"Disk usage {percent:.1f}% exceeds limit {MAX_DISK_USAGE_PERCENT}%")
+        return has_capacity, percent
+    except Exception as e:
+        logger.error(f"Failed to check disk usage: {e}")
+        return True, 0.0  # Allow sync on error (fail open)
 
 
 @dataclass
@@ -62,7 +87,8 @@ class NodeConfig:
     cloudflare_tunnel: Optional[str] = None
     ringrift_path: str = "~/ringrift/ai-service"
     status: str = "unknown"
-    transports: List[str] = field(default_factory=lambda: ["tailscale", "ssh", "aria2"])
+    # Transports for pushing files TO nodes (aria2 is for pulling only)
+    transports: List[str] = field(default_factory=lambda: ["tailscale", "cloudflare", "ssh"])
 
 
 class DataSyncManager:
@@ -379,6 +405,12 @@ class DataSyncManager:
         """Sync best model checkpoints to all nodes."""
         results = {}
 
+        # Check disk usage before syncing (70% limit enforced 2025-12-16)
+        has_capacity, disk_percent = check_disk_usage()
+        if not has_capacity:
+            logger.warning(f"Skipping model sync - disk at {disk_percent:.1f}%")
+            return {"error": f"disk_full:{disk_percent:.1f}%"}
+
         # Find best models
         best_models = list(MODELS_DIR.glob("ringrift_best_*.pth"))
         if not best_models:
@@ -414,6 +446,12 @@ class DataSyncManager:
         """Sync unified ELO database to all nodes."""
         results = {}
 
+        # Check disk usage before syncing (70% limit enforced 2025-12-16)
+        has_capacity, disk_percent = check_disk_usage()
+        if not has_capacity:
+            logger.warning(f"Skipping ELO sync - disk at {disk_percent:.1f}%")
+            return {"error": f"disk_full:{disk_percent:.1f}%"}
+
         elo_db = DATA_DIR / "unified_elo.db"
         if not elo_db.exists():
             logger.warning("ELO database not found")
@@ -442,6 +480,12 @@ class DataSyncManager:
 
     async def collect_training_data(self, pattern: str = "hex8*.db") -> List[Path]:
         """Collect training databases from all nodes."""
+        # Check disk usage before collecting (70% limit enforced 2025-12-16)
+        has_capacity, disk_percent = check_disk_usage()
+        if not has_capacity:
+            logger.warning(f"Skipping data collection - disk at {disk_percent:.1f}%")
+            return []
+
         collected = []
         local_sync_dir = DATA_DIR / "games" / "synced"
         local_sync_dir.mkdir(parents=True, exist_ok=True)

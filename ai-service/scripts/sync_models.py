@@ -40,6 +40,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -100,6 +101,35 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+# ============================================
+# Disk Usage Limits (70% max enforced 2025-12-16)
+# ============================================
+
+MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
+
+
+def check_disk_usage(path: Path = None) -> tuple[bool, float]:
+    """Check if disk has capacity for syncing.
+
+    Args:
+        path: Path to check disk usage for. Defaults to ROOT.
+
+    Returns:
+        Tuple of (has_capacity, current_usage_percent)
+    """
+    check_path = path or ROOT
+    try:
+        usage = shutil.disk_usage(check_path)
+        percent = 100.0 * usage.used / usage.total
+        has_capacity = percent < MAX_DISK_USAGE_PERCENT
+        if not has_capacity:
+            logger.warning(f"Disk usage {percent:.1f}% exceeds limit {MAX_DISK_USAGE_PERCENT}%")
+        return has_capacity, percent
+    except Exception as e:
+        logger.error(f"Failed to check disk usage: {e}")
+        return True, 0.0  # Allow sync on error (fail open)
 
 
 # ============================================
@@ -558,6 +588,11 @@ def collect_model_from_host(
     dry_run: bool = False,
 ) -> Tuple[bool, str]:
     """Collect a model from a remote host to local."""
+    # Check disk usage before collecting (70% limit enforced 2025-12-16)
+    has_capacity, disk_percent = check_disk_usage()
+    if not has_capacity:
+        return False, f"Disk full ({disk_percent:.1f}%), skipping collect"
+
     if model_type == "nnue":
         remote_path = f"{host.work_directory}/models/nnue/{model_name}"
         local_dir = LOCAL_NNUE_DIR
@@ -676,6 +711,14 @@ def sync_missing_models(
     collected = 0
     distributed = 0
     errors = []
+
+    # Check disk usage before collecting (70% limit enforced 2025-12-16)
+    if collect_first and not dry_run:
+        has_capacity, disk_percent = check_disk_usage()
+        if not has_capacity:
+            logger.warning(f"Disk at {disk_percent:.1f}%, skipping model collection phase")
+            collect_first = False  # Skip collect, but still distribute
+            errors.append(f"disk_full:{disk_percent:.1f}%")
 
     # Load culled models from cluster manifests to skip during sync
     culled_models = load_cluster_cull_manifests(hosts)
