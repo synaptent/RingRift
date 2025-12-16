@@ -1101,6 +1101,26 @@ def main():
         weights = load_weights_from_profile(args.weights_file, args.profile)
         logger.info(f"Loaded weights from {args.weights_file}:{args.profile}")
 
+    # Resource guard: Check disk/memory/GPU before starting (80% limits)
+    try:
+        from app.utils.resource_guard import (
+            check_disk_space, check_memory, check_gpu_memory,
+            get_resource_status, LIMITS
+        )
+        # Estimate output size: ~1KB per game for JSONL + ~100KB per 100 games for NPZ
+        estimated_output_mb = (args.num_games * 0.001) + (args.num_games / 100 * 0.1) + 50
+        if not check_disk_space(required_gb=max(2.0, estimated_output_mb / 1024)):
+            logger.error(f"Insufficient disk space (limit: {LIMITS.DISK_MAX_PERCENT}%)")
+            sys.exit(1)
+        if not check_memory(required_gb=2.0):
+            logger.error(f"Insufficient memory (limit: {LIMITS.MEMORY_MAX_PERCENT}%)")
+            sys.exit(1)
+        if not check_gpu_memory(required_gb=1.0):
+            logger.warning("GPU memory constrained, may affect performance")
+        logger.info(f"Resource check passed: {get_resource_status()['can_proceed']}")
+    except ImportError:
+        logger.debug("Resource guard not available, skipping checks")
+
     # Check coordination before spawning (using safe helpers)
     task_id = None
     start_time = time.time()

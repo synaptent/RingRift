@@ -1559,6 +1559,27 @@ def run_self_play_soak(
                     # Clear the neural net model cache to force reload on next AI creation
                     clear_model_cache()
 
+            # Periodic resource check (every 50 games) - stop early if 80% limits exceeded
+            if game_idx > 0 and game_idx % 50 == 0:
+                try:
+                    from app.utils.resource_guard import check_memory, check_disk_space
+                    if not check_memory(required_gb=2.0, log_warning=False):
+                        print(
+                            f"[resource-guard] Memory pressure detected at game {game_idx}, "
+                            f"stopping early to avoid OOM",
+                            flush=True,
+                        )
+                        break
+                    if not check_disk_space(required_gb=1.0, log_warning=False):
+                        print(
+                            f"[resource-guard] Disk space low at game {game_idx}, "
+                            f"stopping early to avoid disk full",
+                            flush=True,
+                        )
+                        break
+                except ImportError:
+                    pass  # Resource guard not available
+
             game_seed = None if base_seed is None else base_seed + game_idx
             # RNG for opening diversity (deterministic per-game if seed provided)
             game_rng = random.Random(game_seed) if game_seed is not None else random.Random()
@@ -3474,6 +3495,24 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:  # pragma: no cover - CLI entrypoint
     args = _parse_args()
+
+    # Resource guard: Check disk/memory before starting (80% limits)
+    try:
+        from app.utils.resource_guard import (
+            check_disk_space, check_memory, get_resource_status, LIMITS
+        )
+        # Estimate output size: soak tests can generate lots of data
+        num_games = getattr(args, "num_games", 1000)
+        estimated_output_mb = (num_games * 0.005) + 100  # ~5KB per game + overhead
+        if not check_disk_space(required_gb=max(5.0, estimated_output_mb / 1024)):
+            print(f"ERROR: Insufficient disk space (limit: {LIMITS.DISK_MAX_PERCENT}%)", file=sys.stderr)
+            raise SystemExit(1)
+        if not check_memory(required_gb=4.0):
+            print(f"ERROR: Insufficient memory (limit: {LIMITS.MEMORY_MAX_PERCENT}%)", file=sys.stderr)
+            raise SystemExit(1)
+        print(f"Resource check passed: disk/memory within 80% limits")
+    except ImportError:
+        pass  # Resource guard not available
 
     # Check coordination before spawning
     task_id = None

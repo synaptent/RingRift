@@ -1089,6 +1089,26 @@ def main():
             # Only one was specified - warn user
             logger.warning("Both --weights-file and --profile are required to load custom weights")
 
+        # Resource guard: Check disk/memory/GPU before starting (80% limits)
+        try:
+            from app.utils.resource_guard import (
+                check_disk_space, check_memory, check_gpu_memory,
+                get_resource_status, LIMITS
+            )
+            # Estimate output size: ~2KB per game for JSONL/DB
+            estimated_output_mb = (args.num_games * 0.002) + 50
+            if not check_disk_space(required_gb=max(2.0, estimated_output_mb / 1024)):
+                logger.error(f"Insufficient disk space (limit: {LIMITS.DISK_MAX_PERCENT}%)")
+                sys.exit(1)
+            if not check_memory(required_gb=2.0):
+                logger.error(f"Insufficient memory (limit: {LIMITS.MEMORY_MAX_PERCENT}%)")
+                sys.exit(1)
+            if not check_gpu_memory(required_gb=1.0):
+                logger.warning("GPU memory constrained, may affect performance")
+            logger.info(f"Resource check passed: disk/memory/GPU within 80% limits")
+        except ImportError:
+            logger.debug("Resource guard not available, skipping checks")
+
         # Check coordination before spawning
         task_id = None
         start_time = time.time()
