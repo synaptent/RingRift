@@ -4572,6 +4572,131 @@ class P2POrchestrator:
         result.sort(key=lambda x: x["cpu_power_score"], reverse=True)
         return result
 
+    # ============================================
+    # Task-Specific Node Selection
+    # ============================================
+
+    def _get_best_gpu_node_for_training(self) -> Optional[NodeInfo]:
+        """Get the best GPU node for neural network training.
+
+        Prioritizes:
+        1. GPU power score (H100 > GH200 > A10 > consumer GPUs)
+        2. Low current load
+        3. Not already running training
+        """
+        with self.peers_lock:
+            all_nodes = list(self.peers.values())
+            all_nodes.append(self.self_info)
+
+        # Filter to GPU nodes that are healthy and not retired
+        gpu_nodes = [
+            n for n in all_nodes
+            if n.has_gpu
+            and n.is_alive()
+            and n.is_healthy()
+            and not getattr(n, "retired", False)
+            and n.gpu_power_score() > 0
+        ]
+
+        if not gpu_nodes:
+            return None
+
+        # Prefer nodes not already running training
+        nodes_with_training = {
+            j.worker_node for j in self.training_jobs.values()
+            if j.status in ("running", "queued")
+        }
+        available = [n for n in gpu_nodes if n.node_id not in nodes_with_training]
+        candidates = available if available else gpu_nodes
+
+        # Sort by GPU power (descending), then load (ascending)
+        candidates.sort(key=lambda n: (-n.gpu_power_score(), n.get_load_score()))
+        return candidates[0] if candidates else None
+
+    def _get_best_cpu_node_for_gauntlet(self) -> Optional[NodeInfo]:
+        """Get the best CPU node for gauntlet/tournament work.
+
+        Prioritizes Vast instances with high CPU count (200+ vCPUs).
+        Gauntlets are CPU-bound and benefit from massive parallelism.
+        """
+        with self.peers_lock:
+            all_nodes = list(self.peers.values())
+            all_nodes.append(self.self_info)
+
+        # Filter to healthy nodes with high CPU count
+        cpu_nodes = [
+            n for n in all_nodes
+            if n.is_alive()
+            and n.is_healthy()
+            and not getattr(n, "retired", False)
+            and n.cpu_power_score() > 0
+        ]
+
+        if not cpu_nodes:
+            return None
+
+        # Strongly prefer Vast nodes (identified by "vast" in node_id or high CPU count)
+        vast_nodes = [
+            n for n in cpu_nodes
+            if "vast" in n.node_id.lower() or n.cpu_count >= 64
+        ]
+
+        # Use vast nodes if available, otherwise fall back to any CPU node
+        candidates = vast_nodes if vast_nodes else cpu_nodes
+
+        # Sort by CPU power (descending), then load (ascending)
+        candidates.sort(key=lambda n: (-n.cpu_power_score(), n.get_load_score()))
+        return candidates[0] if candidates else None
+
+    async def _dispatch_gauntlet_to_cpu_node(
+        self,
+        config_key: str,
+        model_id: str,
+        baseline_id: str,
+        games_per_side: int = 4
+    ) -> Optional[Dict[str, Any]]:
+        """Dispatch gauntlet evaluation to a CPU-rich node.
+
+        This ensures gauntlets run on Vast instances with high CPU count
+        rather than blocking GPU-rich nodes like GH200/H100.
+        """
+        cpu_node = self._get_best_cpu_node_for_gauntlet()
+        if not cpu_node:
+            print("[P2P] No CPU node available for gauntlet, running locally")
+            return None
+
+        # If we're already the best CPU node, return None to run locally
+        if cpu_node.node_id == self.node_id:
+            return None
+
+        try:
+            # Dispatch to the CPU node's gauntlet endpoint
+            payload = {
+                "config_key": config_key,
+                "model_id": model_id,
+                "baseline_id": baseline_id,
+                "games_per_side": games_per_side,
+            }
+
+            timeout = ClientTimeout(total=120)
+            async with get_client_session(timeout) as session:
+                for url in self._urls_for_peer(cpu_node, "/gauntlet/quick-eval"):
+                    try:
+                        async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
+                            if resp.status == 200:
+                                result = await resp.json()
+                                print(f"[P2P] Gauntlet dispatched to {cpu_node.node_id} "
+                                      f"(cpu_power={cpu_node.cpu_power_score()})")
+                                return result
+                    except Exception as e:
+                        continue
+
+            print(f"[P2P] Failed to dispatch gauntlet to {cpu_node.node_id}")
+            return None
+        except Exception as e:
+            print(f"[P2P] Error dispatching gauntlet: {e}")
+            return None
+
     def _should_sync_to_node(self, node: NodeInfo) -> bool:
         """Check if we should sync data TO this node based on disk space."""
         # Don't sync to nodes with critical disk usage
@@ -8120,6 +8245,83 @@ class P2POrchestrator:
             "cpu_count": self.self_info.cpu_count if hasattr(self.self_info, "cpu_count") else 0,
         })
 
+    async def handle_gauntlet_quick_eval(self, request: web.Request) -> web.Response:
+        """POST /gauntlet/quick-eval - Run quick gauntlet evaluation.
+
+        This endpoint is called by GPU nodes to offload gauntlet work to
+        CPU-rich nodes (like Vast instances). Returns win rate and pass status.
+        """
+        try:
+            data = await request.json()
+            config_key = data.get("config_key")
+            model_id = data.get("model_id")
+            baseline_id = data.get("baseline_id")
+            games_per_side = data.get("games_per_side", 4)
+
+            if not all([config_key, model_id, baseline_id]):
+                return web.json_response(
+                    {"error": "Missing required fields"},
+                    status=400
+                )
+
+            # Parse config
+            parts = config_key.rsplit("_", 1)
+            if len(parts) != 2:
+                return web.json_response({"error": "Invalid config_key"}, status=400)
+            board_type = parts[0]
+            num_players = int(parts[1].rstrip("p"))
+
+            model_dir = Path(self.ringrift_path) / "ai-service" / "models"
+
+            # Run games: model vs baseline from both sides
+            wins = 0
+            total_games = 0
+            loop = asyncio.get_event_loop()
+
+            for game_num in range(games_per_side * 2):
+                try:
+                    if game_num < games_per_side:
+                        # Model plays first
+                        result = await loop.run_in_executor(
+                            None,
+                            self._run_gauntlet_game_sync,
+                            f"quick_eval_{game_num}", model_id, baseline_id,
+                            board_type, num_players, model_dir
+                        )
+                        if result.get("model_won"):
+                            wins += 1
+                    else:
+                        # Baseline plays first
+                        result = await loop.run_in_executor(
+                            None,
+                            self._run_gauntlet_game_sync,
+                            f"quick_eval_{game_num}", baseline_id, model_id,
+                            board_type, num_players, model_dir
+                        )
+                        if result.get("baseline_won"):
+                            wins += 1
+                    total_games += 1
+                except Exception as e:
+                    print(f"[P2P] Quick eval game {game_num} error: {e}")
+                    total_games += 1
+
+            win_rate = wins / total_games if total_games > 0 else 0
+            passed = win_rate >= 0.50
+
+            return web.json_response({
+                "success": True,
+                "node_id": self.node_id,
+                "model_id": model_id,
+                "baseline_id": baseline_id,
+                "wins": wins,
+                "total_games": total_games,
+                "win_rate": win_rate,
+                "passed": passed,
+            })
+
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
     async def handle_git_status(self, request: web.Request) -> web.Response:
         """Get git status for this node.
 
@@ -11050,6 +11252,10 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         Model must beat the median-rated model with 50%+ win rate to pass.
         Runs 8 games total (4 as player 1, 4 as player 2) for fairness.
 
+        OPTIMIZATION: Dispatches gauntlet to CPU-rich nodes (Vast instances)
+        to avoid blocking GPU nodes. Falls back to local execution if no
+        CPU nodes are available.
+
         Returns True if model passes, False if it should be archived.
         """
         # Check for skip flag
@@ -11074,8 +11280,31 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         print(f"[P2P] Running post-training gauntlet: {model_id} vs {median_model} (median)")
 
-        # Run 8 games against median (4 as player 1, 4 as player 2)
         GAMES_PER_SIDE = 4
+
+        # OPTIMIZATION: Try to dispatch gauntlet to a CPU-rich node first
+        # This keeps GPU nodes free for training while Vast nodes handle evaluation
+        try:
+            remote_result = await self._dispatch_gauntlet_to_cpu_node(
+                config_key=config_key,
+                model_id=model_id,
+                baseline_id=median_model,
+                games_per_side=GAMES_PER_SIDE,
+            )
+            if remote_result and remote_result.get("success"):
+                # Remote gauntlet completed successfully
+                wins = remote_result.get("wins", 0)
+                total_games = remote_result.get("total_games", 0)
+                win_rate = remote_result.get("win_rate", 0)
+                passed = remote_result.get("passed", False)
+                remote_node = remote_result.get("node_id", "unknown")
+                print(f"[P2P] Post-training gauntlet (remote on {remote_node}): "
+                      f"{wins}/{total_games} ({win_rate:.1%}) {'PASSED' if passed else 'FAILED'}")
+                return passed
+        except Exception as e:
+            print(f"[P2P] Remote gauntlet dispatch failed: {e}, falling back to local")
+
+        # Fallback: Run locally if remote dispatch failed or we're the best CPU node
         model_dir = Path(self.ringrift_path) / "ai-service" / "models"
 
         wins = 0
@@ -11117,7 +11346,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         MIN_WIN_RATE = 0.50
         passed = win_rate >= MIN_WIN_RATE
 
-        print(f"[P2P] Post-training gauntlet vs median: {wins}/{total_games} "
+        print(f"[P2P] Post-training gauntlet vs median (local): {wins}/{total_games} "
               f"({win_rate:.1%}) {'PASSED' if passed else 'FAILED'}")
 
         return passed
@@ -24702,6 +24931,7 @@ print(json.dumps({{
         # Gauntlet evaluation routes
         app.router.add_post('/gauntlet/execute', self.handle_gauntlet_execute)
         app.router.add_get('/gauntlet/status', self.handle_gauntlet_status)
+        app.router.add_post('/gauntlet/quick-eval', self.handle_gauntlet_quick_eval)
 
         # Relay/Hub routes for NAT-blocked nodes
         app.router.add_post('/relay/heartbeat', self.handle_relay_heartbeat)
