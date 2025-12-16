@@ -326,7 +326,7 @@ class ClusterSyncCoordinator:
 
         try:
             result = subprocess.run(
-                [sys.executable, str(sync_script), "--push", "--all-nodes"],
+                [sys.executable, str(sync_script), "--mode", "cluster-sync"],
                 capture_output=True,
                 text=True,
                 timeout=300,
