@@ -737,8 +737,8 @@ def get_baseline_players(board_type: str, num_players: int) -> List[Dict[str, An
     """Get baseline player definitions for Elo calibration.
 
     These provide anchor points for the Elo scale:
-    - random: ~800-1000 Elo (worst baseline)
-    - heuristic: ~1200-1400 Elo (decent play)
+    - random: PINNED at 400 ELO (anchor point for calibration)
+    - heuristic: ~1200-1400 Elo (decent baseline)
     - mcts_100: ~1400-1600 Elo (strong baseline)
     """
     now = time.time()
@@ -998,10 +998,10 @@ def run_all_config_tournaments(args):
         else:
             models = discover_models(models_dir, board_type, num_players)
             print(f"Discovered {len(models)} models for {config_label}")
-            if args.include_baselines:
+            if args.include_baselines and not args.no_baselines:
                 baselines = get_baseline_players(board_type, num_players)
                 models.extend(baselines)
-                print(f"Added {len(baselines)} baseline players")
+                print(f"Added {len(baselines)} baseline players (required for ELO anchoring)")
 
         if args.top_n and not args.baselines_only:
             models = models[:args.top_n]
@@ -1152,7 +1152,7 @@ def run_continuous_tournament(args):
                 models = get_baseline_players(args.board, args.players)
             else:
                 models = discover_models(models_dir, args.board, args.players, include_nnue=args.include_nnue)
-                if args.include_baselines:
+                if args.include_baselines and not args.no_baselines:
                     models.extend(get_baseline_players(args.board, args.players))
 
             if args.top_n:
@@ -1428,7 +1428,9 @@ def main():
     parser.add_argument("--elo-range", type=int, default=200, help="Max Elo difference for matchmaking (default: 200)")
     parser.add_argument("--archive-threshold", type=int, default=1400, help="Archive models below this Elo after 50+ games")
     parser.add_argument("--archive", action="store_true", help="Archive low-Elo models")
-    parser.add_argument("--include-baselines", action="store_true", help="Include baseline players (Random, Heuristic, MCTS)")
+    parser.add_argument("--include-baselines", action="store_true", default=True,
+                        help="Include baseline players (Random, Heuristic, MCTS) - DEFAULT: ON for ELO calibration")
+    parser.add_argument("--no-baselines", action="store_true", help="Exclude baseline players (not recommended - breaks ELO anchoring)")
     parser.add_argument("--baselines-only", action="store_true", help="Run tournament with only baseline players (for calibration)")
     parser.add_argument("--ai-type", choices=["mcts", "descent"], default="descent", help="AI type for neural networks (default: descent)")
     parser.add_argument("--both-ai-types", action="store_true", help="Use BOTH MCTS and Descent AI types (half games each) for comprehensive NN evaluation")
@@ -1547,10 +1549,12 @@ def main():
         print(f"\nDiscovered {nn_count} NN models for {args.board} {args.players}p")
         if nnue_count > 0:
             print(f"Also found {nnue_count} NNUE models")
-        if args.include_baselines:
+        if args.include_baselines and not args.no_baselines:
             baselines = get_baseline_players(args.board, args.players)
             models.extend(baselines)
-            print(f"Added {len(baselines)} baseline players")
+            print(f"Added {len(baselines)} baseline players (required for ELO anchoring)")
+        elif args.no_baselines:
+            print("WARNING: Baselines excluded - ELO ratings may drift without anchor!")
 
     if args.top_n and not args.baselines_only:
         models = models[:args.top_n]

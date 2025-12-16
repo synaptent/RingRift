@@ -126,5 +126,83 @@ class TestResourceGuard:
         assert guard.gpu_required_gb == 1.0
 
 
+class TestAsyncResourceLimiter:
+    """Test the async resource limiter."""
+
+    def test_async_limiter_initializes(self):
+        """AsyncResourceLimiter should initialize with defaults."""
+        from app.utils.resource_guard import AsyncResourceLimiter
+        limiter = AsyncResourceLimiter()
+        assert limiter.disk_required_gb == 2.0
+        assert limiter.mem_required_gb == 1.0
+        assert limiter.gpu_required_gb == 0.0
+
+    def test_async_limiter_check_resources(self):
+        """AsyncResourceLimiter._check_resources should return tuple."""
+        from app.utils.resource_guard import AsyncResourceLimiter
+        limiter = AsyncResourceLimiter(disk_required_gb=0.001, mem_required_gb=0.001)
+        ok, issues = limiter._check_resources()
+        assert isinstance(ok, bool)
+        assert isinstance(issues, list)
+
+    def test_async_limiter_sync_wait(self):
+        """AsyncResourceLimiter.wait_for_resources_sync should work."""
+        from app.utils.resource_guard import AsyncResourceLimiter, get_disk_usage
+        # Skip if disk is already above limit
+        disk_pct, _, _ = get_disk_usage()
+        if disk_pct >= 70.0:
+            pytest.skip(f"Disk at {disk_pct:.1f}%, skipping test")
+        limiter = AsyncResourceLimiter(
+            disk_required_gb=0.001,
+            mem_required_gb=0.001,
+        )
+        # Should succeed quickly with very low requirements
+        result = limiter.wait_for_resources_sync("test", max_wait_seconds=5)
+        assert result is True
+
+
+class TestRespectResourceLimitsDecorator:
+    """Test the @respect_resource_limits decorator."""
+
+    def test_decorator_wraps_sync_function(self):
+        """Decorator should wrap sync functions."""
+        from app.utils.resource_guard import respect_resource_limits, get_disk_usage
+        # Skip if disk is already above limit
+        disk_pct, _, _ = get_disk_usage()
+        if disk_pct >= 70.0:
+            pytest.skip(f"Disk at {disk_pct:.1f}%, skipping test")
+
+        @respect_resource_limits(disk_gb=0.001, mem_gb=0.001, max_wait_seconds=5)
+        def my_func():
+            return 42
+
+        # Should execute and return
+        result = my_func()
+        assert result == 42
+
+
+class TestResourceStatus:
+    """Test resource status reporting."""
+
+    def test_get_resource_status_returns_dict(self):
+        """get_resource_status should return a dictionary."""
+        from app.utils.resource_guard import get_resource_status
+        status = get_resource_status()
+        assert isinstance(status, dict)
+        assert "disk" in status
+        assert "memory" in status
+        assert "cpu" in status
+        assert "gpu" in status
+        assert "can_proceed" in status
+
+    def test_resource_status_has_ok_field(self):
+        """Each resource status should have an 'ok' field."""
+        from app.utils.resource_guard import get_resource_status
+        status = get_resource_status()
+        for key in ["disk", "memory", "cpu", "gpu"]:
+            assert "ok" in status[key]
+            assert isinstance(status[key]["ok"], bool)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

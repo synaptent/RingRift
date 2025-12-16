@@ -75,6 +75,7 @@ class ConfigValidator:
         results.append(self.validate_unified_loop_config())
         results.append(self.validate_remote_hosts())
         results.append(self.validate_hyperparameters())
+        results.append(self.validate_resource_limits())
 
         # Optional configs
         elo_alerts = self.validate_elo_alerts()
@@ -370,6 +371,74 @@ class ConfigValidator:
         return ValidationResult(
             valid=len(errors) == 0,
             config_name="database_paths",
+            errors=errors,
+            warnings=warnings,
+        )
+
+    def validate_resource_limits(self) -> ValidationResult:
+        """Validate resource limit configurations across modules.
+
+        Ensures consistent 80% utilization limits are enforced.
+        """
+        errors = []
+        warnings = []
+
+        # Check unified_loop.yaml safety section
+        config_path = self.base_path / "config" / "unified_loop.yaml"
+        if config_path.exists():
+            try:
+                with open(config_path) as f:
+                    config = yaml.safe_load(f)
+
+                # Check safety thresholds
+                safety = config.get("safety", {})
+
+                # Memory limit check (should not exceed 80% of available)
+                min_mem = safety.get("min_memory_gb", 0)
+                if min_mem > 0 and min_mem < 16:
+                    warnings.append(f"safety.min_memory_gb={min_mem}GB is low - consider 32GB+ for production")
+
+                # Overfitting threshold (should be reasonable)
+                overfit = safety.get("overfit_threshold", 0.15)
+                if overfit > 0.3:
+                    warnings.append(f"safety.overfit_threshold={overfit} is high - may allow overfitted models")
+
+                # Check safeguards section for process limits
+                safeguards = config.get("safeguards", {})
+
+                max_python = safeguards.get("max_python_processes_per_host", 0)
+                if max_python > 100:
+                    warnings.append(f"safeguards.max_python_processes_per_host={max_python} is high - may cause resource exhaustion")
+
+                max_selfplay = safeguards.get("max_selfplay_processes", 0)
+                if max_selfplay > 100:
+                    warnings.append(f"safeguards.max_selfplay_processes={max_selfplay} is high")
+
+                # Check resource limit consistency with resource_guard
+                # The 80% limit should be consistent across codebase
+                try:
+                    from app.utils.resource_guard import LIMITS
+                    if LIMITS:
+                        # Verify consistency
+                        if LIMITS.CPU_MAX_PERCENT != 80.0:
+                            warnings.append(f"resource_guard.CPU_MAX_PERCENT={LIMITS.CPU_MAX_PERCENT} != 80%")
+                        if LIMITS.MEMORY_MAX_PERCENT != 80.0:
+                            warnings.append(f"resource_guard.MEMORY_MAX_PERCENT={LIMITS.MEMORY_MAX_PERCENT} != 80%")
+                        if LIMITS.GPU_MAX_PERCENT != 80.0:
+                            warnings.append(f"resource_guard.GPU_MAX_PERCENT={LIMITS.GPU_MAX_PERCENT} != 80%")
+                        if LIMITS.DISK_MAX_PERCENT != 70.0:
+                            warnings.append(f"resource_guard.DISK_MAX_PERCENT={LIMITS.DISK_MAX_PERCENT} != 70%")
+                except ImportError:
+                    warnings.append("resource_guard module not available - cannot verify limits")
+
+            except yaml.YAMLError as e:
+                errors.append(f"YAML parse error in unified_loop.yaml: {e}")
+            except Exception as e:
+                errors.append(f"Error reading unified_loop.yaml: {e}")
+
+        return ValidationResult(
+            valid=len(errors) == 0,
+            config_name="resource_limits",
             errors=errors,
             warnings=warnings,
         )

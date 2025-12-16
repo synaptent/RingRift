@@ -1207,6 +1207,12 @@ class MutableGameState:
             self._phase = GamePhase.MOVEMENT
         elif move.type == MoveType.SKIP_PLACEMENT:
             self._phase = GamePhase.MOVEMENT
+        elif move.type == MoveType.NO_PLACEMENT_ACTION:
+            # Player has no rings to place - advance to MOVEMENT
+            self._phase = GamePhase.MOVEMENT
+        elif move.type == MoveType.NO_MOVEMENT_ACTION:
+            # No movement available - end turn
+            self._end_turn_for_search()
         elif move.type == MoveType.MOVE_STACK:
             # After movement, check for lines or end turn
             # Simplified: end turn (line detection would need BoardManager)

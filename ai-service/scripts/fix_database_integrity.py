@@ -20,6 +20,11 @@ import sqlite3
 import sys
 from pathlib import Path
 
+# Pinned baselines (anchors for ELO calibration)
+PINNED_BASELINES = {
+    "baseline_random": 400.0,  # Random player pinned at 400 ELO
+}
+
 # Setup paths
 SCRIPT_DIR = Path(__file__).resolve().parent
 AI_SERVICE_ROOT = SCRIPT_DIR.parent
@@ -272,6 +277,16 @@ def recalculate_stats_from_history(db_path: Path, dry_run: bool = False) -> dict
                 SET games_played = ?, wins = ?, losses = ?, draws = ?
                 WHERE participant_id = ? AND board_type = ? AND num_players = ?
             """, (games, wins, losses, draws, pid, bt, np))
+
+        # Re-pin baseline ratings after recalculation
+        for prefix, pinned_rating in PINNED_BASELINES.items():
+            cur.execute("""
+                UPDATE elo_ratings
+                SET rating = ?
+                WHERE participant_id LIKE ?
+            """, (pinned_rating, f"{prefix}%"))
+            if cur.rowcount > 0:
+                logger.info(f"Re-pinned {cur.rowcount} {prefix} ratings to {pinned_rating}")
 
         conn.commit()
         results["updated"] = len(actual_stats)

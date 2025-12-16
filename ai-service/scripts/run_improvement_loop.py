@@ -101,6 +101,30 @@ except ImportError:
     HotDataBuffer = None  # type: ignore
     create_hot_buffer = None  # type: ignore
 
+# Unified resource guard - 80% utilization limits (enforced 2025-12-16)
+try:
+    from app.utils.resource_guard import (
+        can_proceed as resource_can_proceed,
+        check_disk_space,
+        check_memory,
+        check_cpu,
+        check_gpu_memory,
+        wait_for_resources,
+        get_resource_status,
+        LIMITS as RESOURCE_LIMITS,
+    )
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    resource_can_proceed = lambda **kwargs: True  # type: ignore
+    check_disk_space = lambda *args, **kwargs: True  # type: ignore
+    check_memory = lambda *args, **kwargs: True  # type: ignore
+    check_cpu = lambda *args, **kwargs: True  # type: ignore
+    check_gpu_memory = lambda *args, **kwargs: True  # type: ignore
+    wait_for_resources = lambda *args, **kwargs: True  # type: ignore
+    get_resource_status = lambda: {}  # type: ignore
+    RESOURCE_LIMITS = None  # type: ignore
+
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 
