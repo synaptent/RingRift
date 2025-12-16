@@ -814,6 +814,29 @@ def run_gpu_selfplay(
 
     board_size = {"square8": 8, "square19": 19, "hex": 25, "hexagonal": 25}.get(board_type.lower(), 8)
 
+    # Auto-adjust max_moves based on board type and player count if using default
+    # Larger boards and more players need more moves to reach natural game end
+    if max_moves == 500:  # Default value - auto-adjust
+        max_moves_table = {
+            # (board_type, num_players): max_moves
+            ("square8", 2): 500,
+            ("square8", 3): 800,
+            ("square8", 4): 1200,
+            ("square19", 2): 1000,
+            ("square19", 3): 1500,
+            ("square19", 4): 2000,
+            ("hex", 2): 800,
+            ("hex", 3): 1200,
+            ("hex", 4): 1500,
+            ("hexagonal", 2): 800,
+            ("hexagonal", 3): 1200,
+            ("hexagonal", 4): 1500,
+        }
+        key = (board_type.lower(), num_players)
+        if key in max_moves_table:
+            max_moves = max_moves_table[key]
+            logger.info(f"Auto-adjusted max_moves to {max_moves} for {board_type} {num_players}p")
+
     logger.info("=" * 60)
     logger.info("GPU-ACCELERATED SELF-PLAY GENERATION")
     logger.info("=" * 60)
