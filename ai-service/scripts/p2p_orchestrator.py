@@ -10162,12 +10162,14 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             gpu_nodes.sort(key=lambda n: (-n.gpu_power_score(), n.get_load_score()))
             worker_node = gpu_nodes[0] if gpu_nodes else None
         else:
-            # CMA-ES is CPU-heavy. Prefer CPU-only nodes without training, then fall back.
+            # CMA-ES is CPU-heavy. Prefer high-CPU nodes (vast nodes have 256-512 CPUs).
+            # Use cpu_power_score() to prioritize vast nodes over lambda nodes.
             cpu_nodes = [n for n in healthy_nodes if n.is_cpu_only_node() and n.node_id not in nodes_with_training]
             if not cpu_nodes:
                 cpu_nodes = [n for n in healthy_nodes if n.is_cpu_only_node()]
             candidates = cpu_nodes if cpu_nodes else healthy_nodes
-            candidates.sort(key=lambda n: n.get_load_score())
+            # Sort by CPU power (descending) then load score (ascending)
+            candidates.sort(key=lambda n: (-n.cpu_power_score(), n.get_load_score()))
             worker_node = candidates[0] if candidates else None
 
         if not worker_node:

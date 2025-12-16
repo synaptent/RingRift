@@ -434,14 +434,12 @@ class DistributedNNGauntlet:
         tasks: List[GameTask],
         config_key: str,
     ) -> List[GameResult]:
-        """Execute game tasks locally (single process).
+        """Execute game tasks locally using thread pool.
 
-        In production, this would distribute to workers.
-        For now, runs games sequentially with asyncio.
+        Runs actual games using the game engine with NN agents.
+        Uses thread pool to avoid blocking the event loop.
         """
-        from app.tournament.agents import AIAgentRegistry
-        from app.tournament.runner import TournamentRunner
-        from app.tournament.scheduler import TournamentScheduler
+        import concurrent.futures
 
         results = []
 
@@ -450,29 +448,145 @@ class DistributedNNGauntlet:
         num_players = int(parts[1].replace("p", ""))
         max_moves = MAX_MOVES.get(config_key, 2000)
 
-        # This is a simplified local execution
-        # Real distributed version would use P2P coordinator
-        for task in tasks:
-            start = time.time()
+        # Run games in parallel using thread pool
+        max_workers = min(8, len(tasks))  # Limit concurrency
 
-            # Simulate game result for now
-            # In production, would actually run the game
-            result = GameResult(
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {}
+            for task in tasks:
+                future = executor.submit(
+                    self._run_game_sync,
+                    task, board_type, num_players, max_moves,
+                )
+                futures[future] = task
+
+            for future in concurrent.futures.as_completed(futures):
+                task = futures[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as e:
+                    logger.warning(f"[Gauntlet] Game {task.task_id} failed: {e}")
+                    results.append(GameResult(
+                        task_id=task.task_id,
+                        model_id=task.model_id,
+                        baseline_id=task.baseline_id,
+                        model_won=False,
+                        baseline_won=False,
+                        draw=True,
+                        game_length=0,
+                        duration_sec=0.0,
+                    ))
+
+                if len(results) % 10 == 0:
+                    logger.info(f"[Gauntlet] Progress: {len(results)}/{len(tasks)} games")
+
+        return results
+
+    def _run_game_sync(
+        self,
+        task: GameTask,
+        board_type: str,
+        num_players: int,
+        max_moves: int,
+    ) -> GameResult:
+        """Run a single game synchronously.
+
+        Called from thread pool.
+        """
+        start_time = time.time()
+
+        try:
+            from app.tournament.agents import AIAgentRegistry
+            from app.game.board import create_board
+            from app.game.engine import GameEngine
+
+            # Create board
+            board = create_board(board_type)
+
+            # Load agents
+            registry = AIAgentRegistry()
+
+            # Model agent (player 0)
+            if task.model_id == "random_ai":
+                model_agent = registry.get_agent("random")
+            else:
+                model_path = self.model_dir / f"{task.model_id}.pth"
+                if model_path.exists():
+                    model_agent = registry.get_agent("nn", model_path=str(model_path))
+                else:
+                    # Model file not found, use MCTS fallback
+                    model_agent = registry.get_agent("mcts", iterations=100)
+
+            # Baseline agent (player 1)
+            if task.baseline_id == "random_ai":
+                baseline_agent = registry.get_agent("random")
+            else:
+                baseline_path = self.model_dir / f"{task.baseline_id}.pth"
+                if baseline_path.exists():
+                    baseline_agent = registry.get_agent("nn", model_path=str(baseline_path))
+                else:
+                    baseline_agent = registry.get_agent("mcts", iterations=100)
+
+            # Create agents list
+            agents = [model_agent, baseline_agent]
+            # Add more agents for 3p/4p games
+            while len(agents) < num_players:
+                agents.append(registry.get_agent("random"))
+
+            # Run game
+            engine = GameEngine(board, agents)
+            winner = engine.play(max_moves=max_moves)
+            game_length = engine.move_count
+            duration = time.time() - start_time
+
+            # Determine result
+            if winner is None:
+                return GameResult(
+                    task_id=task.task_id,
+                    model_id=task.model_id,
+                    baseline_id=task.baseline_id,
+                    model_won=False,
+                    baseline_won=False,
+                    draw=True,
+                    game_length=game_length,
+                    duration_sec=duration,
+                )
+            elif winner == 0:
+                return GameResult(
+                    task_id=task.task_id,
+                    model_id=task.model_id,
+                    baseline_id=task.baseline_id,
+                    model_won=True,
+                    baseline_won=False,
+                    draw=False,
+                    game_length=game_length,
+                    duration_sec=duration,
+                )
+            else:
+                return GameResult(
+                    task_id=task.task_id,
+                    model_id=task.model_id,
+                    baseline_id=task.baseline_id,
+                    model_won=False,
+                    baseline_won=(winner == 1),
+                    draw=False,
+                    game_length=game_length,
+                    duration_sec=duration,
+                )
+
+        except Exception as e:
+            logger.warning(f"[Gauntlet] Game error: {e}")
+            return GameResult(
                 task_id=task.task_id,
                 model_id=task.model_id,
                 baseline_id=task.baseline_id,
                 model_won=False,
-                baseline_won=True,
-                draw=False,
-                game_length=100,
-                duration_sec=time.time() - start,
+                baseline_won=False,
+                draw=True,
+                game_length=0,
+                duration_sec=time.time() - start_time,
             )
-            results.append(result)
-
-            if len(results) % 100 == 0:
-                logger.info(f"[Gauntlet] Progress: {len(results)}/{len(tasks)} games")
-
-        return results
 
     def _aggregate_results(self, results: List[GameResult]) -> None:
         """Aggregate game results and update Elo ratings."""
