@@ -84,13 +84,16 @@ def load_cluster_nodes() -> Dict[str, Dict[str, str]]:
 # Load nodes from config
 CLUSTER_NODES = load_cluster_nodes()
 
-# Alert thresholds
+# Alert thresholds - aligned with 80% max utilization (2025-12-16)
 THRESHOLDS = {
     "leader_missing_seconds": 300,  # Alert if no leader seen for 5 minutes
     "min_active_peers": 2,          # Alert if fewer than 2 active peers
-    "disk_percent_warning": 85,     # Alert if disk > 85%
-    "disk_percent_critical": 95,    # Critical if disk > 95%
-    "memory_percent_warning": 90,   # Alert if memory > 90%
+    "disk_percent_warning": 65,     # Alert at warning level (70% is hard limit)
+    "disk_percent_critical": 70,    # Critical at disk limit
+    "memory_percent_warning": 70,   # Alert below 80% limit
+    "memory_percent_critical": 80,  # Critical at memory limit
+    "cpu_percent_warning": 70,      # Alert below 80% limit
+    "cpu_percent_critical": 80,     # Critical at CPU limit
 }
 
 # Track last alert times to avoid spam
