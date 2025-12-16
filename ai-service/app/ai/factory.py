@@ -483,6 +483,7 @@ class AIFactory:
         num_players: int = 2,
         *,
         rng_seed: Optional[int] = None,
+        nn_model_id: Optional[str] = None,
     ) -> "BaseAI":
         """Create an AI for tournament use.
 
@@ -500,13 +501,14 @@ class AIFactory:
             board_type: Board type for context
             num_players: Number of players for context
             rng_seed: Optional RNG seed
+            nn_model_id: Optional neural network model ID for NN-guided agents
 
         Returns:
             Configured AI instance
         """
         # Check custom registry first
         if agent_id in cls._custom_registry:
-            config = AIConfig(difficulty=5, rng_seed=rng_seed)
+            config = AIConfig(difficulty=5, rng_seed=rng_seed, nn_model_id=nn_model_id)
             return cls.create_custom(agent_id, player_number, config)
 
         # Parse built-in agent IDs
@@ -519,7 +521,7 @@ class AIFactory:
             return cls.create_from_difficulty(2, player_number, rng_seed=rng_seed)
 
         if agent_lower == "minimax":
-            return cls.create_from_difficulty(3, player_number, rng_seed=rng_seed)
+            return cls.create_from_difficulty(3, player_number, rng_seed=rng_seed, nn_model_id=nn_model_id)
 
         if agent_lower.startswith("mcts_"):
             # Parse simulation count: mcts_100, mcts_500, etc.
@@ -535,11 +537,15 @@ class AIFactory:
                 else:
                     difficulty = 8
 
+                # Enable neural net if model_id provided or difficulty >= 6
+                use_nn = nn_model_id is not None or difficulty >= 6
+
                 config = AIConfig(
                     difficulty=difficulty,
                     think_time=sims * 10,  # Rough heuristic
                     rng_seed=rng_seed,
-                    use_neural_net=difficulty >= 6,
+                    nn_model_id=nn_model_id,
+                    use_neural_net=use_nn,
                 )
                 return cls.create(AIType.MCTS, player_number, config)
             except (ValueError, IndexError):
@@ -549,7 +555,7 @@ class AIFactory:
             # Parse difficulty level: difficulty_5, level_7, etc.
             try:
                 level = int(agent_lower.split("_")[1])
-                return cls.create_from_difficulty(level, player_number, rng_seed=rng_seed)
+                return cls.create_from_difficulty(level, player_number, rng_seed=rng_seed, nn_model_id=nn_model_id)
             except (ValueError, IndexError):
                 pass
 
@@ -561,6 +567,7 @@ class AIFactory:
                 difficulty=5,
                 think_time=profile["think_time_ms"],
                 rng_seed=rng_seed,
+                nn_model_id=nn_model_id,
             )
             return cls.create(ai_type, player_number, config)
         except ValueError:

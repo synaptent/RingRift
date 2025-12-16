@@ -483,6 +483,7 @@ class GameExecutor:
                 board_type=self.board_type,
                 num_players=self.num_players,
                 rng_seed=config.get("rng_seed"),
+                nn_model_id=config.get("nn_model_id"),
             )
             ais.append(ai)
 

@@ -508,14 +508,15 @@ class DistributedNNGauntlet:
             else:
                 model_path = self.model_dir / f"{task.model_id}.pth"
                 if model_path.exists():
+                    # Use MCTS with neural guidance
                     player_configs.append({
-                        "ai_type": "nn",
-                        "model_path": str(model_path),
-                        "difficulty": 10,
+                        "ai_type": "mcts_100",
+                        "difficulty": 7,
+                        "nn_model_id": task.model_id,
                     })
                 else:
-                    # Model file not found, use MCTS fallback
-                    player_configs.append({"ai_type": "mcts", "difficulty": 5})
+                    # Model file not found, use MCTS fallback without NN
+                    player_configs.append({"ai_type": "mcts_100", "difficulty": 5})
 
             # Baseline agent (player 1)
             if task.baseline_id == "random_ai":
@@ -524,12 +525,12 @@ class DistributedNNGauntlet:
                 baseline_path = self.model_dir / f"{task.baseline_id}.pth"
                 if baseline_path.exists():
                     player_configs.append({
-                        "ai_type": "nn",
-                        "model_path": str(baseline_path),
-                        "difficulty": 10,
+                        "ai_type": "mcts_100",
+                        "difficulty": 7,
+                        "nn_model_id": task.baseline_id,
                     })
                 else:
-                    player_configs.append({"ai_type": "mcts", "difficulty": 5})
+                    player_configs.append({"ai_type": "mcts_100", "difficulty": 5})
 
             # Add random players for 3p/4p games
             while len(player_configs) < num_players:
