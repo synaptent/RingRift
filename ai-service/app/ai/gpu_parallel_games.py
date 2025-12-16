@@ -3573,10 +3573,11 @@ def apply_movement_moves_batch_vectorized(
     state.stack_height[game_indices, to_y, to_x] = new_height.to(state.stack_height.dtype)
     state.cap_height[game_indices, to_y, to_x] = new_cap_height.to(state.cap_height.dtype)
 
-    # Advance turn
+    # Advance move counter only (NOT current_player - that's handled by END_TURN phase)
+    # BUG FIX 2025-12-15: Removing player rotation here - it was causing players to
+    # advance mid-turn, then advance again in END_TURN, resulting in players getting
+    # multiple consecutive turns before opponents.
     state.move_count[game_indices] += 1
-    new_player = (players % state.num_players) + 1
-    state.current_player[game_indices] = new_player.to(state.current_player.dtype)
 
 
 def _apply_movement_moves_batch_legacy(
@@ -3651,8 +3652,9 @@ def _apply_movement_moves_batch_legacy(
         state.stack_height[g, to_y, to_x] = new_height
         state.cap_height[g, to_y, to_x] = new_cap_height
 
+        # Advance move counter only (NOT current_player - that's handled by END_TURN phase)
+        # BUG FIX 2025-12-15: See apply_movement_moves_batch_vectorized for details
         state.move_count[g] += 1
-        state.current_player[g] = (player % state.num_players) + 1
 
 
 def apply_movement_moves_batch(
@@ -3799,10 +3801,11 @@ def apply_capture_moves_batch_vectorized(
     # Place marker for attacker
     state.marker_owner[game_indices, to_y, to_x] = players.to(state.marker_owner.dtype)
 
-    # Advance turn
+    # Advance move counter only (NOT current_player - that's handled by END_TURN phase)
+    # BUG FIX 2025-12-15: Removing player rotation here - it was causing players to
+    # advance mid-turn, then advance again in END_TURN, resulting in players getting
+    # multiple consecutive turns before opponents.
     state.move_count[game_indices] += 1
-    new_player = (players % state.num_players) + 1
-    state.current_player[game_indices] = new_player.to(state.current_player.dtype)
 
 
 def _apply_capture_moves_batch_legacy(
@@ -3878,8 +3881,9 @@ def _apply_capture_moves_batch_legacy(
 
         state.marker_owner[g, to_y, to_x] = player
 
+        # Advance move counter only (NOT current_player - that's handled by END_TURN phase)
+        # BUG FIX 2025-12-15: See apply_capture_moves_batch_vectorized for details
         state.move_count[g] += 1
-        state.current_player[g] = (player % state.num_players) + 1
 
 
 def apply_capture_moves_batch(
