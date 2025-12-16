@@ -103,7 +103,7 @@ class HexStateEncoder:
         8: Current player line potential (friendly marker neighbors)
         9: Opponent line potential
 
-    Global Features (10 dims):
+    Global Features (20 dims):
         0-4: Compressed one-hot game phase encoding
              (ring_placement, movement, capture, line_processing,
               territory_processing + forced_elimination)
@@ -112,13 +112,23 @@ class HexStateEncoder:
         7: Current player eliminated rings (normalized)
         8: Opponent eliminated rings (normalized)
         9: Current turn indicator (always 1.0)
+        10: Is 3-player game (1.0 if 3p, else 0.0)
+        11: Is 4-player game (1.0 if 4p, else 0.0)
+        12: Current player territory count (normalized)
+        13: Opponent territory count (normalized)
+        14: Current player marker count (normalized)
+        15: Opponent marker count (normalized)
+        16: Current player stack count (normalized)
+        17: Opponent stack count (normalized)
+        18: Game progress (move_number / 200, capped at 1.0)
+        19: Reserved (always 0.0)
     """
 
     # Canonical hex board dimensions
     BOARD_SIZE = HEX_BOARD_SIZE  # 25
     RADIUS = (HEX_BOARD_SIZE - 1) // 2  # 12
     NUM_CHANNELS = 10
-    NUM_GLOBAL_FEATURES = 10
+    NUM_GLOBAL_FEATURES = 20  # Match NeuralNetAI for model compatibility
     POLICY_SIZE = P_HEX  # 91,876
 
     def __init__(self, board_size: int = HEX_BOARD_SIZE):
@@ -462,6 +472,58 @@ class HexStateEncoder:
         # Turn indicator (index 9)
         globals_vec[9] = 1.0
 
+        # Extended global features (indices 10-19) for model compatibility
+        # Player count indicators
+        globals_vec[10] = 1.0 if num_players == 3 else 0.0
+        globals_vec[11] = 1.0 if num_players == 4 else 0.0
+
+        # Territory counts (normalized by board cell count ~397 for hex)
+        max_cells = 397.0  # Approximate valid cells in hex board
+        my_territory = sum(
+            1 for owner in board.collapsed_spaces.values()
+            if owner == current_player
+        )
+        opp_territory = sum(
+            1 for owner in board.collapsed_spaces.values()
+            if owner != current_player
+        )
+        globals_vec[12] = min(my_territory / max_cells, 1.0)
+        globals_vec[13] = min(opp_territory / max_cells, 1.0)
+
+        # Marker counts (normalized by typical max ~50)
+        max_markers = 50.0
+        my_markers = sum(
+            1 for m in board.markers.values()
+            if m.player == current_player
+        )
+        opp_markers = sum(
+            1 for m in board.markers.values()
+            if m.player != current_player
+        )
+        globals_vec[14] = min(my_markers / max_markers, 1.0)
+        globals_vec[15] = min(opp_markers / max_markers, 1.0)
+
+        # Stack counts (normalized by typical max ~30)
+        max_stacks = 30.0
+        my_stacks = sum(
+            1 for s in board.stacks.values()
+            if s.controlling_player == current_player
+        )
+        opp_stacks = sum(
+            1 for s in board.stacks.values()
+            if s.controlling_player != current_player
+        )
+        globals_vec[16] = min(my_stacks / max_stacks, 1.0)
+        globals_vec[17] = min(opp_stacks / max_stacks, 1.0)
+
+        # Game progress (move number normalized by expected game length)
+        move_number = getattr(state, 'turn_number', 0)
+        if move_number == 0 and hasattr(state, 'move_history'):
+            move_number = len(state.move_history)
+        globals_vec[18] = min(move_number / 200.0, 1.0)
+
+        # Reserved (index 19) - already 0.0 from initialization
+
         return features, globals_vec
 
     def encode_with_history(
@@ -481,7 +543,7 @@ class HexStateEncoder:
         Returns:
             Tuple of (stacked_features, global_features):
             - stacked_features: shape (10 * (history_length + 1), H, W)
-            - global_features: shape (10,)
+            - global_features: shape (20,)
         """
         features, globals_vec = self.encode(state)
 

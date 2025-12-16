@@ -356,6 +356,46 @@ class EloDatabase:
         if "match_id" not in rating_cols:
             conn.execute("ALTER TABLE rating_history ADD COLUMN match_id TEXT")
 
+        # Upgrade elo_ratings table - add archive tracking columns
+        elo_cols = get_columns("elo_ratings")
+        if "archived_at" not in elo_cols:
+            conn.execute("ALTER TABLE elo_ratings ADD COLUMN archived_at REAL")
+        if "archive_reason" not in elo_cols:
+            conn.execute("ALTER TABLE elo_ratings ADD COLUMN archive_reason TEXT")
+
+        conn.commit()
+
+        # Create gauntlet tracking tables if they don't exist
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS gauntlet_runs (
+                run_id TEXT PRIMARY KEY,
+                config_key TEXT NOT NULL,
+                started_at REAL NOT NULL,
+                completed_at REAL,
+                models_evaluated INTEGER DEFAULT 0,
+                total_games INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'running'
+            );
+
+            CREATE TABLE IF NOT EXISTS gauntlet_results (
+                result_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                baseline_id TEXT NOT NULL,
+                wins INTEGER DEFAULT 0,
+                losses INTEGER DEFAULT 0,
+                draws INTEGER DEFAULT 0,
+                elo_before REAL,
+                elo_after REAL,
+                FOREIGN KEY (run_id) REFERENCES gauntlet_runs(run_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_gauntlet_results_model
+                ON gauntlet_results(model_id, run_id);
+
+            CREATE INDEX IF NOT EXISTS idx_gauntlet_runs_config
+                ON gauntlet_runs(config_key, started_at DESC);
+        """)
         conn.commit()
 
     def close(self):
