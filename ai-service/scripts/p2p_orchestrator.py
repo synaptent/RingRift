@@ -5328,6 +5328,7 @@ class P2POrchestrator:
         board_configs = [
             ("square8", 2), ("square8", 3), ("square8", 4),
             ("square19", 2), ("square19", 3), ("square19", 4),
+            ("hex8", 2), ("hex8", 3), ("hex8", 4),
             ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
         ]
 
@@ -9129,7 +9130,7 @@ print(wins / total)
             board = str(data.get("board") or data.get("board_type") or "square8").strip().lower()
             if board == "hexagonal":
                 board = "hex"
-            if board not in ("square8", "square19", "hex"):
+            if board not in ("square8", "square19", "hex8", "hex"):
                 return web.json_response({"error": f"Invalid board: {board!r}"}, status=400)
 
             games_per_matchup = int(data.get("games_per_matchup", 50) or 50)
@@ -17015,6 +17016,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         return {
             "square8": "square8",
             "square19": "square19",
+            "hex8": "hex8",
             "hexagonal": "hex",
         }.get(board_type, board_type)
 
@@ -17291,7 +17293,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             distributed_job_timeout_seconds = int(data.get("distributed_job_timeout_seconds") or 0)
             distributed_fetch_timeout_seconds = int(data.get("distributed_fetch_timeout_seconds") or 0)
 
-            if board_type not in ("square8", "square19", "hexagonal"):
+            if board_type not in ("square8", "square19", "hex8", "hexagonal"):
                 return web.json_response({"success": False, "error": f"Unsupported board_type: {board_type}"}, status=400)
             if num_players not in (2, 3, 4):
                 return web.json_response({"success": False, "error": f"Unsupported num_players: {num_players}"}, status=400)

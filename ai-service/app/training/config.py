@@ -203,6 +203,7 @@ def get_training_config_for_board(
     from app.ai.neural_net import (
         POLICY_SIZE_8x8,
         POLICY_SIZE_19x19,
+        POLICY_SIZE_HEX8,
         P_HEX,
     )
 
@@ -226,6 +227,16 @@ def get_training_config_for_board(
         config.learning_rate = 5e-4  # Lower LR for stability
         config.max_moves_per_game = 10000  # Allow games to complete naturally
         config.model_id = "ringrift_v4_sq19_2p"
+
+    elif board_type == BoardType.HEX8:
+        # Hex8 board: smaller hex (radius-4, 61 cells), parallel to square8
+        config.policy_size = POLICY_SIZE_HEX8  # 4,500
+        config.num_res_blocks = 12
+        config.num_filters = 192
+        config.batch_size = 64  # Similar to square8
+        config.learning_rate = 2e-3  # Slightly higher LR like square8
+        config.max_moves_per_game = 10000  # Allow games to complete naturally
+        config.model_id = "ringrift_v5_hex8_2p"
 
     elif board_type == BoardType.HEXAGONAL:
         # Hex board: largest action space (~92k), requires careful tuning
@@ -268,6 +279,16 @@ BOARD_TRAINING_CONFIGS: Dict[BoardType, Dict[str, any]] = {
         "max_moves_per_game": 10000,
         "model_id": "ringrift_v4_sq19_2p",
         "description": "Full-capacity square19 baseline (v2-family)",
+    },
+    BoardType.HEX8: {
+        "policy_size": 4500,  # Radius-4 hex (9×9 frame, 61 cells)
+        "num_res_blocks": 12,
+        "num_filters": 192,
+        "batch_size": 64,  # Similar to square8 (comparable complexity)
+        "learning_rate": 2e-3,  # Similar to square8
+        "max_moves_per_game": 10000,
+        "model_id": "ringrift_v5_hex8_2p",
+        "description": "Hex8 v3-family (radius-4 hexagonal, parallel to square8)",
     },
     BoardType.HEXAGONAL: {
         "policy_size": 91876,  # Updated for radius-12 hex (25×25 frame)

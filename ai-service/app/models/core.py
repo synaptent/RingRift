@@ -86,6 +86,7 @@ class BoardType(str, Enum):
     """Board type enumeration"""
     SQUARE8 = "square8"
     SQUARE19 = "square19"
+    HEX8 = "hex8"  # Radius-4 hexagonal board (61 cells) - parallel to square8
     HEXAGONAL = "hexagonal"
 
 

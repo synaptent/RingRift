@@ -22,7 +22,9 @@ from app.ai.neural_net import (
     ActionEncoderHex,
     INVALID_MOVE_INDEX,
     HEX_BOARD_SIZE,
+    HEX8_BOARD_SIZE,
     P_HEX,
+    POLICY_SIZE_HEX8,
     _to_canonical_xy,
     _from_canonical_xy,
     _pos_from_key,
@@ -131,18 +133,22 @@ class HexStateEncoder:
     NUM_GLOBAL_FEATURES = 20  # Match NeuralNetAI for model compatibility
     POLICY_SIZE = P_HEX  # 91,876
 
-    def __init__(self, board_size: int = HEX_BOARD_SIZE):
+    def __init__(self, board_size: int = HEX_BOARD_SIZE, policy_size: int = P_HEX):
         """
         Initialize the hex state encoder.
 
         Args:
             board_size: Size of the canonical grid (2*radius + 1).
                         Default is 25 for radius=12 hex boards.
+                        Use 9 for hex8 (radius=4) boards.
+            policy_size: Size of the policy head. Default is P_HEX (91,876).
+                        Use POLICY_SIZE_HEX8 (4,500) for hex8 boards.
         """
         self.board_size = board_size
         self.radius = (board_size - 1) // 2
+        self.policy_size = policy_size
         self.action_encoder = ActionEncoderHex(
-            board_size=board_size, policy_size=P_HEX
+            board_size=board_size, policy_size=policy_size
         )
 
         # Precompute valid hex cell mask for the 25x25 grid
@@ -690,12 +696,21 @@ class HexStateEncoderV3:
     NUM_GLOBAL_FEATURES = 20  # Extended global features for V3
     POLICY_SIZE = P_HEX  # 91,876
 
-    def __init__(self, board_size: int = HEX_BOARD_SIZE):
-        """Initialize the V3 hex state encoder."""
+    def __init__(self, board_size: int = HEX_BOARD_SIZE, policy_size: int = P_HEX):
+        """Initialize the V3 hex state encoder.
+
+        Args:
+            board_size: Size of the canonical grid (2*radius + 1).
+                        Default is 25 for radius=12 hex boards.
+                        Use 9 for hex8 (radius=4) boards.
+            policy_size: Size of the policy head. Default is P_HEX (91,876).
+                        Use POLICY_SIZE_HEX8 (4,500) for hex8 boards.
+        """
         self.board_size = board_size
         self.radius = (board_size - 1) // 2
+        self.policy_size = policy_size
         self.action_encoder = ActionEncoderHex(
-            board_size=board_size, policy_size=P_HEX
+            board_size=board_size, policy_size=policy_size
         )
         self._valid_mask = self._build_valid_mask()
 
@@ -1171,6 +1186,8 @@ def detect_board_type_from_features(features: np.ndarray) -> BoardType:
 
     if h == w == 8:
         return BoardType.SQUARE8
+    elif h == w == 9:
+        return BoardType.HEX8
     elif h == w == 19:
         return BoardType.SQUARE19
     elif h == w == 25:
@@ -1178,7 +1195,7 @@ def detect_board_type_from_features(features: np.ndarray) -> BoardType:
     else:
         raise ValueError(
             f"Cannot detect board type from spatial size {h}x{w}. "
-            f"Expected 8x8, 19x19, or 25x25."
+            f"Expected 8x8, 9x9, 19x19, or 25x25."
         )
 
 
@@ -1195,11 +1212,16 @@ def get_encoder_for_board_type(
                  (64 with frame stacking) for HexNeuralNet_v3.
 
     Returns:
-        HexStateEncoder/HexStateEncoderV3 for HEXAGONAL boards, None for square boards
+        HexStateEncoder/HexStateEncoderV3 for HEXAGONAL/HEX8 boards, None for square boards
         (square boards use NeuralNetAI directly)
     """
     if board_type == BoardType.HEXAGONAL:
         if version.lower() == "v3":
             return HexStateEncoderV3()
         return HexStateEncoder()
+    elif board_type == BoardType.HEX8:
+        # Hex8: radius=4, board_size=9, policy_size=4500
+        if version.lower() == "v3":
+            return HexStateEncoderV3(board_size=HEX8_BOARD_SIZE, policy_size=POLICY_SIZE_HEX8)
+        return HexStateEncoder(board_size=HEX8_BOARD_SIZE, policy_size=POLICY_SIZE_HEX8)
     return None

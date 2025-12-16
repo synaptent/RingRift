@@ -108,7 +108,7 @@ export type RematchResponsePayload = z.infer<typeof RematchResponsePayloadSchema
 /**
  * Valid board types for matchmaking preferences.
  */
-const BoardTypeSchema = z.enum(['square8', 'square19', 'hexagonal']);
+const BoardTypeSchema = z.enum(['square8', 'square19', 'hex8', 'hexagonal']);
 
 /**
  * Numeric range schema for matchmaking preferences.

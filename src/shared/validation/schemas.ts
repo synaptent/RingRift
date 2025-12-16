@@ -83,7 +83,7 @@ export type GameIdParamInput = z.infer<typeof GameIdParamSchema>;
  */
 export const GameListingQuerySchema = z.object({
   status: z.enum(['waiting', 'active', 'completed', 'abandoned', 'paused']).optional(),
-  boardType: z.enum(['square8', 'square19', 'hexagonal']).optional(),
+  boardType: z.enum(['square8', 'square19', 'hex8', 'hexagonal']).optional(),
   maxPlayers: z.coerce.number().int().min(2).max(4).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
@@ -118,7 +118,7 @@ export const TimePeriodSchema = z.enum(['all', 'week', 'month', 'year']).default
  * Board type filter for leaderboard queries.
  */
 export const BoardTypeFilterSchema = z
-  .enum(['all', 'square8', 'square19', 'hexagonal'])
+  .enum(['all', 'square8', 'square19', 'hex8', 'hexagonal'])
   .default('all');
 
 /**
@@ -263,7 +263,7 @@ export type MoveInput = z.infer<typeof MoveSchema>;
 // types as well so the client, server, and validation layer share
 // a single mental model of the create-game payload.
 export const CreateGameSchema = z.object({
-  boardType: z.enum(['square8', 'square19', 'hexagonal']),
+  boardType: z.enum(['square8', 'square19', 'hex8', 'hexagonal']),
   timeControl: z.object({
     type: z.enum(['blitz', 'rapid', 'classical']),
     initialTime: z.number().min(60).max(7200), // 1 minute to 2 hours
@@ -431,7 +431,7 @@ export const ChatMessageSchema = z.object({
 
 // Matchmaking preferences validation
 export const MatchmakingPreferencesSchema = z.object({
-  boardType: z.enum(['square8', 'square19', 'hexagonal']),
+  boardType: z.enum(['square8', 'square19', 'hex8', 'hexagonal']),
   timeControl: z
     .object({
       min: z.number().min(60).max(7200),
@@ -459,7 +459,7 @@ export const CreateTournamentSchema = z
       .min(3, 'Tournament name must be at least 3 characters')
       .max(100, 'Tournament name must be at most 100 characters'),
     format: z.enum(['single_elimination', 'double_elimination', 'round_robin', 'swiss']),
-    boardType: z.enum(['square8', 'square19', 'hexagonal']),
+    boardType: z.enum(['square8', 'square19', 'hex8', 'hexagonal']),
     maxParticipants: z.number().min(4).max(256),
     timeControl: z.object({
       initialTime: z.number().min(60).max(7200),
@@ -497,7 +497,7 @@ export const SocketEventSchema = z.object({
 // GameState shape used by GameEngine.
 export const GameStateSchema = z.object({
   id: z.string().uuid(),
-  boardType: z.enum(['square8', 'square19', 'hexagonal']),
+  boardType: z.enum(['square8', 'square19', 'hex8', 'hexagonal']),
   players: z.array(
     z.object({
       id: z.string().uuid(),

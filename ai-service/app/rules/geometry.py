@@ -39,8 +39,9 @@ class BoardGeometry:
                     if 0 <= nx < limit and 0 <= ny < limit:
                         neighbors.append(Position(x=nx, y=ny))
 
-        elif board_type == BoardType.HEXAGONAL:
-            radius = board_size - 1
+        elif board_type in (BoardType.HEX8, BoardType.HEXAGONAL):
+            # HEX8: radius=4, HEXAGONAL: radius=12
+            radius = 4 if board_type == BoardType.HEX8 else (board_size - 1)
             directions = [
                 (1, 0, -1), (-1, 0, 1),
                 (0, 1, -1), (0, -1, 1),
@@ -74,7 +75,7 @@ class BoardGeometry:
                         continue
                     directions.append((dx, dy, 0))
             return directions
-        elif board_type == BoardType.HEXAGONAL:
+        elif board_type in (BoardType.HEX8, BoardType.HEXAGONAL):
             return [
                 (1, 0, -1), (-1, 0, 1),
                 (0, 1, -1), (0, -1, 1),
@@ -102,6 +103,14 @@ class BoardGeometry:
                 for y in [8, 9, 10]:
                     center.add(f"{x},{y}")
 
+        elif board_type == BoardType.HEX8:
+            # Center hexagon for hex8 (distance 0-1 from origin, smaller board)
+            for x in range(-1, 2):
+                for y in range(-1, 2):
+                    z = -x - y
+                    if abs(x) <= 1 and abs(y) <= 1 and abs(z) <= 1:
+                        center.add(f"{x},{y},{z}")
+
         elif board_type == BoardType.HEXAGONAL:
             # Center hexagon (distance 0-2 from origin)
             for x in range(-2, 3):
@@ -122,8 +131,9 @@ class BoardGeometry:
         if board_type in (BoardType.SQUARE8, BoardType.SQUARE19):
             limit = 8 if board_type == BoardType.SQUARE8 else 19
             return 0 <= pos.x < limit and 0 <= pos.y < limit
-        elif board_type == BoardType.HEXAGONAL:
-            radius = board_size - 1
+        elif board_type in (BoardType.HEX8, BoardType.HEXAGONAL):
+            # HEX8: radius=4, HEXAGONAL: radius=12
+            radius = 4 if board_type == BoardType.HEX8 else (board_size - 1)
             z = pos.z if pos.z is not None else -pos.x - pos.y
             return (abs(pos.x) <= radius and
                     abs(pos.y) <= radius and
@@ -141,7 +151,7 @@ class BoardGeometry:
         Mirrors src/shared/engine/core.ts:calculateDistance and
         GameEngine._calculate_distance.
         """
-        if board_type == BoardType.HEXAGONAL:
+        if board_type in (BoardType.HEX8, BoardType.HEXAGONAL):
             dx = to_pos.x - from_pos.x
             dy = to_pos.y - from_pos.y
             dz = (to_pos.z or 0) - (from_pos.z or 0)

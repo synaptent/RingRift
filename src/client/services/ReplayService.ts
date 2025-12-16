@@ -264,7 +264,7 @@ function isPosition(value: unknown): value is Position {
  * Falls back to 'square8' for unknown values.
  */
 function toBoardType(raw: string): BoardType {
-  if (raw === 'square8' || raw === 'square19' || raw === 'hexagonal') {
+  if (raw === 'square8' || raw === 'square19' || raw === 'hex8' || raw === 'hexagonal') {
     return raw;
   }
   return 'square8';

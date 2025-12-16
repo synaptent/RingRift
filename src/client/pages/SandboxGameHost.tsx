@@ -103,6 +103,12 @@ const BOARD_PRESETS: Array<{
     blurb: 'All line lengths and ring counts enabled for marathon sessions.',
   },
   {
+    value: 'hex8',
+    label: 'Hex 8 Compact',
+    subtitle: 'Fast hex tactics',
+    blurb: 'Smaller hex board for quick games with 6-direction movement.',
+  },
+  {
     value: 'hexagonal',
     label: 'Full Hex',
     subtitle: 'High-mobility frontier',
@@ -219,6 +225,19 @@ const QUICK_START_PRESETS: Array<{
     },
   },
   {
+    id: 'hex8-vs-ai',
+    label: 'Hex 8 vs AI',
+    description: 'Human vs AI on compact hex',
+    learnMoreText:
+      'A smaller hex board for faster games. Same 6-way movement as full hex, but quicker to learn and play.',
+    icon: '⬡',
+    config: {
+      boardType: 'hex8',
+      numPlayers: 2,
+      playerTypes: ['human', 'ai', 'human', 'human'],
+    },
+  },
+  {
     id: 'four-player',
     label: '4-Player Free-for-All',
     description: 'Chaotic multiplayer on hex',
@@ -268,6 +287,19 @@ const QUICK_START_PRESETS: Array<{
       boardType: 'hexagonal',
       numPlayers: 4,
       playerTypes: ['ai', 'ai', 'ai', 'ai'],
+    },
+  },
+  {
+    id: 'hex8-ai-battle',
+    label: 'Hex 8 AI Battle',
+    description: 'Watch AIs on compact hex',
+    learnMoreText:
+      'Two AI players compete on the smaller hex board. Fast-paced games with 6-directional movement.',
+    icon: '⬡',
+    config: {
+      boardType: 'hex8',
+      numPlayers: 2,
+      playerTypes: ['ai', 'ai', 'human', 'human'],
     },
   },
 ];

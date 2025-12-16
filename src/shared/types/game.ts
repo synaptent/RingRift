@@ -1,4 +1,4 @@
-export type BoardType = 'square8' | 'square19' | 'hexagonal';
+export type BoardType = 'square8' | 'square19' | 'hex8' | 'hexagonal';
 /**
  * High-level game phases for the RingRift turn engine.
  *
@@ -994,6 +994,16 @@ export const BOARD_CONFIGS = {
     lineAdjacency: 'moore' as AdjacencyType, // 8-direction line formation
     territoryAdjacency: 'von_neumann' as AdjacencyType, // 4-direction territory
     type: 'square' as const,
+  },
+  hex8: {
+    size: 9, // Radius of hex8 board (radius = 4, size = 2*4+1 = 9)
+    totalSpaces: 61, // 3r² + 3r + 1 = 3(16) + 12 + 1 = 61 for r=4
+    ringsPerPlayer: 18, // Same as square8
+    lineLength: 4, // Minimum line length for collapse (hex)
+    movementAdjacency: 'hexagonal' as AdjacencyType, // 6-direction movement
+    lineAdjacency: 'hexagonal' as AdjacencyType, // 6-direction line formation
+    territoryAdjacency: 'hexagonal' as AdjacencyType, // 6-direction territory
+    type: 'hexagonal' as const,
   },
   hexagonal: {
     size: 13, // Radius of hexagonal board (size - 1 = 12)

@@ -8,11 +8,10 @@ import { debugLog, flagEnabled } from '../../utils/envFlags';
  * This ensures consistent validation across all engine code paths.
  */
 export function isValidPosition(pos: Position, boardType: BoardType, boardSize: number): boolean {
-  if (boardType === 'hexagonal') {
-    // For hex, size is the number of hexes from center to edge (inclusive)
-    // In boardMovementGrid.ts: const radius = board.size - 1;
-    // So valid range is [-radius, radius].
-    const radius = boardSize - 1;
+  if (boardType === 'hexagonal' || boardType === 'hex8') {
+    // For hex boards: hexagonal uses boardSize-1 as radius, hex8 uses fixed radius=4
+    // hex8: radius=4, hexagonal: radius=12 (boardSize-1)
+    const radius = boardType === 'hex8' ? 4 : boardSize - 1;
     const q = pos.x;
     const r = pos.y;
     const s = pos.z ?? -q - r;

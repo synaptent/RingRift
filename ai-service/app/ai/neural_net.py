@@ -165,6 +165,7 @@ MAX_PLAYERS = 4
 BOARD_POLICY_SIZES: Dict[BoardType, int] = {
     BoardType.SQUARE8: POLICY_SIZE_8x8,
     BoardType.SQUARE19: POLICY_SIZE_19x19,
+    BoardType.HEX8: 4500,  # POLICY_SIZE_HEX8 defined below
     BoardType.HEXAGONAL: 91876,  # P_HEX defined below
 }
 
@@ -172,6 +173,7 @@ BOARD_POLICY_SIZES: Dict[BoardType, int] = {
 BOARD_SPATIAL_SIZES: Dict[BoardType, int] = {
     BoardType.SQUARE8: 8,
     BoardType.SQUARE19: 19,
+    BoardType.HEX8: 9,  # HEX8_BOARD_SIZE defined below
     BoardType.HEXAGONAL: 25,  # HEX_BOARD_SIZE
 }
 
@@ -218,6 +220,32 @@ HEX_MOVEMENT_BASE = HEX_PLACEMENT_SPAN
 HEX_MOVEMENT_SPAN = HEX_BOARD_SIZE * HEX_BOARD_SIZE * NUM_HEX_DIRS * HEX_MAX_DIST
 HEX_SPECIAL_BASE = HEX_MOVEMENT_BASE + HEX_MOVEMENT_SPAN
 P_HEX = HEX_SPECIAL_BASE + 1
+
+# =============================================================================
+# Hex8 Board Policy Constants (radius-4 hexagonal board, 61 cells)
+# =============================================================================
+#
+# Hex8 is a smaller hexagonal board (radius=4) parallel to square8, just as
+# hexagonal (radius=12) is parallel to square19. Uses the same 6-direction
+# hex geometry but with a 9×9 bounding box.
+#
+# Hex8 Board: radius=4, cells=61 (3*16 + 12 + 1), bounding box 9×9
+HEX8_BOARD_SIZE = 9  # 2 * 4 + 1
+HEX8_RADIUS = 4
+HEX8_MAX_DIST = HEX8_BOARD_SIZE - 1  # 8 distance buckets (1..8)
+
+# Layout spans for the hex8 policy head:
+#
+# Placements: 9 × 9 × 3 = 243
+# Movement/capture: 9 × 9 × 6 × 8 = 3,888
+# Special: 1 (skip_placement)
+# Total: P_HEX8 = 4,132 → 4,500 (with padding)
+HEX8_PLACEMENT_SPAN = HEX8_BOARD_SIZE * HEX8_BOARD_SIZE * 3  # 243
+HEX8_MOVEMENT_BASE = HEX8_PLACEMENT_SPAN
+HEX8_MOVEMENT_SPAN = HEX8_BOARD_SIZE * HEX8_BOARD_SIZE * NUM_HEX_DIRS * HEX8_MAX_DIST  # 3,888
+HEX8_SPECIAL_BASE = HEX8_MOVEMENT_BASE + HEX8_MOVEMENT_SPAN
+P_HEX8 = HEX8_SPECIAL_BASE + 1  # 4,132
+POLICY_SIZE_HEX8 = 4500  # Padded policy size
 
 # =============================================================================
 # Square Board Spatial Policy Constants (V3)
@@ -335,6 +363,10 @@ def encode_move_for_board(
         return _encode_move_square8(move, board)
     elif board_type == BoardType.SQUARE19:
         return _encode_move_square19(move, board)
+    elif board_type == BoardType.HEX8:
+        # Use the hex-specific encoder with hex8 parameters (policy_size=4500)
+        hex8_encoder = ActionEncoderHex(board_size=HEX8_BOARD_SIZE, policy_size=POLICY_SIZE_HEX8)
+        return hex8_encoder.encode_move(move, board)
     elif board_type == BoardType.HEXAGONAL:
         # Use the hex-specific encoder (policy_size=91876)
         hex_encoder = ActionEncoderHex(board_size=HEX_BOARD_SIZE, policy_size=P_HEX)
@@ -2670,6 +2702,16 @@ def get_model_config_for_board(
                     "estimated_params_m": 8.2,
                 }
             )
+        elif board_type == BoardType.HEX8:
+            config.update(
+                {
+                    "num_res_blocks": 12,
+                    "num_filters": 192,
+                    "recommended_model": "HexNeuralNet_v3",
+                    "description": "V3 spatial policy hex8 model for 96GB systems (~7M params)",
+                    "estimated_params_m": 7.0,
+                }
+            )
         elif board_type == BoardType.SQUARE19:
             config.update(
                 {
@@ -2699,6 +2741,16 @@ def get_model_config_for_board(
                     "recommended_model": "HexNeuralNet_v3_Lite",
                     "description": "V3 spatial policy hex model for 48GB systems (~2M params)",
                     "estimated_params_m": 2.1,
+                }
+            )
+        elif board_type == BoardType.HEX8:
+            config.update(
+                {
+                    "num_res_blocks": 6,
+                    "num_filters": 96,
+                    "recommended_model": "HexNeuralNet_v3_Lite",
+                    "description": "V3 spatial policy hex8 model for 48GB systems (~2M params)",
+                    "estimated_params_m": 1.8,
                 }
             )
         elif board_type == BoardType.SQUARE19:
@@ -2733,6 +2785,16 @@ def get_model_config_for_board(
                     "estimated_params_m": 43.4,
                 }
             )
+        elif board_type == BoardType.HEX8:
+            config.update(
+                {
+                    "num_res_blocks": 12,
+                    "num_filters": 192,
+                    "recommended_model": "HexNeuralNet_v2",
+                    "description": "High-capacity hex8 model for 96GB systems (~34M params)",
+                    "estimated_params_m": 34.0,
+                }
+            )
         elif board_type == BoardType.SQUARE19:
             config.update(
                 {
@@ -2762,6 +2824,16 @@ def get_model_config_for_board(
                     "recommended_model": "HexNeuralNet_v2_Lite",
                     "description": "Memory-efficient hex model for 48GB systems (~19M params)",
                     "estimated_params_m": 18.7,
+                }
+            )
+        elif board_type == BoardType.HEX8:
+            config.update(
+                {
+                    "num_res_blocks": 6,
+                    "num_filters": 96,
+                    "recommended_model": "HexNeuralNet_v2_Lite",
+                    "description": "Memory-efficient hex8 model for 48GB systems (~14M params)",
+                    "estimated_params_m": 14.0,
                 }
             )
         elif board_type == BoardType.SQUARE19:

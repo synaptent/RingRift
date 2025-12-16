@@ -130,6 +130,7 @@ enum UserRole {
 enum BoardType {
   square8
   square19
+  hex8
   hexagonal
 }
 

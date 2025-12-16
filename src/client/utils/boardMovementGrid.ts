@@ -41,6 +41,7 @@ export function computeBoardMovementGrid(board: BoardState): MovementGrid {
     case 'square8':
     case 'square19':
       return computeSquareMovementGrid(board);
+    case 'hex8':
     case 'hexagonal':
       return computeHexMovementGrid(board);
     default:

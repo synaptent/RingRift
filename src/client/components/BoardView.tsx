@@ -289,7 +289,7 @@ const StackWidget: React.FC<{
   const capEndIndex = Math.min(capHeight - 1, rings.length - 1);
 
   const isSquare8 = boardType === 'square8';
-  const isHex = boardType === 'hexagonal';
+  const isHex = boardType === 'hexagonal' || boardType === 'hex8';
 
   // Slight vertical offset so stacks sit comfortably inside both square
   // and hex cells, leaving room for tall stacks while keeping labels legible.

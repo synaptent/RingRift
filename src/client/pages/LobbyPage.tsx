@@ -133,7 +133,9 @@ function GameCard({
               ? '8x8'
               : game.boardType === 'square19'
                 ? '19x19'
-                : 'Hexagonal'}
+                : game.boardType === 'hex8'
+                  ? 'Hex 8'
+                  : 'Hexagonal'}
           </span>
         </div>
         {game.timeControl && (
@@ -221,6 +223,7 @@ function LobbyFilters({
           <option value="all">All</option>
           <option value="square8">Square 8x8</option>
           <option value="square19">Square 19x19</option>
+          <option value="hex8">Hex 8 (small)</option>
           <option value="hexagonal">Hexagonal</option>
         </Select>
       </div>
@@ -820,6 +823,7 @@ export default function LobbyPage() {
               >
                 <option value="square8">8x8 (compact)</option>
                 <option value="square19">19x19 (full)</option>
+                <option value="hex8">Hex 8 (small)</option>
                 <option value="hexagonal">Hexagonal</option>
               </Select>
             </div>
@@ -856,6 +860,7 @@ export default function LobbyPage() {
                 >
                   <option value="square8">8x8 (compact)</option>
                   <option value="square19">19x19 (full)</option>
+                  <option value="hex8">Hex 8 (small)</option>
                   <option value="hexagonal">Hexagonal</option>
                 </Select>
               </div>
