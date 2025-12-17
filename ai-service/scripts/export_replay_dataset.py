@@ -44,6 +44,20 @@ Usage examples (from ai-service/):
         --require-completed \\
         --min-moves 20 \\
         --output data/training/from_replays.square8_3p.npz
+
+    # Incremental export with caching (skip if DBs unchanged)
+    python scripts/export_replay_dataset.py \\
+        --db data/games/consolidated.db \\
+        --board-type square8 --num-players 2 \\
+        --output data/training/square8_2p.npz \\
+        --use-cache
+
+    # Force re-export even with valid cache
+    python scripts/export_replay_dataset.py \\
+        --db data/games/consolidated.db \\
+        --board-type square8 --num-players 2 \\
+        --output data/training/square8_2p.npz \\
+        --use-cache --force-export
 """
 
 from __future__ import annotations
@@ -64,6 +78,7 @@ from app.db import GameReplayDB
 from app.models import AIConfig, BoardType, GameState, Move
 from app.ai.neural_net import NeuralNetAI, INVALID_MOVE_INDEX, encode_move_for_board
 from app.training.encoding import HexStateEncoder, HexStateEncoderV3, get_encoder_for_board_type
+from app.training.export_cache import get_export_cache, ExportCache
 
 
 BOARD_TYPE_MAP: Dict[str, BoardType] = {
@@ -915,6 +930,37 @@ def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
             "anyway, but without this optimization the query is slower)."
         ),
     )
+    parser.add_argument(
+        "--use-cache",
+        action="store_true",
+        help=(
+            "Enable incremental export caching. Skips export if source DBs "
+            "haven't changed since last export. Significantly speeds up "
+            "repeated training runs."
+        ),
+    )
+    parser.add_argument(
+        "--force-export",
+        action="store_true",
+        help=(
+            "Force re-export even if cache indicates no changes. "
+            "Use with --use-cache to rebuild cache."
+        ),
+    )
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help=(
+            "Use parallel encoding with multiple CPU cores. "
+            "10-20x faster on multi-core systems. Recommended for large datasets."
+        ),
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Number of worker processes for parallel mode (default: CPU count - 1)",
+    )
     return parser.parse_args(argv)
 
 
@@ -926,6 +972,49 @@ def main(argv: List[str] | None = None) -> int:
         raise ValueError("--history-length must be >= 0")
     if args.sample_every < 1:
         raise ValueError("--sample-every must be >= 1")
+
+    # Use parallel export if requested
+    if args.parallel:
+        from scripts.export_replay_dataset_parallel import export_parallel
+        export_parallel(
+            db_paths=args.db_paths,
+            board_type=board_type,
+            num_players=args.num_players,
+            output_path=args.output,
+            num_workers=args.workers,
+            encoder_version=args.encoder_version,
+            history_length=args.history_length,
+            sample_every=args.sample_every,
+            max_games=args.max_games,
+            require_completed=args.require_completed,
+            min_moves=args.min_moves,
+            max_moves=args.max_moves,
+            use_board_aware_encoding=args.board_aware_encoding,
+            require_moves=not args.no_require_moves,
+            use_cache=args.use_cache,
+            force_export=args.force_export,
+        )
+        return 0
+
+    # Check cache if enabled
+    if args.use_cache:
+        cache = get_export_cache()
+        if not cache.needs_export(
+            db_paths=args.db_paths,
+            output_path=args.output,
+            board_type=args.board_type,
+            num_players=args.num_players,
+            force=args.force_export,
+        ):
+            cache_info = cache.get_cache_info(
+                args.output, args.board_type, args.num_players
+            )
+            samples = cache_info.get("samples_exported", "?") if cache_info else "?"
+            print(f"[CACHE HIT] Skipping export - source DBs unchanged since last export")
+            print(f"  Output: {args.output}")
+            print(f"  Cached samples: {samples}")
+            return 0
+        print(f"[CACHE MISS] Export needed - source DBs have changed")
 
     # Use multi-source export with deduplication
     export_replay_dataset_multi(
@@ -948,6 +1037,29 @@ def main(argv: List[str] | None = None) -> int:
         encoder_version=args.encoder_version,
         require_moves=not args.no_require_moves,
     )
+
+    # Update cache if enabled
+    if args.use_cache:
+        # Read sample count from output file
+        samples_exported = 0
+        games_exported = 0
+        try:
+            with np.load(args.output, allow_pickle=True) as data:
+                if "values" in data:
+                    samples_exported = len(data["values"])
+        except Exception:
+            pass
+
+        cache.record_export(
+            db_paths=args.db_paths,
+            output_path=args.output,
+            board_type=args.board_type,
+            num_players=args.num_players,
+            samples_exported=samples_exported,
+            games_exported=games_exported,
+        )
+        print(f"[CACHE] Recorded export: {samples_exported} samples")
+
     return 0
 
 

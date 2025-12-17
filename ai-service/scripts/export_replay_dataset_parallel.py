@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 from app.db import GameReplayDB
 from app.models import BoardType
+from app.training.export_cache import get_export_cache
 
 
 BOARD_TYPE_MAP: Dict[str, BoardType] = {
@@ -150,19 +151,46 @@ def export_parallel(
     max_moves: Optional[int] = None,
     use_board_aware_encoding: bool = False,
     require_moves: bool = True,
-) -> None:
+    use_cache: bool = False,
+    force_export: bool = False,
+) -> int:
     """
     Export training samples using parallel encoding.
 
     This is the main export function that:
-    1. Loads games from database(s)
-    2. Encodes them in parallel using ProcessPoolExecutor
-    3. Saves to NPZ format
+    1. Optionally checks cache to skip if unchanged
+    2. Loads games from database(s)
+    3. Encodes them in parallel using ProcessPoolExecutor
+    4. Saves to NPZ format
+    5. Updates cache if enabled
+
+    Returns:
+        Number of samples exported (0 if cache hit)
     """
     from app.training.parallel_encoding import (
         ParallelEncoder,
         samples_to_arrays,
     )
+
+    # Check cache if enabled
+    if use_cache:
+        cache = get_export_cache()
+        if not cache.needs_export(
+            db_paths=db_paths,
+            output_path=output_path,
+            board_type=board_type.value,
+            num_players=num_players,
+            force=force_export,
+        ):
+            cache_info = cache.get_cache_info(
+                output_path, board_type.value, num_players
+            )
+            samples = cache_info.get("samples_exported", "?") if cache_info else "?"
+            logger.info(f"[CACHE HIT] Skipping export - source DBs unchanged")
+            logger.info(f"  Output: {output_path}")
+            logger.info(f"  Cached samples: {samples}")
+            return 0
+        logger.info(f"[CACHE MISS] Export needed - source DBs have changed")
 
     start_time = time.time()
 
@@ -235,6 +263,20 @@ def export_parallel(
         f"Performance: {len(games) / total_time:.1f} games/s, "
         f"{len(samples) / total_time:.1f} samples/s"
     )
+
+    # Update cache if enabled
+    if use_cache:
+        cache.record_export(
+            db_paths=db_paths,
+            output_path=output_path,
+            board_type=board_type.value,
+            num_players=num_players,
+            samples_exported=len(samples),
+            games_exported=len(games),
+        )
+        logger.info(f"[CACHE] Recorded export: {len(samples)} samples")
+
+    return len(samples)
 
 
 def main():
@@ -315,6 +357,16 @@ def main():
         "--no-require-moves",
         action="store_true",
     )
+    parser.add_argument(
+        "--use-cache",
+        action="store_true",
+        help="Enable incremental caching (skip if DBs unchanged)",
+    )
+    parser.add_argument(
+        "--force-export",
+        action="store_true",
+        help="Force re-export even with valid cache",
+    )
 
     args = parser.parse_args()
 
@@ -335,6 +387,8 @@ def main():
         max_moves=args.max_moves,
         use_board_aware_encoding=args.board_aware_encoding,
         require_moves=not args.no_require_moves,
+        use_cache=args.use_cache,
+        force_export=args.force_export,
     )
 
 
