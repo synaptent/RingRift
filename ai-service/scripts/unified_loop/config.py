@@ -99,6 +99,7 @@ class TrainingConfig:
     max_batch_size: int = 512  # Maximum batch size
     focal_gamma: float = 2.0  # Focal loss gamma for hard sample mining
     label_smoothing_warmup: int = 5  # Warmup epochs for label smoothing
+    policy_label_smoothing: float = 0.05  # Policy label smoothing factor (0.05-0.1 recommended)
     use_hex_augmentation: bool = True  # D6 symmetry augmentation for hex boards
     # 2024-12 Advanced Training Improvements
     use_value_whitening: bool = True  # Value head whitening for stable training

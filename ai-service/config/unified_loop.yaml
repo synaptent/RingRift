@@ -64,6 +64,7 @@ training:
   max_batch_size: 512 # Maximum batch size
   focal_gamma: 2.0 # Focal loss gamma for hard sample mining
   label_smoothing_warmup: 5 # Warmup epochs for label smoothing
+  policy_label_smoothing: 0.05 # Policy label smoothing factor (prevents overconfident predictions)
   use_hex_augmentation: true # D6 symmetry augmentation for hex boards
 
 # Continuous evaluation (shadow + full tournaments)
@@ -401,16 +402,16 @@ selfplay:
     hex8: 0.25
 
   # AI type weights (prioritize NN-guided for higher quality games)
-  # Goal: 60%+ NN-guided games for better training signal
+  # Goal: 70%+ NN-guided games for better training signal with soft policy targets
   ai_type_weights:
-    gumbel_mcts: 0.30 # 30% - Highest quality search
+    gumbel_mcts: 0.40 # 40% - Highest quality search with visit distribution (soft targets)
     policy_only: 0.30 # 30% - Fast NN-only (volume)
-    nnue_guided: 0.15 # 15% - NNUE evaluation
-    mcts: 0.10 # 10% - Traditional MCTS
+    nnue_guided: 0.10 # 10% - NNUE evaluation
+    mcts: 0.08 # 8% - Traditional MCTS
     descent: 0.05 # 5% - Gradient search
-    heuristic: 0.05 # 5% - Baseline comparison
-    minimax: 0.03 # 3% - Paranoid search
-    random: 0.02 # 2% - Weak baseline (minimal)
+    heuristic: 0.04 # 4% - Baseline comparison
+    minimax: 0.02 # 2% - Paranoid search
+    random: 0.01 # 1% - Weak baseline (minimal)
 
 # Tournament settings (shared across all tournament scripts)
 tournament:

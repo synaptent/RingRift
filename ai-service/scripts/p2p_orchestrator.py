@@ -6227,6 +6227,19 @@ class P2POrchestrator:
             "--seed", str(int(time.time() * 1000) % 2**31),
         ]
 
+        # For gumbel-mcts mode, auto-detect best model for soft policy targets
+        if engine_mode == "gumbel-mcts":
+            models_dir = Path(self.ringrift_path) / "ai-service" / "models"
+            # Find best model for this board type
+            board_norm = board_type.replace("hexagonal", "hex")
+            pattern = f"ringrift_{board_norm}_{num_players}p_*.pth"
+            model_files = list(models_dir.glob(pattern))
+            if model_files:
+                # Use most recent model
+                best_model = max(model_files, key=lambda p: p.stat().st_mtime)
+                model_id = best_model.stem  # e.g., ringrift_hex8_2p_v3_retrained
+                cmd.extend(["--nn-model-id", model_id])
+
         env = os.environ.copy()
         env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
         env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"

@@ -997,6 +997,16 @@ class TrainingScheduler:
             if self.config.gradient_accumulation > 1:
                 cmd.extend(["--gradient-accumulation", str(self.config.gradient_accumulation)])
 
+            # 2025-12 Training Improvements: Policy label smoothing and hex augmentation
+            # Policy label smoothing (prevents overconfident predictions)
+            policy_smoothing = getattr(self.config, 'policy_label_smoothing', 0.05)
+            if policy_smoothing > 0:
+                cmd.extend(["--policy-label-smoothing", str(policy_smoothing)])
+
+            # D6 hex symmetry augmentation for hex boards (12x effective data)
+            if getattr(self.config, 'use_hex_augmentation', True) and board_type in ('hex8', 'hexagonal'):
+                cmd.append("--augment-hex-symmetry")
+
             # Knowledge distillation
             if self.config.use_knowledge_distill and self.config.teacher_model_path:
                 cmd.extend([
@@ -1138,6 +1148,11 @@ class TrainingScheduler:
             warmup = getattr(self.config, 'label_smoothing_warmup', 5)
             if warmup > 0:
                 cmd.extend(["--label-smoothing-warmup", str(warmup)])
+
+            # D6 hex symmetry augmentation for hex boards (12x effective data)
+            if getattr(self.config, 'use_hex_augmentation', True) and board_type in ('hex8', 'hexagonal'):
+                cmd.append("--hex-augment")
+                cmd.extend(["--hex-augment-count", "6"])  # 6 random transforms per sample
 
             # Save learning curves
             cmd.append("--save-curves")
