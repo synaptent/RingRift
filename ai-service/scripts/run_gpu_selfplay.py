@@ -79,6 +79,15 @@ from app.coordination.helpers import (
     record_task_completion_safe,
 )
 
+# Curriculum feedback for adaptive training weights
+try:
+    from app.training.curriculum_feedback import record_selfplay_game, get_curriculum_feedback
+    HAS_CURRICULUM_FEEDBACK = True
+except ImportError:
+    HAS_CURRICULUM_FEEDBACK = False
+    record_selfplay_game = None
+    get_curriculum_feedback = None
+
 # For backwards compatibility
 HAS_COORDINATION = has_coordination()
 TaskType = get_task_types()
@@ -635,6 +644,15 @@ class GPUSelfPlayGenerator:
                 self.draws += 1
             else:
                 self.wins_by_player[winner] = self.wins_by_player.get(winner, 0) + 1
+
+        # Record results for curriculum feedback (adaptive training weights)
+        if HAS_CURRICULUM_FEEDBACK and self.board_type:
+            config_key = f"{self.board_type}_{self.num_players}p"
+            for winner in results["winners"]:
+                # For selfplay, winner=1 means model won, winner=0 means draw
+                # We record each game result for curriculum tracking
+                outcome = 1 if winner == 1 else (-1 if winner > 1 else 0)
+                record_selfplay_game(config_key, outcome)
 
         return results
 

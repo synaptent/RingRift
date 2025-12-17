@@ -38,6 +38,21 @@ from typing import Dict, List, Optional, Tuple
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
+# Training coordination imports
+try:
+    from app.coordination.distributed_lock import DistributedLock
+    HAS_DISTRIBUTED_LOCK = True
+except ImportError:
+    HAS_DISTRIBUTED_LOCK = False
+    DistributedLock = None
+
+try:
+    from app.training.training_registry import register_trained_model
+    HAS_MODEL_REGISTRY = True
+except ImportError:
+    HAS_MODEL_REGISTRY = False
+    register_trained_model = None
+
 LOG_DIR = AI_SERVICE_ROOT / "logs"
 MODELS_DIR = AI_SERVICE_ROOT / "models"
 DATA_DIR = AI_SERVICE_ROOT / "data"
@@ -201,47 +216,57 @@ def run_transfer_learning(
 
 def run_training_job(job: TrainingJob, initial_model: Optional[Path] = None) -> Tuple[bool, str]:
     """Run a single training job."""
+    config_key = f"{job.board_type}_{job.num_players}p"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = AI_SERVICE_ROOT / "runs" / f"{job.board_type}_{job.num_players}p_{timestamp}"
+    run_dir = AI_SERVICE_ROOT / "runs" / f"{config_key}_{timestamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # Check if data exists
-    data_path = AI_SERVICE_ROOT / job.data_path
-    if not data_path.exists():
-        return False, f"Data not found: {data_path}"
-
-    cmd = [
-        sys.executable,
-        str(AI_SERVICE_ROOT / "scripts" / "run_nn_training_baseline.py"),
-        "--board", job.board_type,
-        "--num-players", str(job.num_players),
-        "--data-path", str(data_path),
-        "--run-dir", str(run_dir),
-        "--epochs", str(job.epochs),
-        "--batch-size", str(job.batch_size),
-        "--model-version", "v3",
-        "--use-optimized-hyperparams",
-        "--sampling-weights", job.sampling_weights,
-    ]
-
-    # Add warmup epochs for cosine annealing
-    cmd.extend(["--warmup-epochs", "5"])
-
-    print(f"\n{'='*60}")
-    print(f"[Training] {job.board_type} {job.num_players}p")
-    print(f"{'='*60}")
-    print(f"  Data: {job.data_path}")
-    print(f"  Batch size: {job.batch_size}")
-    print(f"  Epochs: {job.epochs}")
-    print(f"  Sampling: {job.sampling_weights}")
-    if initial_model:
-        print(f"  Initial model: {initial_model}")
-    print(f"  Run dir: {run_dir}")
-    print()
-
-    log_file = LOG_DIR / f"{job.board_type}_{job.num_players}p_optimized_{timestamp}.log"
+    # Acquire distributed lock to prevent concurrent training on same config
+    lock = None
+    if HAS_DISTRIBUTED_LOCK:
+        lock = DistributedLock(f"training:{config_key}", lock_timeout=7200)
+        if not lock.acquire(timeout=60, blocking=True):
+            print(f"[Training] Could not acquire lock for {config_key}, another training may be in progress")
+            return False, "Lock contention"
+        print(f"[Training] Acquired lock for {config_key}")
 
     try:
+        # Check if data exists
+        data_path = AI_SERVICE_ROOT / job.data_path
+        if not data_path.exists():
+            return False, f"Data not found: {data_path}"
+
+        cmd = [
+            sys.executable,
+            str(AI_SERVICE_ROOT / "scripts" / "run_nn_training_baseline.py"),
+            "--board", job.board_type,
+            "--num-players", str(job.num_players),
+            "--data-path", str(data_path),
+            "--run-dir", str(run_dir),
+            "--epochs", str(job.epochs),
+            "--batch-size", str(job.batch_size),
+            "--model-version", "v3",
+            "--use-optimized-hyperparams",
+            "--sampling-weights", job.sampling_weights,
+        ]
+
+        # Add warmup epochs for cosine annealing
+        cmd.extend(["--warmup-epochs", "5"])
+
+        print(f"\n{'='*60}")
+        print(f"[Training] {job.board_type} {job.num_players}p")
+        print(f"{'='*60}")
+        print(f"  Data: {job.data_path}")
+        print(f"  Batch size: {job.batch_size}")
+        print(f"  Epochs: {job.epochs}")
+        print(f"  Sampling: {job.sampling_weights}")
+        if initial_model:
+            print(f"  Initial model: {initial_model}")
+        print(f"  Run dir: {run_dir}")
+        print()
+
+        log_file = LOG_DIR / f"{job.board_type}_{job.num_players}p_optimized_{timestamp}.log"
+
         env = os.environ.copy()
         env["PYTHONPATH"] = str(AI_SERVICE_ROOT)
 
@@ -256,6 +281,29 @@ def run_training_job(job: TrainingJob, initial_model: Optional[Path] = None) -> 
 
         if result.returncode == 0:
             print(f"[Training] Complete. Log: {log_file}")
+
+            # Register trained model in registry
+            if HAS_MODEL_REGISTRY:
+                model_path = run_dir / "best_model.pt"
+                if model_path.exists():
+                    try:
+                        model_id = register_trained_model(
+                            model_path=str(model_path),
+                            board_type=job.board_type,
+                            num_players=job.num_players,
+                            training_config={
+                                "batch_size": job.batch_size,
+                                "epochs": job.epochs,
+                                "sampling": job.sampling_weights,
+                                "source": "run_optimized_training",
+                            },
+                            source_data_paths=[str(data_path)],
+                        )
+                        if model_id:
+                            print(f"[Training] Registered model: {model_id}")
+                    except Exception as e:
+                        print(f"[Training] Could not register model: {e}")
+
             return True, str(log_file)
         else:
             print(f"[Training] Failed. Check log: {log_file}")
@@ -267,6 +315,11 @@ def run_training_job(job: TrainingJob, initial_model: Optional[Path] = None) -> 
     except Exception as e:
         print(f"[Training] Error: {e}")
         return False, str(e)
+    finally:
+        # Release distributed lock
+        if lock is not None:
+            lock.release()
+            print(f"[Training] Released lock for {config_key}")
 
 
 def run_elo_tournament(board_type: str, num_players: int, games: int = 30) -> bool:
