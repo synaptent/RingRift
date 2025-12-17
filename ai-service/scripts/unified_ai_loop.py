@@ -748,6 +748,20 @@ except ImportError:
     sync_elo_after_games = None
     ensure_elo_synced = None
 
+# Elo reconciliation for drift detection and conflict resolution
+try:
+    from app.training.elo_reconciliation import (
+        ConflictResolution,
+        EloReconciler,
+        check_elo_drift,
+    )
+    HAS_ELO_RECONCILER = True
+except ImportError:
+    HAS_ELO_RECONCILER = False
+    ConflictResolution = None
+    EloReconciler = None
+    check_elo_drift = None
+
 # Model registry synchronization for cluster-wide consistency
 try:
     from app.training.registry_sync_manager import RegistrySyncManager
@@ -2735,6 +2749,22 @@ class UnifiedAILoop:
                 print("[UnifiedLoop] EloSyncManager initialized for cluster-wide Elo consistency")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize EloSyncManager: {e}")
+
+        # Elo reconciliation for drift detection and conflict resolution
+        self.elo_reconciler: Optional[EloReconciler] = None
+        self._elo_reconcile_interval: float = 1800.0  # 30 minutes
+        self._last_elo_reconcile: float = 0.0
+        self._elo_drift_threshold: float = 50.0  # Alert on drift > 50 Elo
+        if HAS_ELO_RECONCILER:
+            try:
+                elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
+                self.elo_reconciler = EloReconciler(
+                    local_db_path=elo_db_path,
+                    conflict_resolution=ConflictResolution.LAST_WRITE_WINS,
+                )
+                print("[UnifiedLoop] EloReconciler initialized for drift detection (last-write-wins)")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize EloReconciler: {e}")
 
         # Model registry synchronization for cluster-wide consistency
         self.registry_sync_manager: Optional[RegistrySyncManager] = None
@@ -6324,6 +6354,8 @@ class UnifiedAILoop:
 
         Uses multi-transport failover (Tailscale, SSH, HTTP, aria2) with
         circuit breakers for fault tolerance.
+
+        Also runs periodic Elo reconciliation to detect drift and emit metrics.
         """
         if not HAS_ELO_SYNC or self.elo_sync_manager is None:
             print("[EloSync] Not available - skipping")
@@ -6340,7 +6372,8 @@ class UnifiedAILoop:
             print(f"[EloSync] Initialization failed: {e}")
             return
 
-        print(f"[EloSync] Cluster-wide Elo sync loop started (interval: {self._elo_sync_interval}s)")
+        reconciler_msg = " (with reconciliation)" if self.elo_reconciler else ""
+        print(f"[EloSync] Cluster-wide Elo sync loop started (interval: {self._elo_sync_interval}s){reconciler_msg}")
 
         while self._running:
             try:
@@ -6362,6 +6395,11 @@ class UnifiedAILoop:
                         errors = self.elo_sync_manager.state.sync_errors[-3:]
                         print(f"[EloSync] Sync failed - recent errors: {errors}")
 
+                # Check if enough time has passed since last reconciliation
+                if self.elo_reconciler and now - self._last_elo_reconcile >= self._elo_reconcile_interval:
+                    self._last_elo_reconcile = now
+                    await self._run_elo_reconciliation()
+
             except Exception as e:
                 print(f"[EloSync] Error in sync loop: {e}")
 
@@ -6373,6 +6411,57 @@ class UnifiedAILoop:
                 break
             except asyncio.TimeoutError:
                 pass
+
+    async def _run_elo_reconciliation(self):
+        """Run Elo reconciliation to detect drift across the cluster.
+
+        Checks for rating drift between local and remote nodes, emits metrics,
+        and logs warnings if significant drift is detected.
+        """
+        if not self.elo_reconciler:
+            return
+
+        try:
+            # Check drift for each active configuration
+            for config_key, config in self.state.configs.items():
+                board_type = config.board_type
+                num_players = config.num_players
+
+                # Run drift check (runs in thread pool to avoid blocking)
+                drift = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self.elo_reconciler.check_drift(
+                        board_type=board_type,
+                        num_players=num_players,
+                    )
+                )
+
+                # Log results
+                if drift.is_significant:
+                    print(
+                        f"[EloReconcile] WARNING: Significant drift detected for {config_key}: "
+                        f"max={drift.max_rating_diff:.1f}, avg={drift.avg_rating_diff:.1f}, "
+                        f"participants={drift.participants_in_both}"
+                    )
+                    # Emit event for alerting
+                    await self.event_bus.publish(DataEvent(
+                        event_type=DataEventType.QUALITY_CHECK_FAILED,
+                        payload={
+                            "check_type": "elo_drift",
+                            "config_key": config_key,
+                            "max_drift": drift.max_rating_diff,
+                            "avg_drift": drift.avg_rating_diff,
+                            "threshold": self._elo_drift_threshold,
+                        }
+                    ))
+                else:
+                    print(
+                        f"[EloReconcile] Drift check OK for {config_key}: "
+                        f"max={drift.max_rating_diff:.1f}, participants={drift.participants_in_both}"
+                    )
+
+        except Exception as e:
+            print(f"[EloReconcile] Error during reconciliation: {e}")
 
     async def _registry_sync_loop(self):
         """Model registry synchronization loop for cluster-wide consistency.

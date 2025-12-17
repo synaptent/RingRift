@@ -53,8 +53,21 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+
+class ConflictResolution(Enum):
+    """Strategy for resolving conflicting match records.
+
+    When the same match_id exists with different data (e.g., different winner),
+    this determines how to handle the conflict.
+    """
+    SKIP = "skip"  # Keep existing, count as conflict
+    LAST_WRITE_WINS = "last_write_wins"  # Accept more recent timestamp
+    FIRST_WRITE_WINS = "first_write_wins"  # Keep existing record
+    RAISE = "raise"  # Raise an error
 
 # Path setup
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
@@ -112,8 +125,9 @@ class SyncResult:
     synced_at: str
     matches_added: int
     matches_skipped: int  # Duplicates
-    matches_conflict: int  # Same ID but different data
-    participants_added: int
+    matches_conflict: int  # Same ID but different data (unresolved)
+    matches_resolved: int = 0  # Conflicts resolved via conflict resolution strategy
+    participants_added: int = 0
     error: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -123,6 +137,7 @@ class SyncResult:
             "matches_added": self.matches_added,
             "matches_skipped": self.matches_skipped,
             "matches_conflict": self.matches_conflict,
+            "matches_resolved": self.matches_resolved,
             "participants_added": self.participants_added,
             "error": self.error,
         }
@@ -138,6 +153,7 @@ class ReconciliationReport:
     total_matches_added: int
     total_matches_skipped: int
     total_conflicts: int
+    total_resolved: int
     drift_detected: bool
     max_drift: float
     sync_results: List[SyncResult] = field(default_factory=list)
@@ -153,10 +169,11 @@ class ReconciliationReport:
             f"Matches added: {self.total_matches_added}",
             f"Matches skipped: {self.total_matches_skipped}",
             f"Conflicts: {self.total_conflicts}",
+            f"Resolved: {self.total_resolved}",
             f"Max drift: {self.max_drift:.1f}",
         ]
         if self.drift_detected:
-            lines.append("⚠️  SIGNIFICANT DRIFT DETECTED")
+            lines.append("WARNING: SIGNIFICANT DRIFT DETECTED")
         if self.nodes_failed:
             lines.append(f"Failed nodes: {', '.join(self.nodes_failed)}")
         return "\n".join(lines)
@@ -169,6 +186,12 @@ class EloReconciler:
     - Local unified_elo.db
     - Remote node databases
     - Central (if different from local)
+
+    Supports configurable conflict resolution strategies:
+    - SKIP: Keep existing record, count as conflict (default)
+    - LAST_WRITE_WINS: Accept match with more recent timestamp
+    - FIRST_WRITE_WINS: Keep existing record, skip incoming
+    - RAISE: Raise an exception on conflict
     """
 
     def __init__(
@@ -176,10 +199,12 @@ class EloReconciler:
         local_db_path: Optional[Path] = None,
         remote_hosts_config: Optional[Path] = None,
         ssh_timeout: int = 30,
+        conflict_resolution: ConflictResolution = ConflictResolution.SKIP,
     ):
         self.local_db_path = local_db_path or (AI_SERVICE_ROOT / "data" / "unified_elo.db")
         self.remote_hosts_config = remote_hosts_config or (AI_SERVICE_ROOT / "config" / "remote_hosts.yaml")
         self.ssh_timeout = ssh_timeout
+        self.conflict_resolution = conflict_resolution
 
     def check_drift(
         self,
@@ -424,7 +449,14 @@ else:
         synced_at: str,
         matches: List[Dict[str, Any]],
     ) -> SyncResult:
-        """Import matches into local DB."""
+        """Import matches into local DB.
+
+        Handles conflict resolution based on self.conflict_resolution strategy:
+        - SKIP: Keep existing, count as unresolved conflict
+        - LAST_WRITE_WINS: Accept match with more recent timestamp
+        - FIRST_WRITE_WINS: Keep existing, count as resolved
+        - RAISE: Raise ConflictError on first conflict
+        """
         if not matches:
             return SyncResult(
                 remote_host=remote_host,
@@ -432,12 +464,14 @@ else:
                 matches_added=0,
                 matches_skipped=0,
                 matches_conflict=0,
+                matches_resolved=0,
                 participants_added=0,
             )
 
         added = 0
         skipped = 0
         conflicts = 0
+        resolved = 0
         participants_added = set()
 
         # Ensure local DB exists
@@ -492,12 +526,35 @@ else:
                 if match_id in existing_ids:
                     # Check for conflict (same ID, different data)
                     cur.execute(
-                        "SELECT winner_id FROM match_history WHERE match_id = ?",
+                        "SELECT winner_id, timestamp FROM match_history WHERE match_id = ?",
                         (match_id,),
                     )
                     row = cur.fetchone()
-                    if row and row[0] != match.get("winner_id"):
-                        conflicts += 1
+                    existing_winner = row[0] if row else None
+                    existing_timestamp = row[1] if row else None
+                    incoming_winner = match.get("winner_id")
+                    incoming_timestamp = match.get("timestamp")
+
+                    if existing_winner != incoming_winner:
+                        # Conflict detected - handle based on resolution strategy
+                        if self.conflict_resolution == ConflictResolution.RAISE:
+                            raise ValueError(
+                                f"Match conflict: {match_id} has winner={existing_winner} "
+                                f"locally but winner={incoming_winner} from {remote_host}"
+                            )
+                        elif self.conflict_resolution == ConflictResolution.FIRST_WRITE_WINS:
+                            # Keep existing, mark as resolved
+                            resolved += 1
+                        elif self.conflict_resolution == ConflictResolution.LAST_WRITE_WINS:
+                            # Compare timestamps, update if incoming is newer
+                            if self._is_newer_timestamp(incoming_timestamp, existing_timestamp):
+                                self._update_match(cur, match, remote_host)
+                                resolved += 1
+                            else:
+                                # Existing is newer, keep it
+                                resolved += 1
+                        else:  # SKIP
+                            conflicts += 1
                     else:
                         skipped += 1
                     continue
@@ -556,7 +613,73 @@ else:
             matches_added=added,
             matches_skipped=skipped,
             matches_conflict=conflicts,
+            matches_resolved=resolved,
             participants_added=len(participants_added),
+        )
+
+    def _is_newer_timestamp(
+        self,
+        incoming: Optional[str],
+        existing: Optional[str],
+    ) -> bool:
+        """Compare timestamps to determine if incoming is newer.
+
+        Returns True if incoming timestamp is more recent than existing.
+        If either is None or unparseable, defaults to accepting incoming.
+        """
+        if not incoming:
+            return False
+        if not existing:
+            return True
+
+        try:
+            # Try ISO format first
+            incoming_dt = datetime.fromisoformat(incoming.replace("Z", "+00:00"))
+            existing_dt = datetime.fromisoformat(existing.replace("Z", "+00:00"))
+            return incoming_dt > existing_dt
+        except (ValueError, AttributeError):
+            # Fall back to string comparison (works for ISO timestamps)
+            return incoming > existing
+
+    def _update_match(
+        self,
+        cursor: sqlite3.Cursor,
+        match: Dict[str, Any],
+        remote_host: str,
+    ) -> None:
+        """Update an existing match with new data (for conflict resolution)."""
+        cursor.execute(
+            """
+            UPDATE match_history SET
+                player1_id = ?,
+                player2_id = ?,
+                winner_id = ?,
+                player1_rating_before = ?,
+                player2_rating_before = ?,
+                player1_rating_after = ?,
+                player2_rating_after = ?,
+                board_type = ?,
+                num_players = ?,
+                game_length = ?,
+                timestamp = ?,
+                source = ?
+            WHERE match_id = ?
+            """,
+            (
+                match.get("player1_id"),
+                match.get("player2_id"),
+                match.get("winner_id"),
+                match.get("player1_rating_before"),
+                match.get("player2_rating_before"),
+                match.get("player1_rating_after"),
+                match.get("player2_rating_after"),
+                match.get("board_type"),
+                match.get("num_players"),
+                match.get("game_length"),
+                match.get("timestamp"),
+                match.get("source", f"sync:{remote_host}"),
+                match.get("match_id"),
+            ),
         )
 
     def reconcile_all(
@@ -582,6 +705,7 @@ else:
         total_added = 0
         total_skipped = 0
         total_conflicts = 0
+        total_resolved = 0
 
         for host in hosts:
             result = self.sync_from_remote(host)
@@ -594,6 +718,7 @@ else:
                 total_added += result.matches_added
                 total_skipped += result.matches_skipped
                 total_conflicts += result.matches_conflict
+                total_resolved += result.matches_resolved
 
         # Check for drift after sync
         drift = self.check_drift()
@@ -606,6 +731,7 @@ else:
             total_matches_added=total_added,
             total_matches_skipped=total_skipped,
             total_conflicts=total_conflicts,
+            total_resolved=total_resolved,
             drift_detected=drift.is_significant,
             max_drift=drift.max_rating_diff,
             sync_results=sync_results,

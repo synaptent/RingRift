@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from app.training.elo_reconciliation import (
+    ConflictResolution,
     EloDrift,
     EloReconciler,
     ReconciliationReport,
@@ -171,12 +172,14 @@ class TestReconciliationReport:
             total_matches_added=100,
             total_matches_skipped=20,
             total_conflicts=5,
+            total_resolved=3,
             drift_detected=False,
             max_drift=15.0,
         )
         assert len(report.nodes_synced) == 2
         assert len(report.nodes_failed) == 1
         assert report.total_matches_added == 100
+        assert report.total_resolved == 3
 
     def test_summary(self):
         """Test human-readable summary."""
@@ -188,6 +191,7 @@ class TestReconciliationReport:
             total_matches_added=50,
             total_matches_skipped=10,
             total_conflicts=0,
+            total_resolved=0,
             drift_detected=False,
             max_drift=10.0,
         )
@@ -196,6 +200,7 @@ class TestReconciliationReport:
         assert "Reconciliation Report" in summary
         assert "Nodes synced: 1" in summary
         assert "Matches added: 50" in summary
+        assert "Resolved: 0" in summary
 
     def test_summary_with_drift(self):
         """Test summary shows drift warning."""
@@ -207,6 +212,7 @@ class TestReconciliationReport:
             total_matches_added=0,
             total_matches_skipped=0,
             total_conflicts=0,
+            total_resolved=0,
             drift_detected=True,
             max_drift=60.0,
         )
@@ -224,6 +230,7 @@ class TestReconciliationReport:
             total_matches_added=10,
             total_matches_skipped=0,
             total_conflicts=0,
+            total_resolved=0,
             drift_detected=False,
             max_drift=0.0,
         )
@@ -454,6 +461,201 @@ class TestConvenienceFunctions:
 
         assert isinstance(drift, EloDrift)
         assert drift.participants_in_source == 1
+
+
+class TestConflictResolution:
+    """Test conflict resolution strategies."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.local_db = Path(self.temp_dir) / "local_elo.db"
+
+    def teardown_method(self):
+        """Clean up."""
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _create_elo_db(self, path: Path):
+        """Create empty Elo database with correct schema."""
+        conn = sqlite3.connect(str(path))
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS match_history (
+                match_id TEXT PRIMARY KEY,
+                player1_id TEXT,
+                player2_id TEXT,
+                winner_id TEXT,
+                player1_rating_before REAL,
+                player2_rating_before REAL,
+                player1_rating_after REAL,
+                player2_rating_after REAL,
+                board_type TEXT,
+                num_players INTEGER,
+                game_length INTEGER,
+                timestamp TEXT,
+                source TEXT
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS participants (
+                participant_id TEXT PRIMARY KEY,
+                rating REAL DEFAULT 1500.0
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+    def _insert_match(self, path: Path, match_id: str, winner_id: str, timestamp: str):
+        """Insert a match into the database."""
+        conn = sqlite3.connect(str(path))
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO match_history (match_id, player1_id, player2_id, winner_id, timestamp) "
+            "VALUES (?, 'p1', 'p2', ?, ?)",
+            (match_id, winner_id, timestamp),
+        )
+        conn.commit()
+        conn.close()
+
+    def _get_match_winner(self, path: Path, match_id: str) -> str:
+        """Get the winner of a match."""
+        conn = sqlite3.connect(str(path))
+        cursor = conn.cursor()
+        cursor.execute("SELECT winner_id FROM match_history WHERE match_id = ?", (match_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def test_conflict_resolution_skip(self):
+        """Test SKIP conflict resolution (default) - keeps existing, counts conflict."""
+        self._create_elo_db(self.local_db)
+        self._insert_match(self.local_db, "match1", "p1", "2024-01-01T12:00:00")
+
+        reconciler = EloReconciler(
+            local_db_path=self.local_db,
+            conflict_resolution=ConflictResolution.SKIP,
+        )
+
+        # Try to import conflicting match
+        result = reconciler._import_matches(
+            "host", "now",
+            [{"match_id": "match1", "player1_id": "p1", "player2_id": "p2", "winner_id": "p2", "timestamp": "2024-01-01T13:00:00"}],
+        )
+
+        assert result.matches_conflict == 1
+        assert result.matches_resolved == 0
+        # Original winner should be preserved
+        assert self._get_match_winner(self.local_db, "match1") == "p1"
+
+    def test_conflict_resolution_first_write_wins(self):
+        """Test FIRST_WRITE_WINS - keeps existing record, marks as resolved."""
+        self._create_elo_db(self.local_db)
+        self._insert_match(self.local_db, "match1", "p1", "2024-01-01T12:00:00")
+
+        reconciler = EloReconciler(
+            local_db_path=self.local_db,
+            conflict_resolution=ConflictResolution.FIRST_WRITE_WINS,
+        )
+
+        result = reconciler._import_matches(
+            "host", "now",
+            [{"match_id": "match1", "player1_id": "p1", "player2_id": "p2", "winner_id": "p2", "timestamp": "2024-01-01T13:00:00"}],
+        )
+
+        assert result.matches_conflict == 0
+        assert result.matches_resolved == 1
+        # Original winner preserved
+        assert self._get_match_winner(self.local_db, "match1") == "p1"
+
+    def test_conflict_resolution_last_write_wins_newer(self):
+        """Test LAST_WRITE_WINS with newer incoming timestamp - updates match."""
+        self._create_elo_db(self.local_db)
+        self._insert_match(self.local_db, "match1", "p1", "2024-01-01T12:00:00")
+
+        reconciler = EloReconciler(
+            local_db_path=self.local_db,
+            conflict_resolution=ConflictResolution.LAST_WRITE_WINS,
+        )
+
+        # Import match with newer timestamp
+        result = reconciler._import_matches(
+            "host", "now",
+            [{"match_id": "match1", "player1_id": "p1", "player2_id": "p2", "winner_id": "p2", "timestamp": "2024-01-01T13:00:00"}],
+        )
+
+        assert result.matches_conflict == 0
+        assert result.matches_resolved == 1
+        # Winner should be updated to incoming
+        assert self._get_match_winner(self.local_db, "match1") == "p2"
+
+    def test_conflict_resolution_last_write_wins_older(self):
+        """Test LAST_WRITE_WINS with older incoming timestamp - keeps existing."""
+        self._create_elo_db(self.local_db)
+        self._insert_match(self.local_db, "match1", "p1", "2024-01-01T13:00:00")  # Newer existing
+
+        reconciler = EloReconciler(
+            local_db_path=self.local_db,
+            conflict_resolution=ConflictResolution.LAST_WRITE_WINS,
+        )
+
+        # Import match with older timestamp
+        result = reconciler._import_matches(
+            "host", "now",
+            [{"match_id": "match1", "player1_id": "p1", "player2_id": "p2", "winner_id": "p2", "timestamp": "2024-01-01T12:00:00"}],
+        )
+
+        assert result.matches_conflict == 0
+        assert result.matches_resolved == 1
+        # Original winner preserved (existing is newer)
+        assert self._get_match_winner(self.local_db, "match1") == "p1"
+
+    def test_conflict_resolution_raise(self):
+        """Test RAISE conflict resolution - raises ValueError on conflict."""
+        self._create_elo_db(self.local_db)
+        self._insert_match(self.local_db, "match1", "p1", "2024-01-01T12:00:00")
+
+        reconciler = EloReconciler(
+            local_db_path=self.local_db,
+            conflict_resolution=ConflictResolution.RAISE,
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            reconciler._import_matches(
+                "host", "now",
+                [{"match_id": "match1", "player1_id": "p1", "player2_id": "p2", "winner_id": "p2"}],
+            )
+
+        assert "Match conflict" in str(exc_info.value)
+        assert "match1" in str(exc_info.value)
+
+    def test_timestamp_comparison_iso_format(self):
+        """Test timestamp comparison with ISO format timestamps."""
+        self._create_elo_db(self.local_db)
+        reconciler = EloReconciler(local_db_path=self.local_db)
+
+        # Test various ISO formats
+        assert reconciler._is_newer_timestamp("2024-01-02T12:00:00", "2024-01-01T12:00:00") is True
+        assert reconciler._is_newer_timestamp("2024-01-01T12:00:00", "2024-01-02T12:00:00") is False
+        assert reconciler._is_newer_timestamp("2024-01-01T13:00:00", "2024-01-01T12:00:00") is True
+
+    def test_timestamp_comparison_with_none(self):
+        """Test timestamp comparison with None values."""
+        self._create_elo_db(self.local_db)
+        reconciler = EloReconciler(local_db_path=self.local_db)
+
+        # None incoming - don't update
+        assert reconciler._is_newer_timestamp(None, "2024-01-01T12:00:00") is False
+        # None existing - accept incoming
+        assert reconciler._is_newer_timestamp("2024-01-01T12:00:00", None) is True
+
+    def test_timestamp_comparison_utc_suffix(self):
+        """Test timestamp comparison with Z (UTC) suffix."""
+        self._create_elo_db(self.local_db)
+        reconciler = EloReconciler(local_db_path=self.local_db)
+
+        assert reconciler._is_newer_timestamp("2024-01-02T12:00:00Z", "2024-01-01T12:00:00Z") is True
+        assert reconciler._is_newer_timestamp("2024-01-01T12:00:00Z", "2024-01-02T12:00:00Z") is False
 
 
 if __name__ == "__main__":

@@ -133,7 +133,34 @@ result = reconciler.sync_from_remote(
 print(f"Added: {result.matches_added}")
 print(f"Skipped: {result.matches_skipped}")
 print(f"Conflicts: {result.matches_conflict}")
+print(f"Resolved: {result.matches_resolved}")
 ```
+
+### Conflict Resolution
+
+When importing matches, conflicts may occur if the same `match_id` exists with different data (e.g., different winner). The reconciler supports configurable conflict resolution strategies:
+
+| Strategy           | Description                                                  |
+| ------------------ | ------------------------------------------------------------ |
+| `SKIP`             | Keep existing record, count as unresolved conflict (default) |
+| `LAST_WRITE_WINS`  | Accept match with more recent timestamp                      |
+| `FIRST_WRITE_WINS` | Keep existing record, mark as resolved                       |
+| `RAISE`            | Raise an exception on first conflict                         |
+
+```python
+from app.training.elo_reconciliation import EloReconciler, ConflictResolution
+
+# Create reconciler with last-write-wins strategy
+reconciler = EloReconciler(
+    conflict_resolution=ConflictResolution.LAST_WRITE_WINS,
+)
+
+# Conflicts are now automatically resolved by timestamp
+result = reconciler.sync_from_remote("192.168.1.100")
+print(f"Resolved: {result.matches_resolved}")
+```
+
+The unified AI loop uses `LAST_WRITE_WINS` by default for automatic conflict resolution.
 
 ### Full Reconciliation
 
