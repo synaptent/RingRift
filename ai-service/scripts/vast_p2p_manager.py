@@ -61,24 +61,36 @@ def get_vast_instances() -> List[VastInstance]:
         return []
 
 
-def run_ssh_command(inst: VastInstance, command: str, timeout: int = 30) -> Tuple[bool, str]:
-    """Run SSH command on a Vast instance."""
+def run_ssh_command(inst: VastInstance, command: str, timeout: int = 30, retries: int = 2) -> Tuple[bool, str]:
+    """Run SSH command on a Vast instance with retries."""
     ssh_cmd = [
         'ssh',
         '-o', 'StrictHostKeyChecking=no',
-        '-o', 'ConnectTimeout=15',
+        '-o', 'ConnectTimeout=20',
         '-o', 'ServerAliveInterval=10',
+        '-o', 'BatchMode=yes',
         '-p', str(inst.ssh_port),
         f'root@{inst.ssh_host}',
         command
     ]
-    try:
-        result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=timeout)
-        return result.returncode == 0, result.stdout.strip()
-    except subprocess.TimeoutExpired:
-        return False, "Timeout"
-    except Exception as e:
-        return False, str(e)
+    for attempt in range(retries + 1):
+        try:
+            result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=timeout)
+            if result.returncode == 0:
+                return True, result.stdout.strip()
+            if attempt < retries:
+                time.sleep(2)
+        except subprocess.TimeoutExpired:
+            if attempt < retries:
+                time.sleep(2)
+                continue
+            return False, "Timeout"
+        except Exception as e:
+            if attempt < retries:
+                time.sleep(2)
+                continue
+            return False, str(e)
+    return False, "Failed after retries"
 
 
 def check_p2p_health(inst: VastInstance) -> Tuple[bool, int, float]:
@@ -102,44 +114,38 @@ def check_p2p_health(inst: VastInstance) -> Tuple[bool, int, float]:
         return False, 0, 0.0
 
 
-def start_p2p(inst: VastInstance) -> bool:
+def start_p2p(inst: VastInstance, skip_kill: bool = False) -> bool:
     """Start P2P orchestrator on instance using robust startup approach."""
     node_id = f"vast-{inst.id}"
 
-    # Create startup script and run with nohup
-    startup_script = f'''
-cd ~/ringrift/ai-service 2>/dev/null || cd /root/ringrift/ai-service
-source venv/bin/activate 2>/dev/null || true
+    # Kill existing P2P if requested
+    if not skip_kill:
+        run_ssh_command(inst, 'pkill -f "p2p_orchestrator.py" 2>/dev/null || true', timeout=15, retries=1)
+        time.sleep(2)
 
-# Kill any existing P2P
-pkill -f "p2p_orchestrator.py" 2>/dev/null
-sleep 2
-
-# Create startup script
-cat > /root/start_p2p.sh << 'STARTSCRIPT'
-#!/bin/bash
+    # Use screen for robust process management (survives SSH disconnect)
+    startup_cmd = f'''
+screen -dmS p2p bash -c '
 cd /root/ringrift/ai-service 2>/dev/null || cd ~/ringrift/ai-service
 source venv/bin/activate 2>/dev/null || true
 export PYTHONPATH="$PWD"
-exec python scripts/p2p_orchestrator.py --node-id {node_id} --port 8770
-STARTSCRIPT
-chmod +x /root/start_p2p.sh
-
-# Start with nohup (robust against SSH disconnect)
-nohup /root/start_p2p.sh > /tmp/p2p.log 2>&1 &
-echo "STARTED_PID=$!"
+python scripts/p2p_orchestrator.py --node-id {node_id} --port 8770 2>&1 | tee /tmp/p2p.log
+'
+echo "STARTED"
 '''
 
-    ok, output = run_ssh_command(inst, startup_script, timeout=30)
+    ok, output = run_ssh_command(inst, startup_cmd, timeout=30, retries=1)
     if not ok:
         return False
 
-    # Wait for startup
-    time.sleep(12)
+    # Wait for startup with multiple health checks
+    for i in range(4):  # Check up to 4 times over 20 seconds
+        time.sleep(5)
+        healthy, _, _ = check_p2p_health(inst)
+        if healthy:
+            return True
 
-    # Check health
-    healthy, _, _ = check_p2p_health(inst)
-    return healthy
+    return False
 
 
 def stop_p2p(inst: VastInstance) -> bool:
@@ -190,6 +196,8 @@ def main():
                        help='Action to perform')
     parser.add_argument('--id', type=int, help='Specific instance ID (default: all)')
     parser.add_argument('--parallel', type=int, default=5, help='Parallel workers')
+    parser.add_argument('--skip-running', action='store_true',
+                       help='Only start on instances without running P2P (start action only)')
     args = parser.parse_args()
 
     print("Discovering Vast instances...")
@@ -212,10 +220,28 @@ def main():
         print_status(instances)
 
     elif args.action == 'start':
+        # Filter out already-running instances if --skip-running
+        if args.skip_running:
+            print("Checking which instances need P2P started...")
+            offline_instances = []
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                def check_one(inst):
+                    healthy, _, _ = check_p2p_health(inst)
+                    return inst, healthy
+                futures = [executor.submit(check_one, inst) for inst in instances]
+                for future in as_completed(futures):
+                    inst, healthy = future.result()
+                    if not healthy:
+                        offline_instances.append(inst)
+            instances = offline_instances
+            if not instances:
+                print("All instances already have P2P running")
+                return 0
+
         print(f"\nStarting P2P on {len(instances)} instances...")
 
         def start_one(inst):
-            ok = start_p2p(inst)
+            ok = start_p2p(inst, skip_kill=args.skip_running)
             return inst.id, ok
 
         with ThreadPoolExecutor(max_workers=args.parallel) as executor:
@@ -225,7 +251,7 @@ def main():
                 print(f"  {inst_id}: {'OK' if ok else 'FAILED'}")
 
         print("\nFinal status:")
-        print_status(instances)
+        print_status(get_vast_instances())
 
     elif args.action == 'stop':
         print(f"\nStopping P2P on {len(instances)} instances...")
@@ -244,9 +270,8 @@ def main():
         print(f"\nRestarting P2P on {len(instances)} instances...")
 
         def restart_one(inst):
-            stop_p2p(inst)
-            time.sleep(2)
-            ok = start_p2p(inst)
+            # start_p2p already kills existing P2P by default
+            ok = start_p2p(inst, skip_kill=False)
             return inst.id, ok
 
         with ThreadPoolExecutor(max_workers=args.parallel) as executor:
