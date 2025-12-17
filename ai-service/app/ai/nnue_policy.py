@@ -1703,7 +1703,7 @@ class NNUEPolicyDataset(Dataset):
                         id="auto-no-line",
                         type=MoveType.NO_LINE_ACTION,
                         player=player,
-                        timestamp=state.last_move.timestamp if state.last_move else None,
+                        timestamp=state.last_move_at,
                         think_time=0,
                         move_number=0,
                     )
@@ -1721,7 +1721,7 @@ class NNUEPolicyDataset(Dataset):
                         id="auto-no-territory",
                         type=MoveType.NO_TERRITORY_ACTION,
                         player=player,
-                        timestamp=state.last_move.timestamp if state.last_move else None,
+                        timestamp=state.last_move_at,
                         think_time=0,
                         move_number=0,
                     )
@@ -1965,8 +1965,19 @@ class NNUEPolicyDataset(Dataset):
         if not move_type_str or move_type_str.startswith("unknown_"):
             return None
 
+        # Map GPU selfplay move type names to CPU MoveType values
+        # GPU uses: place, move_stack, capture, no_action
+        # CPU uses: place_ring, move_stack, overtaking_capture, etc.
+        gpu_move_type_map = {
+            "place": "place_ring",
+            "capture": "overtaking_capture",
+            "no_action": "no_movement_action",
+            # move_stack matches directly
+        }
+        mapped_type = gpu_move_type_map.get(move_type_str.lower(), move_type_str)
+
         try:
-            move_type = MoveType(move_type_str)
+            move_type = MoveType(mapped_type)
         except ValueError:
             return None
 
@@ -1974,12 +1985,30 @@ class NNUEPolicyDataset(Dataset):
         is_hex_board = self.config.board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
         center_offset = self.board_size // 2 if is_hex_board else 0
 
-        def parse_pos(pos_dict):
-            if not pos_dict or not isinstance(pos_dict, dict):
+        def parse_pos(pos_data):
+            if not pos_data:
                 return None
-            x = pos_dict.get("x", 0)
-            y = pos_dict.get("y", 0)
-            z = pos_dict.get("z")
+
+            # Handle string format "y,x" from GPU selfplay
+            if isinstance(pos_data, str):
+                if "," in pos_data:
+                    parts = pos_data.split(",")
+                    if len(parts) >= 2:
+                        y, x = int(parts[0]), int(parts[1])
+                        if is_hex_board:
+                            cube_x = x - center_offset
+                            cube_y = y - center_offset
+                            cube_z = -cube_x - cube_y
+                            return Position(x=cube_x, y=cube_y, z=cube_z)
+                        return Position(x=x, y=y)
+                return None
+
+            # Handle dict format {"x": ..., "y": ..., "z": ...}
+            if not isinstance(pos_data, dict):
+                return None
+            x = pos_data.get("x", 0)
+            y = pos_data.get("y", 0)
+            z = pos_data.get("z")
 
             # Convert offset coords to cube coords for hex boards
             if is_hex_board and z is None:
@@ -2007,6 +2036,12 @@ class NNUEPolicyDataset(Dataset):
         # NOTE: Do NOT default capture_target to to_pos for GPU moves!
         # That's incorrect - to_pos is landing, not target.
         # The extraction code must compute target from game state.
+
+        # For PLACE_RING from GPU selfplay, the position is stored in 'from' not 'to'
+        # because there's no "from" position for placement. Swap them.
+        if move_type == MoveType.PLACE_RING and from_pos is not None and to_pos is None:
+            to_pos = from_pos
+            from_pos = None
 
         return Move(
             id=move_dict.get("id", f"jsonl-{move_number}"),
