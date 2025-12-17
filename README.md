@@ -2,7 +2,7 @@
 
 > _A fractured arena where shifting rings of influence determine power — where moves create fault lines, and mastery comes from navigating both space and its ultimate collapse._
 
-A web-based multiplayer strategy game featuring ring stacking, tactical captures, and territory control across multiple board configurations.
+A web-based multiplayer strategy game featuring ring stacking, tactical captures, and territory control. Play against friends or challenge AI opponents across multiple board sizes.
 
 ![RingRift CI/CD](https://github.com/an0mium/RingRift/actions/workflows/ci.yml/badge.svg)
 ![Parity CI Gate](https://github.com/an0mium/RingRift/actions/workflows/parity-ci.yml/badge.svg)
@@ -11,28 +11,33 @@ A web-based multiplayer strategy game featuring ring stacking, tactical captures
 
 ## The Game
 
-RingRift is an abstract strategy game where you build stacks of rings, claim territory, and outmaneuver your opponents. Every move leaves a mark on the board, and the landscape is constantly shifting.
+RingRift is an abstract strategy game with zero randomness — every outcome is determined by player decisions. Build stacks of rings, claim territory through line formation, and outmaneuver your opponents as the board transforms beneath you.
 
-The game rewards both careful planning and bold plays. You'll form temporary alliances, execute dramatic chain captures, and watch as entire regions of the board collapse in your favor — or against you.
+**What makes it special:**
 
-**Design Philosophy:** High emergent complexity from simple rules. Games remain live and contested — seemingly "won" positions can collapse through territory cascades, and short-term sacrifices can be correct play toward long-term advantage.
+- High emergent complexity from simple rules
+- Multiple victory paths keep games dynamic
+- "Won" positions can collapse through cascading reactions
+- Strong humans can compete with strong AI despite deep decision trees
 
 ### Core Mechanics
 
-- **Ring Stacking**: Build and move stacks of rings; control is determined by the top ring
-- **Movement**: Move in straight lines, leaving markers behind as you go
-- **Overtaking Captures**: Jump over enemy stacks to claim their top ring, adding it to your stack
-- **Chain Captures**: Once you start capturing, continue until no captures remain
-- **Line Formation**: Create lines of 4+ markers to collapse them into permanent territory
-- **Territory Disconnection**: Cut off regions of the board to claim them entirely
+| Mechanic                    | Description                                                 |
+| --------------------------- | ----------------------------------------------------------- |
+| **Ring Stacking**           | Build and move stacks; the top ring determines control      |
+| **Movement**                | Move in straight lines, leaving markers behind              |
+| **Overtaking Captures**     | Jump over enemy stacks to claim their top ring              |
+| **Chain Captures**          | Once you start capturing, continue until no captures remain |
+| **Line Formation**          | Create lines of 4+ markers to collapse them into territory  |
+| **Territory Disconnection** | Cut off regions of the board to claim them entirely         |
 
 ### Victory Conditions
 
-Win by achieving **any one** of three conditions:
+Win by achieving **any one** of:
 
-1. **Ring Elimination**: Remove enough rings to reach the victory threshold
-2. **Territory Control**: Control your fair share of spaces AND more than all opponents combined
-3. **Last Player Standing**: Be the only player who can still take meaningful actions
+1. **Ring Elimination** — Remove enough opponent rings to reach the threshold
+2. **Territory Control** — Control your fair share of spaces AND more than all opponents combined
+3. **Last Player Standing** — Be the only player who can still take meaningful actions
 
 ---
 
@@ -41,37 +46,45 @@ Win by achieving **any one** of three conditions:
 ### Prerequisites
 
 - Node.js 18+ and npm 9+
-- Docker and Docker Compose
+- Docker and Docker Compose (optional, for containerized setup)
 - PostgreSQL 14+ and Redis 6+ (or use Docker)
 
 ### Setup
 
 ```bash
 # Clone and install
-git clone <repository-url>
+git clone https://github.com/an0mium/RingRift.git
 cd ringrift
 npm install
 
 # Configure environment
 cp .env.example .env
 
-# Start services
-docker-compose up -d postgres redis
+# Start services (choose one):
+
+# Option 1: Docker (recommended)
+docker-compose up -d
+
+# Option 2: Manual
+docker-compose up -d postgres redis  # Just databases
 npm run db:migrate
 npm run db:generate
-
-# Run development servers
-npm run dev              # Both frontend and backend
-# Or individually:
-npm run dev:server       # Backend → http://localhost:3000
-npm run dev:client       # Frontend → http://localhost:5173
+npm run dev  # Starts both frontend and backend
 ```
+
+**URLs:**
+
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:3000
+- AI Service: http://localhost:8001 (if running)
 
 ### AI Service (Optional)
 
+For AI opponents beyond the client-side sandbox:
+
 ```bash
 cd ai-service
-source ../.venv/bin/activate
+pip install -r requirements.txt
 uvicorn app.main:app --port 8001 --reload
 ```
 
@@ -82,11 +95,12 @@ uvicorn app.main:app --port 8001 --reload
 | Feature             | Description                                          |
 | ------------------- | ---------------------------------------------------- |
 | **Multiple Boards** | 8×8 square, 19×19 square, and hexagonal (469 spaces) |
-| **2-4 Players**     | Human/AI combinations with flexible matchmaking      |
-| **AI Opponents**    | 10-level difficulty ladder (Random → MCTS → Descent) |
-| **Real-time Play**  | WebSocket-based live gameplay with spectator mode    |
-| **Rating System**   | ELO-based rankings and leaderboards                  |
+| **2-4 Players**     | Any combination of humans and AI                     |
+| **10 AI Levels**    | From random moves to neural network-guided search    |
+| **Real-time Play**  | WebSocket-based with live state sync                 |
+| **Rating System**   | Elo-based rankings and leaderboards                  |
 | **Replay System**   | Watch and analyze completed games                    |
+| **Spectator Mode**  | Watch ongoing games                                  |
 
 ---
 
@@ -95,7 +109,7 @@ uvicorn app.main:app --port 8001 --reload
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   React Client  │◄──►│   Express API   │◄──►│   PostgreSQL    │
-│   (Vite/TS)     │    │   + WebSocket   │    │   + Redis       │
+│   (Vite + TS)   │    │   + WebSocket   │    │   + Redis       │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
                               │
                        ┌──────┴──────┐
@@ -104,22 +118,22 @@ uvicorn app.main:app --port 8001 --reload
                        └─────────────┘
 ```
 
-### Technology Stack
+### Tech Stack
 
-| Layer      | Technologies                                          |
-| ---------- | ----------------------------------------------------- |
-| Frontend   | React 18, TypeScript, Vite, Tailwind CSS, React Query |
-| Backend    | Node.js, Express, Socket.IO, Prisma ORM, Zod          |
-| Database   | PostgreSQL, Redis                                     |
-| AI Service | Python, FastAPI, PyTorch (MCTS, neural networks)      |
-| Monitoring | Prometheus, Grafana, CloudWatch                       |
+| Layer      | Technologies                             |
+| ---------- | ---------------------------------------- |
+| Frontend   | React 18, TypeScript, Vite, Tailwind CSS |
+| Backend    | Node.js, Express, Socket.IO, Prisma ORM  |
+| Database   | PostgreSQL, Redis                        |
+| AI Service | Python, FastAPI, PyTorch                 |
+| Monitoring | Prometheus, Grafana                      |
 
 ### Rules Engine
 
-The game logic is implemented in a canonical TypeScript engine with Python parity:
+The game logic lives in a canonical TypeScript engine with Python parity:
 
-- **Single Source of Truth**: `src/shared/engine/` with 8 canonical phases
-- **Cross-language Parity**: 81 contract vectors, 100% TS↔Python match
+- **Single Source of Truth**: `src/shared/engine/` — 69 files, 8 canonical phases
+- **Cross-language Parity**: 81 contract vectors ensure TS↔Python match exactly
 - **Domain Aggregates**: Placement, Movement, Capture, Line, Territory, Victory
 
 ---
@@ -127,11 +141,15 @@ The game logic is implemented in a canonical TypeScript engine with Python parit
 ## Testing
 
 ```bash
-npm test                          # All Jest tests
-npm run test:coverage             # Coverage report
-npm run test:orchestrator-parity  # Rules parity tests
+# TypeScript tests
+npm test
+npm run test:coverage
 
-cd ai-service && pytest           # Python tests
+# Python tests
+cd ai-service && pytest
+
+# Parity tests (TS↔Python rules)
+npm run test:orchestrator-parity
 ```
 
 | Metric           | Value               |
@@ -143,31 +161,18 @@ cd ai-service && pytest           # Python tests
 
 ---
 
-## Documentation
-
-| Document                                                   | Purpose                     |
-| ---------------------------------------------------------- | --------------------------- |
-| [QUICKSTART.md](QUICKSTART.md)                             | Detailed setup guide        |
-| [ringrift_complete_rules.md](ringrift_complete_rules.md)   | Full rulebook with examples |
-| [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md)         | Formal rules specification  |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                         | Contribution guidelines     |
-| [CURRENT_STATE_ASSESSMENT.md](CURRENT_STATE_ASSESSMENT.md) | Project status              |
-| [docs/INDEX.md](docs/INDEX.md)                             | Full documentation index    |
-
----
-
 ## API Overview
 
 ### REST Endpoints
 
 ```
-POST /api/auth/register        # User registration
-POST /api/auth/login           # Authentication
-GET  /api/games                # List games
-POST /api/games                # Create game
-GET  /api/games/:id            # Game details
-POST /api/games/:id/join       # Join game
-GET  /api/users/leaderboard    # Rankings
+POST /api/auth/register     # Create account
+POST /api/auth/login        # Authenticate
+GET  /api/games             # List games
+POST /api/games             # Create game
+GET  /api/games/:id         # Game details
+POST /api/games/:id/join    # Join game
+GET  /api/users/leaderboard # Rankings
 ```
 
 ### WebSocket Events
@@ -181,45 +186,60 @@ GET  /api/users/leaderboard    # Rankings
 
 ---
 
+## Documentation
+
+| Document                                                 | Purpose                     |
+| -------------------------------------------------------- | --------------------------- |
+| [QUICKSTART.md](QUICKSTART.md)                           | Detailed setup guide        |
+| [ringrift_complete_rules.md](ringrift_complete_rules.md) | Full rulebook with examples |
+| [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md)       | Formal rules specification  |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                       | Contribution guidelines     |
+| [ai-service/README.md](ai-service/README.md)             | AI service documentation    |
+
+---
+
 ## Production Deployment
 
 ```bash
 npm run build
-docker-compose up -d
+docker-compose -f docker-compose.prod.yml up -d
 ```
 
 The Docker stack includes: app, nginx, postgres, redis, ai-service, prometheus, grafana.
 
-> **Note**: The backend is designed for single-instance deployment. See [QUICKSTART.md](QUICKSTART.md) for multi-instance considerations.
+See [QUICKSTART.md](QUICKSTART.md) for detailed deployment options.
 
 ---
 
 ## Project Status
 
-**Stable Beta** – Engine complete, production validation in progress.
+**Stable Beta** — Engine complete, production validation in progress.
 
 - 14 development waves complete
 - All core mechanics implemented and tested
 - Active focus: scaling tests, security hardening, UX polish
 
-For detailed status, see [CURRENT_STATE_ASSESSMENT.md](CURRENT_STATE_ASSESSMENT.md) and [TODO.md](TODO.md).
-
 ---
 
 ## Contributing
 
+We welcome contributions! Here's how to get started:
+
 1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes and run tests
+4. Commit (`git commit -m 'Add amazing feature'`)
+5. Push (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## License
-
-MIT License – see LICENSE file for details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ---
 
-_Built by the RingRift Team_
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+_Built with passion for strategy games_

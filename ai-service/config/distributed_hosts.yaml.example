@@ -1,33 +1,76 @@
-# RingRift Distributed Hosts Configuration - EXAMPLE TEMPLATE
-# Copy this to distributed_hosts.yaml and fill in your actual host details
-# THIS FILE SHOULD BE GITIGNORED after copying
+# =============================================================================
+# RingRift Distributed Hosts Configuration
+# =============================================================================
+#
+# This file defines your GPU cluster for distributed AI training and selfplay.
+#
+# SETUP:
+#   1. Copy this file: cp distributed_hosts.yaml.example distributed_hosts.yaml
+#   2. Edit with your actual host details
+#   3. The real file is gitignored - your IPs stay private
+#
+# NETWORK OPTIONS:
+#   - tailscale_ip: Preferred for mesh networking (100.x.x.x range)
+#   - ssh_host: Direct IP/hostname for SSH connections
+#   - If using Tailscale, set both for redundancy
+#
+# =============================================================================
 
+# Elo rating synchronization settings
 elo_sync:
-  coordinator: gpu-primary
-  sync_port: 8766
-  sync_interval: 300
-  divergence_threshold: 50
-  transports:
-    - tailscale
-    - aria2
-    - http
+  coordinator: gpu-primary      # Node that acts as Elo authority
+  sync_port: 8766               # Port for Elo sync service
+  sync_interval: 300            # Sync every 5 minutes
+  divergence_threshold: 50      # Elo points before triggering reconciliation
+  transports:                   # Transport priority (first available wins)
+    - tailscale                 # Direct Tailscale mesh (fastest)
+    - aria2                     # Parallel multi-source download
+    - http                      # Simple HTTP fallback
+
+# =============================================================================
+# Host Definitions
+# =============================================================================
+# Each host needs at minimum: ssh_host or tailscale_ip, ssh_user, status
+#
+# Fields:
+#   ssh_host        - Direct IP or hostname for SSH
+#   tailscale_ip    - Tailscale mesh IP (100.x.x.x range)
+#   ssh_user        - SSH username (default: ubuntu)
+#   ssh_key         - Path to SSH private key (optional)
+#   ssh_port        - SSH port (default: 22)
+#   ringrift_path   - Path to ringrift/ai-service on this host
+#   memory_gb       - RAM in GB (for job scheduling)
+#   cpus            - CPU count (for job scheduling)
+#   gpu             - GPU description (for display/filtering)
+#   role            - Host role: nn_training_primary, nn_training, selfplay, etc.
+#   p2p_voter       - Can this node vote in leader election? (true/false)
+#   status          - Host status: ready, setup, offline, terminated
+# =============================================================================
 
 hosts:
+  # ---------------------------------------------------------------------------
+  # Primary Training Server (required for training pipeline)
+  # ---------------------------------------------------------------------------
   gpu-primary:
-    ssh_host: 10.0.0.1  # Your primary training server
+    ssh_host: 10.0.0.1              # Replace with your server IP
+    tailscale_ip: 100.100.100.1     # Optional: Tailscale IP if using mesh
     ssh_user: ubuntu
-    ssh_key: ~/.ssh/id_cluster
+    ssh_key: ~/.ssh/id_cluster      # Optional: specific SSH key
     ringrift_path: ~/ringrift/ai-service
     venv_activate: source ~/ringrift/ai-service/venv/bin/activate
     memory_gb: 256
     cpus: 26
     gpu: NVIDIA H100 (80GB)
-    role: nn_training_primary
-    p2p_voter: true
+    role: nn_training_primary       # Primary training node
+    p2p_voter: true                 # Participates in leader election
     status: ready
 
+  # ---------------------------------------------------------------------------
+  # Secondary Training Server (optional - for multi-GPU training)
+  # ---------------------------------------------------------------------------
   gpu-secondary:
-    ssh_host: 10.0.0.2  # Secondary training server
+    ssh_host: 10.0.0.2
+    tailscale_ip: 100.100.100.2
     ssh_user: ubuntu
     ringrift_path: ~/ringrift/ai-service
     venv_activate: source ~/ringrift/ai-service/venv/bin/activate
@@ -38,8 +81,12 @@ hosts:
     p2p_voter: true
     status: ready
 
+  # ---------------------------------------------------------------------------
+  # Selfplay Workers (add as many as you have)
+  # ---------------------------------------------------------------------------
   selfplay-1:
-    ssh_host: 10.0.0.10  # Selfplay worker
+    ssh_host: 10.0.0.10
+    tailscale_ip: 100.100.100.10
     ssh_user: ubuntu
     ringrift_path: ~/ringrift/ai-service
     venv_activate: source ~/ringrift/ai-service/venv/bin/activate
@@ -51,6 +98,7 @@ hosts:
 
   selfplay-2:
     ssh_host: 10.0.0.11
+    tailscale_ip: 100.100.100.11
     ssh_user: ubuntu
     ringrift_path: ~/ringrift/ai-service
     venv_activate: source ~/ringrift/ai-service/venv/bin/activate
@@ -59,3 +107,32 @@ hosts:
     gpu: NVIDIA GH200 (96GB)
     role: selfplay
     status: ready
+
+  # ---------------------------------------------------------------------------
+  # Cloud GPU Instance Example (Vast.ai, Lambda Labs, etc.)
+  # ---------------------------------------------------------------------------
+  # cloud-gpu-1:
+  #   ssh_host: ssh4.vast.ai        # Vast.ai SSH gateway
+  #   ssh_port: 12345               # Vast.ai assigned port
+  #   tailscale_ip: 100.100.100.20  # If Tailscale is installed
+  #   ssh_user: root
+  #   ringrift_path: /root/ringrift/ai-service
+  #   memory_gb: 128
+  #   cpus: 32
+  #   gpu: NVIDIA RTX 4090 (24GB)
+  #   role: selfplay
+  #   status: ready
+
+  # ---------------------------------------------------------------------------
+  # Local Development Machine Example (macOS with Apple Silicon)
+  # ---------------------------------------------------------------------------
+  # mac-studio:
+  #   tailscale_ip: 100.100.100.99  # Tailscale-only connection
+  #   ssh_user: yourname
+  #   ringrift_path: ~/Development/RingRift/ai-service
+  #   memory_gb: 192
+  #   cpus: 24
+  #   gpu: Apple M2 Ultra (192GB unified)
+  #   role: coordinator             # Orchestration only, no heavy training
+  #   p2p_voter: true
+  #   status: ready

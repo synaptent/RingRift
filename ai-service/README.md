@@ -1,1136 +1,315 @@
 # RingRift AI Service
 
-> **Doc Status (2025-12-14): Active (Python AI microservice, AI host/adapter only)**
->
-> - Role: primary reference for the Python AI microservice API surface, difficulty ladder, and integration with the Node.js backend. It describes the AI host, not the game rules themselves.
-> - Not a semantics or lifecycle SSoT: the Python rules engine inside this service is a **host/adapter** over the canonical rules SSoT (the written spec in `RULES_CANONICAL_SPEC.md` plus `ringrift_complete_rules.md` / `ringrift_compact_rules.md`) and its shared TypeScript implementation under `src/shared/engine/**` and `src/shared/engine/contracts/**`, with cross-language behaviour anchored by the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`. For canonical rules semantics and lifecycle/API contracts, defer to [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`ringrift_complete_rules.md`](../ringrift_complete_rules.md), [`RULES_ENGINE_ARCHITECTURE.md`](../docs/architecture/RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../docs/rules/RULES_IMPLEMENTATION_MAPPING.md), and [`docs/architecture/CANONICAL_ENGINE_API.md`](../docs/architecture/CANONICAL_ENGINE_API.md).
-> - Related docs: high-level AI architecture and roadmap in [`AI_ARCHITECTURE.md`](../docs/architecture/AI_ARCHITECTURE.md), host-focused analysis in [`ai-service/AI_ASSESSMENT_REPORT.md`](./AI_ASSESSMENT_REPORT.md), improvement roadmap in [`ai-service/AI_IMPROVEMENT_PLAN.md`](./AI_IMPROVEMENT_PLAN.md), training workflows in [`docs/ai/AI_TRAINING_AND_DATASETS.md`](../docs/ai/AI_TRAINING_AND_DATASETS.md) and [`docs/ai/AI_TRAINING_PREPARATION_GUIDE.md`](../docs/ai/AI_TRAINING_PREPARATION_GUIDE.md), TS↔Python rules parity details in [`docs/rules/PYTHON_PARITY_REQUIREMENTS.md`](../docs/rules/PYTHON_PARITY_REQUIREMENTS.md) and [`docs/testing/STRICT_INVARIANT_SOAKS.md`](../docs/testing/STRICT_INVARIANT_SOAKS.md), and dependency/upgrade details in [`ai-service/DEPENDENCY_UPDATES.md`](./DEPENDENCY_UPDATES.md) together with the wave-based cross-repo plan in [`docs/archive/plans/DEPENDENCY_UPGRADE_PLAN.md`](../docs/archive/plans/DEPENDENCY_UPGRADE_PLAN.md).
+[![CI](https://github.com/RingRift/RingRift/actions/workflows/ci.yml/badge.svg)](https://github.com/RingRift/RingRift/actions/workflows/ci.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-Python-based FastAPI microservice for AI move generation and position evaluation.
+A Python-based AI microservice that powers the intelligent opponents in RingRift. From casual players learning the ropes to experts seeking a challenge, this service provides a 10-level difficulty ladder with AI ranging from random moves to neural network-guided search.
 
-## Architecture
+## What's Inside
 
-This service provides AI capabilities for the RingRift game through a RESTful API. It's designed as a microservice to:
+- **10 Difficulty Levels** — Random (D1) → Heuristic (D2) → Minimax (D3-4) → MCTS (D5-8) → AlphaZero-style Descent (D9-10)
+- **Neural Network Integration** — ResNet-style CNNs with policy/value heads for position evaluation
+- **Distributed Training** — Self-play generation, Elo tracking, and model promotion across GPU clusters
+- **P2P Orchestration** — Automatic cluster coordination with leader election and health monitoring
+- **Apple Silicon Support** — MPS-compatible models for M1/M2/M3 training
 
-- Enable ML/AI libraries (TensorFlow, PyTorch, etc.) without adding them to the Node.js backend
-- Allow independent scaling of AI computation
-- Facilitate future ML model integration
-- Provide language-appropriate AI implementations (Python for ML/AI)
+## Quick Start
 
-## Features
-
-- **Currently supported AI types (canonical ladder)**:
-  - **RandomAI** (difficulty 1): Selects random valid moves
-  - **HeuristicAI** (difficulty 2): Uses 45+ weighted evaluation factors
-  - **MinimaxAI** (difficulty 3–4): Alpha-beta pruning with quiescence search
-    - D3: Heuristic-only evaluation
-    - D4: NNUE neural evaluation for stronger position assessment
-  - **MCTSAI** (difficulty 5–8): Monte Carlo tree search with PUCT/RAVE
-    - D5: Heuristic rollouts only
-    - D6–8: Neural network value/policy guidance
-  - **DescentAI** (difficulty 9–10): UBFM/AlphaZero-style best-first search with neural guidance
-
-  These types are wired through the **canonical 1–10 difficulty ladder** defined in [`app/main.py`](app/main.py:1577) (and per-board/per-player ladders in [`app/config/ladder_config.py`](app/config/ladder_config.py)) and mirrored in the TypeScript backend's `AI_DIFFICULTY_PRESETS` in [`AIEngine.ts`](../src/server/game/ai/AIEngine.ts:1). For a given numeric difficulty, both the backend and service agree on the underlying AI type, randomness, and think-time budget.
-
-- **Neural Network Integration**:
-  - Difficulties 4+ use neural network evaluation (NNUE or full CNN)
-  - ResNet-style architecture with policy/value heads
-  - MPS-compatible variant for Apple Silicon (`RingRiftCNN_MPS`)
-  - Board-specific policy sizes:
-    - `square8`: ~7K (64 cells, 8×8 grid)
-    - `hex8`: ~4.5K (61 cells, radius-4 hexagonal)
-    - `square19`: ~67K (361 cells, 19×19 grid)
-    - `hexagonal`: ~92K (469 cells, radius-12 hexagonal)
-
-- **Supported Board Types**:
-  - `square8`: 8×8 square grid (64 cells) - quick games, ideal for learning
-  - `hex8`: Radius-4 hexagonal (61 cells) - hex mechanics with fast iteration, parallel to square8
-  - `square19`: 19×19 square grid (361 cells) - strategic depth, Go-like complexity
-  - `hexagonal`: Radius-12 hexagonal (469 cells) - largest board, maximum strategic depth
-
-- **Difficulty Levels**: 1–10, mapped consistently to AI profiles in both the backend and service via:
-  - Python: `_CANONICAL_DIFFICULTY_PROFILES` in [`app/main.py`](ai-service/app/main.py)
-  - TypeScript: `AI_DIFFICULTY_PRESETS` in [`AIEngine.ts`](../src/server/game/ai/AIEngine.ts:1)
-- **Position Evaluation**: Heuristic evaluation with detailed breakdown
-- **AI Caching**: Instance caching for performance
-- **Health Checks**: Container orchestration support
-
-For end-to-end training, self-play, and dataset-generation workflows that consume this service and its embedded rules engine (including the territory/combined-margin generator), see [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1). For the territory forced-elimination / `TerritoryMutator` incident and its fix, see [`docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md:1).
-
-## Offline Training & Evaluation Scripts
-
-The AI service repo also contains **offline training/diagnostic scripts** that reuse the same
-`HeuristicAI` and rules/parity backbone as the production service. These are not part of the
-FastAPI surface, but they are important for experimentation and regression analysis.
-
-### CMA-ES Heuristic Optimisation
-
-The canonical CMA-ES harness lives in [`scripts/run_cmaes_optimization.py`](scripts/run_cmaes_optimization.py).
-It exposes both a library-style `run_cmaes_optimization(config)` entry point and a CLI:
+### Local Development
 
 ```bash
 cd ai-service
-python scripts/run_cmaes_optimization.py \
-  --board square8 \
-  --generations 4 \
-  --population-size 16 \
-  --games-per-eval 32 \
-  --sigma 0.5 \
-  --baseline-profile-id heuristic_v1_balanced \
-  --output-dir logs/cmaes \
-  --run-id demo_cmaes_square8_v1
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8001
 ```
 
-- Baseline weights are taken from `BASE_V1_BALANCED_WEIGHTS` in
-  [`app/ai/heuristic_weights.py`](app/ai/heuristic_weights.py).
-- Fitness is computed by `evaluate_fitness(...)` (also used by the genetic harness), which
-  plays self-play matches vs the baseline heuristic under the shared TS↔Python rules engine.
-- Results are written under `logs/cmaes/runs/<run_id>/`:
-  - `run_meta.json`, `baseline_weights.json`, `best_weights.json`.
-  - Per-generation summaries in `generations/generation_00N.json`.
-  - Checkpoints in `checkpoints/checkpoint_gen00N.json`.
+The service will be available at:
 
-For a higher-level orchestration wrapper that also generates statistical reports, see
-[`scripts/run_heuristic_experiment.py`](scripts/run_heuristic_experiment.py) and the
-summary in `docs/AI_TRAINING_ASSESSMENT_FINAL.md` (§10 “Extended CMA-ES Tuning Run #1”).
+- API: http://localhost:8001
+- Interactive docs: http://localhost:8001/docs
+- ReDoc: http://localhost:8001/redoc
 
-### Genetic Search over Heuristic Weights
-
-An experimental genetic search harness lives in
-[`scripts/run_genetic_heuristic_search.py`](scripts/run_genetic_heuristic_search.py). It
-explores the same heuristic weight space as CMA-ES but with a simple GA:
-
-- Individuals are `HeuristicWeights` dicts (same keys as `BASE_V1_BALANCED_WEIGHTS`).
-- Fitness is delegated to `evaluate_fitness(...)` from `run_cmaes_optimization.py`, so CMA-ES
-  and GA share a single fitness definition and plateau diagnostics.
-- Selection uses elitism (top-K per generation), with Gaussian per-weight mutation.
-
-Typical invocation (from `ai-service/`):
+### With Docker
 
 ```bash
-python scripts/run_genetic_heuristic_search.py \
-  --generations 3 \
-  --population-size 8 \
-  --elite-count 3 \
-  --games-per-eval 16 \
-  --sigma 2.0 \
-  --board square8 \
-  --output-dir logs/ga \
-  --run-id ga_v1_square8_demo \
-  --seed 12345
+docker build -t ringrift-ai-service .
+docker run -p 8001:8001 ringrift-ai-service
 ```
 
-Key implementation details:
+### Full Stack (with the main app)
 
-- Supports `--eval-mode` (`initial-only` vs `multi-start`) and `--state-pool-id` to reuse the
-  same evaluation-pool infrastructure as CMA-ES (`ai-service/app/training/eval_pools.py`).
-- Prints per-individual diagnostics via the `debug_hook` from `evaluate_fitness`, including
-  wins/draws/losses and `weight_l2` vs baseline, so you can quickly see whether a run is
-  actually exploring distinct policies.
-- Logs are written under `logs/ga/runs/<run_id>/`, with `best_weights.json` matching the
-  CMA-ES schema (`{"weights": { ... }}`) so downstream tooling can treat GA outputs and
-  CMA-ES outputs uniformly.
-
-Both CMA-ES and GA harnesses are covered by the heuristic-training sanity suite
-(`ai-service/tests/test_heuristic_training_evaluation.py`) and statistical reporting
-pipelines (`scripts/generate_statistical_report.py`), as described in
-[`AI_ARCHITECTURE.md`](../docs/architecture/AI_ARCHITECTURE.md#56-heuristic-training-sanity--plateau-diagnostics).
-
-### Multi-board heuristic evaluation sanity check
-
-For a quick end-to-end sanity check of the heuristic evaluation stack across all supported
-board types, use:
-
-```bash
-cd ai-service
-python scripts/sanity_check_multiboard_eval.py
-```
-
-This script runs a canonical multi-board, multi-start evaluation using
-`build_training_eval_kwargs` and compares:
-
-- baseline vs baseline (`BASE_V1_BALANCED_WEIGHTS` vs itself), and
-- zero vs baseline (all heuristic weights set to 0.0 vs the baseline).
-
-It should confirm that:
-
-- baseline vs baseline fitness is not structurally pinned at `0.5`, and
-- clearly bad weights (all zeros) score significantly worse than the baseline,
-  with per-board fitness summaries printed for `square8`, `square19`, and `hexagonal`.
-
-## API Endpoints
-
-### `GET /`
-
-Service information and status
-
-### `GET /health`
-
-Health check endpoint for container orchestration
-
-### `POST /ai/move`
-
-Get AI-selected move for current game state
-
-**Request Body:**
-
-```json
-{
-  "game_state": {
-    /* GameState object */
-  },
-  "player_number": 1,
-  "difficulty": 5,
-  "ai_type": "heuristic" // optional
-}
-```
-
-**Response:**
-
-```json
-{
-  "move": {
-    /* Move object */
-  },
-  "evaluation": 12.5,
-  "thinking_time_ms": 850,
-  "ai_type": "heuristic",
-  "difficulty": 5
-}
-```
-
-### `POST /ai/evaluate`
-
-Evaluate position from player's perspective.
-
-**Request Body:**
-
-```json
-{
-  "game_state": {
-    /* GameState object */
-  },
-  "player_number": 1
-}
-```
-
-**Response:**
-
-```json
-{
-  "score": 12.5,
-  "breakdown": {
-    "total": 12.5,
-    "stack_control": 20.0,
-    "territory": 5.0,
-    "rings_in_hand": 9.0,
-    "center_control": 4.0,
-    "opponent_threats": -25.5
-  }
-}
-```
-
-### `POST /ai/choice/line_reward_option`
-
-Select a line reward option for an AI-controlled player. This corresponds to the
-`line_reward_option` PlayerChoice in the TypeScript engine.
-
-The service currently mirrors the backend heuristic by preferring **Option 2**
-(minimum collapse, no elimination) when available, while still accepting
-difficulty/ai_type metadata for future smarter policies.
-
-**Request Body (simplified):**
-
-```json
-{
-  "game_state": {
-    /* Optional GameState object; may be null for simple heuristics */
-  },
-  "player_number": 1,
-  "difficulty": 5,
-  "ai_type": "heuristic",
-  "options": ["option_1_collapse_all_and_eliminate", "option_2_min_collapse_no_elimination"]
-}
-```
-
-**Response:**
-
-```json
-{
-  "selectedOption": "option_2_min_collapse_no_elimination",
-  "aiType": "heuristic",
-  "difficulty": 5
-}
-```
-
-### `POST /ai/choice/ring_elimination`
-
-Select which stack to eliminate rings from when a line collapse or territory
-processing step produces a `ring_elimination` PlayerChoice.
-
-**Request Body (simplified):**
-
-```json
-{
-  "game_state": {
-    /* Optional GameState object; not strictly required for current heuristic */
-  },
-  "player_number": 1,
-  "difficulty": 5,
-  "ai_type": "heuristic",
-  "options": [
-    {
-      "stackPosition": { "x": 4, "y": 4 },
-      "capHeight": 3,
-      "totalHeight": 4
-    },
-    {
-      "stackPosition": { "x": 10, "y": 10 },
-      "capHeight": 2,
-      "totalHeight": 5
-    }
-  ]
-}
-```
-
-The current heuristic prefers the option with the **smallest `capHeight`**, then
-breaks ties on **smallest `totalHeight`**.
-
-**Response:**
-
-```json
-{
-  "selectedOption": {
-    "stackPosition": { "x": 10, "y": 10 },
-    "capHeight": 2,
-    "totalHeight": 5
-  },
-  "aiType": "heuristic",
-  "difficulty": 5
-}
-```
-
-### `POST /ai/choice/region_order`
-
-Select which disconnected region to process first for a `region_order`
-PlayerChoice during territory processing.
-
-**Request Body (simplified):**
-
-```json
-{
-  "game_state": {
-    /* Optional GameState object; used to look for nearby enemy stacks */
-  },
-  "player_number": 1,
-  "difficulty": 5,
-  "ai_type": "heuristic",
-  "options": [
-    {
-      "regionId": "A",
-      "size": 5,
-      "representativePosition": { "x": 10, "y": 10 }
-    },
-    {
-      "regionId": "B",
-      "size": 3,
-      "representativePosition": { "x": 2, "y": 2 }
-    }
-  ]
-}
-```
-
-The current heuristic scores each region by:
-
-- Base score = `size`
-- Bonus for nearby enemy-controlled stacks (within a small radius of
-  `representativePosition`), with closer stacks contributing more
-
-The region with the highest score is selected; ties are broken in favour of the
-larger region.
-
-**Response:**
-
-```json
-{
-  "selectedOption": {
-    "regionId": "A",
-    "size": 5,
-    "representativePosition": { "x": 10, "y": 10 }
-  },
-  "aiType": "heuristic",
-  "difficulty": 5
-}
-```
-
-### `DELETE /ai/cache`
-
-Clear cached AI instances
-
-## Cluster Setup (Self-Hosted Training)
-
-This section describes how to set up your own GPU cluster for distributed training and selfplay.
-
-### Prerequisites
-
-- Python 3.11+
-- SSH key-based authentication between nodes
-- NVIDIA GPU with CUDA support (recommended: H100, GH200, A100, or RTX 4090)
-- [Tailscale](https://tailscale.com/) (optional but recommended for mesh networking)
-
-### Quick Start
-
-1. **Configure your hosts:**
-
-   ```bash
-   # Copy example configs
-   cp config/remote_hosts.yaml.example config/remote_hosts.yaml
-   cp config/distributed_hosts.yaml.example config/distributed_hosts.yaml
-   cp config/sync_hosts.env.example config/sync_hosts.env
-
-   # Edit with your actual IPs and hostnames
-   vim config/remote_hosts.yaml
-   ```
-
-2. **Set up SSH config** (on your local machine):
-
-   ```bash
-   # Add to ~/.ssh/config
-   Host gpu-primary
-       HostName 10.0.0.1  # Your primary GPU IP
-       User ubuntu
-       IdentityFile ~/.ssh/id_cluster
-
-   Host gpu-worker-*
-       User ubuntu
-       IdentityFile ~/.ssh/id_cluster
-   ```
-
-3. **Deploy code to cluster:**
-
-   ```bash
-   python scripts/update_cluster_code.py --auto-stash
-   ```
-
-4. **Start training pipeline:**
-
-   ```bash
-   # Start unified AI loop (main orchestrator)
-   ssh gpu-primary 'cd ~/ringrift/ai-service && \
-     nohup python scripts/unified_ai_loop.py --start > logs/loop.log 2>&1 &'
-
-   # Start selfplay workers
-   ssh gpu-worker-1 'cd ~/ringrift/ai-service && \
-     nohup python scripts/run_gpu_selfplay.py --board-type square8 \
-       --num-players 2 --num-games 10000 > logs/selfplay.log 2>&1 &'
-   ```
-
-5. **Set up cron for data sync:**
-
-   ```bash
-   # Edit config/sync_hosts.env with your hosts
-   # Then install crontab
-   crontab config/crontab_training.txt
-   ```
-
-### Configuration Files
-
-| File                            | Purpose                  |
-| ------------------------------- | ------------------------ |
-| `config/remote_hosts.yaml`      | SSH host definitions     |
-| `config/distributed_hosts.yaml` | P2P orchestrator hosts   |
-| `config/sync_hosts.env`         | Data sync configuration  |
-| `config/unified_loop.yaml`      | Training loop parameters |
-
-All `*.yaml` and `*.env` config files with IPs are gitignored. Use the `.example` templates.
-
-### Supported Hardware
-
-| GPU Type      | VRAM  | Recommended Role            |
-| ------------- | ----- | --------------------------- |
-| NVIDIA H100   | 80GB  | Training, tournaments       |
-| NVIDIA GH200  | 96GB  | Selfplay, training          |
-| NVIDIA A100   | 40GB+ | Training, selfplay          |
-| RTX 4090/4080 | 24GB  | Selfplay, small training    |
-| RTX 3090/3080 | 24GB  | Selfplay                    |
-| Apple Silicon | -     | MPS training (M1/M2/M3 Max) |
-
-### Monitoring
-
-```bash
-# Check cluster status
-python scripts/cluster_status.py
-
-# View training progress
-python scripts/unified_ai_loop.py --status
-
-# Check game counts
-sqlite3 data/games/selfplay.db "SELECT board_type, COUNT(*) FROM games GROUP BY 1"
-```
-
-See [docs/TRAINING_PIPELINE.md](docs/TRAINING_PIPELINE.md) for detailed pipeline documentation.
-
-## Development Setup
-
-### Local Development (without Docker)
-
-1. **Install dependencies:**
-
-   ```bash
-   cd ai-service
-   pip install -r requirements.txt
-   ```
-
-2. **Run the service:**
-
-   ```bash
-   python -m app.main
-   # or
-   uvicorn app.main:app --reload --port 8001
-   ```
-
-3. **Service will be available at:**
-   - http://localhost:8001
-   - API docs: http://localhost:8001/docs
-   - ReDoc: http://localhost:8001/redoc
-
-### Docker Development
-
-1. **Build the image:**
-
-   ```bash
-   docker build -t ringrift-ai-service .
-   ```
-
-2. **Run the container:**
-   ```bash
-   docker run -p 8001:8001 ringrift-ai-service
-   ```
-
-### Full Stack with Docker Compose
-
-The root `docker-compose.yml` defines the main application stack, **including this AI service**:
-
-- `app` – Node.js backend (builds from the root [`Dockerfile`](Dockerfile))
-- `nginx` – reverse proxy
-- `postgres` – PostgreSQL
-- `redis` – Redis
-- `ai-service` – Python FastAPI AI microservice (exposes port `8001`)
-- `prometheus`, `grafana` – observability
-
-To run the full stack in Docker, from the project root:
+From the project root:
 
 ```bash
 docker compose up
-# or
-docker compose up -d
 ```
 
-By default:
+This starts everything: the Node.js backend, AI service, PostgreSQL, Redis, and monitoring.
 
-- The `ai-service` container is built from [`ai-service/Dockerfile`](ai-service/Dockerfile) and started alongside the `app` container.
-- The `app` container is configured with `AI_SERVICE_URL=http://ai-service:8001` (see the `AI_SERVICE_URL` entry under the `app` service in `docker-compose.yml`), so you do **not** need to run the AI service separately when using `docker compose up`.
+## API Overview
 
-You should only run the AI service on its own (via `uvicorn` or `docker run`) when you are developing or profiling it in isolation from the rest of the stack.
+### Get an AI Move
 
-## Environment Variables
+```bash
+curl -X POST http://localhost:8001/ai/move \
+  -H "Content-Type: application/json" \
+  -d '{
+    "game_state": { /* GameState object */ },
+    "player_number": 1,
+    "difficulty": 5
+  }'
+```
 
-- `PYTHON_ENV`: Environment mode (development/production)
-- `LOG_LEVEL`: Logging level (default: INFO)
-- `RINGRIFT_TRAINED_HEURISTIC_PROFILES` (optional): Path to a JSON file
-  produced by `app.training.train_heuristic_weights`. When set and
-  `load_trained_profiles_if_available` is called with `mode="override"`, the
-  in-memory heuristic profiles will be replaced by the trained values.
+### Evaluate a Position
+
+```bash
+curl -X POST http://localhost:8001/ai/evaluate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "game_state": { /* GameState object */ },
+    "player_number": 1
+  }'
+```
+
+### Health Check
+
+```bash
+curl http://localhost:8001/health
+```
+
+## The Difficulty Ladder
+
+| Level | AI Type   | Description                             | Think Time |
+| ----- | --------- | --------------------------------------- | ---------- |
+| 1     | Random    | Random valid moves                      | 150ms      |
+| 2     | Heuristic | 45+ weighted factors (CMA-ES optimized) | 200ms      |
+| 3     | Minimax   | Alpha-beta search, heuristic eval       | 1.8s       |
+| 4     | Minimax   | Alpha-beta + NNUE neural eval           | 2.8s       |
+| 5     | MCTS      | Monte Carlo tree search                 | 4.0s       |
+| 6-8   | MCTS      | MCTS + neural value/policy guidance     | 5.5-9.6s   |
+| 9-10  | Descent   | AlphaZero-style UBFM search             | 12.6-16s   |
+
+## Board Support
+
+| Board       | Cells | Description                                |
+| ----------- | ----- | ------------------------------------------ |
+| `square8`   | 64    | 8×8 grid — Quick games, great for learning |
+| `hex8`      | 61    | Radius-4 hex — Fast hex iteration          |
+| `square19`  | 361   | 19×19 grid — Go-like strategic depth       |
+| `hexagonal` | 469   | Radius-12 hex — Maximum complexity         |
 
 ## Project Structure
 
 ```
 ai-service/
 ├── app/
-│   ├── main.py                     # FastAPI application entry point
-│   ├── game_engine.py              # Python rules engine (parity with TS)
-│   ├── board_manager.py            # Board state management
-│   ├── models/                     # Pydantic models (GameState, Move, choices)
-│   ├── ai/                         # AI implementations
-│   │   ├── base.py                 # Base AI class
-│   │   ├── random_ai.py            # Random AI (D1)
-│   │   ├── heuristic_ai.py         # Heuristic AI (D2, ~86KB)
-│   │   ├── minimax_ai.py           # Minimax with alpha-beta (D3-4)
-│   │   ├── mcts_ai.py              # Monte Carlo tree search (D5-8)
-│   │   ├── descent_ai.py           # UBFM/Descent search (D9-10)
-│   │   ├── neural_net.py           # Neural network evaluator (~230KB)
-│   │   ├── nnue.py                 # NNUE evaluator
-│   │   ├── gpu_batch.py            # GPU batch processing
-│   │   └── ...                     # Caching, move ordering, evaluation
-│   ├── rules/                      # Rules engine implementation
-│   │   ├── default_engine.py       # Main rules engine
-│   │   ├── history_contract.py     # Canonical phase↔move contract
-│   │   ├── mutable_state.py        # Make/unmake pattern support
-│   │   └── ...                     # Validators, mutators, geometry
-│   ├── training/                   # Training pipeline
-│   │   ├── train.py                # Main training loop (~117KB)
-│   │   ├── generate_data.py        # Self-play data generation
-│   │   ├── curriculum.py           # Curriculum learning
-│   │   ├── data_loader.py          # Data loading and batching
-│   │   ├── model_versioning.py     # Checkpoint management
-│   │   └── ...                     # Evaluation, encoding, config
-│   ├── db/                         # Database layer
-│   │   ├── game_replay.py          # GameReplayDB (SQLite-backed)
-│   │   └── recording.py            # Game recording helpers
-│   └── distributed/                # Distributed computing
-├── scripts/                        # CLI tools (~380+ scripts)
-│   ├── unified_ai_loop.py          # **Canonical** self-improvement loop
-│   ├── p2p_orchestrator.py         # Distributed P2P cluster coordination
-│   ├── multi_config_training_loop.py # Multi-board training coordinator
-│   ├── model_promotion_manager.py  # Model promotion with Elo validation
-│   ├── run_cmaes_optimization.py   # CMA-ES heuristic optimization
-│   ├── run_self_play_soak.py       # Self-play game generation
-│   ├── run_model_elo_tournament.py # Elo calibration tournaments
-│   └── ...                         # Analysis, debugging, benchmarking
-├── config/                         # Configuration files
-│   ├── distributed_hosts.yaml      # Worker host configuration
-│   ├── unified_loop.yaml           # Unified AI loop config
-│   └── ...                         # Templates, examples
-├── data/                           # Training data
-│   ├── canonical/                  # Canonical training databases
-│   ├── eval_pools/                 # Evaluation state pools
-│   └── holdouts/                   # Holdout/tournament data
-├── docs/                           # Documentation
-├── tests/                          # Test suite
-├── models/                         # Neural network checkpoints
-├── Dockerfile
-├── requirements.txt
-└── README.md
+│   ├── main.py              # FastAPI entry point
+│   ├── game_engine.py       # Python rules engine (TS parity)
+│   ├── ai/                  # AI implementations
+│   │   ├── random_ai.py     # D1: Random moves
+│   │   ├── heuristic_ai.py  # D2: Weighted evaluation
+│   │   ├── minimax_ai.py    # D3-4: Alpha-beta search
+│   │   ├── mcts_ai.py       # D5-8: Monte Carlo search
+│   │   ├── descent_ai.py    # D9-10: UBFM/Descent
+│   │   └── neural_net.py    # CNN architectures
+│   ├── training/            # Training pipeline
+│   └── distributed/         # P2P cluster coordination
+├── scripts/                 # CLI tools (380+)
+│   ├── unified_ai_loop.py   # Main training daemon
+│   ├── p2p_orchestrator.py  # Cluster coordination
+│   └── run_gauntlet.py      # Tournament evaluation
+├── config/                  # Configuration templates
+├── models/                  # Neural network checkpoints
+└── tests/                   # Test suite (1,824 tests)
 ```
 
-## AI Implementation Details
+## Training Your Own Models
 
-### Base AI Class (`base.py`)
-
-- Abstract base class for all AI implementations
-- Provides common utilities: thinking simulation, randomness, position helpers
-- Defines interface: `select_move()`, `evaluate_position()`
-
-### Random AI (`random_ai.py`)
-
-- Selects random valid moves
-- Minimal evaluation (neutral with small variance)
-- Used for difficulty levels 1-2
-
-### Heuristic AI (`heuristic_ai.py`)
-
-- Evaluates positions using 45+ weighted heuristic factors including:
-  - Stack control and height
-  - Territory control and closure potential
-  - Rings in hand and mobility
-  - Center control and board influence
-  - Opponent threats and victory proximity
-  - Chain capture potential and line formation
-- CMA-ES optimized weight profiles per board type
-- Used for difficulty level 2 and as fallback evaluator in search AIs
-
-### Offline heuristic training and experiments
-
-The `app/training` and `scripts` modules provide an offline pipeline for
-training and evaluating heuristic weight profiles for `HeuristicAI`. High-level CLI usage, dataset schemas, and guidance for these training workflows (including how [`generate_territory_dataset.py`](ai-service/app/training/generate_territory_dataset.py:1) is used to produce combined-margin targets) are documented centrally in [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1).
-
-#### 1. Generate self-play datasets
-
-Use `generate_territory_dataset.py` to produce JSONL datasets with
-per-state targets for heuristic training. For example, from the `ai-service`
-root:
+### Single Machine
 
 ```bash
-python -m app.training.generate_territory_dataset \
-  --num-games 100 \
-  --output logs/heuristic/combined_margin.square8.mixed2p.jsonl \
+# Generate self-play games
+python scripts/run_self_play_soak.py \
   --board-type square8 \
-  --max-moves 200 \
-  --seed 123 \
-  --engine-mode mixed \
-  --num-players 2
+  --num-games 10000 \
+  --output data/selfplay/
+
+# Train a model
+python -m app.training.train \
+  --data data/selfplay/*.npz \
+  --epochs 100 \
+  --output models/my_model.pth
 ```
 
-This produces a JSONL file where each line has:
+### Distributed Training
 
-- `game_state`: a serialised `GameState` snapshot
-- `player_number`: perspective (1..N)
-- `target`: scalar combined-margin target for that player
-- `time_weight`: optional per-example weight
+For multi-GPU training across a cluster:
 
-#### 2. Train heuristic weight profiles
+1. **Configure your hosts:**
 
-Use `train_heuristic_weights.py` to fit the scalar weights used by
-`HeuristicAI` to a dataset:
+   ```bash
+   cp config/distributed_hosts.yaml.example config/distributed_hosts.yaml
+   # Edit with your actual server IPs
+   ```
+
+2. **Start the training loop:**
+
+   ```bash
+   python scripts/unified_ai_loop.py --start
+   ```
+
+3. **Monitor progress:**
+   ```bash
+   python scripts/unified_ai_loop.py --status
+   ```
+
+See [docs/UNIFIED_AI_LOOP.md](docs/UNIFIED_AI_LOOP.md) for the full pipeline documentation.
+
+## Cluster Setup
+
+The service includes a P2P orchestration system for distributed training across multiple GPU nodes.
+
+### Requirements
+
+- Python 3.11+
+- NVIDIA GPU with CUDA (H100, GH200, A100, or RTX 4090 recommended)
+- SSH key-based authentication between nodes
+- [Tailscale](https://tailscale.com/) (optional but recommended for easy mesh networking)
+
+### Quick Cluster Start
 
 ```bash
-python -m app.training.train_heuristic_weights \
-  --dataset logs/heuristic/combined_margin.square8.mixed2p.jsonl \
-  --output  logs/heuristic/heuristic_profiles.v1.trained.json \
-  --lambda  0.001
+# 1. Configure hosts
+cp config/distributed_hosts.yaml.example config/distributed_hosts.yaml
+vim config/distributed_hosts.yaml  # Add your server IPs
+
+# 2. Deploy code to all nodes
+python scripts/update_cluster_code.py --auto-stash
+
+# 3. Start the P2P orchestrator
+python scripts/p2p_orchestrator.py --node-id my-node
+
+# 4. Check cluster status
+curl http://localhost:8770/health
 ```
 
-The output JSON contains a mapping from profile ids (e.g.
-`"heuristic_v1_balanced"`) to updated weight dictionaries. These are
-compatible with the runtime registry in `app.ai.heuristic_weights`.
+### Configuration Files
 
-#### 3. Loading trained profiles at runtime
+| File                            | Purpose                               |
+| ------------------------------- | ------------------------------------- |
+| `config/distributed_hosts.yaml` | Cluster host definitions (gitignored) |
+| `config/remote_hosts.yaml`      | SSH host settings (gitignored)        |
+| `config/sync_hosts.env`         | Data sync configuration (gitignored)  |
 
-The helper `load_trained_profiles_if_available` in
-`app.ai.heuristic_weights` can be used to register trained profiles:
+Use the `.example` templates to create your own configuration.
 
-```python
-from app.ai.heuristic_weights import load_trained_profiles_if_available
+## Heuristic Training
 
-# Experiment-only: keep baselines and add trained copies under *_trained ids
-load_trained_profiles_if_available(
-    path="logs/heuristic/heuristic_profiles.v1.trained.json",
-    mode="suffix",
-    suffix="_trained",
-)
-
-# Production override: replace existing ids with trained values
-load_trained_profiles_if_available(
-    path="logs/heuristic/heuristic_profiles.v1.trained.json",
-    mode="override",
-)
-```
-
-When using the `suffix` mode with the default `"_trained"` suffix, a
-baseline profile like `"heuristic_v1_balanced"` will get a trained
-counterpart `"heuristic_v1_balanced_trained"` that can be referenced from
-`AIConfig.heuristic_profile_id`.
-
-#### 4. Automated baseline-vs-trained and A/B experiments
-
-The script `scripts/run_heuristic_experiment.py` provides a thin CLI for
-pitting heuristic profiles against each other using the canonical rules
-engine and collecting aggregated stats.
-
-**Baseline vs trained (single file):**
+The service includes tools for optimizing the heuristic evaluation weights using CMA-ES:
 
 ```bash
-cd ai-service
+# Run CMA-ES optimization
+python scripts/run_cmaes_optimization.py \
+  --board square8 \
+  --generations 20 \
+  --population-size 32 \
+  --games-per-eval 100
 
+# Compare baseline vs trained weights
 python scripts/run_heuristic_experiment.py \
   --mode baseline-vs-trained \
-  --trained-profiles-a logs/heuristic/heuristic_profiles.v1.trained.json \
-  --base-profile-id-a heuristic_v1_balanced \
-  --difficulties 5 \
+  --trained-profiles-a logs/cmaes/best_weights.json \
   --boards Square8 \
-  --games-per-match 200 \
-  --out-json logs/heuristic/experiments.baseline_vs_trained.json \
-  --out-csv  logs/heuristic/experiments.baseline_vs_trained.csv
+  --games-per-match 200
 ```
 
-This registers `heuristic_v1_balanced_trained` from the given JSON and runs
-matches between:
+## Neural Network Architecture
 
-- Profile A: `heuristic_v1_balanced` (baseline)
-- Profile B: `heuristic_v1_balanced_trained` (trained)
+The CNN models use a ResNet-style architecture:
 
-for each requested `(difficulty, board)` pairing, swapping sides every other
-game for fairness. A summary is printed to stdout and written to the optional
-JSON/CSV outputs.
+- **Input**: Board state encoded as multi-channel tensor
+- **Backbone**: 6-12 residual blocks with batch normalization
+- **Policy Head**: Move probability distribution (~7K-92K outputs depending on board)
+- **Value Head**: Win/Draw/Loss prediction or scalar evaluation
 
-**A/B between two different trained files:**
+Variants:
 
-```bash
-cd ai-service
-
-python scripts/run_heuristic_experiment.py \
-  --mode ab-trained \
-  --trained-profiles-a logs/heuristic/heuristic_profiles.v1.expA.json \
-  --trained-profiles-b logs/heuristic/heuristic_profiles.v1.expB.json \
-  --base-profile-id-a heuristic_v1_balanced \
-  --base-profile-id-b heuristic_v1_balanced \
-  --difficulties 3,5,7 \
-  --boards Square8,Square19 \
-  --games-per-match 200 \
-  --out-json logs/heuristic/experiments.expA_vs_expB.json \
-  --out-csv  logs/heuristic/experiments.expA_vs_expB.csv
-```
-
-In this mode, the script registers profiles like
-`"heuristic_v1_balanced_A"` and `"heuristic_v1_balanced_B"` from the two
-trained files and reports relative win-rates across the requested grid of
-(difficulty, board) conditions.
+- `RingRiftCNN_v4` — Standard CUDA architecture
+- `RingRiftCNN_MPS` — Apple Silicon compatible
+- `HexNeuralNet_v3` — Optimized for hexagonal geometry
 
 ## Testing
 
-### Manual Testing
-
 ```bash
-# Health check
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=app --cov-report=html
+
+# Quick health check
 curl http://localhost:8001/health
-
-# Get service info
-curl http://localhost:8001/
-
-# Test AI move (requires valid game state JSON)
-curl -X POST http://localhost:8001/ai/move \
-  -H "Content-Type: application/json" \
-  -d @test_game_state.json
 ```
 
-### Interactive API Documentation
-
-Visit http://localhost:8001/docs for Swagger UI with interactive testing
-
-## Distributed Training
-
-The training infrastructure supports distributed training using PyTorch's DistributedDataParallel (DDP) for multi-GPU training on a single machine or across multiple nodes.
-
-### Quick Start
-
-```bash
-# Single-node multi-GPU training with torchrun
-cd ai-service
-./scripts/run_distributed_training.sh 4 \
-  --data path/to/data.npz \
-  --epochs 100 \
-  --scale-lr
-
-# Or use torchrun directly
-torchrun --nproc_per_node=4 \
-  app/training/train.py \
-  --distributed \
-  --data path/to/data.npz \
-  --epochs 100
-```
-
-### Key Features
-
-1. **Automatic Data Sharding**: StreamingDataLoader automatically shards data
-   across workers so each GPU processes unique samples:
-
-   ```python
-   from app.training.data_loader import StreamingDataLoader
-   from app.training.distributed import get_rank, get_world_size
-
-   loader = StreamingDataLoader(
-       data_paths=["data1.npz", "data2.npz"],
-       batch_size=64,
-       rank=get_rank(),
-       world_size=get_world_size(),
-   )
-   # Each worker gets ~total_samples/world_size unique samples
-   ```
-
-2. **Versioned Checkpoints**: Uses ModelVersionManager for checkpoint
-   management with architecture validation and checksum verification:
-
-   ```python
-   from app.training.model_versioning import ModelVersionManager
-
-   manager = ModelVersionManager()
-
-   # Save with full metadata
-   metadata = manager.create_metadata(model, training_info={...})
-   manager.save_checkpoint(model, metadata, "checkpoint.pth")
-
-   # Load with validation
-   state, metadata = manager.load_checkpoint("checkpoint.pth")
-   ```
-
-3. **High-Level DistributedTrainer**: Coordinates all components:
-
-   ```python
-   from app.training.distributed import DistributedTrainer
-   from app.training.config import TrainConfig
-
-   config = TrainConfig(epochs_per_iter=100, batch_size=64)
-
-   trainer = DistributedTrainer(
-       config=config,
-       data_paths=["data1.npz", "data2.npz"],
-       model=my_model,
-   )
-   trainer.setup()      # Initialize distributed, wrap model, create loaders
-   trainer.train()      # Run training loop with metrics
-   trainer.cleanup()    # Clean up resources
-   ```
-
-### Command Line Arguments
-
-The `train.py` script supports the following distributed training options:
-
-| Argument                   | Description                                |
-| -------------------------- | ------------------------------------------ |
-| `--distributed`            | Enable distributed training with DDP       |
-| `--local-rank`             | Local rank (set automatically by torchrun) |
-| `--scale-lr`               | Scale learning rate based on world size    |
-| `--lr-scale-mode`          | LR scaling mode: `linear` or `sqrt`        |
-| `--find-unused-parameters` | Enable for models with unused params       |
-
-### Checkpoint Synchronization
-
-- **Only rank 0 saves checkpoints** to avoid file conflicts
-- **All ranks load checkpoints** on resume for consistency
-- **Barrier synchronization** before and after checkpoint operations
-
-```python
-# In DistributedTrainer.checkpoint():
-synchronize()  # All ranks wait here
-if is_main_process():
-    # Only rank 0 saves
-    manager.save_checkpoint(model, metadata, path)
-synchronize()  # All ranks wait until save is complete
-```
-
-### Streaming Data Sharding
-
-The StreamingDataLoader partitions samples across workers:
-
-```
-Total samples: 1000
-World size: 4
-
-Rank 0 gets: samples 0, 4, 8, 12, ... (250 samples)
-Rank 1 gets: samples 1, 5, 9, 13, ... (250 samples)
-Rank 2 gets: samples 2, 6, 10, 14, ... (250 samples)
-Rank 3 gets: samples 3, 7, 11, 15, ... (250 samples)
-```
-
-Each epoch shuffles with a deterministic seed so all ranks see consistent
-ordering when using the same base seed.
-
-### Multi-Node Training
-
-For multi-node training, set the appropriate environment variables:
-
-```bash
-# On node 0 (master)
-export MASTER_ADDR=192.168.1.100
-export MASTER_PORT=29500
-torchrun --nnodes=2 --node_rank=0 --nproc_per_node=4 \
-  app/training/train.py --distributed ...
-
-# On node 1
-export MASTER_ADDR=192.168.1.100
-export MASTER_PORT=29500
-torchrun --nnodes=2 --node_rank=1 --nproc_per_node=4 \
-  app/training/train.py --distributed ...
-```
-
-### Best Practices
-
-1. **Scale learning rate** with `--scale-lr` when using multiple GPUs
-2. **Use linear scaling** for small world sizes (2-4 GPUs)
-3. **Use sqrt scaling** for larger setups (8+ GPUs)
-4. **Monitor per-rank metrics** using DistributedMetrics class
-5. **Set consistent seeds** across ranks for reproducibility
-
-## Future Enhancements
-
-- [ ] Productionize Minimax AI with alpha-beta pruning and integrate it into the main `/ai/move` path (building on [`MinimaxAI`](ai-service/app/ai/minimax_ai.py:1) and its tests).
-- [ ] Implement full MCTS (Monte Carlo Tree Search) AI and wire it through [`MCTSAI`](ai-service/app/ai/mcts_ai.py:1) in a way that is compatible with the existing REST contract.
-- [ ] Train and deploy a neural network–based evaluation for [`NeuralNetAI`](ai-service/app/ai/neural_net.py:1), replacing the current heuristic-style placeholder.
-- [ ] Opening book support
-- [ ] Endgame tablebases
-- [ ] Parallel move generation
-- [ ] GPU acceleration for ML models
-- [ ] Performance metrics and monitoring
-
-## Integration with TypeScript Backend
-
-The TypeScript backend communicates with this service via the `AIServiceClient`:
-
-```typescript
-import { getAIServiceClient } from './services/AIServiceClient';
-
-const client = getAIServiceClient();
-const response = await client.getAIMove(gameState, playerNumber, difficulty);
-```
-
-The service URL is configured via environment variable:
-
-```
-AI_SERVICE_URL=http://ai-service:8001  # Docker
-AI_SERVICE_URL=http://localhost:8001   # Local
-```
-
-## Canonical Difficulty Ladder
-
-The AI service implements a 10-level difficulty ladder that maps numeric difficulty values to specific AI algorithms and parameters. This mapping is defined in [`_CANONICAL_DIFFICULTY_PROFILES`](app/main.py:1577) and mirrored in the TypeScript backend's [`AI_DIFFICULTY_PRESETS`](../src/server/game/ai/AIEngine.ts:1).
-
-| Difficulty | AI Type   | Randomness | Think Time | Neural Net | Profile ID        | Description                        |
-| ---------- | --------- | ---------- | ---------- | ---------- | ----------------- | ---------------------------------- |
-| 1          | RANDOM    | 50%        | 150ms      | No         | v1-random-1       | Random valid moves                 |
-| 2          | HEURISTIC | 30%        | 200ms      | No         | v1-heuristic-2    | Basic heuristic with noise         |
-| 3          | MINIMAX   | 15%        | 1.8s       | No         | v1-minimax-3      | Alpha-beta search (heuristic only) |
-| 4          | MINIMAX   | 8%         | 2.8s       | Yes (NNUE) | v1-minimax-4-nnue | Alpha-beta with NNUE evaluation    |
-| 5          | MCTS      | 5%         | 4.0s       | No         | v1-mcts-5         | Monte Carlo tree search            |
-| 6          | MCTS      | 2%         | 5.5s       | Yes        | v1-mcts-6-neural  | MCTS with neural value/policy      |
-| 7          | MCTS      | 0%         | 7.5s       | Yes        | v1-mcts-7-neural  | Expert neural MCTS                 |
-| 8          | MCTS      | 0%         | 9.6s       | Yes        | v1-mcts-8-neural  | Strong expert MCTS                 |
-| 9          | DESCENT   | 0%         | 12.6s      | Yes        | v1-descent-9      | AlphaZero-style UBFM search        |
-| 10         | DESCENT   | 0%         | 16.0s      | Yes        | v1-descent-10     | Grandmaster Descent                |
-
-## RNG Seeding for Determinism
-
-The AI service supports deterministic behavior through RNG seeding, enabling reproducible AI moves for testing, replay, and parity verification.
-
-### Seed Flow Architecture
-
-```
-gameState.rngSeed
-    └─> AIServiceClient.getAIMove()
-            └─> POST /ai/move { seed: <value> }
-                    └─> AIConfig.rng_seed
-                            └─> BaseAI.rng (per-instance Random)
-```
-
-### API Usage
-
-Pass the `seed` field in the `/ai/move` request body:
-
-```json
-{
-  "game_state": {
-    /* GameState object */
-  },
-  "player_number": 1,
-  "difficulty": 5,
-  "seed": 42
-}
-```
-
-### Python Implementation
-
-Each AI instance in [`base.py`](app/ai/base.py:1) creates a per-instance `random.Random` seeded as follows:
-
-```python
-if config.rng_seed is not None:
-    seed = config.rng_seed
-else:
-    # Deterministic fallback from difficulty + player
-    seed = (difficulty * 1_000_003) ^ (player_number * 97_911)
-self.rng = random.Random(seed)
-```
-
-### TypeScript Alignment
-
-The TypeScript side uses the [`SeededRNG`](../src/shared/utils/rng.ts:1) class (xorshift128+) for client-side sandbox AI, and passes seeds through `AIServiceClient` for server-side requests. Key files:
-
-- [`localAIMoveSelection.ts`](../src/shared/engine/localAIMoveSelection.ts:1) - Accepts injectable `LocalAIRng` for deterministic selection
-- [`ClientSandboxEngine.ts`](../src/client/sandbox/ClientSandboxEngine.ts:1) - Creates `SeededRNG` from `generateGameSeed()`
-- [`AIServiceClient.ts`](../src/server/services/AIServiceClient.ts:1) - Passes `gameState.rngSeed` as `seed` in API requests
-
-### Testing Determinism
-
-**Python tests**:
-
-- [`test_engine_determinism.py`](tests/test_engine_determinism.py:1) - applies a fixed scripted move sequence from a
-  canonical initial `GameState` and asserts identical final snapshots and `hash_game_state` values on repeated runs.
-- [`test_no_random_in_rules_core.py`](tests/test_no_random_in_rules_core.py:1) - guards against unseeded randomness in
-  the Python rules core, mirroring the TS `NoRandomInCoreRules.test.ts` invariant.
-
-**TypeScript tests**:
-
-- [`Sandbox_vs_Backend.aiRngParity.test.ts`](../tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts:1) - RNG plumbing verification and shared seeded-RNG injection across backend and sandbox.
-- [`Sandbox_vs_Backend.aiRngFullParity.test.ts`](../tests/unit/Sandbox_vs_Backend.aiRngFullParity.test.ts:1) - Deeper RNG parity coverage (diagnostic/opt-in).
-- [`GameSession.aiDeterminism.test.ts`](../tests/integration/GameSession.aiDeterminism.test.ts:1) - End-to-end AI determinism for server-side game sessions.
-- [`EngineDeterminism.shared.test.ts`](../tests/unit/EngineDeterminism.shared.test.ts:1) - Shared-engine determinism and turn replay invariants for the canonical TS rules engine.
-- [`NoRandomInCoreRules.test.ts`](../tests/unit/NoRandomInCoreRules.test.ts:1) - Guards against unseeded randomness in core shared-engine helpers/aggregates/orchestrator.
-- _Historical:_ an earlier `RNGDeterminism.test.ts` suite exercised the raw `SeededRNG` implementation; its coverage is now subsumed by the integrated determinism and "no random in core" suites above.
-
-## Performance Considerations
-
-- AI instances are cached by `{ai_type}-{difficulty}-{player_number}`
-- Thinking time simulated for natural feel
-- Timeout: 30 seconds for complex AI calculations
-- Memory limit: 512MB (configurable in docker-compose.yml)
+## Environment Variables
+
+| Variable         | Description                                | Default               |
+| ---------------- | ------------------------------------------ | --------------------- |
+| `PYTHON_ENV`     | Environment mode                           | development           |
+| `LOG_LEVEL`      | Logging verbosity                          | INFO                  |
+| `AI_SERVICE_URL` | URL for the main app to reach this service | http://localhost:8001 |
+
+## Resource Limits
+
+The service enforces 80% max utilization to prevent system overload:
+
+| Resource | Warning | Critical |
+| -------- | ------- | -------- |
+| CPU      | 70%     | 80%      |
+| GPU      | 70%     | 80%      |
+| Memory   | 70%     | 80%      |
+| Disk     | 65%     | 70%      |
+
+## Documentation
+
+| Document                                                 | Description               |
+| -------------------------------------------------------- | ------------------------- |
+| [Unified AI Loop](docs/UNIFIED_AI_LOOP.md)               | Main training pipeline    |
+| [Orchestrator Selection](docs/ORCHESTRATOR_SELECTION.md) | Which script to use       |
+| [AI Training Plan](docs/AI_TRAINING_PLAN.md)             | Training methodology      |
+| [Game Record Spec](docs/GAME_RECORD_SPEC.md)             | Data format specification |
 
 ## Troubleshooting
 
 ### Service won't start
 
-- Check Python version (requires 3.11+)
-- Verify all dependencies installed: `pip install -r requirements.txt`
-- Check port 8001 is not in use
+- Check Python version: `python --version` (requires 3.11+)
+- Verify dependencies: `pip install -r requirements.txt`
+- Check if port 8001 is in use: `lsof -i :8001`
 
 ### Connection refused from main app
 
-- Ensure AI service is running
+- Ensure the service is running
 - Check `AI_SERVICE_URL` environment variable
 - Verify Docker network if using containers
 
 ### Slow AI responses
 
-- Check CPU/memory resources
-- Review difficulty setting (higher = slower)
-- Consider adjusting timeout in AIServiceClient
+- Higher difficulties take longer (D10 = 16 seconds)
+- Check CPU/GPU resources
+- Consider running on GPU for neural network evaluation
 
-## Documentation
+## Contributing
 
-### Core Documentation
+1. Fork the repository
+2. Create a feature branch
+3. Run tests: `pytest`
+4. Submit a pull request
 
-| Document                                            | Description                          |
-| --------------------------------------------------- | ------------------------------------ |
-| [AI Improvement Plan](AI_IMPROVEMENT_PLAN.md)       | Technical improvement roadmap        |
-| [Training Data Registry](TRAINING_DATA_REGISTRY.md) | Canonical vs legacy data tracking    |
-| [AGENTS.md](AGENTS.md)                              | Development guidelines for this repo |
-
-### Training & Pipeline
-
-| Document                                                 | Description                          |
-| -------------------------------------------------------- | ------------------------------------ |
-| [Orchestrator Selection](docs/ORCHESTRATOR_SELECTION.md) | **Which script to use** (start here) |
-| [Unified AI Loop](docs/UNIFIED_AI_LOOP.md)               | Canonical self-improvement daemon    |
-| [Pipeline Orchestrator](docs/PIPELINE_ORCHESTRATOR.md)   | CI/CD pipeline orchestration         |
-| [AI Training Plan](docs/AI_TRAINING_PLAN.md)             | CMA-ES and neural network training   |
-| [Distributed Selfplay](docs/DISTRIBUTED_SELFPLAY.md)     | Remote worker setup                  |
-
-### Resource Management
-
-The codebase enforces **80% max utilization** across CPU, GPU, and memory to prevent system overload and maintain stability. Disk has a tighter **70% limit** because cleanup operations take time.
-
-| Resource | Warning | Critical | Rationale                         |
-| -------- | ------- | -------- | --------------------------------- |
-| CPU      | 70%     | 80%      | Leave headroom for spikes         |
-| GPU      | 70%     | 80%      | CUDA memory safety                |
-| Memory   | 70%     | 80%      | Prevent OOM kills                 |
-| Disk     | 65%     | 70%      | Allow time for cleanup operations |
-
-**Key modules:**
-
-- [`app/utils/resource_guard.py`](app/utils/resource_guard.py) - Sync and async utilities with psutil/PyTorch, decorators and backoff
-- [`app/coordination/resource_targets.py`](app/coordination/resource_targets.py) - PID-controlled target utilization
-- [`app/coordination/safeguards.py`](app/coordination/safeguards.py) - Emergency halt and spawn limits
-
-**Usage:**
-
-```python
-from app.utils.resource_guard import check_disk_space, check_memory, can_proceed
-
-# Quick check before starting work
-if not can_proceed():
-    logger.warning("Resources over limit, backing off")
-    return
-
-# Check specific resources
-if not check_disk_space(required_gb=5.0):
-    logger.error("Insufficient disk space")
-```
-
-### Infrastructure & Deployment
-
-| Document                                                           | Description                     |
-| ------------------------------------------------------------------ | ------------------------------- |
-| [Deploy README](deploy/README.md)                                  | Deployment scripts and services |
-| [Cloud Infrastructure](docs/CLOUD_TRAINING_INFRASTRUCTURE_PLAN.md) | AWS/cloud deployment            |
-| [Cluster Monitoring](scripts/monitoring/README.md)                 | CloudWatch and alerting         |
-| [GPU Pipeline Roadmap](docs/GPU_PIPELINE_ROADMAP.md)               | GPU acceleration strategy       |
-
-### Specifications
-
-| Document                                                  | Description                  |
-| --------------------------------------------------------- | ---------------------------- |
-| [Game Record Spec](docs/GAME_RECORD_SPEC.md)              | Canonical game record format |
-| [Game Replay Database](docs/GAME_REPLAY_DATABASE_SPEC.md) | SQLite schema for replays    |
-| [Game Notation Spec](docs/GAME_NOTATION_SPEC.md)          | Algebraic notation system    |
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## License
 
-Part of the RingRift project. See main project LICENSE.
+Part of the RingRift project. See the main project LICENSE for details.
