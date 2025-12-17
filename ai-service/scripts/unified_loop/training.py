@@ -162,6 +162,14 @@ try:
         OpponentStats,
         CMAESAutoTuner,
         PlateauConfig,
+        # Phase 4 imports
+        TrainingStabilityMonitor,
+        StabilityMetrics,
+        AdaptivePrecisionManager,
+        ProgressiveLayerUnfreezing,
+        SWAWithRestarts,
+        SmartCheckpointManager,
+        create_phase4_training_suite,
     )
     HAS_ADVANCED_TRAINING = True
 except ImportError:
@@ -173,6 +181,14 @@ except ImportError:
     OpponentStats = None
     CMAESAutoTuner = None
     PlateauConfig = None
+    # Phase 4 fallbacks
+    TrainingStabilityMonitor = None
+    StabilityMetrics = None
+    AdaptivePrecisionManager = None
+    ProgressiveLayerUnfreezing = None
+    SWAWithRestarts = None
+    SmartCheckpointManager = None
+    create_phase4_training_suite = None
 
 
 class TrainingScheduler:

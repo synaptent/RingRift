@@ -197,6 +197,31 @@ class TrainingConfig:
     lr_finder_min_lr: float = 1e-7  # Minimum LR to test
     lr_finder_max_lr: float = 10.0  # Maximum LR to test
     lr_finder_smooth_factor: float = 0.05  # Loss smoothing factor
+    # =========================================================================
+    # Phase 4: Training Stability & Acceleration (2024-12)
+    # =========================================================================
+    # Training Stability Monitor - Auto-detect and recover from instabilities
+    use_stability_monitor: bool = True  # Monitor gradient/loss health
+    stability_auto_recover: bool = True  # Auto-reduce LR on instability
+    gradient_clip_threshold: float = 10.0  # Gradient norm threshold
+    loss_spike_threshold: float = 3.0  # Std devs for spike detection
+    # Adaptive Precision - Dynamic FP16/BF16/FP32 switching
+    use_adaptive_precision: bool = False  # Auto-switch precision
+    initial_precision: str = "bf16"  # Starting precision
+    precision_auto_downgrade: bool = True  # Downgrade on overflow
+    # Progressive Layer Unfreezing - For fine-tuning
+    use_progressive_unfreezing: bool = False  # Gradually unfreeze layers
+    unfreezing_num_stages: int = 4  # Number of unfreezing stages
+    # SWA with Restarts - Better generalization
+    use_swa_restarts: bool = True  # SWA with warm restarts
+    swa_start_fraction: float = 0.75  # Start SWA at 75% progress
+    swa_restart_period: int = 10  # Epochs between restarts
+    swa_num_restarts: int = 3  # Number of restarts
+    # Smart Checkpointing - Adaptive checkpoint frequency
+    use_smart_checkpoints: bool = True  # Adaptive checkpointing
+    checkpoint_top_k: int = 3  # Keep top-k checkpoints
+    checkpoint_min_interval: int = 1  # Min epochs between checkpoints
+    checkpoint_improvement_threshold: float = 0.01  # Save on X% improvement
 
 
 @dataclass

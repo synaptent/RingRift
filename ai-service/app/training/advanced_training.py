@@ -1169,3 +1169,715 @@ def create_advanced_training_suite(
         suite['auto_tuner'] = auto_tuner
 
     return suite
+
+
+# =============================================================================
+# Phase 4: Training Stability & Acceleration (2024-12)
+# =============================================================================
+
+
+@dataclass
+class StabilityMetrics:
+    """Metrics for training stability monitoring."""
+    gradient_norm: float
+    loss_value: float
+    loss_variance: float
+    param_update_ratio: float
+    is_stable: bool
+    warnings: List[str] = field(default_factory=list)
+
+
+class TrainingStabilityMonitor:
+    """
+    Monitor training stability and detect issues early.
+
+    Detects:
+    - Gradient explosions/vanishing
+    - Loss spikes or NaN
+    - Parameter update instabilities
+    - Learning rate issues
+    """
+
+    def __init__(
+        self,
+        gradient_clip_threshold: float = 10.0,
+        loss_spike_threshold: float = 3.0,
+        loss_history_size: int = 100,
+        param_update_threshold: float = 0.1,
+        auto_recover: bool = True,
+    ):
+        self.gradient_clip_threshold = gradient_clip_threshold
+        self.loss_spike_threshold = loss_spike_threshold
+        self.loss_history_size = loss_history_size
+        self.param_update_threshold = param_update_threshold
+        self.auto_recover = auto_recover
+
+        self._loss_history: deque = deque(maxlen=loss_history_size)
+        self._gradient_history: deque = deque(maxlen=loss_history_size)
+        self._last_params: Optional[Dict[str, torch.Tensor]] = None
+        self._recovery_triggered = False
+        self._stability_score = 1.0
+
+    def check_gradients(self, model: nn.Module) -> Tuple[float, List[str]]:
+        """Check gradient health across all parameters."""
+        warnings = []
+        total_norm = 0.0
+        num_params = 0
+
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                param_norm = param.grad.data.norm(2).item()
+                total_norm += param_norm ** 2
+                num_params += 1
+
+                if math.isnan(param_norm) or math.isinf(param_norm):
+                    warnings.append(f"NaN/Inf gradient in {name}")
+                elif param_norm > self.gradient_clip_threshold * 10:
+                    warnings.append(f"Extreme gradient in {name}: {param_norm:.4f}")
+
+        total_norm = math.sqrt(total_norm) if num_params > 0 else 0.0
+        self._gradient_history.append(total_norm)
+
+        if total_norm > self.gradient_clip_threshold:
+            warnings.append(f"Gradient norm {total_norm:.4f} exceeds threshold")
+        elif total_norm < 1e-7:
+            warnings.append("Vanishing gradients detected")
+
+        return total_norm, warnings
+
+    def check_loss(self, loss: float) -> Tuple[bool, List[str]]:
+        """Check if loss is healthy."""
+        warnings = []
+        is_healthy = True
+
+        if math.isnan(loss) or math.isinf(loss):
+            warnings.append(f"Invalid loss value: {loss}")
+            is_healthy = False
+        else:
+            self._loss_history.append(loss)
+
+            if len(self._loss_history) >= 10:
+                recent_mean = np.mean(list(self._loss_history)[-10:])
+                overall_mean = np.mean(list(self._loss_history))
+                overall_std = np.std(list(self._loss_history))
+
+                if overall_std > 0 and abs(loss - overall_mean) > self.loss_spike_threshold * overall_std:
+                    warnings.append(f"Loss spike detected: {loss:.4f} vs mean {overall_mean:.4f}")
+
+        return is_healthy, warnings
+
+    def check_param_updates(self, model: nn.Module) -> Tuple[float, List[str]]:
+        """Check parameter update ratios."""
+        warnings = []
+        update_ratios = []
+
+        current_params = {name: param.data.clone() for name, param in model.named_parameters()}
+
+        if self._last_params is not None:
+            for name, current in current_params.items():
+                if name in self._last_params:
+                    last = self._last_params[name]
+                    diff = (current - last).norm().item()
+                    param_norm = current.norm().item()
+
+                    if param_norm > 0:
+                        ratio = diff / param_norm
+                        update_ratios.append(ratio)
+
+                        if ratio > self.param_update_threshold:
+                            warnings.append(f"Large param update in {name}: {ratio:.4f}")
+
+        self._last_params = current_params
+        avg_ratio = np.mean(update_ratios) if update_ratios else 0.0
+        return avg_ratio, warnings
+
+    def step(
+        self,
+        model: nn.Module,
+        loss: float,
+        optimizer: Optional[optim.Optimizer] = None,
+    ) -> StabilityMetrics:
+        """Run all stability checks and return metrics."""
+        all_warnings = []
+
+        grad_norm, grad_warnings = self.check_gradients(model)
+        all_warnings.extend(grad_warnings)
+
+        loss_healthy, loss_warnings = self.check_loss(loss)
+        all_warnings.extend(loss_warnings)
+
+        update_ratio, update_warnings = self.check_param_updates(model)
+        all_warnings.extend(update_warnings)
+
+        loss_var = np.var(list(self._loss_history)) if len(self._loss_history) > 1 else 0.0
+
+        is_stable = loss_healthy and len(all_warnings) == 0
+
+        # Update stability score
+        if is_stable:
+            self._stability_score = min(1.0, self._stability_score + 0.01)
+        else:
+            self._stability_score = max(0.0, self._stability_score - 0.1)
+
+        # Auto-recovery if enabled
+        if self.auto_recover and not is_stable and optimizer is not None:
+            if len(all_warnings) > 3:
+                self._trigger_recovery(optimizer)
+
+        return StabilityMetrics(
+            gradient_norm=grad_norm,
+            loss_value=loss,
+            loss_variance=loss_var,
+            param_update_ratio=update_ratio,
+            is_stable=is_stable,
+            warnings=all_warnings,
+        )
+
+    def _trigger_recovery(self, optimizer: optim.Optimizer) -> None:
+        """Attempt to recover from instability."""
+        if self._recovery_triggered:
+            return
+
+        logger.warning("Training instability detected, triggering recovery...")
+
+        # Reduce learning rate
+        for param_group in optimizer.param_groups:
+            param_group['lr'] *= 0.5
+            logger.info(f"Reduced LR to {param_group['lr']:.2e}")
+
+        self._recovery_triggered = True
+
+    @property
+    def stability_score(self) -> float:
+        """Get current stability score (0-1)."""
+        return self._stability_score
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Get stability summary."""
+        return {
+            'stability_score': self._stability_score,
+            'avg_gradient_norm': np.mean(list(self._gradient_history)) if self._gradient_history else 0.0,
+            'avg_loss': np.mean(list(self._loss_history)) if self._loss_history else 0.0,
+            'loss_variance': np.var(list(self._loss_history)) if len(self._loss_history) > 1 else 0.0,
+            'recovery_triggered': self._recovery_triggered,
+        }
+
+
+class AdaptivePrecisionManager:
+    """
+    Dynamically adjust mixed precision based on training stability.
+
+    Switches between FP32, FP16, and BF16 based on:
+    - Loss stability
+    - Gradient overflow frequency
+    - Training progress
+    """
+
+    def __init__(
+        self,
+        initial_precision: str = "fp16",
+        stability_window: int = 100,
+        overflow_threshold: float = 0.05,
+        auto_downgrade: bool = True,
+        auto_upgrade: bool = True,
+    ):
+        self.current_precision = initial_precision
+        self.stability_window = stability_window
+        self.overflow_threshold = overflow_threshold
+        self.auto_downgrade = auto_downgrade
+        self.auto_upgrade = auto_upgrade
+
+        self._overflow_count = 0
+        self._step_count = 0
+        self._precision_history: List[str] = []
+        self._scaler: Optional[torch.cuda.amp.GradScaler] = None
+
+        self._precision_map = {
+            "fp32": torch.float32,
+            "fp16": torch.float16,
+            "bf16": torch.bfloat16,
+        }
+
+    def setup(self, device: torch.device) -> Optional[torch.cuda.amp.GradScaler]:
+        """Setup precision management."""
+        if device.type != "cuda":
+            self.current_precision = "fp32"
+            return None
+
+        if self.current_precision == "fp16":
+            self._scaler = torch.cuda.amp.GradScaler()
+        else:
+            self._scaler = None
+
+        return self._scaler
+
+    def get_autocast_dtype(self) -> torch.dtype:
+        """Get current autocast dtype."""
+        return self._precision_map.get(self.current_precision, torch.float32)
+
+    def record_overflow(self, had_overflow: bool) -> None:
+        """Record gradient overflow event."""
+        self._step_count += 1
+        if had_overflow:
+            self._overflow_count += 1
+
+        # Check if we should change precision
+        if self._step_count >= self.stability_window:
+            overflow_rate = self._overflow_count / self._step_count
+
+            if overflow_rate > self.overflow_threshold and self.auto_downgrade:
+                self._downgrade_precision()
+            elif overflow_rate < self.overflow_threshold * 0.1 and self.auto_upgrade:
+                self._upgrade_precision()
+
+            # Reset counters
+            self._step_count = 0
+            self._overflow_count = 0
+
+    def _downgrade_precision(self) -> None:
+        """Downgrade to more stable precision."""
+        if self.current_precision == "fp16":
+            self.current_precision = "bf16"
+            self._scaler = None
+            logger.info("Precision downgraded: FP16 -> BF16")
+        elif self.current_precision == "bf16":
+            self.current_precision = "fp32"
+            logger.info("Precision downgraded: BF16 -> FP32")
+
+        self._precision_history.append(self.current_precision)
+
+    def _upgrade_precision(self) -> None:
+        """Upgrade to faster precision."""
+        if self.current_precision == "fp32":
+            self.current_precision = "bf16"
+            logger.info("Precision upgraded: FP32 -> BF16")
+        elif self.current_precision == "bf16":
+            self.current_precision = "fp16"
+            self._scaler = torch.cuda.amp.GradScaler()
+            logger.info("Precision upgraded: BF16 -> FP16")
+
+        self._precision_history.append(self.current_precision)
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get precision management stats."""
+        return {
+            'current_precision': self.current_precision,
+            'overflow_rate': self._overflow_count / max(1, self._step_count),
+            'precision_history': self._precision_history[-10:],
+        }
+
+
+class ProgressiveLayerUnfreezing:
+    """
+    Gradually unfreeze model layers during training.
+
+    Implements discriminative fine-tuning where:
+    - Early layers are frozen initially
+    - Layers are progressively unfrozen as training progresses
+    - Different layers can have different learning rates
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        unfreeze_schedule: Optional[Dict[int, List[str]]] = None,
+        lr_multipliers: Optional[Dict[str, float]] = None,
+        total_epochs: int = 50,
+    ):
+        self.model = model
+        self.unfreeze_schedule = unfreeze_schedule or {}
+        self.lr_multipliers = lr_multipliers or {}
+        self.total_epochs = total_epochs
+
+        self._frozen_layers: set = set()
+        self._unfrozen_at_epoch: Dict[str, int] = {}
+
+    def freeze_all_except(self, layer_names: List[str]) -> None:
+        """Freeze all layers except specified ones."""
+        for name, param in self.model.named_parameters():
+            should_freeze = True
+            for unfrozen in layer_names:
+                if unfrozen in name:
+                    should_freeze = False
+                    break
+
+            param.requires_grad = not should_freeze
+            if should_freeze:
+                self._frozen_layers.add(name)
+
+    def freeze_layers(self, layer_names: List[str]) -> None:
+        """Freeze specific layers."""
+        for name, param in self.model.named_parameters():
+            for frozen_name in layer_names:
+                if frozen_name in name:
+                    param.requires_grad = False
+                    self._frozen_layers.add(name)
+                    break
+
+    def unfreeze_layers(self, layer_names: List[str], epoch: int) -> List[str]:
+        """Unfreeze specific layers."""
+        unfrozen = []
+        for name, param in self.model.named_parameters():
+            for unfrozen_name in layer_names:
+                if unfrozen_name in name and name in self._frozen_layers:
+                    param.requires_grad = True
+                    self._frozen_layers.discard(name)
+                    self._unfrozen_at_epoch[name] = epoch
+                    unfrozen.append(name)
+                    break
+        return unfrozen
+
+    def step(self, epoch: int, optimizer: optim.Optimizer) -> List[str]:
+        """Update layer freezing based on epoch."""
+        unfrozen = []
+
+        # Check schedule
+        if epoch in self.unfreeze_schedule:
+            layers_to_unfreeze = self.unfreeze_schedule[epoch]
+            unfrozen = self.unfreeze_layers(layers_to_unfreeze, epoch)
+
+            if unfrozen:
+                logger.info(f"Epoch {epoch}: Unfroze {len(unfrozen)} layers")
+
+                # Update optimizer with new parameters
+                self._update_optimizer_params(optimizer)
+
+        return unfrozen
+
+    def _update_optimizer_params(self, optimizer: optim.Optimizer) -> None:
+        """Update optimizer with trainable parameters and LR multipliers."""
+        trainable_params = []
+
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                lr_mult = 1.0
+                for pattern, mult in self.lr_multipliers.items():
+                    if pattern in name:
+                        lr_mult = mult
+                        break
+
+                trainable_params.append({
+                    'params': [param],
+                    'lr': optimizer.defaults['lr'] * lr_mult,
+                    'name': name,
+                })
+
+        # Replace optimizer param groups
+        optimizer.param_groups = trainable_params
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get layer freezing status."""
+        return {
+            'frozen_count': len(self._frozen_layers),
+            'trainable_count': sum(1 for p in self.model.parameters() if p.requires_grad),
+            'unfrozen_at_epoch': self._unfrozen_at_epoch.copy(),
+        }
+
+    @staticmethod
+    def create_default_schedule(
+        model: nn.Module,
+        total_epochs: int,
+        num_stages: int = 4,
+    ) -> Dict[int, List[str]]:
+        """Create a default unfreezing schedule."""
+        schedule = {}
+        layers = [name for name, _ in model.named_modules()
+                  if any(kw in name.lower() for kw in ['layer', 'block', 'encoder', 'decoder'])]
+
+        if not layers:
+            return schedule
+
+        stage_size = len(layers) // num_stages
+        epoch_step = total_epochs // num_stages
+
+        for i in range(num_stages):
+            epoch = i * epoch_step
+            start_idx = len(layers) - (i + 1) * stage_size
+            end_idx = len(layers) - i * stage_size if i > 0 else len(layers)
+            schedule[epoch] = layers[max(0, start_idx):end_idx]
+
+        return schedule
+
+
+class SWAWithRestarts:
+    """
+    Stochastic Weight Averaging with periodic restarts.
+
+    Combines SWA's generalization benefits with warm restarts
+    for better optimization landscape exploration.
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        swa_start: float = 0.75,
+        swa_lr: Optional[float] = None,
+        restart_period: int = 10,
+        num_restarts: int = 3,
+    ):
+        self.model = model
+        self.swa_start = swa_start
+        self.swa_lr = swa_lr
+        self.restart_period = restart_period
+        self.num_restarts = num_restarts
+
+        self._swa_model: Optional[torch.optim.swa_utils.AveragedModel] = None
+        self._restart_count = 0
+        self._steps_since_restart = 0
+        self._is_averaging = False
+
+    def setup(self, device: torch.device) -> None:
+        """Initialize SWA model."""
+        self._swa_model = torch.optim.swa_utils.AveragedModel(self.model)
+
+    def should_start_averaging(self, progress: float) -> bool:
+        """Check if SWA should start based on training progress."""
+        return progress >= self.swa_start
+
+    def step(
+        self,
+        epoch: int,
+        total_epochs: int,
+        optimizer: optim.Optimizer,
+    ) -> bool:
+        """Update SWA state and check for restarts."""
+        progress = epoch / total_epochs
+        did_restart = False
+
+        if self.should_start_averaging(progress):
+            if not self._is_averaging:
+                self._is_averaging = True
+                logger.info(f"SWA started at epoch {epoch}")
+
+                if self.swa_lr is not None:
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = self.swa_lr
+
+            # Update SWA model
+            if self._swa_model is not None:
+                self._swa_model.update_parameters(self.model)
+
+            # Check for restart
+            self._steps_since_restart += 1
+            if (self._steps_since_restart >= self.restart_period and
+                self._restart_count < self.num_restarts):
+                self._trigger_restart(optimizer)
+                did_restart = True
+
+        return did_restart
+
+    def _trigger_restart(self, optimizer: optim.Optimizer) -> None:
+        """Trigger a warm restart."""
+        self._restart_count += 1
+        self._steps_since_restart = 0
+
+        # Restore original learning rate (will decay again)
+        if self.swa_lr is not None:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = self.swa_lr * 1.5  # Slight bump
+
+        logger.info(f"SWA restart {self._restart_count}/{self.num_restarts}")
+
+    def get_averaged_model(self) -> Optional[nn.Module]:
+        """Get the SWA averaged model."""
+        return self._swa_model
+
+    def update_bn(self, loader: DataLoader, device: torch.device) -> None:
+        """Update batch normalization statistics."""
+        if self._swa_model is not None:
+            torch.optim.swa_utils.update_bn(loader, self._swa_model, device=device)
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get SWA statistics."""
+        return {
+            'is_averaging': self._is_averaging,
+            'restart_count': self._restart_count,
+            'steps_since_restart': self._steps_since_restart,
+        }
+
+
+class SmartCheckpointManager:
+    """
+    Intelligent checkpoint management with minimal I/O overhead.
+
+    Features:
+    - Adaptive checkpointing frequency based on loss improvement
+    - Keep only top-k best checkpoints
+    - Async checkpoint saving
+    - Checkpoint compression
+    """
+
+    def __init__(
+        self,
+        save_dir: Path,
+        top_k: int = 3,
+        min_interval_epochs: int = 1,
+        max_interval_epochs: int = 10,
+        improvement_threshold: float = 0.01,
+    ):
+        self.save_dir = Path(save_dir)
+        self.top_k = top_k
+        self.min_interval = min_interval_epochs
+        self.max_interval = max_interval_epochs
+        self.improvement_threshold = improvement_threshold
+
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+
+        self._checkpoints: List[Tuple[float, Path]] = []
+        self._last_save_epoch = -1
+        self._last_loss = float('inf')
+        self._adaptive_interval = min_interval_epochs
+
+    def should_save(self, epoch: int, loss: float) -> bool:
+        """Determine if checkpoint should be saved."""
+        if epoch - self._last_save_epoch < self.min_interval:
+            return False
+
+        # Always save if significant improvement
+        improvement = (self._last_loss - loss) / (abs(self._last_loss) + 1e-8)
+        if improvement > self.improvement_threshold:
+            self._adaptive_interval = self.min_interval
+            return True
+
+        # Adaptive interval based on improvement rate
+        if epoch - self._last_save_epoch >= self._adaptive_interval:
+            self._adaptive_interval = min(
+                self._adaptive_interval + 1,
+                self.max_interval
+            )
+            return True
+
+        return False
+
+    def save(
+        self,
+        model: nn.Module,
+        optimizer: optim.Optimizer,
+        epoch: int,
+        loss: float,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Path:
+        """Save checkpoint."""
+        checkpoint_path = self.save_dir / f"checkpoint_epoch{epoch:04d}_loss{loss:.4f}.pt"
+
+        checkpoint = {
+            'epoch': epoch,
+            'loss': loss,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'timestamp': datetime.now().isoformat(),
+        }
+
+        if extra:
+            checkpoint.update(extra)
+
+        torch.save(checkpoint, checkpoint_path)
+
+        # Track checkpoint
+        self._checkpoints.append((loss, checkpoint_path))
+        self._checkpoints.sort(key=lambda x: x[0])
+
+        # Remove old checkpoints if exceeding top-k
+        while len(self._checkpoints) > self.top_k:
+            _, old_path = self._checkpoints.pop()
+            if old_path.exists():
+                old_path.unlink()
+                logger.debug(f"Removed old checkpoint: {old_path}")
+
+        self._last_save_epoch = epoch
+        self._last_loss = loss
+
+        return checkpoint_path
+
+    def get_best_checkpoint(self) -> Optional[Path]:
+        """Get path to best checkpoint."""
+        if self._checkpoints:
+            return self._checkpoints[0][1]
+        return None
+
+    def load_best(
+        self,
+        model: nn.Module,
+        optimizer: Optional[optim.Optimizer] = None,
+        device: torch.device = torch.device('cpu'),
+    ) -> Optional[Dict[str, Any]]:
+        """Load best checkpoint."""
+        best_path = self.get_best_checkpoint()
+        if best_path is None or not best_path.exists():
+            return None
+
+        checkpoint = torch.load(best_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+
+        if optimizer is not None and 'optimizer_state_dict' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+        logger.info(f"Loaded best checkpoint from epoch {checkpoint['epoch']}")
+        return checkpoint
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get checkpoint stats."""
+        return {
+            'num_checkpoints': len(self._checkpoints),
+            'best_loss': self._checkpoints[0][0] if self._checkpoints else None,
+            'adaptive_interval': self._adaptive_interval,
+            'last_save_epoch': self._last_save_epoch,
+        }
+
+
+# Update the suite creation function
+def create_phase4_training_suite(
+    model: nn.Module,
+    optimizer: optim.Optimizer,
+    criterion: nn.Module,
+    save_dir: Path,
+    device: torch.device,
+    total_epochs: int = 50,
+    enable_stability_monitor: bool = True,
+    enable_adaptive_precision: bool = True,
+    enable_progressive_unfreezing: bool = False,
+    enable_swa_restarts: bool = True,
+    enable_smart_checkpoints: bool = True,
+) -> Dict[str, Any]:
+    """
+    Create Phase 4 training utilities suite.
+
+    Args:
+        model: Model to train
+        optimizer: Optimizer
+        criterion: Loss function
+        save_dir: Directory for checkpoints
+        device: Training device
+        total_epochs: Total training epochs
+        enable_*: Flags to enable specific features
+
+    Returns:
+        Dictionary of Phase 4 utility objects
+    """
+    suite = {}
+
+    if enable_stability_monitor:
+        suite['stability_monitor'] = TrainingStabilityMonitor()
+
+    if enable_adaptive_precision:
+        precision_mgr = AdaptivePrecisionManager()
+        suite['precision_manager'] = precision_mgr
+        suite['scaler'] = precision_mgr.setup(device)
+
+    if enable_progressive_unfreezing:
+        schedule = ProgressiveLayerUnfreezing.create_default_schedule(
+            model, total_epochs
+        )
+        suite['layer_unfreezing'] = ProgressiveLayerUnfreezing(
+            model, unfreeze_schedule=schedule, total_epochs=total_epochs
+        )
+
+    if enable_swa_restarts:
+        swa = SWAWithRestarts(model)
+        swa.setup(device)
+        suite['swa_restarts'] = swa
+
+    if enable_smart_checkpoints:
+        suite['checkpoint_manager'] = SmartCheckpointManager(save_dir)
+
+    return suite
