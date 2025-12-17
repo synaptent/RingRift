@@ -2913,6 +2913,13 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         help='Enable D6 symmetry augmentation for hex boards (12x dataset)'
     )
 
+    # Policy label smoothing for regularization
+    parser.add_argument(
+        '--policy-label-smoothing', type=float, default=0.0,
+        help='Policy label smoothing factor (0=disabled, typical: 0.05-0.1). '
+             'Mixes target with uniform distribution for regularization.'
+    )
+
     # Distributed training arguments
     parser.add_argument(
         '--distributed', action='store_true',
@@ -3176,6 +3183,8 @@ def main():
         config.learning_rate = args.learning_rate
     if args.seed is not None:
         config.seed = args.seed
+    if args.policy_label_smoothing > 0:
+        config.policy_label_smoothing = args.policy_label_smoothing
     if args.board_type is not None:
         board_type_map = {
             'square8': BoardType.SQUARE8,

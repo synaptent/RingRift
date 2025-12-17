@@ -345,8 +345,14 @@ def export_to_npz(db_path: Path, output_path: Path) -> bool:
         return False
 
 
-def train_hex8_model(npz_path: Path) -> bool:
-    """Train a HexNeuralNet_v2 model on hex8 data."""
+def train_hex8_model(npz_path: Path, use_label_smoothing: bool = True, use_hex_augmentation: bool = True) -> bool:
+    """Train a HexNeuralNet_v2 model on hex8 data.
+
+    Args:
+        npz_path: Path to training data NPZ file
+        use_label_smoothing: Enable policy label smoothing (0.05) for regularization
+        use_hex_augmentation: Enable D6 symmetry augmentation (12x data expansion)
+    """
     logger.info(f"Training hex8 model from {npz_path}...")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -364,6 +370,15 @@ def train_hex8_model(npz_path: Path) -> bool:
         "--early-stopping-patience", "10",
         "--checkpoint-dir", "models",
     ]
+
+    # Add new training improvements
+    if use_label_smoothing:
+        cmd.extend(["--policy-label-smoothing", "0.05"])
+        logger.info("Using policy label smoothing (0.05)")
+
+    if use_hex_augmentation:
+        cmd.append("--augment-hex-symmetry")
+        logger.info("Using D6 hex symmetry augmentation (12x)")
 
     try:
         logger.info(f"Starting training with command: {' '.join(cmd)}")

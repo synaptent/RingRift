@@ -463,6 +463,19 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Maximum batch size for progressive batching (default: 512)",
     )
 
+    # Hex board data augmentation
+    parser.add_argument(
+        "--hex-augment",
+        action="store_true",
+        help="Enable D6 symmetry augmentation for hexagonal boards (multiplies training data)",
+    )
+    parser.add_argument(
+        "--hex-augment-count",
+        type=int,
+        default=6,
+        help="Number of augmented copies per sample (1-12 for D6 symmetry, default: 6)",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -477,6 +490,70 @@ def collate_policy_batch(batch):
     sample_weights = torch.stack([b[6] for b in batch])
     mcts_probs = torch.stack([b[7] for b in batch])
     return features, values, from_indices, to_indices, move_mask, target_idx, sample_weights, mcts_probs
+
+
+def augment_batch_with_hex(
+    features: torch.Tensor,
+    values: torch.Tensor,
+    from_idx: torch.Tensor,
+    to_idx: torch.Tensor,
+    mask: torch.Tensor,
+    target: torch.Tensor,
+    sample_weights: torch.Tensor,
+    mcts_probs: Optional[torch.Tensor],
+    augmenter: "HexBoardAugmenter",
+) -> tuple:
+    """Apply D6 symmetry augmentation to a batch of hex board samples.
+
+    Expands the batch by applying random transformations to each sample.
+    """
+    aug_features = []
+    aug_values = []
+    aug_from_idx = []
+    aug_to_idx = []
+    aug_mask = []
+    aug_target = []
+    aug_weights = []
+    aug_mcts = [] if mcts_probs is not None else None
+
+    batch_size = features.shape[0]
+    for i in range(batch_size):
+        # Get numpy arrays for augmentation
+        feat_np = features[i].numpy()
+        from_np = from_idx[i].numpy()
+        to_np = to_idx[i].numpy()
+        target_idx_val = target[i].item()
+
+        # Get augmented samples (includes original)
+        augmented = augmenter.augment_sample(
+            features=feat_np,
+            from_indices=from_np,
+            to_indices=to_np,
+            target_move_idx=target_idx_val,
+            include_original=True,
+        )
+
+        for aug_feat, aug_from, aug_to, aug_tgt in augmented:
+            aug_features.append(torch.from_numpy(aug_feat).float())
+            aug_values.append(values[i])
+            aug_from_idx.append(torch.from_numpy(aug_from).long())
+            aug_to_idx.append(torch.from_numpy(aug_to).long())
+            aug_mask.append(mask[i])  # Mask stays the same
+            aug_target.append(torch.tensor(aug_tgt, dtype=torch.long))
+            aug_weights.append(sample_weights[i])
+            if aug_mcts is not None:
+                aug_mcts.append(mcts_probs[i])  # MCTS probs stay same (would need transform too)
+
+    return (
+        torch.stack(aug_features),
+        torch.stack(aug_values),
+        torch.stack(aug_from_idx),
+        torch.stack(aug_to_idx),
+        torch.stack(aug_mask),
+        torch.stack(aug_target),
+        torch.stack(aug_weights),
+        torch.stack(aug_mcts) if aug_mcts is not None else None,
+    )
 
 
 def train_nnue_policy(
@@ -532,6 +609,8 @@ def train_nnue_policy(
     min_batch_size: int = 64,
     max_batch_size: int = 512,
     jsonl_paths: Optional[List[str]] = None,
+    hex_augment: bool = False,
+    hex_augment_count: int = 6,
 ) -> Dict[str, Any]:
     """Train NNUE policy model and return training report."""
     seed_all(seed)
@@ -613,6 +692,15 @@ def train_nnue_policy(
         collate_fn=collate_policy_batch,
         pin_memory=device.type != "cpu",
     )
+
+    # Initialize hex augmenter if enabled (only for hex boards)
+    hex_augmenter = None
+    if hex_augment and board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
+        board_size = get_board_size(board_type)
+        hex_augmenter = HexBoardAugmenter(board_size=board_size, num_augmentations=hex_augment_count)
+        logger.info(f"Enabled D6 symmetry augmentation for hex board (size={board_size}, augmentations={hex_augment_count})")
+    elif hex_augment:
+        logger.warning(f"Hex augmentation requested but board_type={board_type.value} is not hexagonal, skipping")
 
     # Resolve hidden_dim (auto-select if not specified)
     actual_hidden_dim = hidden_dim
@@ -776,6 +864,16 @@ def train_nnue_policy(
 
         for batch in train_loader:
             features, values, from_idx, to_idx, mask, target, sample_weights, mcts_probs = batch
+
+            # Apply hex augmentation if enabled (before moving to GPU)
+            if hex_augmenter is not None:
+                features, values, from_idx, to_idx, mask, target, sample_weights, mcts_probs = (
+                    augment_batch_with_hex(
+                        features, values, from_idx, to_idx, mask, target, sample_weights,
+                        mcts_probs if effective_use_kl_loss else None, hex_augmenter
+                    )
+                )
+
             features = features.to(device)
             values = values.to(device)
             from_idx = from_idx.to(device)
@@ -783,7 +881,7 @@ def train_nnue_policy(
             mask = mask.to(device)
             target = target.to(device)
             sample_weights = sample_weights.to(device)
-            mcts_probs = mcts_probs.to(device) if effective_use_kl_loss else None
+            mcts_probs = mcts_probs.to(device) if mcts_probs is not None and effective_use_kl_loss else None
 
             total_loss, value_loss, policy_loss = trainer.train_step(
                 features, values, from_idx, to_idx, mask, target, mcts_probs, sample_weights
@@ -1009,6 +1107,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         min_batch_size=args.min_batch_size,
         max_batch_size=args.max_batch_size,
         jsonl_paths=jsonl_paths,
+        hex_augment=args.hex_augment,
+        hex_augment_count=args.hex_augment_count,
     )
 
     # Add metadata to report
