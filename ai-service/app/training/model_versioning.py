@@ -46,6 +46,7 @@ import hashlib
 import logging
 import os
 from dataclasses import dataclass, field, asdict
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -511,7 +512,6 @@ class ModelVersionManager:
             torch.save(checkpoint, temp_path)
 
             # Flush to disk (important for NFS and network filesystems)
-            import os
             os.sync()
 
             # Validate the saved file before finalizing
