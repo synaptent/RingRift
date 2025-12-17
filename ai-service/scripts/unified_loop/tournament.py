@@ -267,6 +267,144 @@ class ShadowTournamentService:
 
         return processed_results
 
+    async def run_batched_parallel_tournaments(
+        self,
+        config_keys: List[str],
+        games_per_config: int = 50,
+        batch_size: int = 3,
+    ) -> List[Dict[str, Any]]:
+        """Phase 3.3: Run tournaments in batches for more efficient resource utilization.
+
+        This method batches multiple configs together on powerful hosts, running
+        larger batches of games per tournament for better throughput.
+
+        Strategy:
+        1. Assign high-CPU hosts (512, 384 CPUs) to run batches of configs
+        2. Each batch runs multiple configs sequentially with more games per config
+        3. Lower-CPU hosts run individual configs in parallel
+
+        Args:
+            config_keys: List of config keys to evaluate
+            games_per_config: Number of games per config (default 50)
+            batch_size: Number of configs per batch on high-CPU hosts (default 3)
+
+        Returns:
+            List of tournament results
+        """
+        if not config_keys:
+            return []
+
+        start_time = time.time()
+        all_results = []
+
+        # Separate high-CPU and standard hosts
+        high_cpu_hosts = [h for h in self.TOURNAMENT_HOSTS if h.get("cpus", 0) >= 128]
+        standard_hosts = [h for h in self.TOURNAMENT_HOSTS if h.get("cpus", 0) < 128]
+
+        # Create batches for high-CPU hosts
+        batches = []
+        remaining = list(config_keys)
+
+        # Assign batches to high-CPU hosts
+        for host in high_cpu_hosts:
+            if not remaining:
+                break
+            batch = remaining[:batch_size]
+            remaining = remaining[batch_size:]
+            batches.append((host, batch))
+
+        print(f"[ShadowTournament] Batched tournament: {len(batches)} batches on high-CPU hosts, "
+              f"{len(remaining)} individual configs remaining")
+
+        async def run_batch(host: Dict[str, Any], batch_configs: List[str]) -> List[Dict[str, Any]]:
+            """Run a batch of configs on a single host."""
+            ssh_target = host["ssh"]
+            ringrift_path = host["ringrift_path"]
+            host_name = host["name"]
+
+            batch_results = []
+            for config_key in batch_configs:
+                parts = config_key.rsplit("_", 1)
+                board_type = parts[0]
+                num_players = int(parts[1].replace("p", ""))
+
+                remote_cmd = f'''cd {ringrift_path} && source venv/bin/activate && \\
+                    python scripts/run_model_elo_tournament.py \\
+                    --board {board_type} \\
+                    --players {num_players} \\
+                    --games {games_per_config} \\
+                    --quick --include-baselines 2>&1'''
+
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "ssh", "-i", os.path.expanduser("~/.ssh/id_cluster"),
+                        "-o", "ConnectTimeout=10", "-o", "BatchMode=yes",
+                        "-o", "StrictHostKeyChecking=no", ssh_target, remote_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    await asyncio.wait_for(proc.communicate(), timeout=600)
+
+                    batch_results.append({
+                        "config": config_key,
+                        "games_played": games_per_config,
+                        "success": proc.returncode == 0,
+                        "host": host_name,
+                        "batch": True,
+                    })
+                except Exception as e:
+                    batch_results.append({
+                        "config": config_key,
+                        "error": str(e),
+                        "success": False,
+                        "host": host_name,
+                    })
+
+            return batch_results
+
+        # Run batches in parallel
+        batch_tasks = [run_batch(host, configs) for host, configs in batches]
+
+        # Run remaining configs individually on standard hosts
+        async def run_individual(config_key: str) -> Dict[str, Any]:
+            return await self.run_shadow_tournament(config_key)
+
+        individual_tasks = [run_individual(ck) for ck in remaining]
+
+        # Gather all results
+        if batch_tasks or individual_tasks:
+            results = await asyncio.gather(
+                *batch_tasks,
+                *individual_tasks,
+                return_exceptions=True
+            )
+
+            # Flatten batch results
+            for result in results[:len(batch_tasks)]:
+                if isinstance(result, Exception):
+                    all_results.append({"error": str(result), "success": False})
+                elif isinstance(result, list):
+                    all_results.extend(result)
+                else:
+                    all_results.append(result)
+
+            # Add individual results
+            for result in results[len(batch_tasks):]:
+                if isinstance(result, Exception):
+                    all_results.append({"error": str(result), "success": False})
+                else:
+                    all_results.append(result)
+
+        elapsed = time.time() - start_time
+        successful = sum(1 for r in all_results if r.get("success", False))
+        total_games = successful * games_per_config
+        print(f"[ShadowTournament] Batched tournament complete: "
+              f"{successful}/{len(config_keys)} configs, "
+              f"{total_games} games in {elapsed:.1f}s "
+              f"({total_games / max(0.1, elapsed):.1f} games/sec)")
+
+        return all_results
+
     def get_adaptive_interval(self, promotion_velocity: float = 0.0) -> int:
         """Calculate adaptive evaluation interval based on cluster health and performance.
 

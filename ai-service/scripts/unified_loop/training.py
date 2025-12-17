@@ -258,6 +258,41 @@ class TrainingScheduler:
                     print(f"[Training] CATCHUP: {config_key} has {model_count} models - threshold {final_threshold} → {catchup_threshold}")
                     final_threshold = catchup_threshold
 
+        # Phase 2.4: Win rate → training feedback
+        # Adjust threshold based on evaluation win rates to avoid redundant training
+        if config_state:
+            win_rate = getattr(config_state, 'win_rate', 0.5)
+            win_rate_trend = getattr(config_state, 'win_rate_trend', 0.0)
+            consecutive_high = getattr(config_state, 'consecutive_high_win_rate', 0)
+
+            # High win rate (>70%) consistently → de-prioritize training (already strong)
+            if consecutive_high >= 3 and win_rate > 0.7:
+                skip_factor = 1.5 + (consecutive_high - 3) * 0.2  # Max ~2.5x
+                skip_factor = min(skip_factor, 2.5)
+                old_threshold = final_threshold
+                final_threshold = min(max_threshold, int(final_threshold * skip_factor))
+                if final_threshold > old_threshold:
+                    print(f"[Training] WIN_RATE_SKIP: {config_key} has {win_rate:.1%} win rate "
+                          f"(consecutive_high={consecutive_high}) - threshold {old_threshold} → {final_threshold}")
+
+            # Low win rate (<50%) or declining → prioritize training urgently
+            elif win_rate < 0.5 or win_rate_trend < -0.05:
+                urgency_factor = 0.6 if win_rate < 0.4 else 0.8
+                old_threshold = final_threshold
+                final_threshold = max(min_threshold, int(final_threshold * urgency_factor))
+                if final_threshold < old_threshold:
+                    trend_str = f", trend={win_rate_trend:+.1%}" if win_rate_trend < -0.05 else ""
+                    print(f"[Training] WIN_RATE_URGENT: {config_key} has {win_rate:.1%} win rate{trend_str} "
+                          f"- threshold {old_threshold} → {final_threshold}")
+
+            # Declining win rate but still decent → moderate priority increase
+            elif win_rate_trend < -0.02 and win_rate < 0.65:
+                old_threshold = final_threshold
+                final_threshold = max(min_threshold, int(final_threshold * 0.9))
+                if final_threshold < old_threshold:
+                    print(f"[Training] WIN_RATE_DECLINING: {config_key} win rate declining ({win_rate_trend:+.1%}) "
+                          f"- threshold {old_threshold} → {final_threshold}")
+
         if final_threshold != base_threshold:
             print(f"[Training] Dynamic threshold for {config_key}: {final_threshold} (base: {base_threshold}, adj: {adjustment:.2f})")
 
@@ -344,8 +379,8 @@ class TrainingScheduler:
                 except Exception:
                     pass
 
-    def is_training_locked_elsewhere(self) -> bool:
-        """Check if training is running on another host in the cluster."""
+    def is_training_locked_elsewhere(self, config_key: str = None) -> bool:
+        """Check if training is running on another host for a specific config."""
         import socket
 
         lock_dir = AI_SERVICE_ROOT / "data" / "coordination"
@@ -353,26 +388,54 @@ class TrainingScheduler:
             return False
 
         hostname = socket.gethostname()
-        for lock_file in lock_dir.glob("training.*.lock"):
-            if f"training.{hostname}.lock" in lock_file.name:
+        # Look for locks matching this config (or any lock if config_key is None)
+        pattern = f"training.{config_key}.*" if config_key else "training.*"
+
+        for lock_file in lock_dir.glob(pattern + ".lock"):
+            # Skip our own locks
+            if hostname in lock_file.name:
                 continue
             try:
                 if lock_file.stat().st_size > 0:
                     age = time.time() - lock_file.stat().st_mtime
                     if age < 3600:
-                        other_host = lock_file.name.replace("training.", "").replace(".lock", "")
-                        print(f"[Training] Training lock held by {other_host}")
+                        parts = lock_file.name.replace("training.", "").replace(".lock", "").split(".")
+                        other_config = parts[0] if len(parts) > 1 else "unknown"
+                        other_host = parts[-1] if len(parts) > 1 else parts[0]
+                        print(f"[Training] Config {other_config} locked by {other_host}")
                         return True
             except Exception:
                 continue
         return False
 
-    def should_trigger_training(self) -> Optional[str]:
-        """Check if training should be triggered. Returns config key or None."""
-        if self.state.training_in_progress:
-            return None
+    def count_active_training_runs(self) -> int:
+        """Count how many training runs are active across the cluster."""
+        lock_dir = AI_SERVICE_ROOT / "data" / "coordination"
+        if not lock_dir.exists():
+            return 0
 
-        if self.is_training_locked_elsewhere():
+        count = 0
+        for lock_file in lock_dir.glob("training.*.lock"):
+            try:
+                if lock_file.stat().st_size > 0:
+                    age = time.time() - lock_file.stat().st_mtime
+                    if age < 3600:
+                        count += 1
+            except Exception:
+                continue
+        return count
+
+    def should_trigger_training(self) -> Optional[str]:
+        """Check if training should be triggered. Returns config key or None.
+
+        Supports parallel training: different configs can train simultaneously,
+        up to _max_concurrent_training total runs.
+        """
+        # Check concurrent training limit (cluster-wide)
+        active_runs = self.count_active_training_runs()
+        if active_runs >= self._max_concurrent_training:
+            if self.config.verbose:
+                print(f"[Training] Max concurrent training ({self._max_concurrent_training}) reached cluster-wide")
             return None
 
         # Duration-aware scheduling
@@ -421,6 +484,13 @@ class TrainingScheduler:
 
         for config_key, priority_score in prioritized_configs:
             config_state = self.state.configs[config_key]
+
+            # Skip configs already training (per-config lock check)
+            if self.is_training_locked_elsewhere(config_key):
+                continue
+            if config_key in self._training_locks:
+                continue  # Already training locally
+
             if now - config_state.last_training_time < self.config.min_interval_seconds:
                 continue
 
@@ -542,26 +612,42 @@ class TrainingScheduler:
                 self._release_training_lock()
                 return False
 
-            # Auto-consolidate databases
+            # Phase 2.5: Incremental DB consolidation
+            # Track which DBs have been merged to avoid redundant work
             consolidated_db = games_dir / "consolidated_training_v2.db"
-            consolidation_max_age = 6 * 3600
+            consolidation_state_file = games_dir / ".consolidation_state.json"
 
             should_consolidate = False
             if has_jsonl_data:
                 print(f"[Training] Using JSONL data, skipping DB consolidation")
             elif not consolidated_db.exists():
                 should_consolidate = True
-            elif time.time() - consolidated_db.stat().st_mtime > consolidation_max_age:
-                should_consolidate = True
+            else:
+                # Check if any source DB has changed since last consolidation
+                last_state = {}
+                if consolidation_state_file.exists():
+                    try:
+                        import json
+                        with open(consolidation_state_file) as f:
+                            last_state = json.load(f)
+                    except Exception:
+                        pass
 
-            if should_consolidate:
+                # Find DBs that need merging
                 merge_dbs = []
+                changed_dbs = []
                 for db_path in game_dbs:
                     db_str = str(db_path)
                     if any(skip in db_str for skip in ['quarantine', 'corrupted', 'backup', 'consolidated']):
                         continue
                     if 'selfplay' in db_path.name or 'merged' in db_path.name or 'training' in db_path.name:
                         try:
+                            current_mtime = db_path.stat().st_mtime
+                            current_size = db_path.stat().st_size
+                            db_key = str(db_path)
+                            last_mtime = last_state.get(db_key, {}).get('mtime', 0)
+                            last_size = last_state.get(db_key, {}).get('size', 0)
+
                             conn = sqlite3.connect(db_path)
                             cursor = conn.cursor()
                             cursor.execute("SELECT COUNT(*) FROM games")
@@ -569,10 +655,41 @@ class TrainingScheduler:
                             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'")
                             has_moves = cursor.fetchone() is not None
                             conn.close()
+
                             if count > 0 and has_moves:
                                 merge_dbs.append(db_path)
+                                # Check if this DB has new data
+                                if current_mtime > last_mtime + 60 or current_size > last_size:
+                                    changed_dbs.append(db_path.name)
                         except Exception:
                             pass
+
+                # Only re-consolidate if there are changed DBs
+                if changed_dbs:
+                    should_consolidate = True
+                    print(f"[Training] Incremental consolidation: {len(changed_dbs)} DBs with new data")
+
+            if should_consolidate and not has_jsonl_data:
+                # Re-scan for merge_dbs if we didn't already
+                if 'merge_dbs' not in locals() or not merge_dbs:
+                    merge_dbs = []
+                    for db_path in game_dbs:
+                        db_str = str(db_path)
+                        if any(skip in db_str for skip in ['quarantine', 'corrupted', 'backup', 'consolidated']):
+                            continue
+                        if 'selfplay' in db_path.name or 'merged' in db_path.name or 'training' in db_path.name:
+                            try:
+                                conn = sqlite3.connect(db_path)
+                                cursor = conn.cursor()
+                                cursor.execute("SELECT COUNT(*) FROM games")
+                                count = cursor.fetchone()[0]
+                                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'")
+                                has_moves = cursor.fetchone() is not None
+                                conn.close()
+                                if count > 0 and has_moves:
+                                    merge_dbs.append(db_path)
+                            except Exception:
+                                pass
 
                 if len(merge_dbs) > 1:
                     print(f"[Training] Consolidating {len(merge_dbs)} databases...")
@@ -593,8 +710,23 @@ class TrainingScheduler:
                             cwd=AI_SERVICE_ROOT,
                         )
                         await asyncio.wait_for(merge_process.communicate(), timeout=1800)
-                    except Exception:
-                        pass
+
+                        # Save consolidation state for incremental tracking
+                        import json
+                        new_state = {}
+                        for db_path in merge_dbs:
+                            try:
+                                new_state[str(db_path)] = {
+                                    'mtime': db_path.stat().st_mtime,
+                                    'size': db_path.stat().st_size,
+                                }
+                            except Exception:
+                                pass
+                        with open(consolidation_state_file, 'w') as f:
+                            json.dump(new_state, f)
+                        print(f"[Training] Consolidation state saved for {len(new_state)} DBs")
+                    except Exception as e:
+                        print(f"[Training] Consolidation error: {e}")
 
             if consolidated_db.exists():
                 largest_db = consolidated_db

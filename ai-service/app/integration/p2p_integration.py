@@ -383,13 +383,24 @@ class SelfplayCoordinator:
     - Auto-scaling selfplay workers based on target rate
     - Load balancing across nodes
     - GPU vs CPU allocation
+    - Curriculum-weighted config selection (Phase 3.1)
     """
+
+    # All supported configs
+    ALL_CONFIGS = [
+        ("square8", 2), ("square8", 3), ("square8", 4),
+        ("square19", 2), ("square19", 3), ("square19", 4),
+        ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
+    ]
 
     def __init__(self, client: P2PAPIClient, config: P2PIntegrationConfig):
         self.client = client
         self.config = config
         self._selfplay_targets: Dict[str, int] = {}
         self._rate_multiplier: float = 1.0  # Feedback-driven multiplier
+        # Phase 3.1: Curriculum weights for config prioritization
+        self._curriculum_weights: Dict[str, float] = {}  # config_key -> weight
+        self._last_selected_config_idx: int = 0  # Round-robin base
 
     def adjust_target_rate(self, multiplier: float, reason: str) -> int:
         """Adjust the target selfplay rate by applying a multiplier.
@@ -412,6 +423,59 @@ class SelfplayCoordinator:
         """Get the current effective target rate after feedback adjustments."""
         return int(self.config.target_selfplay_games_per_hour * self._rate_multiplier)
 
+    def update_curriculum_weights(self, weights: Dict[str, float]) -> None:
+        """Update curriculum weights from the training loop.
+
+        Phase 3.1: These weights influence which configs get more selfplay.
+        Higher weights = more resources allocated to that config.
+
+        Args:
+            weights: Dict mapping config_key (e.g., "square8_2p") to weight (0.7-1.5)
+        """
+        self._curriculum_weights = weights.copy()
+        logger.info(f"[Selfplay] Updated curriculum weights: {len(weights)} configs")
+
+    def select_weighted_config(self) -> Tuple[str, int]:
+        """Select a config based on curriculum weights.
+
+        Phase 3.1: Uses weighted random selection to prioritize configs that need
+        more training (higher curriculum weight).
+
+        Returns:
+            Tuple of (board_type, num_players)
+        """
+        import random
+
+        if not self._curriculum_weights:
+            # No weights - use simple round-robin
+            self._last_selected_config_idx = (self._last_selected_config_idx + 1) % len(self.ALL_CONFIGS)
+            return self.ALL_CONFIGS[self._last_selected_config_idx]
+
+        # Build weighted list
+        weighted_configs = []
+        for board_type, num_players in self.ALL_CONFIGS:
+            config_key = f"{board_type}_{num_players}p"
+            weight = self._curriculum_weights.get(config_key, 1.0)
+            weighted_configs.append((board_type, num_players, weight))
+
+        # Weighted random selection
+        total_weight = sum(w for _, _, w in weighted_configs)
+        if total_weight <= 0:
+            total_weight = len(weighted_configs)
+            weighted_configs = [(b, n, 1.0) for b, n, _ in weighted_configs]
+
+        r = random.uniform(0, total_weight)
+        cumulative = 0
+        for board_type, num_players, weight in weighted_configs:
+            cumulative += weight
+            if r <= cumulative:
+                config_key = f"{board_type}_{num_players}p"
+                logger.debug(f"[Selfplay] Selected {config_key} (weight={weight:.2f})")
+                return (board_type, num_players)
+
+        # Fallback to first config
+        return self.ALL_CONFIGS[0]
+
     async def get_current_rate(self) -> float:
         """Get current selfplay games per hour."""
         status = await self.client.get_cluster_status()
@@ -421,7 +485,10 @@ class SelfplayCoordinator:
         return status.get("selfplay_rate", 0)
 
     async def auto_scale(self) -> Dict[str, Any]:
-        """Auto-scale selfplay to meet target rate."""
+        """Auto-scale selfplay to meet target rate.
+
+        Phase 3.1: Uses curriculum weights to select configs for new selfplay jobs.
+        """
         if not self.config.auto_scale_selfplay:
             return {"action": "disabled"}
 
@@ -434,24 +501,35 @@ class SelfplayCoordinator:
         actions = []
 
         if current_rate < target_rate * 0.8:
-            # Scale up
+            # Scale up - use curriculum weights to select config
             for node in healthy_nodes:
+                # Phase 3.1: Select config based on curriculum weights
+                board_type, num_players = self.select_weighted_config()
+
                 if node.has_gpu and node.selfplay_jobs < 4:
                     result = await self.client.start_selfplay(
-                        node.node_id, count=2
+                        node.node_id,
+                        board_type=board_type,
+                        num_players=num_players,
+                        count=2
                     )
                     actions.append({
                         "node": node.node_id,
                         "action": "scale_up",
+                        "config": f"{board_type}_{num_players}p",
                         "result": result
                     })
                 elif not node.has_gpu and node.selfplay_jobs < 2:
                     result = await self.client.start_selfplay(
-                        node.node_id, count=1
+                        node.node_id,
+                        board_type=board_type,
+                        num_players=num_players,
+                        count=1
                     )
                     actions.append({
                         "node": node.node_id,
                         "action": "scale_up",
+                        "config": f"{board_type}_{num_players}p",
                         "result": result
                     })
 

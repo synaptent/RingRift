@@ -416,3 +416,7 @@ class ConfigState:
     current_elo: float = 1500.0
     elo_trend: float = 0.0  # Positive = improving
     training_weight: float = 1.0
+    # Win rate tracking for training feedback (Phase 2.4)
+    win_rate: float = 0.5  # Latest win rate from evaluations (0.5 = default/unknown)
+    win_rate_trend: float = 0.0  # Change in win rate (positive = improving)
+    consecutive_high_win_rate: int = 0  # Count of evals with win_rate > 0.7

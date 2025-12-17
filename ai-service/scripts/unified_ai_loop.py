@@ -470,6 +470,9 @@ try:
     from scripts.run_diverse_tournaments import (
         build_tournament_configs,
         run_tournament_round_local,
+        run_tournament_round_distributed,  # Phase 3.3: Batched parallel tournaments
+        load_cluster_hosts,
+        filter_available_hosts,
         TournamentConfig,
         TournamentResult,
     )
@@ -478,6 +481,9 @@ except ImportError:
     HAS_DIVERSE_TOURNAMENTS = False
     build_tournament_configs = None
     run_tournament_round_local = None
+    run_tournament_round_distributed = None
+    load_cluster_hosts = None
+    filter_available_hosts = None
     TournamentConfig = None
     TournamentResult = None
 
@@ -2345,6 +2351,8 @@ class UnifiedAILoop:
                 self.event_bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_for_feedback)
                 # Event-driven curriculum rebalancing on significant Elo changes
                 self.event_bus.subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, self._on_elo_significant_change)
+                # Phase 3.1: Propagate curriculum weights to P2P selfplay coordinator
+                self.event_bus.subscribe(DataEventType.CURRICULUM_REBALANCED, self._on_curriculum_rebalanced)
                 # CMA-ES trigger handler
                 self.event_bus.subscribe(DataEventType.CMAES_TRIGGERED, self._handle_cmaes_trigger)
                 # Subscribe to failure events for coordinated error handling
@@ -2886,25 +2894,25 @@ class UnifiedAILoop:
             if active_hosts == 0:
                 return
 
-            # Hysteresis band to prevent oscillation (5% outside target range)
-            hysteresis = 5.0
+            # OPTIMIZED: Tighter hysteresis for faster response (2% instead of 5%)
+            hysteresis = 2.0  # Reduced from 5.0 for faster response
             new_bp = current_bp
 
             # Check if cluster is significantly underutilized (below min - hysteresis)
             if avg_cpu < (targets.cpu_min - hysteresis) and avg_gpu < (targets.gpu_min - hysteresis):
-                # Relax backpressure gradually to allow more production
-                new_bp = min(1.0, current_bp + 0.1)
+                # Relax backpressure faster to maximize throughput
+                new_bp = min(1.0, current_bp + 0.15)  # Increased from 0.1
 
             # Check if cluster is overloaded (above max + hysteresis)
             elif avg_cpu > (targets.cpu_max + hysteresis) or avg_gpu > (targets.gpu_max + hysteresis):
-                # Apply backpressure to prevent overload
+                # Apply backpressure more aggressively to prevent overload
                 if avg_cpu > targets.cpu_critical or avg_gpu > targets.gpu_critical:
-                    new_bp = max(0.5, current_bp - 0.2)  # Strong reduction
+                    new_bp = max(0.5, current_bp - 0.25)  # Stronger reduction (was 0.2)
                 else:
-                    new_bp = max(0.7, current_bp - 0.1)  # Mild reduction
+                    new_bp = max(0.7, current_bp - 0.15)  # Faster mild reduction (was 0.1)
 
-            # Only apply change if significant and not too frequent (60s cooldown)
-            if abs(new_bp - current_bp) >= 0.05 and (now - self._last_backpressure_change > 60):
+            # OPTIMIZED: Faster response (30s cooldown instead of 60s)
+            if abs(new_bp - current_bp) >= 0.05 and (now - self._last_backpressure_change > 30):
                 set_backpressure(new_bp)
                 self._last_backpressure_change = now
                 if self.config.verbose:
@@ -3081,6 +3089,28 @@ class UnifiedAILoop:
             win_rate = payload.get('win_rate')
             elo = payload.get('elo')
 
+            # Phase 2.4: Update win rate tracking in ConfigState
+            if config_key and config_key in self.state.configs and win_rate is not None:
+                config_state = self.state.configs[config_key]
+                old_win_rate = getattr(config_state, 'win_rate', 0.5)
+
+                # Update win rate and calculate trend
+                config_state.win_rate = win_rate
+                config_state.win_rate_trend = win_rate - old_win_rate
+
+                # Track consecutive high win rates (>70%)
+                HIGH_WIN_RATE_THRESHOLD = 0.7
+                if win_rate > HIGH_WIN_RATE_THRESHOLD:
+                    old_consecutive = getattr(config_state, 'consecutive_high_win_rate', 0)
+                    config_state.consecutive_high_win_rate = old_consecutive + 1
+                    if config_state.consecutive_high_win_rate >= 3:
+                        print(f"[WinRateFeedback] {config_key} maintaining high win rate: "
+                              f"{win_rate:.1%} (consecutive={config_state.consecutive_high_win_rate})")
+                else:
+                    config_state.consecutive_high_win_rate = 0
+                    if win_rate < 0.5:
+                        print(f"[WinRateFeedback] {config_key} low win rate: {win_rate:.1%} - prioritizing training")
+
             # Forward to feedback controller
             await self.feedback.on_stage_complete('evaluation', {
                 'config_key': config_key,
@@ -3170,8 +3200,79 @@ class UnifiedAILoop:
                         reason=signal.reason
                     )
 
+            # AUTO-SYNC: Broadcast trained model to P2P cluster immediately
+            model_id = payload.get('model_id')
+            model_path = payload.get('model_path')
+            if model_id and model_path:
+                asyncio.create_task(self._auto_sync_model_to_cluster(model_id, Path(model_path)))
+
+            # PIPELINE: Trigger immediate evaluation for this config (don't wait for next cycle)
+            if config_key:
+                asyncio.create_task(self._trigger_immediate_evaluation(config_key, model_id))
+
         except Exception as e:
             print(f"[Feedback] Error processing training feedback: {e}")
+
+    async def _auto_sync_model_to_cluster(self, model_id: str, model_path: Path):
+        """Automatically sync newly trained model to cluster (non-blocking)."""
+        try:
+            print(f"[P2P] Auto-syncing trained model {model_id} to cluster...")
+            success = await self.sync_model_to_cluster(model_id, model_path)
+            if success:
+                print(f"[P2P] Model {model_id} auto-synced successfully")
+            else:
+                print(f"[P2P] Model {model_id} auto-sync failed (will retry on next cycle)")
+        except Exception as e:
+            print(f"[P2P] Error in auto-sync: {e}")
+
+    async def _trigger_immediate_evaluation(self, config_key: str, model_id: str = None):
+        """Trigger immediate evaluation for a config after training completes.
+
+        Part of the Training→Eval→Promotion pipeline to eliminate wait times.
+        """
+        try:
+            print(f"[Pipeline] Triggering immediate evaluation for {config_key} (model: {model_id})")
+
+            # Run shadow tournament immediately for this config
+            if hasattr(self, 'shadow_tournament'):
+                result = await self.shadow_tournament.run_shadow_tournament(config_key)
+                if result.get('success'):
+                    print(f"[Pipeline] Evaluation complete for {config_key}, checking promotion...")
+                    # Update last eval time
+                    self._last_shadow_eval[config_key] = time.time()
+                    # Trigger promotion check
+                    await self._check_promotion_after_eval(config_key, model_id, result)
+                else:
+                    print(f"[Pipeline] Evaluation failed for {config_key}: {result.get('error')}")
+        except Exception as e:
+            print(f"[Pipeline] Error in immediate evaluation: {e}")
+
+    async def _check_promotion_after_eval(self, config_key: str, model_id: str, eval_result: dict):
+        """Check if model should be promoted after evaluation.
+
+        Part of the Training→Eval→Promotion pipeline.
+        """
+        try:
+            if hasattr(self, 'model_promoter') and self.model_promoter:
+                # Check if any models in this config qualify for promotion
+                candidates = self.model_promoter.get_promotion_candidates(config_key)
+                if candidates:
+                    print(f"[Pipeline] Found {len(candidates)} promotion candidates for {config_key}")
+                    for candidate in candidates:
+                        result = await self.model_promoter.try_promote(candidate)
+                        if result.get('promoted'):
+                            print(f"[Pipeline] Model {candidate} promoted successfully!")
+                            # Publish promotion event
+                            await self.event_bus.publish(DataEvent(
+                                event_type=DataEventType.MODEL_PROMOTED,
+                                payload={
+                                    'model_id': candidate,
+                                    'config': config_key,
+                                    'elo_gain': result.get('elo_gain', 0),
+                                }
+                            ))
+        except Exception as e:
+            print(f"[Pipeline] Error checking promotion: {e}")
 
     async def _on_promotion_for_feedback(self, event: DataEvent):
         """Handle model promotion for feedback loop."""
@@ -3330,6 +3431,16 @@ class UnifiedAILoop:
 
         except Exception as e:
             print(f"[Curriculum] Error handling Elo change event: {e}")
+
+    async def _on_curriculum_rebalanced(self, event: DataEvent):
+        """Phase 3.1: Propagate curriculum weights to P2P selfplay coordinator."""
+        try:
+            weights = event.payload.get('new_weights', {})
+            if weights and self.p2p and hasattr(self.p2p, 'selfplay'):
+                self.p2p.selfplay.update_curriculum_weights(weights)
+                print(f"[P2P] Updated selfplay curriculum weights: {len(weights)} configs")
+        except Exception as e:
+            print(f"[P2P] Error propagating curriculum weights: {e}")
 
     async def _adjust_selfplay_rate(self, multiplier: float, reason: str) -> None:
         """Adjust selfplay rate based on feedback signals.
@@ -4337,8 +4448,28 @@ class UnifiedAILoop:
             for config in configs:
                 print(f"  {config.board_type} {config.num_players}p: {config.num_games} games")
 
-            # Run locally (sequential) - for distributed, use p2p_orchestrator
-            results = run_tournament_round_local(configs)
+            # Phase 3.3: Use distributed execution when cluster is available
+            results = None
+            if run_tournament_round_distributed and load_cluster_hosts and filter_available_hosts:
+                try:
+                    # Load and filter available cluster hosts
+                    hosts_config = AI_SERVICE_ROOT / "config" / "remote_hosts.yaml"
+                    cluster_hosts = load_cluster_hosts(str(hosts_config))
+                    if cluster_hosts:
+                        available_hosts = await filter_available_hosts(cluster_hosts)
+                        if available_hosts:
+                            print(f"[DiverseTournament] Using distributed execution ({len(available_hosts)} hosts)")
+                            results = await run_tournament_round_distributed(configs, available_hosts)
+                        else:
+                            print("[DiverseTournament] No cluster hosts available, falling back to local")
+                    else:
+                        print("[DiverseTournament] No cluster hosts configured, using local execution")
+                except Exception as e:
+                    print(f"[DiverseTournament] Distributed execution failed ({e}), falling back to local")
+
+            # Fall back to local execution if distributed didn't work
+            if results is None:
+                results = run_tournament_round_local(configs)
 
             # Aggregate results
             total_games = sum(r.games_completed for r in results)
@@ -4527,6 +4658,32 @@ class UnifiedAILoop:
                         num_players=num_players,
                     )
 
+    async def _async_quality_check(self):
+        """Run data quality check asynchronously (non-blocking).
+
+        This runs in the background so it doesn't block data collection.
+        """
+        try:
+            quality_stats = self.data_collector.compute_quality_stats()
+            quality_score = self.feedback.update_data_quality(
+                draw_rate=quality_stats.get("draw_rate"),
+                timeout_rate=quality_stats.get("timeout_rate"),
+                game_lengths=quality_stats.get("game_lengths"),
+            )
+            print(f"[DataQuality] Updated: score={quality_score:.2f}, "
+                  f"draw_rate={quality_stats.get('draw_rate', 0):.1%}, "
+                  f"timeout_rate={quality_stats.get('timeout_rate', 0):.1%}, "
+                  f"sampled={quality_stats.get('total_sampled', 0)} games")
+
+            # Update Prometheus metrics
+            if HAS_PROMETHEUS:
+                DATA_QUALITY_SCORE.set(quality_score)
+                DATA_QUALITY_DRAW_RATE.set(quality_stats.get("draw_rate", 0))
+                DATA_QUALITY_TIMEOUT_RATE.set(quality_stats.get("timeout_rate", 0))
+                DATA_QUALITY_CHECKS.inc()
+        except Exception as qe:
+            print(f"[DataQuality] Error computing quality: {qe}")
+
     async def _data_collection_loop(self):
         """Main data collection loop - runs every 60 seconds.
 
@@ -4585,31 +4742,13 @@ class UnifiedAILoop:
                         ))
 
                 # Periodic data quality check (every 10 cycles, ~10 minutes)
-                # Only run quality stats when using internal collector (has compute_quality_stats)
+                # OPTIMIZED: Run async in background to not block data collection
                 _quality_check_counter += 1
                 if _quality_check_counter >= _quality_check_interval:
                     _quality_check_counter = 0
                     if self.feedback and not use_external:
-                        try:
-                            quality_stats = self.data_collector.compute_quality_stats()
-                            quality_score = self.feedback.update_data_quality(
-                                draw_rate=quality_stats.get("draw_rate"),
-                                timeout_rate=quality_stats.get("timeout_rate"),
-                                game_lengths=quality_stats.get("game_lengths"),
-                            )
-                            print(f"[DataQuality] Updated: score={quality_score:.2f}, "
-                                  f"draw_rate={quality_stats.get('draw_rate', 0):.1%}, "
-                                  f"timeout_rate={quality_stats.get('timeout_rate', 0):.1%}, "
-                                  f"sampled={quality_stats.get('total_sampled', 0)} games")
-
-                            # Update Prometheus metrics
-                            if HAS_PROMETHEUS:
-                                DATA_QUALITY_SCORE.set(quality_score)
-                                DATA_QUALITY_DRAW_RATE.set(quality_stats.get("draw_rate", 0))
-                                DATA_QUALITY_TIMEOUT_RATE.set(quality_stats.get("timeout_rate", 0))
-                                DATA_QUALITY_CHECKS.inc()
-                        except Exception as qe:
-                            print(f"[DataQuality] Error computing quality: {qe}")
+                        # Spawn quality check as background task (non-blocking)
+                        asyncio.create_task(self._async_quality_check())
 
             except Exception as e:
                 print(f"[DataCollection] Error: {e}")
@@ -4631,11 +4770,11 @@ class UnifiedAILoop:
     async def _evaluation_loop(self):
         """Main evaluation loop - shadow every 15 min, full every 1 hour.
 
-        OPTIMIZED: Now runs shadow tournaments in parallel (up to 3 concurrent)
-        instead of one-at-a-time, reducing evaluation cycle time by 3-6x.
+        OPTIMIZED: Now runs all 9 configs in parallel (3 boards × 3 player counts)
+        instead of batched 3-at-a-time, reducing evaluation cycle from 45min to ~5min.
         """
-        # Configuration for parallel evaluation
-        max_concurrent_shadow = 3  # Run up to 3 shadow tournaments in parallel
+        # Configuration for parallel evaluation - run ALL configs simultaneously
+        max_concurrent_shadow = 9  # Run all 9 configs in parallel (was 3)
 
         while self._running:
             try:
@@ -4832,6 +4971,126 @@ class UnifiedAILoop:
             # Check every 10 minutes
             try:
                 await asyncio.wait_for(self._shutdown_event.wait(), timeout=600)
+                break
+            except asyncio.TimeoutError:
+                pass
+
+    async def _holdout_validation_loop(self):
+        """Phase 3.2: Continuous holdout validation to detect overfitting.
+
+        Periodically evaluates the best models on held-out data to track
+        generalization performance and detect overfitting trends.
+        """
+        # Import holdout validation
+        try:
+            from scripts.holdout_validation import (
+                evaluate_model_on_holdout,
+                EvaluationResult,
+                OVERFIT_THRESHOLD,
+            )
+            has_holdout = True
+        except ImportError:
+            print("[HoldoutValidation] holdout_validation module not available - skipping")
+            return
+
+        holdout_interval = 1800  # Run every 30 minutes
+        last_holdout_time = 0.0
+        consecutive_overfit = {}  # config -> count of consecutive overfit detections
+
+        while self._running:
+            try:
+                now = time.time()
+                if now - last_holdout_time >= holdout_interval:
+                    last_holdout_time = now
+
+                    # Find the best model for each config
+                    models_dir = AI_SERVICE_ROOT / "models"
+                    for config_key in self.state.configs:
+                        parts = config_key.rsplit("_", 1)
+                        board_type = parts[0]
+                        num_players = int(parts[1].replace("p", ""))
+
+                        # Find most recent model file for this config
+                        model_pattern = f"{config_key}*.pth"
+                        model_files = list(models_dir.glob(model_pattern))
+                        if not model_files:
+                            model_pattern = f"{config_key}*.pt"
+                            model_files = list(models_dir.glob(model_pattern))
+
+                        if not model_files:
+                            continue
+
+                        # Use most recent model
+                        model_path = max(model_files, key=lambda p: p.stat().st_mtime)
+
+                        try:
+                            # Run holdout evaluation
+                            result = await asyncio.get_event_loop().run_in_executor(
+                                None,
+                                lambda: evaluate_model_on_holdout(
+                                    model_path=model_path,
+                                    board_type=board_type,
+                                    num_players=num_players,
+                                    train_loss=0.0,  # Don't have train loss here
+                                )
+                            )
+
+                            if result:
+                                # Update Prometheus metrics
+                                if HAS_PROMETHEUS:
+                                    try:
+                                        from prometheus_client import REGISTRY
+                                        if 'ringrift_holdout_loss' not in REGISTRY._names_to_collectors:
+                                            from prometheus_client import Gauge
+                                            HOLDOUT_LOSS_GAUGE = Gauge(
+                                                'ringrift_holdout_loss',
+                                                'Holdout validation loss',
+                                                ['config']
+                                            )
+                                        else:
+                                            HOLDOUT_LOSS_GAUGE = REGISTRY._names_to_collectors['ringrift_holdout_loss']
+                                        HOLDOUT_LOSS_GAUGE.labels(config=config_key).set(result.holdout_loss)
+                                    except Exception:
+                                        pass
+
+                                # Check for overfitting trend
+                                if result.overfit_gap is not None and result.overfit_gap > OVERFIT_THRESHOLD:
+                                    consecutive_overfit[config_key] = consecutive_overfit.get(config_key, 0) + 1
+
+                                    if consecutive_overfit[config_key] >= 3:
+                                        print(f"[HoldoutValidation] OVERFITTING ALERT: {config_key} "
+                                              f"gap={result.overfit_gap:.4f} "
+                                              f"(consecutive={consecutive_overfit[config_key]})")
+
+                                        # Emit overfitting event for feedback loop
+                                        await self.event_bus.publish(DataEvent(
+                                            event_type=DataEventType.DATA_QUALITY_ALERT,
+                                            payload={
+                                                "alert_type": "overfitting",
+                                                "config": config_key,
+                                                "holdout_loss": result.holdout_loss,
+                                                "overfit_gap": result.overfit_gap,
+                                                "consecutive_count": consecutive_overfit[config_key],
+                                            }
+                                        ))
+                                else:
+                                    # Reset consecutive count on good result
+                                    consecutive_overfit[config_key] = 0
+
+                                print(f"[HoldoutValidation] {config_key}: "
+                                      f"loss={result.holdout_loss:.4f}, "
+                                      f"accuracy={result.holdout_accuracy:.2%}, "
+                                      f"samples={result.num_samples}")
+
+                        except Exception as e:
+                            print(f"[HoldoutValidation] Error evaluating {config_key}: {e}")
+
+            except Exception as e:
+                print(f"[HoldoutValidation] Loop error: {e}")
+
+            # Check every 5 minutes
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=300)
                 break
             except asyncio.TimeoutError:
                 pass
@@ -5910,7 +6169,7 @@ class UnifiedAILoop:
                 "curriculum", "metrics", "health_check", "utilization_optimization",
                 "hp_tuning_sync", "external_drive_sync", "pbt", "nas",
                 "per", "cross_process_event", "health_recovery", "gauntlet_culling",
-                "elo_sync"
+                "elo_sync", "holdout_validation"
             ]
             results = await asyncio.gather(
                 self._data_collection_loop(),
@@ -5930,6 +6189,7 @@ class UnifiedAILoop:
                 self._health_recovery_loop(),  # Automatic issue detection and healing
                 self._gauntlet_culling_loop(),  # Model evaluation and top-quartile culling
                 self._elo_sync_loop(),  # Cluster-wide Elo database consistency
+                self._holdout_validation_loop(),  # Phase 3.2: Continuous holdout validation
                 return_exceptions=True,  # Don't crash if one loop fails
             )
             # Log any exceptions from loops
