@@ -107,6 +107,13 @@ except ImportError:
     unified_check_cpu = None
     RESOURCE_LIMITS = None
 
+# Model hygiene: validation at startup
+try:
+    from scripts.validate_models import run_startup_validation
+    HAS_MODEL_VALIDATION = True
+except ImportError:
+    HAS_MODEL_VALIDATION = False
+
 # Optional Prometheus client
 try:
     from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
@@ -6333,6 +6340,13 @@ def main():
         else:
             print("[UnifiedLoop] No emergency halt flag was set")
         return
+
+    # Model hygiene: validate and clean up corrupted models at startup
+    if HAS_MODEL_VALIDATION and (args.start or args.foreground):
+        models_dir = AI_SERVICE_ROOT / "models"
+        if models_dir.exists():
+            print("[UnifiedLoop] Running startup model validation...")
+            run_startup_validation(models_dir, cleanup=True)
 
     # Validate config at startup
     if args.start or args.foreground:

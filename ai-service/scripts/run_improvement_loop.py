@@ -125,6 +125,13 @@ except ImportError:
     get_resource_status = lambda: {}  # type: ignore
     RESOURCE_LIMITS = None  # type: ignore
 
+# Model hygiene: validation at startup
+try:
+    from scripts.validate_models import run_startup_validation
+    HAS_MODEL_VALIDATION = True
+except ImportError:
+    HAS_MODEL_VALIDATION = False
+
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -2305,6 +2312,13 @@ def main():
         help="Path to state checkpoint file",
     )
     args = parser.parse_args()
+
+    # Model hygiene: validate and clean up corrupted models at startup
+    if HAS_MODEL_VALIDATION:
+        models_dir = AI_SERVICE_ROOT / "models"
+        if models_dir.exists():
+            print("[Model Hygiene] Running startup model validation...")
+            run_startup_validation(models_dir, cleanup=True)
 
     canonical_mode = not bool(args.allow_legacy)
     if args.replay_db:
