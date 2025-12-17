@@ -992,8 +992,7 @@ The codebase enforces **80% max utilization** across CPU, GPU, and memory to pre
 
 **Key modules:**
 
-- [`app/utils/resource_guard.py`](app/utils/resource_guard.py) - Sync-focused utilities with psutil/PyTorch
-- [`app/utils/resource_limiter.py`](app/utils/resource_limiter.py) - Async-focused with decorators and backoff
+- [`app/utils/resource_guard.py`](app/utils/resource_guard.py) - Sync and async utilities with psutil/PyTorch, decorators and backoff
 - [`app/coordination/resource_targets.py`](app/coordination/resource_targets.py) - PID-controlled target utilization
 - [`app/coordination/safeguards.py`](app/coordination/safeguards.py) - Emergency halt and spawn limits
 

@@ -492,7 +492,7 @@ These items should be resolved by the project owner before or during PV-2–PV-7
 | Core engine tests passing         | ✅     | Part of 2,987 TS tests           | turnOrchestrator, aggregates |
 | Client component tests passing    | ✅     | GameHUD, VictoryModal, BoardView | 176 component tests added    |
 | Server tests passing              | ✅     | WebSocket, auth, sessions        | Integration suites           |
-| AI service tests passing          | ✅     | 1,727 tests                      | pytest suite                 |
+| AI service tests passing          | ✅     | 1,824 tests                      | pytest suite                 |
 | No skipped tests blocking release | ✅     | 47 triaged (down from 160+)      | `SKIPPED_TESTS_TRIAGE.md`    |
 | Weak assertions audited           | ✅     | 18 strengthened                  | `WEAK_ASSERTION_AUDIT.md`    |
 

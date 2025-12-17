@@ -1,6 +1,6 @@
 # RingRift Documentation Index
 
-> **Last Updated:** 2025-12-14
+> **Last Updated:** 2025-12-16
 > **Organization:** 13 core docs in root, 6 in `/docs/` root, detailed docs in `/docs/` subdirectories
 
 This index catalogs all project documentation organized by topic and location. For a lightweight landing page, see `docs/INDEX.md`.
@@ -42,8 +42,8 @@ This index catalogs all project documentation organized by topic and location. F
 
 ### Architecture
 
-- [RULES_ENGINE_ARCHITECTURE.md](RULES_ENGINE_ARCHITECTURE.md) - Rules engine design
-- [AI_ARCHITECTURE.md](AI_ARCHITECTURE.md) - AI service architecture
+- [RULES_ENGINE_ARCHITECTURE.md](docs/architecture/RULES_ENGINE_ARCHITECTURE.md) - Rules engine design
+- [AI_ARCHITECTURE.md](docs/architecture/AI_ARCHITECTURE.md) - AI service architecture
 
 ---
 
@@ -395,5 +395,5 @@ Key reference documents:
 
 - **New developers:** README → QUICKSTART → CONTRIBUTING
 - **Rules/Game designers:** ringrift\_\*.md → RULES_CANONICAL_SPEC
-- **AI/ML engineers:** AI_ARCHITECTURE → docs/ai/
+- **AI/ML engineers:** docs/architecture/AI_ARCHITECTURE → docs/ai/
 - **Operators:** docs/runbooks/ → docs/operations/ALERTING_THRESHOLDS
