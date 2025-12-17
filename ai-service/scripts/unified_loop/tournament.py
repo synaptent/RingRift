@@ -11,9 +11,13 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List
 
 from .config import DataEvent, DataEventType, EvaluationConfig
+
+# Path to config directory
+AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 
 if TYPE_CHECKING:
     from unified_ai_loop import EventBus, UnifiedLoopState
@@ -31,17 +35,48 @@ except ImportError:
     get_evaluation_interval = None
 
 
+def _load_tournament_hosts() -> List[Dict[str, Any]]:
+    """Load tournament hosts from config/distributed_hosts.yaml."""
+    config_path = AI_SERVICE_ROOT / "config" / "distributed_hosts.yaml"
+
+    if not config_path.exists():
+        print("[Tournament] Warning: No config found, using empty host list")
+        return []
+
+    try:
+        import yaml
+        with open(config_path) as f:
+            config = yaml.safe_load(f) or {}
+
+        hosts = []
+        for name, info in config.get("hosts", {}).items():
+            # Use Tailscale IP preferentially
+            ip = info.get("tailscale_ip") or info.get("ssh_host")
+            if not ip or info.get("status") != "ready":
+                continue
+
+            user = info.get("ssh_user", "root")
+            hosts.append({
+                "name": name,
+                "ssh": f"{user}@{ip}",
+                "cpus": info.get("cpus", 8),
+                "ringrift_path": info.get("ringrift_path", "~/ringrift/ai-service"),
+            })
+
+        # Sort by CPU count descending (prioritize high-CPU hosts)
+        hosts.sort(key=lambda h: h["cpus"], reverse=True)
+        return hosts
+    except Exception as e:
+        print(f"[Tournament] Error loading config: {e}")
+        return []
+
+
 class ShadowTournamentService:
     """Runs lightweight continuous evaluation."""
 
-    # Tournament hosts - high CPU Vast hosts via Tailscale IPs
+    # Tournament hosts loaded from config/distributed_hosts.yaml
     # Prioritized by CPU count for CPU-intensive tournament evaluation
-    TOURNAMENT_HOSTS = [
-        {"name": "vast-5090-quad", "ssh": "root@100.118.201.85", "cpus": 512, "ringrift_path": "~/ringrift/ai-service"},
-        {"name": "vast-4060ti", "ssh": "root@100.100.242.64", "cpus": 384, "ringrift_path": "~/ringrift/ai-service"},
-        {"name": "vast-3070", "ssh": "root@100.74.154.36", "cpus": 24, "ringrift_path": "~/ringrift/ai-service"},
-        {"name": "vast-2060s", "ssh": "root@100.75.98.13", "cpus": 22, "ringrift_path": "~/ringrift/ai-service"},
-    ]
+    TOURNAMENT_HOSTS = _load_tournament_hosts()
 
     def __init__(self, config: EvaluationConfig, state: "UnifiedLoopState", event_bus: "EventBus"):
         self.config = config
