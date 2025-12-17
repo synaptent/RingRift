@@ -759,6 +759,10 @@ class P2POrchestrator:
             self.max_concurrent_cmaes_evals = 2
         self._cmaes_eval_semaphore = asyncio.Semaphore(int(self.max_concurrent_cmaes_evals))
 
+        # Tournament match semaphore - limit concurrent Elo calibration matches to prevent OOM
+        # Each match can potentially load neural networks which use significant memory
+        self._tournament_match_semaphore = asyncio.Semaphore(1)  # Only 1 concurrent match
+
         # Phase 2: Distributed data sync state
         self.local_data_manifest: Optional[NodeDataManifest] = None
         self.cluster_data_manifest: Optional[ClusterDataManifest] = None  # Leader-only
@@ -8402,16 +8406,22 @@ print(wins / total)
             print(f"[P2P] Playing Elo match {match_id}: {agent_a} vs {agent_b}")
             start_time = time.time()
 
-            # Run the match in a thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                self._play_elo_match_sync,
-                agent_a_config,
-                agent_b_config,
-                board_type_str,
-                num_players,
-            )
+            # Acquire semaphore to prevent concurrent matches (OOM protection)
+            sem = getattr(self, "_tournament_match_semaphore", None)
+            if sem is None:
+                sem = asyncio.Semaphore(1)
+
+            async with sem:
+                # Run the match in a thread pool to avoid blocking
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    self._play_elo_match_sync,
+                    agent_a_config,
+                    agent_b_config,
+                    board_type_str,
+                    num_players,
+                )
 
             duration = time.time() - start_time
 
@@ -8537,13 +8547,13 @@ print(wins / total)
                     mem = psutil.virtual_memory()
                     available_gb = mem.available / (1024**3)
 
-                    # Require at least 4GB free for neural network loading
-                    if available_gb < 4.0:
-                        print(f"[P2P] Skipping NN-based AI {ai_type}: only {available_gb:.1f}GB available (need 4GB)")
-                        # Fall back to heuristic AI
-                        from app.ai.heuristic_ai import HeuristicAI
-                        config = AIConfig(ai_type=AIType.HEURISTIC, board_type=board_type, difficulty=7)
-                        return HeuristicAI(player_num, config)
+                    # Require at least 8GB free for neural network loading (conservative to prevent OOM)
+                    if available_gb < 8.0:
+                        print(f"[P2P] Skipping NN-based AI {ai_type}: only {available_gb:.1f}GB available (need 8GB)")
+                        # Fall back to descent AI (CPU-based, no NN)
+                        from app.ai.descent_ai import DescentAI
+                        config = AIConfig(ai_type=AIType.DESCENT, board_type=board_type, difficulty=7)
+                        return DescentAI(player_num, config, board_type)
 
                     # Safe to load neural network AI
                     try:
