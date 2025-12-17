@@ -139,8 +139,10 @@ Updated core modules to import from `app/config/thresholds.py`:
 | `app/training/background_eval.py`      | INITIAL_ELO_RATING, ELO_DROP_ROLLBACK               | ✅ Complete |
 | `app/training/feedback_accelerator.py` | INITIAL_ELO_RATING                                  | ✅ Complete |
 | `app/training/unified_orchestrator.py` | INITIAL_ELO_RATING                                  | ✅ Complete |
-| `app/config/unified_config.py`         | INITIAL_ELO_RATING, ELO_K_FACTOR, etc.              | ✅ Complete |
+| `app/config/unified_config.py`         | INITIAL_ELO_RATING, ELO_K_FACTOR, ELO_DROP_ROLLBACK | ✅ Complete |
 | `scripts/unified_loop/config.py`       | INITIAL_ELO_RATING, ELO_DROP_ROLLBACK               | ✅ Complete |
+| `scripts/p2p/constants.py`             | INITIAL_ELO_RATING, ELO_K_FACTOR                    | ✅ Complete |
+| `scripts/p2p_orchestrator.py`          | Uses constants from p2p/constants.py                | ✅ Complete |
 
 **Pattern Used:**
 
@@ -303,9 +305,21 @@ result = await transport.transfer_file(
 )
 ```
 
+**Additional Enhancement (2025-12-17):**
+
+Created `app/coordination/sync_base.py` - Abstract base class for sync managers:
+
+- `SyncManagerBase` - Base class with common patterns
+- `SyncState` - Unified state dataclass with JSON serialization
+- `SimpleCircuitBreaker` - Lightweight circuit breaker for per-node fault tolerance
+- `try_transports()` - Helper for transport failover orchestration
+
+This provides a foundation for future sync manager consolidation.
+
 **Remaining (Optional):**
 
 - Refactor `ModelSyncCoordinator` to use `ClusterTransport` (not widely used)
+- Migrate existing sync managers to inherit from `SyncManagerBase`
 - Add ClusterTransport tests
 
 ---
