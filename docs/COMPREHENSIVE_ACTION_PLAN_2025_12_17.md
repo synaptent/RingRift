@@ -3148,7 +3148,7 @@ def on_sync_failure(game, error):
 - [x] Game-level `DataValidator` class ✅ `app/training/data_validation.py` (21 tests)
 - [x] `GameDeduplicator` for training data ✅ `app/training/data_validation.py`
 - [x] Prometheus metrics for data quality ✅ `VALIDATION_RUNS`, `DUPLICATE_RATE` gauges
-- [ ] Data quality Grafana dashboard - Not yet created
+- [x] Data quality Grafana dashboard ✅ `monitoring/grafana/dashboards/data-quality.json`
 
 **4.5 Recovery After Failures:**
 
