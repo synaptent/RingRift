@@ -87,11 +87,16 @@ from app.distributed import (
     BOARD_MEMORY_REQUIREMENTS,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("run_distributed_nnue_training", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
+    logger = logging.getLogger(__name__)
 
 # Deployment modes for host selection
 VALID_MODES = ["local", "lan", "aws", "hybrid"]

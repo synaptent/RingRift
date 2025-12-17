@@ -34,8 +34,13 @@ from app.training.generate_data import generate_dataset
 from app.training.train import train_from_file
 from app.training.config import TrainConfig
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("run_descent_vs_mcts_experiment", log_dir="logs")
+except ImportError:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    logger = logging.getLogger(__name__)
 
 
 def run_experiment(
