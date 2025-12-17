@@ -6,7 +6,7 @@ set -e
 
 NODE_ID="${1:-$(hostname)}"
 RINGRIFT_PATH="${2:-$HOME/ringrift}"
-COORDINATOR_URL="${3:-http://100.78.101.123:8770}"
+COORDINATOR_URL="${3:-http://localhost:8770}"  # Set to your coordinator URL
 P2P_PORT="${4:-8770}"
 
 echo "[setup] Configuring P2P orchestrator cron watchdog for node: $NODE_ID"

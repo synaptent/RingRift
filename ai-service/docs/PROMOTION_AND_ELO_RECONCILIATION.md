@@ -123,9 +123,9 @@ print(f"Is significant: {drift.is_significant}")
 ### Synchronization
 
 ```python
-# Sync from a remote host
+# Sync from a remote host (replace with your node's IP or hostname)
 result = reconciler.sync_from_remote(
-    remote_host="192.168.1.100",
+    remote_host="gpu-node-1",  # Or use Tailscale IP
     remote_db_path="~/ringrift/ai-service/data/unified_elo.db",
     ssh_user="ubuntu",
 )
@@ -156,7 +156,7 @@ reconciler = EloReconciler(
 )
 
 # Conflicts are now automatically resolved by timestamp
-result = reconciler.sync_from_remote("192.168.1.100")
+result = reconciler.sync_from_remote("gpu-node-1")
 print(f"Resolved: {result.matches_resolved}")
 ```
 
@@ -169,8 +169,8 @@ The unified AI loop uses `LAST_WRITE_WINS` by default for automatic conflict res
 report = reconciler.reconcile_all()
 print(report.summary())
 
-# Custom host list
-report = reconciler.reconcile_all(hosts=["192.168.1.100", "192.168.1.101"])
+# Custom host list (replace with your actual node hostnames or IPs)
+report = reconciler.reconcile_all(hosts=["gpu-node-1", "gpu-node-2"])
 ```
 
 ### Historical Drift Tracking
@@ -220,8 +220,8 @@ python scripts/elo_reconciliation_cli.py check-drift
 python scripts/elo_reconciliation_cli.py check-drift --board-type square8 --num-players 2
 python scripts/elo_reconciliation_cli.py check-drift --json
 
-# Sync from specific host
-python scripts/elo_reconciliation_cli.py sync --host 192.168.1.100
+# Sync from specific host (replace with your node hostname or IP)
+python scripts/elo_reconciliation_cli.py sync --host gpu-node-1
 
 # Full reconciliation
 python scripts/elo_reconciliation_cli.py reconcile-all
@@ -348,11 +348,11 @@ Configure P2P hosts in `config/remote_hosts.yaml`:
 
 ```yaml
 standard_hosts:
-  gh200-1:
-    ssh_host: 192.168.1.100
+  gpu-node-1:
+    ssh_host: 10.0.0.1 # Replace with actual IP or hostname
     role: selfplay
-  gh200-2:
-    ssh_host: 192.168.1.101
+  gpu-node-2:
+    ssh_host: 10.0.0.2 # Replace with actual IP or hostname
     role: selfplay
 ```
 

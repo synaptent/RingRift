@@ -12,7 +12,7 @@ This document describes the automated P2P orchestration system for Vast.ai GPU i
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐             │
-│  │ mac-studio  │    │ lambda-a10  │    │ lambda-h100 │             │
+│  │ coordinator │    │ gpu-node-1  │    │ gpu-node-2  │             │
 │  │ (Leader)    │◄──►│ (Voter)     │◄──►│ (Voter)     │             │
 │  │ TS: 100.x   │    │ TS: 100.x   │    │ TS: 100.x   │             │
 │  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘             │
@@ -22,7 +22,7 @@ This document describes the automated P2P orchestration system for Vast.ai GPU i
 │         ┌──────────────────┼──────────────────┐                     │
 │         │                  │                  │                     │
 │  ┌──────▼──────┐    ┌──────▼──────┐    ┌──────▼──────┐             │
-│  │ vast-5090x8 │    │ vast-a40    │    │ vast-4080s  │  ... x15    │
+│  │ cloud-vm-1  │    │ cloud-vm-2  │    │ cloud-vm-3  │  ... x N    │
 │  │ P2P:8770    │    │ P2P:8770    │    │ P2P:8770    │             │
 │  │ aria2:6800  │    │ aria2:6800  │    │ aria2:6800  │             │
 │  │ data:8766   │    │ data:8766   │    │ data:8766   │             │
@@ -106,9 +106,9 @@ Vast instances are auto-discovered and added to `config/distributed_hosts.yaml`:
 
 ```yaml
 hosts:
-  vast-28928169:
-    ssh_host: ssh5.vast.ai
-    ssh_port: 18168
+  vast-INSTANCE_ID:
+    ssh_host: sshN.vast.ai # From `vastai show instances`
+    ssh_port: 12345 # From `vastai show instances`
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
@@ -117,8 +117,8 @@ hosts:
     gpu: 8x RTX 5090
     role: nn_training_primary
     status: ready
-    vast_instance_id: '28928169'
-    tailscale_ip: 100.x.x.x # If available
+    vast_instance_id: 'INSTANCE_ID'
+    tailscale_ip: 100.x.x.x # Tailscale IP if available
 ```
 
 ### GPU to Role Mapping
@@ -142,9 +142,9 @@ transport = Aria2Transport(Aria2Config(
     max_concurrent_downloads=5,
 ))
 
-# Sync from multiple sources
+# Sync from multiple sources (replace with your instance Tailscale IPs or hostnames)
 result = await transport.sync_from_sources(
-    sources=["http://vast-28928169:8766", "http://vast-28918742:8766"],
+    sources=["http://node-1:8766", "http://node-2:8766"],
     local_dir=Path("data/models"),
     patterns=["*.pth"],
 )
@@ -154,9 +154,10 @@ result = await transport.sync_from_sources(
 
 ```bash
 # Download from multiple sources with 16 connections each
+# Replace node-1, node-2 with your instance Tailscale IPs or hostnames
 aria2c --max-connection-per-server=16 --split=16 \
-    http://vast-28928169:8766/models/latest.pth \
-    http://vast-28918742:8766/models/latest.pth
+    http://node-1:8766/models/latest.pth \
+    http://node-2:8766/models/latest.pth
 ```
 
 ## Environment Variables
@@ -198,7 +199,7 @@ curl http://localhost:6800/jsonrpc \
 ### Tailscale SOCKS Not Working
 
 1. Check tailscaled is running: `pgrep tailscaled`
-2. Test SOCKS: `curl --socks5 localhost:1055 http://100.107.168.125:8770/health`
+2. Test SOCKS: `curl --socks5 localhost:1055 http://COORDINATOR_IP:8770/health`
 3. Check auth: `tailscale status`
 
 ### aria2 Not Responding
@@ -295,8 +296,8 @@ python scripts/vast_p2p_sync.py --provision 3
 ### Admin Endpoints Used
 
 ```bash
-# Unretire a node
-curl -X POST http://localhost:8770/admin/unretire/vast-28928169
+# Unretire a node (replace INSTANCE_ID with actual instance ID)
+curl -X POST http://localhost:8770/admin/unretire/vast-INSTANCE_ID
 
 # Get retired nodes
 curl http://localhost:8770/cluster/retired

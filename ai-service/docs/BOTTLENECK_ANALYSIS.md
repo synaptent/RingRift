@@ -141,8 +141,8 @@ PYTHONPATH=. nohup python scripts/unified_data_sync.py --watchdog > logs/unified
 # Check unified AI loop status
 PYTHONPATH=. python scripts/unified_ai_loop.py --status
 
-# Start GPU selfplay on Lambda node
-ssh lambda-gh200-h "cd ~/ringrift/ai-service && source venv/bin/activate && \
+# Start GPU selfplay on a GPU node (replace gpu-node with your hostname)
+ssh gpu-node "cd ~/ringrift/ai-service && source venv/bin/activate && \
   PYTHONPATH=. nohup python scripts/run_gpu_selfplay.py --board hex8 --num-games 1000 --num-players 2 \
   --output-dir data/selfplay/gpu_hex8_2p > logs/gpu_hex8_2p.log 2>&1 &"
 

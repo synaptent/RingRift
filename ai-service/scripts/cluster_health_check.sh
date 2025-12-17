@@ -5,7 +5,7 @@
 set -e
 
 # Configuration
-COORDINATOR_URL="${COORDINATOR_URL:-http://100.78.101.123:8770}"
+COORDINATOR_URL="${COORDINATOR_URL:-http://localhost:8770}"  # Set to your coordinator IP
 ALERT_EMAIL="${ALERT_EMAIL:-}"  # Set to receive email alerts
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"  # Set for Slack alerts
 LOG_FILE="${LOG_FILE:-/tmp/cluster_health.log}"

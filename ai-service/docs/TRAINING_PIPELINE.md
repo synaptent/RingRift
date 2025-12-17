@@ -10,8 +10,8 @@ This document describes the self-improvement training loop architecture and oper
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌────────────┐ │
-│  │  GH200 x12   │    │  Vast.ai x4  │    │  Lambda H100 │    │ Lambda A10 │ │
-│  │  (Selfplay)  │    │  (Selfplay)  │    │  (Training)  │    │ (Backup)   │ │
+│  │  GPU Nodes   │    │  Cloud VMs   │    │  Train Node  │    │  Backup    │ │
+│  │  (Selfplay)  │    │  (Selfplay)  │    │  (Training)  │    │  (Backup)  │ │
 │  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘    └────────────┘ │
 │         │                   │                   │                           │
 │         └───────────────────┼───────────────────┘                           │
@@ -33,7 +33,7 @@ This document describes the self-improvement training loop architecture and oper
 │                             │                                               │
 │                     ┌───────▼───────┐                                       │
 │                     │   GPU Train   │                                       │
-│                     │   (H100)      │                                       │
+│                     │  (GPU Node)   │                                       │
 │                     └───────┬───────┘                                       │
 │                             │                                               │
 │                     ┌───────▼───────┐                                       │
@@ -48,7 +48,7 @@ This document describes the self-improvement training loop architecture and oper
 
 ### 1. Selfplay Generation
 
-**Hosts**: GH200 cluster (12 nodes), Vast.ai instances (4 nodes)
+**Hosts**: Configure in `config/cluster_hosts.yaml` (GPU nodes for selfplay, cloud VMs optional)
 
 **Output**: JSONL files in `data/selfplay/` directories
 
@@ -93,7 +93,7 @@ python3 scripts/export_replay_dataset.py \
 
 ### 5. Model Training
 
-**Host**: Lambda H100
+**Host**: Training GPU Node
 
 **Script**: `scripts/unified_ai_loop.py`
 
@@ -196,12 +196,12 @@ with open("logs/unified_loop/unified_loop_state.json", "r+") as f:
 
 ### SSH Key Issues
 
-Vast hosts require SSH key configuration on H100:
+Remote hosts require SSH key configuration on your training node:
 
 ```bash
-# Add to ~/.ssh/config on H100
-Host 100.118.201.85
-    User root
+# Add to ~/.ssh/config on training node
+Host gpu-node-*
+    User ubuntu
     IdentityFile ~/.ssh/id_cluster
     StrictHostKeyChecking no
 ```
@@ -214,7 +214,7 @@ Run health check:
 python3 scripts/db_health_check.py --repair --quarantine
 ```
 
-## Cron Jobs (H100)
+## Cron Jobs (Training Node)
 
 ```cron
 # Sync JSONL from vast hosts
@@ -229,7 +229,7 @@ python3 scripts/db_health_check.py --repair --quarantine
 
 ## Metrics
 
-Prometheus metrics available at: `http://H100_IP:9090/metrics`
+Prometheus metrics available at: `http://TRAINING_NODE_IP:9090/metrics`
 
 Key metrics:
 
@@ -522,7 +522,7 @@ python scripts/unified_ai_loop.py --start &
 **Fix**: Launch dedicated training loop
 
 ```bash
-ssh lambda-gh200-k "cd ~/ringrift/ai-service && source venv/bin/activate && \
+ssh gpu-node-1 "cd ~/ringrift/ai-service && source venv/bin/activate && \
   python scripts/multi_config_training_loop.py --board hexagonal --players 3 --iterations 30 &"
 ```
 
@@ -541,20 +541,20 @@ python scripts/run_hybrid_selfplay.py --board-type square8 --engine-mode gumbel-
 
 Install with: `crontab config/crontab_training.txt`
 
-| Schedule       | Job                          | Description                  |
-| -------------- | ---------------------------- | ---------------------------- |
-| `*/15 * * * *` | `sync_training_data_cron.sh` | Sync data from GH200 cluster |
-| `0 3 * * *`    | `prune_models.py --auto`     | Daily model pruning          |
-| `*/30 * * * *` | `vast_lifecycle.py --check`  | Vast health monitoring       |
+| Schedule       | Job                          | Description                |
+| -------------- | ---------------------------- | -------------------------- |
+| `*/15 * * * *` | `sync_training_data_cron.sh` | Sync data from GPU cluster |
+| `0 3 * * *`    | `prune_models.py --auto`     | Daily model pruning        |
+| `*/30 * * * *` | `vast_lifecycle.py --check`  | Cloud VM health monitoring |
 
 ### Active Daemons
 
-| Daemon                   | Host   | Purpose                     |
-| ------------------------ | ------ | --------------------------- |
-| `unified_ai_loop.py`     | Local  | Main orchestration          |
-| `unified_data_sync.py`   | Local  | Data collection             |
-| `auto_elo_tournament.py` | H100   | Model evaluation            |
-| `baseline_gauntlet.py`   | 2xH100 | Continuous baseline testing |
+| Daemon                   | Host       | Purpose                     |
+| ------------------------ | ---------- | --------------------------- |
+| `unified_ai_loop.py`     | Local      | Main orchestration          |
+| `unified_data_sync.py`   | Local      | Data collection             |
+| `auto_elo_tournament.py` | Train Node | Model evaluation            |
+| `baseline_gauntlet.py`   | GPU Node   | Continuous baseline testing |
 
 ### Quick Status Check
 
@@ -616,19 +616,19 @@ python scripts/train_nnue_policy.py \
 - `--freeze-value`: Freeze value head, train policy only
 - `--use-swa`: Stochastic weight averaging for stability
 
-### Tailscale Network
+### Network Configuration
 
-Cluster nodes accessible via Tailscale IPs:
+Configure your cluster nodes in `config/cluster_hosts.yaml.example`:
 
-| Node          | Tailscale IP    | Direct IP      |
-| ------------- | --------------- | -------------- |
-| GH200-a       | 100.123.183.70  | 192.222.51.29  |
-| GH200-e       | 100.88.176.74   | 192.222.57.162 |
-| GH200-f       | 100.104.165.116 | -              |
-| GH200-g       | 100.104.126.58  | 192.222.57.79  |
-| lambda-2xh100 | 100.97.104.89   | -              |
+| Node Type    | Example Tailscale IP | Example Direct IP |
+| ------------ | -------------------- | ----------------- |
+| gpu-node-1   | 100.x.x.x            | 10.0.0.1          |
+| gpu-node-2   | 100.x.x.x            | 10.0.0.2          |
+| training-srv | 100.x.x.x            | 10.0.0.10         |
 
 The sync script (`scripts/sync_training_data_cron.sh`) tries Tailscale first, then falls back to direct IP.
+
+**Setup**: Copy `config/cluster_hosts.yaml.example` to `config/cluster_hosts.yaml` and fill in your IPs.
 
 ## Contact
 

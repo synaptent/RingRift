@@ -1,0 +1,18 @@
+{
+  "saved_at": "2025-12-17T20:36:57.077551+00:00",
+  "histories": {
+    "square8_2": {
+      "config_key": "square8_2",
+      "max_snapshots": 100,
+      "snapshots": [
+        {
+          "checked_at": "2025-12-17T20:36:57.077527+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        }
+      ]
+    }
+  }
+}

@@ -44,7 +44,7 @@ python scripts/vast_keepalive.py --keepalive
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │  mac-studio  │  │ lambda-h100  │  │ lambda-gh200 │  x10         │
+│  │ coordinator  │  │  gpu-node-1  │  │  gpu-node-N  │  x10         │
 │  │   (Leader)   │  │   (Voter)    │  │   (Voter)    │              │
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 │         │                  │                  │                     │
@@ -107,14 +107,14 @@ crontab -e
 **Resolution:**
 
 ```bash
-# 1. Check SSH connectivity
-ssh -p PORT root@ssh5.vast.ai "echo OK"
+# 1. Check SSH connectivity (replace PORT and SSH_HOST with actual values from vastai show instances)
+ssh -p PORT root@SSH_HOST "echo OK"
 
 # 2. Check P2P status on instance
-ssh -p PORT root@ssh5.vast.ai "curl -s localhost:8770/health"
+ssh -p PORT root@SSH_HOST "curl -s localhost:8770/health"
 
-# 3. Manually start P2P
-ssh -p PORT root@ssh5.vast.ai "cd ~/ringrift/ai-service && pkill -f p2p_orchestrator; nohup python scripts/p2p_orchestrator.py --node-id vast-INSTANCE_ID --port 8770 --peers 100.107.168.125:8770 > logs/p2p.log 2>&1 &"
+# 3. Manually start P2P (COORDINATOR_IP = your Tailscale coordinator IP)
+ssh -p PORT root@SSH_HOST "cd ~/ringrift/ai-service && pkill -f p2p_orchestrator; nohup python scripts/p2p_orchestrator.py --node-id vast-INSTANCE_ID --port 8770 --peers COORDINATOR_IP:8770 > logs/p2p.log 2>&1 &"
 
 # 4. Or use the sync script
 python scripts/vast_p2p_sync.py --full
@@ -159,8 +159,8 @@ python scripts/model_sync_aria2.py --status
 # 2. Sync to all nodes
 python scripts/model_sync_aria2.py --sync-to-all
 
-# 3. Manual rsync fallback
-rsync -avz --progress data/models/latest.pth ubuntu@100.88.176.74:~/ringrift/ai-service/data/models/
+# 3. Manual rsync fallback (replace GPU_NODE_IP with target node's Tailscale IP)
+rsync -avz --progress data/models/latest.pth ubuntu@GPU_NODE_IP:~/ringrift/ai-service/data/models/
 ```
 
 ### Scenario 4: P2P Network Partition

@@ -95,7 +95,9 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
 
     # Access worker config
     global _worker_config
-    config = SelfplayConfig(**_worker_config)
+    # Filter out internal keys before creating SelfplayConfig
+    config_fields = {k: v for k, v in _worker_config.items() if not k.startswith('_')}
+    config = SelfplayConfig(**config_fields)
 
     try:
         start_time = time.time()
@@ -107,10 +109,11 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
             sys.path.insert(0, ai_service_root)
 
         # Import dependencies in worker (avoid serialization issues)
-        from app.env import RingRiftEnv
+        from app.training.env import RingRiftEnv
         from app.ai.descent_ai import DescentAI
         from app.ai.mcts_ai import MCTSAI
-        from app.training.generate_data import state_to_feature_planes
+        from app.ai.nnue import extract_features_from_gamestate, get_board_size, FEATURE_PLANES
+        from app.models import AIConfig
 
         # Conditionally import GumbelMCTSAI (heavy dependencies)
         GumbelMCTSAI = None
@@ -126,25 +129,29 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
         # Create AI players (per-worker, not shared)
         ai_players = {}
         for pn in range(1, config.num_players + 1):
+            # Create AIConfig for this player
+            ai_config = AIConfig(
+                difficulty=5,  # Mid-range difficulty for selfplay
+                nn_model_id=config.nn_model_id,
+                self_play=True,  # Enable exploration for selfplay
+                use_neural_net=config.nn_model_id is not None,
+            )
+
             if config.engine == "mcts":
                 ai_players[pn] = MCTSAI(
-                    player_num=pn,
-                    simulations=400,
-                    nn_model_id=config.nn_model_id,
+                    player_number=pn,
+                    config=ai_config,
                 )
             elif config.engine == "gumbel":
+                # Gumbel-MCTS may have different initialization
                 ai_players[pn] = GumbelMCTSAI(
-                    player_num=pn,
-                    simulations=config.gumbel_simulations,
-                    top_k=config.gumbel_top_k,
-                    c_visit=config.gumbel_c_visit,
-                    c_scale=config.gumbel_c_scale,
-                    nn_model_id=config.nn_model_id,
+                    player_number=pn,
+                    config=ai_config,
                 )
             else:
                 ai_players[pn] = DescentAI(
-                    player_num=pn,
-                    nn_model_id=config.nn_model_id,
+                    player_number=pn,
+                    config=ai_config,
                 )
 
         # Seed RNG
@@ -160,9 +167,10 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
         state = env.reset(seed=game_seed)
         game_history = []
         state_history = []
+        done = False
 
         move_count = 0
-        while not state.done and move_count < config.max_moves:
+        while not done and move_count < config.max_moves:
             current_player = state.current_player
 
             # Get AI move
@@ -193,14 +201,21 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
                         policy_indices.append(mv.id)
                         policy_values.append(prob)
 
-            # Get feature planes
-            feature_planes = state_to_feature_planes(
-                state,
-                state_history,
-                config.board_type,
-                config.history_length,
-            )
-            state_history.append(feature_planes[0])  # Current state only
+            # Get feature planes using NNUE feature extraction
+            # Extract 1D features and reshape to (C, H, W)
+            features_1d = extract_features_from_gamestate(state, current_player)
+            board_size = get_board_size(config.board_type)
+            num_channels = FEATURE_PLANES  # 12 planes
+            current_features = features_1d.reshape(num_channels, board_size, board_size)
+
+            # Build stacked features with history
+            hist_frames = list(state_history[-config.history_length:])
+            while len(hist_frames) < config.history_length:
+                hist_frames.insert(0, np.zeros_like(current_features))
+            stacked_features = np.concatenate([current_features] + hist_frames, axis=0)
+
+            # Update history
+            state_history.append(current_features.copy())
             if len(state_history) > config.history_length:
                 state_history.pop(0)
 
@@ -209,7 +224,7 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
 
             # Store sample
             game_history.append({
-                'features': feature_planes,
+                'features': stacked_features,
                 'globals': globals_vec,
                 'player': current_player,
                 'root_value': root_value,
@@ -222,7 +237,7 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
             move_count += 1
 
         # Assign values based on game outcome
-        if state.done and state.winner is not None:
+        if done and state.winner is not None:
             winner = state.winner
             for sample in game_history:
                 player = sample['player']

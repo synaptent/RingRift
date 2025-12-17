@@ -70,8 +70,8 @@ python scripts/unified_ai_loop.py --resume
 **CLI**:
 
 ```bash
-# Start as node in P2P cluster
-python scripts/p2p_orchestrator.py --node-id lambda-gh200-f --peers 100.104.165.116:8770
+# Start as node in P2P cluster (replace with your node ID and coordinator IP)
+python scripts/p2p_orchestrator.py --node-id gpu-node-1 --peers COORDINATOR_IP:8770
 
 # View cluster status
 curl http://localhost:8770/status

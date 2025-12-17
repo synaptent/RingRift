@@ -26,19 +26,21 @@ AI_SERVICE_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_DIR="$AI_SERVICE_DIR/logs"
 LOG_FILE="$LOG_DIR/cluster_monitor_$(date +%Y%m%d).log"
 
-# Node IPs (Tailscale)
-H100_IP="100.78.101.123"
-GH200_NODES=(
-    "100.88.176.74:GH200-e"
-    "100.88.35.19:GH200-c"
-    "100.75.84.47:GH200-d"
-    "100.104.165.116:GH200-f"
-    "100.104.126.58:GH200-g"
-    "100.65.88.62:GH200-h"
-    "100.99.27.56:GH200-i"
-    "100.96.142.42:GH200-k"
-    "100.76.145.60:GH200-l"
-)
+# Node IPs - Configure in config/cluster_nodes.env or set environment variables
+# Example format: IP:NAME pairs
+if [ -f "$AI_SERVICE_DIR/config/cluster_nodes.env" ]; then
+    source "$AI_SERVICE_DIR/config/cluster_nodes.env"
+fi
+
+H100_IP="${H100_IP:-localhost}"  # Primary training node IP
+# GPU nodes array - Configure via GH200_NODES env var or config file
+# Format: "IP:NAME" pairs
+if [ -z "${GH200_NODES+x}" ]; then
+    GH200_NODES=(
+        # Add your GPU node IPs here, format: "IP:NAME"
+        # Example: "10.0.0.10:gpu-node-1"
+    )
+fi
 
 # Colors
 RED='\033[0;31m'

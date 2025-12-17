@@ -66,7 +66,7 @@ This section covers setting up a local training cluster using underutilized MacB
 │  │  Coordinator    │  - Your primary Mac                        │
 │  │  (Main Mac)     │  - Runs CMA-ES algorithm                   │
 │  │                 │  - Distributes work via HTTP API           │
-│  │  192.168.1.10   │  - Aggregates results                      │
+│  │  10.0.0.1       │  - Aggregates results                      │
 │  └────────┬────────┘                                            │
 │           │ HTTP (port 8765)                                    │
 │    ┌──────┴──────┬───────────────┐                              │
@@ -74,7 +74,7 @@ This section covers setting up a local training cluster using underutilized MacB
 │  ┌───────┐   ┌───────┐       ┌───────┐                          │
 │  │Worker │   │Worker │  ...  │Worker │  - Other MacBooks        │
 │  │Mac #1 │   │Mac #2 │       │Mac #N │  - Run evaluation tasks  │
-│  │.1.11  │   │.1.12  │       │.1.1N  │  - Report back via HTTP  │
+│  │.0.2   │   │.0.3   │       │.0.N   │  - Report back via HTTP  │
 │  └───────┘   └───────┘       └───────┘                          │
 │                                                                  │
 │  Shared Storage: SMB share on coordinator OR git-synced repo    │
@@ -118,7 +118,7 @@ This section covers setting up a local training cluster using underutilized MacB
 
 4. **Static IP or hostname** (optional but recommended)
    - Either assign static IPs in router settings
-   - Or use `.local` hostnames (e.g., `armands-macbook.local`)
+   - Or use `.local` hostnames (e.g., `my-macbook.local`)
 
 ### 0.3 Implementation: HTTP-based Worker System
 

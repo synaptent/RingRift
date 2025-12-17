@@ -8,6 +8,8 @@ config/remote_hosts.yaml
 config/orchestrator_hosts.yaml
 config/orchestrator_hosts.sh
 config/p2p_hosts.yaml
+config/sync_hosts.env
+config/cluster_hosts.yaml
 
 # Machine-specific sync scripts with private IPs
 scripts/sync_to_mbp64.sh
@@ -17,6 +19,35 @@ scripts/sync_gh200_data.sh
 scripts/migrate_vast_to_gh200.sh
 scripts/backup_models.sh
 scripts/auto_consolidate_nfs.sh
+
+# Cluster-specific operational scripts with private IPs (use .example templates)
+scripts/aggregate_gh200_data.sh
+scripts/cluster/cluster_health.sh
+scripts/collect_and_merge_selfplay.sh
+scripts/collect_cluster_logs.sh
+scripts/collect_diverse_selfplay.sh
+scripts/deploy_aria2_servers.sh
+scripts/deploy_elo_sync.sh
+scripts/deploy_gossip_sync.sh
+scripts/deploy_gpu_fix.sh
+scripts/deploy_systemd_services.sh
+scripts/deploy_unified_loop.sh
+scripts/fix_p2p_network.sh
+scripts/local_data_sync.sh
+scripts/monitor_all_jobs.sh
+scripts/monitor_hp_tuning.sh
+scripts/monitor_selfplay_progress.sh
+scripts/run_all_hp_tuning.sh
+scripts/run_hp_tuning_pipeline.sh
+scripts/start_cluster_selfplay.sh
+scripts/sync_all_nodes.sh
+scripts/sync_cluster_games.sh
+scripts/setup_aws_cluster_proxy.sh
+scripts/setup_vast_relay.sh
+scripts/distributed_gauntlet_launcher.sh
+config/cluster_nodes.env
+scripts/setup_vast_networking.sh
+scripts/vast_bootstrap.sh
 
 # Orchestrator state and logs contain host-specific data
 logs/orchestrator/cluster_state.json

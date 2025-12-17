@@ -1,0 +1,61 @@
+# RingRift Distributed Hosts Configuration - EXAMPLE TEMPLATE
+# Copy this to distributed_hosts.yaml and fill in your actual host details
+# THIS FILE SHOULD BE GITIGNORED after copying
+
+elo_sync:
+  coordinator: gpu-primary
+  sync_port: 8766
+  sync_interval: 300
+  divergence_threshold: 50
+  transports:
+    - tailscale
+    - aria2
+    - http
+
+hosts:
+  gpu-primary:
+    ssh_host: 10.0.0.1  # Your primary training server
+    ssh_user: ubuntu
+    ssh_key: ~/.ssh/id_cluster
+    ringrift_path: ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    memory_gb: 256
+    cpus: 26
+    gpu: NVIDIA H100 (80GB)
+    role: nn_training_primary
+    p2p_voter: true
+    status: ready
+
+  gpu-secondary:
+    ssh_host: 10.0.0.2  # Secondary training server
+    ssh_user: ubuntu
+    ringrift_path: ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    memory_gb: 256
+    cpus: 30
+    gpu: 2x NVIDIA H100 (160GB)
+    role: nn_training
+    p2p_voter: true
+    status: ready
+
+  selfplay-1:
+    ssh_host: 10.0.0.10  # Selfplay worker
+    ssh_user: ubuntu
+    ringrift_path: ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    memory_gb: 480
+    cpus: 72
+    gpu: NVIDIA GH200 (96GB)
+    role: selfplay
+    status: ready
+
+  selfplay-2:
+    ssh_host: 10.0.0.11
+    ssh_user: ubuntu
+    ringrift_path: ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    memory_gb: 480
+    cpus: 72
+    gpu: NVIDIA GH200 (96GB)
+    role: selfplay
+    status: ready

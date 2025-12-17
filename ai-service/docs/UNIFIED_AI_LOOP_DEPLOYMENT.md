@@ -25,7 +25,7 @@ The unified AI loop is a single daemon that coordinates all aspects of the AI im
 
 ## Prerequisites
 
-### Required on Primary Host (lambda_h100)
+### Required on Primary Host
 
 ```bash
 # Python dependencies
@@ -63,7 +63,7 @@ cd ai-service
 ### 2. Start the Unified Loop
 
 ```bash
-ssh ubuntu@209.20.157.81 'cd ~/ringrift/ai-service && \
+ssh gpu-primary 'cd ~/ringrift/ai-service && \
   nohup python3 scripts/unified_ai_loop.py --foreground -v \
   > logs/unified_loop/daemon.log 2>&1 &'
 ```
@@ -71,7 +71,7 @@ ssh ubuntu@209.20.157.81 'cd ~/ringrift/ai-service && \
 ### 3. Verify It's Running
 
 ```bash
-ssh ubuntu@209.20.157.81 'cd ~/ringrift/ai-service && \
+ssh gpu-primary 'cd ~/ringrift/ai-service && \
   python3 scripts/unified_ai_loop.py --status'
 ```
 
@@ -159,14 +159,14 @@ curriculum:
 ```yaml
 standard_hosts:
   lambda_h100:
-    ssh_host: '209.20.157.81'
+    ssh_host: '<primary-gpu-ip>'
     ssh_user: 'ubuntu'
     role: 'training,hp_tuning,tournament'
     has_gpu: true
     gpu_type: 'H100'
 
-  gh200_a:
-    ssh_host: '192.222.51.29'
+  selfplay_1:
+    ssh_host: '10.0.0.10' # Your selfplay node IP
     ssh_user: 'ubuntu'
     role: 'selfplay'
     has_gpu: true
@@ -260,24 +260,24 @@ Dashboard panels:
 The main cluster dashboard at `/monitoring/grafana/dashboards/ai-cluster.json` requires:
 
 - Infinity datasource plugin installed in Grafana
-- Orchestrator host variable set to `209.20.157.81` (lambda_h100)
+- Orchestrator host variable set to `<primary-gpu-ip>` (lambda_h100)
 - P2P Orchestrator running on port 8770
 
 **Fixing "No data" in Elo Leaderboard or Node Status Table:**
 
 ```bash
 # 1. Verify orchestrator is running
-ssh ubuntu@209.20.157.81 'curl -s http://localhost:8770/elo/table | head -5'
+ssh ubuntu@<primary-gpu-ip> 'curl -s http://localhost:8770/elo/table | head -5'
 
 # 2. If not running, start it
-ssh ubuntu@209.20.157.81 'cd ~/ringrift/ai-service && \
+ssh ubuntu@<primary-gpu-ip> 'cd ~/ringrift/ai-service && \
   nohup python scripts/p2p_orchestrator.py --port 8770 > logs/orchestrator.log 2>&1 &'
 ```
 
 Then in Grafana:
 
 1. Go to Dashboard Settings → Variables
-2. Set `orchestrator_host` to `209.20.157.81`
+2. Set `orchestrator_host` to `<primary-gpu-ip>`
 3. Save and refresh the dashboard
 
 ### Alerting
@@ -306,10 +306,10 @@ Configure alerts in Prometheus using `config/monitoring/alerting-rules.yaml`:
 
 ```bash
 # Check if loop is running
-curl -s http://209.20.157.81:9090/health
+curl -s http://<primary-gpu-ip>:9090/health
 
 # Get key metrics
-curl -s http://209.20.157.81:9090/metrics | grep -E 'ringrift_(uptime|hosts_active|games_synced)'
+curl -s http://<primary-gpu-ip>:9090/metrics | grep -E 'ringrift_(uptime|hosts_active|games_synced)'
 ```
 
 ## Hot Model Reload
@@ -379,7 +379,7 @@ regression:
 
 ```bash
 # Check for Python errors
-ssh ubuntu@209.20.157.81 'cd ~/ringrift/ai-service && \
+ssh ubuntu@<primary-gpu-ip> 'cd ~/ringrift/ai-service && \
   python3 scripts/unified_ai_loop.py --foreground -v'
 
 # Common issues:
@@ -391,39 +391,39 @@ ssh ubuntu@209.20.157.81 'cd ~/ringrift/ai-service && \
 ### No Data Being Synced
 
 ```bash
-# Test SSH connectivity to hosts
-for host in 192.222.51.29 192.222.51.167; do
+# Test SSH connectivity to hosts (replace with your actual IPs)
+for host in <selfplay-node-1> <selfplay-node-2>; do
   ssh -o ConnectTimeout=5 ubuntu@$host 'echo OK' && echo "$host: OK"
 done
 
 # Check host configuration
 cat config/remote_hosts.yaml | grep ssh_host
 
-# Manual sync test
-rsync -avz ubuntu@192.222.51.29:~/ringrift/ai-service/data/games/*.db /tmp/
+# Manual sync test (replace with your actual IP)
+rsync -avz ubuntu@<selfplay-node>:~/ringrift/ai-service/data/games/*.db /tmp/
 ```
 
 ### Training Not Triggering
 
 ```bash
 # Check games pending
-curl -s http://209.20.157.81:9090/metrics | grep games_pending
+curl -s http://<primary-gpu-ip>:9090/metrics | grep games_pending
 
 # Verify threshold in config
 grep trigger_threshold config/unified_loop.yaml
 
 # Check training state
-ssh ubuntu@209.20.157.81 'cat ~/ringrift/ai-service/logs/unified_loop/unified_loop_state.json | jq .training_in_progress'
+ssh ubuntu@<primary-gpu-ip> 'cat ~/ringrift/ai-service/logs/unified_loop/unified_loop_state.json | jq .training_in_progress'
 ```
 
 ### Metrics Endpoint Not Responding
 
 ```bash
 # Check if prometheus_client is installed
-ssh ubuntu@209.20.157.81 'python3 -c "from prometheus_client import Counter"'
+ssh ubuntu@<primary-gpu-ip> 'python3 -c "from prometheus_client import Counter"'
 
 # Check if port is in use
-ssh ubuntu@209.20.157.81 'netstat -tlnp | grep 9090'
+ssh ubuntu@<primary-gpu-ip> 'netstat -tlnp | grep 9090'
 
 # Restart with fresh port
 # Edit config/unified_loop.yaml: metrics_port: 9091
@@ -433,12 +433,12 @@ ssh ubuntu@209.20.157.81 'netstat -tlnp | grep 9090'
 
 ```bash
 # Check consecutive failures in state
-ssh ubuntu@209.20.157.81 'cat ~/ringrift/ai-service/logs/unified_loop/unified_loop_state.json | \
+ssh ubuntu@<primary-gpu-ip> 'cat ~/ringrift/ai-service/logs/unified_loop/unified_loop_state.json | \
   jq ".hosts | to_entries[] | select(.value.consecutive_failures > 0)"'
 
 # Reset failure count by restarting loop
-ssh ubuntu@209.20.157.81 'cd ~/ringrift/ai-service && python3 scripts/unified_ai_loop.py --stop'
-ssh ubuntu@209.20.157.81 'cd ~/ringrift/ai-service && python3 scripts/unified_ai_loop.py --start'
+ssh ubuntu@<primary-gpu-ip> 'cd ~/ringrift/ai-service && python3 scripts/unified_ai_loop.py --stop'
+ssh ubuntu@<primary-gpu-ip> 'cd ~/ringrift/ai-service && python3 scripts/unified_ai_loop.py --start'
 ```
 
 ## Architecture
@@ -676,6 +676,6 @@ python3 scripts/unified_ai_loop.py --status
 python3 scripts/regression_gate.py --model <path> --config <config> -v
 
 # Check metrics
-curl http://209.20.157.81:9090/metrics | grep ringrift
-curl http://209.20.157.81:9090/health
+curl http://<primary-gpu-ip>:9090/metrics | grep ringrift
+curl http://<primary-gpu-ip>:9090/health
 ```

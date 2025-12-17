@@ -13,10 +13,10 @@
 #
 # Usage:
 #   # Reverse tunnel (run on NAT-blocked node like Vast)
-#   ./autossh_p2p_tunnel.sh reverse --relay ubuntu@100.78.101.123 --node-id vast-5080
+#   ./autossh_p2p_tunnel.sh reverse --relay ubuntu@<coordinator-ip> --node-id vast-5080
 #
 #   # Forward tunnel (run on relay to reach NAT-blocked node)
-#   ./autossh_p2p_tunnel.sh forward --target root@100.67.77.104 --node-id vast-3070-b
+#   ./autossh_p2p_tunnel.sh forward --target root@<target-ip> --node-id vast-3070-b
 #
 #   # Status check
 #   ./autossh_p2p_tunnel.sh status
@@ -58,7 +58,7 @@ Options for reverse/forward:
 
 Examples:
   # Vast instance creates reverse tunnel to Lambda H100
-  $0 reverse --relay ubuntu@100.78.101.123 --node-id vast-5080
+  $0 reverse --relay ubuntu@<coordinator-ip> --node-id vast-5080
 
   # Lambda creates forward tunnel to reach Vast via its reverse tunnel
   $0 forward --target root@localhost --local-port 21005 --remote-port 8770
@@ -202,7 +202,7 @@ register_tunnel() {
     local node_id="$2"
 
     # Try to register with local P2P first, then coordinator
-    for url in "http://localhost:$P2P_PORT" "https://p2p.ringrift.ai" "http://100.78.101.123:8770"; do
+    for url in "http://localhost:$P2P_PORT" "https://p2p.ringrift.ai" "http://${COORDINATOR_IP:-localhost}:8770"; do
         echo "Registering tunnel with $url..."
 
         response=$(curl -s -X POST "$url/tunnel/register" \
