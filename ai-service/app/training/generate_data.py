@@ -447,7 +447,9 @@ def augment_data(
 
         new_indices = []
         new_values = []
-        board_size = neural_net.board_size
+        # Get board_size from BOARD_CONFIGS (neural_net may be None for some engines)
+        from app.rules.core import BOARD_CONFIGS
+        board_size = BOARD_CONFIGS[board_type].size if board_type in BOARD_CONFIGS else 8
 
         # Create a dummy game state for decoding/encoding context.
         from app.models import (

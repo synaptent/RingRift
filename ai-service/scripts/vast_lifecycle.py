@@ -273,7 +273,60 @@ print(f'{total}|{min_age:.2f}')
     return health
 
 
-def restart_workers(instance: Dict) -> bool:
+def sync_git_repo(instance: Dict) -> bool:
+    """Sync git repository on a Vast instance."""
+    host, port = instance["host"], instance["port"]
+    name = instance.get("name", "unknown")
+
+    # Canonical path for git repo
+    repo_path = "/root/ringrift"
+
+    logger.info(f"Syncing git repo on {name}...")
+
+    # Check if repo exists
+    success, output = run_ssh_command(
+        host, port,
+        f"test -d {repo_path}/.git && echo 'exists'",
+        timeout=10,
+    )
+
+    if success and "exists" in output:
+        # Repo exists, do git pull
+        success, output = run_ssh_command(
+            host, port,
+            f"cd {repo_path} && git fetch origin && git reset --hard origin/main && git log -1 --oneline",
+            timeout=60,
+        )
+        if success:
+            logger.info(f"  {name}: Updated to {output.strip()}")
+            return True
+        else:
+            logger.warning(f"  {name}: Git pull failed - {output}")
+            return False
+    else:
+        # Clone fresh
+        success, output = run_ssh_command(
+            host, port,
+            f"rm -rf {repo_path} && git clone --depth 1 https://github.com/an0mium/RingRift.git {repo_path} && "
+            f"cd {repo_path} && git log -1 --oneline",
+            timeout=120,
+        )
+        if success:
+            logger.info(f"  {name}: Cloned fresh - {output.strip()}")
+            # Set up venv after fresh clone
+            run_ssh_command(
+                host, port,
+                f"cd {repo_path}/ai-service && python3 -m venv venv && "
+                f"venv/bin/pip install -q -r requirements.txt",
+                timeout=300,
+            )
+            return True
+        else:
+            logger.warning(f"  {name}: Git clone failed - {output}")
+            return False
+
+
+def restart_workers(instance: Dict, sync_code: bool = True) -> bool:
     """Restart selfplay workers on an instance."""
     host, port = instance["host"], instance["port"]
     board_type = instance.get("board_type", DEFAULT_BOARD_TYPE)
@@ -282,29 +335,28 @@ def restart_workers(instance: Dict) -> bool:
 
     logger.info(f"Restarting workers on {name} ({gpu_name}) with board_type={board_type}...")
 
+    # Sync git repo first (ensures latest code)
+    if sync_code:
+        sync_git_repo(instance)
+
     # Kill existing workers
     run_ssh_command(host, port, "pkill -f 'generate_data|selfplay' || true", timeout=15)
 
     # Determine num_games based on board type (larger boards = fewer games)
     num_games = {"hex8": 2000, "square8": 1500, "hexagonal": 500}.get(board_type, 1000)
 
-    # Try multiple possible paths (vast containers vary)
-    paths_to_try = [
-        "~/ringrift/ai-service",
-        "/root/ringrift/ai-service",
-        "/root/RingRift/ai-service",
-    ]
+    # Canonical path for git repo
+    path = "/root/ringrift/ai-service"
 
-    for path in paths_to_try:
-        success, output = run_ssh_command(
-            host, port,
-            f"test -d {path} && echo 'found'",
-            timeout=10,
-        )
-        if success and "found" in output:
-            break
-    else:
-        path = "~/ringrift/ai-service"  # Default
+    # Verify path exists
+    success, output = run_ssh_command(
+        host, port,
+        f"test -d {path} && echo 'found'",
+        timeout=10,
+    )
+    if not success or "found" not in output:
+        logger.warning(f"  {name}: Code path not found at {path}")
+        return False
 
     # Determine engine based on board type and model availability
     # - square8: use mcts with neural network (GPU) if models exist
@@ -317,12 +369,13 @@ def restart_workers(instance: Dict) -> bool:
         model_arg = ""
 
     # Start new workers with GPU-appropriate board type and engine
+    # RINGRIFT_DISABLE_TORCH_COMPILE=1 avoids triton compilation issues on some vast images
     success, output = run_ssh_command(
         host, port,
         f"""cd {path} &&
         mkdir -p data/games logs models &&
         source venv/bin/activate 2>/dev/null || true &&
-        PYTHONPATH=. nohup python3 -m app.training.generate_data \\
+        PYTHONPATH=. RINGRIFT_DISABLE_TORCH_COMPILE=1 nohup python3 -m app.training.generate_data \\
             --board-type {board_type} --num-games {num_games} \\
             --engine {engine} {model_arg} \\
             --record-db data/games/selfplay_{board_type}_{name}.db \\
@@ -545,11 +598,36 @@ def run_auto_cycle():
     logger.info("=" * 60)
 
 
+def run_code_sync() -> int:
+    """Sync git repos on all reachable Vast instances."""
+    logger.info("=" * 60)
+    logger.info("VAST.AI CODE SYNC (GIT)")
+    logger.info("=" * 60)
+
+    instances = get_vast_instances()
+    logger.info(f"Syncing code to {len(instances)} instances...")
+
+    synced = 0
+    for instance in instances:
+        # First check if reachable
+        success, _ = run_ssh_command(instance["host"], instance["port"], "echo ok", timeout=15)
+        if not success:
+            logger.warning(f"  {instance.get('name', 'unknown')}: unreachable")
+            continue
+
+        if sync_git_repo(instance):
+            synced += 1
+
+    logger.info(f"Code synced to {synced}/{len(instances)} instances")
+    return synced
+
+
 def main():
     parser = argparse.ArgumentParser(description="Vast.ai lifecycle manager")
     parser.add_argument("--check", action="store_true", help="Check instance health")
     parser.add_argument("--restart", action="store_true", help="Restart stuck workers")
     parser.add_argument("--sync", action="store_true", help="Sync data from instances")
+    parser.add_argument("--sync-code", action="store_true", help="Sync git repos to latest")
     parser.add_argument("--auto", action="store_true", help="Full automation cycle")
     args = parser.parse_args()
 
@@ -565,6 +643,8 @@ def main():
     elif args.sync:
         health = run_health_check()
         run_sync_cycle(health)
+    elif args.sync_code:
+        run_code_sync()
     else:
         # Default to check
         run_health_check()
