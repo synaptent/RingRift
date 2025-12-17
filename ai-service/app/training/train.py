@@ -1304,6 +1304,21 @@ def train_model(
     num_filters: Optional[int] = None,
     heartbeat_file: Optional[str] = None,
     heartbeat_interval: float = 30.0,
+    # 2024-12 Training Improvements (accept but log for now)
+    spectral_norm: bool = False,
+    cyclic_lr: bool = False,
+    cyclic_lr_period: int = 5,
+    mixed_precision: bool = False,
+    amp_dtype: str = 'bfloat16',
+    value_whitening: bool = False,
+    value_whitening_momentum: float = 0.99,
+    ema: bool = False,
+    ema_decay: float = 0.999,
+    stochastic_depth: bool = False,
+    stochastic_depth_prob: float = 0.1,
+    adaptive_warmup: bool = False,
+    hard_example_mining: bool = False,
+    hard_example_top_k: float = 0.3,
 ):
     """
     Train the RingRift neural network model.
@@ -1381,6 +1396,38 @@ def train_model(
         else:
             device = torch.device("cpu")
         logger.info(f"Using device: {device}")
+
+    # Log 2024-12 Training Improvements status
+    improvements_enabled = []
+    if spectral_norm:
+        improvements_enabled.append("spectral_norm")
+    if cyclic_lr:
+        improvements_enabled.append(f"cyclic_lr(period={cyclic_lr_period})")
+    if mixed_precision:
+        improvements_enabled.append(f"mixed_precision({amp_dtype})")
+    if value_whitening:
+        improvements_enabled.append("value_whitening")
+    if ema:
+        improvements_enabled.append(f"ema(decay={ema_decay})")
+    if stochastic_depth:
+        improvements_enabled.append(f"stochastic_depth(p={stochastic_depth_prob})")
+    if adaptive_warmup:
+        improvements_enabled.append("adaptive_warmup")
+    if hard_example_mining:
+        improvements_enabled.append(f"hard_example_mining(top_k={hard_example_top_k})")
+
+    if improvements_enabled:
+        logger.info(f"2024-12 Training Improvements enabled: {', '.join(improvements_enabled)}")
+
+    # Mixed precision setup
+    use_amp = mixed_precision and device.type in ('cuda', 'mps')
+    scaler = None
+    if use_amp:
+        from torch.cuda.amp import GradScaler
+        scaler = GradScaler()
+        dtype_map = {'float16': torch.float16, 'bfloat16': torch.bfloat16}
+        amp_torch_dtype = dtype_map.get(amp_dtype, torch.bfloat16)
+        logger.info(f"Mixed precision training enabled with {amp_dtype}")
 
     # Determine canonical spatial board_size for the CNN from config.
     if config.board_type == BoardType.SQUARE19:

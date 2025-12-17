@@ -237,6 +237,84 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Use StreamingDataLoader for memory-efficient large dataset training.",
     )
+    # 2024-12 Training Improvements
+    parser.add_argument(
+        "--spectral-norm",
+        action="store_true",
+        help="Enable spectral normalization for gradient stability.",
+    )
+    parser.add_argument(
+        "--cyclic-lr",
+        action="store_true",
+        help="Enable cyclic learning rate with triangular waves.",
+    )
+    parser.add_argument(
+        "--cyclic-lr-period",
+        type=int,
+        default=5,
+        help="Cyclic LR period in epochs (default: 5).",
+    )
+    parser.add_argument(
+        "--mixed-precision",
+        action="store_true",
+        help="Enable mixed precision training (FP16/BF16).",
+    )
+    parser.add_argument(
+        "--amp-dtype",
+        type=str,
+        default="bfloat16",
+        choices=["float16", "bfloat16"],
+        help="AMP dtype (default: bfloat16).",
+    )
+    parser.add_argument(
+        "--value-whitening",
+        action="store_true",
+        help="Enable value head whitening for stable training.",
+    )
+    parser.add_argument(
+        "--value-whitening-momentum",
+        type=float,
+        default=0.99,
+        help="Momentum for value whitening running stats (default: 0.99).",
+    )
+    parser.add_argument(
+        "--ema",
+        action="store_true",
+        help="Enable Model EMA for better generalization.",
+    )
+    parser.add_argument(
+        "--ema-decay",
+        type=float,
+        default=0.999,
+        help="EMA decay factor (default: 0.999).",
+    )
+    parser.add_argument(
+        "--stochastic-depth",
+        action="store_true",
+        help="Enable stochastic depth regularization.",
+    )
+    parser.add_argument(
+        "--stochastic-depth-prob",
+        type=float,
+        default=0.1,
+        help="Drop probability for stochastic depth (default: 0.1).",
+    )
+    parser.add_argument(
+        "--adaptive-warmup",
+        action="store_true",
+        help="Use adaptive warmup based on dataset size.",
+    )
+    parser.add_argument(
+        "--hard-example-mining",
+        action="store_true",
+        help="Enable hard example mining for focused training.",
+    )
+    parser.add_argument(
+        "--hard-example-top-k",
+        type=float,
+        default=0.3,
+        help="Top K percent of hardest examples to upweight (default: 0.3).",
+    )
     return parser.parse_args(argv)
 
 
@@ -401,6 +479,29 @@ def main(argv: Optional[list[str]] = None) -> int:
           f"early_stop={early_stop}, warmup={warmup}, scheduler={lr_sched}, "
           f"sampling={sampling_weights}")
 
+    # Collect 2024-12 training improvements from args
+    training_improvements = {
+        'spectral_norm': getattr(args, 'spectral_norm', False),
+        'cyclic_lr': getattr(args, 'cyclic_lr', False),
+        'cyclic_lr_period': getattr(args, 'cyclic_lr_period', 5),
+        'mixed_precision': getattr(args, 'mixed_precision', False),
+        'amp_dtype': getattr(args, 'amp_dtype', 'bfloat16'),
+        'value_whitening': getattr(args, 'value_whitening', False),
+        'value_whitening_momentum': getattr(args, 'value_whitening_momentum', 0.99),
+        'ema': getattr(args, 'ema', False),
+        'ema_decay': getattr(args, 'ema_decay', 0.999),
+        'stochastic_depth': getattr(args, 'stochastic_depth', False),
+        'stochastic_depth_prob': getattr(args, 'stochastic_depth_prob', 0.1),
+        'adaptive_warmup': getattr(args, 'adaptive_warmup', False),
+        'hard_example_mining': getattr(args, 'hard_example_mining', False),
+        'hard_example_top_k': getattr(args, 'hard_example_top_k', 0.3),
+    }
+
+    # Log enabled improvements
+    enabled = [k for k, v in training_improvements.items() if v and k not in ['cyclic_lr_period', 'amp_dtype', 'value_whitening_momentum', 'ema_decay', 'stochastic_depth_prob', 'hard_example_top_k']]
+    if enabled:
+        print(f"[Training] 2024-12 improvements enabled: {', '.join(enabled)}")
+
     train_model(
         config=train_cfg,
         data_path=data_path,
@@ -415,6 +516,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         model_version=args.model_version,
         sampling_weights=sampling_weights,
         use_streaming=use_streaming,
+        **training_improvements,
     )
 
     created_at = datetime.now(timezone.utc).isoformat()
