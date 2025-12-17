@@ -49,6 +49,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+# Ramdrive utilities for high-speed I/O
+from app.utils.ramdrive import add_ramdrive_args, get_config_from_args, get_games_directory, RamdriveSyncer
+
 # Add app/ to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -1075,6 +1078,9 @@ def main():
              "Used for curriculum learning diversity. Default: 0.1",
     )
 
+    # Add ramdrive storage options
+    add_ramdrive_args(parser)
+
     args = parser.parse_args()
 
     if args.benchmark_only:
@@ -1157,12 +1163,35 @@ def main():
         if register_running_task_safe(task_id, "gpu_selfplay", 60.0):
             logger.info(f"Registered task {task_id} with coordinator")
 
+    # Determine output directory: --output-dir > --ram-storage > default
+    output_dir = args.output_dir
+    syncer = None
+    if getattr(args, 'ram_storage', False) and args.output_dir == "data/selfplay/gpu":
+        # Only use ramdrive if output_dir wasn't explicitly set
+        ramdrive_config = get_config_from_args(args)
+        ramdrive_config.subdirectory = f"selfplay/gpu_{args.board}_{args.num_players}p"
+        output_dir = str(get_games_directory(prefer_ramdrive=True, config=ramdrive_config))
+        logger.info(f"Using ramdrive storage: {output_dir}")
+
+        # Set up periodic sync if requested
+        sync_interval = getattr(args, 'sync_interval', 0)
+        sync_target = getattr(args, 'sync_target', '')
+        if sync_interval > 0 and sync_target:
+            syncer = RamdriveSyncer(
+                source_dir=Path(output_dir),
+                target_dir=Path(sync_target),
+                interval=sync_interval,
+                patterns=["*.db", "*.jsonl", "*.json", "*.npz"],
+            )
+            syncer.start()
+            logger.info(f"Started ramdrive sync: {output_dir} -> {sync_target} every {sync_interval}s")
+
     try:
         run_gpu_selfplay(
             board_type=args.board,
             num_players=args.num_players,
             num_games=args.num_games,
-            output_dir=args.output_dir,
+            output_dir=output_dir,
             batch_size=args.batch_size,
             max_moves=args.max_moves,
             weights=weights,
@@ -1182,6 +1211,12 @@ def main():
             noise_scale=args.noise_scale,
         )
     finally:
+        # Stop ramdrive syncer and perform final sync
+        if syncer:
+            logger.info("Stopping ramdrive syncer and performing final sync...")
+            syncer.stop(final_sync=True)
+            logger.info(f"Ramdrive sync stats: {syncer.stats}")
+
         # Record task completion for duration learning (safe version handles errors)
         if HAS_COORDINATION and task_id:
             config = f"{args.board}_{args.num_players}p"

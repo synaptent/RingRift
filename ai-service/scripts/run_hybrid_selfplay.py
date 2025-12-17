@@ -43,6 +43,9 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+# Ramdrive utilities for high-speed I/O
+from app.utils.ramdrive import add_ramdrive_args, get_config_from_args, get_games_directory, RamdriveSyncer
+
 # Unified resource checking utilities (80% max utilization)
 try:
     from app.utils.resource_guard import (
@@ -1138,6 +1141,9 @@ def main():
         help="Profile name in weights file (requires --weights-file)",
     )
 
+    # Add ramdrive storage options
+    add_ramdrive_args(parser)
+
     args = parser.parse_args()
 
     # Validate GPU/CUDA environment
@@ -1233,12 +1239,34 @@ def main():
                 logger.warning(f"Failed to register task: {e}")
 
         # Auto-generate unique output directory if not specified
+        # Priority: --output-dir > --ram-storage > default
         output_dir = args.output_dir
+        syncer = None
         if output_dir is None:
-            ts = int(time.time())
-            pid = os.getpid()
-            output_dir = f"data/selfplay/auto_{ts}/{pid}"
-            logger.info(f"Auto-generated output directory: {output_dir}")
+            if getattr(args, 'ram_storage', False):
+                # Use ramdrive for high-speed I/O
+                ramdrive_config = get_config_from_args(args)
+                ramdrive_config.subdirectory = f"selfplay/hybrid_{args.board_type}_{args.num_players}p"
+                output_dir = str(get_games_directory(prefer_ramdrive=True, config=ramdrive_config))
+                logger.info(f"Using ramdrive storage: {output_dir}")
+
+                # Set up periodic sync if requested
+                sync_interval = getattr(args, 'sync_interval', 0)
+                sync_target = getattr(args, 'sync_target', '')
+                if sync_interval > 0 and sync_target:
+                    syncer = RamdriveSyncer(
+                        source_dir=Path(output_dir),
+                        target_dir=Path(sync_target),
+                        interval=sync_interval,
+                        patterns=["*.db", "*.jsonl", "*.json"],
+                    )
+                    syncer.start()
+                    logger.info(f"Started ramdrive sync: {output_dir} -> {sync_target} every {sync_interval}s")
+            else:
+                ts = int(time.time())
+                pid = os.getpid()
+                output_dir = f"data/selfplay/auto_{ts}/{pid}"
+                logger.info(f"Auto-generated output directory: {output_dir}")
 
         try:
             run_hybrid_selfplay(
@@ -1263,6 +1291,12 @@ def main():
                 nnue_blend=args.nnue_blend,
             )
         finally:
+            # Stop ramdrive syncer and perform final sync
+            if syncer:
+                logger.info("Stopping ramdrive syncer and performing final sync...")
+                syncer.stop(final_sync=True)
+                logger.info(f"Ramdrive sync stats: {syncer.stats}")
+
             # Record task completion for duration learning
             if HAS_COORDINATION and task_id:
                 try:

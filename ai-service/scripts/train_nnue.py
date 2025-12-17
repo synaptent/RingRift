@@ -41,6 +41,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+# Ramdrive utilities for high-speed I/O
+from app.utils.ramdrive import add_ramdrive_args, get_config_from_args, get_data_directory, RamdriveSyncer
+
 # Set up path for imports
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -311,6 +314,9 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=None,
         help="Device to train on (default: auto-detect)",
     )
+
+    # Add ramdrive storage options
+    add_ramdrive_args(parser)
 
     return parser.parse_args(argv)
 
@@ -649,10 +655,41 @@ def main(argv: Optional[List[str]] = None) -> int:
         device = torch.device("cpu")
     logger.info(f"Using device: {device}")
 
-    # Set up output paths
+    # Set up output paths with optional ramdrive support
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    run_dir = args.run_dir or os.path.join(PROJECT_ROOT, "runs", f"nnue_{timestamp}")
+    syncer = None
+
+    # Use ramdrive for run_dir if requested (faster training logs/checkpoints)
+    if getattr(args, 'ram_storage', False) and not args.run_dir:
+        ramdrive_config = get_config_from_args(args)
+        ramdrive_config.subdirectory = f"training/nnue_{timestamp}"
+        run_dir = str(get_data_directory(prefer_ramdrive=True, config=ramdrive_config, base_name="runs"))
+        logger.info(f"Using ramdrive for training output: {run_dir}")
+
+        # Set up periodic sync to persistent storage
+        sync_interval = getattr(args, 'sync_interval', 0)
+        sync_target = getattr(args, 'sync_target', '')
+        if sync_interval > 0 and sync_target:
+            syncer = RamdriveSyncer(
+                source_dir=Path(run_dir),
+                target_dir=Path(sync_target) / f"nnue_{timestamp}",
+                interval=sync_interval,
+                patterns=["*.json", "*.pt", "*.npz"],
+            )
+            syncer.start()
+            logger.info(f"Started ramdrive sync: {run_dir} -> {sync_target} every {sync_interval}s")
+    else:
+        run_dir = args.run_dir or os.path.join(PROJECT_ROOT, "runs", f"nnue_{timestamp}")
+
     os.makedirs(run_dir, exist_ok=True)
+
+    # Use ramdrive for cache_path if ramdrive is enabled and no cache specified
+    if getattr(args, 'ram_storage', False) and not args.cache_path:
+        ramdrive_config = get_config_from_args(args)
+        ramdrive_config.subdirectory = "training/cache"
+        cache_dir = get_data_directory(prefer_ramdrive=True, config=ramdrive_config, base_name="nnue_cache")
+        args.cache_path = str(cache_dir / f"nnue_{board_type.value}_{args.num_players}p.npz")
+        logger.info(f"Using ramdrive for feature cache: {args.cache_path}")
 
     model_id = args.model_id or f"nnue_{board_type.value}_{args.num_players}p"
     save_path = args.save_path or str(get_nnue_model_path(board_type, args.num_players))
@@ -718,6 +755,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Clear NNUE cache so new model is loaded
     clear_nnue_cache()
+
+    # Stop ramdrive syncer and perform final sync
+    if syncer:
+        logger.info("Stopping ramdrive syncer and performing final sync...")
+        syncer.stop(final_sync=True)
+        logger.info(f"Ramdrive sync stats: {syncer.stats}")
 
     logger.info("NNUE training complete!")
     logger.info(f"  Model saved to: {save_path}")

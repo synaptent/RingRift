@@ -51,6 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.models import BoardType
 from app.training.env import get_theoretical_max_moves
+from app.utils.ramdrive import add_ramdrive_args, get_config_from_args, get_games_directory, RamdriveSyncer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -339,13 +340,32 @@ def main():
     parser.add_argument("--players", type=int, help="Number of players (2, 3, 4)")
     parser.add_argument("--games-per-matchup", type=int, default=50, help="Games per matchup type")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID to use")
-    parser.add_argument("--output-dir", type=str, help="Output directory")
+    parser.add_argument("--output-dir", type=str, help="Output directory (overrides --ram-storage)")
     parser.add_argument("--all-configs", action="store_true", help="Run all 9 configs")
     parser.add_argument("--priority-configs", action="store_true",
                         help="Run priority configs (least models first)")
+    add_ramdrive_args(parser)  # Add --ram-storage, --sync-interval, --sync-target
     args = parser.parse_args()
 
-    output_dir = Path(args.output_dir) if args.output_dir else AI_SERVICE_ROOT / "data" / "selfplay" / "diverse"
+    # Determine output directory: explicit path > ramdrive > default
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        ramdrive_config = get_config_from_args(args)
+        ramdrive_config.subdirectory = "selfplay/diverse"
+        output_dir = get_games_directory(prefer_ramdrive=args.ram_storage, config=ramdrive_config)
+
+    # Set up ramdrive sync if requested
+    syncer = None
+    if args.ram_storage and args.sync_interval > 0 and args.sync_target:
+        syncer = RamdriveSyncer(
+            source_dir=output_dir,
+            target_dir=Path(args.sync_target),
+            interval=args.sync_interval,
+            patterns=["*.db", "*.jsonl", "*.npz"],
+        )
+        syncer.start()
+        logger.info(f"Started ramdrive sync: {output_dir} -> {args.sync_target} every {args.sync_interval}s")
 
     configs_to_run = []
 
@@ -398,6 +418,12 @@ def main():
                     f"{results['total_games']} games, "
                     f"{results['matchups_completed']} matchups")
 
+    # Stop syncer and perform final sync
+    if syncer:
+        logger.info("Stopping ramdrive syncer and performing final sync...")
+        syncer.stop(final_sync=True)
+        logger.info(f"Sync stats: {syncer.stats}")
+
     # Summary
     print("\n" + "=" * 60)
     print("DIVERSE SELFPLAY SUMMARY")
@@ -406,6 +432,7 @@ def main():
     total_matchups = sum(r["matchups_completed"] for r in all_results)
     print(f"Total games generated: {total_games}")
     print(f"Total matchups completed: {total_matchups}")
+    print(f"Output directory: {output_dir}")
     for r in all_results:
         print(f"  {r['config']}: {r['total_games']} games")
 
