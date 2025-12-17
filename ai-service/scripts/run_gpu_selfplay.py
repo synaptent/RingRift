@@ -646,8 +646,8 @@ class GPUSelfPlayGenerator:
                 results = self.generate_batch(seed=batch_idx * 1000)
 
                 # Create game records
-                # GPU kernels use board_size=25 as the hex embedding size.
-                board_type_str = {8: "square8", 19: "square19", 25: "hexagonal"}.get(self.board_size, "square8")
+                # Use the board_type that was passed in, not inferred from board_size
+                board_type_str = self.board_type or {8: "square8", 9: "hex8", 19: "square19", 25: "hexagonal"}.get(self.board_size, "square8")
                 for i in range(actual_batch):
                     game_idx = len(all_records)
                     vtype = results["victory_types"][i]
@@ -816,7 +816,7 @@ def run_gpu_selfplay(
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-    board_size = {"square8": 8, "square19": 19, "hex": 25, "hexagonal": 25}.get(board_type.lower(), 8)
+    board_size = {"square8": 8, "square19": 19, "hex": 25, "hexagonal": 25, "hex8": 9}.get(board_type.lower(), 8)
 
     # Auto-adjust max_moves based on board type and player count if using default
     # Larger boards and more players need more moves to reach natural game end
@@ -1087,7 +1087,7 @@ def main():
     if args.benchmark_only:
         logger.info("Running GPU benchmark...")
         device = get_device()
-        board_size = {"square8": 8, "square19": 19, "hex": 25}.get(args.board.lower(), 8)
+        board_size = {"square8": 8, "square19": 19, "hex": 25, "hexagonal": 25, "hex8": 9}.get(args.board.lower(), 8)
         results = benchmark_parallel_games(
             batch_sizes=[32, 64, 128, 256, 512, 1024],
             board_size=board_size,
