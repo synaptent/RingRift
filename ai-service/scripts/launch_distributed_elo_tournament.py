@@ -38,24 +38,14 @@ from typing import Any, Dict, List, Optional, Tuple
 # AI type configurations for calibration
 # Split into lightweight (no NN) and heavyweight (requires NN) types
 #
-# NOTE: This game has multi-move turns (players make 4-9 consecutive moves).
-# Minimax depth mapping from difficulty:
-#   difficulty >= 9 → depth 5
-#   difficulty >= 7 → depth 4
-#   difficulty >= 4 → depth 3
-#   otherwise       → depth 2
-#
-# Due to multi-move turns, depth < 5 provides little advantage over random
-# because the search doesn't see opponent responses. MCTS handles this better.
+# DEPRECATED: Minimax is unsuitable for this game on larger boards.
+# This game has multi-move turns (players make 4-9 consecutive moves),
+# so minimax at any practical depth doesn't see opponent responses.
+# Use MCTS-based agents instead which handle multi-move games naturally.
 AI_TYPE_CONFIGS_LIGHTWEIGHT = {
     "random": {"ai_type": "random", "difficulty": 1},
-    "heuristic": {"ai_type": "heuristic", "difficulty": 3},
-    # Minimax: use correct difficulty for desired depth
-    # Note: depth 2-3 is very weak in this game due to multi-move turns
-    "minimax_d3": {"ai_type": "minimax", "difficulty": 4, "use_neural_net": False},  # depth 3
-    "minimax_d4": {"ai_type": "minimax", "difficulty": 7, "use_neural_net": False},  # depth 4
-    "minimax_d5": {"ai_type": "minimax", "difficulty": 9, "use_neural_net": False},  # depth 5
-    # MCTS handles multi-move games better (no fixed depth limit)
+    "heuristic": {"ai_type": "heuristic", "difficulty": 5},
+    # MCTS handles multi-move games well (no fixed depth limit)
     "mcts_100": {"ai_type": "mcts", "difficulty": 5, "use_neural_net": False, "mcts_iterations": 100},
     "mcts_200": {"ai_type": "mcts", "difficulty": 6, "use_neural_net": False, "mcts_iterations": 200},
     "mcts_400": {"ai_type": "mcts", "difficulty": 7, "use_neural_net": False, "mcts_iterations": 400},
@@ -63,7 +53,6 @@ AI_TYPE_CONFIGS_LIGHTWEIGHT = {
 
 # Heavyweight types that require neural networks - run on high-memory nodes only
 AI_TYPE_CONFIGS_HEAVYWEIGHT = {
-    "minimax_nnue": {"ai_type": "minimax", "difficulty": 9, "use_neural_net": True},  # depth 5 with NNUE eval
     "mcts_neural": {"ai_type": "mcts", "difficulty": 6, "use_neural_net": True, "mcts_iterations": 400},
     "mcts_neural_high": {"ai_type": "mcts", "difficulty": 7, "use_neural_net": True, "mcts_iterations": 800},
     "policy_only": {"ai_type": "policy_only", "difficulty": 3, "policy_temperature": 0.5},
