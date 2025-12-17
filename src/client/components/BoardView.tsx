@@ -214,31 +214,6 @@ const getPlayerColors = (playerNumber?: number) => {
   );
 };
 
-// Contrasting highlight colors for just-moved rings (complements player colors)
-const _getJustMovedHighlight = (playerNumber?: number): string => {
-  switch (playerNumber) {
-    case 1: // Emerald → Rose highlight
-      return 'ring-[2px] ring-rose-400';
-    case 2: // Sky/Blue → Orange highlight
-      return 'ring-[2px] ring-orange-400';
-    case 3: // Amber/Yellow → Violet highlight
-      return 'ring-[2px] ring-violet-400';
-    case 4: // Fuchsia → Cyan highlight
-      return 'ring-[2px] ring-cyan-400';
-    default:
-      return 'ring-[2px] ring-white';
-  }
-};
-
-// Derive highlight from colorClass for ViewModel-based rendering
-const _getJustMovedHighlightFromColorClass = (colorClass: string): string => {
-  if (colorClass.includes('emerald')) return 'ring-[2px] ring-rose-400';
-  if (colorClass.includes('sky')) return 'ring-[2px] ring-orange-400';
-  if (colorClass.includes('amber')) return 'ring-[2px] ring-violet-400';
-  if (colorClass.includes('fuchsia')) return 'ring-[2px] ring-cyan-400';
-  return 'ring-[2px] ring-white';
-};
-
 const generateFileLabels = (size: number, skipI = false): string[] => {
   const labels: string[] = [];
   let code = 'a'.charCodeAt(0);
