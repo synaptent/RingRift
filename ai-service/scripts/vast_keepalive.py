@@ -34,15 +34,20 @@ LOG_FILE = LOG_DIR / "vast_keepalive.log"
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [VastKeepAlive] %(levelname)s: %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("vast_keepalive", log_file=LOG_FILE)
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [VastKeepAlive] %(levelname)s: %(message)s",
+        handlers=[
+            logging.FileHandler(LOG_FILE),
+            logging.StreamHandler(),
+        ],
+    )
+    logger = logging.getLogger(__name__)
 
 # Vastai CLI path
 VASTAI_CMD = "/Users/armand/.pyenv/versions/3.10.13/bin/vastai"

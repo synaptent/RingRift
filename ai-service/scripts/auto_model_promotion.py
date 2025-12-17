@@ -253,10 +253,15 @@ def main():
     args = parser.parse_args()
 
     log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
+    # Unified logging setup
+    try:
+        from app.core.logging_config import setup_logging
+        setup_logging("auto_model_promotion", level=log_level, log_dir="logs")
+    except ImportError:
+        logging.basicConfig(
+            level=log_level,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+        )
 
     if args.promote:
         if not args.board_type:

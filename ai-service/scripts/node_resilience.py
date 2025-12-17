@@ -33,15 +33,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("node_resilience", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.StreamHandler(),
+        ],
+    )
+    logger = logging.getLogger(__name__)
 
 _log_file = (os.environ.get("RINGRIFT_NODE_RESILIENCE_LOG_FILE") or "").strip()
 if _log_file:

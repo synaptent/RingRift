@@ -48,15 +48,20 @@ CONFIG_FILE = AI_SERVICE_ROOT / "config" / "promotion_daemon.yaml"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [PromotionDaemon] %(levelname)s: %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("unified_promotion_daemon", log_file=LOG_FILE)
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [PromotionDaemon] %(levelname)s: %(message)s",
+        handlers=[
+            logging.FileHandler(LOG_FILE),
+            logging.StreamHandler(),
+        ],
+    )
+    logger = logging.getLogger(__name__)
 
 
 # =============================================================================

@@ -152,15 +152,20 @@ def _get_fallback_instances() -> List[Dict]:
         {"host": "ssh5.vast.ai", "port": 18168, "name": "vast-5090x8", "gpu": "8x RTX 5090", "board_type": "hexagonal"},
     ]
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("vast_lifecycle", log_file=LOG_FILE)
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(LOG_FILE),
+            logging.StreamHandler(),
+        ],
+    )
+    logger = logging.getLogger(__name__)
 
 
 def run_ssh_command(

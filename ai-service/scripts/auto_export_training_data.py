@@ -47,15 +47,20 @@ SELFPLAY_DIR = DATA_DIR / "selfplay"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 TRAINING_DIR.mkdir(parents=True, exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [AutoExport] %(levelname)s: %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("auto_export_training_data", log_file=LOG_FILE)
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [AutoExport] %(levelname)s: %(message)s",
+        handlers=[
+            logging.FileHandler(LOG_FILE),
+            logging.StreamHandler(),
+        ],
+    )
+    logger = logging.getLogger(__name__)
 
 
 @dataclass

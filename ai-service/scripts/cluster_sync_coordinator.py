@@ -44,12 +44,17 @@ sys.path.insert(0, str(AI_SERVICE_ROOT))
 
 import yaml
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [ClusterCoord] %(levelname)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("cluster_sync_coordinator", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [ClusterCoord] %(levelname)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logger = logging.getLogger(__name__)
 
 # Import DataSyncManager for transport fallback chain (tailscale → cloudflare → ssh)
 try:

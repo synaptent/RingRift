@@ -56,11 +56,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.models import BoardType, GamePhase, GameState, GameStatus, Move, MoveType, Position
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("aggregate_jsonl_to_db", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+    logger = logging.getLogger(__name__)
 
 
 def compute_game_hash(record: Dict[str, Any]) -> str:
