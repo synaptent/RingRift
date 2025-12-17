@@ -1,0 +1,334 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "ringrift-cluster",
+    "title": "RingRift P2P Cluster",
+    "tags": ["ringrift", "p2p", "vast", "training"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "refresh": "30s",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Cluster Overview",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "ringrift_p2p_active_peers",
+            "legendFormat": "Active Peers"
+          },
+          {
+            "expr": "ringrift_vast_running_instances",
+            "legendFormat": "Vast Instances"
+          },
+          {
+            "expr": "ringrift_selfplay_jobs_total",
+            "legendFormat": "Selfplay Jobs"
+          },
+          {
+            "expr": "ringrift_vast_hourly_cost",
+            "legendFormat": "$/hr"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "horizontal",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 2,
+        "title": "P2P Network Nodes",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+        "targets": [
+          {
+            "expr": "ringrift_p2p_active_peers",
+            "legendFormat": "Active Peers"
+          },
+          {
+            "expr": "ringrift_p2p_vast_peers",
+            "legendFormat": "Vast Peers"
+          },
+          {
+            "expr": "ringrift_p2p_lambda_peers",
+            "legendFormat": "Lambda Peers"
+          },
+          {
+            "expr": "ringrift_p2p_retired_peers",
+            "legendFormat": "Retired"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 10
+            },
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Selfplay Jobs",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+        "targets": [
+          {
+            "expr": "ringrift_selfplay_jobs_total",
+            "legendFormat": "Total Jobs"
+          },
+          {
+            "expr": "ringrift_selfplay_jobs_vast",
+            "legendFormat": "Vast Jobs"
+          },
+          {
+            "expr": "ringrift_selfplay_jobs_lambda",
+            "legendFormat": "Lambda Jobs"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 20
+            },
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Vast.ai Costs",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+        "targets": [
+          {
+            "expr": "ringrift_vast_hourly_cost",
+            "legendFormat": "Hourly Cost"
+          },
+          {
+            "expr": "ringrift_vast_daily_cost",
+            "legendFormat": "Daily Cost (projected)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 10
+            },
+            "unit": "currencyUSD"
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Vast Instance Count by GPU",
+        "type": "piechart",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+        "targets": [
+          {
+            "expr": "ringrift_vast_instances_by_gpu",
+            "legendFormat": "{{gpu_name}}"
+          }
+        ],
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "right",
+            "values": ["value", "percent"]
+          },
+          "pieType": "donut",
+          "tooltip": { "mode": "single" }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Training Progress",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+        "targets": [
+          {
+            "expr": "ringrift_games_generated_total",
+            "legendFormat": "Games Generated"
+          },
+          {
+            "expr": "rate(ringrift_games_generated_total[5m]) * 60",
+            "legendFormat": "Games/min"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": {
+              "lineWidth": 2
+            },
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Model Elo Ratings",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+        "targets": [
+          {
+            "expr": "ringrift_model_elo{board_type=\"hexagonal\"}",
+            "legendFormat": "Hexagonal - {{model_id}}"
+          },
+          {
+            "expr": "ringrift_model_elo{board_type=\"square8\"}",
+            "legendFormat": "Square8 - {{model_id}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": {
+              "lineWidth": 2
+            },
+            "unit": "short",
+            "min": 1000,
+            "max": 2000
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Autoscaler Events",
+        "type": "table",
+        "gridPos": { "h": 6, "w": 24, "x": 0, "y": 28 },
+        "targets": [
+          {
+            "expr": "ringrift_autoscaler_events",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "options": {
+          "showHeader": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "align": "auto",
+              "displayMode": "auto"
+            }
+          }
+        }
+      },
+      {
+        "id": 9,
+        "title": "Rollback Events",
+        "type": "timeseries",
+        "gridPos": { "h": 6, "w": 12, "x": 0, "y": 34 },
+        "targets": [
+          {
+            "expr": "ringrift_rollback_triggered_total",
+            "legendFormat": "Rollbacks Triggered"
+          },
+          {
+            "expr": "ringrift_rollback_completed_total",
+            "legendFormat": "Rollbacks Completed"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 30
+            },
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 10,
+        "title": "Elo Drift from Baseline",
+        "type": "gauge",
+        "gridPos": { "h": 6, "w": 12, "x": 12, "y": 34 },
+        "targets": [
+          {
+            "expr": "ringrift_elo_drift_from_baseline",
+            "legendFormat": "{{board_type}}"
+          }
+        ],
+        "options": {
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": -30 },
+                { "color": "red", "value": -50 }
+              ]
+            },
+            "unit": "short",
+            "min": -100,
+            "max": 100
+          }
+        }
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "board_type",
+          "type": "query",
+          "query": "label_values(ringrift_model_elo, board_type)",
+          "refresh": 2,
+          "multi": true,
+          "includeAll": true
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Deployments",
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "iconColor": "blue",
+          "type": "dashboard"
+        },
+        {
+          "name": "Rollbacks",
+          "datasource": "Prometheus",
+          "enable": true,
+          "expr": "ringrift_rollback_triggered_total > 0",
+          "iconColor": "red"
+        }
+      ]
+    }
+  }
+}

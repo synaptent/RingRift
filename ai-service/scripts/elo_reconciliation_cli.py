@@ -441,10 +441,10 @@ def cmd_backfill_history(args: argparse.Namespace) -> int:
     try:
         cur = conn.cursor()
 
-        # Get all configurations
+        # Get all configurations from elo_ratings table
         cur.execute("""
             SELECT DISTINCT board_type, num_players
-            FROM participants
+            FROM elo_ratings
             WHERE board_type IS NOT NULL
         """)
         configs = cur.fetchall()
@@ -461,16 +461,13 @@ def cmd_backfill_history(args: argparse.Namespace) -> int:
             config_key = f"{board_type}_{num_players}p"
             print(f"\nProcessing {config_key}...")
 
-            # Get matches sorted by timestamp
+            # Get matches sorted by timestamp (using rating_history for daily averages)
             cur.execute("""
-                SELECT m.timestamp, AVG(p.rating) as avg_rating
-                FROM match_history m
-                JOIN participants p ON p.id IN (
-                    SELECT player_id FROM match_results WHERE match_id = m.id
-                )
-                WHERE p.board_type = ? AND p.num_players = ?
-                GROUP BY DATE(m.timestamp)
-                ORDER BY m.timestamp
+                SELECT DATE(timestamp, 'unixepoch') as match_date, AVG(rating) as avg_rating
+                FROM rating_history
+                WHERE board_type = ? AND num_players = ?
+                GROUP BY DATE(timestamp, 'unixepoch')
+                ORDER BY timestamp
             """, (board_type, num_players))
 
             daily_ratings = cur.fetchall()
