@@ -177,10 +177,12 @@ def play_model_vs_model_game(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     max_moves: int = 10000,
+    save_game_history: bool = True,
 ) -> Dict[str, Any]:
     """Play a single game between two models (NN or baseline).
 
-    Returns dict with: winner (model_a, model_b, or draw), game_length, duration_sec
+    Returns dict with: winner (model_a, model_b, or draw), game_length, duration_sec, game_record
+    If save_game_history=True, also returns full game record for training data export.
     """
     import uuid
     from app.rules.default_engine import DefaultRulesEngine
@@ -191,12 +193,28 @@ def play_model_vs_model_game(
 
     # Create initial state
     state = create_initial_state(board_type, num_players)
+    state.id = game_id
     engine = DefaultRulesEngine()
+
+    # Capture initial state for training data
+    initial_state_snapshot = state.dict() if save_game_history else None
+    move_history = []
 
     # Create AIs for both models
     # Model A plays as player 1, Model B plays as player 2
     ai_a = create_ai_from_model(model_a, 1, board_type)
     ai_b = create_ai_from_model(model_b, 2, board_type)
+
+    # Track player types for metadata
+    player_types = []
+    for m in [model_a, model_b]:
+        ai_type = m.get("ai_type", "")
+        if ai_type in ("random", "heuristic", "mcts"):
+            player_types.append(ai_type)
+        elif m.get("model_path", "").startswith("__BASELINE"):
+            player_types.append("baseline")
+        else:
+            player_types.append("neural_net")
 
     move_count = 0
     while state.game_status == GameStatus.ACTIVE and move_count < max_moves:
@@ -208,6 +226,24 @@ def play_model_vs_model_game(
         if move is None:
             break
 
+        # Record move for training data
+        if save_game_history and move is not None:
+            move_record = {
+                'move_type': move.move_type.value if hasattr(move.move_type, 'value') else str(move.move_type),
+                'player': current_player,
+            }
+            if hasattr(move, 'to_key') and move.to_key:
+                move_record['to_key'] = move.to_key
+            if hasattr(move, 'to') and move.to:
+                move_record['to'] = {'x': move.to.x, 'y': move.to.y}
+            if hasattr(move, 'from_key') and move.from_key:
+                move_record['from_key'] = move.from_key
+            if hasattr(move, 'from_pos') and move.from_pos:
+                move_record['from'] = {'x': move.from_pos.x, 'y': move.from_pos.y}
+            if hasattr(move, 'ring_index') and move.ring_index is not None:
+                move_record['ring_index'] = move.ring_index
+            move_history.append(move_record)
+
         # Apply move
         state = engine.apply_move(state, move)
         move_count += 1
@@ -216,11 +252,43 @@ def play_model_vs_model_game(
 
     # Determine winner
     winner = "draw"
+    winner_player = None
     if state.game_status == GameStatus.COMPLETED:
         if state.winner == 1:
             winner = "model_a"
+            winner_player = 1
         elif state.winner == 2:
             winner = "model_b"
+            winner_player = 2
+
+    status = "completed" if state.game_status == GameStatus.COMPLETED else str(state.game_status.value)
+
+    # Build game record for training data export
+    game_record = None
+    if save_game_history:
+        game_record = {
+            'game_id': game_id,
+            'board_type': board_type.value if hasattr(board_type, 'value') else str(board_type),
+            'num_players': num_players,
+            'winner': winner_player,
+            'move_count': move_count,
+            'total_moves': move_count,
+            'status': status,
+            'game_status': status,
+            'completed': state.game_status == GameStatus.COMPLETED,
+            'engine_mode': 'mixed_tournament',
+            'opponent_type': 'tournament_baseline',
+            'player_types': player_types,
+            'model_a': model_a.get("model_id", model_a.get("model_path", "unknown")),
+            'model_b': model_b.get("model_id", model_b.get("model_path", "unknown")),
+            'moves': move_history,
+            'initial_state': initial_state_snapshot,
+            'game_time_seconds': duration,
+            'duration_sec': duration,
+            'timestamp': datetime.now().isoformat(),
+            'created_at': datetime.now().isoformat(),
+            'source': GAME_SOURCE_TAG,
+        }
 
     return {
         "winner": winner,
@@ -228,6 +296,7 @@ def play_model_vs_model_game(
         "duration_sec": duration,
         "game_id": game_id,
         "final_status": state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status),
+        "game_record": game_record,
     }
 
 
