@@ -210,10 +210,11 @@ When the Prometheus client is installed, the loop exports metrics on port 9090:
 
 - [Training Features](TRAINING_FEATURES.md) - Training configuration options
 - [Training Triggers](TRAINING_TRIGGERS.md) - 3-signal trigger system
+- [Training Internals](TRAINING_INTERNALS.md) - Internal training modules
 - [Curriculum Feedback](CURRICULUM_FEEDBACK.md) - Adaptive curriculum weights
 - [Training Optimizations](TRAINING_OPTIMIZATIONS.md) - Pipeline optimizations
+- [Coordination System](COORDINATION_SYSTEM.md) - Task coordination and resource management
 - [Distributed Selfplay](DISTRIBUTED_SELFPLAY.md) - Remote host configuration
-- [Training Data Registry](../TRAINING_DATA_REGISTRY.md) - Canonical data management
 - [Pipeline Orchestrator](PIPELINE_ORCHESTRATOR.md) - ⚠️ _Archived; replaced by unified loop_
 
 ---

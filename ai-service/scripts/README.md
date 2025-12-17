@@ -66,10 +66,13 @@ Features:
 
 ### Training
 
-- `multi_config_training_loop.py` - **Multi-board training coordinator**
+- `multi_config_training_loop.py` - **Multi-board training coordinator** (52KB)
   - Adaptive curriculum based on Elo ratings
   - Balance mode for underrepresented configs
   - Supports hex8, square8, square19, hexagonal configurations
+  - **Dynamic JSONL directory discovery** (2025-12-17) - auto-discovers selfplay data sources
+  - Victory-type balanced sampling (`--sampling-weights victory_type`)
+  - Policy label smoothing, hex augmentation
   - Start: `python scripts/multi_config_training_loop.py --configs all`
 - `run_nn_training_baseline.py` - **Primary NN training script** (21KB)
   - Board-specific hyperparameters from `config/hyperparameters.json`

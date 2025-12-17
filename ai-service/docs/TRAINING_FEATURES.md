@@ -728,6 +728,115 @@ python scripts/train_nnue.py \
 
 ---
 
+## Advanced Training Utilities (`app/training/advanced_training.py`)
+
+This module provides advanced training utilities added in Phase 3-4 (December 2025).
+
+### Learning Rate Finder
+
+Automatically finds the optimal learning rate range before training begins.
+
+```python
+from app.training.advanced_training import LRFinder
+
+# Create finder
+finder = LRFinder(model, optimizer, criterion)
+
+# Run sweep
+result = finder.find_lr(
+    dataloader=train_loader,
+    start_lr=1e-7,
+    end_lr=10,
+    num_iterations=100,
+)
+
+# Get suggested LR range
+suggested_lr = result.suggested_lr
+print(f"Suggested LR: {suggested_lr}")
+```
+
+**CLI Usage:**
+
+```bash
+python scripts/train_nnue.py \
+  --find-lr \
+  --lr-finder-iterations 100
+```
+
+### Gradient Checkpointing
+
+Memory-efficient training by trading compute for memory.
+
+```python
+from app.training.advanced_training import GradientCheckpointing
+
+# Wrap model for checkpointing
+checkpointed_model = GradientCheckpointing(model, checkpoint_segments=4)
+```
+
+**Benefits:**
+
+- 30-50% memory reduction
+- Enables larger batch sizes
+- Slight compute overhead (re-computing activations)
+
+### PFSP Opponent Pool (Prioritized Fictitious Self-Play)
+
+Maintains a pool of opponents weighted by performance metrics.
+
+```python
+from app.training.advanced_training import PFSPOpponentPool
+
+# Create pool
+pool = PFSPOpponentPool(max_size=50)
+
+# Add opponents with scores
+pool.add_opponent(model_path, win_rate=0.55, elo=1500)
+
+# Sample opponent (weighted by difficulty)
+opponent = pool.sample_opponent(prioritization="hard")  # or "easy", "uniform"
+```
+
+**Benefits:**
+
+- Prevents catastrophic forgetting
+- Maintains diverse training opponents
+- Focuses training on challenging matchups
+
+### CMA-ES Auto-Tuner
+
+Automatically triggers hyperparameter search when training plateaus.
+
+```python
+from app.training.advanced_training import CMAESAutoTuner
+
+# Create tuner
+tuner = CMAESAutoTuner(
+    patience=10,  # Epochs without improvement
+    improvement_threshold=0.001,  # Min improvement to count
+)
+
+# Check during training
+for epoch in range(epochs):
+    val_loss = train_epoch(...)
+    if tuner.should_trigger_search(val_loss):
+        # Launch CMA-ES hyperparameter search
+        best_params = launch_cmaes_search(...)
+        apply_params(best_params)
+```
+
+**Integration with Unified Loop:**
+
+```yaml
+training:
+  auto_hp_search:
+    enabled: true
+    plateau_patience: 10
+    improvement_threshold: 0.001
+```
+
+---
+
 ## Learning Rate Scheduling
 
 ### Available Schedulers

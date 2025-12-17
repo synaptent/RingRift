@@ -136,16 +136,28 @@ trainer.run()
 
 ### Position Complexity Estimation
 
-Curriculum learning uses complexity estimation to stage training samples:
+Curriculum learning uses complexity estimation to stage training samples. The complexity
+estimation is handled internally by the `AdaptiveSchedule` class in temperature_scheduling:
 
 ```python
-from app.training.curriculum import estimate_complexity
+from app.training.temperature_scheduling import AdaptiveSchedule
 
-# Returns 0.0-1.0 complexity score
-complexity = estimate_complexity(game_state)
+# Create adaptive temperature schedule with complexity awareness
+schedule = AdaptiveSchedule(
+    base_temp=1.0,
+    min_temp=0.1,
+    max_temp=2.0,
+)
+
+# Get temperature adjusted for position complexity
+# Internally calls _estimate_complexity(game_state) which returns 0.0-1.0
+temperature = schedule.get_temperature(
+    move_number=current_move,
+    game_state=game_state,
+)
 ```
 
-Complexity factors:
+Complexity factors considered:
 
 - Piece count and distribution
 - Board control percentages
