@@ -1370,80 +1370,20 @@ class ModelEMA:
         return {k: v.clone() for k, v in self.shadow.items()}
 
 
-class HardExampleMiner:
-    """Hard Example Mining for focused training on difficult samples.
-
-    Tracks prediction errors and upweights hard examples in subsequent epochs.
-    Typical improvement: 4-6% on difficult positions.
-
-    Reference: 'Training Region-based Object Detectors with Online Hard Example Mining' (CVPR 2016)
-    """
-
-    def __init__(
-        self,
-        dataset_size: int,
-        top_k_percent: float = 0.3,
-        min_weight: float = 0.5,
-        max_weight: float = 3.0,
-        momentum: float = 0.9,
-    ):
-        self.dataset_size = dataset_size
-        self.top_k_percent = top_k_percent
-        self.min_weight = min_weight
-        self.max_weight = max_weight
-        self.momentum = momentum
-
-        # Error history per sample
-        self.errors = np.zeros(dataset_size, dtype=np.float32)
-        self.seen = np.zeros(dataset_size, dtype=bool)
-
-    def update_errors(self, indices: np.ndarray, errors: np.ndarray) -> None:
-        """Update error history for given samples."""
-        for idx, err in zip(indices, errors):
-            if self.seen[idx]:
-                self.errors[idx] = self.momentum * self.errors[idx] + (1 - self.momentum) * err
-            else:
-                self.errors[idx] = err
-                self.seen[idx] = True
-
-    def get_sample_weights(self) -> np.ndarray:
-        """Compute sample weights based on difficulty."""
-        if not self.seen.any():
-            return np.ones(self.dataset_size, dtype=np.float32)
-
-        # Normalize errors to [0, 1]
-        seen_mask = self.seen
-        seen_errors = self.errors[seen_mask]
-        if len(seen_errors) == 0 or seen_errors.max() == seen_errors.min():
-            return np.ones(self.dataset_size, dtype=np.float32)
-
-        # Rank-based weighting
-        weights = np.ones(self.dataset_size, dtype=np.float32)
-        error_ranks = np.argsort(np.argsort(-self.errors[seen_mask]))  # Descending rank
-        percentiles = error_ranks / len(error_ranks)
-
-        # Top k% get higher weights
-        hard_mask = percentiles < self.top_k_percent
-        easy_mask = ~hard_mask
-
-        # Map to weight range
-        normalized = percentiles.copy()
-        normalized[hard_mask] = 1.0 - percentiles[hard_mask] / self.top_k_percent
-        normalized[easy_mask] = 0.0
-
-        weights[seen_mask] = self.min_weight + normalized * (self.max_weight - self.min_weight)
-
-        return weights
-
-    def get_stats(self) -> Dict[str, float]:
-        """Get mining statistics."""
-        seen_count = self.seen.sum()
-        return {
-            'seen_samples': int(seen_count),
-            'seen_ratio': seen_count / self.dataset_size if self.dataset_size > 0 else 0,
-            'mean_error': float(self.errors[self.seen].mean()) if seen_count > 0 else 0,
-            'max_error': float(self.errors[self.seen].max()) if seen_count > 0 else 0,
-        }
+# Training enhancements are imported from consolidated module for maintainability.
+# HardExampleMiner: uncertainty weighting, decay rate, over-sampling protection
+# TrainingAnomalyDetector: NaN/Inf detection, loss spike detection, gradient explosion
+try:
+    from app.training.training_enhancements import (
+        HardExampleMiner,
+        TrainingAnomalyDetector,
+        SeedManager,
+    )
+except ImportError:
+    # Fallback for standalone execution
+    HardExampleMiner = None
+    TrainingAnomalyDetector = None
+    SeedManager = None
 
 
 class DynamicBatchScheduler:
@@ -4354,14 +4294,30 @@ def train_nnue(
 
     # Hard example mining for focused training
     hard_miner = None
-    if hard_example_mining and not streaming and not demo:
+    hard_miner_dataset_size = 0  # Track for backwards compat get_all_sample_weights
+    if hard_example_mining and not streaming and not demo and HardExampleMiner is not None:
         train_size = len(train_dataset) if not streaming else 0
         if train_size > 0:
+            hard_miner_dataset_size = train_size
             hard_miner = HardExampleMiner(
-                dataset_size=train_size,
-                top_k_percent=hard_example_top_k,
+                buffer_size=min(train_size, 10000),  # Cap buffer at 10k for memory
+                hard_fraction=hard_example_top_k,    # Renamed from top_k_percent
+                loss_threshold_percentile=80.0,      # New: percentile threshold
+                min_samples_before_mining=1000,      # New: warmup period
             )
-            logger.info(f"Hard example mining enabled (top_k={hard_example_top_k:.0%})")
+            logger.info(f"Hard example mining enabled (hard_fraction={hard_example_top_k:.0%})")
+
+    # Training anomaly detection for NaN/Inf and loss spike protection
+    anomaly_detector = None
+    if TrainingAnomalyDetector is not None:
+        anomaly_detector = TrainingAnomalyDetector(
+            loss_spike_threshold=3.0,      # Standard deviations above mean
+            gradient_norm_threshold=100.0, # Gradient explosion threshold
+            halt_on_nan=True,              # Halt on NaN/Inf loss
+            halt_on_spike=False,           # Don't halt on spikes, just log
+            max_consecutive_anomalies=5,   # Max anomalies before forced halt
+        )
+        logger.info("Training anomaly detector enabled (NaN/Inf/spike detection)")
 
     # Dynamic batch scheduling
     batch_scheduler = None
@@ -4671,7 +4627,7 @@ def train_nnue(
 
         # Hard example mining: update sampler weights
         if hard_miner is not None and epoch > 0:
-            weights = hard_miner.get_sample_weights()
+            weights = hard_miner.get_all_sample_weights(hard_miner_dataset_size)
             train_indices = train_dataset.indices if hasattr(train_dataset, 'indices') else list(range(len(train_dataset)))
             train_weights = weights[train_indices] if hasattr(train_dataset, 'indices') else weights
             from torch.utils.data import WeightedRandomSampler
@@ -4693,6 +4649,18 @@ def train_nnue(
                 logger.info(f"Hard example mining stats: seen={stats['seen_ratio']:.1%}, mean_err={stats['mean_error']:.4f}")
 
         train_loss = trainer.train_epoch(train_loader)
+
+        # Check for training anomalies (NaN/Inf, loss spikes)
+        if anomaly_detector is not None:
+            step = epoch * len(train_loader) if hasattr(train_loader, '__len__') else epoch
+            has_anomaly = anomaly_detector.check_loss(train_loss, step)
+            if has_anomaly:
+                logger.warning(f"Epoch {epoch}: Training anomaly detected (loss={train_loss:.4f})")
+                # Get anomaly summary for debugging
+                anomaly_summary = anomaly_detector.get_summary()
+                if anomaly_summary.get('total_anomalies', 0) > 0:
+                    logger.warning(f"Anomaly summary: {anomaly_summary['total_anomalies']} total, "
+                                   f"types: {anomaly_summary.get('by_type', {})}")
 
         # Update Model EMA after training epoch
         if model_ema is not None:

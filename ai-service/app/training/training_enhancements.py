@@ -1134,6 +1134,85 @@ class HardExampleMiner:
         self._current_step = 0
         self._loss_history.clear()
 
+    # =========================================================================
+    # Backwards Compatibility Methods (for drop-in replacement of train_nnue.py version)
+    # =========================================================================
+
+    def update_errors(
+        self,
+        indices: Union[List[int], np.ndarray],
+        errors: Union[List[float], np.ndarray],
+    ) -> None:
+        """
+        Update error history for given samples (backwards compatible).
+
+        This is an alias for record_batch() to maintain compatibility with
+        the train_nnue.py HardExampleMiner implementation.
+
+        Args:
+            indices: Dataset indices for the batch
+            errors: Per-sample errors (treated as losses)
+        """
+        self.record_batch(indices, errors, uncertainties=None)
+
+    def get_all_sample_weights(
+        self,
+        dataset_size: int,
+        min_weight: float = 0.5,
+        max_weight: float = 3.0,
+    ) -> np.ndarray:
+        """
+        Compute sample weights for the entire dataset (backwards compatible).
+
+        This method returns weights for all samples in the dataset, compatible
+        with the train_nnue.py HardExampleMiner.get_sample_weights() method.
+
+        Args:
+            dataset_size: Total size of the dataset
+            min_weight: Minimum weight for easy samples
+            max_weight: Maximum weight for hard samples
+
+        Returns:
+            Array of weights for all samples
+        """
+        weights = np.full(dataset_size, min_weight, dtype=np.float32)
+
+        if self._total_samples_seen < self.min_samples_before_mining:
+            return np.ones(dataset_size, dtype=np.float32)
+
+        if len(self._loss_history) < 100:
+            return np.ones(dataset_size, dtype=np.float32)
+
+        # Get hardness threshold
+        threshold = np.percentile(list(self._loss_history), self.loss_threshold_percentile)
+
+        # Update weights for tracked examples
+        for idx, example in self._examples.items():
+            if idx < dataset_size:
+                # Scale weight based on hardness
+                if example.loss >= threshold:
+                    # Hard example - higher weight
+                    hardness = min(1.0, (example.loss - threshold) / threshold if threshold > 0 else 0)
+                    weights[idx] = min_weight + hardness * (max_weight - min_weight)
+                else:
+                    weights[idx] = min_weight
+
+        return weights
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get mining statistics (backwards compatible alias for get_statistics).
+        """
+        stats = self.get_statistics()
+        # Map to train_nnue.py expected format
+        return {
+            'seen_samples': stats.get('total_samples_seen', 0),
+            'seen_ratio': stats.get('tracked_examples', 0) / max(1, self.buffer_size),
+            'mean_error': stats.get('mean_loss', 0),
+            'max_error': stats.get('max_loss', 0),
+            'mining_active': stats.get('mining_active', False),
+        }
+
 
 # =============================================================================
 # 4. Adaptive Learning Rate
@@ -2200,6 +2279,44 @@ class EnhancedEarlyStopping:
         self.best_state = None
         self.best_epoch = 0
         self._stopped = False
+
+    # =========================================================================
+    # Backwards Compatibility Methods (for drop-in replacement of basic EarlyStopping)
+    # =========================================================================
+
+    def __call__(self, val_loss: float, model: nn.Module) -> bool:
+        """
+        Check if training should stop (backwards compatible interface).
+
+        This allows EnhancedEarlyStopping to be used as a drop-in replacement
+        for the basic EarlyStopping class in train.py.
+
+        Args:
+            val_loss: Current validation loss
+            model: Model to save state from if this is best so far
+
+        Returns:
+            True if training should stop, False otherwise
+        """
+        return self.should_stop(val_loss=val_loss, model=model)
+
+    def restore_best_weights(self, model: nn.Module) -> None:
+        """
+        Restore the best weights to the model (backwards compatible alias).
+
+        This is an alias for restore_best_model() to maintain compatibility
+        with code using the basic EarlyStopping class.
+        """
+        self.restore_best_model(model)
+
+    @property
+    def counter(self) -> int:
+        """Backwards compatible counter property (returns loss_counter)."""
+        return self.loss_counter
+
+
+# Backwards compatible alias
+EarlyStopping = EnhancedEarlyStopping
 
 
 # =============================================================================

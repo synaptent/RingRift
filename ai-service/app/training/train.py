@@ -398,50 +398,9 @@ def run_cmaes_heuristic_optimization(
     return report
 
 
-class EarlyStopping:
-    """
-    Early stopping to terminate training when validation loss stops improving.
-
-    Args:
-        patience: Number of epochs to wait before stopping after
-            last improvement
-        min_delta: Minimum change in validation loss to qualify as improvement
-    """
-
-    def __init__(self, patience: int = 10, min_delta: float = 0.0001):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_loss = float('inf')
-        self.best_state: Optional[Dict[str, Any]] = None
-        self.should_stop = False
-
-    def __call__(self, val_loss: float, model: nn.Module) -> bool:
-        """
-        Check if training should stop based on validation loss.
-
-        Args:
-            val_loss: Current validation loss
-            model: Model to save state from if this is best so far
-
-        Returns:
-            True if training should stop, False otherwise
-        """
-        if val_loss < self.best_loss - self.min_delta:
-            self.best_loss = val_loss
-            self.best_state = copy.deepcopy(model.state_dict())
-            self.counter = 0
-        else:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.should_stop = True
-        return self.should_stop
-
-    def restore_best_weights(self, model: nn.Module) -> None:
-        """Restore the best weights to the model."""
-        if self.best_state is not None:
-            model.load_state_dict(self.best_state)
-            logger.info("Restored best model weights from early stopping")
+# EarlyStopping is now imported from training_enhancements for consolidation
+# The EnhancedEarlyStopping class provides backwards compatibility via __call__ method
+from app.training.training_enhancements import EarlyStopping, EnhancedEarlyStopping
 
 
 def save_checkpoint(
