@@ -1,0 +1,88 @@
+# Data Aggregator Configuration
+# This config is for the data aggregation node (Mac Studio)
+# It runs unified_data_sync.py to collect data from all cluster nodes
+# and syncs to both local OWC drive and AWS S3
+
+version: '1.0'
+
+# Aggregator role configuration
+aggregator:
+  # This machine IS the data aggregator
+  enabled: true
+  role: 'primary_aggregator'
+
+  # Local storage target (OWC external drive on Mac Studio)
+  local_storage:
+    enabled: true
+    base_path: '/Volumes/RingRift-Data'
+
+    # Directory structure on OWC drive
+    paths:
+      selfplay_raw: 'selfplay_repository/raw' # Raw data from cluster
+      selfplay_synced: 'selfplay_repository/synced' # Synced/consolidated data
+      models: 'models' # Model backups
+      training: 'training_runs' # Training artifacts
+      archives: 'archives' # Old data archives
+
+    # Retention settings
+    retention:
+      keep_raw_days: 30 # Keep raw data for 30 days
+      keep_synced_days: 90 # Keep synced data for 90 days
+      archive_after_days: 7 # Archive data older than 7 days
+
+  # Cloud storage target (AWS S3)
+  s3_storage:
+    enabled: true
+    bucket: 'ringrift-models-20251214'
+    region: 'us-east-1'
+
+    # S3 sync settings
+    sync_interval_minutes: 60 # Sync to S3 every hour
+
+    # What to sync to S3
+    sync_targets:
+      models: true # Sync models (important)
+      databases: true # Sync consolidated game DBs
+      state: true # Sync state files
+      raw_data: false # Don't sync raw data (too large)
+
+    # S3 paths
+    paths:
+      models: 'models'
+      databases: 'data/games'
+      state: 'data/state'
+      manifests: 'manifests'
+
+# Data collection settings (for unified_data_sync.py)
+data_collection:
+  # Override local_sync_dir to use OWC drive
+  local_sync_dir: '/Volumes/RingRift-Data/selfplay_repository/raw/cluster_synced'
+
+  # Poll intervals
+  poll_interval_seconds: 60 # Check for new data every minute
+  ephemeral_poll_interval_seconds: 30 # Faster for Vast.ai nodes
+
+  # Processing
+  auto_consolidate: true # Auto-consolidate synced data
+  consolidation_interval_minutes: 30
+
+  # Health monitoring
+  health_check_interval: 60
+  max_consecutive_failures: 10
+
+# Notification settings
+notifications:
+  # Slack webhook for alerts (optional)
+  slack_webhook: ''
+
+  # Alert thresholds
+  disk_warning_percent: 80
+  disk_critical_percent: 90
+  sync_failure_threshold: 5
+
+# Logging
+logging:
+  log_dir: '/Volumes/RingRift-Data/logs'
+  log_level: 'INFO'
+  max_log_size_mb: 100
+  backup_count: 5
