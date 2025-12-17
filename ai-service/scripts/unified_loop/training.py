@@ -13,6 +13,7 @@ import os
 import sqlite3
 import sys
 import time
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
@@ -2441,3 +2442,226 @@ class TrainingScheduler:
                 'games_since_training': config_state.games_since_training,
             }
         return result
+
+    # =========================================================================
+    # Training Checkpointing (Phase 7)
+    # =========================================================================
+
+    def _get_checkpoint_path(self) -> Path:
+        """Get the path to the checkpoint file."""
+        custom_path = getattr(self.config, 'checkpoint_path', None)
+        if custom_path:
+            return Path(custom_path)
+        return AI_SERVICE_ROOT / "data" / "training_checkpoint.json"
+
+    def save_checkpoint(self) -> bool:
+        """Save current training state to checkpoint file.
+
+        Saves:
+        - Retry attempts and pending retries
+        - Curriculum weights
+        - Feedback state summary
+        - Last checkpoint time
+
+        Returns:
+            True if checkpoint saved successfully
+        """
+        if not getattr(self.config, 'checkpoint_enabled', True):
+            return False
+
+        try:
+            import json
+            checkpoint_path = self._get_checkpoint_path()
+            checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+
+            checkpoint_data = {
+                'timestamp': time.time(),
+                'timestamp_iso': datetime.now().isoformat(),
+                'retry_attempts': self._retry_attempts,
+                'last_failure_times': self._last_failure_time,
+                'pending_retries': [
+                    {'config': k, 'scheduled_time': t}
+                    for k, t in self._pending_retries
+                ],
+                'curriculum_weights': self._curriculum_weights,
+                'parity_failure_rate': self._parity_failure_rate,
+                'promotion_history': list(self._promotion_history),
+                'training_history': list(self._training_history),
+                'config_states': {
+                    k: {
+                        'games_since_training': cs.games_since_training,
+                        'last_training_time': cs.last_training_time,
+                        'last_promotion_time': cs.last_promotion_time,
+                        'current_elo': cs.current_elo,
+                        'win_rate': cs.win_rate,
+                    }
+                    for k, cs in self.state.configs.items()
+                },
+            }
+
+            # Atomic write with temp file
+            temp_path = checkpoint_path.with_suffix('.tmp')
+            with open(temp_path, 'w') as f:
+                json.dump(checkpoint_data, f, indent=2)
+            temp_path.rename(checkpoint_path)
+
+            if self.config.verbose:
+                print(f"[Checkpoint] Saved to {checkpoint_path}")
+            return True
+
+        except Exception as e:
+            print(f"[Checkpoint] Error saving checkpoint: {e}")
+            return False
+
+    def load_checkpoint(self) -> bool:
+        """Load training state from checkpoint file.
+
+        Restores:
+        - Retry attempts and pending retries
+        - Curriculum weights
+        - Parity failure rate
+
+        Returns:
+            True if checkpoint loaded successfully
+        """
+        try:
+            import json
+            checkpoint_path = self._get_checkpoint_path()
+
+            if not checkpoint_path.exists():
+                print(f"[Checkpoint] No checkpoint file found at {checkpoint_path}")
+                return False
+
+            with open(checkpoint_path) as f:
+                checkpoint_data = json.load(f)
+
+            # Check if checkpoint is recent (within 24 hours)
+            checkpoint_time = checkpoint_data.get('timestamp', 0)
+            age_hours = (time.time() - checkpoint_time) / 3600
+            if age_hours > 24:
+                print(f"[Checkpoint] Checkpoint is {age_hours:.1f}h old, skipping restore")
+                return False
+
+            # Restore retry state
+            self._retry_attempts = checkpoint_data.get('retry_attempts', {})
+            self._last_failure_time = checkpoint_data.get('last_failure_times', {})
+            self._pending_retries = [
+                (r['config'], r['scheduled_time'])
+                for r in checkpoint_data.get('pending_retries', [])
+            ]
+
+            # Restore curriculum weights
+            self._curriculum_weights = checkpoint_data.get('curriculum_weights', {})
+
+            # Restore parity failure rate
+            self._parity_failure_rate = checkpoint_data.get('parity_failure_rate', 0.0)
+
+            # Restore history deques (limited to recent entries)
+            promotion_history = checkpoint_data.get('promotion_history', [])
+            self._promotion_history = deque(promotion_history[-100:], maxlen=100)
+            training_history = checkpoint_data.get('training_history', [])
+            self._training_history = deque(training_history[-100:], maxlen=100)
+
+            print(f"[Checkpoint] Restored from {checkpoint_path} "
+                  f"(age: {age_hours:.1f}h, retries: {len(self._retry_attempts)}, "
+                  f"curriculum weights: {len(self._curriculum_weights)})")
+            return True
+
+        except Exception as e:
+            print(f"[Checkpoint] Error loading checkpoint: {e}")
+            return False
+
+    def maybe_save_checkpoint(self, force: bool = False) -> bool:
+        """Save checkpoint if enough time has elapsed.
+
+        Args:
+            force: Save regardless of interval
+
+        Returns:
+            True if checkpoint was saved
+        """
+        if not getattr(self.config, 'checkpoint_enabled', True):
+            return False
+
+        checkpoint_interval = getattr(self.config, 'checkpoint_interval_seconds', 300.0)
+
+        if not hasattr(self, '_last_checkpoint_time'):
+            self._last_checkpoint_time = 0.0
+
+        now = time.time()
+        if force or (now - self._last_checkpoint_time) >= checkpoint_interval:
+            if self.save_checkpoint():
+                self._last_checkpoint_time = now
+                return True
+        return False
+
+    # =========================================================================
+    # A/B Testing for Hyperparameters (Phase 7)
+    # =========================================================================
+
+    def is_ab_test_config(self, config_key: str) -> bool:
+        """Check if a config should use test hyperparameters.
+
+        Uses deterministic selection based on config_key hash to ensure
+        consistent assignment across restarts.
+
+        Args:
+            config_key: Config identifier
+
+        Returns:
+            True if config should use test hyperparameters
+        """
+        if not getattr(self.config, 'ab_testing_enabled', False):
+            return False
+
+        ab_fraction = getattr(self.config, 'ab_test_fraction', 0.3)
+
+        # Deterministic selection based on config_key hash
+        config_hash = hash(config_key) % 1000
+        threshold = int(ab_fraction * 1000)
+
+        return config_hash < threshold
+
+    def get_ab_test_assignments(self) -> Dict[str, str]:
+        """Get A/B test group assignments for all configs.
+
+        Returns:
+            Dict mapping config_key to 'control' or 'test'
+        """
+        return {
+            config_key: 'test' if self.is_ab_test_config(config_key) else 'control'
+            for config_key in self.state.configs
+        }
+
+    def get_hyperparameters_for_config(self, config_key: str) -> Dict[str, Any]:
+        """Get hyperparameters for a config, applying A/B test overrides.
+
+        Args:
+            config_key: Config identifier
+
+        Returns:
+            Dict of hyperparameters to use
+        """
+        # Base hyperparameters from config
+        base_params = {
+            'batch_size': getattr(self.config, 'batch_size', 256),
+            'epochs': 50,
+            'learning_rate': 1e-3,
+            'use_swa': getattr(self.config, 'use_swa', True),
+            'use_ema': getattr(self.config, 'use_ema', True),
+        }
+
+        if self.is_ab_test_config(config_key):
+            # Test group: Use experimental hyperparameters
+            test_params = {
+                'batch_size': 512,  # Larger batch size
+                'learning_rate': 5e-4,  # Adjusted for larger batch
+                'use_sam': True,  # Sharpness-Aware Minimization
+                'use_lookahead': True,  # Lookahead optimizer
+            }
+            base_params.update(test_params)
+            print(f"[A/B Test] {config_key} using TEST hyperparameters")
+        else:
+            print(f"[A/B Test] {config_key} using CONTROL hyperparameters")
+
+        return base_params

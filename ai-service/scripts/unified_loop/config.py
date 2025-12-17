@@ -270,6 +270,13 @@ class TrainingConfig:
     # Post-Promotion Warmup (Phase 7)
     warmup_games_after_promotion: int = 100  # Games to collect before retraining
     warmup_time_after_promotion: float = 1800.0  # Min seconds after promotion (30 min)
+    # Training Checkpointing (Phase 7)
+    checkpoint_enabled: bool = True  # Save training state for crash recovery
+    checkpoint_interval_seconds: float = 300.0  # Save checkpoint every 5 minutes
+    checkpoint_path: Optional[str] = None  # Path to checkpoint file (default: data/training_checkpoint.json)
+    # A/B Testing for Hyperparameters (Phase 7)
+    ab_testing_enabled: bool = False  # Enable A/B testing for new configs
+    ab_test_fraction: float = 0.3  # Fraction of configs to use test hyperparameters
 
 
 @dataclass
