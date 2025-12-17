@@ -29,10 +29,14 @@ def find_best_source_model(
     models_dir = AI_SERVICE_ROOT / "models"
 
     # Try various naming patterns
+    # Handle common abbreviations: square8->sq8, square19->sq19, hexagonal->hex
+    short_name = board_type.replace("square", "sq").replace("hexagonal", "hex")
     patterns = [
-        f"ringrift_best_{board_type[:3]}_{num_players}p.pth",
+        f"ringrift_best_{short_name}_{num_players}p.pth",
         f"ringrift_best_{board_type}_{num_players}p.pth",
-        f"ringrift_v*_{board_type[:3]}_{num_players}p.pth",
+        f"ringrift_v*_{short_name}_{num_players}p*.pth",
+        f"ringrift_v*_{board_type}_{num_players}p*.pth",
+        f"*{short_name}_{num_players}p*.pth",
     ]
 
     for pattern in patterns:

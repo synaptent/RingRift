@@ -1,0 +1,12 @@
+{
+  "backup_id": "20251217_005139",
+  "timestamp": "2025-12-17T00:51:39.581254",
+  "reason": "Recent",
+  "registry_path": "/var/folders/8v/4jm9btw12dddtv8tnn7rbwk40000gn/T/tmpai_yp606/registry.db",
+  "db_size_bytes": 24576,
+  "db_hash": "caa9a79bd5977d0ed9cbb498bd062c7a09d66af2e5460ae35e6358f61735a991",
+  "model_count": 0,
+  "version_count": 0,
+  "source_host": "MacBook-Pro.local",
+  "created_by": "system"
+}

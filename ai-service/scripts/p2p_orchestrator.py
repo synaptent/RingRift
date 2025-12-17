@@ -8497,6 +8497,13 @@ print(wins / total)
             board_type = BoardType(board_type_str)
             start_time = time_mod.time()
 
+            # Generate unique random seeds for this match
+            import random as rand_mod
+            match_seed = int(time_mod.time() * 1000000) % (2**31)
+            rand_mod.seed(match_seed)
+            seed_a = rand_mod.randint(0, 2**31 - 1)
+            seed_b = rand_mod.randint(0, 2**31 - 1)
+
             # Create initial state
             state = create_initial_state(board_type, num_players)
             engine = DefaultRulesEngine()
@@ -8508,18 +8515,18 @@ print(wins / total)
                     return ai_type.lower()
                 return str(ai_type).lower()
 
-            def create_lightweight_ai(agent_config: dict, player_num: int):
+            def create_lightweight_ai(agent_config: dict, player_num: int, rng_seed: int):
                 """Create AI without loading heavy dependencies."""
                 ai_type = get_ai_type(agent_config)
 
                 if ai_type in ("random", "aitype.random"):
                     from app.ai.random_ai import RandomAI
-                    config = AIConfig(ai_type=AIType.RANDOM, board_type=board_type, difficulty=1)
+                    config = AIConfig(ai_type=AIType.RANDOM, board_type=board_type, difficulty=1, rng_seed=rng_seed)
                     return RandomAI(player_num, config)
 
                 elif ai_type in ("heuristic", "aitype.heuristic"):
                     from app.ai.heuristic_ai import HeuristicAI
-                    config = AIConfig(ai_type=AIType.HEURISTIC, board_type=board_type, difficulty=3)
+                    config = AIConfig(ai_type=AIType.HEURISTIC, board_type=board_type, difficulty=3, rng_seed=rng_seed)
                     return HeuristicAI(player_num, config)
 
                 elif ai_type in ("minimax", "minimax_heuristic", "aitype.minimax"):
@@ -8532,6 +8539,7 @@ print(wins / total)
                         difficulty=agent_config.get("difficulty", 3),
                         use_neural_net=use_nn,
                         max_depth=max_depth,
+                        rng_seed=rng_seed,
                     )
                     return MinimaxAI(player_num, config, board_type)
 
@@ -8545,6 +8553,7 @@ print(wins / total)
                         difficulty=agent_config.get("difficulty", 5),
                         use_neural_net=use_nn,
                         mcts_iterations=iters,
+                        rng_seed=rng_seed,
                     )
                     return MCTSAI(player_num, config, board_type)
 
@@ -8560,6 +8569,7 @@ print(wins / total)
                         ai_type=AIType.DESCENT,
                         board_type=board_type,
                         difficulty=capped_diff,
+                        rng_seed=rng_seed,
                     )
                     return DescentAI(player_num, config, board_type)
 
@@ -8575,7 +8585,7 @@ print(wins / total)
                         print(f"[P2P] Skipping NN-based AI {ai_type}: only {available_gb:.1f}GB available (need 8GB)")
                         # Fall back to descent AI (CPU-based, no NN)
                         from app.ai.descent_ai import DescentAI
-                        config = AIConfig(ai_type=AIType.DESCENT, board_type=board_type, difficulty=7)
+                        config = AIConfig(ai_type=AIType.DESCENT, board_type=board_type, difficulty=7, rng_seed=rng_seed)
                         return DescentAI(player_num, config, board_type)
 
                     # Safe to load neural network AI
@@ -8585,12 +8595,12 @@ print(wins / total)
                     except Exception as e:
                         print(f"[P2P] Failed to create NN AI {ai_type}: {e}, falling back to heuristic")
                         from app.ai.heuristic_ai import HeuristicAI
-                        config = AIConfig(ai_type=AIType.HEURISTIC, board_type=board_type, difficulty=7)
+                        config = AIConfig(ai_type=AIType.HEURISTIC, board_type=board_type, difficulty=7, rng_seed=rng_seed)
                         return HeuristicAI(player_num, config)
 
-            # Create AIs
-            ai_a = create_lightweight_ai(agent_a_config, 1)
-            ai_b = create_lightweight_ai(agent_b_config, 2)
+            # Create AIs with unique seeds
+            ai_a = create_lightweight_ai(agent_a_config, 1, seed_a)
+            ai_b = create_lightweight_ai(agent_b_config, 2, seed_b)
 
             # Play game
             move_count = 0

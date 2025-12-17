@@ -3569,10 +3569,18 @@ class NeuralNetAI(BaseAI):
                 num_players=num_players_override,
             )
         else:
-            # NOTE: in_channels=14 and global_features=20 are canonical for all boards.
+            # Hex boards use different in_channels depending on encoder version:
+            # - HexStateEncoderV3: 16 base channels (for HexNeuralNet_v3)
+            # - HexStateEncoder (v2): 10 base channels (for HexNeuralNet_v2)
+            # Square boards use 14 base channels.
+            if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
+                # Default to V3 encoder (16 channels) for hex boards
+                hex_base_channels = 16
+            else:
+                hex_base_channels = 14
             self.model = create_model_for_board(
                 board_type=board_type,
-                in_channels=14,
+                in_channels=hex_base_channels,
                 global_features=20,
                 num_res_blocks=num_res_blocks,
                 num_filters=num_filters,

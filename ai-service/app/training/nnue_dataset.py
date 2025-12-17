@@ -20,7 +20,7 @@ import logging
 import os
 import sqlite3
 from dataclasses import dataclass
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -596,3 +596,95 @@ def count_available_samples(
 
     counts['total'] = total
     return counts
+
+
+def extract_features_from_state(
+    state_dict: Dict[str, Any],
+    board_type: str,
+    num_players: int,
+    current_player: int = 1,
+) -> np.ndarray:
+    """Extract NNUE features from a JSON state dictionary.
+
+    This function converts a dictionary representation of a game state
+    (as stored in holdout databases) into NNUE feature vectors.
+
+    Args:
+        state_dict: Dictionary representation of board state
+        board_type: Board type string (e.g., "square8", "hexagonal")
+        num_players: Number of players in the game
+        current_player: Current player number (1-indexed)
+
+    Returns:
+        numpy array of NNUE features
+    """
+    from ..models import BoardType as BT
+
+    # Parse board type
+    board_type_lower = board_type.lower()
+    if "hex" in board_type_lower:
+        bt = BT.HEXAGONAL
+    elif "19" in board_type_lower:
+        bt = BT.SQUARE19
+    else:
+        bt = BT.SQUARE8
+
+    # Get feature dimension for this board
+    feature_dim = get_feature_dim(bt)
+
+    try:
+        # Try to reconstruct a minimal GameState from the dict
+        # The state_dict may be a full GameState or just board data
+        if "board" in state_dict or "boardType" in state_dict:
+            # Full game state format - use pydantic to parse
+            from ..models import GameState
+            game_state = GameState.model_validate(state_dict)
+            return extract_features_from_gamestate(game_state, current_player)
+
+        # Otherwise, try to extract from board-only format
+        # This handles legacy formats where only board data is stored
+        rings = state_dict.get("rings", state_dict.get("cells", {}))
+        stacks = state_dict.get("stacks", {})
+        territories = state_dict.get("territories", state_dict.get("territory", {}))
+
+        # Build feature vector manually for simple board formats
+        # This is a simplified extraction for compatibility
+        features = np.zeros(feature_dim, dtype=np.float32)
+
+        # Encode ring positions
+        for pos_key, ring_data in rings.items():
+            if isinstance(ring_data, dict):
+                owner = ring_data.get("owner", ring_data.get("player", 0))
+            else:
+                owner = ring_data if isinstance(ring_data, int) else 0
+
+            if owner > 0:
+                # Simple encoding: hash position to feature index
+                pos_hash = hash(pos_key) % (feature_dim // 4)
+                # Rotate perspective to current player
+                rotated_owner = ((owner - current_player) % num_players) + 1
+                features[pos_hash + (rotated_owner - 1) * (feature_dim // 4)] = 1.0
+
+        # Encode stack positions
+        for pos_key, stack_data in stacks.items():
+            if isinstance(stack_data, dict):
+                owner = stack_data.get("owner", stack_data.get("player", 0))
+                height = stack_data.get("height", stack_data.get("count", 1))
+            elif isinstance(stack_data, list):
+                owner = stack_data[0] if stack_data else 0
+                height = len(stack_data)
+            else:
+                owner = stack_data if isinstance(stack_data, int) else 0
+                height = 1
+
+            if owner > 0:
+                pos_hash = hash(pos_key) % (feature_dim // 4)
+                rotated_owner = ((owner - current_player) % num_players) + 1
+                offset = feature_dim // 2
+                features[offset + pos_hash + (rotated_owner - 1) * (feature_dim // 8)] = height / 5.0
+
+        return features
+
+    except Exception as e:
+        logger.warning(f"Failed to extract features from state dict: {e}")
+        return np.zeros(feature_dim, dtype=np.float32)
