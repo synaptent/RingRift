@@ -1016,12 +1016,43 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
     parser.add_argument("--host", type=str, help="Only sync to specific host")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    parser.add_argument("--no-lock", action="store_true", help="Skip singleton lock (for testing)")
 
     args = parser.parse_args()
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    # Singleton lock to prevent multiple instances from stacking up
+    # (cron runs every 30 min, but sync can take longer with slow hosts)
+    lock_file = Path("/tmp/ringrift_sync_models.lock")
+    lock_fd = None
+    if not args.no_lock:
+        import fcntl
+        try:
+            lock_fd = open(lock_file, "w")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_fd.write(str(os.getpid()))
+            lock_fd.flush()
+        except (IOError, OSError):
+            logger.warning("Another sync_models instance is already running, exiting")
+            return 0  # Exit gracefully, not an error
+
+    try:
+        return _main_impl(args)
+    finally:
+        if lock_fd:
+            import fcntl
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
+            try:
+                lock_file.unlink()
+            except OSError:
+                pass
+
+
+def _main_impl(args):
+    """Main implementation after lock is acquired."""
     if not HOSTS_MODULE_AVAILABLE:
         logger.error("app.distributed.hosts module not available")
         return 1
