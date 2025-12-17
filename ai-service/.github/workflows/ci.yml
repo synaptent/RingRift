@@ -60,6 +60,34 @@ jobs:
       - name: Run mypy
         run: mypy app --ignore-missing-imports --no-error-summary || true
 
+  deprecation-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check for deprecated module usage
+        run: |
+          echo "Checking for deprecated module usage..."
+          # Fail if any script imports deprecated modules without being the deprecated file itself
+          DEPRECATED_IMPORTS=$(grep -r "from scripts.simple_game_sync import\|from scripts.model_sync_aria2 import\|from scripts.baseline_gauntlet import\|from scripts.run_vast_gauntlet import" scripts/ --include="*.py" 2>/dev/null | grep -v "^scripts/simple_game_sync.py\|^scripts/model_sync_aria2.py\|^scripts/baseline_gauntlet.py\|^scripts/run_vast_gauntlet.py" || true)
+          if [ -n "$DEPRECATED_IMPORTS" ]; then
+            echo "ERROR: Found imports from deprecated modules:"
+            echo "$DEPRECATED_IMPORTS"
+            echo ""
+            echo "Please use the canonical alternatives:"
+            echo "  - simple_game_sync.py -> unified_data_sync.py"
+            echo "  - model_sync_aria2.py -> sync_models.py"
+            echo "  - baseline_gauntlet.py -> run_gauntlet.py"
+            echo "  - run_vast_gauntlet.py -> run_gauntlet.py"
+            exit 1
+          fi
+          echo "No deprecated module imports found."
+
   test:
     runs-on: ubuntu-latest
     steps:

@@ -125,21 +125,21 @@ Path 3: Full GPU Batch (CMA-ES Training)
 
 ### 2.3 Code Duplication Analysis
 
-| Function                | Locations                                             | Status                      |
-| ----------------------- | ----------------------------------------------------- | --------------------------- |
-| `get_device()`          | gpu_kernels.py, gpu_batch.py                          | Consolidated (gpu_batch.py canonical) |
-| `detect_lines_*`        | gpu_kernels.py, gpu_parallel_games.py, numba_rules.py | 3 copies                    |
-| `evaluate_positions_*`  | gpu_kernels.py, gpu_parallel_games.py, gpu_batch.py   | 3 copies                    |
-| Victory checking        | gpu_kernels.py, gpu_parallel_games.py, numba_rules.py | 3 copies                    |
+| Function               | Locations                                             | Status                                |
+| ---------------------- | ----------------------------------------------------- | ------------------------------------- |
+| `get_device()`         | gpu_kernels.py, gpu_batch.py                          | Consolidated (gpu_batch.py canonical) |
+| `detect_lines_*`       | gpu_kernels.py, gpu_parallel_games.py, numba_rules.py | 3 copies                              |
+| `evaluate_positions_*` | gpu_kernels.py, gpu_parallel_games.py, gpu_batch.py   | 3 copies                              |
+| Victory checking       | gpu_kernels.py, gpu_parallel_games.py, numba_rules.py | 3 copies                              |
 
 ### 2.4 GPU vs CPU Evaluation Discrepancy Analysis (2025-12-11)
 
 **CRITICAL FINDING:** The GPU and CPU evaluators are **intentionally divergent** by design:
 
-| Implementation | Approach | Features | Speed |
-|---------------|----------|----------|-------|
-| CPU `HeuristicAI.evaluate_position()` | Full 45-weight heuristic | All Tier 0/1/2 features, visibility-based | Baseline |
-| GPU `evaluate_positions_batch()` | Simplified vectorized | ~8 effective weights, 4-adjacency only | 6x faster |
+| Implementation                        | Approach                 | Features                                  | Speed     |
+| ------------------------------------- | ------------------------ | ----------------------------------------- | --------- |
+| CPU `HeuristicAI.evaluate_position()` | Full 45-weight heuristic | All Tier 0/1/2 features, visibility-based | Baseline  |
+| GPU `evaluate_positions_batch()`      | Simplified vectorized    | ~8 effective weights, 4-adjacency only    | 6x faster |
 
 **Root Causes of Score Divergence (63%-200% observed):**
 
@@ -149,6 +149,7 @@ Path 3: Full GPU Batch (CMA-ES Training)
    - Impact: Misses diagonal threats, distant stack interactions
 
 2. **Constant Approximations**
+
    ```python
    # GPU approximates mobility with constants:
    mobility = stack_count * 4.0      # CPU: actual move enumeration
@@ -372,7 +373,7 @@ python scripts/benchmark_gpu_cpu.py --board hexagonal
 
 ## Document History
 
-| Date       | Version | Changes                                             |
-| ---------- | ------- | --------------------------------------------------- |
-| 2025-12-11 | 1.0     | Initial architecture analysis and benchmark results |
+| Date       | Version | Changes                                                                          |
+| ---------- | ------- | -------------------------------------------------------------------------------- |
+| 2025-12-11 | 1.0     | Initial architecture analysis and benchmark results                              |
 | 2025-12-11 | 1.1     | Completed Phase A: cuda_rules.py deletion (3,613 lines), integration tests added |
