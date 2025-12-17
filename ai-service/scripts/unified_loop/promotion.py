@@ -4,6 +4,15 @@ This module contains model promotion services for the unified AI loop:
 - ModelPromoter: Automatic model promotion based on Elo with holdout validation
 
 Extracted from unified_ai_loop.py for better modularity (Phase 2 refactoring).
+
+Integration with PromotionController:
+The ModelPromoter now delegates to PromotionController for:
+- Centralized promotion criteria (PromotionCriteria)
+- Decision evaluation (PromotionDecision)
+- Prometheus metrics emission
+
+The existing logic (Elo queries, holdout validation, script execution) remains
+but is enhanced with proper criteria checking and observability.
 """
 
 from __future__ import annotations
@@ -28,6 +37,22 @@ try:
 except ImportError:
     HAS_ELO_SERVICE = False
     get_elo_service = None
+
+# Optional PromotionController for centralized criteria and metrics
+try:
+    from app.training.promotion_controller import (
+        PromotionController,
+        PromotionCriteria,
+        PromotionDecision,
+        PromotionType,
+    )
+    HAS_PROMOTION_CONTROLLER = True
+except ImportError:
+    HAS_PROMOTION_CONTROLLER = False
+    PromotionController = None
+    PromotionCriteria = None
+    PromotionDecision = None
+    PromotionType = None
 
 # Optional Prometheus metrics - avoid duplicate registration
 try:
@@ -71,12 +96,31 @@ except ImportError:
 
 
 class ModelPromoter:
-    """Handles automatic model promotion based on Elo."""
+    """Handles automatic model promotion based on Elo.
+
+    Integrates with PromotionController for centralized criteria evaluation
+    and Prometheus metrics emission. The PromotionController provides:
+    - Standardized promotion criteria (min_elo_improvement, min_games_played, etc.)
+    - Metrics emission for all promotion decisions
+    - Support for different promotion types (staging, production, tier, rollback)
+    """
 
     def __init__(self, config: PromotionConfig, state: "UnifiedLoopState", event_bus: "EventBus"):
         self.config = config
         self.state = state
         self.event_bus = event_bus
+
+        # Initialize PromotionController with criteria from config
+        self._promotion_controller = None
+        if HAS_PROMOTION_CONTROLLER and PromotionController is not None:
+            try:
+                criteria = PromotionCriteria(
+                    min_elo_improvement=config.elo_threshold,
+                    min_games_played=config.min_games,
+                )
+                self._promotion_controller = PromotionController(criteria=criteria)
+            except Exception as e:
+                print(f"[ModelPromoter] Warning: Failed to initialize PromotionController: {e}")
 
     async def check_promotion_candidates(self) -> List[Dict[str, Any]]:
         """Check for models that should be promoted."""
@@ -119,14 +163,39 @@ class ModelPromoter:
                 for model in models:
                     if model[0] == current_best_id:
                         continue
-                    if model[3] - best[3] >= self.config.elo_threshold:
-                        candidates.append({
+
+                    elo_gain = model[3] - best[3]
+                    if elo_gain >= self.config.elo_threshold:
+                        candidate = {
                             "model_id": model[0],
                             "config": config_key,
                             "elo": model[3],
                             "games": model[4],
-                            "elo_gain": model[3] - best[3],
-                        })
+                            "elo_gain": elo_gain,
+                        }
+
+                        # Use PromotionController for centralized evaluation and metrics
+                        if self._promotion_controller and HAS_PROMOTION_CONTROLLER:
+                            parts = config_key.rsplit("_", 1)
+                            board_type = parts[0] if len(parts) == 2 else config_key
+                            num_players = int(parts[1].replace("p", "")) if len(parts) == 2 else 2
+
+                            decision = self._promotion_controller.evaluate_promotion(
+                                model_id=model[0],
+                                board_type=board_type,
+                                num_players=num_players,
+                                promotion_type=PromotionType.PRODUCTION,
+                                baseline_model_id=current_best_id,
+                            )
+
+                            # Add decision details to candidate
+                            candidate["promotion_decision"] = decision.to_dict()
+
+                            if not decision.should_promote:
+                                print(f"[ModelPromoter] Candidate {model[0]} rejected by PromotionController: {decision.reason}")
+                                continue
+
+                        candidates.append(candidate)
                         break
 
             return candidates
@@ -183,6 +252,8 @@ class ModelPromoter:
                             if HAS_PROMETHEUS:
                                 HOLDOUT_EVALUATIONS.labels(config=config_key, result='failed_overfit').inc()
                                 PROMOTION_BLOCKED_OVERFIT.labels(config=config_key).inc()
+                            # Emit execution failure metrics
+                            self._emit_execution_metrics(candidate, success=False)
                             return False
 
                         print(f"[ModelPromoter] Holdout validation PASSED for {candidate['model_id']}: "
@@ -215,6 +286,9 @@ class ModelPromoter:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
 
             success = process.returncode == 0
+
+            # Emit execution metrics via PromotionController
+            self._emit_execution_metrics(candidate, success=success, dry_run=False)
 
             if success:
                 self.state.total_promotions += 1
@@ -253,3 +327,25 @@ class ModelPromoter:
 
         except Exception as e:
             print(f"[ModelPromoter] Error syncing to cluster: {e}")
+
+    def _emit_execution_metrics(
+        self,
+        candidate: Dict[str, Any],
+        success: bool,
+        dry_run: bool = False,
+    ) -> None:
+        """Emit Prometheus metrics for promotion execution.
+
+        Uses the centralized record_promotion_execution helper from app.metrics.
+        """
+        try:
+            from app.metrics import record_promotion_execution
+            record_promotion_execution(
+                promotion_type="production",  # ModelPromoter always does production promotions
+                success=success,
+                dry_run=dry_run,
+            )
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"[ModelPromoter] Error emitting execution metrics: {e}")

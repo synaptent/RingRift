@@ -259,7 +259,7 @@ class PromotionController:
             should_promote = True
             reason = f"Meets all criteria: Elo +{elo_improvement or 0:.1f}, {games_played} games"
 
-        return PromotionDecision(
+        decision = PromotionDecision(
             model_id=model_id,
             promotion_type=promotion_type,
             should_promote=should_promote,
@@ -270,6 +270,23 @@ class PromotionController:
             win_rate=win_rate,
             criteria_used=self.criteria,
         )
+
+        # Emit metrics
+        self._emit_decision_metrics(decision)
+
+        return decision
+
+    def _emit_decision_metrics(self, decision: PromotionDecision) -> None:
+        """Emit Prometheus metrics for a promotion decision."""
+        try:
+            from app.metrics import record_promotion_decision
+            record_promotion_decision(
+                promotion_type=decision.promotion_type.value,
+                approved=decision.should_promote,
+                elo_improvement=decision.elo_improvement,
+            )
+        except ImportError:
+            pass
 
     def _evaluate_tier_promotion(
         self,
@@ -437,23 +454,45 @@ class PromotionController:
 
         if dry_run:
             logger.info(f"[DRY RUN] Would promote {decision.model_id}: {decision.reason}")
+            self._emit_execution_metrics(decision, success=True, dry_run=True)
             return True
 
+        success = False
         try:
             if decision.promotion_type == PromotionType.TIER:
-                return self._execute_tier_promotion(decision)
+                success = self._execute_tier_promotion(decision)
             elif decision.promotion_type in (PromotionType.STAGING, PromotionType.PRODUCTION):
-                return self._execute_stage_promotion(decision)
+                success = self._execute_stage_promotion(decision)
             elif decision.promotion_type == PromotionType.CHAMPION:
-                return self._execute_champion_promotion(decision)
+                success = self._execute_champion_promotion(decision)
             elif decision.promotion_type == PromotionType.ROLLBACK:
-                return self._execute_rollback(decision)
+                success = self._execute_rollback(decision)
             else:
                 logger.error(f"Unknown promotion type: {decision.promotion_type}")
-                return False
+                success = False
         except Exception as e:
             logger.error(f"Promotion failed for {decision.model_id}: {e}")
-            return False
+            success = False
+
+        self._emit_execution_metrics(decision, success=success, dry_run=False)
+        return success
+
+    def _emit_execution_metrics(
+        self,
+        decision: PromotionDecision,
+        success: bool,
+        dry_run: bool,
+    ) -> None:
+        """Emit Prometheus metrics for a promotion execution."""
+        try:
+            from app.metrics import record_promotion_execution
+            record_promotion_execution(
+                promotion_type=decision.promotion_type.value,
+                success=success,
+                dry_run=dry_run,
+            )
+        except ImportError:
+            pass
 
     def _execute_stage_promotion(self, decision: PromotionDecision) -> bool:
         """Execute staging or production promotion."""
