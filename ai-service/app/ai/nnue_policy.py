@@ -510,12 +510,28 @@ class NNUEPolicyTrainer:
             self.label_smoothing = self.target_label_smoothing * progress
             self.policy_criterion = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
 
-    def _focal_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        """Compute focal loss for hard sample mining."""
+    def _focal_loss(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        reduction: str = 'mean'
+    ) -> torch.Tensor:
+        """Compute focal loss for hard sample mining.
+
+        Args:
+            logits: (batch, num_classes) model outputs
+            targets: (batch,) target class indices
+            reduction: 'mean', 'sum', or 'none' for per-sample loss
+        """
         ce_loss = torch.nn.functional.cross_entropy(logits, targets, reduction='none')
         pt = torch.exp(-ce_loss)
         focal_loss = ((1 - pt) ** self.focal_gamma) * ce_loss
-        return focal_loss.mean()
+        if reduction == 'mean':
+            return focal_loss.mean()
+        elif reduction == 'sum':
+            return focal_loss.sum()
+        else:  # 'none'
+            return focal_loss
 
     def set_temperature(self, temperature: float) -> None:
         """Set the temperature for policy softmax."""
@@ -564,6 +580,7 @@ class NNUEPolicyTrainer:
         move_mask: torch.Tensor,
         target_move_idx: torch.Tensor,
         mcts_probs: Optional[torch.Tensor] = None,
+        sample_weights: Optional[torch.Tensor] = None,
     ) -> Tuple[float, float, float]:
         """Single training step with both value and policy loss.
 
@@ -575,6 +592,7 @@ class NNUEPolicyTrainer:
             move_mask: (batch, max_moves) valid move mask
             target_move_idx: (batch,) index of the move that was played
             mcts_probs: (batch, max_moves) optional MCTS visit distribution for KL loss
+            sample_weights: (batch,) optional per-sample weights for loss
 
         Returns:
             Tuple of (total_loss, value_loss, policy_loss)
@@ -587,8 +605,10 @@ class NNUEPolicyTrainer:
             # Forward pass with policy
             pred_value, from_logits, to_logits = self.model(features, return_policy=True)
 
-            # Value loss
-            value_loss = self.value_criterion(pred_value, values)
+            # Value loss (per-sample for weighting)
+            value_loss_unreduced = torch.nn.functional.mse_loss(
+                pred_value, values, reduction='none'
+            ).squeeze(-1)  # (batch,)
 
             # Policy loss: compute move scores and apply cross-entropy or KL divergence
             # Apply temperature scaling (higher temp = softer targets, lower = sharper)
@@ -604,14 +624,29 @@ class NNUEPolicyTrainer:
                 log_policy = torch.log_softmax(move_scores, dim=-1)
                 # Add small epsilon to avoid log(0)
                 mcts_probs_safe = mcts_probs.clamp(min=1e-8)
-                policy_loss = torch.nn.functional.kl_div(
-                    log_policy, mcts_probs_safe, reduction='batchmean'
-                )
+                # Per-sample KL divergence
+                policy_loss_unreduced = torch.sum(
+                    mcts_probs_safe * (torch.log(mcts_probs_safe) - log_policy), dim=-1
+                )  # (batch,)
             elif self.focal_gamma > 0:
-                # Focal loss for hard sample mining
-                policy_loss = self._focal_loss(move_scores, target_move_idx)
+                # Focal loss for hard sample mining (per-sample)
+                policy_loss_unreduced = self._focal_loss(move_scores, target_move_idx, reduction='none')
             else:
-                policy_loss = self.policy_criterion(move_scores, target_move_idx)
+                # Cross-entropy per sample
+                policy_loss_unreduced = torch.nn.functional.cross_entropy(
+                    move_scores, target_move_idx, reduction='none',
+                    label_smoothing=self.policy_criterion.label_smoothing
+                )  # (batch,)
+
+            # Apply sample weights if provided
+            if sample_weights is not None:
+                # Normalize weights to sum to batch size for consistent magnitude
+                weights = sample_weights / (sample_weights.mean() + 1e-8)
+                value_loss = (value_loss_unreduced * weights).mean()
+                policy_loss = (policy_loss_unreduced * weights).mean()
+            else:
+                value_loss = value_loss_unreduced.mean()
+                policy_loss = policy_loss_unreduced.mean()
 
             # Combined loss
             total_loss = self.value_weight * value_loss + self.policy_weight * policy_loss
@@ -666,10 +701,10 @@ class NNUEPolicyTrainer:
             # Value loss
             value_loss = self.value_criterion(pred_value, values)
 
-            # Policy loss
+            # Policy loss - apply temperature scaling consistent with training
             from_scores = torch.gather(from_logits, 1, from_indices)
             to_scores = torch.gather(to_logits, 1, to_indices)
-            move_scores = from_scores + to_scores
+            move_scores = (from_scores + to_scores) / self.temperature
             # Use large negative instead of -inf to avoid numerical issues
             move_scores = move_scores.masked_fill(~move_mask, -1e4)  # Use -1e4 for AMP compatibility
 

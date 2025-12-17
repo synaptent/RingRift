@@ -122,6 +122,20 @@ except ImportError:
     HAS_TEMPERATURE_SCHEDULING = False
     create_temp_scheduler = None
 
+# Simplified training triggers (2024-12)
+try:
+    from app.training.training_triggers import (
+        TrainingTriggers,
+        TriggerConfig,
+        TriggerDecision,
+    )
+    HAS_SIMPLIFIED_TRIGGERS = True
+except ImportError:
+    HAS_SIMPLIFIED_TRIGGERS = False
+    TrainingTriggers = None
+    TriggerConfig = None
+    TriggerDecision = None
+
 
 class TrainingScheduler:
     """Schedules and manages training runs with cluster-wide coordination."""
@@ -161,6 +175,20 @@ class TrainingScheduler:
         self._temp_scheduler: Optional[Any] = None
         if HAS_TEMPERATURE_SCHEDULING:
             self._temp_scheduler = create_temp_scheduler(state.current_temperature_preset or "default")
+
+        # Simplified 3-signal trigger system (2024-12)
+        self._simplified_triggers: Optional[Any] = None
+        if HAS_SIMPLIFIED_TRIGGERS and getattr(config, 'use_simplified_triggers', True):
+            trigger_cfg = TriggerConfig(
+                freshness_threshold=config.trigger_threshold_games,
+                staleness_hours=getattr(config, 'staleness_hours', 6.0),
+                min_win_rate=getattr(config, 'min_win_rate_threshold', 0.45),
+                min_interval_minutes=config.min_interval_seconds / 60,
+                max_concurrent_training=self._max_concurrent_training,
+                bootstrap_threshold=getattr(config, 'bootstrap_threshold', 50),
+            )
+            self._simplified_triggers = TrainingTriggers(trigger_cfg)
+            print("[Training] Using simplified 3-signal trigger system")
 
     def _get_dynamic_threshold(self, config_key: str) -> int:
         """Calculate dynamic training threshold based on promotion velocity."""
@@ -297,6 +325,58 @@ class TrainingScheduler:
             print(f"[Training] Dynamic threshold for {config_key}: {final_threshold} (base: {base_threshold}, adj: {adjustment:.2f})")
 
         return final_threshold
+
+    def should_train_simplified(
+        self,
+        config_key: str,
+        games_since_training: int,
+        win_rate: float = 0.5,
+        model_count: int = 1,
+    ) -> tuple[bool, str, float]:
+        """Check if training should run using simplified 3-signal system.
+
+        Args:
+            config_key: Config identifier (e.g., "square8_2p")
+            games_since_training: Number of new games since last training
+            win_rate: Current win rate (0.0 to 1.0)
+            model_count: Number of trained models for this config
+
+        Returns:
+            Tuple of (should_train, reason, priority)
+        """
+        if self._simplified_triggers is None:
+            # Fall back to legacy system
+            threshold = self._get_dynamic_threshold(config_key)
+            should = games_since_training >= threshold
+            return should, f"games={games_since_training} >= threshold={threshold}", float(games_since_training)
+
+        # Update state in simplified triggers
+        self._simplified_triggers.update_config_state(
+            config_key,
+            games_count=games_since_training + self._simplified_triggers.get_config_state(config_key).last_training_games,
+            win_rate=win_rate,
+            model_count=model_count,
+        )
+
+        # Get decision from simplified system
+        decision = self._simplified_triggers.should_train(config_key)
+        return decision.should_train, decision.reason, decision.priority
+
+    def record_training_complete_simplified(self, config_key: str, games_at_training: int) -> None:
+        """Record training completion in simplified trigger system."""
+        if self._simplified_triggers is not None:
+            self._simplified_triggers.record_training_complete(config_key, games_at_training)
+
+    def get_next_training_config_simplified(self) -> Optional[str]:
+        """Get the highest priority config that should train using simplified system."""
+        if self._simplified_triggers is None:
+            return None
+
+        decision = self._simplified_triggers.get_next_training_config()
+        if decision is not None:
+            print(f"[Training] Simplified trigger: {decision.config_key} (priority={decision.priority:.2f}, reason={decision.reason})")
+            return decision.config_key
+        return None
 
     def record_promotion(self):
         """Record a successful promotion for velocity tracking."""

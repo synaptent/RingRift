@@ -58,6 +58,11 @@ class TrainingConfig:
     min_interval_seconds: int = 1200  # Canonical: 20 min (was 30)
     max_concurrent_jobs: int = 1
     prefer_gpu_hosts: bool = True
+    # Simplified 3-signal trigger system (2024-12)
+    use_simplified_triggers: bool = True  # Use 3-signal system instead of 8+ signals
+    staleness_hours: float = 6.0  # Hours before config is "stale"
+    min_win_rate_threshold: float = 0.45  # Below this triggers urgent training
+    bootstrap_threshold: int = 50  # Low threshold for configs with 0 models
     nnue_training_script: str = "scripts/train_nnue.py"
     nn_training_script: str = "scripts/run_nn_training_baseline.py"
     export_script: str = "scripts/export_replay_dataset.py"

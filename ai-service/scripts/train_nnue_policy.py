@@ -57,6 +57,7 @@ from app.ai.nnue_policy import (
     NNUEPolicyDataset,
     NNUEPolicyDatasetConfig,
     get_hidden_dim_for_board,
+    HexBoardAugmenter,
 )
 from app.models import BoardType
 from app.training.seed_utils import seed_all
@@ -774,17 +775,18 @@ def train_nnue_policy(
         train_policy_losses = []
 
         for batch in train_loader:
-            features, values, from_idx, to_idx, mask, target, _sample_weights, mcts_probs = batch
+            features, values, from_idx, to_idx, mask, target, sample_weights, mcts_probs = batch
             features = features.to(device)
             values = values.to(device)
             from_idx = from_idx.to(device)
             to_idx = to_idx.to(device)
             mask = mask.to(device)
             target = target.to(device)
+            sample_weights = sample_weights.to(device)
             mcts_probs = mcts_probs.to(device) if effective_use_kl_loss else None
 
             total_loss, value_loss, policy_loss = trainer.train_step(
-                features, values, from_idx, to_idx, mask, target, mcts_probs
+                features, values, from_idx, to_idx, mask, target, mcts_probs, sample_weights
             )
             train_losses.append(total_loss)
             train_value_losses.append(value_loss)
@@ -801,13 +803,14 @@ def train_nnue_policy(
         val_accuracies = []
 
         for batch in val_loader:
-            features, values, from_idx, to_idx, mask, target, _sample_weights, mcts_probs = batch
+            features, values, from_idx, to_idx, mask, target, sample_weights, mcts_probs = batch
             features = features.to(device)
             values = values.to(device)
             from_idx = from_idx.to(device)
             to_idx = to_idx.to(device)
             mask = mask.to(device)
             target = target.to(device)
+            # sample_weights not used in validation - we want unweighted metrics
             mcts_probs = mcts_probs.to(device) if effective_use_kl_loss else None
 
             total_loss, value_loss, policy_loss, accuracy = trainer.validate(
