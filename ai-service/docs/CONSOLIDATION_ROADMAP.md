@@ -1,7 +1,7 @@
 # Consolidation Roadmap
 
 > **Last Updated**: 2025-12-17
-> **Status**: In Progress
+> **Status**: ✅ All Priorities Complete
 
 This document outlines identified consolidation opportunities in the RingRift AI Service codebase and provides a roadmap for addressing them.
 
@@ -18,6 +18,25 @@ The codebase has evolved with multiple contributors and use cases, resulting in 
 3. ✅ **Factory functions** - `create_training_manager()` added to unified_config
 4. ✅ **Both import paths** - Verified working: `app.config.unified_config` and `scripts.unified_loop.config`
 5. ✅ **Cross-references** - Header comments added pointing to canonical locations
+
+### Training Signal Consolidation (Priority 2) ✅ COMPLETE
+
+**Created:** `app/training/unified_signals.py`
+
+Central signal computation engine consolidating logic from 5 systems:
+
+- `TrainingTriggers` - Now delegates to `get_signal_computer()`
+- `FeedbackAccelerator` - Uses `_signal_computer` for intensity mapping
+- `ModelLifecycleManager` - Integrated with unified signals
+- `PromotionController` - Uses `get_signal_computer()` for decisions
+- `OptimizedPipeline` - Imports unified signal computation
+
+**Key Components:**
+
+- `UnifiedSignalComputer` - Thread-safe computation with 5s caching
+- `TrainingSignals` - Immutable snapshot of all computed metrics
+- `TrainingUrgency` enum (CRITICAL, HIGH, NORMAL, LOW, NONE)
+- Urgency-to-intensity mapping for FeedbackAccelerator
 
 ### Regression Detection Consolidation (Priority 3) ✅ COMPLETE
 
@@ -153,6 +172,19 @@ except ImportError:
     INITIAL_ELO_RATING = 1500.0  # Fallback for standalone usage
 ```
 
+### Threshold Constant Migration (Phase 3) ✅ COMPLETE
+
+Updated additional scripts to import from `app/config/thresholds.py`:
+
+| Module                                         | Constants Migrated                     | Status      |
+| ---------------------------------------------- | -------------------------------------- | ----------- |
+| `scripts/run_distributed_tournament.py`        | INITIAL_ELO_RATING (TierStats default) | ✅ Complete |
+| `scripts/run_p2p_elo_tournament.py`            | INITIAL_ELO_RATING, ELO_K_FACTOR       | ✅ Complete |
+| `scripts/launch_distributed_elo_tournament.py` | INITIAL_ELO_RATING, ELO_K_FACTOR       | ✅ Complete |
+| `scripts/fix_elo_database.py`                  | INITIAL_RATING, K_FACTOR               | ✅ Complete |
+| `scripts/unified_loop/training.py`             | INITIAL_ELO_RATING (method defaults)   | ✅ Complete |
+| `scripts/unified_loop/selfplay.py`             | INITIAL_ELO_RATING (method defaults)   | ✅ Complete |
+
 ### Health Function Analysis
 
 Analyzed 4 `get_health_summary()` implementations:
@@ -208,36 +240,61 @@ Analyzed 4 `get_health_summary()` implementations:
 
 ---
 
-## Priority 2: Training Decision Logic
+## Priority 2: Training Decision Logic ✅ COMPLETE
 
-### Issue: Multiple Competing Training Trigger Systems
+> **Status**: Complete (2025-12-17) - UnifiedSignalComputer created and integrated
 
-**Systems Identified:**
-| System | File | Purpose |
-|--------|------|---------|
-| TrainingTriggers | `training_triggers.py` | Simplified 3-signal system |
-| FeedbackAccelerator | `feedback_accelerator.py` | Elo momentum + intensity |
-| ModelLifecycleManager | `model_lifecycle.py` | Embedded trigger logic |
-| PromotionController | `promotion_controller.py` | Regression detection |
-| OptimizedPipeline | `optimized_pipeline.py` | Partial training logic |
+### Completed Work
 
-**Problem:** These systems independently evaluate similar conditions:
+**Created:** `app/training/unified_signals.py`
 
-- All track "games since training"
-- All monitor Elo metrics
-- All implement different decision thresholds
-- Risk of conflicting decisions
+Central signal computation engine that all training decision systems now use:
 
-**Consolidation Plan:**
+**Features:**
 
-1. Create `UnifiedTrainingSignal` class that computes all signals once
-2. Adapt `TrainingTriggers` to use it (keep as stable API)
-3. Refactor `FeedbackAccelerator` to build on unified signals
-4. Extract common signal computation from other systems
+- `UnifiedSignalComputer` - Thread-safe central computation engine
+- `TrainingSignals` - Immutable dataclass with all computed metrics
+- `TrainingUrgency` enum (CRITICAL, HIGH, NORMAL, LOW, NONE)
+- Per-config state tracking with `ConfigTrainingState`
+- Elo trend computation via linear regression
+- Short-term caching with 5s TTL
+- Convenience functions: `should_train()`, `get_urgency()`, `get_training_intensity()`
 
-**Risk:** High - training decisions affect model quality
-**Impact:** High - cleaner architecture, consistent decisions
-**Effort:** 8-12 hours
+**Systems Integrated:**
+
+| System                | File                      | Integration                              |
+| --------------------- | ------------------------- | ---------------------------------------- |
+| TrainingTriggers      | `training_triggers.py`    | ✅ Delegates to `get_signal_computer()`  |
+| FeedbackAccelerator   | `feedback_accelerator.py` | ✅ Uses `_signal_computer` for intensity |
+| ModelLifecycleManager | `model_lifecycle.py`      | ✅ Uses unified signals                  |
+| PromotionController   | `promotion_controller.py` | ✅ Uses `get_signal_computer()`          |
+| OptimizedPipeline     | `optimized_pipeline.py`   | ✅ Imports `get_signal_computer`         |
+
+**Usage:**
+
+```python
+from app.training.unified_signals import get_signal_computer, TrainingUrgency
+
+computer = get_signal_computer()
+signals = computer.compute_signals(
+    current_games=10000,
+    current_elo=1650.0,
+    config_key='square8_2p',
+)
+
+if signals.should_train:
+    print(f"Training triggered: {signals.reason}")
+    print(f"Urgency: {signals.urgency.value}")
+    print(f"Priority: {signals.priority}")
+```
+
+**Urgency Mapping:**
+
+- `CRITICAL` → HOT_PATH (2.0x intensity) - Regression detected
+- `HIGH` → ACCELERATED (1.5x intensity) - Threshold exceeded significantly
+- `NORMAL` → NORMAL (1.0x intensity) - Threshold met
+- `LOW` → REDUCED (0.75x intensity) - Approaching threshold
+- `NONE` → PAUSED (0.5x intensity) - No training needed
 
 ---
 
@@ -324,28 +381,55 @@ This provides a foundation for future sync manager consolidation.
 
 ---
 
-## Priority 5: Promotion Pipeline
+## Priority 5: Promotion Pipeline ✅ COMPLETE
 
-### Issue: Multiple Promotion Entry Points
+> **Status**: Complete (2025-12-17) - Unified criteria across promotion systems
 
-**Entry Points:**
+### Completed Work
 
-- `ModelRegistry.AutoPromoter` - Stage transitions
-- `PromotionController` - A/B testing + auto-promotion
-- `ModelLifecycleManager.PromotionGate` - Multi-criteria evaluation
-- `CMAESRegistryIntegration` - Heuristic weight promotion
+**Unified thresholds via `PromotionCriteria`:**
 
-**Problem:** Promotion logic fragmented across classes
+All promotion systems now use `PromotionCriteria` from `promotion_controller.py`:
 
-**Consolidation Plan:**
+1. **AutoPromoter** (`app/training/model_registry.py`):
+   - Updated `__init__` to accept optional `criteria: PromotionCriteria`
+   - Falls back to `PromotionCriteria()` defaults when no explicit values provided
+   - Backward compatible - explicit `min_elo_improvement`, `min_games`, `min_win_rate` still work
+   - 17 tests pass
 
-1. Create `PromotionPipeline` orchestrator
-2. Consolidate criteria into `PromotionEvaluator`
-3. Centralize webhook/notification dispatch
+2. **PromotionGate** (`app/integration/model_lifecycle.py`):
+   - Updated `__init__` to accept optional `criteria: UnifiedCriteria`
+   - Added property getters: `min_elo_improvement`, `min_games_for_production`, `min_win_rate`
+   - Uses `LifecycleConfig` values via criteria bridge
 
-**Risk:** Medium
-**Impact:** Medium - clearer promotion flow
-**Effort:** 6-8 hours
+3. **PromotionController** - Already the canonical source of `PromotionCriteria`
+
+**Unified Default Values:**
+| Parameter | Value | Source |
+|-----------|-------|--------|
+| min_elo_improvement | 25.0 | PromotionCriteria |
+| min_games_played | 50 | PromotionCriteria |
+| min_win_rate | 0.52 | PromotionCriteria |
+| confidence_threshold | 0.95 | PromotionCriteria |
+
+**Usage:**
+
+```python
+from app.training.promotion_controller import PromotionCriteria
+from app.training.model_registry import AutoPromoter
+
+# Use unified defaults
+promoter = AutoPromoter(registry)  # Uses PromotionCriteria defaults
+
+# Or customize
+criteria = PromotionCriteria(min_elo_improvement=30.0)
+promoter = AutoPromoter(registry, criteria=criteria)
+```
+
+**Remaining (Optional):**
+
+- Add webhook/notification dispatch to PromotionController
+- Migrate CMAESRegistryIntegration to use PromotionCriteria
 
 ---
 
@@ -353,15 +437,15 @@ This provides a foundation for future sync manager consolidation.
 
 Based on risk/impact analysis:
 
-| Phase | Task                 | Priority | Risk | Effort |
-| ----- | -------------------- | -------- | ---- | ------ |
-| 1     | Config consolidation | P1       | Med  | 4-6h   |
-| 2     | Regression detection | P3       | Med  | 4-6h   |
-| 3     | Model sync           | P4       | Low  | 3-4h   |
-| 4     | Training signals     | P2       | High | 8-12h  |
-| 5     | Promotion pipeline   | P5       | Med  | 6-8h   |
+| Phase | Task                 | Priority | Risk | Status      |
+| ----- | -------------------- | -------- | ---- | ----------- |
+| 1     | Config consolidation | P1       | Med  | ✅ Complete |
+| 2     | Regression detection | P3       | Med  | ✅ Complete |
+| 3     | Model sync           | P4       | Low  | ✅ Complete |
+| 4     | Training signals     | P2       | High | ✅ Complete |
+| 5     | Promotion pipeline   | P5       | Med  | ✅ Complete |
 
-**Total Estimated Effort:** 25-36 hours
+**All consolidation priorities complete as of 2025-12-17.**
 
 ---
 
