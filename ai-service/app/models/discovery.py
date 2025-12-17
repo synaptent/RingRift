@@ -205,10 +205,10 @@ def extract_metadata_from_checkpoint(model_path: Path) -> Optional[Dict[str, Any
 def get_model_info(model_path: Path, model_type: str = "nn") -> Optional[ModelInfo]:
     """Get ModelInfo for a single model, trying all detection methods.
 
-    Detection order:
+    Detection order (optimized for speed):
     1. Sidecar JSON (fastest, most reliable)
-    2. Checkpoint metadata (requires loading, but authoritative)
-    3. Filename parsing (fallback)
+    2. Filename parsing (fast, usually sufficient)
+    3. Checkpoint metadata (slow - only if needed)
 
     Args:
         model_path: Path to the model file
@@ -226,7 +226,7 @@ def get_model_info(model_path: Path, model_type: str = "nn") -> Optional[ModelIn
     architecture_version = None
     source = "filename"
 
-    # 1. Try sidecar JSON first
+    # 1. Try sidecar JSON first (fastest)
     sidecar = read_model_sidecar(model_path)
     if sidecar:
         board_type = sidecar.get("board_type")
@@ -235,7 +235,14 @@ def get_model_info(model_path: Path, model_type: str = "nn") -> Optional[ModelIn
         architecture_version = sidecar.get("architecture_version")
         source = "sidecar"
 
-    # 2. Try checkpoint metadata
+    # 2. Try filename parsing (fast)
+    if not board_type:
+        board_type, parsed_players = detect_board_type_from_name(model_path.stem)
+        if parsed_players:
+            num_players = parsed_players
+        source = "filename"
+
+    # 3. Try checkpoint metadata (slow - only as last resort)
     if not board_type:
         checkpoint_meta = extract_metadata_from_checkpoint(model_path)
         if checkpoint_meta:
@@ -243,13 +250,6 @@ def get_model_info(model_path: Path, model_type: str = "nn") -> Optional[ModelIn
             num_players = checkpoint_meta.get("num_players", 2)
             architecture_version = checkpoint_meta.get("architecture_version")
             source = "checkpoint"
-
-    # 3. Fall back to filename parsing
-    if not board_type:
-        board_type, parsed_players = detect_board_type_from_name(model_path.stem)
-        if parsed_players:
-            num_players = parsed_players
-        source = "filename"
 
     if not board_type:
         logger.warning(f"Could not determine board type for {model_path.name}")
