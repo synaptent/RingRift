@@ -94,6 +94,15 @@ else:
 
 
 # ============================================
+# Source Tag Configuration
+# ============================================
+# Default source tag - identifies games as tournament (filtered from training)
+# When --training-mode is used, this is changed to "elo_selfplay" so games
+# feed into training pool instead of being filtered as holdout
+GAME_SOURCE_TAG = "run_model_elo_tournament"
+
+
+# ============================================
 # Game Execution with Neural Networks
 # ============================================
 
@@ -909,21 +918,21 @@ def update_elo_after_match(
                 # If there's already a running loop, schedule the coroutines
                 asyncio.ensure_future(emit_elo_updated(
                     config=config_key, model_id=model_a, new_elo=new_elo_a,
-                    old_elo=old_elo_a, games_played=games_a, source="run_model_elo_tournament"
+                    old_elo=old_elo_a, games_played=games_a, source=GAME_SOURCE_TAG
                 ))
                 asyncio.ensure_future(emit_elo_updated(
                     config=config_key, model_id=model_b, new_elo=new_elo_b,
-                    old_elo=old_elo_b, games_played=games_b, source="run_model_elo_tournament"
+                    old_elo=old_elo_b, games_played=games_b, source=GAME_SOURCE_TAG
                 ))
             else:
                 # No running loop, run synchronously
                 loop.run_until_complete(emit_elo_updated(
                     config=config_key, model_id=model_a, new_elo=new_elo_a,
-                    old_elo=old_elo_a, games_played=games_a, source="run_model_elo_tournament"
+                    old_elo=old_elo_a, games_played=games_a, source=GAME_SOURCE_TAG
                 ))
                 loop.run_until_complete(emit_elo_updated(
                     config=config_key, model_id=model_b, new_elo=new_elo_b,
-                    old_elo=old_elo_b, games_played=games_b, source="run_model_elo_tournament"
+                    old_elo=old_elo_b, games_played=games_b, source=GAME_SOURCE_TAG
                 ))
         except Exception as e:
             # Don't fail the match update if event emission fails
@@ -1241,7 +1250,7 @@ def run_continuous_tournament(args):
                         elo=best_elo,
                         games_played=games_completed,
                         win_rate=win_rate,
-                        source="run_model_elo_tournament.py",
+                        source=GAME_SOURCE_TAG,
                     ))
                 except Exception as e:
                     print(f"[ContinuousTournament] Failed to emit event: {e}")
@@ -1260,7 +1269,7 @@ def run_continuous_tournament(args):
                     asyncio.run(emit_error(
                         component="continuous_tournament",
                         error=str(e),
-                        source="run_model_elo_tournament.py",
+                        source=GAME_SOURCE_TAG,
                     ))
                 except Exception:
                     pass
@@ -1444,7 +1453,17 @@ def main():
     parser.add_argument("--checkpoint-watch", type=str, help="Directory to watch for new model checkpoints")
     parser.add_argument("--emit-events", action="store_true", help="Emit data events for pipeline integration")
 
+    # Training data generation mode
+    parser.add_argument("--training-mode", action="store_true",
+                        help="Training mode: tag games as 'elo_selfplay' so they feed into training pool instead of being filtered as holdout")
+
     args = parser.parse_args()
+
+    # === TRAINING MODE: Change source tag so games feed into training pool ===
+    global GAME_SOURCE_TAG
+    if args.training_mode:
+        GAME_SOURCE_TAG = "elo_selfplay"
+        print("[Tournament] Training mode enabled: games will be tagged as 'elo_selfplay' for training pool inclusion")
 
     # === PROCESS SAFEGUARDS ===
     # Limit torch.compile workers to prevent process sprawl

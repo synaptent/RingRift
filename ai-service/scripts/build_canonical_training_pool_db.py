@@ -48,6 +48,12 @@ DEFAULT_HOLDOUT_SOURCE_SUBSTRINGS = (
     "eval",
 )
 
+# Substrings to remove from holdout when --include-tournament is used
+TOURNAMENT_HOLDOUT_SUBSTRINGS = (
+    "tournament",
+    "elo_tournament",
+)
+
 
 @dataclass(frozen=True)
 class GateFailure:
@@ -821,6 +827,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "(default: 1 = sequential)"
         ),
     )
+    parser.add_argument(
+        "--include-tournament",
+        action="store_true",
+        help=(
+            "Include tournament games in training pool instead of treating them as holdout. "
+            "This removes 'tournament' and 'elo_tournament' from holdout source substrings."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -870,6 +884,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         token_norm = (token or "").strip().lower()
         if token_norm:
             substrings.append(token_norm)
+
+    # If --include-tournament is set, remove tournament-related substrings
+    if getattr(args, 'include_tournament', False):
+        substrings = [s for s in substrings if s not in TOURNAMENT_HOLDOUT_SUBSTRINGS]
+        print(f"[INFO] Including tournament games in training pool (removed holdout filters: {TOURNAMENT_HOLDOUT_SUBSTRINGS})")
 
     # De-duplicate while preserving order.
     seen: Set[str] = set()
