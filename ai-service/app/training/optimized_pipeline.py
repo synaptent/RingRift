@@ -135,7 +135,7 @@ except ImportError:
     MultiTaskModelWrapper = None
 
 try:
-    from .distributed_training import (
+    from .distributed_unified import (
         DistributedTrainer,
         DistributedConfig,
         GradientCompressor,

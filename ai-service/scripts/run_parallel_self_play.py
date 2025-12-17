@@ -45,13 +45,17 @@ try:
 except ImportError:
     MCTSAI = None  # type: ignore
 
-# Configure logging for the script
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(process)d] %(levelname)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("run_parallel_self_play", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(process)d] %(levelname)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logger = logging.getLogger(__name__)
 
 
 @dataclass

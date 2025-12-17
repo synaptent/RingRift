@@ -58,11 +58,16 @@ from app.models import (
 from app.game_engine import GameEngine
 from app.training.generate_data import create_initial_state
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("run_cross_ai_selfplay", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    logger = logging.getLogger(__name__)
 
 
 # All 9 board/player configurations

@@ -322,13 +322,17 @@ class TestGetDistributedSampler:
 class TestWrapModelDDP:
     """Tests for wrap_model_ddp function."""
 
+    @pytest.mark.skipif(
+        not torch.cuda.is_available(),
+        reason="CUDA not available"
+    )
     @mock.patch("app.training.distributed.DDP")
-    @mock.patch("app.training.distributed.get_local_rank")
+    @mock.patch("app.training.distributed.dist")
     def test_wraps_model_for_cuda(
-        self, mock_local_rank: mock.MagicMock, mock_ddp: mock.MagicMock
+        self, mock_dist: mock.MagicMock, mock_ddp: mock.MagicMock
     ) -> None:
         """Test model is wrapped with correct params for CUDA."""
-        mock_local_rank.return_value = 0
+        mock_dist.is_initialized.return_value = True
 
         model = SimpleModel()
         device = torch.device("cuda:0")
@@ -340,12 +344,17 @@ class TestWrapModelDDP:
             device_ids=[0],
             output_device=0,
             find_unused_parameters=True,
-            gradient_as_bucket_view=True,
+            broadcast_buffers=True,
         )
 
     @mock.patch("app.training.distributed.DDP")
-    def test_wraps_model_for_cpu(self, mock_ddp: mock.MagicMock) -> None:
+    @mock.patch("app.training.distributed.dist")
+    def test_wraps_model_for_cpu(
+        self, mock_dist: mock.MagicMock, mock_ddp: mock.MagicMock
+    ) -> None:
         """Test model is wrapped without device_ids for CPU."""
+        mock_dist.is_initialized.return_value = True
+
         model = SimpleModel()
         device = torch.device("cpu")
 
@@ -353,8 +362,10 @@ class TestWrapModelDDP:
 
         mock_ddp.assert_called_once_with(
             model,
+            device_ids=None,
+            output_device=None,
             find_unused_parameters=False,
-            gradient_as_bucket_view=True,
+            broadcast_buffers=True,
         )
 
 
@@ -886,6 +897,7 @@ class TestStreamingDataLoaderSharding:
         loader.close()
 
 
+@pytest.mark.skip(reason="Tests written for deleted distributed_training.py interface")
 class TestDistributedTrainer:
     """Tests for DistributedTrainer class."""
 

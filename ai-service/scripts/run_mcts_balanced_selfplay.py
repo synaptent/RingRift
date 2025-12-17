@@ -35,11 +35,16 @@ from app.ai.mcts_ai import MCTSAI
 from app.models import AIConfig, BoardType, GameStatus
 from app.training.env import RingRiftEnv
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("run_mcts_balanced_selfplay", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+    logger = logging.getLogger(__name__)
 
 
 def play_mcts_game(

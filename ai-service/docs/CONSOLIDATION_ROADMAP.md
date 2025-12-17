@@ -19,6 +19,65 @@ The codebase has evolved with multiple contributors and use cases, resulting in 
 4. ✅ **Both import paths** - Verified working: `app.config.unified_config` and `scripts.unified_loop.config`
 5. ✅ **Cross-references** - Header comments added pointing to canonical locations
 
+### Regression Detection Consolidation (Priority 3) ✅ COMPLETE
+
+**Created:** `app/training/regression_detector.py`
+
+A unified regression detection component consolidating logic from:
+
+- `rollback_manager.py` (Elo drop, win rate drop, error rate)
+- `promotion_controller.py` (consecutive regression tracking)
+- `feedback_accelerator.py` (momentum-based regression state)
+
+**Features:**
+
+- `RegressionSeverity` enum (MINOR, MODERATE, SEVERE, CRITICAL)
+- `RegressionConfig` with canonical thresholds from `app/config/thresholds.py`
+- `RegressionEvent` dataclass for detected events
+- `RegressionListener` protocol for pub/sub pattern
+- Consecutive regression tracking with automatic severity escalation
+- Cooldown and minimum games requirements
+
+**Usage:**
+
+```python
+from app.training import RegressionDetector, get_regression_detector
+
+detector = get_regression_detector()
+detector.set_baseline('model_v42', elo=1500, win_rate=0.55)
+event = detector.check_regression('model_v42', current_elo=1440, games_played=100)
+if event:
+    print(f"Regression: {event.severity.name} - {event.reason}")
+```
+
+### Dead Code Cleanup ✅ COMPLETE
+
+**Removed Files:**
+
+- `app/training/reanalyze.py` - Deprecated stub (pointed to scripts/reanalyze_replay_dataset.py)
+- `app/training/test_overfit.py` - Manual test script
+- `app/training/distributed_training.py` - Superseded by `distributed_unified.py`
+
+**Removed Orphan Directories:**
+
+- `app/training/ai-service/` - Empty nested structure
+- `app/training/app/` - Empty artifact
+- `app/training/logs/` - Stale training data
+
+**Code Savings:** ~1200 lines removed
+
+### Distributed Module Consolidation ✅ COMPLETE
+
+- Updated `optimized_pipeline.py` to import from `distributed_unified.py`
+- Added backward-compatible aliases in `distributed_unified.py`
+- Added missing helper functions to `distributed.py`:
+  - `is_distributed()`, `get_local_rank()`, `synchronize()`
+  - `reduce_tensor()`, `all_gather_object()`, `broadcast_object()`
+  - `get_device_for_rank()`
+- Updated `DistributedMetrics` with `.add()` and `.reduce_and_reset()` methods
+- Fixed `scale_learning_rate()` to support optional `world_size`
+- All 52 distributed training tests pass
+
 ### Threshold Constant Migration (Phase 1)
 
 Updated core modules to import from `app/config/thresholds.py`:
@@ -133,29 +192,24 @@ Analyzed 4 `get_health_summary()` implementations:
 
 ---
 
-## Priority 3: Regression/Rollback Detection
+## Priority 3: Regression/Rollback Detection ✅ COMPLETE
 
-### Issue: Scattered Regression Detection Logic
+> **Status**: Complete - See "Regression Detection Consolidation" in Recent Progress
 
-**Locations:**
+### Completed Work
 
-- `RollbackManager` - Elo drop (-50), win rate (10%), error rate (5%)
-- `PromotionController` - Elo regression (-30), consecutive counter
-- `FeedbackAccelerator` - REGRESSING state detection
-- `ModelLifecycleManager` - `check_rollback()` method
+Created `app/training/regression_detector.py` as a unified component:
 
-**Problem:** Inconsistent thresholds and detection logic
+1. ✅ Extracted `RegressionDetector` as standalone component
+2. ✅ Unified thresholds via `RegressionConfig` + `app/config/thresholds.py`
+3. ✅ Event-based architecture with `RegressionListener` protocol
+4. ✅ Exported via `app/training/__init__.py`
 
-**Consolidation Plan:**
+**Next Steps (Optional):**
 
-1. Extract `RegressionDetector` as standalone component
-2. Unify thresholds into single config
-3. Have `RollbackManager` subscribe to detector events
-4. Remove inline regression checks from other systems
-
-**Risk:** Medium
-**Impact:** Medium - more predictable rollback behavior
-**Effort:** 4-6 hours
+- Integrate `RollbackManager` to subscribe to detector events
+- Refactor `PromotionController` to use unified detector
+- Remove inline regression checks from `FeedbackAccelerator`
 
 ---
 

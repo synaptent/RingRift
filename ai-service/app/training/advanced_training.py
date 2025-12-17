@@ -3126,11 +3126,29 @@ def create_phase5_production_suite(
 # =============================================================================
 # Temperature Scheduling for Selfplay
 # =============================================================================
+# NOTE: The canonical temperature scheduling implementation is in
+# app/training/temperature_scheduling.py which provides a more comprehensive
+# ABC-based architecture. This section provides backwards-compatibility
+# aliases for the simpler dataclass-based API.
+
+# Import from canonical module for backwards compatibility
+try:
+    from app.training.temperature_scheduling import (
+        TemperatureConfig,
+        TemperatureScheduler as _CanonicalScheduler,
+        create_scheduler as _create_canonical_scheduler,
+    )
+    _HAS_TEMP_SCHEDULING = True
+except ImportError:
+    _HAS_TEMP_SCHEDULING = False
 
 
 @dataclass
 class TemperatureSchedule:
     """Configuration for temperature scheduling in selfplay.
+
+    NOTE: Consider using app.training.temperature_scheduling.TemperatureConfig
+    for the more comprehensive implementation with multiple schedule types.
 
     Temperature controls exploration vs exploitation:
     - High temperature (>1.0): More exploration, diverse moves

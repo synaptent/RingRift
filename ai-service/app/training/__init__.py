@@ -68,6 +68,44 @@ try:
 except ImportError:
     HAS_DISTRIBUTED_UNIFIED = False
 
+# Import distributed helper functions (December 2025)
+try:
+    from app.training.distributed import (
+        setup_distributed,
+        cleanup_distributed,
+        is_distributed,
+        is_main_process,
+        get_rank,
+        get_world_size,
+        get_local_rank,
+        get_distributed_sampler,
+        wrap_model_ddp,
+        synchronize,
+        reduce_tensor,
+        all_gather_object,
+        broadcast_object,
+        get_device_for_rank,
+        seed_everything,
+        scale_learning_rate,
+        DistributedMetrics,
+        DistributedTrainer,
+        DistributedConfig,
+    )
+    HAS_DISTRIBUTED_HELPERS = True
+except ImportError:
+    HAS_DISTRIBUTED_HELPERS = False
+
+# Import temperature scheduling (December 2025)
+try:
+    from app.training.temperature_scheduling import (
+        TemperatureScheduler,
+        TemperatureConfig,
+        create_scheduler as create_temperature_scheduler,
+    )
+    HAS_TEMPERATURE_SCHEDULING = True
+except ImportError:
+    HAS_TEMPERATURE_SCHEDULING = False
+
 # Import unified orchestrator (December 2025)
 try:
     from app.training.unified_orchestrator import (
@@ -83,6 +121,8 @@ __all__ = [
     "HAS_INTEGRATED_ENHANCEMENTS",
     "HAS_CHECKPOINT_UNIFIED",
     "HAS_DISTRIBUTED_UNIFIED",
+    "HAS_DISTRIBUTED_HELPERS",
+    "HAS_TEMPERATURE_SCHEDULING",
     "HAS_ORCHESTRATOR",
 ]
 
@@ -116,8 +156,66 @@ if HAS_DISTRIBUTED_UNIFIED:
         "UnifiedDistributedConfig",
     ])
 
+if HAS_DISTRIBUTED_HELPERS:
+    __all__.extend([
+        "setup_distributed",
+        "cleanup_distributed",
+        "is_distributed",
+        "is_main_process",
+        "get_rank",
+        "get_world_size",
+        "get_local_rank",
+        "get_distributed_sampler",
+        "wrap_model_ddp",
+        "synchronize",
+        "reduce_tensor",
+        "all_gather_object",
+        "broadcast_object",
+        "get_device_for_rank",
+        "seed_everything",
+        "scale_learning_rate",
+        "DistributedMetrics",
+        "DistributedTrainer",
+        "DistributedConfig",
+    ])
+
+if HAS_TEMPERATURE_SCHEDULING:
+    __all__.extend([
+        "TemperatureScheduler",
+        "TemperatureConfig",
+        "create_temperature_scheduler",
+    ])
+
 if HAS_ORCHESTRATOR:
     __all__.extend([
         "UnifiedTrainingOrchestrator",
         "OrchestratorConfig",
+    ])
+
+# Import consolidated regression detector (December 2025)
+try:
+    from app.training.regression_detector import (
+        RegressionDetector,
+        RegressionConfig,
+        RegressionEvent,
+        RegressionSeverity,
+        RegressionListener,
+        get_regression_detector,
+        create_regression_detector,
+    )
+    HAS_REGRESSION_DETECTOR = True
+except ImportError:
+    HAS_REGRESSION_DETECTOR = False
+
+__all__.append("HAS_REGRESSION_DETECTOR")
+
+if HAS_REGRESSION_DETECTOR:
+    __all__.extend([
+        "RegressionDetector",
+        "RegressionConfig",
+        "RegressionEvent",
+        "RegressionSeverity",
+        "RegressionListener",
+        "get_regression_detector",
+        "create_regression_detector",
     ])

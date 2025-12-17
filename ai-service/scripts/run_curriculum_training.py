@@ -31,8 +31,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.models import BoardType
 from app.training.curriculum import CurriculumConfig, CurriculumTrainer
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("run_curriculum_training", log_dir="logs")
+except ImportError:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    logger = logging.getLogger(__name__)
 
 
 def main():

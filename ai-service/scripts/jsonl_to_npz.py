@@ -76,11 +76,16 @@ if ROOT not in sys.path:
 # Force CPU to avoid MPS/OMP issues during batch conversion
 os.environ.setdefault("RINGRIFT_FORCE_CPU", "1")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("jsonl_to_npz", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+    logger = logging.getLogger(__name__)
 
 from app.models import AIConfig, BoardType, GameState, Move, MoveType, Position
 from app.game_engine import GameEngine

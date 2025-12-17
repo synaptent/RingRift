@@ -665,7 +665,11 @@ class UnifiedTrainingOrchestrator:
             return
 
         try:
-            from app.training.fault_tolerance import TrainingProgress
+            # Import from unified module first, fallback to legacy
+            try:
+                from app.training.checkpoint_unified import TrainingProgress
+            except ImportError:
+                from app.training.fault_tolerance import TrainingProgress
 
             progress = TrainingProgress(
                 epoch=self._epoch,

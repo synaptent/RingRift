@@ -192,6 +192,7 @@ Examples:
     parser.add_argument("--interval", type=int, help="Override poll interval")
     parser.add_argument("--http-port", type=int, default=8772, help="HTTP API port")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    parser.add_argument("--force", action="store_true", help="Force run even if sync_disabled=true")
 
     # Watchdog options
     parser.add_argument("--watchdog", action="store_true", help="Run with watchdog monitoring")
@@ -242,6 +243,23 @@ Examples:
     if not config_path.exists():
         logger.error(f"Config file not found: {config_path}")
         sys.exit(1)
+
+    # Check if sync is disabled on this machine
+    import yaml
+    with open(config_path) as f:
+        raw_config = yaml.safe_load(f) or {}
+
+    di_config = raw_config.get("data_ingestion", {})
+    if di_config.get("sync_disabled", False):
+        logger.warning("=" * 60)
+        logger.warning("DATA SYNC DISABLED on this machine (sync_disabled=true)")
+        logger.warning("This machine is configured as orchestrator only.")
+        logger.warning("Run unified_data_sync.py on a machine with sufficient storage.")
+        logger.warning("=" * 60)
+        logger.warning("Exiting. To override, use --force flag or set sync_disabled=false")
+        if not args.force:
+            sys.exit(0)
+        logger.info("--force flag set, continuing anyway...")
 
     # Create service
     try:
