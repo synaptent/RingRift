@@ -336,6 +336,7 @@ class NNUEPolicyTrainer:
         policy_weight: float = 1.0,
         temperature: float = 1.0,
         label_smoothing: float = 0.0,
+        use_kl_loss: bool = False,
     ):
         self.model = model.to(device)
         self.device = device
@@ -344,6 +345,7 @@ class NNUEPolicyTrainer:
         self.temperature = temperature
         self.initial_temperature = temperature
         self.label_smoothing = label_smoothing
+        self.use_kl_loss = use_kl_loss
 
         self.optimizer = torch.optim.AdamW(
             model.parameters(),
@@ -405,6 +407,7 @@ class NNUEPolicyTrainer:
         to_indices: torch.Tensor,
         move_mask: torch.Tensor,
         target_move_idx: torch.Tensor,
+        mcts_probs: Optional[torch.Tensor] = None,
     ) -> Tuple[float, float, float]:
         """Single training step with both value and policy loss.
 
@@ -415,6 +418,7 @@ class NNUEPolicyTrainer:
             to_indices: (batch, max_moves) to position indices
             move_mask: (batch, max_moves) valid move mask
             target_move_idx: (batch,) index of the move that was played
+            mcts_probs: (batch, max_moves) optional MCTS visit distribution for KL loss
 
         Returns:
             Tuple of (total_loss, value_loss, policy_loss)
@@ -428,7 +432,7 @@ class NNUEPolicyTrainer:
         # Value loss
         value_loss = self.value_criterion(pred_value, values)
 
-        # Policy loss: compute move scores and apply cross-entropy
+        # Policy loss: compute move scores and apply cross-entropy or KL divergence
         # Apply temperature scaling (higher temp = softer targets, lower = sharper)
         from_scores = torch.gather(from_logits, 1, from_indices)
         to_scores = torch.gather(to_logits, 1, to_indices)
@@ -436,7 +440,17 @@ class NNUEPolicyTrainer:
         # Use large negative instead of -inf to avoid numerical issues with label smoothing
         move_scores = move_scores.masked_fill(~move_mask, -1e9)
 
-        policy_loss = self.policy_criterion(move_scores, target_move_idx)
+        # Use KL divergence if enabled and MCTS probs available
+        if self.use_kl_loss and mcts_probs is not None:
+            # KL divergence: KL(mcts_probs || softmax(move_scores))
+            log_policy = torch.log_softmax(move_scores, dim=-1)
+            # Add small epsilon to avoid log(0)
+            mcts_probs_safe = mcts_probs.clamp(min=1e-8)
+            policy_loss = torch.nn.functional.kl_div(
+                log_policy, mcts_probs_safe, reduction='batchmean'
+            )
+        else:
+            policy_loss = self.policy_criterion(move_scores, target_move_idx)
 
         # Combined loss
         total_loss = self.value_weight * value_loss + self.policy_weight * policy_loss
@@ -454,8 +468,18 @@ class NNUEPolicyTrainer:
         to_indices: torch.Tensor,
         move_mask: torch.Tensor,
         target_move_idx: torch.Tensor,
+        mcts_probs: Optional[torch.Tensor] = None,
     ) -> Tuple[float, float, float, float]:
         """Validate on held-out data.
+
+        Args:
+            features: (batch, input_dim) state features
+            values: (batch, 1) target values
+            from_indices: (batch, max_moves) from position indices
+            to_indices: (batch, max_moves) to position indices
+            move_mask: (batch, max_moves) valid move mask
+            target_move_idx: (batch,) index of the move that was played
+            mcts_probs: (batch, max_moves) optional MCTS visit distribution for KL loss
 
         Returns:
             Tuple of (total_loss, value_loss, policy_loss, policy_accuracy)
@@ -474,9 +498,17 @@ class NNUEPolicyTrainer:
             # Use large negative instead of -inf to avoid numerical issues
             move_scores = move_scores.masked_fill(~move_mask, -1e9)
 
-            policy_loss = self.policy_criterion(move_scores, target_move_idx)
+            # Use KL divergence if enabled and MCTS probs available
+            if self.use_kl_loss and mcts_probs is not None:
+                log_policy = torch.log_softmax(move_scores, dim=-1)
+                mcts_probs_safe = mcts_probs.clamp(min=1e-8)
+                policy_loss = torch.nn.functional.kl_div(
+                    log_policy, mcts_probs_safe, reduction='batchmean'
+                )
+            else:
+                policy_loss = self.policy_criterion(move_scores, target_move_idx)
 
-            # Policy accuracy
+            # Policy accuracy (always use argmax for accuracy metric)
             pred_move_idx = move_scores.argmax(dim=-1)
             policy_accuracy = (pred_move_idx == target_move_idx).float().mean()
 
