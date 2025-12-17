@@ -950,15 +950,15 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="TD lambda value (default: 0.95)",
     )
     parser.add_argument(
-        "--dynamic-batch",
+        "--dynamic-batch-gradient",
         action="store_true",
         help="Enable dynamic batch sizing based on gradient noise",
     )
     parser.add_argument(
-        "--dynamic-batch-max",
+        "--dynamic-batch-gradient-max",
         type=int,
         default=4096,
-        help="Maximum batch size for dynamic batching (default: 4096)",
+        help="Maximum batch size for gradient-based dynamic batching (default: 4096)",
     )
     parser.add_argument(
         "--pruning",
@@ -1014,18 +1014,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=None,
         help="Path to teacher model for distillation",
     )
-    parser.add_argument(
-        "--distill-temp",
-        type=float,
-        default=4.0,
-        help="Distillation temperature (default: 4.0)",
-    )
-    parser.add_argument(
-        "--distill-alpha",
-        type=float,
-        default=0.7,
-        help="Distillation alpha (soft vs hard targets) (default: 0.7)",
-    )
+    # Note: --distill-temp and --distill-alpha already defined above (reuses existing args)
 
     # Add ramdrive storage options
     add_ramdrive_args(parser)
@@ -5207,8 +5196,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         sam_rho=args.sam_rho,
         td_lambda=args.td_lambda,
         td_lambda_value=args.td_lambda_value,
-        dynamic_batch_gradient=args.dynamic_batch,
-        dynamic_batch_max=args.dynamic_batch_max,
+        dynamic_batch_gradient=args.dynamic_batch_gradient,
+        dynamic_batch_max=args.dynamic_batch_gradient_max,
         pruning=args.pruning,
         pruning_ratio=args.pruning_ratio,
         game_phase_network=args.game_phase_network,
@@ -5219,8 +5208,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         self_play_buffer=args.self_play_buffer,
         distillation=args.distillation,
         teacher_path=args.teacher_path,
-        distill_temp=args.distill_temp,
-        distill_alpha_phase3=args.distill_alpha,
+        distill_temp=args.distill_temperature,  # Reuses existing --distill-temperature arg
+        distill_alpha_phase3=args.distill_alpha,  # Reuses existing --distill-alpha arg
     )
 
     # Add metadata to report
