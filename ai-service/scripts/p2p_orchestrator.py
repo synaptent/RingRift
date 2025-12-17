@@ -668,14 +668,14 @@ class P2POrchestrator:
             resources = get_system_resources()
             if should_use_ramdrive():
                 self.storage_type = "ramdrive"
-                logger.info(f"Auto-detected storage: RAMDRIVE "
-                           f"(RAM: {resources.total_ram_gb:.0f}GB, "
-                           f"Disk: {resources.free_disk_gb:.0f}GB free / {resources.disk_usage_percent:.0f}% used)")
+                print(f"[P2P] Auto-detected storage: RAMDRIVE "
+                      f"(RAM: {resources.total_ram_gb:.0f}GB, "
+                      f"Disk: {resources.free_disk_gb:.0f}GB free / {resources.disk_usage_percent:.0f}% used)")
             else:
                 self.storage_type = "disk"
-                logger.info(f"Auto-detected storage: DISK "
-                           f"(RAM: {resources.total_ram_gb:.0f}GB, "
-                           f"Disk: {resources.free_disk_gb:.0f}GB free / {resources.disk_usage_percent:.0f}% used)")
+                print(f"[P2P] Auto-detected storage: DISK "
+                      f"(RAM: {resources.total_ram_gb:.0f}GB, "
+                      f"Disk: {resources.free_disk_gb:.0f}GB free / {resources.disk_usage_percent:.0f}% used)")
             log_storage_recommendation()
         else:
             self.storage_type = storage_type
