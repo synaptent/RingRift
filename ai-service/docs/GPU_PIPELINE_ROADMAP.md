@@ -1419,14 +1419,14 @@ player_markers = (state.marker_owner[g] == player) & (state.stack_owner[g] == 0)
 
 **Location:** `gpu_parallel_games.py:_find_eligible_territory_cap()`, `compute_territory_batch()`
 
-**Issue:** Territory processing allowed eliminating from height-1 stacks.
+**Issue:** Territory processing eligibility was ambiguous.
 
-**Fix:** Added eligibility check: only stacks with height > 1 are eligible for territory elimination.
+**Fix:** Clarified eligibility check per RR-CANON-R022/R145: all controlled stacks (including height-1) are eligible for territory elimination.
 
 ```python
-# Per RR-CANON-R145: Height-1 standalone rings are NOT eligible
-if height > 1:
-    return (y, x, height)  # Eligible
+# Per RR-CANON-R022/R145: All controlled stacks are eligible (including height-1)
+# Eligible: player owns stack AND height >= 1
+eligible = (stack_owner_np == player) & (stack_height_np >= 1)
 ```
 
 ##### 4. Territory Cascade Detection (RR-CANON-R144)

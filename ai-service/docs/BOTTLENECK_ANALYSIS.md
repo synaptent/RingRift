@@ -194,16 +194,53 @@ python scripts/cluster_control.py selfplay start --board hex8 --games 500
 
 **Result**: Training triggers properly, evaluations running.
 
+### 7. DATA AGGREGATION ARCHITECTURE (New) - IMPLEMENTED
+
+**Problem**: Data sync service (unified_data_sync.py) was filling local MacBook disk.
+
+**Root Cause**: The sync service pulls data FROM cluster TO local storage, but the orchestrator MacBook has limited disk space.
+
+**Solution**: New data aggregation architecture:
+
+```
+    Cluster Nodes (GH200, Vast.ai, Lambda, AWS)
+                    |
+                    v (rsync/P2P)
+    Mac Studio (Data Aggregator)
+      - OWC Drive: /Volumes/RingRift-Data (7.3TB)
+      - Runs: unified_data_sync.py
+      - Runs: data_aggregator.py
+                    |
+                    v (aws s3 sync - hourly)
+    AWS S3 (ringrift-models-20251214)
+      - Cloud backup of models and consolidated DBs
+```
+
+**Configuration**:
+
+- **MacBook (Orchestrator)**: `sync_disabled: true` in unified_loop.yaml
+- **Mac Studio (Aggregator)**: `sync_disabled: false` in unified_loop_aggregator.yaml
+- **S3 Sync**: Hourly cron job on Mac Studio
+
+**Scripts Added**:
+
+- `scripts/data_aggregator.py` - Primary aggregation service
+- `scripts/start_aggregator.sh` - Mac Studio startup script
+- `scripts/s3_sync_cron.sh` - Hourly S3 sync
+- `config/data_aggregator.yaml` - Aggregator configuration
+
 ## Current System Status (2025-12-17)
 
-| Component         | Status     | Details                                    |
-| ----------------- | ---------- | ------------------------------------------ |
-| Unified AI Loop   | Running    | Detecting 784K games, triggering training  |
-| Data Sync Service | Running    | Port 8772, 28 hosts configured             |
-| Training          | Active     | square8_2p, square8_3p training on GH200-k |
-| Elo Evaluation    | Active     | 7,685 matches, recent evaluations          |
-| Cluster Nodes     | 34/47      | Updated with latest code                   |
-| Disk Space        | 114GB free | Synced data moved to Mac Studio            |
+| Component        | Status     | Details                                 |
+| ---------------- | ---------- | --------------------------------------- |
+| Unified AI Loop  | Running    | On MacBook, detecting 469K games        |
+| Data Aggregation | Configured | Mac Studio as primary (7.3TB OWC drive) |
+| S3 Backup        | Configured | Hourly sync to ringrift-models-20251214 |
+| Training         | Active     | On GH200-k cluster                      |
+| Elo Evaluation   | Active     | Running gauntlet evaluations            |
+| Cluster Nodes    | 33/47      | Updated with latest code                |
+| Disk Space (MBP) | 179GB free | Data sync disabled on orchestrator      |
+| Disk Space (MS)  | 5.8TB free | OWC drive for data aggregation          |
 
 ## Related Documentation
 
