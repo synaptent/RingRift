@@ -198,15 +198,25 @@ def play_game(
 
         # Model setup
         model_player = 1 if model_plays_first else 2
+        model_name = Path(model_path).stem
+
         if model_type == "nnue":
+            # NNUE models use minimax with NNUE evaluation
             model_ai = _create_ai_instance(
                 AIType.MINIMAX, model_player,
                 AIConfig(ai_type=AIType.MINIMAX, difficulty=4, nnue_model_path=model_path)
             )
         else:
+            # NN models use MCTS with neural network guidance
             model_ai = _create_ai_instance(
-                AIType.HEURISTIC, model_player,
-                AIConfig(ai_type=AIType.HEURISTIC, difficulty=5)
+                AIType.MCTS, model_player,
+                AIConfig(
+                    ai_type=AIType.MCTS,
+                    difficulty=5,
+                    think_time=500,  # 500ms per move
+                    nn_model_id=model_name,
+                    use_neural_net=True,
+                )
             )
 
         ais = {model_player: model_ai, opp_player: opponent}
