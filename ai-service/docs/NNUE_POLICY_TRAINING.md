@@ -519,8 +519,10 @@ Policy models typically show greater improvements at shorter think times.
 
 ## See Also
 
-- `docs/TRAINING_PIPELINE.md` - Full training pipeline
-- `docs/MCTS_INTEGRATION.md` - MCTS system details
+- [Training Pipeline](TRAINING_PIPELINE.md) - Full training pipeline
+- [Example Training Run](EXAMPLE_TRAINING_RUN.md) - Step-by-step training example
+- [MCTS Integration](MCTS_INTEGRATION.md) - MCTS system details
+- [Unified AI Loop](UNIFIED_AI_LOOP.md) - Automated training system
 - `scripts/train_nnue_policy_curriculum.py` - Curriculum-based training
 - `scripts/auto_training_pipeline.py` - Automated training workflow
 - `scripts/ab_test_policy_models.py` - A/B testing validation
