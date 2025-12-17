@@ -1017,12 +1017,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     # Note: --distill-temp and --distill-alpha already defined above (reuses existing args)
 
     # Phase 5: Production Optimization Arguments (2024-12)
-    parser.add_argument(
-        "--gradient-accumulation",
-        type=int,
-        default=1,
-        help="Gradient accumulation steps (default: 1, auto-adjusts if --adaptive-accumulation)",
-    )
+    # Note: --gradient-accumulation already defined above (reuses existing arg)
     parser.add_argument(
         "--adaptive-accumulation",
         action="store_true",
