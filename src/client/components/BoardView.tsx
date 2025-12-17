@@ -1962,9 +1962,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
             className={`${cellClasses} ${focusClasses} ${isSpectator ? 'cursor-default' : 'cursor-pointer'}`}
             disabled={isSpectator}
             tabIndex={isFocused ? 0 : -1}
-            role="gridcell"
             aria-label={cellLabel}
-            aria-selected={effectiveIsSelected || undefined}
+            aria-pressed={effectiveIsSelected || undefined}
           >
             {cellVM?.stack ? (
               <StackFromViewModel
@@ -2361,9 +2360,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
             className={`${cellClasses} ${focusClasses} ${isSpectator ? 'cursor-default' : 'cursor-pointer'}`}
             disabled={isSpectator}
             tabIndex={isFocused ? 0 : -1}
-            role="gridcell"
             aria-label={cellLabel}
-            aria-selected={effectiveIsSelected || undefined}
+            aria-pressed={effectiveIsSelected || undefined}
           >
             {cellVM?.stack ? (
               <StackFromViewModel

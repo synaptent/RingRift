@@ -1121,9 +1121,8 @@ describe('BoardView', () => {
       expect(boardView).toHaveAttribute('role', 'region');
       expect(boardView).toHaveAttribute('aria-label');
 
-      // Check that cells have proper roles and labels
+      // Check that cells have proper labels (button elements have implicit role="button")
       const cell = container.querySelector('button[data-x="0"][data-y="0"]');
-      expect(cell).toHaveAttribute('role', 'gridcell');
       expect(cell).toHaveAttribute('aria-label');
     });
 
