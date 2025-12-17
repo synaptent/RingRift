@@ -237,11 +237,14 @@ data/quarantine/
 # View quarantine summary
 python scripts/analyze_game_statistics.py --quarantine
 
-# Replay specific game for debugging
-python scripts/replay_game.py --game data/quarantine/parity_failures/game_12345.jsonl --verbose
+# Debug specific game with per-step trace (use --db for SQLite, --json for JSON files)
+python scripts/check_ts_python_replay_parity.py --db data/quarantine/games.db --trace-game game_12345
 
-# Re-validate after fix
-python scripts/check_ts_python_replay_parity.py --input data/quarantine/parity_failures/ --revalidate
+# For JSON fixture files
+python scripts/check_ts_python_replay_parity.py --json data/quarantine/parity_failures/game_12345.json
+
+# Re-validate database after fix
+python scripts/check_ts_python_replay_parity.py --db data/quarantine/parity_failures/games.db
 ```
 
 ## Configuration

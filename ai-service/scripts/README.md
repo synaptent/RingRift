@@ -221,6 +221,43 @@ Features:
   - Provides early feedback without waiting for full Elo calibration
   - Start: `python scripts/shadow_tournament_service.py --daemon`
 
+### Data Validation
+
+- `training_preflight_check.py` - **Pre-training validation** (12KB)
+  - Database integrity, data volume, feature consistency checks
+  - Resource availability verification (GPU, disk, memory)
+  - Model checkpoint validity
+  - Start: `python scripts/training_preflight_check.py`
+- `holdout_validation.py` - **Overfitting detection** (18KB)
+  - Holdout set management for unseen data evaluation
+  - Train vs holdout loss comparison (warning: >0.10 gap)
+  - Value head calibration metrics
+  - Start: `python scripts/holdout_validation.py --evaluate --model models/square8_2p.pt`
+  - Stats: `python scripts/holdout_validation.py --stats`
+- `generate_canonical_selfplay.py` - **End-to-end canonical validation** (15KB)
+  - TS/Python parity + canonical history validation
+  - FE/territory fixture tests
+  - Produces health summary JSON
+  - Start: `python scripts/generate_canonical_selfplay.py --board-type square8 --num-games 50`
+
+### Hyperparameter Optimization
+
+- `run_gpu_cmaes.py` - **GPU-accelerated CMA-ES** (25KB)
+  - 10-100x faster fitness evaluation on GPU
+  - Single GPU: `python scripts/run_gpu_cmaes.py --board square8 --generations 50`
+  - Multi-GPU: `python scripts/run_gpu_cmaes.py --board square8 --multi-gpu`
+- `run_distributed_gpu_cmaes.py` - **Distributed CMA-ES**
+  - Cluster-wide heuristic weight optimization
+  - Start coordinator: `python scripts/run_distributed_gpu_cmaes.py --mode coordinator`
+- `run_iterative_cmaes.py` - **Iterative CMA-ES refinement**
+  - Warm start from previous best weights
+  - Population adaptation, sigma annealing
+  - Start: `python scripts/run_iterative_cmaes.py --board square8 --iterations 5`
+- `run_cmaes_optimization.py` - **Basic CMA-ES** (CPU-based)
+  - Simpler CMA-ES without GPU acceleration
+- `cmaes_cloud_worker.py` - **Cloud CMA-ES worker**
+  - Remote worker for distributed CMA-ES optimization
+
 ### Benchmarking
 
 - `benchmark_engine.py` - Engine performance benchmarking

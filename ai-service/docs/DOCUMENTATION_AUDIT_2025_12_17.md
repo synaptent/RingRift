@@ -426,3 +426,86 @@ TRAINING_FEATURES.md now has 11 major sections (was 8):
 
 **Phase 3 audit completed by Claude Code**
 **Date:** 2025-12-17
+
+---
+
+## Phase 4 Audit (2025-12-17 Night)
+
+### Verification of New Documentation Files
+
+Verified recently added documentation files against code:
+
+| Document                       | Verification Status | Notes                                    |
+| ------------------------------ | ------------------- | ---------------------------------------- |
+| HYPERPARAMETER_OPTIMIZATION.md | ✅ VERIFIED         | CMA-ES defaults match `run_gpu_cmaes.py` |
+| COORDINATION_SYSTEM.md         | ✅ VERIFIED         | PID settings, task limits match code     |
+| MCTS_INTEGRATION.md            | ✅ VERIFIED         | MCTS/Gumbel config options match         |
+| VAST_LIFECYCLE.md              | ✅ VERIFIED         | All referenced scripts exist             |
+| DATA_VALIDATION.md             | ⚠️ FIXED            | Referenced non-existent `replay_game.py` |
+
+### Issues Fixed
+
+#### 1. DATA_VALIDATION.md - Non-existent Script Reference
+
+**Problem:** Referenced `scripts/replay_game.py` which doesn't exist.
+
+**Fixed:** Replaced with correct commands:
+
+```bash
+# Debug specific game with per-step trace
+python scripts/check_ts_python_replay_parity.py --db data/quarantine/games.db --trace-game game_12345
+
+# For JSON fixture files
+python scripts/check_ts_python_replay_parity.py --json data/quarantine/parity_failures/game_12345.json
+```
+
+#### 2. scripts/README.md - Added New Sections
+
+**Data Validation section added:**
+
+- `training_preflight_check.py` - Pre-training validation
+- `holdout_validation.py` - Overfitting detection
+- `generate_canonical_selfplay.py` - End-to-end canonical validation
+
+**Hyperparameter Optimization section added:**
+
+- `run_gpu_cmaes.py` - GPU-accelerated CMA-ES
+- `run_distributed_gpu_cmaes.py` - Distributed CMA-ES
+- `run_iterative_cmaes.py` - Iterative CMA-ES refinement
+- `run_cmaes_optimization.py` - Basic CMA-ES (CPU)
+- `cmaes_cloud_worker.py` - Cloud CMA-ES worker
+
+### Code-Documentation Verification Summary
+
+| Module                                | Verification Method            | Result   |
+| ------------------------------------- | ------------------------------ | -------- |
+| `task_coordinator.TaskLimits`         | Grep task limits in code       | ✅ Match |
+| `safeguards.SafeguardConfig`          | Read resource thresholds       | ✅ Match |
+| `resource_optimizer.PID_*`            | Read PID constants             | ✅ Match |
+| `run_gpu_cmaes.DEFAULT_WEIGHTS`       | Read heuristic weight defaults | ✅ Match |
+| `check_ts_python_replay_parity` flags | Read argparse definitions      | ✅ Match |
+
+### Updated Documentation Coverage
+
+| Category                    | Phase 3 | Phase 4 |
+| --------------------------- | ------- | ------- |
+| Training scripts            | 18      | 18      |
+| Data management scripts     | 12      | 12      |
+| Cluster management scripts  | 14      | 14      |
+| Analysis scripts            | 9       | 9       |
+| **Data validation scripts** | 0       | 3       |
+| **HP optimization scripts** | 1       | 5       |
+| **Total documented**        | ~70     | ~78     |
+
+### Deprecated References Cleanup Status
+
+| Pattern                   | Status   | Notes                           |
+| ------------------------- | -------- | ------------------------------- |
+| `cluster_orchestrator.py` | ✅ Fixed | Only in audit doc (historical)  |
+| `replay_game.py`          | ✅ Fixed | Replaced with correct command   |
+| `--input --revalidate`    | ✅ Fixed | Removed invalid flags from docs |
+
+---
+
+**Phase 4 audit completed by Claude Code**
+**Date:** 2025-12-17
