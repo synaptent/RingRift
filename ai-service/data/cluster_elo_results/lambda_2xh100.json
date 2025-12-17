@@ -1,0 +1,177 @@
+{
+  "timestamp": "2025-12-17T09:35:51.184020",
+  "num_models": 17,
+  "results": [
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_4p_best.pt",
+      "model_type": "nnue",
+      "vs_random": 0.2,
+      "vs_heuristic": 0.6,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 1.4,
+      "timestamp": "2025-12-17T06:43:43.517929"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/nnue_square8_4p.pt",
+      "model_type": "nnue",
+      "vs_random": 0.0,
+      "vs_heuristic": 0.3,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.6,
+      "timestamp": "2025-12-17T06:43:07.689416"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_2p_best.pt",
+      "model_type": "nnue",
+      "vs_random": 0.0,
+      "vs_heuristic": 0.3,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.6,
+      "timestamp": "2025-12-17T06:41:18.720394"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_2p_vast5090.pt",
+      "model_type": "nnue",
+      "vs_random": 0.1,
+      "vs_heuristic": 0.3333333333333333,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.7666666666666666,
+      "timestamp": "2025-12-17T06:45:44.231479"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_3p_auto.pt",
+      "model_type": "nnue",
+      "vs_random": 0.3,
+      "vs_heuristic": 0.2,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.7,
+      "timestamp": "2025-12-17T07:25:46.733925"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_2p_merged.pt",
+      "model_type": "nnue",
+      "vs_random": 0.1,
+      "vs_heuristic": 0.4,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.9,
+      "timestamp": "2025-12-17T07:27:19.653433"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_2p_auto.pt",
+      "model_type": "nnue",
+      "vs_random": 0.3,
+      "vs_heuristic": 0.3,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.8999999999999999,
+      "timestamp": "2025-12-17T07:27:43.368913"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_3p_best.pt",
+      "model_type": "nnue",
+      "vs_random": 0.1,
+      "vs_heuristic": 0.2,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.5,
+      "timestamp": "2025-12-17T07:30:51.606293"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_2p_v2.pt",
+      "model_type": "nnue",
+      "vs_random": 0.3,
+      "vs_heuristic": 0.3,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.8999999999999999,
+      "timestamp": "2025-12-17T08:11:27.538032"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_4p_auto.pt",
+      "model_type": "nnue",
+      "vs_random": 0.2,
+      "vs_heuristic": 0.3,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.8,
+      "timestamp": "2025-12-17T08:11:31.455590"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_2p_aggregated_20251214.pt",
+      "model_type": "nnue",
+      "vs_random": 0.2,
+      "vs_heuristic": 0.4,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 1.0,
+      "timestamp": "2025-12-17T08:13:00.296523"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/nnue_square8_3p.pt",
+      "model_type": "nnue",
+      "vs_random": 0.4,
+      "vs_heuristic": 0.2,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.8,
+      "timestamp": "2025-12-17T08:14:48.804636"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/nnue_square8.pt",
+      "model_type": "nnue",
+      "vs_random": 0.1,
+      "vs_heuristic": 0.4,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.9,
+      "timestamp": "2025-12-17T08:56:26.297848"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/nnue_square8_2p.pt",
+      "model_type": "nnue",
+      "vs_random": 0.2,
+      "vs_heuristic": 0.3,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.8,
+      "timestamp": "2025-12-17T08:56:03.022807"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_2p_v3.pt",
+      "model_type": "nnue",
+      "vs_random": 0.2,
+      "vs_heuristic": 0.3,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.8,
+      "timestamp": "2025-12-17T08:56:45.514940"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/square8_2p_consolidated.pt",
+      "model_type": "nnue",
+      "vs_random": 0.2,
+      "vs_heuristic": 0.2,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 0.6000000000000001,
+      "timestamp": "2025-12-17T08:58:53.343085"
+    },
+    {
+      "model_path": "/home/ubuntu/ringrift/ai-service/models/nnue/nnue_policy_square8_2p.pt",
+      "model_type": "nnue",
+      "vs_random": 0.1,
+      "vs_heuristic": 0.5,
+      "vs_mcts": 0.0,
+      "games_played": 30,
+      "score": 1.1,
+      "timestamp": "2025-12-17T09:35:50.703408"
+    }
+  ],
+  "_source": "lambda-2xh100"
+}

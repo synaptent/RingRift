@@ -735,8 +735,8 @@ def main():
         "--workers",
         "-w",
         type=int,
-        default=2,
-        help="Number of parallel workers for conversion (default: 2)",
+        default=min(8, max(2, os.cpu_count() // 2 if os.cpu_count() else 2)),
+        help="Number of parallel workers for conversion (default: half of CPU cores, min 2, max 8)",
     )
 
     # Other options

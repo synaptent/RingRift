@@ -1,0 +1,100 @@
+# Board-Specific Training Hyperparameters
+# Configure different training settings for each board type
+# Used by train_nnue.py and run_improvement_loop.py
+
+# Default settings (used as fallback)
+default:
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  batch_size: 512
+  epochs: 100
+  hidden_dim: 256
+  num_hidden_layers: 2
+  early_stopping_patience: 15
+  lr_schedule: 'warmup_cosine'
+  warmup_epochs: 5
+  val_split: 0.1
+
+# Square 8x8 board (2-player)
+square8_2p:
+  # Smaller board = faster convergence, can use higher LR
+  learning_rate: 0.0005
+  weight_decay: 0.0001
+  batch_size: 512
+  epochs: 80
+  hidden_dim: 256
+  num_hidden_layers: 2
+  early_stopping_patience: 12
+  lr_schedule: 'warmup_cosine'
+  warmup_epochs: 4
+  val_split: 0.1
+  # Data augmentation settings
+  sample_every_n: 1
+  min_game_length: 8
+  balanced_sampling: true
+
+# Square 8x8 board (3-4 player)
+square8_mp:
+  # Multiplayer needs more complexity
+  learning_rate: 0.0003
+  weight_decay: 0.00015
+  batch_size: 512
+  epochs: 120
+  hidden_dim: 384
+  num_hidden_layers: 3
+  early_stopping_patience: 15
+  lr_schedule: 'warmup_cosine'
+  warmup_epochs: 6
+  val_split: 0.1
+  sample_every_n: 1
+  min_game_length: 12
+  balanced_sampling: true
+
+# Square 19x19 board
+square19:
+  # Larger board = more complex, needs more capacity
+  learning_rate: 0.0002
+  weight_decay: 0.0001
+  batch_size: 256
+  epochs: 150
+  hidden_dim: 512
+  num_hidden_layers: 3
+  early_stopping_patience: 20
+  lr_schedule: 'warmup_cosine'
+  warmup_epochs: 8
+  val_split: 0.1
+  sample_every_n: 2
+  min_game_length: 20
+  balanced_sampling: true
+
+# Hexagonal board
+hexagonal:
+  # Hex board has different geometry
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  batch_size: 384
+  epochs: 100
+  hidden_dim: 320
+  num_hidden_layers: 2
+  early_stopping_patience: 15
+  lr_schedule: 'warmup_cosine'
+  warmup_epochs: 5
+  val_split: 0.1
+  sample_every_n: 1
+  min_game_length: 10
+  balanced_sampling: true
+
+# Mixed precision settings per board (optional overrides)
+mixed_precision:
+  square8_2p:
+    enabled: true
+    dtype: 'bfloat16' # Prefer BF16 for stability
+  square8_mp:
+    enabled: true
+    dtype: 'bfloat16'
+  square19:
+    enabled: true
+    dtype: 'float16' # FP16 for memory efficiency on large boards
+  hexagonal:
+    enabled: true
+    dtype: 'bfloat16'

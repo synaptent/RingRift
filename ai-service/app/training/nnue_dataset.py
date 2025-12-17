@@ -19,12 +19,12 @@ import json
 import logging
 import os
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset, IterableDataset
+from torch.utils.data import Dataset, IterableDataset, Sampler
 
 from ..ai.nnue import (
     extract_features_from_gamestate,
@@ -514,6 +514,12 @@ class NNUEStreamingDataset(IterableDataset):
 
     Streams samples from SQLite databases without loading all into memory.
     Suitable for training on very large game databases.
+
+    Features:
+    - Memory-efficient streaming from SQLite
+    - Multi-worker support with database sharding
+    - Buffered shuffling for randomization
+    - Epoch-based reseeding for different shuffles each epoch
     """
 
     def __init__(
@@ -522,27 +528,68 @@ class NNUEStreamingDataset(IterableDataset):
         config: Optional[NNUEDatasetConfig] = None,
         shuffle_games: bool = True,
         seed: Optional[int] = None,
+        buffer_size: int = 10000,
+        epoch: int = 0,
     ):
         self.db_paths = db_paths
         self.config = config or NNUEDatasetConfig()
         self.shuffle_games = shuffle_games
-        self.rng = np.random.default_rng(seed)
+        self.base_seed = seed if seed is not None else 42
+        self.buffer_size = buffer_size
+        self.epoch = epoch
         self.feature_dim = get_feature_dim(self.config.board_type)
 
+    def set_epoch(self, epoch: int) -> None:
+        """Set current epoch for shuffling variance across epochs."""
+        self.epoch = epoch
+
+    def _get_worker_info(self) -> Tuple[int, int]:
+        """Get worker ID and total workers for sharding."""
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None:
+            return 0, 1
+        return worker_info.id, worker_info.num_workers
+
     def __iter__(self) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
-        """Iterate over training samples."""
-        db_paths = self.db_paths.copy()
+        """Iterate over training samples with multi-worker sharding and buffered shuffle."""
+        worker_id, num_workers = self._get_worker_info()
+
+        # Create RNG with epoch-based seed for different shuffles each epoch
+        rng = np.random.default_rng(self.base_seed + self.epoch + worker_id * 1000)
+
+        # Shard databases across workers
+        db_paths = [p for i, p in enumerate(self.db_paths) if i % num_workers == worker_id]
+
         if self.shuffle_games:
-            self.rng.shuffle(db_paths)
+            rng.shuffle(db_paths)
+
+        # Use buffer for shuffling samples within a window
+        buffer: List[Tuple[torch.Tensor, torch.Tensor]] = []
 
         for db_path in db_paths:
             if not os.path.exists(db_path):
                 continue
 
             try:
-                yield from self._stream_from_db(db_path)
+                for sample in self._stream_from_db(db_path):
+                    buffer.append(sample)
+
+                    # When buffer is full, shuffle and yield half
+                    if len(buffer) >= self.buffer_size:
+                        rng.shuffle(buffer)
+                        # Yield first half of buffer
+                        for item in buffer[:self.buffer_size // 2]:
+                            yield item
+                        # Keep second half
+                        buffer = buffer[self.buffer_size // 2:]
             except Exception as e:
                 logger.error(f"Error streaming from {db_path}: {e}")
+
+        # Yield remaining samples in buffer
+        if buffer:
+            rng.shuffle(buffer)
+            for item in buffer:
+                yield item
 
     def _stream_from_db(self, db_path: str) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
         """Stream samples from a single database."""
@@ -611,6 +658,131 @@ class NNUEStreamingDataset(IterableDataset):
             yield features_tensor, value_tensor
 
         conn.close()
+
+
+class PrioritizedExperienceSampler(Sampler):
+    """Prioritized Experience Replay (PER) sampler for NNUE training.
+
+    Samples training examples based on prediction error priority.
+    Samples with higher errors are sampled more frequently.
+
+    Uses proportional prioritization: P(i) = p_i^alpha / sum(p_j^alpha)
+    With importance sampling weights: w_i = (N * P(i))^(-beta)
+
+    Args:
+        dataset_size: Number of samples in the dataset
+        alpha: Prioritization exponent (0 = uniform, 1 = full prioritization)
+        beta: Importance sampling correction (0 = no correction, 1 = full)
+        beta_schedule: Whether to anneal beta during training
+        epsilon: Small constant to ensure non-zero priority
+        initial_priority: Initial priority for unseen samples
+    """
+
+    def __init__(
+        self,
+        dataset_size: int,
+        alpha: float = 0.6,
+        beta: float = 0.4,
+        beta_schedule: bool = True,
+        epsilon: float = 1e-6,
+        initial_priority: float = 1.0,
+    ):
+        self.dataset_size = dataset_size
+        self.alpha = alpha
+        self.beta = beta
+        self.beta_start = beta
+        self.beta_schedule = beta_schedule
+        self.epsilon = epsilon
+
+        # Initialize priorities to initial_priority
+        self.priorities = np.full(dataset_size, initial_priority, dtype=np.float64)
+
+        # Track which samples have been seen
+        self.seen = np.zeros(dataset_size, dtype=bool)
+
+        # Current epoch for beta annealing
+        self.epoch = 0
+        self.total_epochs = 100
+
+        logger.info(f"PER sampler initialized: {dataset_size} samples, alpha={alpha}, beta={beta}")
+
+    def __len__(self) -> int:
+        return self.dataset_size
+
+    def __iter__(self) -> Iterator[int]:
+        """Generate sample indices based on priority."""
+        # Compute sampling probabilities
+        probs = self._compute_probabilities()
+
+        # Sample indices
+        indices = np.random.choice(
+            self.dataset_size,
+            size=self.dataset_size,
+            replace=True,  # With replacement for prioritized sampling
+            p=probs,
+        )
+
+        return iter(indices.tolist())
+
+    def _compute_probabilities(self) -> np.ndarray:
+        """Compute sampling probabilities from priorities."""
+        priorities_alpha = np.power(self.priorities + self.epsilon, self.alpha)
+        probs = priorities_alpha / priorities_alpha.sum()
+        return probs
+
+    def update_priorities(self, indices: List[int], errors: np.ndarray) -> None:
+        """Update priorities based on prediction errors.
+
+        Args:
+            indices: List of sample indices that were used
+            errors: Corresponding prediction errors (|predicted - target|)
+        """
+        for idx, error in zip(indices, errors):
+            self.priorities[idx] = abs(error) + self.epsilon
+            self.seen[idx] = True
+
+    def get_importance_weights(self, indices: List[int]) -> torch.Tensor:
+        """Compute importance sampling weights for a batch.
+
+        Args:
+            indices: Batch sample indices
+
+        Returns:
+            Tensor of importance sampling weights
+        """
+        # Current beta (annealed if scheduled)
+        beta = self.beta
+        if self.beta_schedule and self.total_epochs > 0:
+            beta = min(1.0, self.beta_start + (1.0 - self.beta_start) * (self.epoch / self.total_epochs))
+
+        probs = self._compute_probabilities()
+        batch_probs = probs[indices]
+
+        # w_i = (N * P(i))^(-beta)
+        weights = np.power(self.dataset_size * batch_probs, -beta)
+
+        # Normalize by max weight for stability
+        weights = weights / weights.max()
+
+        return torch.from_numpy(weights).float()
+
+    def set_epoch(self, epoch: int, total_epochs: int = 100) -> None:
+        """Set current epoch for beta annealing."""
+        self.epoch = epoch
+        self.total_epochs = total_epochs
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get sampler statistics."""
+        return {
+            "mean_priority": float(self.priorities.mean()),
+            "max_priority": float(self.priorities.max()),
+            "min_priority": float(self.priorities.min()),
+            "std_priority": float(self.priorities.std()),
+            "seen_ratio": float(self.seen.sum() / self.dataset_size),
+            "current_beta": self.beta if not self.beta_schedule else min(
+                1.0, self.beta_start + (1.0 - self.beta_start) * (self.epoch / max(1, self.total_epochs))
+            ),
+        }
 
 
 def generate_nnue_dataset(

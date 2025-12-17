@@ -191,6 +191,35 @@ def play_game(
         return None
 
 
+def compute_confidence_interval(wins: int, total: int, confidence: float = 0.95) -> Tuple[float, float]:
+    """Compute Wilson score confidence interval for win rate.
+
+    Args:
+        wins: Number of wins
+        total: Total games played
+        confidence: Confidence level (default 0.95 = 95%)
+
+    Returns:
+        Tuple of (lower_bound, upper_bound) for win rate
+    """
+    import math
+
+    if total == 0:
+        return (0.0, 1.0)
+
+    p = wins / total
+
+    # Z-score for confidence level
+    z = {0.90: 1.645, 0.95: 1.96, 0.99: 2.576}.get(confidence, 1.96)
+
+    # Wilson score interval
+    denominator = 1 + z * z / total
+    centre = (p + z * z / (2 * total)) / denominator
+    margin = z * math.sqrt((p * (1 - p) + z * z / (4 * total)) / total) / denominator
+
+    return (max(0, centre - margin), min(1, centre + margin))
+
+
 def test_model_vs_baseline(
     model_path: str,
     model_type: str,
@@ -223,34 +252,132 @@ def test_model_vs_baseline(
     return wins / games_played if games_played > 0 else 0.0
 
 
+def test_model_vs_baseline_adaptive(
+    model_path: str,
+    model_type: str,
+    opponent_type: str,
+    min_games: int = 6,
+    max_games: int = 30,
+    target_margin: float = 0.15,
+    confidence: float = 0.95,
+    board_type: BoardType = BoardType.SQUARE8,
+) -> Tuple[float, int]:
+    """Test model against baseline with adaptive game count.
+
+    Stops early if the result is decisive (confidence interval doesn't
+    cross 0.5 threshold by target_margin) or continues up to max_games.
+
+    Args:
+        model_path: Path to model checkpoint
+        model_type: "nn" or "nnue"
+        opponent_type: Baseline opponent type
+        min_games: Minimum games before early stopping
+        max_games: Maximum games to play
+        target_margin: Required confidence margin from 0.5 threshold
+        confidence: Confidence level for interval
+        board_type: Board type for games
+
+    Returns:
+        Tuple of (win_rate, games_played)
+    """
+    wins = 0
+    games_played = 0
+
+    for i in range(max_games):
+        # Alternate who plays first
+        model_first = (i % 2 == 0)
+        model_player = 1 if model_first else 2
+
+        winner = play_game(
+            model_path=model_path,
+            model_type=model_type,
+            opponent_type=opponent_type,
+            board_type=board_type,
+            model_plays_first=model_first,
+        )
+
+        if winner is not None:
+            games_played += 1
+            if winner == model_player:
+                wins += 1
+
+        # Check for early stopping after minimum games
+        if games_played >= min_games:
+            lower, upper = compute_confidence_interval(wins, games_played, confidence)
+
+            # Decisive win: lower bound > 0.5 + margin
+            if lower > 0.5 + target_margin:
+                break
+
+            # Decisive loss: upper bound < 0.5 - margin
+            if upper < 0.5 - target_margin:
+                break
+
+    win_rate = wins / games_played if games_played > 0 else 0.0
+    return win_rate, games_played
+
+
 def run_gauntlet_for_model(
     model: Dict[str, Any],
     num_games: int = 10,
     board_type: BoardType = BoardType.SQUARE8,
     fast_mode: bool = True,
+    adaptive: bool = False,
+    min_games: int = 6,
+    max_games: int = 30,
 ) -> GauntletResult:
-    """Run full gauntlet for a single model."""
+    """Run full gauntlet for a single model.
+
+    Args:
+        model: Model info dict with path, type, name
+        num_games: Fixed number of games per baseline (used if not adaptive)
+        board_type: Board type for games
+        fast_mode: Skip slow MCTS baseline
+        adaptive: Use adaptive game count based on statistical confidence
+        min_games: Minimum games for adaptive mode
+        max_games: Maximum games for adaptive mode
+    """
     model_path = model["path"]
     model_type = model["type"]
     model_name = model["name"]
 
     print(f"  Testing {model_name}...", flush=True)
 
-    # Test against each baseline
-    vs_random = test_model_vs_baseline(
-        model_path, model_type, "random", num_games, board_type
-    )
-    vs_heuristic = test_model_vs_baseline(
-        model_path, model_type, "heuristic", num_games, board_type
-    )
+    total_games = 0
 
-    # In fast mode, skip slow MCTS baseline
-    if fast_mode:
-        vs_mcts = 0.0
-    else:
-        vs_mcts = test_model_vs_baseline(
-            model_path, model_type, "mcts", num_games, board_type
+    # Test against each baseline
+    if adaptive:
+        vs_random, games_random = test_model_vs_baseline_adaptive(
+            model_path, model_type, "random", min_games, max_games, board_type=board_type
         )
+        vs_heuristic, games_heuristic = test_model_vs_baseline_adaptive(
+            model_path, model_type, "heuristic", min_games, max_games, board_type=board_type
+        )
+        total_games = games_random + games_heuristic
+
+        if fast_mode:
+            vs_mcts = 0.0
+        else:
+            vs_mcts, games_mcts = test_model_vs_baseline_adaptive(
+                model_path, model_type, "mcts", min_games, max_games, board_type=board_type
+            )
+            total_games += games_mcts
+    else:
+        vs_random = test_model_vs_baseline(
+            model_path, model_type, "random", num_games, board_type
+        )
+        vs_heuristic = test_model_vs_baseline(
+            model_path, model_type, "heuristic", num_games, board_type
+        )
+
+        if fast_mode:
+            vs_mcts = 0.0
+        else:
+            vs_mcts = test_model_vs_baseline(
+                model_path, model_type, "mcts", num_games, board_type
+            )
+
+        total_games = num_games * (2 if fast_mode else 3)
 
     # Weighted score (harder opponents worth more)
     score = 3 * vs_mcts + 2 * vs_heuristic + 1 * vs_random
@@ -261,7 +388,7 @@ def run_gauntlet_for_model(
         vs_random=vs_random,
         vs_heuristic=vs_heuristic,
         vs_mcts=vs_mcts,
-        games_played=num_games * 3,
+        games_played=total_games,
         score=score,
         timestamp=datetime.utcnow().isoformat(),
     )
@@ -269,8 +396,10 @@ def run_gauntlet_for_model(
 
 def _run_model_wrapper(args):
     """Wrapper for parallel execution."""
-    model, num_games, board_type = args
-    return run_gauntlet_for_model(model, num_games, board_type)
+    model, num_games, board_type, fast_mode, adaptive, min_games, max_games = args
+    return run_gauntlet_for_model(
+        model, num_games, board_type, fast_mode, adaptive, min_games, max_games
+    )
 
 
 def run_gauntlet(
@@ -278,11 +407,19 @@ def run_gauntlet(
     num_games: int = 10,
     board_type: BoardType = BoardType.SQUARE8,
     parallel: int = 1,
+    fast_mode: bool = True,
+    adaptive: bool = False,
+    min_games: int = 6,
+    max_games: int = 30,
 ) -> List[GauntletResult]:
     """Run gauntlet for all models."""
     total = len(models)
-    print(f"Running gauntlet for {total} models ({num_games} games × 2 baselines each)", flush=True)
-    print(f"Total games: {total * num_games * 2}", flush=True)
+    mode_str = "adaptive" if adaptive else f"{num_games} games"
+    print(f"Running gauntlet for {total} models ({mode_str} × 2 baselines each)", flush=True)
+    if not adaptive:
+        print(f"Total games: {total * num_games * 2}", flush=True)
+    else:
+        print(f"Adaptive mode: {min_games}-{max_games} games per baseline", flush=True)
     print(f"Parallel workers: {parallel}", flush=True)
     print(flush=True)
 
@@ -291,7 +428,7 @@ def run_gauntlet(
     if parallel > 1:
         # Parallel execution
         results = []
-        args_list = [(m, num_games, board_type) for m in models]
+        args_list = [(m, num_games, board_type, fast_mode, adaptive, min_games, max_games) for m in models]
 
         with ProcessPoolExecutor(max_workers=parallel) as executor:
             futures = {executor.submit(_run_model_wrapper, args): i for i, args in enumerate(args_list)}
@@ -307,7 +444,8 @@ def run_gauntlet(
                     elapsed = time.time() - start_time
                     rate = completed / elapsed if elapsed > 0 else 0
                     remaining = (total - completed) / rate if rate > 0 else 0
-                    print(f"[{completed}/{total}] {models[idx]['name']}: Score={result.score:.2f} (r={result.vs_random:.0%} h={result.vs_heuristic:.0%}) ETA: {remaining/60:.1f}min", flush=True)
+                    games_info = f"({result.games_played} games)" if adaptive else ""
+                    print(f"[{completed}/{total}] {models[idx]['name']}: Score={result.score:.2f} (r={result.vs_random:.0%} h={result.vs_heuristic:.0%}) {games_info} ETA: {remaining/60:.1f}min", flush=True)
                 except Exception as e:
                     print(f"Error testing {models[idx]['name']}: {e}", flush=True)
 
@@ -319,7 +457,7 @@ def run_gauntlet(
         results = []
         for i, model in enumerate(models):
             print(f"[{i+1}/{total}] {model['name']}", flush=True)
-            result = run_gauntlet_for_model(model, num_games, board_type)
+            result = run_gauntlet_for_model(model, num_games, board_type, fast_mode, adaptive, min_games, max_games)
             results.append(result)
 
             elapsed = time.time() - start_time

@@ -432,6 +432,132 @@ def run_ab_test(
     return results
 
 
+def run_multi_time_test(
+    model_a_path: str,
+    model_b_path: Optional[str],
+    num_games: int,
+    board_type: BoardType,
+    think_times: List[int],
+    max_moves: int = 300,
+    output_path: Optional[str] = None,
+) -> int:
+    """Run A/B tests at multiple think times.
+
+    Policy models typically benefit more at shorter think times where MCTS
+    has less time to search. This function runs tests at each think time
+    and outputs a comparison table.
+
+    Returns:
+        Exit code (0 for success)
+    """
+    logger.info("=" * 60)
+    logger.info("MULTI-TIME A/B TEST")
+    logger.info("=" * 60)
+    logger.info(f"Model A: {model_a_path}")
+    logger.info(f"Model B: {model_b_path or 'baseline (no policy)'}")
+    logger.info(f"Games per think time: {num_games}")
+    logger.info(f"Think times: {think_times} ms")
+    logger.info("")
+
+    all_results = {}
+
+    for think_time in think_times:
+        logger.info(f"Testing at {think_time}ms think time...")
+
+        results = run_ab_test(
+            model_a_path=model_a_path,
+            model_b_path=model_b_path,
+            num_games=num_games,
+            board_type=board_type,
+            think_time_ms=think_time,
+            max_moves=max_moves,
+        )
+
+        all_results[think_time] = results
+        logger.info(f"  Model A win rate: {results.model_a_win_rate:.1%} "
+                   f"(95% CI: [{results.confidence_interval_95[0]:.1%}, {results.confidence_interval_95[1]:.1%}])")
+
+    # Print comparison table
+    print("\n" + "=" * 80)
+    print("MULTI-TIME A/B TEST RESULTS")
+    print("=" * 80)
+    print(f"Model A: {model_a_path}")
+    print(f"Model B: {model_b_path or 'baseline (no policy)'}")
+    print(f"Games per think time: {num_games}")
+    print()
+
+    # Table header
+    print(f"{'Think Time':>12} | {'A Wins':>8} | {'B Wins':>8} | {'Draws':>8} | {'A Win%':>10} | {'95% CI':>20} | {'Sig?':>5}")
+    print("-" * 80)
+
+    for think_time in think_times:
+        r = all_results[think_time]
+        ci_str = f"[{r.confidence_interval_95[0]:.1%}, {r.confidence_interval_95[1]:.1%}]"
+        sig = "YES" if r.significant_at_95 else "no"
+        print(f"{think_time:>10}ms | {r.model_a_wins:>8} | {r.model_b_wins:>8} | {r.draws:>8} | "
+              f"{r.model_a_win_rate:>9.1%} | {ci_str:>20} | {sig:>5}")
+
+    print("-" * 80)
+    print()
+
+    # Summary
+    best_time = max(think_times, key=lambda t: all_results[t].model_a_win_rate)
+    worst_time = min(think_times, key=lambda t: all_results[t].model_a_win_rate)
+
+    print(f"Best performance for A: {all_results[best_time].model_a_win_rate:.1%} at {best_time}ms")
+    print(f"Worst performance for A: {all_results[worst_time].model_a_win_rate:.1%} at {worst_time}ms")
+
+    # Check if policy benefits more at shorter think times (expected for policy models)
+    if len(think_times) >= 2:
+        shortest = min(think_times)
+        longest = max(think_times)
+        diff = all_results[shortest].model_a_win_rate - all_results[longest].model_a_win_rate
+        if diff > 0.05:
+            print(f"Policy shows {diff:.1%} stronger advantage at shorter think times (expected)")
+        elif diff < -0.05:
+            print(f"Policy shows {abs(diff):.1%} weaker advantage at shorter think times (unexpected)")
+
+    print("=" * 80)
+
+    # Save to file if requested
+    if output_path:
+        # Convert to serializable format
+        report = {
+            "model_a_path": model_a_path,
+            "model_b_path": model_b_path,
+            "num_games_per_time": num_games,
+            "board_type": board_type.value,
+            "timestamp": datetime.now().isoformat(),
+            "results_by_think_time": {}
+        }
+
+        for think_time, r in all_results.items():
+            # Convert numpy types
+            def convert_numpy(obj):
+                if isinstance(obj, dict):
+                    return {k: convert_numpy(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_numpy(v) for v in obj]
+                elif isinstance(obj, tuple):
+                    return tuple(convert_numpy(v) for v in obj)
+                elif isinstance(obj, np.bool_):
+                    return bool(obj)
+                elif isinstance(obj, np.integer):
+                    return int(obj)
+                elif isinstance(obj, np.floating):
+                    return float(obj)
+                return obj
+
+            report["results_by_think_time"][think_time] = convert_numpy(asdict(r))
+
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        with open(output_path, "w") as f:
+            json.dump(report, f, indent=2)
+        logger.info(f"Report saved to: {output_path}")
+
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="A/B test NNUE policy models",
@@ -487,6 +613,20 @@ def main():
         action="store_true",
         help="Quick test with fewer games (10)",
     )
+    parser.add_argument(
+        "--multi-time",
+        action="store_true",
+        help="Run tests at multiple think times (50ms, 100ms, 200ms, 500ms). "
+             "Policy models typically benefit more at shorter think times. "
+             "Output includes results for each think time.",
+    )
+    parser.add_argument(
+        "--multi-time-values",
+        type=int,
+        nargs="+",
+        default=[50, 100, 200, 500],
+        help="Think times (ms) to test with --multi-time (default: 50 100 200 500)",
+    )
 
     args = parser.parse_args()
 
@@ -506,7 +646,19 @@ def main():
         logger.error(f"Model A not found: {args.model_a}")
         return 1
 
-    # Run test
+    # Multi-time test mode
+    if args.multi_time:
+        return run_multi_time_test(
+            model_a_path=args.model_a,
+            model_b_path=args.model_b,
+            num_games=args.num_games,
+            board_type=board_type,
+            think_times=args.multi_time_values,
+            max_moves=args.max_moves,
+            output_path=args.output,
+        )
+
+    # Run single test
     results = run_ab_test(
         model_a_path=args.model_a,
         model_b_path=args.model_b,

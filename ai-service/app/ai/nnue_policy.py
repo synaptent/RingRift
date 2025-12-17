@@ -31,6 +31,35 @@ from .nnue import (
 )
 
 
+def get_hidden_dim_for_board(board_type: BoardType, board_size: int = 0) -> int:
+    """Auto-select hidden dimension based on board type and size.
+
+    Args:
+        board_type: The type of board
+        board_size: For hexagonal boards, used to distinguish hex8 from full hex
+
+    Returns:
+        Recommended hidden dimension for the model
+
+    Sizes:
+        - Square8 (64 cells): 128 hidden
+        - Hex8 (size <= 8): 256 hidden
+        - Full hexagonal (size > 8): 1024 hidden
+        - Square19 (361 cells): 512 hidden
+    """
+    if board_type == BoardType.SQUARE8:
+        return 128  # 64 cells - smaller model
+    elif board_type == BoardType.SQUARE19:
+        return 512  # 361 cells - larger model
+    elif board_type == BoardType.HEXAGONAL:
+        # Distinguish hex8 vs full hex by board_size
+        if board_size <= 8:
+            return 256  # hex8 - medium model
+        else:
+            return 1024  # full hexagonal (size 19+) - large model
+    return 256  # default fallback
+
+
 class RingRiftNNUEWithPolicy(nn.Module):
     """NNUE network with both value and policy heads.
 
@@ -49,12 +78,17 @@ class RingRiftNNUEWithPolicy(nn.Module):
     def __init__(
         self,
         board_type: BoardType = BoardType.SQUARE8,
-        hidden_dim: int = 256,
+        hidden_dim: Optional[int] = None,
         num_hidden_layers: int = 2,
     ):
         super().__init__()
         self.board_type = board_type
         self.board_size = get_board_size(board_type)
+
+        # Auto-select hidden dimension if not specified
+        if hidden_dim is None:
+            hidden_dim = get_hidden_dim_for_board(board_type, self.board_size)
+
         input_dim = get_feature_dim(board_type)
         num_positions = self.board_size * self.board_size
 
@@ -498,6 +532,10 @@ def _process_game_batch(
     include_draws = config_dict['include_draws']
     distill_from_winners = config_dict['distill_from_winners']
     winner_weight_boost = config_dict['winner_weight_boost']
+    weight_by_game_length = config_dict.get('weight_by_game_length', True)
+    game_length_weight_cap = config_dict.get('game_length_weight_cap', 50)
+    min_move_number = config_dict.get('min_move_number', 0)
+    max_move_number = config_dict.get('max_move_number', 999999)
 
     samples = []
     engine = DefaultRulesEngine()
@@ -506,17 +544,23 @@ def _process_game_batch(
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
+    # Detect schema for move count column
+    cursor.execute("PRAGMA table_info(games)")
+    columns = {row['name'] for row in cursor.fetchall()}
+    moves_col = 'total_moves' if 'total_moves' in columns else 'move_count'
+
     for game_id in game_ids:
         try:
-            # Get game info
+            # Get game info including move count for length weighting
             cursor.execute(
-                "SELECT winner FROM games WHERE game_id = ?",
+                f"SELECT winner, {moves_col} as game_length FROM games WHERE game_id = ?",
                 (game_id,)
             )
             game_row = cursor.fetchone()
             if not game_row:
                 continue
             winner = game_row['winner']
+            game_length = game_row['game_length'] or 0
 
             # Get initial state
             cursor.execute(
@@ -572,6 +616,8 @@ def _process_game_batch(
                         should_include = False
                     elif value == 0.0 and not include_draws:
                         should_include = False
+                    elif move_number < min_move_number or move_number > max_move_number:
+                        should_include = False  # Curriculum: filter by move range
 
                     if should_include:
                         try:
@@ -590,7 +636,16 @@ def _process_game_batch(
                                         legal_moves, board_size, max_moves, board_type
                                     )
 
-                                    sample_weight = winner_weight_boost if is_winner and winner_weight_boost > 1.0 else 1.0
+                                    # Calculate sample weight
+                                    sample_weight = 1.0
+
+                                    # Apply game length weight (longer games = more signal)
+                                    if weight_by_game_length and game_length_weight_cap > 0:
+                                        sample_weight *= min(1.0, game_length / game_length_weight_cap)
+
+                                    # Apply winner weight boost
+                                    if is_winner and winner_weight_boost > 1.0:
+                                        sample_weight *= winner_weight_boost
 
                                     # Store as dict for pickling
                                     samples.append({
@@ -701,6 +756,9 @@ class NNUEPolicySample:
     game_id: str
     move_number: int
     sample_weight: float = 1.0  # Weight for weighted loss (for distillation)
+    # Optional MCTS visit distribution for KL divergence training
+    # Shape: (max_moves,) normalized visit counts, None if not available
+    mcts_visit_distribution: Optional["np.ndarray"] = None
 
 
 @dataclass
@@ -716,6 +774,14 @@ class NNUEPolicyDatasetConfig:
     # Policy distillation options (for training on strong games)
     distill_from_winners: bool = False  # Only include positions from winning players
     winner_weight_boost: float = 1.0    # Sample weight multiplier for winners (for weighted loss)
+
+    # Sample weighting options
+    weight_by_game_length: bool = True  # Weight samples by game length (longer = more signal)
+    game_length_weight_cap: int = 50    # Games with >= this many moves get weight 1.0
+
+    # Curriculum learning move range filter
+    min_move_number: int = 0       # Only include positions with move_number >= this
+    max_move_number: int = 999999  # Only include positions with move_number <= this
 
 
 class NNUEPolicyDataset(Dataset):
@@ -831,9 +897,15 @@ class NNUEPolicyDataset(Dataset):
             'include_draws': self.config.include_draws,
             'distill_from_winners': self.config.distill_from_winners,
             'winner_weight_boost': self.config.winner_weight_boost,
+            'weight_by_game_length': self.config.weight_by_game_length,
+            'game_length_weight_cap': self.config.game_length_weight_cap,
+            'min_move_number': self.config.min_move_number,
+            'max_move_number': self.config.max_move_number,
         }
 
         # Process batches in parallel
+        import time as _time
+        parallel_start = _time.time()
         all_sample_dicts = []
         with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
             futures = {
@@ -853,7 +925,10 @@ class NNUEPolicyDataset(Dataset):
                     all_sample_dicts.extend(batch_samples)
                     completed += 1
                     if completed % 5 == 0 or completed == len(batches):
-                        logger.info(f"  Completed {completed}/{len(batches)} batches, {len(all_sample_dicts)} samples")
+                        elapsed = _time.time() - parallel_start
+                        rate = completed / elapsed if elapsed > 0 else 0
+                        eta = (len(batches) - completed) / rate if rate > 0 else 0
+                        logger.info(f"  Completed {completed}/{len(batches)} batches ({rate:.2f} batches/s, ETA: {eta:.0f}s), {len(all_sample_dicts)} samples")
                 except Exception as e:
                     logger.warning(f"Batch failed: {e}")
 
@@ -911,12 +986,24 @@ class NNUEPolicyDataset(Dataset):
             self.config.min_game_length,
         ))
         games = cursor.fetchall()
+        total_games = len(games)
 
         engine = DefaultRulesEngine()
 
-        for game_row in games:
+        # Progress tracking
+        import time as _time
+        extraction_start = _time.time()
+
+        for game_idx, game_row in enumerate(games):
+            # Progress logging every 100 games
+            if game_idx > 0 and game_idx % 100 == 0:
+                elapsed = _time.time() - extraction_start
+                rate = game_idx / elapsed if elapsed > 0 else 0
+                eta = (total_games - game_idx) / rate if rate > 0 else 0
+                logger.info(f"  Extraction progress: {game_idx}/{total_games} games ({rate:.1f}/s, ETA: {eta:.0f}s, {len(samples)} samples)")
             game_id = game_row['game_id']
             winner = game_row['winner']
+            game_length = game_row['moves'] or 0
 
             # Get initial state
             cursor.execute(
@@ -976,6 +1063,8 @@ class NNUEPolicyDataset(Dataset):
                         pass  # Skip non-winner positions but continue replay
                     elif value == 0.0 and not self.config.include_draws:
                         pass  # Skip draws but continue replay
+                    elif move_number < self.config.min_move_number or move_number > self.config.max_move_number:
+                        pass  # Curriculum: skip moves outside range
                     else:
                         # Get legal moves at this position
                         try:
@@ -1002,10 +1091,16 @@ class NNUEPolicyDataset(Dataset):
                                         legal_moves
                                     )
 
-                                    # Calculate sample weight for distillation
+                                    # Calculate sample weight
                                     sample_weight = 1.0
+
+                                    # Apply game length weight (longer games = more signal)
+                                    if self.config.weight_by_game_length and self.config.game_length_weight_cap > 0:
+                                        sample_weight *= min(1.0, game_length / self.config.game_length_weight_cap)
+
+                                    # Apply winner weight boost
                                     if is_winner and self.config.winner_weight_boost > 1.0:
-                                        sample_weight = self.config.winner_weight_boost
+                                        sample_weight *= self.config.winner_weight_boost
 
                                     sample = NNUEPolicySample(
                                         features=features,
@@ -1036,6 +1131,9 @@ class NNUEPolicyDataset(Dataset):
                     return samples
 
         conn.close()
+        # Final extraction summary
+        total_time = _time.time() - extraction_start
+        logger.info(f"  Extraction complete: {total_games} games in {total_time:.1f}s ({total_games/total_time:.1f}/s), {len(samples)} samples")
         return samples
 
     def _find_move_index(self, played_move, legal_moves: list) -> int:

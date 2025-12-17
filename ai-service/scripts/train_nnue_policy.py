@@ -50,12 +50,13 @@ if PROJECT_ROOT not in sys.path:
 import torch
 from torch.utils.data import DataLoader, random_split
 
-from app.ai.nnue import RingRiftNNUE, clear_nnue_cache
+from app.ai.nnue import RingRiftNNUE, clear_nnue_cache, get_board_size
 from app.ai.nnue_policy import (
     RingRiftNNUEWithPolicy,
     NNUEPolicyTrainer,
     NNUEPolicyDataset,
     NNUEPolicyDatasetConfig,
+    get_hidden_dim_for_board,
 )
 from app.models import BoardType
 from app.training.seed_utils import seed_all
@@ -170,8 +171,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--hidden-dim",
         type=int,
-        default=256,
-        help="NNUE hidden layer dimension (default: 256)",
+        default=None,
+        help="NNUE hidden layer dimension. If not set, auto-selects based on board type: square8=128, hex8=256, full_hex=1024, square19=512",
     )
     parser.add_argument(
         "--num-hidden-layers",
@@ -281,6 +282,22 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
              "Filters to decisive wins only. (default: 0 = all wins)",
     )
 
+    # Curriculum learning (move range filter)
+    parser.add_argument(
+        "--min-move-number",
+        type=int,
+        default=0,
+        help="Only include positions with move_number >= this value. "
+             "Used for curriculum learning stages. (default: 0 = all moves)",
+    )
+    parser.add_argument(
+        "--max-move-number",
+        type=int,
+        default=999999,
+        help="Only include positions with move_number <= this value. "
+             "Used for curriculum learning stages. (default: 999999 = all moves)",
+    )
+
     # Performance
     parser.add_argument(
         "--num-workers",
@@ -329,7 +346,7 @@ def train_nnue_policy(
     weight_decay: float,
     val_split: float,
     early_stopping_patience: int,
-    hidden_dim: int,
+    hidden_dim: Optional[int],
     num_hidden_layers: int,
     value_weight: float,
     policy_weight: float,
@@ -349,6 +366,8 @@ def train_nnue_policy(
     distill_from_winners: bool = False,
     winner_weight_boost: float = 1.0,
     num_workers: int = 0,
+    min_move_number: int = 0,
+    max_move_number: int = 999999,
 ) -> Dict[str, Any]:
     """Train NNUE policy model and return training report."""
     seed_all(seed)
@@ -362,10 +381,14 @@ def train_nnue_policy(
         max_moves_per_position=max_moves_per_position,
         distill_from_winners=distill_from_winners,
         winner_weight_boost=winner_weight_boost,
+        min_move_number=min_move_number,
+        max_move_number=max_move_number,
     )
 
     if distill_from_winners:
         logger.info(f"Distillation mode: training on winners only (weight boost: {winner_weight_boost}x)")
+    if min_move_number > 0 or max_move_number < 999999:
+        logger.info(f"Curriculum mode: filtering to moves {min_move_number}-{max_move_number}")
     if num_workers != 1:
         worker_count = num_workers if num_workers > 0 else "auto"
         logger.info(f"Using parallel sample extraction with {worker_count} workers")
@@ -411,6 +434,15 @@ def train_nnue_policy(
         pin_memory=device.type != "cpu",
     )
 
+    # Resolve hidden_dim (auto-select if not specified)
+    actual_hidden_dim = hidden_dim
+    if actual_hidden_dim is None:
+        board_size = get_board_size(board_type)
+        actual_hidden_dim = get_hidden_dim_for_board(board_type, board_size)
+        logger.info(f"Auto-selected hidden_dim={actual_hidden_dim} for {board_type.value} (size={board_size})")
+    else:
+        logger.info(f"Using specified hidden_dim={actual_hidden_dim}")
+
     # Create model
     if pretrained_path and os.path.exists(pretrained_path):
         logger.info(f"Loading pretrained model from {pretrained_path}")
@@ -421,7 +453,7 @@ def train_nnue_policy(
                 state_dict = checkpoint["model_state_dict"]
             if not isinstance(state_dict, dict):
                 raise TypeError(f"Unexpected checkpoint type: {type(state_dict).__name__}")
-            inferred_hidden_dim = hidden_dim
+            inferred_hidden_dim = actual_hidden_dim
             inferred_num_hidden_layers = num_hidden_layers
 
             try:
@@ -458,7 +490,7 @@ def train_nnue_policy(
         if value_model is None:
             model = RingRiftNNUEWithPolicy(
                 board_type=board_type,
-                hidden_dim=hidden_dim,
+                hidden_dim=actual_hidden_dim,
                 num_hidden_layers=num_hidden_layers,
             )
         else:
@@ -469,7 +501,7 @@ def train_nnue_policy(
     else:
         model = RingRiftNNUEWithPolicy(
             board_type=board_type,
-            hidden_dim=hidden_dim,
+            hidden_dim=actual_hidden_dim,
             num_hidden_layers=num_hidden_layers,
         )
 
@@ -601,7 +633,7 @@ def train_nnue_policy(
             checkpoint = {
                 "model_state_dict": model.state_dict(),
                 "board_type": board_type.value,
-                "hidden_dim": hidden_dim,
+                "hidden_dim": actual_hidden_dim,
                 "num_hidden_layers": num_hidden_layers,
                 "epoch": epoch + 1,
                 "val_loss": avg_val_loss,
@@ -626,7 +658,7 @@ def train_nnue_policy(
         "val_size": len(val_dataset),
         "model_params_total": total_params,
         "model_params_trainable": trainable_params,
-        "hidden_dim": hidden_dim,
+        "hidden_dim": actual_hidden_dim,
         "num_hidden_layers": num_hidden_layers,
         "value_weight": value_weight,
         "policy_weight": policy_weight,
@@ -718,6 +750,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         distill_from_winners=args.distill_from_winners,
         winner_weight_boost=args.winner_weight_boost,
         num_workers=args.num_workers,
+        min_move_number=args.min_move_number,
+        max_move_number=args.max_move_number,
     )
 
     # Add metadata to report

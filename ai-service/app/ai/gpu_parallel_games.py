@@ -5349,6 +5349,7 @@ class ParallelGameRunner:
         weight_noise: float = 0.0,
         temperature: float = 1.0,
         noise_scale: float = 0.1,
+        random_opening_moves: int = 0,
     ):
         """Initialize parallel game runner.
 
@@ -5379,6 +5380,9 @@ class ParallelGameRunner:
                        Used for curriculum learning. Default 1.0.
             noise_scale: Scale of noise added to move scores for exploration.
                        Used for curriculum learning diversity. Default 0.1.
+            random_opening_moves: Number of initial moves to select uniformly at random
+                       instead of using heuristic/policy. Increases opening diversity
+                       for training. Default 0 (no random opening).
         """
         self.batch_size = batch_size
         self.board_size = board_size
@@ -5389,6 +5393,7 @@ class ParallelGameRunner:
         self.weight_noise = weight_noise
         self.temperature = temperature
         self.noise_scale = noise_scale
+        self.random_opening_moves = random_opening_moves
         self.use_policy_selection = False
         self.policy_model: Optional["RingRiftNNUEWithPolicy"] = None
         # Default LPS victory rounds to 3 if not specified
@@ -5460,6 +5465,17 @@ class ParallelGameRunner:
             rings_per_player=self.rings_per_player,
             board_type=self.board_type,
         )
+
+    def set_temperature(self, temperature: float) -> None:
+        """Dynamically set the temperature for move selection.
+
+        Higher temperature = more random move selection.
+        Useful for difficulty mixing during training data generation.
+
+        Args:
+            temperature: New temperature value (e.g., 0.5 for optimal, 4.0 for random)
+        """
+        self.temperature = temperature
 
     def load_policy_model(self, model_path: Optional[str] = None) -> bool:
         """Load policy model for policy-based move selection.
@@ -5534,7 +5550,38 @@ class ParallelGameRunner:
         3. Fast center-bias selection (default)
 
         Uses self.temperature for softmax temperature (curriculum learning).
+        During opening phase (move_count < random_opening_moves), uses very high
+        temperature to make selections nearly uniform random.
         """
+        # Check if any games are in opening phase (need random selection)
+        if self.random_opening_moves > 0:
+            in_opening = self.state.move_count < self.random_opening_moves
+            all_in_opening = (in_opening & active_mask).sum() == active_mask.sum()
+            any_in_opening = in_opening.any()
+
+            # If all active games are in opening, use uniform random (high temp)
+            if all_in_opening:
+                return select_moves_vectorized(
+                    moves, active_mask, self.board_size, temperature=100.0
+                )
+
+            # If some are in opening but not all, we need to handle them separately
+            # For simplicity, use standard selection with slightly elevated temperature
+            if any_in_opening:
+                # Use elevated temperature to increase randomness during mixed phase
+                elevated_temp = max(self.temperature, 3.0)
+                if self.use_policy_selection and self.policy_model is not None:
+                    return self._select_moves_policy(moves, active_mask, temperature=elevated_temp)
+                elif self.use_heuristic_selection:
+                    return select_moves_heuristic(
+                        moves, self.state, active_mask, temperature=elevated_temp
+                    )
+                else:
+                    return select_moves_vectorized(
+                        moves, active_mask, self.board_size, temperature=elevated_temp
+                    )
+
+        # Normal selection with configured strategy
         if self.use_policy_selection and self.policy_model is not None:
             return self._select_moves_policy(moves, active_mask, temperature=self.temperature)
         elif self.use_heuristic_selection:

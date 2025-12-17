@@ -452,6 +452,9 @@ class GPUSelfPlayGenerator:
         policy_model_path: Optional[str] = None,
         temperature: float = 1.0,
         noise_scale: float = 0.1,
+        min_game_length: int = 0,
+        random_opening_moves: int = 0,
+        temperature_mix: Optional[str] = None,
     ):
         self.board_size = board_size
         self.num_players = num_players
@@ -463,6 +466,13 @@ class GPUSelfPlayGenerator:
         self.lps_victory_rounds = lps_victory_rounds
         self.rings_per_player = rings_per_player
         self.board_type = board_type
+        self.min_game_length = min_game_length
+        self.filtered_short_games = 0  # Track filtered games for logging
+        self.temperature_mix = temperature_mix
+        self.base_temperature = temperature
+        # Temperature levels for difficulty mixing: optimal → random
+        self.mix_temperatures = [0.5, 1.0, 2.0, 4.0]
+        self._temp_cycle_idx = 0  # Current position in temperature cycle
         # For random-only mode, use None weights (uniform random)
         # For heuristic-only mode, use provided weights or defaults
         # For nnue-guided mode, use heuristic + NNUE evaluation
@@ -511,6 +521,7 @@ class GPUSelfPlayGenerator:
             weight_noise=weight_noise,
             temperature=temperature,
             noise_scale=noise_scale,
+            random_opening_moves=random_opening_moves,
         )
 
         # Log shadow validation status
@@ -552,6 +563,36 @@ class GPUSelfPlayGenerator:
         )
         self._initial_state_json = self._initial_state.model_dump(mode="json")
 
+    def _get_next_temperature(self) -> float:
+        """Get next temperature for difficulty mixing.
+
+        Returns:
+            Temperature value based on mixing mode:
+            - 'uniform': cycles through all temps equally
+            - 'weighted': biased toward optimal (lower) temps
+            - 'random': random selection each batch
+        """
+        import random as _random
+
+        if self.temperature_mix == "uniform":
+            # Cycle through temperatures
+            temp = self.mix_temperatures[self._temp_cycle_idx]
+            self._temp_cycle_idx = (self._temp_cycle_idx + 1) % len(self.mix_temperatures)
+            return temp
+
+        elif self.temperature_mix == "weighted":
+            # Weighted toward lower (more optimal) temperatures
+            # Weights: [0.4, 0.3, 0.2, 0.1] for [0.5, 1.0, 2.0, 4.0]
+            weights = [0.4, 0.3, 0.2, 0.1]
+            return _random.choices(self.mix_temperatures, weights=weights)[0]
+
+        elif self.temperature_mix == "random":
+            # Uniform random selection
+            return _random.choice(self.mix_temperatures)
+
+        else:
+            return self.base_temperature
+
     def generate_batch(
         self,
         seed: Optional[int] = None,
@@ -566,6 +607,14 @@ class GPUSelfPlayGenerator:
         """
         if seed is not None:
             torch.manual_seed(seed)
+
+        # Apply temperature mixing if enabled
+        if self.temperature_mix:
+            temp = self._get_next_temperature()
+            self.runner.set_temperature(temp)
+        else:
+            # Restore base temperature if not mixing
+            self.runner.set_temperature(self.base_temperature)
 
         start = time.time()
         # Pass None for random mode (uniform random), weights for heuristic mode
@@ -649,6 +698,13 @@ class GPUSelfPlayGenerator:
                 # Use the board_type that was passed in, not inferred from board_size
                 board_type_str = self.board_type or {8: "square8", 9: "hex8", 19: "square19", 25: "hexagonal"}.get(self.board_size, "square8")
                 for i in range(actual_batch):
+                    move_count = int(results["move_counts"][i])
+
+                    # Filter out games that are too short
+                    if self.min_game_length > 0 and move_count < self.min_game_length:
+                        self.filtered_short_games += 1
+                        continue
+
                     game_idx = len(all_records)
                     vtype = results["victory_types"][i]
                     record = {
@@ -659,7 +715,7 @@ class GPUSelfPlayGenerator:
                         "num_players": self.num_players,
                         # === Game outcome ===
                         "winner": int(results["winners"][i]),
-                        "move_count": int(results["move_counts"][i]),
+                        "move_count": move_count,
                         "max_moves": self.max_moves,
                         "status": "completed",
                         "game_status": "completed",
@@ -733,6 +789,8 @@ class GPUSelfPlayGenerator:
             "max_moves": self.max_moves,
             "device": str(self.device),
             "weights": self.weights,
+            "min_game_length": self.min_game_length,
+            "filtered_short_games": self.filtered_short_games,
         }
 
         # Add win rates by player
@@ -779,6 +837,9 @@ def run_gpu_selfplay(
     policy_model_path: Optional[str] = None,
     temperature: float = 1.0,
     noise_scale: float = 0.1,
+    min_game_length: int = 0,
+    random_opening_moves: int = 0,
+    temperature_mix: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run GPU-accelerated self-play generation.
 
@@ -861,6 +922,12 @@ def run_gpu_selfplay(
     else:
         logger.info(f"Move selection: {'heuristic-based' if use_heuristic_selection else 'center-bias random'}")
     logger.info(f"Weight noise: {weight_noise:.1%}" if weight_noise > 0 else "Weight noise: disabled")
+    if min_game_length > 0:
+        logger.info(f"Min game length filter: {min_game_length} moves")
+    if random_opening_moves > 0:
+        logger.info(f"Random opening moves: {random_opening_moves}")
+    if temperature_mix:
+        logger.info(f"Temperature mixing: {temperature_mix} (temps: [0.5, 1.0, 2.0, 4.0])")
     logger.info(f"Output: {output_dir}")
     logger.info("")
 
@@ -884,6 +951,9 @@ def run_gpu_selfplay(
         policy_model_path=policy_model_path,
         temperature=temperature,
         noise_scale=noise_scale,
+        min_game_length=min_game_length,
+        random_opening_moves=random_opening_moves,
+        temperature_mix=temperature_mix,
     )
 
     # Generate games - use unique filename per config to avoid lock contention
@@ -916,6 +986,8 @@ def run_gpu_selfplay(
     logger.info(f"Total time: {stats['total_time_seconds']:.1f}s")
     logger.info(f"Throughput: {stats['games_per_second']:.1f} games/sec")
     logger.info(f"Draw rate: {stats['draw_rate']:.1%}")
+    if stats.get('filtered_short_games', 0) > 0:
+        logger.info(f"Filtered short games (<{stats['min_game_length']} moves): {stats['filtered_short_games']}")
     logger.info("")
     logger.info("Win rates by player:")
     for p in range(1, num_players + 1):
@@ -1079,6 +1151,33 @@ def main():
              "Used for curriculum learning diversity. Default: 0.1",
     )
 
+    # Data quality filters
+    parser.add_argument(
+        "--min-game-length",
+        type=int,
+        default=0,
+        help="Minimum move count for a game to be recorded (default: 0 = no filter). "
+             "Games shorter than this are discarded to improve training data quality.",
+    )
+    parser.add_argument(
+        "--random-opening-moves",
+        type=int,
+        default=0,
+        help="Number of initial moves to select uniformly at random (default: 0). "
+             "Increases opening diversity for training by randomizing the first N moves.",
+    )
+
+    # Difficulty mixing for training diversity
+    parser.add_argument(
+        "--temperature-mix",
+        type=str,
+        default=None,
+        choices=["uniform", "weighted", "random"],
+        help="Mix different temperature levels per game for training diversity. "
+             "'uniform' = equal split across temps, 'weighted' = bias toward optimal, "
+             "'random' = random temperature per batch. Temps: [0.5, 1.0, 2.0, 4.0]",
+    )
+
     # Add ramdrive storage options
     add_ramdrive_args(parser)
 
@@ -1210,6 +1309,9 @@ def main():
             policy_model_path=args.policy_model,
             temperature=args.temperature,
             noise_scale=args.noise_scale,
+            min_game_length=args.min_game_length,
+            random_opening_moves=args.random_opening_moves,
+            temperature_mix=args.temperature_mix,
         )
     finally:
         # Stop ramdrive syncer and perform final sync

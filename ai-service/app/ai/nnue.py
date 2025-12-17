@@ -197,6 +197,61 @@ class RingRiftNNUE(nn.Module):
             value = self.forward(x)
         return float(value.cpu().item())
 
+    def quantize_dynamic(self) -> "RingRiftNNUE":
+        """Apply dynamic int8 quantization for faster CPU inference.
+
+        Returns:
+            Quantized model (self, modified in-place)
+        """
+        self.cpu()
+        self.eval()
+
+        # Dynamic quantization: quantizes weights to int8, activations at runtime
+        quantized = torch.quantization.quantize_dynamic(
+            self,
+            {nn.Linear},  # Quantize Linear layers
+            dtype=torch.qint8,
+        )
+
+        logger.info("Applied dynamic int8 quantization to NNUE model")
+        return quantized
+
+    @classmethod
+    def from_quantized_checkpoint(
+        cls,
+        checkpoint_path: str,
+        board_type: BoardType = BoardType.SQUARE8,
+    ) -> "RingRiftNNUE":
+        """Load a quantized model from checkpoint.
+
+        Args:
+            checkpoint_path: Path to quantized model checkpoint
+            board_type: Board type for the model
+
+        Returns:
+            Quantized NNUE model
+        """
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+        # Create base model
+        hidden_dim = checkpoint.get("hidden_dim", 256)
+        num_hidden_layers = checkpoint.get("num_hidden_layers", 2)
+        model = cls(
+            board_type=board_type,
+            hidden_dim=hidden_dim,
+            num_hidden_layers=num_hidden_layers,
+        )
+
+        # Load state dict (may need to handle quantized format)
+        if "quantized_state_dict" in checkpoint:
+            # Load quantized weights
+            model.load_state_dict(checkpoint["quantized_state_dict"])
+        else:
+            model.load_state_dict(checkpoint["model_state_dict"])
+
+        model.eval()
+        return model
+
 
 # =============================================================================
 # Feature Extraction
