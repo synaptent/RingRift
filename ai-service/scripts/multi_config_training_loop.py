@@ -144,54 +144,75 @@ CONFIG_DATABASES: Dict[Tuple[str, int], List[str]] = {
 
 # JSONL source directories for each config
 # These are converted directly to NPZ using jsonl_to_npz.py (no DB needed)
-# JSONL from tournaments and hybrid selfplay are canonical format
+# JSONL from tournaments, hybrid selfplay, GPU selfplay, and MCTS selfplay
+# NOTE: Prior to 2025-12-17, only canonical and data/games were searched - this
+# caused a critical data flow mismatch where selfplay data wasn't reaching training!
 CONFIG_JSONL_DIRS: Dict[Tuple[str, int], List[str]] = {
-    # All configs can use canonical JSONL from tournaments
+    # Square8 2p - highest priority, include all selfplay sources
     ("square8", 2): [
         "data/selfplay/canonical",  # Canonical selfplay JSONL
         "data/games",  # Tournament JSONL (games.jsonl, etc.)
+        "data/selfplay/gpu",  # GPU selfplay (high throughput)
+        "data/selfplay/mcts_square8_2p",  # MCTS policy selfplay
+        "data/selfplay/mcts_cluster_collected_v3",  # Cluster MCTS data
+        "data/selfplay/mcts_cluster_collected_v2",  # Older cluster MCTS
+        "data/selfplay/hybrid_test",  # Hybrid selfplay test data
+        "data/selfplay/reanalyzed_square8_2p",  # Reanalyzed games
+        "data/selfplay/cluster_h100",  # H100 cluster selfplay
     ],
     ("square8", 3): [
         "data/selfplay/canonical",
         "data/games",
+        "data/selfplay/gpu",
     ],
     ("square8", 4): [
         "data/selfplay/canonical",
         "data/games",
+        "data/selfplay/gpu",
     ],
     ("square19", 2): [
         "data/selfplay/canonical",
         "data/games",
+        "data/selfplay/gpu",
+        "data/selfplay/daemon_square19_2p",
     ],
     ("square19", 3): [
         "data/selfplay/canonical",
         "data/games",
+        "data/selfplay/daemon_square19_3p",
     ],
     ("square19", 4): [
         "data/selfplay/canonical",
         "data/games",
+        "data/selfplay/daemon_square19_4p",
     ],
     ("hexagonal", 2): [
         "data/selfplay/canonical",
         "data/games",
+        "data/selfplay/daemon_hexagonal_2p",
     ],
     ("hexagonal", 3): [
         "data/selfplay/canonical",
         "data/games",
+        "data/selfplay/daemon_hexagonal_3p",
     ],
     ("hexagonal", 4): [
         "data/selfplay/canonical",
         "data/games",
+        "data/selfplay/daemon_hexagonal_4p",
     ],
     # Hex8 configs - use hex8-specific selfplay directories
     ("hex8", 2): [
         "data/selfplay/hex8_policy_c",
+        "data/selfplay/hex8_combined",  # Combined hex8 selfplay
     ],
     ("hex8", 3): [
         "data/selfplay/hex8_policy_c",
+        "data/selfplay/hex8_combined",
     ],
     ("hex8", 4): [
         "data/selfplay/hex8_policy_c",
+        "data/selfplay/hex8_combined",
     ],
 }
 
@@ -562,6 +583,65 @@ def find_jsonl_files(path: str) -> List[str]:
     return []
 
 
+def auto_discover_jsonl_dirs() -> Dict[str, List[str]]:
+    """Auto-discover all selfplay JSONL directories.
+
+    Scans data/selfplay for subdirectories containing JSONL files.
+    Returns a mapping of directory name to list of JSONL files.
+
+    This prevents data flow mismatches where selfplay generates data
+    but training can't find it because CONFIG_JSONL_DIRS is out of date.
+    """
+    selfplay_root = os.path.join(BASE_DIR, "data/selfplay")
+    if not os.path.exists(selfplay_root):
+        return {}
+
+    discovered = {}
+    for entry in os.listdir(selfplay_root):
+        dir_path = os.path.join(selfplay_root, entry)
+        if os.path.isdir(dir_path):
+            jsonl_files = find_jsonl_files(dir_path)
+            if jsonl_files:
+                discovered[entry] = jsonl_files
+
+    return discovered
+
+
+def get_dynamic_jsonl_dirs(board_type: str, num_players: int) -> List[str]:
+    """Get JSONL directories for a config, including auto-discovered ones.
+
+    Combines static CONFIG_JSONL_DIRS with dynamically discovered directories
+    that might contain relevant data based on naming patterns.
+    """
+    config = (board_type, num_players)
+    static_dirs = list(CONFIG_JSONL_DIRS.get(config, []))
+
+    # Auto-discover directories matching naming patterns
+    discovered = auto_discover_jsonl_dirs()
+
+    # Patterns that indicate relevance to this config
+    board_patterns = BOARD_VARIANTS.get(board_type, [board_type])
+    player_pattern = f"{num_players}p"
+
+    for dir_name, jsonl_files in discovered.items():
+        # Skip if already in static config
+        rel_path = f"data/selfplay/{dir_name}"
+        if rel_path in static_dirs:
+            continue
+
+        # Check if directory name suggests relevance to this config
+        dir_lower = dir_name.lower()
+        is_relevant = any(bp in dir_lower for bp in board_patterns) or player_pattern in dir_lower
+
+        # Also check for generic selfplay directories that might have mixed content
+        is_generic = any(pat in dir_lower for pat in ['gpu', 'mcts', 'hybrid', 'cluster', 'daemon'])
+
+        if is_relevant or is_generic:
+            static_dirs.append(rel_path)
+
+    return static_dirs
+
+
 def count_jsonl_games(jsonl_path: str, board_type: str, num_players: int,
                        max_lines: int = 10000) -> Tuple[int, Set[str]]:
     """Count games in JSONL file matching board_type and num_players.
@@ -693,9 +773,13 @@ def get_jsonl_file_metadata(jsonl_path: str, max_lines: int = 5000) -> Dict[Tupl
 
 
 def get_jsonl_counts(board_type: str, num_players: int) -> Tuple[int, List[str]]:
-    """Get total JSONL game counts for a config, returning (total_count, jsonl_files_with_games)."""
+    """Get total JSONL game counts for a config, returning (total_count, jsonl_files_with_games).
+
+    Uses dynamic directory discovery to find all selfplay JSONL sources.
+    """
     config = (board_type, num_players)
-    jsonl_dirs = CONFIG_JSONL_DIRS.get(config, [])
+    # Use dynamic discovery to find all relevant JSONL directories
+    jsonl_dirs = get_dynamic_jsonl_dirs(board_type, num_players)
 
     total_count = 0
     jsonl_with_games = []
