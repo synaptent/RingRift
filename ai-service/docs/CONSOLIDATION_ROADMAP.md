@@ -19,6 +19,41 @@ The codebase has evolved with multiple contributors and use cases, resulting in 
 4. ✅ **Both import paths** - Verified working: `app.config.unified_config` and `scripts.unified_loop.config`
 5. ✅ **Cross-references** - Header comments added pointing to canonical locations
 
+### Threshold Constant Migration (Phase 1)
+
+Updated core modules to import from `app/config/thresholds.py`:
+
+| Module                                 | Constants Migrated                                  | Status      |
+| -------------------------------------- | --------------------------------------------------- | ----------- |
+| `app/tournament/elo.py`                | INITIAL_ELO_RATING                                  | ✅ Complete |
+| `app/training/elo_service.py`          | INITIAL_ELO_RATING, ELO_K_FACTOR, MIN_GAMES_FOR_ELO | ✅ Complete |
+| `app/training/auto_tournament.py`      | INITIAL_ELO_RATING, ELO_K_FACTOR                    | ✅ Complete |
+| `app/training/training_triggers.py`    | INITIAL*ELO_RATING, TRAINING*\* constants           | ✅ Complete |
+| `app/training/background_eval.py`      | INITIAL_ELO_RATING, ELO_DROP_ROLLBACK               | ✅ Complete |
+| `app/training/feedback_accelerator.py` | INITIAL_ELO_RATING                                  | ✅ Complete |
+| `app/training/unified_orchestrator.py` | INITIAL_ELO_RATING                                  | ✅ Complete |
+| `app/config/unified_config.py`         | INITIAL_ELO_RATING, ELO_K_FACTOR, etc.              | ✅ Complete |
+
+**Pattern Used:**
+
+```python
+try:
+    from app.config.thresholds import INITIAL_ELO_RATING
+except ImportError:
+    INITIAL_ELO_RATING = 1500.0  # Fallback for standalone usage
+```
+
+### Health Function Analysis
+
+Analyzed 4 `get_health_summary()` implementations:
+
+- **`app/main.py`** - Stateless HTTP endpoint (no init required)
+- **`app/routes/health.py`** - FastAPI router version
+- **`app/services/model_registry.py`** - ModelRegistry.get_health_summary()
+- **`app/training/model_lifecycle.py`** - ModelLifecycleManager.get_health_summary()
+
+**Conclusion:** These serve different purposes (stateless vs registry-based) and are not candidates for consolidation. Documented as parallel implementations for different contexts.
+
 ## Priority 1: Configuration Consolidation
 
 > **Status**: Partially Complete (Quick wins done, full merge pending)
