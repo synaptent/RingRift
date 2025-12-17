@@ -174,6 +174,29 @@ class TrainingConfig:
     # NNUE policy training script
     nnue_policy_script: str = "scripts/train_nnue_policy.py"
     nnue_curriculum_script: str = "scripts/train_nnue_policy_curriculum.py"
+    # =========================================================================
+    # Advanced Training Utilities (2025-12)
+    # =========================================================================
+    # Gradient Checkpointing - trade compute for memory
+    use_gradient_checkpointing: bool = False  # Enable for large models
+    gradient_checkpoint_layers: Optional[List[str]] = None  # Specific layers to checkpoint
+    # PFSP Opponent Pool - Prioritized Fictitious Self-Play
+    use_pfsp: bool = True  # Enable diverse opponent selection
+    pfsp_max_pool_size: int = 20  # Maximum opponents in pool
+    pfsp_hard_opponent_weight: float = 0.7  # Weight for hard opponents (0-1)
+    pfsp_diversity_weight: float = 0.2  # Weight for opponent diversity
+    pfsp_recency_weight: float = 0.1  # Weight for recent opponents
+    # CMA-ES Auto-Tuning - Automatic HP optimization on plateau
+    use_cmaes_auto_tuning: bool = True  # Enable auto HP optimization
+    cmaes_plateau_patience: int = 10  # Epochs without improvement before triggering
+    cmaes_min_epochs_between: int = 50  # Minimum epochs between auto-tunes
+    cmaes_max_auto_tunes: int = 3  # Maximum auto-tunes per training run
+    cmaes_generations: int = 30  # CMA-ES generations per optimization
+    cmaes_population_size: int = 15  # CMA-ES population size
+    # LR Finder - Optimal learning rate detection
+    lr_finder_min_lr: float = 1e-7  # Minimum LR to test
+    lr_finder_max_lr: float = 10.0  # Maximum LR to test
+    lr_finder_smooth_factor: float = 0.05  # Loss smoothing factor
 
 
 @dataclass

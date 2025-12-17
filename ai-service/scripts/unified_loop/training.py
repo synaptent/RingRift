@@ -152,6 +152,28 @@ except ImportError:
     record_selfplay_game = None
     get_curriculum_weights = None
 
+# Advanced training utilities (2025-12)
+try:
+    from app.training.advanced_training import (
+        LRFinder,
+        LRFinderResult,
+        GradientCheckpointing,
+        PFSPOpponentPool,
+        OpponentStats,
+        CMAESAutoTuner,
+        PlateauConfig,
+    )
+    HAS_ADVANCED_TRAINING = True
+except ImportError:
+    HAS_ADVANCED_TRAINING = False
+    LRFinder = None
+    LRFinderResult = None
+    GradientCheckpointing = None
+    PFSPOpponentPool = None
+    OpponentStats = None
+    CMAESAutoTuner = None
+    PlateauConfig = None
+
 
 class TrainingScheduler:
     """Schedules and manages training runs with cluster-wide coordination."""
@@ -211,6 +233,41 @@ class TrainingScheduler:
         if HAS_CURRICULUM_FEEDBACK:
             self._curriculum_feedback = get_curriculum_feedback()
             print("[Training] Using curriculum feedback loop for adaptive weights")
+
+        # Advanced training utilities (2025-12)
+        self._pfsp_pool: Optional[Any] = None
+        self._cmaes_auto_tuner: Optional[Any] = None
+        self._gradient_checkpointing: Optional[Any] = None
+
+        if HAS_ADVANCED_TRAINING:
+            # Initialize PFSP opponent pool
+            if getattr(config, 'use_pfsp', True):
+                self._pfsp_pool = PFSPOpponentPool(
+                    max_pool_size=getattr(config, 'pfsp_max_pool_size', 20),
+                    hard_opponent_weight=getattr(config, 'pfsp_hard_opponent_weight', 0.7),
+                    diversity_weight=getattr(config, 'pfsp_diversity_weight', 0.2),
+                    recency_weight=getattr(config, 'pfsp_recency_weight', 0.1),
+                )
+                print("[Training] PFSP opponent pool initialized")
+
+            # Initialize CMA-ES auto-tuner (per config)
+            self._cmaes_auto_tuners: Dict[str, Any] = {}
+            if getattr(config, 'use_cmaes_auto_tuning', True):
+                for config_key in state.configs:
+                    parts = config_key.rsplit("_", 1)
+                    board_type = parts[0]
+                    num_players = int(parts[1].replace("p", "")) if len(parts) > 1 else 2
+                    plateau_cfg = PlateauConfig(
+                        patience=getattr(config, 'cmaes_plateau_patience', 10),
+                    )
+                    self._cmaes_auto_tuners[config_key] = CMAESAutoTuner(
+                        board_type=board_type,
+                        num_players=num_players,
+                        plateau_config=plateau_cfg,
+                        min_epochs_between_tuning=getattr(config, 'cmaes_min_epochs_between', 50),
+                        max_auto_tunes=getattr(config, 'cmaes_max_auto_tunes', 3),
+                    )
+                print(f"[Training] CMA-ES auto-tuners initialized for {len(self._cmaes_auto_tuners)} configs")
 
     def _get_dynamic_threshold(self, config_key: str) -> int:
         """Calculate dynamic training threshold based on promotion velocity."""
@@ -1421,3 +1478,169 @@ class TrainingScheduler:
 
         print(f"[Training] Urgent training request could not be fulfilled for configs: {configs}")
         return False
+
+    # =========================================================================
+    # Advanced Training Utilities (2025-12)
+    # =========================================================================
+
+    def get_pfsp_opponent(self, config_key: str, current_elo: float = 1500.0) -> Optional[str]:
+        """Get an opponent from PFSP pool for self-play.
+
+        Args:
+            config_key: Config identifier for filtering
+            current_elo: Current model Elo for opponent selection
+
+        Returns:
+            Model path of selected opponent or None if pool empty
+        """
+        if self._pfsp_pool is None:
+            return None
+
+        opponent = self._pfsp_pool.sample_opponent(
+            current_elo=current_elo,
+            strategy="pfsp",
+        )
+        return opponent.model_path if opponent else None
+
+    def add_pfsp_opponent(
+        self,
+        model_path: str,
+        elo: float = 1500.0,
+        generation: int = 0,
+        name: Optional[str] = None,
+    ) -> None:
+        """Add an opponent to the PFSP pool.
+
+        Args:
+            model_path: Path to model file
+            elo: Model's Elo rating
+            generation: Training generation number
+            name: Optional display name
+        """
+        if self._pfsp_pool is not None:
+            self._pfsp_pool.add_opponent(model_path, elo, generation, name)
+
+    def update_pfsp_stats(
+        self,
+        model_path: str,
+        won: bool,
+        drew: bool = False,
+        elo_change: float = 0.0,
+    ) -> None:
+        """Update PFSP opponent statistics after a game.
+
+        Args:
+            model_path: Opponent model path
+            won: Whether current model won
+            drew: Whether game was a draw
+            elo_change: Elo rating change
+        """
+        if self._pfsp_pool is not None:
+            self._pfsp_pool.update_stats(model_path, won, drew, elo_change)
+
+    def get_pfsp_pool_stats(self) -> Dict[str, Any]:
+        """Get PFSP opponent pool statistics."""
+        if self._pfsp_pool is not None:
+            return self._pfsp_pool.get_pool_stats()
+        return {'size': 0}
+
+    def update_cmaes_metrics(
+        self,
+        config_key: str,
+        current_elo: Optional[float] = None,
+        current_loss: Optional[float] = None,
+        current_win_rate: Optional[float] = None,
+    ) -> None:
+        """Update CMA-ES auto-tuner with current training metrics.
+
+        Args:
+            config_key: Config identifier
+            current_elo: Current Elo rating
+            current_loss: Current training loss
+            current_win_rate: Current win rate
+        """
+        if hasattr(self, '_cmaes_auto_tuners') and config_key in self._cmaes_auto_tuners:
+            self._cmaes_auto_tuners[config_key].step(
+                current_elo=current_elo,
+                current_loss=current_loss,
+                current_win_rate=current_win_rate,
+            )
+
+    def should_trigger_cmaes(self, config_key: str) -> bool:
+        """Check if CMA-ES auto-tuning should be triggered for a config.
+
+        Returns:
+            True if plateau detected and tuning should run
+        """
+        if hasattr(self, '_cmaes_auto_tuners') and config_key in self._cmaes_auto_tuners:
+            return self._cmaes_auto_tuners[config_key].should_tune()
+        return False
+
+    async def run_cmaes_auto_tuning(self, config_key: str) -> Optional[Dict[str, Any]]:
+        """Run CMA-ES hyperparameter optimization for a config.
+
+        Args:
+            config_key: Config identifier
+
+        Returns:
+            Optimization result with weights, or None if failed
+        """
+        if not hasattr(self, '_cmaes_auto_tuners') or config_key not in self._cmaes_auto_tuners:
+            return None
+
+        tuner = self._cmaes_auto_tuners[config_key]
+        print(f"[Training] Starting CMA-ES auto-tuning for {config_key}")
+
+        # Run optimization (this is blocking but can take hours)
+        result = tuner.run_optimization(
+            generations=getattr(self.config, 'cmaes_generations', 30),
+            population_size=getattr(self.config, 'cmaes_population_size', 15),
+        )
+
+        if result:
+            print(f"[Training] CMA-ES optimization complete for {config_key}")
+            await self.event_bus.publish(DataEvent(
+                event_type=DataEventType.TRAINING_COMPLETED,
+                payload={
+                    'type': 'cmaes_auto_tune',
+                    'config': config_key,
+                    'result': result,
+                }
+            ))
+
+        return result
+
+    def get_cmaes_status(self, config_key: str) -> Dict[str, Any]:
+        """Get CMA-ES auto-tuner status for a config."""
+        if hasattr(self, '_cmaes_auto_tuners') and config_key in self._cmaes_auto_tuners:
+            return self._cmaes_auto_tuners[config_key].get_status()
+        return {'available': False}
+
+    def enable_gradient_checkpointing(self, model: Any) -> bool:
+        """Enable gradient checkpointing for memory-efficient training.
+
+        Args:
+            model: PyTorch model to apply checkpointing to
+
+        Returns:
+            True if successfully enabled
+        """
+        if not HAS_ADVANCED_TRAINING or GradientCheckpointing is None:
+            return False
+
+        try:
+            layers = getattr(self.config, 'gradient_checkpoint_layers', None)
+            self._gradient_checkpointing = GradientCheckpointing(model, layers)
+            self._gradient_checkpointing.enable()
+            print("[Training] Gradient checkpointing enabled")
+            return True
+        except Exception as e:
+            print(f"[Training] Failed to enable gradient checkpointing: {e}")
+            return False
+
+    def disable_gradient_checkpointing(self) -> None:
+        """Disable gradient checkpointing."""
+        if self._gradient_checkpointing is not None:
+            self._gradient_checkpointing.disable()
+            self._gradient_checkpointing = None
+            print("[Training] Gradient checkpointing disabled")

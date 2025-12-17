@@ -296,5 +296,5 @@ save_square8_two_player_registry({'board': 'square8', 'num_players': 2, 'tiers':
 ## Related Documentation
 
 - [TRAINING_PIPELINE.md](TRAINING_PIPELINE.md) - Training workflow
-- [MODEL_PROMOTION.md](MODEL_PROMOTION.md) - Promotion mechanics
-- [LADDER_SYSTEM.md](LADDER_SYSTEM.md) - Difficulty ladder
+- [UNIFIED_AI_LOOP.md](UNIFIED_AI_LOOP.md) - Automated promotion in unified loop
+- [AI_LADDER_PRODUCTION_RUNBOOK.md](../../docs/ai/AI_LADDER_PRODUCTION_RUNBOOK.md) - Difficulty ladder operations

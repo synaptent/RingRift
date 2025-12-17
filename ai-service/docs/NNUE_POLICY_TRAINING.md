@@ -124,7 +124,32 @@ Controls label smoothness during training. Higher temperature = softer targets.
 - `cosine`: Smooth cosine decay (recommended)
 - `exponential`: Rapid early decay
 
+## Loss Weighting
+
+Control the relative importance of policy and value losses:
+
+```bash
+--policy-weight 1.0   # Weight for policy loss (default: 1.0)
+--value-weight 1.0    # Weight for value loss (default: 1.0)
+```
+
+To emphasize policy learning over value:
+
+```bash
+--policy-weight 2.0 --value-weight 0.5
+```
+
 ## Advanced Training Features
+
+### Gradient Accumulation
+
+Simulate larger batches on limited GPU memory:
+
+```bash
+--gradient-accumulation-steps 4  # Accumulate 4 batches before optimizer step
+```
+
+Effective batch size = `batch_size * gradient_accumulation_steps`
 
 ### Progressive Batch Sizing
 
@@ -242,11 +267,37 @@ torchrun --nproc_per_node=4 scripts/train_nnue_policy.py \
     --use-ddp
 ```
 
+### Manual Rank Assignment
+
+For custom distributed setups:
+
+```bash
+# Set explicit rank for DDP
+python scripts/train_nnue_policy.py \
+    --db data/games/*.db \
+    --use-ddp \
+    --ddp-rank 0  # Rank of this process (0 = master)
+```
+
 ## Output
 
 ### Model Checkpoint
 
 Saved to `models/nnue/nnue_policy_{board_type}_{num_players}p.pt`
+
+### Learning Curve Plots
+
+Save training/validation curve plots:
+
+```bash
+--save-curves  # Saves loss and accuracy plots to run directory
+```
+
+Generates `{run_dir}/learning_curves.png` with:
+
+- Training loss over epochs
+- Validation loss over epochs
+- Policy accuracy over epochs
 
 ### Training Report
 
