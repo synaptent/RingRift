@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """P2P Model Distribution using aria2 for resilient multi-source downloads.
 
+DEPRECATED (2025-12-16): This script should be consolidated into aria2_data_sync.py.
+Use aria2_data_sync.py for all aria2-based sync operations.
+See docs/RESOURCE_MANAGEMENT.md for sync tool consolidation notes.
+
 This script enables efficient model distribution across distributed nodes using:
 - HTTP serving mode: Any node can serve models over HTTP
 - aria2c downloads: Parallel, resumable downloads from multiple sources

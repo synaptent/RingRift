@@ -3446,7 +3446,7 @@ export function getValidMoves(state: GameState): Move[] {
       // Get capture continuations from the chain capture position.
       // Per RR-CANON-R084/R085, chain captures must continue from the landing
       // position of the previous capture segment, stored in chainCapturePosition.
-      const chainPos = state.chainCapturePosition;
+      let chainPos = state.chainCapturePosition;
       if (!chainPos) {
         // No chain position set - fall back to last move's landing position
         // (this handles states loaded from fixtures that may not have chainCapturePosition)
@@ -3455,15 +3455,14 @@ export function getValidMoves(state: GameState): Move[] {
         if (!lastMove?.to) {
           return [];
         }
-        const allCaptures = enumerateAllCaptureMoves(state, player);
-        const fallbackKey = positionToString(lastMove.to);
-        return allCaptures.filter((m) => m.from && positionToString(m.from) === fallbackKey);
+        chainPos = lastMove.to;
       }
 
-      // Use chainCapturePosition to enumerate continuations
-      const chainKey = positionToString(chainPos);
-      const allCaptures = enumerateAllCaptureMoves(state, player);
-      return allCaptures.filter((m) => m.from && positionToString(m.from) === chainKey);
+      // Use getChainCaptureContinuationInfo which returns properly-typed
+      // 'continue_capture_segment' moves, consistent with what the sandbox
+      // and other hosts expect during chain_capture phase.
+      const info = getChainCaptureContinuationInfo(state, player, chainPos);
+      return info.availableContinuations;
     }
 
     case 'line_processing': {

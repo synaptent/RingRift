@@ -96,11 +96,15 @@ except ImportError:
     HAS_RESOURCE_OPTIMIZER = False
     update_config_weights = None
 
-# Prometheus metrics
+# Prometheus metrics - avoid duplicate registration
 try:
-    from prometheus_client import Gauge
+    from prometheus_client import Gauge, REGISTRY
     HAS_PROMETHEUS = True
-    CONFIG_WEIGHT = Gauge('ringrift_config_weight', 'Training weight for config', ['config_key'])
+    # Check if metric already registered (e.g., by unified_ai_loop.py)
+    if 'ringrift_config_weight' in REGISTRY._names_to_collectors:
+        CONFIG_WEIGHT = REGISTRY._names_to_collectors['ringrift_config_weight']
+    else:
+        CONFIG_WEIGHT = Gauge('ringrift_config_weight', 'Training weight for config', ['config_key'])
 except ImportError:
     HAS_PROMETHEUS = False
     CONFIG_WEIGHT = None

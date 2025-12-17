@@ -69,10 +69,126 @@ from scripts.p2p.models import (
     DataSyncJob,
     ClusterSyncPlan,
 )
-# Import constants from the refactored module
-# Note: Many constants are still defined below for backward compatibility
-# and to avoid breaking existing env var overrides
-from scripts.p2p.constants import GPU_POWER_RANKINGS
+# Import constants from the refactored module (Phase 2 refactoring - consolidated)
+from scripts.p2p.constants import (
+    # Network configuration
+    DEFAULT_PORT,
+    HEARTBEAT_INTERVAL,
+    PEER_TIMEOUT,
+    ELECTION_TIMEOUT,
+    LEADER_LEASE_DURATION,
+    LEADER_LEASE_RENEW_INTERVAL,
+    LEADERLESS_TRAINING_TIMEOUT,
+    JOB_CHECK_INTERVAL,
+    DISCOVERY_PORT,
+    DISCOVERY_INTERVAL,
+    # Resource thresholds
+    DISK_CRITICAL_THRESHOLD,
+    DISK_WARNING_THRESHOLD,
+    DISK_CLEANUP_THRESHOLD,
+    MEMORY_CRITICAL_THRESHOLD,
+    MEMORY_WARNING_THRESHOLD,
+    MIN_MEMORY_GB_FOR_TASKS,
+    LOAD_MAX_FOR_NEW_JOBS,
+    # GPU configuration
+    TARGET_GPU_UTIL_MIN,
+    TARGET_GPU_UTIL_MAX,
+    GH200_MIN_SELFPLAY,
+    GH200_MAX_SELFPLAY,
+    GPU_POWER_RANKINGS,
+    # Connection robustness
+    HTTP_CONNECT_TIMEOUT,
+    HTTP_TOTAL_TIMEOUT,
+    MAX_CONSECUTIVE_FAILURES,
+    RETRY_DEAD_NODE_INTERVAL,
+    PEER_RETIRE_AFTER_SECONDS,
+    RETRY_RETIRED_NODE_INTERVAL,
+    PEER_PURGE_AFTER_SECONDS,
+    # NAT/Relay settings
+    NAT_INBOUND_HEARTBEAT_STALE_SECONDS,
+    RELAY_HEARTBEAT_INTERVAL,
+    RELAY_COMMAND_TTL_SECONDS,
+    RELAY_COMMAND_MAX_BATCH,
+    RELAY_COMMAND_MAX_ATTEMPTS,
+    RELAY_MAX_PENDING_START_JOBS,
+    NAT_BLOCKED_RECOVERY_TIMEOUT,
+    NAT_BLOCKED_PROBE_INTERVAL,
+    NAT_BLOCKED_PROBE_TIMEOUT,
+    VOTER_HEARTBEAT_INTERVAL,
+    VOTER_HEARTBEAT_TIMEOUT,
+    VOTER_MESH_REFRESH_INTERVAL,
+    VOTER_NAT_RECOVERY_AGGRESSIVE,
+    NAT_STUN_LIKE_PROBE_INTERVAL,
+    NAT_SYMMETRIC_DETECTION_ENABLED,
+    NAT_RELAY_PREFERENCE_THRESHOLD,
+    NAT_HOLE_PUNCH_RETRY_COUNT,
+    NAT_EXTERNAL_IP_CACHE_TTL,
+    PEER_BOOTSTRAP_INTERVAL,
+    PEER_BOOTSTRAP_MIN_PEERS,
+    # Safeguards
+    GPU_IDLE_RESTART_TIMEOUT,
+    GPU_IDLE_THRESHOLD,
+    RUNAWAY_SELFPLAY_PROCESS_THRESHOLD,
+    LOAD_AVERAGE_MAX_MULTIPLIER,
+    SPAWN_RATE_LIMIT_PER_MINUTE,
+    COORDINATOR_URL,
+    AGENT_MODE_ENABLED,
+    MAX_DISK_USAGE_PERCENT,
+    ARBITER_URL,
+    # Dynamic voter management
+    DYNAMIC_VOTER_ENABLED,
+    DYNAMIC_VOTER_TARGET,
+    DYNAMIC_VOTER_MIN,
+    VOTER_MIN_QUORUM,
+    DYNAMIC_VOTER_MAX_QUORUM,
+    VOTER_HEALTH_THRESHOLD,
+    VOTER_PROMOTION_UPTIME,
+    VOTER_DEMOTION_FAILURES,
+    LEADER_HEALTH_CHECK_INTERVAL,
+    LEADER_MIN_RESPONSE_RATE,
+    LEADER_DEGRADED_STEPDOWN_DELAY,
+    # Auto-update settings
+    GIT_UPDATE_CHECK_INTERVAL,
+    GIT_REMOTE_NAME,
+    GIT_BRANCH_NAME,
+    AUTO_UPDATE_ENABLED,
+    GRACEFUL_SHUTDOWN_BEFORE_UPDATE,
+    # Auth and build info
+    AUTH_TOKEN_ENV,
+    AUTH_TOKEN_FILE_ENV,
+    BUILD_VERSION_ENV,
+    ADVERTISE_HOST_ENV,
+    ADVERTISE_PORT_ENV,
+    TAILSCALE_CGNAT_NETWORK,
+    # Data management
+    MANIFEST_JSONL_LINECOUNT_MAX_BYTES,
+    MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES,
+    MANIFEST_JSONL_SAMPLE_BYTES,
+    STARTUP_JSONL_GRACE_PERIOD_SECONDS,
+    DATA_MANAGEMENT_INTERVAL,
+    DB_EXPORT_THRESHOLD_MB,
+    TRAINING_DATA_SYNC_THRESHOLD_MB,
+    MAX_CONCURRENT_EXPORTS,
+    AUTO_TRAINING_THRESHOLD_MB,
+    # Training node sync
+    TRAINING_NODE_COUNT,
+    TRAINING_SYNC_INTERVAL,
+    MODEL_SYNC_INTERVAL,
+    MIN_GAMES_FOR_SYNC,
+    P2P_DATA_SYNC_BASE,
+    P2P_DATA_SYNC_MIN,
+    P2P_DATA_SYNC_MAX,
+    P2P_MODEL_SYNC_BASE,
+    P2P_MODEL_SYNC_MIN,
+    P2P_MODEL_SYNC_MAX,
+    P2P_TRAINING_DB_SYNC_BASE,
+    P2P_TRAINING_DB_SYNC_MIN,
+    P2P_TRAINING_DB_SYNC_MAX,
+    P2P_SYNC_BACKOFF_FACTOR,
+    P2P_SYNC_SPEEDUP_FACTOR,
+    # State directory
+    STATE_DIR,
+)
 
 # Import refactored utilities (Phase 2 refactoring)
 from scripts.p2p.resource import (
@@ -353,249 +469,10 @@ except ImportError:
 # ============================================
 # Configuration
 # ============================================
-
-DEFAULT_PORT = 8770
-HEARTBEAT_INTERVAL = 30  # seconds
-PEER_TIMEOUT = 90  # seconds without heartbeat = node considered dead
-ELECTION_TIMEOUT = 10  # seconds to wait for election responses
-# Leader lease must be comfortably larger than the heartbeat cadence; otherwise
-# small scheduling delays can cause leaders to "expire" their own lease and
-# flap into leaderless states.
-# LEARNED LESSONS: Increased from 90s to 180s - network latency between cloud providers
-# (Oracle/Lambda/AWS) can cause lease renewal to fail even with Tailscale. The 180s
-# window provides ample buffer for transient network issues.
-LEADER_LEASE_DURATION = 180  # seconds (increased from 90s for cross-provider stability)
-LEADER_LEASE_RENEW_INTERVAL = 15  # How often leader renews lease (increased from 10s)
-# LEADERLESS FALLBACK: When the cluster has no leader for this long, individual nodes
-# may trigger local training to prevent data accumulation without progress.
-# This makes the system more resilient to leader election failures.
-# Reduced from 10 minutes to 3 minutes for faster response to leader instability.
-LEADERLESS_TRAINING_TIMEOUT = 180  # 3 minutes without leader triggers local training
-JOB_CHECK_INTERVAL = 60  # seconds between job status checks
-DISCOVERY_PORT = 8771  # UDP port for peer discovery
-DISCOVERY_INTERVAL = 120  # seconds between discovery broadcasts
-
-# LEARNED LESSONS from PLAN.md - Disk and resource thresholds
-# These thresholds are env-overridable so heterogeneous clusters (e.g. small
-# Mac disks vs large cloud volumes) can tune health/scheduling without code
-# changes.
-# 2025-12-15: Lowered disk thresholds to enforce 70% max disk usage as requested
-# This prevents disk exhaustion that was causing orchestrator instability
-DISK_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", "70") or 70)  # Stop all new jobs at 70%
-DISK_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", "65") or 65)    # Start cleanup at 65%
-DISK_CLEANUP_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CLEANUP_THRESHOLD", "65") or 65)    # Trigger cleanup at 65%
-# Memory thresholds - respect 80% max utilization (enforced 2025-12-16)
-MEMORY_CRITICAL_THRESHOLD = min(80, int(os.environ.get("RINGRIFT_P2P_MEMORY_CRITICAL_THRESHOLD", "80") or 80))  # Stop jobs
-MEMORY_WARNING_THRESHOLD = min(75, int(os.environ.get("RINGRIFT_P2P_MEMORY_WARNING_THRESHOLD", "75") or 75))    # Reduce jobs
-MIN_MEMORY_GB_FOR_TASKS = int(os.environ.get("RINGRIFT_P2P_MIN_MEMORY_GB", "64") or 64)                # Skip low-memory nodes
-LOAD_MAX_FOR_NEW_JOBS = min(80, int(os.environ.get("RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS", "80") or 80))  # Stop starting
-
-# GPU utilization targeting for efficient resource usage
-# Use unified targets from resource_targets.py if available, fallback to env vars
-# IMPORTANT: GPU max MUST respect 80% limit (enforced 2025-12-16 - was 90%)
-if _unified_targets is not None:
-    TARGET_GPU_UTIL_MIN = int(_unified_targets.gpu_min)  # 60% from unified config
-    TARGET_GPU_UTIL_MAX = min(80, int(_unified_targets.gpu_max))  # 80% hard cap
-else:
-    TARGET_GPU_UTIL_MIN = int(os.environ.get("RINGRIFT_P2P_TARGET_GPU_UTIL_MIN", "60") or 60)
-    TARGET_GPU_UTIL_MAX = min(80, int(os.environ.get("RINGRIFT_P2P_TARGET_GPU_UTIL_MAX", "80") or 80))
-GH200_MIN_SELFPLAY = int(os.environ.get("RINGRIFT_P2P_GH200_MIN_SELFPLAY", "20") or 20)    # Min selfplay for GH200
-GH200_MAX_SELFPLAY = int(os.environ.get("RINGRIFT_P2P_GH200_MAX_SELFPLAY", "100") or 100)  # Max selfplay for GH200
-
-# LEARNED LESSONS - Connection robustness
-HTTP_CONNECT_TIMEOUT = 10     # Fast timeout for connection phase
-HTTP_TOTAL_TIMEOUT = 30       # Total request timeout
-MAX_CONSECUTIVE_FAILURES = 3  # Mark node dead after 3 failures
-RETRY_DEAD_NODE_INTERVAL = 300  # Retry dead nodes every 5 minutes
-
-# Retire peers that have been offline for a long time so they don't pollute the
-# active scheduling set (but we still probe them occasionally so they can
-# return without manual intervention).
-PEER_RETIRE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "3600") or 3600)
-RETRY_RETIRED_NODE_INTERVAL = int(os.environ.get("RINGRIFT_P2P_RETRY_RETIRED_NODE_INTERVAL", "3600") or 3600)
-
-# STABILITY FIX: Automatically purge very old retired peers to prevent unbounded
-# growth of the peer list. This prevents stale data (including old leader claims)
-# from polluting cluster state and causing split-brain confusion.
-# Reduced from 24h to 6h to clean up stale nodes faster and prevent list bloat.
-PEER_PURGE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_PURGE_AFTER_SECONDS", "21600") or 21600)  # 6 hours
-
-# NAT/relay settings
-# Nodes that can't receive inbound connections can operate in relay mode:
-# they send heartbeats to a relay (/relay/heartbeat) and poll for commands.
-NAT_INBOUND_HEARTBEAT_STALE_SECONDS = 180  # seconds since last inbound /heartbeat
-RELAY_HEARTBEAT_INTERVAL = 15  # seconds between relay heartbeats when enabled (reduced for faster job delivery)
-RELAY_COMMAND_TTL_SECONDS = 1800  # expire queued commands after 30 minutes
-RELAY_COMMAND_MAX_BATCH = 16
-RELAY_COMMAND_MAX_ATTEMPTS = 3
-RELAY_MAX_PENDING_START_JOBS = 4
-
-# NAT recovery settings - allow NAT-blocked peers to recover when they become reachable
-NAT_BLOCKED_RECOVERY_TIMEOUT = 300  # seconds before attempting to recover NAT-blocked peers
-NAT_BLOCKED_PROBE_INTERVAL = 60     # seconds between NAT recovery probe attempts
-NAT_BLOCKED_PROBE_TIMEOUT = 5       # seconds to wait for probe response
-
-# IMPROVED: Voter heartbeat settings for reliable leader election
-# Voters need faster heartbeats to maintain quorum and prevent leadership flapping
-VOTER_HEARTBEAT_INTERVAL = 10       # seconds between voter heartbeats (faster than regular 30s)
-VOTER_HEARTBEAT_TIMEOUT = 5         # seconds to wait for voter heartbeat response
-VOTER_MESH_REFRESH_INTERVAL = 30    # seconds between voter mesh refresh attempts
-VOTER_NAT_RECOVERY_AGGRESSIVE = True  # Clear NAT-blocked immediately on successful heartbeat
-
-# Advanced NAT management settings
-NAT_STUN_LIKE_PROBE_INTERVAL = 120  # seconds between STUN-like probes to determine NAT type
-NAT_SYMMETRIC_DETECTION_ENABLED = True  # Detect symmetric NAT which breaks direct connectivity
-NAT_RELAY_PREFERENCE_THRESHOLD = 3  # Use relay after N consecutive direct connection failures
-NAT_HOLE_PUNCH_RETRY_COUNT = 3      # Number of hole-punch attempts before falling back to relay
-NAT_EXTERNAL_IP_CACHE_TTL = 300     # seconds to cache external IP detection results
-
-# Peer bootstrap settings
-# Seed peers are used to import a snapshot of cluster membership (via /relay/peers)
-# so new nodes can join existing clusters without needing every peer preconfigured.
-PEER_BOOTSTRAP_INTERVAL = 60  # seconds between bootstrap refresh attempts
-PEER_BOOTSTRAP_MIN_PEERS = 3  # refresh if we see fewer than this many peers
-
-# LEARNED LESSONS - Stuck job detection
-GPU_IDLE_RESTART_TIMEOUT = 300  # Restart jobs after 5 min of GPU at 0%
-GPU_IDLE_THRESHOLD = 2          # Consider GPU idle if utilization < 2%
-# If a node reports hundreds/thousands of selfplay processes, it almost always
-# indicates job tracking was lost and stale processes are accumulating (which
-# can brick nodes via disk/memory pressure). Treat this as a runaway condition
-# and trigger a restart_stuck_jobs sweep.
-_runaway_threshold_env = (os.environ.get("RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD") or "").strip()
-RUNAWAY_SELFPLAY_PROCESS_THRESHOLD = int(_runaway_threshold_env) if _runaway_threshold_env else 0
-
-# SAFEGUARDS - Load average and rate limiting (added 2025-12-15)
-# These provide hard limits beyond the soft load_score calculation
-LOAD_AVERAGE_MAX_MULTIPLIER = float(os.environ.get("RINGRIFT_P2P_LOAD_AVG_MAX_MULT", "2.0") or 2.0)  # Max load = cpus * multiplier
-SPAWN_RATE_LIMIT_PER_MINUTE = int(os.environ.get("RINGRIFT_P2P_SPAWN_RATE_LIMIT", "5") or 5)  # Max spawns per minute
-COORDINATOR_URL = os.environ.get("RINGRIFT_COORDINATOR_URL", "")  # If set, defer to coordinator
-AGENT_MODE_ENABLED = os.environ.get("RINGRIFT_P2P_AGENT_MODE", "").lower() in {"1", "true", "yes", "on"}
-
-# Disk capacity limit - stop syncing when disk usage exceeds this percentage
-MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
-
-# Arbiter URL for split-brain resolution when voter quorum fails
-# This should be a reliably-reachable node (e.g., Oracle Cloud instance with public IP)
-# Falls back to COORDINATOR_URL if not set
-ARBITER_URL = os.environ.get("RINGRIFT_ARBITER_URL", "") or COORDINATOR_URL
-
-# Dynamic voter management settings
-# All GPU nodes are eligible voters; system maintains TARGET active voters
-DYNAMIC_VOTER_ENABLED = os.environ.get("RINGRIFT_DYNAMIC_VOTERS", "1").lower() in {"1", "true", "yes"}
-DYNAMIC_VOTER_TARGET = int(os.environ.get("RINGRIFT_VOTER_TARGET", "7") or 7)  # Target number of active voters
-DYNAMIC_VOTER_MIN = int(os.environ.get("RINGRIFT_VOTER_MIN", "5") or 5)  # Minimum voters before promoting
-# SIMPLIFIED QUORUM: Fixed at 3 voters regardless of cluster size
-# This makes leader election more resilient to partial failures while still
-# preventing split-brain (3 voters can't agree on 2 different leaders)
-VOTER_MIN_QUORUM = int(os.environ.get("RINGRIFT_VOTER_MIN_QUORUM", "3") or 3)  # Fixed minimum quorum
-DYNAMIC_VOTER_MAX_QUORUM = int(os.environ.get("RINGRIFT_VOTER_MAX_QUORUM", "3") or 3)  # Cap quorum size at 3
-VOTER_HEALTH_THRESHOLD = float(os.environ.get("RINGRIFT_VOTER_HEALTH_THRESHOLD", "0.7") or 0.7)  # Min response rate
-VOTER_PROMOTION_UPTIME = int(os.environ.get("RINGRIFT_VOTER_PROMOTION_UPTIME", "300") or 300)  # Min uptime for promotion
-VOTER_DEMOTION_FAILURES = int(os.environ.get("RINGRIFT_VOTER_DEMOTION_FAILURES", "5") or 5)  # Consecutive failures before demotion
-
-# Health-based leadership settings
-LEADER_HEALTH_CHECK_INTERVAL = 30  # seconds between health checks
-LEADER_MIN_RESPONSE_RATE = float(os.environ.get("RINGRIFT_LEADER_MIN_RESPONSE_RATE", "0.6") or 0.6)  # 60% response rate
-LEADER_DEGRADED_STEPDOWN_DELAY = 60  # seconds to wait before stepping down when degraded
-
-# Git auto-update settings
-GIT_UPDATE_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL", "300") or 300)  # seconds
-GIT_REMOTE_NAME = "origin"       # Git remote to check
-GIT_BRANCH_NAME = "main"         # Branch to track
-AUTO_UPDATE_ENABLED = (os.environ.get("RINGRIFT_P2P_AUTO_UPDATE", "false").strip().lower() in {"1", "true", "yes"})
-GRACEFUL_SHUTDOWN_BEFORE_UPDATE = True  # Stop jobs before updating
-
-# Shared auth token (optional but strongly recommended if any node is public)
-AUTH_TOKEN_ENV = "RINGRIFT_CLUSTER_AUTH_TOKEN"
-AUTH_TOKEN_FILE_ENV = "RINGRIFT_CLUSTER_AUTH_TOKEN_FILE"
-
-# Optional build/version label surfaced in the dashboard / heartbeats.
-BUILD_VERSION_ENV = "RINGRIFT_BUILD_VERSION"
-
-# Optional advertised endpoint override (useful behind NAT/port-mapping).
-ADVERTISE_HOST_ENV = "RINGRIFT_ADVERTISE_HOST"
-ADVERTISE_PORT_ENV = "RINGRIFT_ADVERTISE_PORT"
-
-# Tailscale uses CGNAT space (100.64.0.0/10) for node IPs by default.
-TAILSCALE_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
-
-# Data manifest collection settings
-# For files up to this size, count lines directly. For larger files, estimate from sample.
-# This enables automatic training triggers while avoiding blocking on large files.
-MANIFEST_JSONL_LINECOUNT_MAX_BYTES = 50 * 1024 * 1024  # 50MB - direct count for small files
-MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES = 1024 * 1024
-MANIFEST_JSONL_SAMPLE_BYTES = 256 * 1024  # 256KB sample for estimating large files
-
-# Startup grace period: skip ALL JSONL reading for this many seconds after startup
-# to ensure HTTP server becomes responsive before any heavy I/O operations
-STARTUP_JSONL_GRACE_PERIOD_SECONDS = 120  # 2 minutes
-
-# LEARNED LESSONS - Automatic data management settings
-DATA_MANAGEMENT_INTERVAL = 300  # Check data status every 5 minutes (reduced for faster training triggers)
-DB_EXPORT_THRESHOLD_MB = 100    # Trigger export when DB exceeds 100MB
-TRAINING_DATA_SYNC_THRESHOLD_MB = 10  # Sync training data when > 10MB new data
-MAX_CONCURRENT_EXPORTS = 2      # Limit concurrent export jobs per node
-AUTO_TRAINING_THRESHOLD_MB = 50 # Auto-trigger training when training data exceeds 50MB
-
-# GPU Power Rankings for training node priority
-# Higher score = more powerful GPU = higher priority for receiving training data
-# Scores are approximate TFLOPS (FP16) for relative comparison
-GPU_POWER_RANKINGS = {
-    # Data center GPUs (highest priority)
-    "H100": 2000,      # ~2000 TFLOPS FP16
-    "H200": 2500,      # ~2500 TFLOPS FP16
-    "A100": 624,       # ~624 TFLOPS FP16
-    "A10G": 250,       # ~250 TFLOPS FP16
-    "A10": 250,        # ~250 TFLOPS FP16
-    "L40": 362,        # ~362 TFLOPS FP16
-    "V100": 125,       # ~125 TFLOPS FP16
-    # Consumer GPUs - RTX 50 series
-    "5090": 419,       # ~419 TFLOPS FP16 (estimated)
-    "5080": 300,       # ~300 TFLOPS FP16 (estimated)
-    "5070": 200,       # ~200 TFLOPS FP16 (estimated)
-    # Consumer GPUs - RTX 40 series
-    "4090": 330,       # ~330 TFLOPS FP16
-    "4080": 242,       # ~242 TFLOPS FP16
-    "4070": 184,       # ~184 TFLOPS FP16
-    "4060": 120,       # ~120 TFLOPS FP16
-    # Consumer GPUs - RTX 30 series
-    "3090": 142,       # ~142 TFLOPS FP16
-    "3080": 119,       # ~119 TFLOPS FP16
-    "3070": 81,        # ~81 TFLOPS FP16
-    "3060": 51,        # ~51 TFLOPS FP16
-    # Apple Silicon
-    "Apple M3": 30,    # Approximate
-    "Apple M2": 25,    # Approximate
-    "Apple M1": 20,    # Approximate
-    "Apple MPS": 15,   # Generic Apple GPU
-    # Fallback
-    "Unknown": 10,
-}
-
-# Training node sync settings
-TRAINING_NODE_COUNT = 3          # Top N GPU nodes to prioritize for sync
-TRAINING_SYNC_INTERVAL = 300.0   # Sync to training nodes every 5 minutes
-MODEL_SYNC_INTERVAL = 300.0      # Sync NN/NNUE models across cluster every 5 minutes
-MIN_GAMES_FOR_SYNC = 100         # Minimum new games before triggering sync
-
-# ADAPTIVE P2P SYNC INTERVAL SETTINGS
-# Sync intervals adapt based on cluster activity and success rate
-P2P_DATA_SYNC_BASE = 300       # Base interval for data sync (5 min)
-P2P_DATA_SYNC_MIN = 120        # Min interval when active (2 min)
-P2P_DATA_SYNC_MAX = 600        # Max interval when idle (10 min)
-P2P_MODEL_SYNC_BASE = 180      # Base interval for model sync (3 min)
-P2P_MODEL_SYNC_MIN = 60        # Min interval when training active (1 min)
-P2P_MODEL_SYNC_MAX = 300       # Max interval when idle (5 min)
-P2P_TRAINING_DB_SYNC_BASE = 600  # Base interval for training DB sync (10 min)
-P2P_TRAINING_DB_SYNC_MIN = 300   # Min interval when training (5 min)
-P2P_TRAINING_DB_SYNC_MAX = 900   # Max interval when idle (15 min)
-P2P_SYNC_BACKOFF_FACTOR = 1.5    # Increase interval on failure
-P2P_SYNC_SPEEDUP_FACTOR = 0.8    # Decrease interval on success
-
-# Path to local state database
-STATE_DIR = Path(__file__).parent.parent / "logs" / "p2p_orchestrator"
-STATE_DIR.mkdir(parents=True, exist_ok=True)
+# NOTE: All constants have been consolidated into scripts/p2p/constants.py
+# and are imported at the top of this file (Phase 2 refactoring).
+# See scripts/p2p/constants.py for configuration values and documentation.
+# ============================================
 
 
 # ============================================

@@ -29,15 +29,25 @@ except ImportError:
     HAS_ELO_SERVICE = False
     get_elo_service = None
 
-# Optional Prometheus metrics
+# Optional Prometheus metrics - avoid duplicate registration
 try:
-    from prometheus_client import Counter, Gauge
+    from prometheus_client import Counter, Gauge, REGISTRY
     HAS_PROMETHEUS = True
-    # Define metrics (will be initialized if Prometheus is available)
-    HOLDOUT_LOSS = Gauge('ringrift_holdout_loss', 'Holdout evaluation loss', ['config'])
-    HOLDOUT_OVERFIT_GAP = Gauge('ringrift_holdout_overfit_gap', 'Gap between train and holdout loss', ['config'])
-    HOLDOUT_EVALUATIONS = Counter('ringrift_holdout_evaluations_total', 'Total holdout evaluations', ['config', 'result'])
-    PROMOTION_BLOCKED_OVERFIT = Counter('ringrift_promotion_blocked_overfit_total', 'Promotions blocked due to overfitting', ['config'])
+
+    def _get_or_create_gauge(name, desc, labels):
+        if name in REGISTRY._names_to_collectors:
+            return REGISTRY._names_to_collectors[name]
+        return Gauge(name, desc, labels)
+
+    def _get_or_create_counter(name, desc, labels):
+        if name in REGISTRY._names_to_collectors:
+            return REGISTRY._names_to_collectors[name]
+        return Counter(name, desc, labels)
+
+    HOLDOUT_LOSS = _get_or_create_gauge('ringrift_holdout_loss', 'Holdout evaluation loss', ['config'])
+    HOLDOUT_OVERFIT_GAP = _get_or_create_gauge('ringrift_holdout_overfit_gap', 'Gap between train and holdout loss', ['config'])
+    HOLDOUT_EVALUATIONS = _get_or_create_counter('ringrift_holdout_evaluations_total', 'Total holdout evaluations', ['config', 'result'])
+    PROMOTION_BLOCKED_OVERFIT = _get_or_create_counter('ringrift_promotion_blocked_overfit_total', 'Promotions blocked due to overfitting', ['config'])
 except ImportError:
     HAS_PROMETHEUS = False
     HOLDOUT_LOSS = None

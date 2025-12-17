@@ -43,6 +43,7 @@ from .curriculum import AdaptiveCurriculum
 from .promotion import ModelPromoter
 from .tournament import ShadowTournamentService
 from .data_collection import StreamingDataCollector
+from .training import TrainingScheduler
 
 __all__ = [
     # Configuration
@@ -70,4 +71,5 @@ __all__ = [
     'ModelPromoter',
     'ShadowTournamentService',
     'StreamingDataCollector',
+    'TrainingScheduler',
 ]

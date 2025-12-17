@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Cluster Sync Integration - Unified data and model synchronization.
 
+DEPRECATED (2025-12-16): This script overlaps with cluster_sync_coordinator.py.
+Use cluster_sync_coordinator.py instead. This file will be removed in a future release.
+See docs/RESOURCE_MANAGEMENT.md for sync tool consolidation notes.
+
 This script provides integrated synchronization for:
 1. Model distribution across all cluster nodes
 2. Training data aggregation from distributed selfplay

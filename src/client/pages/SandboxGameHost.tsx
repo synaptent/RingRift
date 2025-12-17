@@ -1570,6 +1570,26 @@ export const SandboxGameHost: React.FC = () => {
     }
   }, [sandboxGameState]);
 
+  // Initialize chain capture valid targets when loading a game directly into chain_capture phase.
+  // The normal interaction handlers only set valid targets when transitioning INTO chain_capture
+  // via a move, but when loading a fixture/scenario that starts in chain_capture, targets need
+  // to be initialized explicitly.
+  useEffect(() => {
+    if (
+      sandboxEngine &&
+      sandboxGameState &&
+      sandboxGameState.gameStatus === 'active' &&
+      sandboxGameState.currentPhase === 'chain_capture' &&
+      validTargets.length === 0
+    ) {
+      const ctx = sandboxEngine.getChainCaptureContextForCurrentPlayer();
+      if (ctx && ctx.landings.length > 0) {
+        setSelected(ctx.from);
+        setValidTargets(ctx.landings);
+      }
+    }
+  }, [sandboxEngine, sandboxGameState, validTargets.length, setSelected, setValidTargets]);
+
   const humanSeatCount = sandboxPlayersList.filter((p) => p.type === 'human').length;
   const aiSeatCount = sandboxPlayersList.length - humanSeatCount;
 
@@ -1784,6 +1804,56 @@ export const SandboxGameHost: React.FC = () => {
       const seenAny = new Set<string>();
 
       for (const move of captureMoves) {
+        const target = move.captureTarget as Position | undefined;
+        const landing = move.to as Position | undefined;
+
+        if (landing) {
+          const key = positionToString(landing);
+          if (!seenPrimary.has(key)) {
+            seenPrimary.add(key);
+            seenAny.add(key);
+            highlights.push({ positionKey: key, intensity: 'primary' });
+          }
+        }
+
+        if (target) {
+          const key = positionToString(target);
+          if (!seenAny.has(key)) {
+            seenAny.add(key);
+            highlights.push({ positionKey: key, intensity: 'secondary' });
+          }
+        }
+      }
+
+      if (highlights.length > 0) {
+        decisionHighlights = {
+          choiceKind: 'capture_direction',
+          highlights,
+        };
+      }
+    }
+  }
+
+  // Chain-capture visibility: when the sandbox is in chain_capture phase,
+  // surface similar capture-direction highlights so landing cells and
+  // overtaken stacks are visible.
+  if (
+    !decisionHighlights &&
+    sandboxGameState &&
+    sandboxGameState.gameStatus === 'active' &&
+    sandboxGameState.currentPhase === 'chain_capture' &&
+    sandboxEngine
+  ) {
+    const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
+    const chainMoves = moves.filter((m) => m.type === 'continue_capture_segment');
+
+    if (chainMoves.length > 0) {
+      type CaptureHighlight = { positionKey: string; intensity: 'primary' | 'secondary' };
+      const highlights: CaptureHighlight[] = [];
+      const seenPrimary = new Set<string>();
+      const seenAny = new Set<string>();
+
+      for (const move of chainMoves) {
         const target = move.captureTarget as Position | undefined;
         const landing = move.to as Position | undefined;
 

@@ -78,6 +78,7 @@ from scripts.unified_loop.curriculum import AdaptiveCurriculum
 from scripts.unified_loop.promotion import ModelPromoter
 from scripts.unified_loop.tournament import ShadowTournamentService
 from scripts.unified_loop.data_collection import StreamingDataCollector
+from scripts.unified_loop.training import TrainingScheduler
 
 # Shared database integrity utilities
 from app.db.integrity import (
@@ -108,7 +109,7 @@ except ImportError:
 
 # Optional Prometheus client
 try:
-    from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
+    from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
     HAS_PROMETHEUS = True
 except ImportError:
     HAS_PROMETHEUS = False
@@ -824,317 +825,346 @@ def check_all_resources() -> Tuple[bool, str]:
 # =============================================================================
 
 if HAS_PROMETHEUS:
+    # Helper to avoid duplicate registration during circular imports
+    def _safe_counter(name, desc, labels):
+        if name in REGISTRY._names_to_collectors:
+            return REGISTRY._names_to_collectors[name]
+        return Counter(name, desc, labels)
+
+    def _safe_gauge(name, desc, labels):
+        if name in REGISTRY._names_to_collectors:
+            return REGISTRY._names_to_collectors[name]
+        return Gauge(name, desc, labels)
+
+    def _safe_histogram(name, desc, labels, buckets):
+        if name in REGISTRY._names_to_collectors:
+            return REGISTRY._names_to_collectors[name]
+        return Histogram(name, desc, labels, buckets=buckets)
+
     # Data collection metrics
-    GAMES_SYNCED_TOTAL = Counter(
+    GAMES_SYNCED_TOTAL = _safe_counter(
         'ringrift_games_synced_total',
         'Total games synced from remote hosts',
         ['host']
     )
-    SYNC_DURATION_SECONDS = Histogram(
+    SYNC_DURATION_SECONDS = _safe_histogram(
         'ringrift_sync_duration_seconds',
         'Time taken to sync games from a host',
         ['host'],
         buckets=[1, 5, 10, 30, 60, 120, 300]
     )
-    SYNC_ERRORS_TOTAL = Counter(
+    SYNC_ERRORS_TOTAL = _safe_counter(
         'ringrift_sync_errors_total',
         'Total sync errors by host',
         ['host', 'error_type']
     )
-    GAMES_PENDING_TRAINING = Gauge(
+    GAMES_PENDING_TRAINING = _safe_gauge(
         'ringrift_games_pending_training',
         'Games collected but not yet used for training',
         ['config']
     )
 
     # Training metrics
-    TRAINING_RUNS_TOTAL = Counter(
+    TRAINING_RUNS_TOTAL = _safe_counter(
         'ringrift_training_runs_total',
         'Total training runs',
         ['config', 'status']
     )
-    TRAINING_DURATION_SECONDS = Histogram(
+    TRAINING_DURATION_SECONDS = _safe_histogram(
         'ringrift_training_duration_seconds',
         'Training run duration in seconds',
         ['config'],
         buckets=[60, 300, 600, 1800, 3600, 7200]
     )
-    TRAINING_IN_PROGRESS = Gauge(
+    TRAINING_IN_PROGRESS = _safe_gauge(
         'ringrift_training_in_progress',
         'Whether training is currently running',
         ['config']
     )
 
     # Evaluation metrics
-    EVALUATIONS_TOTAL = Counter(
+    EVALUATIONS_TOTAL = _safe_counter(
         'ringrift_evaluations_total',
         'Total evaluation runs',
         ['config', 'type']
     )
-    EVALUATION_DURATION_SECONDS = Histogram(
+    EVALUATION_DURATION_SECONDS = _safe_histogram(
         'ringrift_evaluation_duration_seconds',
         'Evaluation duration in seconds',
         ['config', 'type'],
         buckets=[30, 60, 120, 300, 600, 1200]
     )
-    CURRENT_ELO = Gauge(
+    CURRENT_ELO = _safe_gauge(
         'ringrift_current_elo',
         'Current Elo rating for configuration',
         ['config', 'model']
     )
-    ELO_TREND = Gauge(
+    ELO_TREND = _safe_gauge(
         'ringrift_elo_trend',
         'Elo trend (positive = improving)',
         ['config']
     )
 
     # Promotion metrics
-    PROMOTIONS_TOTAL = Counter(
+    PROMOTIONS_TOTAL = _safe_counter(
         'ringrift_promotions_total',
         'Total model promotions',
         ['config', 'status']
     )
-    ELO_GAIN_ON_PROMOTION = Histogram(
+    ELO_GAIN_ON_PROMOTION = _safe_histogram(
         'ringrift_elo_gain_on_promotion',
         'Elo gain when model is promoted',
         ['config'],
         buckets=[5, 10, 20, 30, 50, 100]
     )
-    PROMOTION_CANDIDATES = Gauge(
+    PROMOTION_CANDIDATES = _safe_gauge(
         'ringrift_promotion_candidates',
         'Number of promotion candidates',
         []
     )
 
     # Curriculum metrics
-    CURRICULUM_WEIGHT = Gauge(
+    CURRICULUM_WEIGHT = _safe_gauge(
         'ringrift_curriculum_weight',
         'Training weight for configuration',
         ['config']
     )
-    CURRICULUM_REBALANCES_TOTAL = Counter(
+    CURRICULUM_REBALANCES_TOTAL = _safe_counter(
         'ringrift_curriculum_rebalances_total',
         'Total curriculum rebalancing events',
         []
     )
 
     # System metrics
-    LOOP_CYCLES_TOTAL = Counter(
+    LOOP_CYCLES_TOTAL = _safe_counter(
         'ringrift_loop_cycles_total',
         'Total improvement loop cycles',
         ['loop']
     )
-    LOOP_ERRORS_TOTAL = Counter(
+    LOOP_ERRORS_TOTAL = _safe_counter(
         'ringrift_loop_errors_total',
         'Total loop errors',
         ['loop', 'error_type']
     )
-    UPTIME_SECONDS = Gauge(
+    UPTIME_SECONDS = _safe_gauge(
         'ringrift_uptime_seconds',
         'Daemon uptime in seconds',
         []
     )
-    HOSTS_ACTIVE = Gauge(
+    HOSTS_ACTIVE = _safe_gauge(
         'ringrift_hosts_active',
         'Number of active hosts',
         []
     )
-    HOSTS_FAILED = Gauge(
+    HOSTS_FAILED = _safe_gauge(
         'ringrift_hosts_failed',
         'Number of failed hosts (consecutive failures)',
         []
     )
 
     # Training progress metrics (for training dashboard compatibility)
-    TOTAL_MODELS = Gauge(
+    TOTAL_MODELS = _safe_gauge(
         'ringrift_total_models',
         'Total number of model files across all configs',
         []
     )
-    MAX_MODEL_VERSION = Gauge(
+    MAX_MODEL_VERSION = _safe_gauge(
         'ringrift_max_model_version',
         'Maximum model version number',
         []
     )
-    MAX_ITERATION = Gauge(
+    MAX_ITERATION = _safe_gauge(
         'ringrift_max_iteration',
         'Maximum training iteration by config',
         ['config']
     )
-    MODEL_PROMOTIONS = Gauge(
+    MODEL_PROMOTIONS = _safe_gauge(
         'ringrift_model_promotions_total',
         'Total model promotions (gauge for dashboard)',
         []
     )
-    MODEL_ELO = Gauge(
+    MODEL_ELO = _safe_gauge(
         'ringrift_model_elo',
         'Model Elo rating by config and model',
         ['config', 'model']
     )
-    MODEL_WIN_RATE = Gauge(
+    MODEL_WIN_RATE = _safe_gauge(
         'ringrift_model_win_rate',
         'Model win rate by config',
         ['config']
     )
-    MODELS_BY_VERSION = Gauge(
+    MODELS_BY_VERSION = _safe_gauge(
         'ringrift_models_by_version',
         'Number of models by version',
         ['version']
     )
-    MODELS_SIZE_GB = Gauge(
+    MODELS_SIZE_GB = _safe_gauge(
         'ringrift_models_size_gb',
         'Total size of models in GB',
         []
     )
 
     # Health monitoring metrics
-    COMPONENT_HEALTH = Gauge(
+    COMPONENT_HEALTH = _safe_gauge(
         'ringrift_component_health',
         'Component health status (1=healthy, 0.5=degraded, 0=unhealthy)',
         ['component']
     )
-    COMPONENT_LAST_SUCCESS = Gauge(
+    COMPONENT_LAST_SUCCESS = _safe_gauge(
         'ringrift_component_last_success_timestamp',
         'Unix timestamp of last successful operation per component',
         ['component']
     )
-    COMPONENT_CONSECUTIVE_FAILURES = Gauge(
+    COMPONENT_CONSECUTIVE_FAILURES = _safe_gauge(
         'ringrift_component_consecutive_failures',
         'Number of consecutive failures per component',
         ['component']
     )
-    OVERALL_HEALTH = Gauge(
+    OVERALL_HEALTH = _safe_gauge(
         'ringrift_overall_health',
         'Overall system health (1=healthy, 0.5=degraded, 0=unhealthy)',
         []
     )
 
     # Cluster utilization metrics (for 60-80% target tracking)
-    CLUSTER_CPU_UTILIZATION = Gauge(
+    CLUSTER_CPU_UTILIZATION = _safe_gauge(
         'ringrift_cluster_cpu_utilization_percent',
         'Average cluster CPU utilization percentage',
         []
     )
-    CLUSTER_GPU_UTILIZATION = Gauge(
+    CLUSTER_GPU_UTILIZATION = _safe_gauge(
         'ringrift_cluster_gpu_utilization_percent',
         'Average cluster GPU utilization percentage',
         []
     )
-    CLUSTER_MEMORY_UTILIZATION = Gauge(
+    CLUSTER_MEMORY_UTILIZATION = _safe_gauge(
         'ringrift_cluster_memory_utilization_percent',
         'Average cluster memory utilization percentage',
         []
     )
-    CLUSTER_TOTAL_JOBS = Gauge(
+    CLUSTER_TOTAL_JOBS = _safe_gauge(
         'ringrift_cluster_total_jobs',
         'Total number of jobs running across the cluster',
         []
     )
-    CLUSTER_BACKPRESSURE = Gauge(
+    CLUSTER_BACKPRESSURE = _safe_gauge(
         'ringrift_cluster_backpressure_factor',
         'Backpressure factor (1.0=none, 0.0=full throttle)',
         []
     )
-    HOST_CPU_UTILIZATION = Gauge(
+    HOST_CPU_UTILIZATION = _safe_gauge(
         'ringrift_host_cpu_utilization_percent',
         'Per-host CPU utilization percentage',
         ['host']
     )
-    HOST_GPU_UTILIZATION = Gauge(
+    HOST_GPU_UTILIZATION = _safe_gauge(
         'ringrift_host_gpu_utilization_percent',
         'Per-host GPU utilization percentage',
         ['host']
     )
-    HOST_JOBS_RUNNING = Gauge(
+    HOST_JOBS_RUNNING = _safe_gauge(
         'ringrift_host_jobs_running',
         'Number of jobs running on each host',
         ['host']
     )
 
     # Resource optimizer metrics (60-80% utilization target)
-    OPTIMIZER_IN_TARGET = Gauge(
+    OPTIMIZER_IN_TARGET = _safe_gauge(
         'ringrift_optimizer_in_target',
         'Cluster utilization in 60-80% target (1=yes, 0=no)',
         ['resource']
     )
-    OPTIMIZER_ADJUSTMENT = Gauge(
+    OPTIMIZER_ADJUSTMENT = _safe_gauge(
         'ringrift_optimizer_adjustment',
         'PID controller job adjustment recommendation',
         []
     )
-    SELFPLAY_RATE = Gauge(
+    SELFPLAY_RATE = _safe_gauge(
         'ringrift_selfplay_rate_per_hour',
         'Current negotiated selfplay rate (games per hour)',
         []
     )
-    UTILIZATION_STATUS = Gauge(
+    UTILIZATION_STATUS = _safe_gauge(
         'ringrift_utilization_status',
         'Cluster utilization status: -1=below, 0=optimal, 1=above target',
         []
     )
-    CONFIG_WEIGHT = Gauge(
-        'ringrift_config_weight',
-        'Data-aware config weight for selfplay distribution',
-        ['config_key']
-    )
+    # Check if metric already registered (may be imported from data_collection.py first)
+    if 'ringrift_config_weight' in REGISTRY._names_to_collectors:
+        CONFIG_WEIGHT = REGISTRY._names_to_collectors['ringrift_config_weight']
+    else:
+        CONFIG_WEIGHT = _safe_gauge(
+            'ringrift_config_weight',
+            'Data-aware config weight for selfplay distribution',
+            ['config_key']
+        )
 
     # Cross-process event metrics
-    CROSS_PROCESS_EVENTS_BRIDGED = Counter(
+    CROSS_PROCESS_EVENTS_BRIDGED = _safe_counter(
         'ringrift_cross_process_events_bridged_total',
         'Total cross-process events bridged to local event bus',
         ['event_type', 'source']
     )
-    CROSS_PROCESS_POLL_ERRORS = Counter(
+    CROSS_PROCESS_POLL_ERRORS = _safe_counter(
         'ringrift_cross_process_poll_errors_total',
         'Total errors when polling cross-process event queue',
         []
     )
 
     # Data quality metrics
-    DATA_QUALITY_SCORE = Gauge(
+    DATA_QUALITY_SCORE = _safe_gauge(
         'ringrift_data_quality_score',
         'Current data quality score (0-1)',
         []
     )
-    DATA_QUALITY_DRAW_RATE = Gauge(
+    DATA_QUALITY_DRAW_RATE = _safe_gauge(
         'ringrift_data_quality_draw_rate',
         'Current draw rate in training data',
         []
     )
-    DATA_QUALITY_TIMEOUT_RATE = Gauge(
+    DATA_QUALITY_TIMEOUT_RATE = _safe_gauge(
         'ringrift_data_quality_timeout_rate',
         'Current timeout/move-limit rate in training data',
         []
     )
-    DATA_QUALITY_CHECKS = Counter(
+    DATA_QUALITY_CHECKS = _safe_counter(
         'ringrift_data_quality_checks_total',
         'Total data quality checks performed',
         []
     )
-    DATA_QUALITY_BLOCKED_TRAINING = Counter(
-        'ringrift_data_quality_blocked_training_total',
-        'Training runs blocked due to data quality issues',
-        ['reason']
-    )
+    # Check if metric already registered (may be imported from training.py first)
+    if 'ringrift_data_quality_blocked_training_total' in REGISTRY._names_to_collectors:
+        DATA_QUALITY_BLOCKED_TRAINING = REGISTRY._names_to_collectors['ringrift_data_quality_blocked_training_total']
+    else:
+        DATA_QUALITY_BLOCKED_TRAINING = _safe_counter(
+            'ringrift_data_quality_blocked_training_total',
+            'Training runs blocked due to data quality issues',
+            ['reason']
+        )
 
-    # Holdout validation metrics
-    HOLDOUT_EVALUATIONS = Counter(
-        'ringrift_holdout_evaluations_total',
+    # Holdout validation metrics - check for existing registration
+    def _get_or_create(name, metric_class, desc, labels):
+        if name in REGISTRY._names_to_collectors:
+            return REGISTRY._names_to_collectors[name]
+        return metric_class(name, desc, labels)
+
+    HOLDOUT_EVALUATIONS = _get_or_create(
+        'ringrift_holdout_evaluations_total', Counter,
         'Total holdout evaluations performed',
         ['config', 'result']  # result: passed, failed_overfit, skipped
     )
-    HOLDOUT_LOSS = Gauge(
-        'ringrift_holdout_loss',
+    HOLDOUT_LOSS = _get_or_create(
+        'ringrift_holdout_loss', Gauge,
         'Holdout loss for most recent evaluation',
         ['config']
     )
-    HOLDOUT_OVERFIT_GAP = Gauge(
-        'ringrift_holdout_overfit_gap',
+    HOLDOUT_OVERFIT_GAP = _get_or_create(
+        'ringrift_holdout_overfit_gap', Gauge,
         'Gap between holdout loss and training loss (positive = overfitting)',
         ['config']
     )
-    PROMOTION_BLOCKED_OVERFIT = Counter(
-        'ringrift_promotion_blocked_overfit_total',
+    PROMOTION_BLOCKED_OVERFIT = _get_or_create(
+        'ringrift_promotion_blocked_overfit_total', Counter,
         'Promotions blocked due to overfitting detection',
         ['config']
     )
@@ -1896,914 +1926,8 @@ class UnifiedLoopState:
 
 # =============================================================================
 # Training Scheduler Component
+# EXTRACTED: Now imported from scripts.unified_loop.training (Phase 2 refactoring)
 # =============================================================================
-
-class TrainingScheduler:
-    """Schedules and manages training runs with cluster-wide coordination."""
-
-    def __init__(
-        self,
-        config: TrainingConfig,
-        state: UnifiedLoopState,
-        event_bus: EventBus,
-        feedback_config: Optional[FeedbackConfig] = None,
-        feedback: Optional["PipelineFeedbackController"] = None,
-        config_priority: Optional["ConfigPriorityQueue"] = None
-    ):
-        self.config = config
-        self.state = state
-        self.event_bus = event_bus
-        self.feedback_config = feedback_config or FeedbackConfig()
-        self.feedback = feedback
-        self.config_priority = config_priority or ConfigPriorityQueue()
-        self._training_process: Optional[asyncio.subprocess.Process] = None
-        # Dynamic threshold tracking (for promotion velocity calculation)
-        self._promotion_history: List[float] = []  # Timestamps of recent promotions
-        self._training_history: List[float] = []   # Timestamps of recent training runs
-        # Cluster-wide training coordination
-        self._training_lock_fd: Optional[int] = None
-        self._training_lock_path: Optional[Path] = None
-        # Calibration tracking (per config)
-        self._calibration_trackers: Dict[str, Any] = {}
-        if HAS_VALUE_CALIBRATION:
-            for config_key in state.configs:
-                self._calibration_trackers[config_key] = CalibrationTracker(window_size=1000)
-        # Temperature scheduler for self-play exploration
-        self._temp_scheduler: Optional[Any] = None
-        if HAS_TEMPERATURE_SCHEDULING:
-            self._temp_scheduler = create_temp_scheduler(state.current_temperature_preset or "default")
-
-
-
-    def _get_dynamic_threshold(self, config_key: str) -> int:
-        """Calculate dynamic training threshold based on promotion velocity.
-
-        The threshold adjusts based on:
-        1. Promotion velocity - more frequent promotions → lower threshold (faster iteration)
-        2. Elo improvement rate - rapid improvement → lower threshold
-        3. Time since last promotion - long gap → lower threshold (try to break plateau)
-
-        Returns:
-            Adjusted game threshold for training
-        """
-        base_threshold = self.config.trigger_threshold_games  # Default: 500
-
-        # Track promotion velocity (promotions per hour)
-        now = time.time()
-        recent_promotions = [t for t in self._promotion_history if now - t < 3600 * 6]  # Last 6 hours
-        promotions_per_hour = len(recent_promotions) / 6.0 if recent_promotions else 0
-
-        # Track training velocity
-        recent_training = [t for t in self._training_history if now - t < 3600 * 6]
-        training_per_hour = len(recent_training) / 6.0 if recent_training else 0
-
-        # Calculate adjustment factor
-        adjustment = 1.0
-
-        # Factor 1: Promotion velocity
-        # High promotion rate (> 0.5/hour) → we're improving fast, keep threshold low
-        # Low promotion rate (< 0.1/hour) → might be stuck, try more frequent training
-        if promotions_per_hour > 0.5:
-            adjustment *= 0.7  # 30% lower threshold - ride the momentum
-        elif promotions_per_hour < 0.1:
-            adjustment *= 0.8  # 20% lower threshold - try to break plateau
-        else:
-            adjustment *= 0.9  # 10% lower - moderate improvement pace
-
-        # Factor 2: Training-to-promotion ratio
-        # If we're training a lot but not promoting, increase threshold (save resources)
-        if training_per_hour > 2 and promotions_per_hour < 0.2:
-            adjustment *= 1.5  # Increase threshold - training not helping
-            print(f"[Training] Dynamic: High training ({training_per_hour:.1f}/hr) but low promotion ({promotions_per_hour:.1f}/hr) - increasing threshold")
-
-        # Factor 3: Time since last promotion (staleness)
-        config_state = self.state.configs.get(config_key)
-        if config_state:
-            time_since_promotion = now - config_state.last_promotion_time
-            if time_since_promotion > 3600 * 2:  # 2+ hours without promotion
-                adjustment *= 0.75  # Try more aggressive training
-                print(f"[Training] Dynamic: {time_since_promotion/3600:.1f}h since last promotion for {config_key} - lowering threshold")
-
-        # Apply adjustment with bounds
-        dynamic_threshold = int(base_threshold * adjustment)
-        min_threshold = base_threshold // 4  # Never go below 25% of base
-        max_threshold = base_threshold * 2   # Never go above 200% of base
-
-        final_threshold = max(min_threshold, min(max_threshold, dynamic_threshold))
-
-        # Factor 4: Improvement optimizer positive feedback acceleration
-        # When we're on a promotion streak or have high-quality data, push even harder
-        if HAS_IMPROVEMENT_OPTIMIZER:
-            try:
-                optimizer = get_improvement_optimizer()
-                optimizer_threshold = optimizer.get_dynamic_threshold(config_key)
-                metrics = optimizer.get_improvement_metrics()
-
-                # Take the more aggressive (lower) threshold between local and optimizer
-                if optimizer_threshold < final_threshold:
-                    streak_info = f"streak={metrics.get('consecutive_promotions', 0)}"
-                    print(f"[ImprovementOptimizer] Accelerating threshold for {config_key}: "
-                          f"{final_threshold} → {optimizer_threshold} ({streak_info})")
-                    final_threshold = optimizer_threshold
-
-                # Additional fast-track check for exceptional performance
-                if should_fast_track_training(config_key):
-                    fast_threshold = max(min_threshold, final_threshold * 8 // 10)  # 20% faster
-                    if fast_threshold < final_threshold:
-                        print(f"[ImprovementOptimizer] Fast-tracking {config_key}: {final_threshold} → {fast_threshold}")
-                        final_threshold = fast_threshold
-            except Exception as e:
-                if self.config.verbose:
-                    print(f"[ImprovementOptimizer] Error getting threshold: {e}")
-
-        # Factor 5: Cluster utilization-based adjustment for 60-80% target
-        # Low utilization → train more aggressively; High utilization → slow down
-        if HAS_RESOURCE_OPTIMIZER and get_utilization_status is not None:
-            try:
-                util_status = get_utilization_status()
-                cpu_util = util_status.get('cpu_util', 70)
-                gpu_util = util_status.get('gpu_util', 70)
-                avg_util = (cpu_util + gpu_util) / 2 if gpu_util > 0 else cpu_util
-                if avg_util < 50:
-                    final_threshold = max(min_threshold, final_threshold * 6 // 10)
-                elif avg_util < 60:
-                    final_threshold = max(min_threshold, final_threshold * 8 // 10)
-                elif avg_util > 85:
-                    final_threshold = min(max_threshold, final_threshold * 12 // 10)
-            except Exception:
-                pass
-
-        # Factor 6: Underrepresented config priority - CRITICAL for balancing model counts
-        # Configs with 0 trained models get drastically lower threshold to bootstrap training
-        # This ensures we build models for ALL 9 board/player combinations
-        if hasattr(self.config_priority, '_trained_model_counts'):
-            self.config_priority._update_trained_model_counts()
-            model_count = self.config_priority._trained_model_counts.get(config_key, 0)
-
-            if model_count == 0:
-                # NO trained models - minimum viable threshold (50 games)
-                # This is critical for bootstrapping underrepresented configs
-                bootstrap_threshold = 50
-                if final_threshold > bootstrap_threshold:
-                    print(f"[Training] BOOTSTRAP: {config_key} has 0 trained models - threshold {final_threshold} → {bootstrap_threshold}")
-                    final_threshold = bootstrap_threshold
-            elif model_count == 1:
-                # Only 1 model - still very underrepresented
-                single_model_threshold = min_threshold  # 125 games
-                if final_threshold > single_model_threshold:
-                    print(f"[Training] UNDERREPRESENTED: {config_key} has 1 model - threshold {final_threshold} → {single_model_threshold}")
-                    final_threshold = single_model_threshold
-            elif model_count <= 3:
-                # 2-3 models - lower threshold to catch up
-                catchup_threshold = min_threshold * 3 // 2  # ~188 games
-                if final_threshold > catchup_threshold:
-                    print(f"[Training] CATCHUP: {config_key} has {model_count} models - threshold {final_threshold} → {catchup_threshold}")
-                    final_threshold = catchup_threshold
-
-        if final_threshold != base_threshold:
-            print(f"[Training] Dynamic threshold for {config_key}: {final_threshold} (base: {base_threshold}, adj: {adjustment:.2f})")
-
-        return final_threshold
-
-    def record_promotion(self):
-        """Record a successful promotion for velocity tracking."""
-        now = time.time()
-        self._promotion_history.append(now)
-        # Keep only last 24 hours
-        self._promotion_history = [t for t in self._promotion_history if now - t < 86400]
-
-    def record_training_start(self):
-        """Record a training run start for velocity tracking."""
-        now = time.time()
-        self._training_history.append(now)
-        # Keep only last 24 hours
-        self._training_history = [t for t in self._training_history if now - t < 86400]
-
-    def set_feedback_controller(self, feedback: "PipelineFeedbackController"):
-        """Set the feedback controller (called after initialization)."""
-        self.feedback = feedback
-
-    def _acquire_training_lock(self) -> bool:
-        """Acquire cluster-wide training lock using file locking.
-
-        Returns True if lock acquired, False if training already running.
-        """
-        import fcntl
-        import socket
-
-        lock_dir = AI_SERVICE_ROOT / "data" / "coordination"
-        lock_dir.mkdir(parents=True, exist_ok=True)
-
-        hostname = socket.gethostname()
-        self._training_lock_path = lock_dir / f"training.{hostname}.lock"
-
-        try:
-            self._training_lock_fd = os.open(
-                str(self._training_lock_path),
-                os.O_RDWR | os.O_CREAT
-            )
-            fcntl.flock(self._training_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            os.ftruncate(self._training_lock_fd, 0)
-            os.lseek(self._training_lock_fd, 0, os.SEEK_SET)
-            os.write(self._training_lock_fd, f"{os.getpid()}\n".encode())
-            print(f"[Training] Acquired cluster-wide training lock on {hostname}")
-            return True
-        except (OSError, BlockingIOError) as e:
-            if self._training_lock_fd is not None:
-                os.close(self._training_lock_fd)
-                self._training_lock_fd = None
-            print(f"[Training] Lock acquisition failed: {e}")
-            return False
-
-    def _release_training_lock(self):
-        """Release the cluster-wide training lock."""
-        import fcntl
-
-        if self._training_lock_fd is not None:
-            try:
-                fcntl.flock(self._training_lock_fd, fcntl.LOCK_UN)
-                os.close(self._training_lock_fd)
-                print("[Training] Released cluster-wide training lock")
-            except Exception as e:
-                print(f"[Training] Error releasing lock: {e}")
-            finally:
-                self._training_lock_fd = None
-            if self._training_lock_path and self._training_lock_path.exists():
-                try:
-                    self._training_lock_path.unlink()
-                except Exception:
-                    pass
-
-    def is_training_locked_elsewhere(self) -> bool:
-        """Check if training is running on another host in the cluster."""
-        import socket
-
-        lock_dir = AI_SERVICE_ROOT / "data" / "coordination"
-        if not lock_dir.exists():
-            return False
-
-        hostname = socket.gethostname()
-        for lock_file in lock_dir.glob("training.*.lock"):
-            if f"training.{hostname}.lock" in lock_file.name:
-                continue
-            try:
-                if lock_file.stat().st_size > 0:
-                    age = time.time() - lock_file.stat().st_mtime
-                    if age < 3600:
-                        other_host = lock_file.name.replace("training.", "").replace(".lock", "")
-                        print(f"[Training] Training lock held by {other_host}")
-                        return True
-            except Exception:
-                continue
-        return False
-
-    def should_trigger_training(self) -> Optional[str]:
-        """Check if training should be triggered. Returns config key or None.
-
-        Training can be triggered by:
-        1. Momentum-based acceleration (fastest) - model improving, capitalize on momentum
-        2. Game count threshold (traditional) - enough new games collected
-        3. Elo plateau detection - model stopped improving
-        4. Win rate degradation - model performing worse than threshold
-        """
-        if self.state.training_in_progress:
-            return None
-
-        # Check for cluster-wide training lock (prevent simultaneous training)
-        if self.is_training_locked_elsewhere():
-            return None
-
-        # Duration-aware scheduling: check if training can be scheduled now
-        # Skip peak hours check for dedicated training cluster - always allow training
-        # Only check for host availability (concurrent task limits)
-        if HAS_COORDINATION:
-            import socket
-            from app.coordination.duration_scheduler import get_scheduler
-            node_id = socket.gethostname()
-            scheduler = get_scheduler()
-            # Use can_schedule_now with avoid_peak_hours=False for dedicated cluster
-            can_schedule, schedule_reason = scheduler.can_schedule_now(
-                "training", node_id, avoid_peak_hours=False
-            )
-            if not can_schedule:
-                if self.config.verbose:
-                    print(f"[Training] Deferred by duration scheduler: {schedule_reason}")
-                return None
-
-        # Health-aware training: defer only when GPU is overloaded (>85% utilization)
-        # Training is GPU-bound, so only gate on GPU utilization - not CPU.
-        # This allows CPU-bound selfplay and GPU-bound training to run independently,
-        # pursuing 70% utilization targets for each resource independently.
-        if HAS_RESOURCE_OPTIMIZER and get_utilization_status is not None:
-            try:
-                util_status = get_utilization_status()
-                cpu_util = util_status.get('cpu_util', 70)
-                gpu_util = util_status.get('gpu_util', 70)
-
-                # Only defer training if GPU is overloaded - CPU utilization is irrelevant
-                # for GPU-bound training tasks
-                if gpu_util > 85:
-                    if self.state.verbose:
-                        print(f"[Training] Deferred due to high GPU utilization "
-                              f"(GPU={gpu_util:.1f}%, CPU={cpu_util:.1f}% - CPU ignored for GPU tasks)")
-                    return None
-            except Exception:
-                pass  # Non-critical, proceed with training
-
-        # Cluster health gate: defer training if cluster is degraded
-        # This prevents wasting compute when hosts are unreachable
-        if HAS_PRE_SPAWN_HEALTH and gate_on_cluster_health is not None:
-            try:
-                can_proceed, health_msg = gate_on_cluster_health(
-                    "training",
-                    min_healthy=2,  # Need at least 2 hosts for distributed training
-                    min_healthy_ratio=0.4,  # Allow training if 40%+ hosts healthy
-                )
-                if not can_proceed:
-                    if self.config.verbose:
-                        print(f"[Training] Deferred: {health_msg}")
-                    return None
-            except Exception as e:
-                # Non-critical, proceed with training
-                if self.config.verbose:
-                    print(f"[Training] Cluster health check failed: {e}, proceeding anyway")
-
-        now = time.time()
-
-        # Get configs sorted by priority (underperforming configs first)
-        # This ensures that when multiple configs are ready, we train the most urgent one
-        priority_queue = ConfigPriorityQueue()
-        prioritized_configs = priority_queue.get_prioritized_configs(self.state.configs)
-
-        for config_key, priority_score in prioritized_configs:
-            config_state = self.state.configs[config_key]
-            # Check minimum interval between training runs
-            if now - config_state.last_training_time < self.config.min_interval_seconds:
-                continue
-
-            # Trigger 0: Momentum-based acceleration (positive feedback optimization)
-            # When a model is improving, train more frequently to capitalize on momentum
-            if HAS_FEEDBACK_ACCELERATOR:
-                try:
-                    decision = get_feedback_accelerator().get_training_decision(config_key)
-                    if decision.should_train:
-                        # Update games_since_training in accelerator
-                        record_games_generated(config_key, config_state.games_since_training)
-
-                        intensity_str = decision.intensity.value if decision.intensity else "normal"
-                        momentum_str = decision.momentum.value if decision.momentum else "stable"
-                        print(f"[Training] Trigger: momentum-based acceleration for {config_key} "
-                              f"(intensity={intensity_str}, momentum={momentum_str}, "
-                              f"threshold={decision.min_games_threshold})")
-                        return config_key
-                except Exception as e:
-                    if self.config.verbose:
-                        print(f"[Training] Feedback accelerator error: {e}")
-
-            # Trigger 1: Dynamic game count threshold (adapts to promotion velocity)
-            dynamic_threshold = self._get_dynamic_threshold(config_key)
-            if config_state.games_since_training >= dynamic_threshold:
-                print(f"[Training] Trigger: game threshold reached for {config_key} "
-                      f"({config_state.games_since_training} >= {dynamic_threshold} games)")
-                return config_key
-
-            # Trigger 2: Performance-based - Elo plateau detection
-            if self.feedback:
-                if self.feedback.eval_analyzer.is_plateau(
-                    config_key,
-                    min_improvement=self.feedback_config.elo_plateau_threshold,
-                    lookback=self.feedback_config.elo_plateau_lookback
-                ):
-                    # Only trigger if we have some data to train on
-                    if config_state.games_since_training >= self.config.trigger_threshold_games // 4:
-                        print(f"[Training] Trigger: Elo plateau detected for {config_key} "
-                              f"(trend < {self.feedback_config.elo_plateau_threshold})")
-                        return config_key
-
-            # Trigger 3: Performance-based - Win rate degradation
-            if self.feedback:
-                weak_configs = self.feedback.eval_analyzer.get_weak_configs(
-                    threshold=self.feedback_config.win_rate_degradation_threshold
-                )
-                if config_key in weak_configs:
-                    # Urgent retraining needed - lower data threshold
-                    if config_state.games_since_training >= self.config.trigger_threshold_games // 4:
-                        print(f"[Training] Trigger: Win rate degradation for {config_key} "
-                              f"(below {self.feedback_config.win_rate_degradation_threshold})")
-                        return config_key
-
-        return None
-
-    async def start_training(self, config_key: str) -> bool:
-        """Start a training run for the given configuration.
-
-        For hex boards, exports data with V3 encoder first, then trains.
-        For square boards, uses existing data or exports with default encoder.
-        """
-        # Skip local training if disabled
-        if DISABLE_LOCAL_TASKS:
-            print(f"[Training] Skipping local training (RINGRIFT_DISABLE_LOCAL_TASKS=true)")
-            return False
-
-        if self.state.training_in_progress:
-            return False
-
-        # Record training start for dynamic threshold velocity tracking
-        self.record_training_start()
-
-        # P0-3: Data quality gate - check before training
-        if self.feedback:
-            # Check parity failure rate
-            parity_failure_rate = self.feedback.data_monitor.get_parity_failure_rate()
-            if parity_failure_rate > self.feedback_config.max_parity_failure_rate:
-                print(f"[Training] BLOCKED by data quality gate: parity failure rate "
-                      f"{parity_failure_rate:.1%} exceeds threshold "
-                      f"{self.feedback_config.max_parity_failure_rate:.1%}")
-                if HAS_PROMETHEUS:
-                    DATA_QUALITY_BLOCKED_TRAINING.labels(reason="parity_failure").inc()
-                return False
-
-            # Check if data is quarantined
-            if self.feedback.should_quarantine_data():
-                print(f"[Training] BLOCKED by data quality gate: data quarantined due to quality issues")
-                if HAS_PROMETHEUS:
-                    DATA_QUALITY_BLOCKED_TRAINING.labels(reason="quarantined").inc()
-                return False
-
-            # Check data quality score
-            if self.feedback.state.data_quality_score < self.feedback_config.min_data_quality_score:
-                print(f"[Training] BLOCKED by data quality gate: data quality score "
-                      f"{self.feedback.state.data_quality_score:.2f} below threshold "
-                      f"{self.feedback_config.min_data_quality_score:.2f}")
-                if HAS_PROMETHEUS:
-                    DATA_QUALITY_BLOCKED_TRAINING.labels(reason="low_score").inc()
-                return False
-
-            print(f"[Training] Data quality gate PASSED: parity_failure_rate={parity_failure_rate:.1%}, "
-                  f"quality_score={self.feedback.state.data_quality_score:.2f}")
-
-        parts = config_key.rsplit("_", 1)
-        board_type = parts[0]
-        num_players = int(parts[1].replace("p", ""))
-
-        # Acquire cluster-wide training lock
-        if not self._acquire_training_lock():
-            print(f"[Training] Could not acquire cluster-wide lock for {config_key}")
-            return False
-
-        await self.event_bus.publish(DataEvent(
-            event_type=DataEventType.TRAINING_STARTED,
-            payload={"config": config_key}
-        ))
-
-        try:
-            self.state.training_in_progress = True
-            self.state.training_config = config_key
-            self.state.training_started_at = time.time()
-
-            # Estimate training duration and log ETA
-            if HAS_COORDINATION:
-                est_duration = estimate_task_duration("training", config=config_key)
-                eta_time = datetime.fromtimestamp(time.time() + est_duration).strftime("%H:%M:%S")
-                print(f"[Training] Estimated duration: {est_duration/3600:.1f}h (ETA: {eta_time})")
-
-            # Use v3 for all board types (best architecture with spatial policy heads)
-            model_version = "v3"
-
-            # Find game data - check both DB files and JSONL files (GPU selfplay)
-            games_dir = AI_SERVICE_ROOT / "data" / "games"
-            synced_dir = games_dir / "synced"
-            gpu_selfplay_dir = games_dir / "gpu_selfplay"
-
-            # Check for JSONL data for this config (preferred for GPU selfplay)
-            jsonl_path = gpu_selfplay_dir / config_key / "games.jsonl"
-            has_jsonl_data = jsonl_path.exists() and jsonl_path.stat().st_size > 0
-
-            # Collect databases from main games dir and synced subdirectory
-            game_dbs = list(games_dir.glob("*.db"))
-            if synced_dir.exists():
-                # Include all synced databases (cluster data)
-                game_dbs.extend(synced_dir.rglob("*.db"))
-
-            if not game_dbs and not has_jsonl_data:
-                print(f"[Training] No game data found (DB: {games_dir}, JSONL: {jsonl_path})")
-                self.state.training_in_progress = False
-                self._release_training_lock()
-                return False
-
-            if has_jsonl_data:
-                print(f"[Training] Found JSONL data for {config_key}: {jsonl_path}")
-
-            # Auto-consolidate databases if consolidated DB is stale or missing
-            # Skip consolidation if using JSONL data (will use jsonl_to_npz.py instead)
-            consolidated_db = games_dir / "consolidated_training_v2.db"
-            consolidation_max_age = 6 * 3600  # 6 hours
-
-            should_consolidate = False
-            if has_jsonl_data:
-                # Using JSONL data - skip DB consolidation
-                print(f"[Training] Using JSONL data, skipping DB consolidation")
-            elif not consolidated_db.exists():
-                should_consolidate = True
-                print(f"[Training] Consolidated DB missing, will merge databases")
-            elif time.time() - consolidated_db.stat().st_mtime > consolidation_max_age:
-                should_consolidate = True
-                print(f"[Training] Consolidated DB stale (>{consolidation_max_age/3600:.0f}h old), will refresh")
-
-            if should_consolidate:
-                # Find all selfplay DBs to merge (exclude quarantine, corrupted, etc.)
-                merge_dbs = []
-                skipped_invalid = 0
-                for db_path in game_dbs:
-                    db_str = str(db_path)
-                    # Skip quarantine, corrupted, backup, and the consolidated DB itself
-                    if any(skip in db_str for skip in ['quarantine', 'corrupted', 'backup', 'consolidated']):
-                        continue
-                    # Only include selfplay/merged databases
-                    if 'selfplay' in db_path.name or 'merged' in db_path.name or 'training' in db_path.name:
-                        # Pre-consolidation validation: check DB structure
-                        try:
-                            conn = sqlite3.connect(db_path)
-                            cursor = conn.cursor()
-                            # Check games table exists and has data
-                            cursor.execute("SELECT COUNT(*) FROM games")
-                            count = cursor.fetchone()[0]
-                            # Check game_moves table exists
-                            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'")
-                            has_moves = cursor.fetchone() is not None
-                            conn.close()
-
-                            if count > 0 and has_moves:
-                                merge_dbs.append(db_path)
-                            else:
-                                skipped_invalid += 1
-                        except Exception:
-                            skipped_invalid += 1
-
-                if skipped_invalid > 0:
-                    print(f"[Training] Skipped {skipped_invalid} invalid/empty databases")
-
-                # Elo-based quality filter: get models with sufficient Elo via centralized service
-                high_elo_models = set()
-                min_model_elo = 1300  # Minimum Elo to include games from this model
-                if get_elo_service is not None:
-                    try:
-                        elo_svc = get_elo_service()
-                        rows = elo_svc.execute_query("""
-                            SELECT participant_id, rating FROM elo_ratings
-                            WHERE rating >= ? AND games_played >= 5
-                        """, (min_model_elo,))
-                        for row in rows:
-                            high_elo_models.add(row[0])
-                            # Also add without prefix variations
-                            if row[0].startswith("nn:"):
-                                high_elo_models.add(row[0][3:])
-                        print(f"[Training] Elo filter: {len(high_elo_models)} models with Elo >= {min_model_elo}")
-                    except Exception as e:
-                        print(f"[Training] Elo filter skipped: {e}")
-
-                if len(merge_dbs) > 1:
-                    print(f"[Training] Consolidating {len(merge_dbs)} validated databases...")
-                    merge_cmd = [
-                        sys.executable,
-                        str(AI_SERVICE_ROOT / "scripts" / "merge_game_dbs.py"),
-                        "--output", str(consolidated_db),
-                        "--dedupe-by-game-id",
-                    ]
-                    for db in merge_dbs:
-                        merge_cmd.extend(["--db", str(db)])
-
-                    try:
-                        merge_process = await asyncio.create_subprocess_exec(
-                            *merge_cmd,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE,
-                            cwd=AI_SERVICE_ROOT,
-                        )
-                        stdout, stderr = await asyncio.wait_for(
-                            merge_process.communicate(),
-                            timeout=1800  # 30 min max for consolidation
-                        )
-                        if merge_process.returncode == 0:
-                            print(f"[Training] Database consolidation complete")
-
-                            # Generate parity fixtures for the consolidated DB
-                            parity_fixtures_dir = AI_SERVICE_ROOT / "data" / "parity_fixtures"
-                            parity_fixtures_dir.mkdir(parents=True, exist_ok=True)
-                            print(f"[Training] Generating parity fixtures...")
-                            parity_cmd = [
-                                sys.executable,
-                                str(AI_SERVICE_ROOT / "scripts" / "check_ts_python_replay_parity.py"),
-                                "--db", str(consolidated_db),
-                                "--emit-fixtures-dir", str(parity_fixtures_dir),
-                                "--limit-games-per-db", "1000",  # Sample for speed
-                            ]
-                            try:
-                                parity_process = await asyncio.create_subprocess_exec(
-                                    *parity_cmd,
-                                    stdout=asyncio.subprocess.PIPE,
-                                    stderr=asyncio.subprocess.PIPE,
-                                    cwd=AI_SERVICE_ROOT,
-                                )
-                                await asyncio.wait_for(
-                                    parity_process.communicate(),
-                                    timeout=600  # 10 min max for parity check
-                                )
-                                if parity_process.returncode == 0:
-                                    print(f"[Training] Parity fixtures generated")
-                            except Exception as e:
-                                print(f"[Training] Parity fixtures generation skipped: {e}")
-                        else:
-                            print(f"[Training] Consolidation failed: {stderr.decode()[:500]}")
-                    except asyncio.TimeoutError:
-                        print(f"[Training] Consolidation timed out, using largest DB instead")
-                    except Exception as e:
-                        print(f"[Training] Consolidation error: {e}")
-
-            # Prefer consolidated database if it exists, otherwise use largest
-            if consolidated_db.exists():
-                largest_db = consolidated_db
-                print(f"[Training] Using consolidated database: {largest_db}")
-            else:
-                largest_db = max(game_dbs, key=lambda p: p.stat().st_size)
-                print(f"[Training] Using largest database: {largest_db} ({largest_db.stat().st_size / 1024 / 1024:.1f}MB)")
-
-            # Export training data with appropriate encoder
-            training_dir = AI_SERVICE_ROOT / "data" / "training"
-            training_dir.mkdir(parents=True, exist_ok=True)
-            data_path = training_dir / f"unified_{config_key}.npz"
-
-            # Skip export if NPZ file exists and is recent (less than 6 hours old)
-            # This allows reuse of existing data and avoids errors from corrupted DBs
-            export_max_age = 6 * 3600  # 6 hours
-            skip_export = False
-            if data_path.exists():
-                npz_age = time.time() - data_path.stat().st_mtime
-                if npz_age < export_max_age:
-                    print(f"[Training] Skipping export - NPZ file recent ({npz_age/3600:.1f}h old < {export_max_age/3600:.0f}h)")
-                    skip_export = True
-
-            # Use JSONL export if we have JSONL data (checked earlier)
-            use_jsonl_export = has_jsonl_data
-
-            # Determine encoder version (v2 for hex to match 20 global features)
-            encoder_version = "v2" if board_type == "hexagonal" else "default"
-
-            if not skip_export:
-                if use_jsonl_export:
-                    # Use jsonl_to_npz.py for JSONL data (from GPU selfplay)
-                    print(f"[Training] Using JSONL source: {jsonl_path}")
-                    export_cmd = [
-                        sys.executable,
-                        str(AI_SERVICE_ROOT / "scripts" / "jsonl_to_npz.py"),
-                        "--input", str(jsonl_path),
-                        "--output", str(data_path),
-                        "--board-type", board_type,
-                        "--num-players", str(num_players),
-                        "--gpu-selfplay",  # Flag for GPU selfplay format
-                        "--max-games", "10000",  # Reasonable limit
-                    ]
-                    if encoder_version != "default":
-                        export_cmd.extend(["--encoder-version", encoder_version])
-                else:
-                    # Use export_replay_dataset.py for DB data
-                    export_cmd = [
-                        sys.executable,
-                        str(AI_SERVICE_ROOT / self.config.export_script),
-                        "--db", str(largest_db),
-                        "--output", str(data_path),
-                        "--board-type", board_type,
-                        "--num-players", str(num_players),
-                        "--sample-every", "2",
-                        # Quality filters - only train on good data
-                        "--require-completed",  # Only games that completed normally
-                        "--min-moves", "10",    # Filter out trivially short games
-                        "--exclude-recovery",   # Exclude error recovery games
-                    ]
-                    if encoder_version != "default":
-                        export_cmd.extend(["--encoder-version", encoder_version])
-
-                # Use parity fixtures to truncate games at safe points (avoid parity divergence)
-                parity_fixtures_dir = AI_SERVICE_ROOT / "data" / "parity_fixtures"
-                if parity_fixtures_dir.exists() and any(parity_fixtures_dir.iterdir()):
-                    export_cmd.extend(["--parity-fixtures-dir", str(parity_fixtures_dir)])
-                    print(f"[Training] Using parity fixtures from {parity_fixtures_dir}")
-
-                print(f"[Training] Exporting data for {config_key} (encoder: {encoder_version})...")
-                # Set PYTHONPATH to AI_SERVICE_ROOT so that 'app' module can be imported
-                export_env = os.environ.copy()
-                export_env["PYTHONPATH"] = str(AI_SERVICE_ROOT)
-                export_process = await asyncio.create_subprocess_exec(
-                    *export_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=AI_SERVICE_ROOT,
-                    env=export_env,
-                )
-                stdout, stderr = await export_process.communicate()
-
-                if export_process.returncode != 0:
-                    error_msg = stderr.decode().strip()[:500] if stderr else "Unknown error"
-                    print(f"[Training] Export failed for {config_key}: {error_msg}")
-                    self.state.training_in_progress = False
-                    self._release_training_lock()
-                    return False
-
-            # Start NN training process
-            timestamp = int(time.time())
-            model_id = f"{config_key}_v3_{timestamp}"
-            run_dir = AI_SERVICE_ROOT / "logs" / "unified_training" / model_id
-
-            # Calculate adaptive epochs based on feedback
-            base_epochs = 100
-            if self.feedback:
-                epochs_multiplier = self.feedback.get_epochs_multiplier()
-                epochs = max(50, int(base_epochs * epochs_multiplier))  # Floor at 50
-                print(f"[Training] Adaptive epochs: {epochs} (base={base_epochs}, multiplier={epochs_multiplier:.2f})")
-            else:
-                epochs = base_epochs
-
-            cmd = [
-                sys.executable,
-                str(AI_SERVICE_ROOT / self.config.nn_training_script),
-                "--board", board_type,
-                "--num-players", str(num_players),
-                "--data-path", str(data_path),
-                "--run-dir", str(run_dir),
-                "--model-id", model_id,
-                "--model-version", model_version,
-                "--epochs", str(epochs),
-            ]
-
-            print(f"[Training] Starting training for {model_id}...")
-            self._training_process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=AI_SERVICE_ROOT,
-            )
-
-            return True
-
-        except Exception as e:
-            print(f"[TrainingScheduler] Error starting training: {e}")
-            self.state.training_in_progress = False
-            self._release_training_lock()
-            return False
-
-    async def check_training_status(self) -> Optional[Dict[str, Any]]:
-        """Check if current training has completed."""
-        if not self.state.training_in_progress or not self._training_process:
-            return None
-
-        # Check if process has finished
-        if self._training_process.returncode is not None:
-            stdout, stderr = await self._training_process.communicate()
-
-            success = self._training_process.returncode == 0
-            config_key = self.state.training_config
-
-            self.state.training_in_progress = False
-            self.state.training_config = ""
-            self.state.total_training_runs += 1
-            self._training_process = None
-            self._release_training_lock()  # Release cluster-wide lock
-
-            if config_key in self.state.configs:
-                self.state.configs[config_key].last_training_time = time.time()
-                self.state.configs[config_key].games_since_training = 0
-
-            result = {
-                "config": config_key,
-                "success": success,
-                "duration": time.time() - self.state.training_started_at,
-            }
-
-            # Run calibration analysis if training succeeded
-            if success and HAS_VALUE_CALIBRATION:
-                calibration_report = await self._run_calibration_analysis(config_key)
-                if calibration_report:
-                    result["calibration"] = calibration_report
-
-            # Record training completion in improvement optimizer for positive feedback
-            if HAS_IMPROVEMENT_OPTIMIZER and success:
-                try:
-                    optimizer = get_improvement_optimizer()
-                    calibration_ece = None
-                    if "calibration" in result:
-                        calibration_ece = result["calibration"].get("ece")
-
-                    rec = optimizer.record_training_complete(
-                        config_key=config_key,
-                        duration_seconds=result["duration"],
-                        val_loss=0.0,  # Not tracked here, but could be added
-                        calibration_ece=calibration_ece,
-                    )
-                    metrics = optimizer.get_improvement_metrics()
-                    print(f"[ImprovementOptimizer] Training complete recorded for {config_key}: "
-                          f"duration={result['duration']/60:.1f}min, "
-                          f"training_runs_24h={metrics['training_runs_24h']}")
-                except Exception as e:
-                    if self.config.verbose:
-                        print(f"[ImprovementOptimizer] Error recording training: {e}")
-
-            await self.event_bus.publish(DataEvent(
-                event_type=DataEventType.TRAINING_COMPLETED,
-                payload=result
-            ))
-
-            return result
-
-        return None
-
-    async def _run_calibration_analysis(self, config_key: str) -> Optional[Dict[str, Any]]:
-        """Run value calibration analysis on recent training data."""
-        if not HAS_VALUE_CALIBRATION:
-            return None
-
-        try:
-            # Get calibration tracker for this config
-            if config_key not in self._calibration_trackers:
-                self._calibration_trackers[config_key] = CalibrationTracker(window_size=1000)
-
-            tracker = self._calibration_trackers[config_key]
-
-            # Compute calibration from tracker's running window
-            report = tracker.compute_current_calibration()
-            if report is None:
-                print(f"[Calibration] Not enough samples for {config_key}")
-                return None
-
-            # Store in state
-            report_dict = report.to_dict()
-            self.state.calibration_reports[config_key] = report_dict
-            self.state.last_calibration_time = time.time()
-
-            # Log calibration metrics
-            print(f"[Calibration] {config_key}: ECE={report.ece:.4f}, MCE={report.mce:.4f}, "
-                  f"overconfidence={report.overconfidence:.4f}")
-
-            # Check if recalibration is needed
-            if report.ece > 0.1:  # High calibration error
-                print(f"[Calibration] WARNING: High ECE for {config_key}, consider recalibration")
-                if report.optimal_temperature:
-                    print(f"[Calibration] Suggested temperature: {report.optimal_temperature:.3f}")
-
-            return report_dict
-
-        except Exception as e:
-            print(f"[Calibration] Error analyzing {config_key}: {e}")
-            return None
-
-    def get_temperature_for_move(self, move_number: int, game_state: Optional[Any] = None) -> float:
-        """Get exploration temperature for a given move in self-play."""
-        if self._temp_scheduler is None:
-            return 1.0
-        return self._temp_scheduler.get_temperature(move_number, game_state)
-
-    def update_training_progress(self, progress: float):
-        """Update training progress for curriculum-based temperature scheduling."""
-        if self._temp_scheduler is not None:
-            self._temp_scheduler.set_training_progress(progress)
-
-    async def request_urgent_training(self, configs: List[str], reason: str) -> bool:
-        """Request urgent training for specified configs due to feedback signal.
-
-        This bypasses normal game count thresholds when the feedback system
-        detects repeated failures (e.g., consecutive promotion failures).
-
-        Args:
-            configs: List of config keys to train
-            reason: Human-readable reason for urgent training
-
-        Returns:
-            True if training was started, False otherwise
-        """
-        if self.state.training_in_progress:
-            print(f"[Training] Urgent training request deferred: training already in progress")
-            return False
-
-        # Pick the first config that hasn't been trained recently
-        now = time.time()
-        for config_key in configs:
-            if config_key not in self.state.configs:
-                continue
-
-            config_state = self.state.configs[config_key]
-            # Allow urgent training even if recently trained (use shorter cooldown)
-            urgent_cooldown = self.config.min_interval_seconds / 2
-            if now - config_state.last_training_time < urgent_cooldown:
-                print(f"[Training] Urgent training for {config_key} still in cooldown")
-                continue
-
-            print(f"[Training] URGENT TRAINING triggered for {config_key}: {reason}")
-            started = await self.start_training(config_key)
-            if started:
-                return True
-
-        print(f"[Training] Urgent training request could not be fulfilled for configs: {configs}")
-        return False
-
 
 # =============================================================================
 # Model Promoter Component

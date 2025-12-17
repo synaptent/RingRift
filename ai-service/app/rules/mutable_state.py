@@ -1003,14 +1003,15 @@ class MutableGameState:
             move.from_pos, move.to, move.player, undo
         )
 
-        # Handle landing marker
+        # Handle landing marker - landing on ANY marker (own or opponent)
+        # removes the marker and eliminates the top ring of the landing stack.
+        # Per canonical rules: "Landing on a marker (own or opponent) is legal;
+        # the marker is removed and the top ring of the moving stack's cap is
+        # immediately Eliminated (credited to the mover)."
         landing_marker = self._markers.get(to_key)
-        landed_on_own_marker = (
-            landing_marker is not None
-            and landing_marker.player == move.player
-        )
+        landed_on_marker = landing_marker is not None
 
-        if landed_on_own_marker and landing_marker is not None:
+        if landed_on_marker:
             # Record marker removal
             undo.removed_markers[to_key] = landing_marker.copy()
             lm_hash = self._zobrist.get_marker_hash(
@@ -1055,8 +1056,8 @@ class MutableGameState:
             tuple(new_dest.rings)
         )
 
-        # Self-elimination if landed on own marker
-        if landed_on_own_marker:
+        # Self-elimination if landed on ANY marker (own or opponent)
+        if landed_on_marker:
             self._make_eliminate_top_ring(move.to, move.player, undo)
 
     def _make_process_path_markers(
@@ -1494,14 +1495,12 @@ class MutableGameState:
         attacker.controlling_player = prev_controlling
         attacker.cap_height = prev_cap_height
 
-        # Check for landing marker
+        # Check for landing marker - landing on ANY marker (own or opponent)
+        # removes the marker and eliminates the top ring of the landing stack.
         landing_marker = self._markers.get(to_key)
-        landed_on_own_marker = (
-            landing_marker is not None
-            and landing_marker.player == move.player
-        )
+        landed_on_marker = landing_marker is not None
 
-        if landed_on_own_marker and landing_marker is not None:
+        if landed_on_marker:
             # Record marker removal
             undo.removed_markers[to_key] = landing_marker.copy()
             lm_hash = self._zobrist.get_marker_hash(to_key, landing_marker.player)
@@ -1539,8 +1538,8 @@ class MutableGameState:
             tuple(new_dest.rings)
         )
 
-        # Self-elimination if landed on own marker
-        if landed_on_own_marker:
+        # Self-elimination if landed on ANY marker (own or opponent)
+        if landed_on_marker:
             self._make_eliminate_top_ring(move.to, move.player, undo)
 
     def _make_eliminate_rings_from_stack(
