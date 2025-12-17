@@ -761,7 +761,8 @@ class P2POrchestrator:
 
         # Tournament match semaphore - limit concurrent Elo calibration matches to prevent OOM
         # Each match can potentially load neural networks which use significant memory
-        self._tournament_match_semaphore = asyncio.Semaphore(1)  # Only 1 concurrent match
+        # NOTE: Set to None here, created lazily in async context to avoid event loop issues
+        self._tournament_match_semaphore: Optional[asyncio.Semaphore] = None
 
         # Phase 2: Distributed data sync state
         self.local_data_manifest: Optional[NodeDataManifest] = None
@@ -8393,7 +8394,9 @@ print(wins / total)
             duration_sec: Game duration in seconds
         """
         try:
+            print(f"[P2P] Tournament endpoint called, parsing request...")
             data = await request.json()
+            print(f"[P2P] Request parsed: {data}")
 
             match_id = data.get("match_id", str(uuid.uuid4())[:8])
             agent_a = data.get("agent_a", "random")
@@ -8407,11 +8410,14 @@ print(wins / total)
             start_time = time.time()
 
             # Acquire semaphore to prevent concurrent matches (OOM protection)
-            sem = getattr(self, "_tournament_match_semaphore", None)
-            if sem is None:
-                sem = asyncio.Semaphore(1)
+            # Create lazily in async context to avoid event loop issues
+            if self._tournament_match_semaphore is None:
+                print(f"[P2P] Creating tournament semaphore...")
+                self._tournament_match_semaphore = asyncio.Semaphore(1)
 
-            async with sem:
+            print(f"[P2P] Acquiring semaphore...")
+            async with self._tournament_match_semaphore:
+                print(f"[P2P] Semaphore acquired, running match...")
                 # Run the match in a thread pool to avoid blocking
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
