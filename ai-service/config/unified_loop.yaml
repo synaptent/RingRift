@@ -358,7 +358,7 @@ ssh:
 selfplay:
   # Game generation
   default_games_per_config: 50
-  min_games_for_training: 500
+  min_games_for_training: 300 # OPTIMIZED: Aligned with training.trigger_threshold_games
   max_games_per_session: 1000
 
   # Worker management

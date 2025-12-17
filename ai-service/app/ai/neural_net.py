@@ -2468,6 +2468,7 @@ def create_model_for_board(
     history_length: int = 3,
     memory_tier: Optional[str] = None,
     model_class: Optional[str] = None,
+    num_players: int = 4,
     **_: Any,
 ) -> nn.Module:
     """
@@ -2565,6 +2566,7 @@ def create_model_for_board(
                 num_filters=num_filters or 192,
                 board_size=board_size,
                 policy_size=policy_size,
+                num_players=num_players,
             )
         elif tier == "v3-low":
             # HexNeuralNet_v3_Lite: Spatial policy heads, 6 res blocks, 96 filters, ~4M params
@@ -2575,6 +2577,7 @@ def create_model_for_board(
                 num_filters=num_filters or 96,
                 board_size=board_size,
                 policy_size=policy_size,
+                num_players=num_players,
             )
         elif tier == "high":
             # HexNeuralNet_v2: 12 res blocks, 192 filters, ~43M params
@@ -2585,6 +2588,7 @@ def create_model_for_board(
                 num_filters=num_filters or 192,
                 board_size=board_size,
                 policy_size=policy_size,
+                num_players=num_players,
             )
         else:  # low tier (default)
             # HexNeuralNet_v2_Lite: 6 res blocks, 96 filters, ~19M params
@@ -2595,6 +2599,7 @@ def create_model_for_board(
                 num_filters=num_filters or 96,
                 board_size=board_size,
                 policy_size=policy_size,
+                num_players=num_players,
             )
     else:
         # Square boards (8x8 and 19x19)
@@ -3573,6 +3578,7 @@ class NeuralNetAI(BaseAI):
                 num_filters=num_filters,
                 history_length=history_length_override,
                 memory_tier=memory_tier_override,
+                num_players=num_players_override,
             )
         # Ensure the encoder uses the same history length as the loaded model.
         self.history_length = history_length_override

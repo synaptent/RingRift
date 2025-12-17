@@ -284,6 +284,9 @@ def run_hybrid_selfplay(
             ("square19", 2): 1200,
             ("square19", 3): 1600,
             ("square19", 4): 2000,
+            ("hex8", 2): 500,
+            ("hex8", 3): 800,
+            ("hex8", 4): 1200,
             ("hex", 2): 1200,
             ("hex", 3): 1600,
             ("hex", 4): 2000,
@@ -297,6 +300,7 @@ def run_hybrid_selfplay(
     board_type_enum_map = {
         "square8": BoardType.SQUARE8,
         "square19": BoardType.SQUARE19,
+        "hex8": BoardType.HEX8,
         "hex": BoardType.HEXAGONAL,
         "hexagonal": BoardType.HEXAGONAL,
     }
@@ -920,7 +924,7 @@ def run_benchmark(board_type: str = "square8", num_players: int = 2):
     logger.info("BENCHMARK: CPU vs Hybrid GPU Evaluation")
     logger.info("=" * 60)
 
-    board_size = {"square8": 8, "square19": 19, "hex": 25}.get(board_type.lower(), 8)
+    board_size = {"square8": 8, "square19": 19, "hex8": 9, "hex": 25, "hexagonal": 25}.get(board_type.lower(), 8)
     board_type_enum = getattr(BoardType, board_type.upper(), BoardType.SQUARE8)
     device = get_device()
 
@@ -1012,8 +1016,8 @@ def main():
         "--board-type",
         type=str,
         default="square8",
-        choices=["square8", "square19", "hex", "hexagonal"],
-        help="Board type (hexagonal is an alias for hex)",
+        choices=["square8", "square19", "hex8", "hex", "hexagonal"],
+        help="Board type (hex8 is radius-4, hexagonal/hex is radius-12)",
     )
     parser.add_argument(
         "--num-players",

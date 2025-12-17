@@ -534,6 +534,26 @@ class DataManifest:
         conn.close()
         return log_id
 
+    # Alias for backwards compatibility with tests
+    def record_sync(
+        self,
+        host_name: str,
+        games_synced: int,
+        duration_seconds: float,
+        success: bool,
+        sync_method: str = "",
+        error_message: str = "",
+    ) -> int:
+        """Alias for log_sync (backwards compatibility)."""
+        return self.log_sync(
+            host_name=host_name,
+            games_synced=games_synced,
+            duration_seconds=duration_seconds,
+            success=success,
+            sync_method=sync_method,
+            error_message=error_message,
+        )
+
     def get_recent_syncs(self, hours: int = 24, host_name: Optional[str] = None) -> List[SyncHistoryEntry]:
         """Get recent sync history.
 

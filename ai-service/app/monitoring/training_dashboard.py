@@ -746,6 +746,76 @@ class MetricsCollector:
                 {"board_type": board_type, "num_players": num_players}
             )
 
+    def record_data_quality(
+        self,
+        config_key: str,
+        parity_passed: bool,
+        parity_failure_rate: float,
+        games_checked: int,
+        holdout_loss: Optional[float] = None,
+        overfit_gap: Optional[float] = None,
+    ):
+        """Record data quality metrics for dashboard display.
+
+        Args:
+            config_key: Configuration key (e.g., 'square8_2p')
+            parity_passed: Whether parity validation passed
+            parity_failure_rate: Rate of parity failures (0-1)
+            games_checked: Number of games checked in validation
+            holdout_loss: Optional holdout evaluation loss
+            overfit_gap: Optional overfitting gap (holdout_loss - train_loss)
+        """
+        now = datetime.utcnow().isoformat() + "Z"
+
+        # Store in SQLite for historical tracking
+        try:
+            self.db.conn.execute("""
+                INSERT INTO data_quality_metrics
+                (timestamp, config_key, parity_passed, parity_failure_rate,
+                 games_checked, holdout_loss, overfit_gap)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (now, config_key, 1 if parity_passed else 0, parity_failure_rate,
+                  games_checked, holdout_loss, overfit_gap))
+            self.db.conn.commit()
+        except sqlite3.OperationalError:
+            # Table may not exist yet - create it
+            self.db.conn.execute("""
+                CREATE TABLE IF NOT EXISTS data_quality_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    config_key TEXT NOT NULL,
+                    parity_passed INTEGER NOT NULL,
+                    parity_failure_rate REAL NOT NULL,
+                    games_checked INTEGER NOT NULL,
+                    holdout_loss REAL,
+                    overfit_gap REAL
+                )
+            """)
+            self.db.conn.execute("""
+                INSERT INTO data_quality_metrics
+                (timestamp, config_key, parity_passed, parity_failure_rate,
+                 games_checked, holdout_loss, overfit_gap)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (now, config_key, 1 if parity_passed else 0, parity_failure_rate,
+                  games_checked, holdout_loss, overfit_gap))
+            self.db.conn.commit()
+
+        # Create alert if parity failure rate is high
+        if parity_failure_rate > 0.10:  # 10% threshold
+            self._create_alert(
+                "warning", "data_quality",
+                f"High parity failure rate for {config_key}: {parity_failure_rate:.1%}",
+                {"config_key": config_key, "failure_rate": parity_failure_rate}
+            )
+
+        # Create alert if overfitting detected
+        if overfit_gap is not None and overfit_gap > 0.15:  # 15% overfit gap threshold
+            self._create_alert(
+                "warning", "data_quality",
+                f"Overfitting detected for {config_key}: gap={overfit_gap:.4f}",
+                {"config_key": config_key, "overfit_gap": overfit_gap}
+            )
+
     def _check_loss_anomaly(self, loss: float):
         """Check for loss spikes."""
         self._loss_history.append(loss)

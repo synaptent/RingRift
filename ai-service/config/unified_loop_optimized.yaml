@@ -1,0 +1,46 @@
+# Optimized Unified AI Loop Configuration
+# Based on Bayesian hyperparameter search results
+
+data_ingestion:
+  sync_interval_seconds: 60
+  data_threshold_games: 500
+
+training:
+  # Optimal hyperparameters from Bayesian search
+  learning_rate: 0.000934
+  batch_size: 256
+  hidden_size: 768
+  num_layers: 2
+  dropout: 0.348
+  weight_decay: 0.0082
+  value_weight: 1.73
+  policy_weight: 0.95
+  epochs_per_run: 20
+  min_games_for_training: 100
+
+evaluation:
+  shadow_interval_seconds: 180
+  shadow_games: 5
+  full_interval_seconds: 3600
+  full_games: 20
+
+promotion:
+  elo_threshold: 50 # Promote if +50 Elo over current best
+  min_games: 20
+  auto_deploy: true
+
+curriculum:
+  adaptive_weights: true
+  boost_underrepresented: true
+  max_weight: 2.0
+  min_weight: 0.5
+
+model_pruning:
+  enabled: true
+  min_elo: 1300
+  min_games: 30
+  archive_instead_of_delete: true
+
+p2p_cluster:
+  enabled: false # Local mode
+

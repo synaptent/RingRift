@@ -431,6 +431,10 @@ class TrainingScheduler:
         Supports parallel training: different configs can train simultaneously,
         up to _max_concurrent_training total runs.
         """
+        # Check global training_in_progress flag (legacy check for backwards compatibility)
+        if self.state.training_in_progress:
+            return None
+
         # Check concurrent training limit (cluster-wide)
         active_runs = self.count_active_training_runs()
         if active_runs >= self._max_concurrent_training:

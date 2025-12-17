@@ -114,6 +114,20 @@ try:
 except ImportError:
     HAS_MODEL_VALIDATION = False
 
+# Model registry for tracking model lifecycle and provenance
+try:
+    from app.training.model_registry import (
+        ModelRegistry,
+        ModelStage,
+        ModelMetrics,
+        TrainingConfig as RegistryTrainingConfig,
+    )
+    HAS_MODEL_REGISTRY = True
+except ImportError:
+    HAS_MODEL_REGISTRY = False
+    ModelRegistry = None
+    ModelStage = None
+
 # Optional Prometheus client
 try:
     from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
@@ -1182,6 +1196,50 @@ if HAS_PROMETHEUS:
         ['config']
     )
 
+    # Parity validation metrics
+    PARITY_VALIDATIONS = _get_or_create(
+        'ringrift_parity_validations_total', Counter,
+        'Total parity validations performed',
+        ['config', 'result']  # result: passed, failed
+    )
+    PARITY_GAMES_CHECKED = _get_or_create(
+        'ringrift_parity_games_checked', Gauge,
+        'Number of games checked in last parity validation',
+        ['config']
+    )
+    PARITY_FAILURE_RATE = _get_or_create(
+        'ringrift_parity_failure_rate', Gauge,
+        'Parity failure rate (0-1) from last validation',
+        ['config']
+    )
+    PARITY_VALIDATION_IN_PROGRESS = _get_or_create(
+        'ringrift_parity_validation_in_progress', Gauge,
+        'Whether parity validation is currently running (1=yes, 0=no)',
+        []
+    )
+    TRAINING_BLOCKED_PARITY = _get_or_create(
+        'ringrift_training_blocked_parity_total', Counter,
+        'Training runs blocked due to parity validation failure',
+        ['config']
+    )
+
+    # Model registry metrics
+    MODEL_REGISTRY_COUNT = _get_or_create(
+        'ringrift_model_registry_count', Gauge,
+        'Number of models in registry by stage',
+        ['stage']  # development, staging, production, archived, rejected
+    )
+    MODEL_REGISTRY_REGISTRATIONS = _get_or_create(
+        'ringrift_model_registry_registrations_total', Counter,
+        'Total model registrations',
+        ['config']
+    )
+    MODEL_REGISTRY_PROMOTIONS = _get_or_create(
+        'ringrift_model_registry_promotions_total', Counter,
+        'Total model stage promotions in registry',
+        ['from_stage', 'to_stage']
+    )
+
 
 class HealthStatus(Enum):
     """Component health status levels."""
@@ -1814,6 +1872,7 @@ class UnifiedLoopState:
     # Parity validation state
     last_parity_validation: float = 0.0
     parity_validation_passed: bool = True
+    parity_validation_in_progress: bool = False
     parity_games_passed: int = 0
     parity_games_failed: int = 0
 
@@ -1870,6 +1929,7 @@ class UnifiedLoopState:
             # Parity validation state
             "last_parity_validation": self.last_parity_validation,
             "parity_validation_passed": self.parity_validation_passed,
+            "parity_validation_in_progress": self.parity_validation_in_progress,
             "parity_games_passed": self.parity_games_passed,
             "parity_games_failed": self.parity_games_failed,
             # CMA-ES state
@@ -1902,7 +1962,7 @@ class UnifiedLoopState:
                     "tier_assignments", "tier_promotions_count", "last_tier_check",
                     # Parity validation state
                     "last_parity_validation", "parity_validation_passed",
-                    "parity_games_passed", "parity_games_failed",
+                    "parity_validation_in_progress", "parity_games_passed", "parity_games_failed",
                     # CMA-ES state
                     "cmaes_in_progress", "cmaes_run_id", "cmaes_started_at", "cmaes_best_weights"]:
             if key in data:
@@ -2341,6 +2401,19 @@ class UnifiedAILoop:
         self.model_pruning = ModelPruningService(
             config.model_pruning, self.state, self.event_bus
         )
+
+        # Model registry for tracking model lifecycle and provenance
+        self.model_registry: Optional[ModelRegistry] = None
+        if HAS_MODEL_REGISTRY:
+            try:
+                registry_path = AI_SERVICE_ROOT / "data" / "model_registry.db"
+                self.model_registry = ModelRegistry(db_path=registry_path)
+                # Subscribe to events for model lifecycle tracking
+                self.event_bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_for_model_registry)
+                self.event_bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_for_model_registry)
+                print(f"[UnifiedLoop] Model registry initialized with event handlers: {registry_path}")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize model registry: {e}")
 
         # Pipeline feedback controller for closed-loop integration
         self.feedback: Optional[PipelineFeedbackController] = None
@@ -2831,6 +2904,15 @@ class UnifiedAILoop:
         else:
             for config_key in self.state.configs:
                 TRAINING_IN_PROGRESS.labels(config=config_key).set(0)
+
+        # Model registry counts by stage
+        if HAS_MODEL_REGISTRY and self.model_registry:
+            try:
+                for stage in ModelStage:
+                    models = self.model_registry.list_models(stage=stage)
+                    MODEL_REGISTRY_COUNT.labels(stage=stage.value).set(len(models))
+            except Exception:
+                pass  # Don't fail metrics loop on registry errors
 
         # Update training progress metrics (for dashboard compatibility)
         self._update_training_progress_metrics()
@@ -3375,6 +3457,90 @@ class UnifiedAILoop:
 
         except Exception as e:
             print(f"[Feedback] Error processing promotion feedback: {e}")
+
+    async def _on_training_for_model_registry(self, event: DataEvent):
+        """Register newly trained models in the model registry."""
+        if not self.model_registry:
+            return
+
+        try:
+            payload = event.payload
+            config_key = payload.get('config_key') or payload.get('config', '')
+            model_path = payload.get('model_path')
+            train_loss = payload.get('train_loss') or payload.get('final_loss')
+            val_loss = payload.get('val_loss')
+
+            if not model_path or not config_key:
+                return
+
+            # Register model in the registry
+            model_id, version = self.model_registry.register_model(
+                name=config_key,
+                model_path=Path(model_path),
+                initial_stage=ModelStage.DEVELOPMENT,
+                metrics=ModelMetrics(
+                    value_mse=train_loss,
+                ) if train_loss else None,
+                training_config=RegistryTrainingConfig() if RegistryTrainingConfig else None,
+            )
+            print(f"[ModelRegistry] Registered model {model_id}:v{version} from training ({config_key})")
+
+            # Update Prometheus metrics
+            if HAS_PROMETHEUS:
+                MODEL_REGISTRY_REGISTRATIONS.labels(config=config_key).inc()
+
+        except Exception as e:
+            print(f"[ModelRegistry] Error registering model: {e}")
+
+    async def _on_promotion_for_model_registry(self, event: DataEvent):
+        """Update model stage in registry when promoted."""
+        if not self.model_registry:
+            return
+
+        try:
+            payload = event.payload
+            model_id = payload.get('model_id')
+            elo_gain = payload.get('elo_gain', 0)
+            new_elo = payload.get('new_elo', 0)
+            config_key = payload.get('config', '')
+
+            if not model_id:
+                return
+
+            # Get current version to promote
+            model = self.model_registry.get_model(model_id)
+            if not model:
+                print(f"[ModelRegistry] Model {model_id} not found in registry")
+                return
+
+            from_stage = model.stage.value
+
+            # Promote through staging to production
+            if model.stage == ModelStage.DEVELOPMENT:
+                self.model_registry.promote(
+                    model_id, model.version, ModelStage.STAGING,
+                    reason=f"Elo gain: +{elo_gain:.0f}"
+                )
+            if model.stage in (ModelStage.DEVELOPMENT, ModelStage.STAGING):
+                self.model_registry.promote(
+                    model_id, model.version, ModelStage.PRODUCTION,
+                    reason=f"Promoted with Elo={new_elo:.0f}"
+                )
+
+            print(f"[ModelRegistry] Promoted {model_id}:v{model.version} to PRODUCTION (+{elo_gain:.0f} Elo)")
+
+            # Update model metrics
+            self.model_registry.update_metrics(
+                model_id, model.version,
+                ModelMetrics(elo=new_elo, elo_uncertainty=50.0),
+            )
+
+            # Update Prometheus metrics
+            if HAS_PROMETHEUS:
+                MODEL_REGISTRY_PROMOTIONS.labels(from_stage=from_stage, to_stage="production").inc()
+
+        except Exception as e:
+            print(f"[ModelRegistry] Error updating model stage: {e}")
 
     async def _on_elo_significant_change(self, event: DataEvent):
         """Handle significant Elo changes by triggering curriculum rebalancing.
@@ -4889,33 +5055,46 @@ class UnifiedAILoop:
                     trigger_config = self.training_scheduler.should_trigger_training()
                     print(f"[TrainingLoop] Check: trigger_config={trigger_config}", flush=True)
                     if trigger_config:
-                        # Run parity validation gate before training
-                        if self.should_run_parity_validation(min_interval_seconds=1800):
-                            parts = trigger_config.rsplit("_", 1)
-                            board_type = parts[0]
-                            num_players = int(parts[1].replace("p", ""))
-                            parity_result = await self.run_parity_validation(
-                                board_type=board_type, num_players=num_players
-                            )
-                            if not parity_result.get("passed", True):
-                                failure_rate = parity_result.get("failure_rate", 0)
-                                max_rate = self.config.feedback.max_parity_failure_rate if hasattr(self.config, 'feedback') else 0.10
-                                if failure_rate > max_rate:
-                                    print(f"[Training] BLOCKED by parity validation: {failure_rate:.1%} > {max_rate:.1%}")
-                                    continue
+                        # Use cached parity validation results (non-blocking)
+                        # Background _parity_validation_loop updates state continuously
+                        max_rate = self.config.feedback.max_parity_failure_rate if hasattr(self.config, 'feedback') else 0.10
 
-                            # Record data quality in improvement optimizer for acceleration
-                            if HAS_IMPROVEMENT_OPTIMIZER:
-                                try:
-                                    optimizer = get_improvement_optimizer()
-                                    parity_success = 1.0 - parity_result.get("failure_rate", 0)
-                                    data_quality = self.feedback.state.data_quality_score if self.feedback else 1.0
-                                    rec = optimizer.record_data_quality(parity_success, data_quality)
-                                    if rec.signal in (ImprovementSignal.QUALITY_DATA_SURGE, ImprovementSignal.DATA_QUALITY_HIGH):
-                                        print(f"[ImprovementOptimizer] High data quality detected: "
-                                              f"parity={parity_success:.1%}, quality={data_quality:.2f}")
-                                except Exception:
-                                    pass  # Don't block training for optimizer errors
+                        # Check cached parity state
+                        if self.state.last_parity_validation > 0:
+                            # We have cached results - use them
+                            if not self.state.parity_validation_passed:
+                                failure_rate = (
+                                    self.state.parity_games_failed /
+                                    max(1, self.state.parity_games_passed + self.state.parity_games_failed)
+                                )
+                                if failure_rate > max_rate:
+                                    print(f"[Training] BLOCKED by cached parity validation: {failure_rate:.1%} > {max_rate:.1%}")
+                                    # Request fresh validation if stale (>1 hour old)
+                                    if time.time() - self.state.last_parity_validation > 3600:
+                                        print("[Training] Cached parity results stale, background validation will refresh")
+                                    continue
+                        else:
+                            # No cached results yet - first run. Allow training to proceed
+                            # (background loop will populate soon)
+                            print("[Training] No cached parity results yet, allowing training to proceed")
+
+                        # Record data quality in improvement optimizer for acceleration
+                        if HAS_IMPROVEMENT_OPTIMIZER:
+                            try:
+                                optimizer = get_improvement_optimizer()
+                                # Use cached parity success rate
+                                total_checked = self.state.parity_games_passed + self.state.parity_games_failed
+                                parity_success = (
+                                    self.state.parity_games_passed / max(1, total_checked)
+                                    if total_checked > 0 else 1.0
+                                )
+                                data_quality = self.feedback.state.data_quality_score if self.feedback else 1.0
+                                rec = optimizer.record_data_quality(parity_success, data_quality)
+                                if rec.signal in (ImprovementSignal.QUALITY_DATA_SURGE, ImprovementSignal.DATA_QUALITY_HIGH):
+                                    print(f"[ImprovementOptimizer] High data quality detected: "
+                                          f"parity={parity_success:.1%}, quality={data_quality:.2f}")
+                            except Exception:
+                                pass  # Don't block training for optimizer errors
 
                         print(f"[Training] Starting training for {trigger_config}")
                         await self.training_scheduler.start_training(trigger_config)
@@ -4933,12 +5112,75 @@ class UnifiedAILoop:
 
     async def _promotion_loop(self):
         """Main promotion checking loop."""
+        # Import holdout validation for pre-promotion gate
+        try:
+            from scripts.holdout_validation import (
+                evaluate_model_on_holdout,
+                OVERFIT_THRESHOLD,
+            )
+            has_holdout_validation = True
+        except ImportError:
+            has_holdout_validation = False
+
         while self._running:
             try:
                 candidates = await self.model_promoter.check_promotion_candidates()
                 self.health_tracker.record_success("promoter")
                 for candidate in candidates:
                     print(f"[Promotion] Found candidate: {candidate['model_id']} (+{candidate['elo_gain']} Elo)")
+
+                    # Pre-promotion holdout validation gate
+                    promotion_approved = True
+                    if has_holdout_validation:
+                        config_key = candidate.get("config", "")
+                        model_path = candidate.get("model_path")
+
+                        if model_path and config_key:
+                            try:
+                                parts = config_key.rsplit("_", 1)
+                                board_type = parts[0]
+                                num_players = int(parts[1].replace("p", ""))
+
+                                print(f"[Promotion] Running holdout validation for {candidate['model_id']}...")
+                                result = await asyncio.get_event_loop().run_in_executor(
+                                    None,
+                                    lambda: evaluate_model_on_holdout(
+                                        model_path=Path(model_path),
+                                        board_type=board_type,
+                                        num_players=num_players,
+                                        train_loss=0.0,  # Will be computed as gap
+                                    )
+                                )
+
+                                if result:
+                                    print(f"[Promotion] Holdout validation: loss={result.holdout_loss:.4f}, "
+                                          f"accuracy={result.holdout_accuracy:.2%}, samples={result.num_samples}")
+
+                                    # Check overfit gap if we have enough samples
+                                    if result.num_samples >= 100:
+                                        if result.overfit_gap is not None and result.overfit_gap > OVERFIT_THRESHOLD:
+                                            print(f"[Promotion] REJECTED: {candidate['model_id']} - "
+                                                  f"overfit gap {result.overfit_gap:.4f} > {OVERFIT_THRESHOLD:.4f}")
+                                            promotion_approved = False
+
+                                            # Emit overfitting event
+                                            await self.event_bus.publish(DataEvent(
+                                                event_type=DataEventType.PROMOTION_REJECTED,
+                                                payload={
+                                                    "model_id": candidate['model_id'],
+                                                    "reason": "overfitting",
+                                                    "overfit_gap": result.overfit_gap,
+                                                    "holdout_loss": result.holdout_loss,
+                                                    "threshold": OVERFIT_THRESHOLD,
+                                                }
+                                            ))
+                            except Exception as e:
+                                print(f"[Promotion] Holdout validation error (proceeding anyway): {e}")
+                                # Don't block on holdout errors - allow Elo-based promotion to continue
+
+                    if not promotion_approved:
+                        continue
+
                     success = await self.model_promoter.execute_promotion(candidate)
 
                     # Record successful promotion for dynamic threshold calculation
@@ -5098,6 +5340,90 @@ class UnifiedAILoop:
             # Check every 5 minutes
             try:
                 await asyncio.wait_for(self._shutdown_event.wait(), timeout=300)
+                break
+            except asyncio.TimeoutError:
+                pass
+
+    async def _parity_validation_loop(self):
+        """Background parity validation loop (non-blocking).
+
+        Runs parity validation periodically in the background, updating cached
+        state that the training loop uses. This prevents the training loop from
+        blocking while waiting for validation.
+
+        The training loop reads self.state.parity_validation_passed instead of
+        waiting for validation to complete.
+        """
+        parity_interval = 1800  # Run every 30 minutes
+        last_run_time = 0.0
+
+        while self._running:
+            try:
+                now = time.time()
+                if now - last_run_time >= parity_interval and not self.state.parity_validation_in_progress:
+                    last_run_time = now
+                    self.state.parity_validation_in_progress = True
+                    # Update in-progress metric
+                    if HAS_PROMETHEUS:
+                        PARITY_VALIDATION_IN_PROGRESS.set(1)
+
+                    # Determine which configs to validate
+                    configs_to_validate = list(self.state.configs.keys())
+                    if not configs_to_validate:
+                        # Use default config if no configs tracked yet
+                        configs_to_validate = ["square8_2p"]
+
+                    for config_key in configs_to_validate:
+                        if not self._running:
+                            break
+
+                        try:
+                            parts = config_key.rsplit("_", 1)
+                            board_type = parts[0]
+                            num_players = int(parts[1].replace("p", ""))
+
+                            print(f"[ParityValidation] Background validation for {config_key}...")
+                            result = await self.run_parity_validation(
+                                board_type=board_type,
+                                num_players=num_players
+                            )
+
+                            # Emit event on validation results
+                            if result.get("total_games_checked", 0) > 0:
+                                await self.event_bus.publish(DataEvent(
+                                    event_type=DataEventType.DATA_QUALITY_ALERT if not result.get("passed", True) else DataEventType.DATA_SYNC_COMPLETED,
+                                    payload={
+                                        "validation_type": "parity",
+                                        "config": config_key,
+                                        "passed": result.get("passed", False),
+                                        "games_checked": result.get("total_games_checked", 0),
+                                        "games_passed": result.get("games_passed", 0),
+                                        "failure_rate": result.get("failure_rate", 0.0),
+                                    }
+                                ))
+
+                                # Update Prometheus metrics
+                                if HAS_PROMETHEUS:
+                                    result_label = "passed" if result.get("passed", False) else "failed"
+                                    PARITY_VALIDATIONS.labels(config=config_key, result=result_label).inc()
+                                    PARITY_GAMES_CHECKED.labels(config=config_key).set(result.get("total_games_checked", 0))
+                                    PARITY_FAILURE_RATE.labels(config=config_key).set(result.get("failure_rate", 0.0))
+
+                        except Exception as e:
+                            print(f"[ParityValidation] Error validating {config_key}: {e}")
+
+                    self.state.parity_validation_in_progress = False
+                    # Update in-progress metric
+                    if HAS_PROMETHEUS:
+                        PARITY_VALIDATION_IN_PROGRESS.set(0)
+
+            except Exception as e:
+                print(f"[ParityValidation] Loop error: {e}")
+                self.state.parity_validation_in_progress = False
+
+            # Check every 2 minutes
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=120)
                 break
             except asyncio.TimeoutError:
                 pass
@@ -5853,6 +6179,9 @@ class UnifiedAILoop:
                         # Small delay between configs to avoid overload
                         await asyncio.sleep(1)
 
+                    # Archive old development models in registry
+                    await self._archive_old_registry_models()
+
             except Exception as e:
                 print(f"[Gauntlet] Error in gauntlet/culling loop: {e}")
 
@@ -5864,6 +6193,67 @@ class UnifiedAILoop:
                 break
             except asyncio.TimeoutError:
                 pass
+
+    async def _archive_old_registry_models(self):
+        """Archive old development models that haven't been promoted.
+
+        Models in DEVELOPMENT stage older than 7 days without promotion
+        are moved to ARCHIVED stage to keep the registry clean.
+        """
+        if not HAS_MODEL_REGISTRY or not self.model_registry:
+            return
+
+        try:
+            # Get all development models
+            dev_models = self.model_registry.list_models(stage=ModelStage.DEVELOPMENT)
+
+            if not dev_models:
+                return
+
+            now = datetime.now()
+            archive_threshold = 7 * 24 * 3600  # 7 days in seconds
+            archived_count = 0
+
+            for model_info in dev_models:
+                try:
+                    model_id = model_info['model_id']
+                    version = model_info['version']
+                    updated_at_str = model_info.get('updated_at', '')
+
+                    if not updated_at_str:
+                        continue
+
+                    # Parse updated_at timestamp
+                    try:
+                        updated_at = datetime.fromisoformat(updated_at_str)
+                    except ValueError:
+                        continue
+
+                    # Check if model is old enough to archive
+                    age_seconds = (now - updated_at).total_seconds()
+                    if age_seconds > archive_threshold:
+                        # Archive the model
+                        self.model_registry.promote(
+                            model_id, version, ModelStage.ARCHIVED,
+                            reason=f"Auto-archived: no promotion in {age_seconds/86400:.1f} days"
+                        )
+                        archived_count += 1
+
+                        # Update Prometheus metrics
+                        if HAS_PROMETHEUS:
+                            MODEL_REGISTRY_PROMOTIONS.labels(
+                                from_stage="development", to_stage="archived"
+                            ).inc()
+
+                except Exception as e:
+                    # Skip individual model errors
+                    continue
+
+            if archived_count > 0:
+                print(f"[ModelRegistry] Archived {archived_count} old development models")
+
+        except Exception as e:
+            print(f"[ModelRegistry] Error in auto-archival: {e}")
 
     async def _elo_sync_loop(self):
         """Elo database synchronization loop for cluster-wide consistency.
@@ -6176,7 +6566,7 @@ class UnifiedAILoop:
                 "curriculum", "metrics", "health_check", "utilization_optimization",
                 "hp_tuning_sync", "external_drive_sync", "pbt", "nas",
                 "per", "cross_process_event", "health_recovery", "gauntlet_culling",
-                "elo_sync", "holdout_validation"
+                "elo_sync", "holdout_validation", "parity_validation"
             ]
             results = await asyncio.gather(
                 self._data_collection_loop(),
@@ -6197,6 +6587,7 @@ class UnifiedAILoop:
                 self._gauntlet_culling_loop(),  # Model evaluation and top-quartile culling
                 self._elo_sync_loop(),  # Cluster-wide Elo database consistency
                 self._holdout_validation_loop(),  # Phase 3.2: Continuous holdout validation
+                self._parity_validation_loop(),  # Non-blocking parity validation
                 return_exceptions=True,  # Don't crash if one loop fails
             )
             # Log any exceptions from loops

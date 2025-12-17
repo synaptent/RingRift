@@ -627,6 +627,7 @@ class JobConfig:
     num_games: int
     max_moves: int
     difficulty_band: str
+    engine_mode: str
     output_db: str
     log_jsonl: str
     seed: int
@@ -638,6 +639,7 @@ def generate_job_configs(
     output_dir: str,
     base_seed: int = 42,
     difficulty_band: str = "light",
+    engine_mode: str = "mixed",
     host_memory: Optional[Dict[str, int]] = None,
     host_disk_available: Optional[Dict[str, int]] = None,
     min_remote_free_disk_gb: int = 0,
@@ -708,6 +710,7 @@ def generate_job_configs(
                         num_games=host_games,
                         max_moves=max_moves,
                         difficulty_band=difficulty_band,
+                        engine_mode=engine_mode,
                         output_db=os.path.join(output_dir, f"selfplay_{config_id}_{host}.db"),
                         log_jsonl=os.path.join(output_dir, f"selfplay_{config_id}_{host}.jsonl"),
                         seed=job_seed,
@@ -766,7 +769,7 @@ def build_soak_command(job: JobConfig, is_remote: bool = False) -> str:
         f"--num-players {job.num_players}",
         f"--max-moves {job.max_moves}",
         f"--seed {job.seed}",
-        "--engine-mode mixed",
+        f"--engine-mode {job.engine_mode}",
         f"--difficulty-band {job.difficulty_band}",
         f"--log-jsonl {job.log_jsonl}",
         f"--record-db {job.output_db}",
@@ -1261,6 +1264,31 @@ def main():
         ),
     )
     parser.add_argument(
+        "--engine-mode",
+        type=str,
+        choices=[
+            "mixed",
+            "diverse",           # GPU-optimized diverse AI (all 11 types)
+            "diverse-cpu",       # CPU-optimized diverse AI
+            "descent-only",
+            "heuristic-only",
+            "minimax-only",
+            "mcts-only",
+            "nn-only",
+            "gpu-minimax-only",
+            "maxn-only",
+            "brs-only",
+            "policy-only",
+            "gumbel-mcts-only",
+        ],
+        default="mixed",
+        help=(
+            "Engine mode for selfplay. 'diverse' uses GPU-optimized distribution "
+            "with all 11 AI types (GUMBEL_MCTS 20%%, POLICY_ONLY 15%%, GPU_MINIMAX 12%%). "
+            "Default: mixed."
+        ),
+    )
+    parser.add_argument(
         "--max-parallel-per-host",
         type=int,
         default=2,
@@ -1401,6 +1429,7 @@ def main():
         output_dir=args.output_dir,
         base_seed=args.base_seed,
         difficulty_band=args.difficulty_band,
+        engine_mode=args.engine_mode,
         host_memory=host_memory,
         host_disk_available=host_disk_available,
         min_remote_free_disk_gb=int(args.min_remote_free_disk_gb) if args.min_remote_free_disk_gb else 0,

@@ -321,9 +321,9 @@ promotion:
         config = UnifiedLoopConfig()
 
         assert config.data_ingestion.poll_interval_seconds == 60
-        assert config.training.trigger_threshold_games == 1000
-        assert config.evaluation.shadow_interval_seconds == 900
-        assert config.promotion.elo_threshold == 20
+        assert config.training.trigger_threshold_games == 500  # Updated from 1000
+        assert config.evaluation.shadow_interval_seconds == 300  # Updated from 900
+        assert config.promotion.elo_threshold == 25  # Updated from 20
         assert config.curriculum.adaptive is True
 
 

@@ -1088,12 +1088,101 @@ def _build_mixed_ai_pool(
                 ai_metadata[f"player_{pnum}_difficulty"] = 5
         return ai_by_player, ai_metadata
 
+    # Diverse AI modes - all 11 AI types with weighted distribution
+    if engine_mode in ("diverse", "diverse-cpu"):
+        try:
+            from app.training.diverse_ai_config import (
+                get_weighted_ai_type,
+                GPU_OPTIMIZED_WEIGHTS,
+                CPU_OPTIMIZED_WEIGHTS,
+                get_diverse_matchups,
+                DiverseAIConfig,
+            )
+        except ImportError:
+            raise SystemExit(
+                "Diverse AI mode requires app.training.diverse_ai_config module"
+            )
+
+        use_gpu = engine_mode == "diverse"
+        weights = GPU_OPTIMIZED_WEIGHTS if use_gpu else CPU_OPTIMIZED_WEIGHTS
+        diverse_config = DiverseAIConfig(
+            board_type=board_type.name.lower(),
+            num_players=num_players,
+            use_gpu=use_gpu,
+        )
+
+        # Get diverse matchups for this game
+        matchups = get_diverse_matchups(num_players=num_players, num_matchups=1, config=diverse_config)
+        matchup = matchups[0] if matchups else None
+
+        ai_by_player: Dict[int, Any] = {}
+        ai_metadata: Dict[str, Any] = {"engine_mode": engine_mode, "use_gpu": use_gpu}
+
+        for pnum in range(1, num_players + 1):
+            if matchup:
+                ai_types_list = matchup.ai_types
+                ai_type_str = ai_types_list[pnum - 1] if pnum <= len(ai_types_list) else get_weighted_ai_type(weights)
+            else:
+                ai_type_str = get_weighted_ai_type(weights)
+
+            ai_metadata[f"player_{pnum}_ai_type"] = ai_type_str
+
+            # Map string to AIType enum and create AI instance
+            ai_type = AIType(ai_type_str)
+            difficulty = 5  # Default difficulty
+
+            # Create AI config and instance
+            cfg = AIConfig(
+                difficulty=difficulty,
+                randomness=0.05,
+                think_time=500,
+                ai_type=ai_type,
+            )
+
+            ai = _create_ai_instance(pnum, cfg)
+            ai_by_player[pnum] = ai
+            ai_metadata[f"player_{pnum}_difficulty"] = difficulty
+
+        return ai_by_player, ai_metadata
+
+    # Single AI type modes (new diverse AI types)
+    single_ai_mode_map = {
+        "gpu-minimax-only": AIType.GPU_MINIMAX,
+        "maxn-only": AIType.MAXN,
+        "brs-only": AIType.BRS,
+        "policy-only": AIType.POLICY_ONLY,
+        "gumbel-mcts-only": AIType.GUMBEL_MCTS,
+        "neural-demo-only": AIType.NEURAL_DEMO,
+    }
+
+    if engine_mode in single_ai_mode_map:
+        ai_type = single_ai_mode_map[engine_mode]
+        ai_by_player: Dict[int, Any] = {}
+        ai_metadata: Dict[str, Any] = {"engine_mode": engine_mode}
+
+        for pnum in range(1, num_players + 1):
+            difficulty = 5
+            cfg = AIConfig(
+                difficulty=difficulty,
+                randomness=0.05,
+                think_time=500,
+                ai_type=ai_type,
+            )
+            ai = _create_ai_instance(pnum, cfg)
+            ai_by_player[pnum] = ai
+            ai_metadata[f"player_{pnum}_ai_type"] = ai_type.value
+            ai_metadata[f"player_{pnum}_difficulty"] = difficulty
+
+        return ai_by_player, ai_metadata
+
     # mixed mode
     if engine_mode != "mixed":
         raise SystemExit(
             "engine_mode must be one of: descent-only, mixed, random-only, "
             "heuristic-only, minimax-only, mcts-only, nn-only, best-vs-pool, "
-            "nn-vs-mcts, nn-vs-minimax, nn-vs-descent, tournament-varied; "
+            "nn-vs-mcts, nn-vs-minimax, nn-vs-descent, tournament-varied, "
+            "diverse, diverse-cpu, gpu-minimax-only, maxn-only, brs-only, "
+            "policy-only, gumbel-mcts-only, neural-demo-only; "
             f"got {engine_mode!r}"
         )
 
@@ -3057,7 +3146,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--board-type",
-        choices=["square8", "square19", "hexagonal"],
+        choices=["square8", "square19", "hexagonal", "hex8"],
         default="square8",
         help="Board type for self-play games (default: square8).",
     )
@@ -3083,6 +3172,15 @@ def _parse_args() -> argparse.Namespace:
             "mcts-only",
             "nn-only",
             "best-vs-pool",
+            # New diverse AI modes (all 11 AI types)
+            "diverse",           # GPU-optimized diverse AI distribution
+            "diverse-cpu",       # CPU-optimized diverse AI distribution
+            "gpu-minimax-only",  # GPU batched minimax
+            "maxn-only",         # Max-N search
+            "brs-only",          # Best-Reply Search
+            "policy-only",       # Direct NN policy
+            "gumbel-mcts-only",  # Gumbel AlphaZero
+            "neural-demo-only",  # Experimental neural
         ],
         default="mixed",
         help=(
@@ -3093,7 +3191,10 @@ def _parse_args() -> argparse.Namespace:
             "'minimax-only' for pure MinimaxAI, "
             "'mcts-only' for pure MCTS, "
             "'nn-only' for neural-net enabled Descent+MCTS+NNUE Minimax, "
-            "'best-vs-pool' for best NN vs recent checkpoint pool (DescentAI). "
+            "'best-vs-pool' for best NN vs recent checkpoint pool (DescentAI), "
+            "'diverse' for GPU-optimized diverse AI with all 11 types "
+            "(GUMBEL_MCTS 20%%, POLICY_ONLY 15%%, GPU_MINIMAX 12%%), "
+            "'diverse-cpu' for CPU-optimized distribution. "
             "Default: mixed."
         ),
     )

@@ -408,11 +408,15 @@ def run_match_via_p2p(
     match_id: str,
     board_type: str = "square8",
     use_ramdrive: bool = False,
-) -> Optional[MatchResult]:
+    max_retries: int = 2,
+) -> Tuple[Optional[MatchResult], Optional[str]]:
     """Run a single match on a remote node via P2P orchestrator endpoint.
 
     Uses the /tournament/play_elo_match endpoint on port 8770 which supports
     all AI types including MCTS, Descent, Policy-Only, and Gumbel MCTS.
+
+    Returns:
+        Tuple of (MatchResult or None, error_message or None)
     """
     import urllib.request
     import urllib.error
@@ -426,38 +430,54 @@ def run_match_via_p2p(
         "use_ramdrive": use_ramdrive,
     }
 
-    try:
-        data = json.dumps(payload).encode('utf-8')
-        req = urllib.request.Request(
-            url,
-            data=data,
-            headers={'Content-Type': 'application/json'},
-            method='POST'
-        )
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={'Content-Type': 'application/json'},
+                method='POST'
+            )
 
-        with urllib.request.urlopen(req, timeout=300) as response:
-            result = json.loads(response.read().decode('utf-8'))
+            with urllib.request.urlopen(req, timeout=300) as response:
+                result = json.loads(response.read().decode('utf-8'))
 
-            if result.get("success"):
-                return MatchResult(
-                    match_id=result.get("match_id", match_id),
-                    agent_a=agent_a,
-                    agent_b=agent_b,
-                    winner=result.get("winner", "draw"),
-                    game_length=result.get("game_length", 0),
-                    duration_sec=result.get("duration_sec", 0),
-                    worker_node=result.get("worker_node", node_id),
-                )
-    except urllib.error.URLError:
-        pass
-    except urllib.error.HTTPError:
-        pass
-    except json.JSONDecodeError:
-        pass
-    except Exception:
-        pass
+                if result.get("success"):
+                    return MatchResult(
+                        match_id=result.get("match_id", match_id),
+                        agent_a=agent_a,
+                        agent_b=agent_b,
+                        winner=result.get("winner", "draw"),
+                        game_length=result.get("game_length", 0),
+                        duration_sec=result.get("duration_sec", 0),
+                        worker_node=result.get("worker_node", node_id),
+                    ), None
+                else:
+                    last_error = f"Match failed: {result.get('error', 'unknown')}"
 
-    return None
+        except urllib.error.HTTPError as e:
+            try:
+                error_body = e.read().decode('utf-8')
+                error_json = json.loads(error_body)
+                last_error = f"HTTP {e.code}: {error_json.get('error', error_body[:100])}"
+            except Exception:
+                last_error = f"HTTP {e.code}: {str(e)}"
+        except urllib.error.URLError as e:
+            last_error = f"URL error: {e.reason}"
+        except json.JSONDecodeError as e:
+            last_error = f"JSON decode error: {str(e)}"
+        except TimeoutError:
+            last_error = "Timeout (300s)"
+        except Exception as e:
+            last_error = f"Exception: {type(e).__name__}: {str(e)}"
+
+        # Sleep briefly before retry
+        if attempt < max_retries - 1:
+            time.sleep(0.5 * (attempt + 1))
+
+    return None, last_error
 
 
 def run_match_on_node(
@@ -468,16 +488,19 @@ def run_match_on_node(
     match_id: str,
     board_type: str = "square8",
     use_ramdrive: bool = False,
-) -> Optional[MatchResult]:
+) -> Tuple[Optional[MatchResult], Optional[str]]:
     """Run a single match on a remote node.
 
     First tries the P2P orchestrator endpoint (fast, supports all AI types),
     falls back to SSH if P2P is unavailable.
+
+    Returns:
+        Tuple of (MatchResult or None, error_message or None)
     """
     ip = config["ip"]
 
     # Try P2P endpoint first (preferred - supports all AI types)
-    result = run_match_via_p2p(
+    result, p2p_error = run_match_via_p2p(
         node_id=node_id,
         node_ip=ip,
         agent_a=agent_a,
@@ -488,7 +511,7 @@ def run_match_on_node(
     )
 
     if result:
-        return result
+        return result, None
 
     # Fallback to SSH for nodes without P2P (limited AI type support)
     user = config["user"]
@@ -503,7 +526,7 @@ def run_match_on_node(
 
     # Skip SSH fallback for complex AI types
     if agent_a not in ai_type_map or agent_b not in ai_type_map:
-        return None
+        return None, p2p_error or f"P2P failed and SSH fallback not available for {agent_a} vs {agent_b}"
 
     a_info = ai_type_map[agent_a]
     b_info = ai_type_map[agent_b]
@@ -559,6 +582,7 @@ print(json.dumps({{"winner": winner, "moves": moves, "dur": round(time.time() - 
     cmd = f'cd {path} && source venv/bin/activate 2>/dev/null; python3 -c "{python_script}"'
     ssh_args.append(cmd)
 
+    ssh_error = None
     try:
         result = subprocess.run(ssh_args, capture_output=True, text=True, timeout=120)
 
@@ -576,15 +600,17 @@ print(json.dumps({{"winner": winner, "moves": moves, "dur": round(time.time() - 
                                 game_length=data.get("moves", 0),
                                 duration_sec=data.get("dur", 0),
                                 worker_node=node_id,
-                            )
-            except json.JSONDecodeError:
-                pass
+                            ), None
+            except json.JSONDecodeError as e:
+                ssh_error = f"SSH JSON decode: {e}"
+        else:
+            ssh_error = f"SSH exit code {result.returncode}: {result.stderr[:100] if result.stderr else 'no output'}"
     except subprocess.TimeoutExpired:
-        pass
-    except Exception:
-        pass
+        ssh_error = "SSH timeout (120s)"
+    except Exception as e:
+        ssh_error = f"SSH exception: {e}"
 
-    return None
+    return None, p2p_error or ssh_error or "Unknown failure"
 
 
 def calculate_elo(results: List[MatchResult]) -> Dict[str, float]:
@@ -676,13 +702,18 @@ def run_distributed_tournament(
     failed = 0
     start_time = time.time()
 
+    # Track errors for debugging
+    from collections import Counter
+    error_counts: Counter = Counter()
+    node_failures: Counter = Counter()
+
     # Round-robin node assignment with parallel execution
     def process_match(args):
         idx, (agent_a, agent_b), node = args
         match_id = f"{tournament_id}_{idx}"
         config = all_hosts.get(node.node_id, {})
         if not config:
-            return None
+            return None, "No config for node"
         return run_match_on_node(node.node_id, config, agent_a, agent_b, match_id, board_type, use_ramdrive)
 
     # Distribute work across nodes
@@ -705,15 +736,20 @@ def run_distributed_tournament(
             idx, (agent_a, agent_b), node = item
 
             try:
-                result = future.result()
+                result, error = future.result()
                 if result:
                     results.append(result)
                     completed += 1
                 else:
                     failed += 1
+                    # Categorize error
+                    error_key = error[:50] if error else "Unknown"
+                    error_counts[error_key] += 1
+                    node_failures[node.node_id] += 1
             except Exception as e:
                 failed += 1
-                print(f"  [!] Match {idx} failed: {e}")
+                error_counts[f"Exception: {type(e).__name__}"] += 1
+                node_failures[node.node_id] += 1
 
             # Progress update every 10 matches
             if (completed + failed) % 10 == 0:
@@ -727,6 +763,18 @@ def run_distributed_tournament(
     print(f"  Total: {completed} matches in {elapsed:.1f}s")
     print(f"  Failed: {failed}")
     print(f"  Rate: {completed/elapsed:.2f} matches/sec")
+
+    # Print error breakdown if there were failures
+    if error_counts:
+        print(f"\n[Tournament] Error breakdown:")
+        for error, count in error_counts.most_common(10):
+            print(f"  {count:>4}x {error}")
+
+    # Print node failure breakdown
+    if node_failures:
+        print(f"\n[Tournament] Failures by node:")
+        for node_id, count in node_failures.most_common(10):
+            print(f"  {count:>4}x {node_id}")
 
     # Calculate Elo
     ratings = calculate_elo(results)

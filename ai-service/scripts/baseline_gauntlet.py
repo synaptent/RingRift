@@ -117,20 +117,26 @@ def play_game(
         state = create_initial_state(board_type=board_type, num_players=2)
         engine = GameEngine()
 
-        # Create opponent AI
+        # Create opponent AI - All 11 AI types for diverse training
         opp_player = 2 if model_plays_first else 1
-        if opponent_type == "random":
-            opp_type = AIType.RANDOM
-            opp_config = AIConfig(ai_type=opp_type, difficulty=1)
-        elif opponent_type == "heuristic":
-            opp_type = AIType.HEURISTIC
-            opp_config = AIConfig(ai_type=opp_type, difficulty=3)
-        elif opponent_type == "mcts":
-            # Use minimax for faster evaluation (pure search, no neural)
-            opp_type = AIType.MINIMAX
-            opp_config = AIConfig(ai_type=opp_type, difficulty=4)
+        OPPONENT_TYPE_MAP = {
+            "random": (AIType.RANDOM, 1),
+            "heuristic": (AIType.HEURISTIC, 3),
+            "minimax": (AIType.MINIMAX, 4),
+            "mcts": (AIType.MCTS, 5),
+            "descent": (AIType.DESCENT, 5),
+            "gpu_minimax": (AIType.GPU_MINIMAX, 5),
+            "maxn": (AIType.MAXN, 5),
+            "brs": (AIType.BRS, 5),
+            "policy_only": (AIType.POLICY_ONLY, 5),
+            "gumbel_mcts": (AIType.GUMBEL_MCTS, 5),
+            "neural_demo": (AIType.NEURAL_DEMO, 5),
+        }
+        if opponent_type in OPPONENT_TYPE_MAP:
+            opp_type, difficulty = OPPONENT_TYPE_MAP[opponent_type]
+            opp_config = AIConfig(ai_type=opp_type, difficulty=difficulty)
         else:
-            raise ValueError(f"Unknown opponent: {opponent_type}")
+            raise ValueError(f"Unknown opponent: {opponent_type}. Valid: {list(OPPONENT_TYPE_MAP.keys())}")
         opponent = _create_ai_instance(opp_type, opp_player, opp_config)
 
         # Create model AI - use fast settings for quick filtering
@@ -412,6 +418,12 @@ def main():
     parser.add_argument("--top", type=int, default=50, help="Show top N results")
     parser.add_argument("--limit", type=int, help="Limit number of models to test")
     parser.add_argument("--parallel", "-j", type=int, default=1, help="Number of parallel workers (default: 1)")
+    parser.add_argument("--opponents", type=str, default="random,heuristic,mcts",
+                        help="Comma-separated opponent types. All 11 AI types available: "
+                             "random,heuristic,minimax,mcts,descent,gpu_minimax,maxn,brs,policy_only,gumbel_mcts,neural_demo. "
+                             "Default: random,heuristic,mcts")
+    parser.add_argument("--diverse", action="store_true",
+                        help="Use all 11 AI types as opponents for diverse training data")
 
     args = parser.parse_args()
 
