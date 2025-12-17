@@ -3145,8 +3145,9 @@ def on_sync_failure(game, error):
 **4.4 Self-Play Data Quality:**
 
 - [x] Database validation exists ✅ `app/db/validation.py`
-- [ ] Game-level `DataValidator` class - Not yet implemented
-- [ ] `GameDeduplicator` for training data - Not yet implemented
+- [x] Game-level `DataValidator` class ✅ `app/training/data_validation.py` (21 tests)
+- [x] `GameDeduplicator` for training data ✅ `app/training/data_validation.py`
+- [x] Prometheus metrics for data quality ✅ `VALIDATION_RUNS`, `DUPLICATE_RATE` gauges
 - [ ] Data quality Grafana dashboard - Not yet created
 
 **4.5 Recovery After Failures:**
