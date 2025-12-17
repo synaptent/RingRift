@@ -58,6 +58,14 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 AI_SERVICE_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
+# Unified resource checking (canonical source for resource limits)
+try:
+    from app.utils.resource_guard import get_disk_usage as resource_get_disk_usage
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    resource_get_disk_usage = None
+
 # Unified logging setup
 try:
     from app.core.logging_config import setup_logging
@@ -322,18 +330,28 @@ class DataAggregator:
             },
         }
 
-        # Check disk space
+        # Check disk space using unified resource guard
         if local_storage.get('enabled', False):
             base_path = Path(local_storage.get('base_path', ''))
             if base_path.exists():
                 try:
-                    usage = shutil.disk_usage(base_path)
-                    status['disk'] = {
-                        'total_gb': round(usage.total / (1024**3), 1),
-                        'used_gb': round(usage.used / (1024**3), 1),
-                        'free_gb': round(usage.free / (1024**3), 1),
-                        'percent_used': round(usage.used / usage.total * 100, 1),
-                    }
+                    if HAS_RESOURCE_GUARD and resource_get_disk_usage:
+                        used_pct, free_gb, total_gb = resource_get_disk_usage(str(base_path))
+                        status['disk'] = {
+                            'total_gb': round(total_gb, 1),
+                            'used_gb': round(total_gb - free_gb, 1),
+                            'free_gb': round(free_gb, 1),
+                            'percent_used': round(used_pct, 1),
+                        }
+                    else:
+                        # Fallback to raw shutil
+                        usage = shutil.disk_usage(base_path)
+                        status['disk'] = {
+                            'total_gb': round(usage.total / (1024**3), 1),
+                            'used_gb': round(usage.used / (1024**3), 1),
+                            'free_gb': round(usage.free / (1024**3), 1),
+                            'percent_used': round(usage.used / usage.total * 100, 1),
+                        }
                 except Exception:
                     pass
 
