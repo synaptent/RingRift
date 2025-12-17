@@ -16,12 +16,14 @@ Training:
 """
 
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Callable
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.cuda.amp import GradScaler, autocast
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim.swa_utils import AveragedModel, SWALR
 
 from ..models import BoardType, Position
 from .nnue import (
@@ -346,6 +348,12 @@ class NNUEPolicyTrainer:
         ema_decay: float = 0.999,
         focal_gamma: float = 0.0,
         label_smoothing_warmup: int = 0,
+        use_ddp: bool = False,
+        ddp_rank: int = 0,
+        use_swa: bool = False,
+        swa_start_epoch: int = 0,
+        swa_lr: Optional[float] = None,
+        progressive_batch_callback: Optional[Callable[[int, int], int]] = None,
     ):
         self.model = model.to(device)
         self.device = device
@@ -360,10 +368,18 @@ class NNUEPolicyTrainer:
         self.grad_clip = grad_clip
         self.lr_scheduler_type = lr_scheduler
         self.focal_gamma = focal_gamma
+        self.total_epochs = total_epochs
+        self.learning_rate = learning_rate
 
         # Mixed precision training (AMP)
         self.use_amp = use_amp and device.type == "cuda"
         self.scaler = GradScaler() if self.use_amp else None
+
+        # Distributed Data Parallel (DDP)
+        self.use_ddp = use_ddp
+        self.ddp_rank = ddp_rank
+        if use_ddp:
+            self.model = DDP(self.model, device_ids=[device.index] if device.type == "cuda" else None)
 
         # Exponential Moving Average
         self.use_ema = use_ema
@@ -371,6 +387,16 @@ class NNUEPolicyTrainer:
         self.ema_model = None
         if use_ema:
             self._init_ema()
+
+        # Stochastic Weight Averaging (SWA)
+        self.use_swa = use_swa
+        self.swa_start_epoch = swa_start_epoch if swa_start_epoch > 0 else int(total_epochs * 0.75)
+        self.swa_model = None
+        self.swa_scheduler = None
+        self.swa_lr = swa_lr if swa_lr is not None else learning_rate * 0.1
+
+        # Progressive batch sizing callback: (epoch, total_epochs) -> batch_size
+        self.progressive_batch_callback = progressive_batch_callback
 
         # Learning history for plotting
         self.history: Dict[str, List[float]] = {
@@ -381,7 +407,7 @@ class NNUEPolicyTrainer:
         }
 
         self.optimizer = torch.optim.AdamW(
-            model.parameters(),
+            self._get_model_params(),
             lr=learning_rate,
             weight_decay=weight_decay,
         )
@@ -409,6 +435,51 @@ class NNUEPolicyTrainer:
 
         self.value_criterion = nn.MSELoss()
         self.policy_criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+
+    def _get_model_params(self):
+        """Get model parameters, handling DDP wrapper."""
+        if self.use_ddp and hasattr(self.model, 'module'):
+            return self.model.module.parameters()
+        return self.model.parameters()
+
+    def _get_base_model(self) -> RingRiftNNUEWithPolicy:
+        """Get the base model, unwrapping DDP if needed."""
+        if self.use_ddp and hasattr(self.model, 'module'):
+            return self.model.module
+        return self.model
+
+    def _init_swa(self) -> None:
+        """Initialize SWA model and scheduler."""
+        base_model = self._get_base_model()
+        self.swa_model = AveragedModel(base_model)
+        self.swa_scheduler = SWALR(self.optimizer, swa_lr=self.swa_lr)
+
+    def update_swa(self, epoch: int) -> None:
+        """Update SWA model if past start epoch."""
+        if not self.use_swa:
+            return
+        if epoch >= self.swa_start_epoch:
+            if self.swa_model is None:
+                self._init_swa()
+            self.swa_model.update_parameters(self._get_base_model())
+            self.swa_scheduler.step()
+
+    def finalize_swa(self, train_loader) -> None:
+        """Finalize SWA by updating batch normalization statistics."""
+        if not self.use_swa or self.swa_model is None:
+            return
+        # Update BN statistics for SWA model
+        torch.optim.swa_utils.update_bn(train_loader, self.swa_model, device=self.device)
+
+    def get_swa_model(self) -> Optional[AveragedModel]:
+        """Get the SWA averaged model for inference."""
+        return self.swa_model
+
+    def get_batch_size(self, epoch: int, base_batch_size: int) -> int:
+        """Get batch size for current epoch using progressive callback."""
+        if self.progressive_batch_callback is not None:
+            return self.progressive_batch_callback(epoch, self.total_epochs)
+        return base_batch_size
 
     def _init_ema(self) -> None:
         """Initialize EMA model as a copy of the main model."""
@@ -721,12 +792,49 @@ class NNUEPolicyTrainer:
 # =============================================================================
 
 
+def progressive_batch_schedule(
+    epoch: int,
+    total_epochs: int,
+    min_batch: int = 64,
+    max_batch: int = 512,
+    warmup_fraction: float = 0.2,
+) -> int:
+    """Default progressive batch sizing schedule.
+
+    Starts with small batches for better gradient signal, grows to larger
+    batches for faster convergence in later epochs.
+
+    Args:
+        epoch: Current epoch (0-indexed)
+        total_epochs: Total number of epochs
+        min_batch: Starting batch size
+        max_batch: Maximum batch size
+        warmup_fraction: Fraction of epochs for warmup (linear growth)
+
+    Returns:
+        Batch size for this epoch
+    """
+    warmup_epochs = int(total_epochs * warmup_fraction)
+    if epoch < warmup_epochs:
+        # Linear growth during warmup
+        progress = epoch / warmup_epochs
+        batch = int(min_batch + (max_batch - min_batch) * progress)
+    else:
+        batch = max_batch
+    # Round to nearest power of 2 for efficiency
+    return min(max_batch, max(min_batch, 2 ** int(np.log2(batch))))
+
+
 class HexBoardAugmenter:
-    """Data augmentation for hexagonal boards using symmetry transformations.
+    """Data augmentation for hexagonal boards using D6 symmetry transformations.
 
     Hexagonal boards have D6 symmetry (dihedral group of order 12):
     - 6 rotational symmetries (0°, 60°, 120°, 180°, 240°, 300°)
     - Each can be combined with reflection = 12 total transformations
+
+    Uses axial coordinates (q, r) for hex grid transformations:
+    - Rotation by 60°: (q, r) -> (-r, q + r)
+    - Reflection: (q, r) -> (q, -r - q) or similar
 
     This class augments training samples by applying these transformations
     to the feature arrays and adjusting move indices accordingly.
@@ -743,19 +851,95 @@ class HexBoardAugmenter:
         self.num_augmentations = min(num_augmentations, 12)
         self._build_transformation_tables()
 
-    def _build_transformation_tables(self) -> None:
-        """Build lookup tables for coordinate transformations."""
-        # For hex boards, compute index mappings for rotations
-        # Simplified: we'll use rotation indices based on board structure
-        self.rotation_maps = []
-        num_cells = self.board_size * self.board_size  # Approximate
+    def _axial_to_flat(self, q: int, r: int) -> int:
+        """Convert axial coordinates to flat index."""
+        # Offset coordinates: row = r, col = q + r // 2
+        row = r + self.board_size // 2
+        col = q + self.board_size // 2 + r // 2
+        if 0 <= row < self.board_size and 0 <= col < self.board_size:
+            return row * self.board_size + col
+        return -1  # Out of bounds
 
-        for rotation in range(6):
-            # Build mapping: original_idx -> rotated_idx
-            mapping = list(range(num_cells))
-            # In practice, this requires knowing the actual hex coordinate system
-            # For now, store identity mappings (actual implementation depends on encoding)
-            self.rotation_maps.append(mapping)
+    def _flat_to_axial(self, idx: int) -> Tuple[int, int]:
+        """Convert flat index to axial coordinates."""
+        row = idx // self.board_size
+        col = idx % self.board_size
+        r = row - self.board_size // 2
+        q = col - self.board_size // 2 - r // 2
+        return q, r
+
+    def _rotate_axial_60(self, q: int, r: int) -> Tuple[int, int]:
+        """Rotate axial coordinates by 60° clockwise."""
+        return -r, q + r
+
+    def _reflect_axial(self, q: int, r: int) -> Tuple[int, int]:
+        """Reflect axial coordinates across q-axis."""
+        return q, -r - q
+
+    def _build_transformation_tables(self) -> None:
+        """Build lookup tables for all 12 D6 transformations."""
+        num_cells = self.board_size * self.board_size
+        self.transformation_maps = []
+
+        for t in range(12):
+            rotation = t % 6  # 0-5 rotations
+            reflect = t >= 6   # Apply reflection for t >= 6
+
+            mapping = np.full(num_cells, -1, dtype=np.int32)
+
+            for idx in range(num_cells):
+                q, r = self._flat_to_axial(idx)
+
+                # Apply rotation (multiple 60° rotations)
+                for _ in range(rotation):
+                    q, r = self._rotate_axial_60(q, r)
+
+                # Apply reflection if needed
+                if reflect:
+                    q, r = self._reflect_axial(q, r)
+
+                new_idx = self._axial_to_flat(q, r)
+                if new_idx >= 0:
+                    mapping[idx] = new_idx
+
+            self.transformation_maps.append(mapping)
+
+    def _transform_indices(self, indices: "np.ndarray", transform_idx: int) -> "np.ndarray":
+        """Apply transformation to position indices."""
+        mapping = self.transformation_maps[transform_idx]
+        result = indices.copy()
+        for i, idx in enumerate(indices):
+            if idx >= 0 and idx < len(mapping):
+                new_idx = mapping[idx]
+                result[i] = new_idx if new_idx >= 0 else idx
+        return result
+
+    def _transform_features(self, features: "np.ndarray", transform_idx: int) -> "np.ndarray":
+        """Apply transformation to feature array.
+
+        Features are organized by position, so we need to permute
+        the position-based feature blocks according to the transformation.
+        """
+        mapping = self.transformation_maps[transform_idx]
+        num_cells = self.board_size * self.board_size
+
+        # If features are flat (per-position features concatenated)
+        if len(features.shape) == 1:
+            features_per_cell = len(features) // num_cells
+            if features_per_cell * num_cells != len(features):
+                # Features don't align with cells, return unchanged
+                return features.copy()
+
+            # Reshape, permute, flatten
+            reshaped = features.reshape(num_cells, features_per_cell)
+            permuted = np.zeros_like(reshaped)
+            for old_idx in range(num_cells):
+                new_idx = mapping[old_idx]
+                if new_idx >= 0:
+                    permuted[new_idx] = reshaped[old_idx]
+            return permuted.flatten()
+
+        return features.copy()
 
     def augment_sample(
         self,
@@ -765,7 +949,7 @@ class HexBoardAugmenter:
         target_move_idx: int,
         include_original: bool = True,
     ) -> List[Tuple["np.ndarray", "np.ndarray", "np.ndarray", int]]:
-        """Augment a single sample with transformations.
+        """Augment a single sample with D6 symmetry transformations.
 
         Args:
             features: Feature array for the board state
@@ -777,31 +961,29 @@ class HexBoardAugmenter:
         Returns:
             List of (features, from_indices, to_indices, target_idx) tuples
         """
-        import numpy as np
+        import random
         results = []
 
         if include_original:
             results.append((features, from_indices, to_indices, target_move_idx))
 
-        # Apply random subset of transformations
-        import random
-        transforms = random.sample(range(1, 12), min(self.num_augmentations - 1, 11))
+        # Apply random subset of transformations (skip identity t=0)
+        num_to_select = min(self.num_augmentations - (1 if include_original else 0), 11)
+        if num_to_select > 0:
+            transforms = random.sample(range(1, 12), num_to_select)
 
-        for t in transforms[:self.num_augmentations - 1]:
-            rotation = t % 6
-            reflect = t >= 6
+            for t in transforms:
+                # Transform features
+                aug_features = self._transform_features(features, t)
 
-            # Apply transformation to features
-            # Note: Full implementation requires board-specific coordinate transforms
-            # For now, features remain unchanged (placeholder for future implementation)
-            aug_features = features.copy()
+                # Transform move indices
+                aug_from = self._transform_indices(from_indices, t)
+                aug_to = self._transform_indices(to_indices, t)
 
-            # The move indices also need transformation (placeholder)
-            aug_from = from_indices.copy()
-            aug_to = to_indices.copy()
-            aug_target = target_move_idx
+                # Target move index stays the same (it's an index into the move list)
+                aug_target = target_move_idx
 
-            results.append((aug_features, aug_from, aug_to, aug_target))
+                results.append((aug_features, aug_from, aug_to, aug_target))
 
         return results
 

@@ -81,12 +81,14 @@ BOARD_SIZES: Dict[BoardType, int] = {
     BoardType.SQUARE8: 8,
     BoardType.SQUARE19: 19,
     BoardType.HEXAGONAL: 25,  # Embedded in 25x25 grid
+    BoardType.HEX8: 9,        # Radius 4, embedded in 9x9 grid
 }
 
 FEATURE_DIMS: Dict[BoardType, int] = {
     BoardType.SQUARE8: 8 * 8 * FEATURE_PLANES,      # 768 features
     BoardType.SQUARE19: 19 * 19 * FEATURE_PLANES,   # 4332 features
     BoardType.HEXAGONAL: 25 * 25 * FEATURE_PLANES,  # 7500 features
+    BoardType.HEX8: 9 * 9 * FEATURE_PLANES,         # 972 features
 }
 
 
@@ -304,7 +306,7 @@ class RingRiftNNUE(nn.Module):
 
 def _pos_to_index(pos: Position, board_size: int, board_type: BoardType) -> int:
     """Convert position to linear index in feature vector."""
-    if board_type == BoardType.HEXAGONAL:
+    if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
         # Hex uses axial coordinates, offset by radius
         radius = (board_size - 1) // 2
         cx = pos.x + radius

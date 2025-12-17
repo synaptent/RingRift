@@ -3340,6 +3340,22 @@ class NeuralNetAI(BaseAI):
                 except Exception:
                     pass
             self._initialized_board_type = board_type
+
+            # Initialize hex encoder for hex boards (must also do this for cached models)
+            if board_type in (BoardType.HEXAGONAL, BoardType.HEX8) and self._hex_encoder is None:
+                from ..training.encoding import HexStateEncoderV3
+
+                if board_type == BoardType.HEX8:
+                    self._hex_encoder = HexStateEncoderV3(
+                        board_size=HEX8_BOARD_SIZE,
+                        policy_size=POLICY_SIZE_HEX8,
+                    )
+                else:
+                    self._hex_encoder = HexStateEncoderV3(
+                        board_size=HEX_BOARD_SIZE,
+                        policy_size=P_HEX,
+                    )
+
             logger.debug(
                 f"Reusing cached model: board={board_type}, "
                 f"arch={self.architecture_type}, device={self.device}"

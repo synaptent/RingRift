@@ -77,6 +77,7 @@ def parse_board_type(value: str) -> BoardType:
         "sq19": BoardType.SQUARE19,
         "hexagonal": BoardType.HEXAGONAL,
         "hex": BoardType.HEXAGONAL,
+        "hex8": BoardType.HEX8,
     }
     key = value.lower()
     if key not in mapping:
@@ -106,7 +107,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--board-type",
         type=str,
         default="square8",
-        help="Board type: square8, square19, or hexagonal (default: square8)",
+        help="Board type: square8, square19, hexagonal, or hex8 (default: square8)",
     )
     parser.add_argument(
         "--num-players",
@@ -403,6 +404,57 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Save learning curve plots (requires matplotlib)",
     )
 
+    # Distributed training
+    parser.add_argument(
+        "--use-ddp",
+        action="store_true",
+        help="Use DistributedDataParallel for multi-GPU training",
+    )
+    parser.add_argument(
+        "--ddp-rank",
+        type=int,
+        default=0,
+        help="Rank for DDP (default: 0)",
+    )
+
+    # Stochastic Weight Averaging
+    parser.add_argument(
+        "--use-swa",
+        action="store_true",
+        help="Use Stochastic Weight Averaging for better generalization",
+    )
+    parser.add_argument(
+        "--swa-start-epoch",
+        type=int,
+        default=0,
+        help="Epoch to start SWA (0 = 75%% of total epochs)",
+    )
+    parser.add_argument(
+        "--swa-lr",
+        type=float,
+        default=None,
+        help="SWA learning rate (default: 10%% of base LR)",
+    )
+
+    # Progressive batch sizing
+    parser.add_argument(
+        "--progressive-batch",
+        action="store_true",
+        help="Use progressive batch sizing (start small, grow larger)",
+    )
+    parser.add_argument(
+        "--min-batch-size",
+        type=int,
+        default=64,
+        help="Minimum batch size for progressive batching (default: 64)",
+    )
+    parser.add_argument(
+        "--max-batch-size",
+        type=int,
+        default=512,
+        help="Maximum batch size for progressive batching (default: 512)",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -463,6 +515,14 @@ def train_nnue_policy(
     focal_gamma: float = 0.0,
     label_smoothing_warmup: int = 0,
     save_curves: bool = False,
+    use_ddp: bool = False,
+    ddp_rank: int = 0,
+    use_swa: bool = False,
+    swa_start_epoch: int = 0,
+    swa_lr: Optional[float] = None,
+    progressive_batch: bool = False,
+    min_batch_size: int = 64,
+    max_batch_size: int = 512,
 ) -> Dict[str, Any]:
     """Train NNUE policy model and return training report."""
     seed_all(seed)
@@ -619,6 +679,17 @@ def train_nnue_policy(
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Model parameters: {total_params:,} total, {trainable_params:,} trainable")
 
+    # Build progressive batch callback if enabled
+    from functools import partial
+    progressive_callback = None
+    if progressive_batch:
+        from app.ai.nnue_policy import progressive_batch_schedule
+        progressive_callback = partial(
+            progressive_batch_schedule,
+            min_batch=min_batch_size,
+            max_batch=max_batch_size,
+        )
+
     # Create trainer with temperature annealing and label smoothing
     trainer = NNUEPolicyTrainer(
         model=model,
@@ -638,6 +709,12 @@ def train_nnue_policy(
         ema_decay=ema_decay,
         focal_gamma=focal_gamma,
         label_smoothing_warmup=label_smoothing_warmup,
+        use_ddp=use_ddp,
+        ddp_rank=ddp_rank,
+        use_swa=use_swa,
+        swa_start_epoch=swa_start_epoch,
+        swa_lr=swa_lr,
+        progressive_batch_callback=progressive_callback,
     )
 
     logger.info(f"Temperature annealing: {temperature_start} -> {temperature_end} ({temperature_schedule})")
@@ -648,6 +725,12 @@ def train_nnue_policy(
         logger.info(f"Focal loss enabled with gamma={focal_gamma}")
     if effective_use_kl_loss:
         logger.info("KL divergence loss ENABLED (using MCTS visit distributions)")
+    if use_ddp:
+        logger.info(f"DDP enabled (rank={ddp_rank})")
+    if use_swa:
+        logger.info(f"SWA enabled (start epoch={swa_start_epoch if swa_start_epoch > 0 else 'auto'})")
+    if progressive_batch:
+        logger.info(f"Progressive batch sizing: {min_batch_size} -> {max_batch_size}")
 
     # Training loop
     best_val_loss = float("inf")
@@ -891,6 +974,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         focal_gamma=args.focal_gamma,
         label_smoothing_warmup=args.label_smoothing_warmup,
         save_curves=args.save_curves,
+        use_ddp=args.use_ddp,
+        ddp_rank=args.ddp_rank,
+        use_swa=args.use_swa,
+        swa_start_epoch=args.swa_start_epoch,
+        swa_lr=args.swa_lr,
+        progressive_batch=args.progressive_batch,
+        min_batch_size=args.min_batch_size,
+        max_batch_size=args.max_batch_size,
     )
 
     # Add metadata to report

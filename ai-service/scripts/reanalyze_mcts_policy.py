@@ -155,6 +155,54 @@ class HeuristicNetworkWrapper:
         return policy, value
 
 
+def parse_move_dict(move_dict: Dict[str, Any], move_number: int) -> Optional[Move]:
+    """Parse a move dict into a Move object with defaults for missing fields.
+
+    Returns None for unknown move types.
+    """
+    from datetime import datetime
+    from app.models import MoveType, Position
+
+    move_type_str = str(move_dict.get("type") or "").strip()
+    if not move_type_str:
+        return None
+
+    # Skip unknown move types
+    if move_type_str.startswith("unknown_"):
+        return None
+
+    try:
+        move_type = MoveType(move_type_str)
+    except ValueError:
+        return None
+
+    # Parse positions
+    def parse_pos(pos_dict):
+        if not pos_dict or not isinstance(pos_dict, dict):
+            return None
+        return Position(
+            x=pos_dict.get("x", 0),
+            y=pos_dict.get("y", 0),
+            z=pos_dict.get("z"),
+        )
+
+    from_pos = parse_pos(move_dict.get("from") or move_dict.get("from_pos"))
+    to_pos = parse_pos(move_dict.get("to"))
+    capture_target = parse_pos(move_dict.get("capture_target") or move_dict.get("captureTarget"))
+
+    return Move(
+        id=move_dict.get("id", f"reanalyzed-{move_number}"),
+        type=move_type,
+        player=move_dict.get("player", 1),
+        from_pos=from_pos,
+        to=to_pos,
+        capture_target=capture_target,
+        timestamp=move_dict.get("timestamp", datetime.now()),
+        think_time=move_dict.get("think_time", move_dict.get("thinkTime", 0)),
+        move_number=move_dict.get("move_number", move_dict.get("moveNumber", move_number + 1)),
+    )
+
+
 def parse_board_type(board_str: str) -> BoardType:
     """Parse board type string to BoardType enum."""
     board_str = board_str.lower()
@@ -250,9 +298,14 @@ def reanalyze_game(
 
         # Apply move to advance state
         try:
-            move = Move(**move_dict)
-            state = engine.apply_move(state, move)
-        except Exception:
+            # Parse move with defaults for missing required fields
+            move = parse_move_dict(move_dict, i)
+            if move is not None:
+                state = engine.apply_move(state, move)
+            else:
+                logger.debug(f"Skipping unknown move type at {i}")
+        except Exception as e:
+            logger.debug(f"Failed to apply move {i}: {e}")
             break
 
     # Create output game dict
