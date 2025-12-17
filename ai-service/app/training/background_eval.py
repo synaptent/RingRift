@@ -2,6 +2,8 @@
 
 Evaluates model strength in real-time during training via mini-gauntlets.
 Auto-checkpoints on Elo improvement and early-stops on significant drops.
+
+See: app.config.thresholds for canonical threshold constants.
 """
 
 from __future__ import annotations
@@ -16,17 +18,27 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
+# Import canonical Elo constants
+try:
+    from app.config.thresholds import INITIAL_ELO_RATING, ELO_DROP_ROLLBACK
+except ImportError:
+    INITIAL_ELO_RATING = 1500.0
+    ELO_DROP_ROLLBACK = 50.0
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class EvalConfig:
-    """Configuration for background evaluation."""
+    """Configuration for background evaluation.
+
+    Note: Uses thresholds from app.config.thresholds.
+    """
     eval_interval_steps: int = 1000  # Steps between evaluations
     games_per_eval: int = 20  # Games per evaluation
     baselines: List[str] = field(default_factory=lambda: ["random", "heuristic"])
     elo_checkpoint_threshold: float = 10.0  # Min Elo gain to checkpoint
-    elo_drop_threshold: float = 50.0  # Elo drop for early stopping
+    elo_drop_threshold: float = ELO_DROP_ROLLBACK  # Elo drop for early stopping
     auto_checkpoint: bool = True
     checkpoint_dir: str = "data/eval_checkpoints"
 
@@ -64,7 +76,7 @@ class BackgroundEvaluator:
         self.current_step = 0
         self.last_eval_step = 0
         self.best_elo = 0.0
-        self.current_elo = 1500.0
+        self.current_elo = INITIAL_ELO_RATING
         self.elo_history: List[Tuple[int, float]] = []
         self.eval_results: List[EvalResult] = []
 

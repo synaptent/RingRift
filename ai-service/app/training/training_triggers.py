@@ -17,6 +17,8 @@ Usage:
     decision = triggers.should_train("square8_2p", current_state)
     if decision.should_train:
         print(f"Training triggered by: {decision.reason}")
+
+See: app.config.thresholds for canonical threshold constants.
 """
 
 from __future__ import annotations
@@ -31,17 +33,39 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Import canonical thresholds
+try:
+    from app.config.thresholds import (
+        INITIAL_ELO_RATING,
+        TRAINING_TRIGGER_GAMES,
+        TRAINING_STALENESS_HOURS,
+        MIN_WIN_RATE_PROMOTE,
+        TRAINING_MIN_INTERVAL_SECONDS,
+        TRAINING_BOOTSTRAP_GAMES,
+    )
+    DEFAULT_FRESHNESS_THRESHOLD = TRAINING_TRIGGER_GAMES
+    DEFAULT_STALENESS_HOURS = TRAINING_STALENESS_HOURS
+    DEFAULT_MIN_WIN_RATE = MIN_WIN_RATE_PROMOTE
+    DEFAULT_MIN_INTERVAL_MINUTES = TRAINING_MIN_INTERVAL_SECONDS / 60
+    DEFAULT_BOOTSTRAP_THRESHOLD = TRAINING_BOOTSTRAP_GAMES
+except ImportError:
+    INITIAL_ELO_RATING = 1500.0
+    DEFAULT_FRESHNESS_THRESHOLD = 500
+    DEFAULT_STALENESS_HOURS = 6
+    DEFAULT_MIN_WIN_RATE = 0.45
+    DEFAULT_MIN_INTERVAL_MINUTES = 20
+    DEFAULT_BOOTSTRAP_THRESHOLD = 50
+
 # Constants
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_FRESHNESS_THRESHOLD = 500  # New games needed
-DEFAULT_STALENESS_HOURS = 6  # Hours before config is "stale"
-DEFAULT_MIN_WIN_RATE = 0.45  # Below this triggers urgent training
-DEFAULT_MIN_INTERVAL_MINUTES = 20  # Minimum time between training runs
 
 
 @dataclass
 class TriggerConfig:
-    """Configuration for training triggers."""
+    """Configuration for training triggers.
+
+    Note: Defaults sourced from app.config.thresholds.
+    """
     # Data freshness
     freshness_threshold: int = DEFAULT_FRESHNESS_THRESHOLD
     freshness_weight: float = 1.0
@@ -59,7 +83,7 @@ class TriggerConfig:
     max_concurrent_training: int = 3
 
     # Bootstrap (new configs with no models)
-    bootstrap_threshold: int = 50  # Very low threshold for configs with 0 models
+    bootstrap_threshold: int = DEFAULT_BOOTSTRAP_THRESHOLD
 
 
 @dataclass
@@ -83,13 +107,16 @@ class TriggerDecision:
 
 @dataclass
 class ConfigState:
-    """State for a single board/player configuration."""
+    """State for a single board/player configuration.
+
+    Note: Uses INITIAL_ELO_RATING from app.config.thresholds as default.
+    """
     config_key: str
     games_since_training: int = 0
     last_training_time: float = 0
     last_training_games: int = 0
     model_count: int = 0
-    current_elo: float = 1500.0
+    current_elo: float = INITIAL_ELO_RATING
     win_rate: float = 0.5
     win_rate_trend: float = 0.0
 

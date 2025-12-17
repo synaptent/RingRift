@@ -107,6 +107,26 @@ from app.training.model_versioning import (  # noqa: E402
 from app.training.seed_utils import seed_all
 from app.training.fault_tolerance import HeartbeatMonitor  # noqa: E402
 from app.training.value_calibration import CalibrationTracker  # noqa: E402
+
+# Hot data buffer for priority experience replay (2024-12)
+try:
+    from app.training.hot_data_buffer import HotDataBuffer
+    HAS_HOT_DATA_BUFFER = True
+except ImportError:
+    HotDataBuffer = None
+    HAS_HOT_DATA_BUFFER = False
+
+# Integrated enhancements (2024-12)
+try:
+    from app.training.integrated_enhancements import (
+        IntegratedTrainingManager,
+        IntegratedEnhancementsConfig,
+    )
+    HAS_INTEGRATED_ENHANCEMENTS = True
+except ImportError:
+    IntegratedTrainingManager = None
+    IntegratedEnhancementsConfig = None
+    HAS_INTEGRATED_ENHANCEMENTS = False
 from app.ai.heuristic_weights import (  # noqa: E402
     HEURISTIC_WEIGHT_KEYS,
     HEURISTIC_WEIGHT_PROFILES,
@@ -1454,6 +1474,14 @@ def train_model(
     hard_example_top_k: float = 0.3,
     auto_tune_batch_size: bool = False,
     track_calibration: bool = False,
+    # 2024-12 Hot Data Buffer and Integrated Enhancements
+    use_hot_data_buffer: bool = False,
+    hot_buffer_size: int = 10000,
+    hot_buffer_mix_ratio: float = 0.3,
+    use_integrated_enhancements: bool = False,
+    enable_curriculum: bool = False,
+    enable_augmentation: bool = False,
+    enable_elo_weighting: bool = False,
 ):
     """
     Train the RingRift neural network model.
@@ -1553,6 +1581,38 @@ def train_model(
 
     if improvements_enabled:
         logger.info(f"2024-12 Training Improvements enabled: {', '.join(improvements_enabled)}")
+
+    # Initialize hot data buffer if requested
+    hot_buffer = None
+    if use_hot_data_buffer and HAS_HOT_DATA_BUFFER:
+        hot_buffer = HotDataBuffer(
+            max_size=hot_buffer_size,
+            training_threshold=config.batch_size * 5,
+        )
+        logger.info(f"Hot data buffer enabled (size={hot_buffer_size}, mix_ratio={hot_buffer_mix_ratio})")
+    elif use_hot_data_buffer and not HAS_HOT_DATA_BUFFER:
+        logger.warning("Hot data buffer requested but not available (import failed)")
+
+    # Initialize integrated enhancements if requested
+    enhancements_manager = None
+    if use_integrated_enhancements and HAS_INTEGRATED_ENHANCEMENTS:
+        enh_config = IntegratedEnhancementsConfig(
+            curriculum_learning_enabled=enable_curriculum,
+            augmentation_enabled=enable_augmentation,
+            elo_weighting_enabled=enable_elo_weighting,
+        )
+        enhancements_manager = IntegratedTrainingManager(
+            config=enh_config,
+            model=None,  # Will be set after model creation
+            board_type=config.board_type.value,
+        )
+        logger.info(
+            f"Integrated enhancements enabled: "
+            f"curriculum={enable_curriculum}, augmentation={enable_augmentation}, "
+            f"elo_weighting={enable_elo_weighting}"
+        )
+    elif use_integrated_enhancements and not HAS_INTEGRATED_ENHANCEMENTS:
+        logger.warning("Integrated enhancements requested but not available (import failed)")
 
     # Mixed precision setup
     use_amp = mixed_precision and device.type in ('cuda', 'mps')
@@ -1912,6 +1972,11 @@ def train_model(
             num_filters=effective_filters,
         )
     model.to(device)
+
+    # Initialize enhancements manager with model reference
+    if enhancements_manager is not None:
+        enhancements_manager.model = model
+        enhancements_manager.initialize_all()
 
     # Auto-tune batch size if requested (overrides config.batch_size)
     if auto_tune_batch_size and str(device).startswith('cuda'):
@@ -3112,6 +3177,37 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         '--track-calibration', action='store_true',
         help='Track value head calibration metrics during training'
     )
+
+    # 2024-12 Hot Data Buffer and Integrated Enhancements
+    parser.add_argument(
+        '--use-hot-data-buffer', action='store_true',
+        help='Enable hot data buffer for priority experience replay'
+    )
+    parser.add_argument(
+        '--hot-buffer-size', type=int, default=10000,
+        help='Size of hot data buffer (default: 10000)'
+    )
+    parser.add_argument(
+        '--hot-buffer-mix-ratio', type=float, default=0.3,
+        help='Ratio of samples from hot buffer vs regular data (default: 0.3)'
+    )
+    parser.add_argument(
+        '--use-integrated-enhancements', action='store_true',
+        help='Enable integrated training enhancements (curriculum, augmentation, etc.)'
+    )
+    parser.add_argument(
+        '--enable-curriculum', action='store_true',
+        help='Enable curriculum learning (progressive difficulty)'
+    )
+    parser.add_argument(
+        '--enable-augmentation', action='store_true',
+        help='Enable data augmentation (symmetry transforms)'
+    )
+    parser.add_argument(
+        '--enable-elo-weighting', action='store_true',
+        help='Enable ELO-based sample weighting'
+    )
+
     parser.add_argument(
         '--learning-rate', type=float, default=None,
         help='Initial learning rate'
@@ -3564,6 +3660,14 @@ def main():
         num_filters=getattr(args, 'num_filters', None),
         auto_tune_batch_size=getattr(args, 'auto_tune_batch_size', False),
         track_calibration=getattr(args, 'track_calibration', False),
+        # 2024-12 Hot Data Buffer and Integrated Enhancements
+        use_hot_data_buffer=getattr(args, 'use_hot_data_buffer', False),
+        hot_buffer_size=getattr(args, 'hot_buffer_size', 10000),
+        hot_buffer_mix_ratio=getattr(args, 'hot_buffer_mix_ratio', 0.3),
+        use_integrated_enhancements=getattr(args, 'use_integrated_enhancements', False),
+        enable_curriculum=getattr(args, 'enable_curriculum', False),
+        enable_augmentation=getattr(args, 'enable_augmentation', False),
+        enable_elo_weighting=getattr(args, 'enable_elo_weighting', False),
     )
 
 

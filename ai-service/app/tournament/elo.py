@@ -16,6 +16,8 @@ This module (`app.tournament.elo`) focuses on:
 - Glicko-style confidence intervals
 - Multiplayer Elo decomposition
 - Tournament rating utilities
+
+See: app.config.thresholds for canonical Elo constants.
 """
 from __future__ import annotations
 
@@ -23,6 +25,12 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Sequence
+
+# Import canonical Elo constants
+try:
+    from app.config.thresholds import INITIAL_ELO_RATING
+except ImportError:
+    INITIAL_ELO_RATING = 1500.0
 
 
 @dataclass
@@ -32,10 +40,12 @@ class EloRating:
     Includes confidence interval estimation based on Glicko-style rating deviation.
     The rating deviation (RD) starts high for new players and decreases as more
     games are played, reflecting increased confidence in the rating.
+
+    Note: Uses INITIAL_ELO_RATING from app.config.thresholds as default.
     """
 
     agent_id: str
-    rating: float = 1500.0
+    rating: float = INITIAL_ELO_RATING
     games_played: int = 0
     wins: int = 0
     losses: int = 0

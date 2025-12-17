@@ -36,6 +36,22 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
+# Import canonical threshold constants
+try:
+    from app.config.thresholds import (
+        INITIAL_ELO_RATING,
+        ELO_K_FACTOR,
+        MIN_GAMES_FOR_ELO,
+        TRAINING_TRIGGER_GAMES,
+        TRAINING_MIN_INTERVAL_SECONDS,
+    )
+except ImportError:
+    INITIAL_ELO_RATING = 1500.0
+    ELO_K_FACTOR = 32
+    MIN_GAMES_FOR_ELO = 30
+    TRAINING_TRIGGER_GAMES = 500
+    TRAINING_MIN_INTERVAL_SECONDS = 1200
+
 logger = logging.getLogger(__name__)
 
 # Default config path relative to ai-service root
@@ -301,6 +317,59 @@ class TournamentConfig:
 
 
 @dataclass
+class IntegratedEnhancementsConfig:
+    """Configuration for integrated training enhancements.
+
+    Centralizes all advanced training feature flags and parameters.
+    See app/training/integrated_enhancements.py for implementation.
+    """
+    # Master toggle
+    enabled: bool = True
+
+    # Auxiliary Tasks (Multi-Task Learning)
+    auxiliary_tasks_enabled: bool = False
+    aux_game_length_weight: float = 0.1
+    aux_piece_count_weight: float = 0.1
+    aux_outcome_weight: float = 0.05
+
+    # Gradient Surgery (PCGrad)
+    gradient_surgery_enabled: bool = False
+    gradient_surgery_method: str = "pcgrad"  # "pcgrad" or "cagrad"
+
+    # Batch Scheduling
+    batch_scheduling_enabled: bool = False
+    batch_initial_size: int = 64
+    batch_final_size: int = 512
+    batch_warmup_steps: int = 1000
+    batch_rampup_steps: int = 10000
+    batch_schedule_type: str = "linear"
+
+    # Background Evaluation
+    background_eval_enabled: bool = False
+    eval_interval_steps: int = 1000
+    eval_elo_checkpoint_threshold: float = 10.0
+
+    # ELO Weighting (uses thresholds.py constants)
+    elo_weighting_enabled: bool = True
+    elo_base_rating: float = INITIAL_ELO_RATING
+    elo_weight_scale: float = 400.0
+    elo_min_weight: float = 0.5
+    elo_max_weight: float = 2.0
+
+    # Curriculum Learning
+    curriculum_enabled: bool = True
+    curriculum_auto_advance: bool = True
+
+    # Data Augmentation
+    augmentation_enabled: bool = True
+    augmentation_mode: str = "all"  # "all", "random", "light"
+
+    # Reanalysis
+    reanalysis_enabled: bool = False
+    reanalysis_blend_ratio: float = 0.5
+
+
+@dataclass
 class HealthConfig:
     """Configuration for component health monitoring."""
     enabled: bool = True
@@ -347,6 +416,9 @@ class UnifiedConfig:
     ssh: SSHConfig = field(default_factory=SSHConfig)
     selfplay: SelfplayConfig = field(default_factory=SelfplayConfig)
     tournament: TournamentConfig = field(default_factory=TournamentConfig)
+
+    # Integrated training enhancements (December 2025)
+    enhancements: IntegratedEnhancementsConfig = field(default_factory=IntegratedEnhancementsConfig)
 
     # Paths
     hosts_config_path: str = "config/remote_hosts.yaml"
@@ -831,3 +903,83 @@ ALL_BOARD_CONFIGS: List[Tuple[str, int]] = [
     ("square19", 2), ("square19", 3), ("square19", 4),
     ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
 ]
+
+
+# =============================================================================
+# Integrated Enhancements Factory
+# =============================================================================
+
+def create_training_manager(
+    model: Optional[Any] = None,
+    board_type: str = "square8",
+    config: Optional[UnifiedConfig] = None,
+) -> Optional[Any]:
+    """Create an IntegratedTrainingManager from UnifiedConfig.
+
+    Factory function that creates a training enhancement manager using
+    the canonical IntegratedEnhancementsConfig from unified config.
+
+    Args:
+        model: PyTorch model (optional, can be set later)
+        board_type: Board type for augmentation
+        config: Optional UnifiedConfig (defaults to get_config())
+
+    Returns:
+        IntegratedTrainingManager instance or None if disabled/unavailable
+
+    Example:
+        from app.config.unified_config import create_training_manager
+
+        manager = create_training_manager(model=my_model, board_type="square8")
+        if manager:
+            manager.initialize_all()
+            batch_size = manager.get_batch_size()
+    """
+    if config is None:
+        config = get_config()
+
+    if not config.enhancements.enabled:
+        return None
+
+    try:
+        from app.training.integrated_enhancements import (
+            IntegratedTrainingManager,
+            IntegratedEnhancementsConfig as EnhancementsConfig,
+        )
+
+        # Map UnifiedConfig.enhancements to IntegratedEnhancementsConfig
+        enh = config.enhancements
+        manager_config = EnhancementsConfig(
+            auxiliary_tasks_enabled=enh.auxiliary_tasks_enabled,
+            aux_game_length_weight=enh.aux_game_length_weight,
+            aux_piece_count_weight=enh.aux_piece_count_weight,
+            aux_outcome_weight=enh.aux_outcome_weight,
+            gradient_surgery_enabled=enh.gradient_surgery_enabled,
+            gradient_surgery_method=enh.gradient_surgery_method,
+            batch_scheduling_enabled=enh.batch_scheduling_enabled,
+            batch_initial_size=enh.batch_initial_size,
+            batch_final_size=enh.batch_final_size,
+            batch_warmup_steps=enh.batch_warmup_steps,
+            batch_rampup_steps=enh.batch_rampup_steps,
+            batch_schedule_type=enh.batch_schedule_type,
+            background_eval_enabled=enh.background_eval_enabled,
+            eval_interval_steps=enh.eval_interval_steps,
+            eval_elo_checkpoint_threshold=enh.eval_elo_checkpoint_threshold,
+            elo_weighting_enabled=enh.elo_weighting_enabled,
+            elo_base_rating=enh.elo_base_rating,
+            elo_weight_scale=enh.elo_weight_scale,
+            elo_min_weight=enh.elo_min_weight,
+            elo_max_weight=enh.elo_max_weight,
+            curriculum_enabled=enh.curriculum_enabled,
+            curriculum_auto_advance=enh.curriculum_auto_advance,
+            augmentation_enabled=enh.augmentation_enabled,
+            augmentation_mode=enh.augmentation_mode,
+            reanalysis_enabled=enh.reanalysis_enabled,
+            reanalysis_blend_ratio=enh.reanalysis_blend_ratio,
+        )
+
+        return IntegratedTrainingManager(manager_config, model, board_type)
+
+    except ImportError as e:
+        logger.warning(f"Failed to import integrated enhancements: {e}")
+        return None
