@@ -1167,6 +1167,20 @@ def main():
 
     args = parser.parse_args()
 
+    # Entry point resource validation (enforced 2025-12-16)
+    # Check local resources before starting export work
+    if HAS_RESOURCE_GUARD and args.command in ("worker", "coordinate"):
+        # Export requires significant disk space for output files
+        required_disk_gb = 10.0 if args.command == "coordinate" else 5.0
+        if not check_disk_space(required_gb=required_disk_gb):
+            logger.error(f"Insufficient disk space for {args.command} command")
+            logger.error("Disk usage exceeds 70% limit or less than required GB available")
+            return 1
+        if not check_memory(required_gb=4.0):
+            logger.error(f"Insufficient memory for {args.command} command")
+            logger.error("Memory usage exceeds 80% limit")
+            return 1
+
     if args.command == "worker":
         return cmd_worker(args)
     elif args.command == "coordinate":

@@ -98,8 +98,9 @@ class ModelCullingController:
             cull_threshold: Number of models before culling triggers
             keep_fraction: Fraction of models to keep (0.25 = top 25%)
         """
-        self.elo_db_path = elo_db_path
-        self.model_dir = model_dir
+        # Convert to Path objects if strings were passed
+        self.elo_db_path = Path(elo_db_path) if isinstance(elo_db_path, str) else elo_db_path
+        self.model_dir = Path(model_dir) if isinstance(model_dir, str) else model_dir
         self.CULL_THRESHOLD = cull_threshold
         self.KEEP_FRACTION = keep_fraction
 

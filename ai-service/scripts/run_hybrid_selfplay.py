@@ -1114,10 +1114,12 @@ def main():
             logger.warning("Both --weights-file and --profile are required to load custom weights")
 
         # Resource guard: Check disk/memory/GPU before starting (80% limits)
+        # Also import graceful degradation functions for dynamic resource management
         try:
             from app.utils.resource_guard import (
                 check_disk_space, check_memory, check_gpu_memory,
-                get_resource_status, LIMITS
+                get_resource_status, LIMITS,
+                should_proceed_with_priority, OperationPriority, get_degradation_level,
             )
             # Estimate output size: ~2KB per game for JSONL/DB
             estimated_output_mb = (args.num_games * 0.002) + 50
@@ -1130,6 +1132,22 @@ def main():
             if not check_gpu_memory(required_gb=1.0):
                 logger.warning("GPU memory constrained, may affect performance")
             logger.info(f"Resource check passed: disk/memory/GPU within 80% limits")
+
+            # Graceful degradation: Hybrid selfplay is NORMAL priority
+            degradation = get_degradation_level()
+            if degradation >= 4:  # CRITICAL - resources at/above limits
+                logger.error("Resources at critical levels, aborting hybrid selfplay")
+                sys.exit(1)
+            elif degradation >= 3:  # HEAVY - only critical ops proceed
+                if not should_proceed_with_priority(OperationPriority.NORMAL):
+                    logger.warning("Heavy resource pressure, reducing num_games by 75%")
+                    args.num_games = max(10, args.num_games // 4)
+            elif degradation >= 2:  # MODERATE - reduce workload
+                if not should_proceed_with_priority(OperationPriority.NORMAL):
+                    logger.warning("Moderate resource pressure, reducing num_games by 50%")
+                    args.num_games = max(10, args.num_games // 2)
+            elif degradation >= 1:  # LIGHT - slight reduction
+                logger.info(f"Light resource pressure (degradation level {degradation})")
         except ImportError:
             logger.debug("Resource guard not available, skipping checks")
 

@@ -1102,10 +1102,12 @@ def main():
         logger.info(f"Loaded weights from {args.weights_file}:{args.profile}")
 
     # Resource guard: Check disk/memory/GPU before starting (80% limits)
+    # Also import graceful degradation functions for dynamic resource management
     try:
         from app.utils.resource_guard import (
             check_disk_space, check_memory, check_gpu_memory,
-            get_resource_status, LIMITS
+            get_resource_status, LIMITS,
+            should_proceed_with_priority, OperationPriority, get_degradation_level,
         )
         # Estimate output size: ~1KB per game for JSONL + ~100KB per 100 games for NPZ
         estimated_output_mb = (args.num_games * 0.001) + (args.num_games / 100 * 0.1) + 50
@@ -1118,8 +1120,26 @@ def main():
         if not check_gpu_memory(required_gb=1.0):
             logger.warning("GPU memory constrained, may affect performance")
         logger.info(f"Resource check passed: {get_resource_status()['can_proceed']}")
+
+        # Graceful degradation: GPU selfplay is NORMAL priority
+        # Under heavy resource pressure, reduce workload or skip
+        degradation = get_degradation_level()
+        if degradation >= 4:  # CRITICAL - resources at/above limits
+            logger.error("Resources at critical levels, aborting selfplay")
+            sys.exit(1)
+        elif degradation >= 3:  # HEAVY - only critical ops proceed
+            if not should_proceed_with_priority(OperationPriority.NORMAL):
+                logger.warning("Heavy resource pressure, reducing num_games by 75%")
+                args.num_games = max(10, args.num_games // 4)
+        elif degradation >= 2:  # MODERATE - reduce workload
+            if not should_proceed_with_priority(OperationPriority.NORMAL):
+                logger.warning("Moderate resource pressure, reducing num_games by 50%")
+                args.num_games = max(10, args.num_games // 2)
+        elif degradation >= 1:  # LIGHT - slight reduction
+            logger.info(f"Light resource pressure (degradation level {degradation})")
     except ImportError:
         logger.debug("Resource guard not available, skipping checks")
+        should_proceed_with_priority = None  # Mark as unavailable
 
     # Check coordination before spawning (using safe helpers)
     task_id = None

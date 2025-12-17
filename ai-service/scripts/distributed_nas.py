@@ -1685,6 +1685,16 @@ def main():
 
     args = parser.parse_args()
 
+    # Entry point resource validation (enforced 2025-12-16)
+    # NAS requires significant resources for model evaluation
+    if HAS_RESOURCE_GUARD:
+        if not resource_can_proceed(check_disk=True, check_mem=True, check_gpu=True):
+            logger.error("Insufficient resources to start distributed NAS")
+            logger.error("CPU/Memory/GPU usage exceeds 80% limit or disk exceeds 70%")
+            logger.error("Free up resources before starting NAS")
+            return
+        logger.info("Resource check passed: disk, memory, GPU within limits")
+
     # Worker mode
     if args.worker:
         if not args.work_dir:

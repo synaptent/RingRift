@@ -837,6 +837,17 @@ def generate_dataset(
         jsonl_file = open(jsonl_path, "a", encoding="utf-8")
 
     for game_idx in range(num_games):
+        # Circuit breaker: Check resources every 10 games
+        if game_idx > 0 and game_idx % 10 == 0:
+            try:
+                from app.utils.resource_guard import can_proceed, wait_for_resources
+                if not can_proceed(check_disk=True, check_mem=True, check_cpu_load=True):
+                    print(f"Resource pressure at game {game_idx}/{num_games}, waiting...")
+                    if not wait_for_resources(timeout=120.0, mem_required_gb=1.0):
+                        print("Resources still constrained, continuing anyway")
+            except ImportError:
+                pass  # resource_guard not available
+
         game_start_time = time.time()
         # Set seed for each game if provided, incrementing to ensure variety
         game_seed = seed + game_idx if seed is not None else None

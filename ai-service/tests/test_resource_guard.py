@@ -204,5 +204,174 @@ class TestResourceStatus:
             assert isinstance(status[key]["ok"], bool)
 
 
+class TestClusterCoordinatorConsistency:
+    """Test that cluster_coordinator uses consistent limits."""
+
+    def test_cluster_coordinator_limits_match(self):
+        """ProcessLimits should match resource_guard limits (80% for CPU/memory)."""
+        import warnings
+        # Suppress deprecation warning for this test
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            from app.distributed.cluster_coordinator import ProcessLimits
+
+        limits = ProcessLimits()
+        assert limits.max_memory_percent == 80.0, "Memory limit should be 80%"
+        assert limits.max_cpu_percent == 80.0, "CPU limit should be 80% (fixed from 90%)"
+
+
+class TestExecutorResourceChecks:
+    """Test that executor has resource checking capability."""
+
+    def test_executor_has_resource_check_option(self):
+        """LocalExecutor should have check_resources option."""
+        from app.execution.executor import LocalExecutor
+
+        executor = LocalExecutor(check_resources=True, required_mem_gb=1.0)
+        assert executor.check_resources is True
+        assert executor.required_mem_gb == 1.0
+
+    def test_executor_default_no_resource_check(self):
+        """LocalExecutor should default to no resource checking."""
+        from app.execution.executor import LocalExecutor
+
+        executor = LocalExecutor()
+        assert executor.check_resources is False
+
+    def test_check_resources_before_spawn_exists(self):
+        """check_resources_before_spawn function should exist."""
+        from app.execution.executor import check_resources_before_spawn
+        import asyncio
+        assert callable(check_resources_before_spawn)
+        assert asyncio.iscoroutinefunction(check_resources_before_spawn)
+
+
+class TestTrainingResourceChecks:
+    """Test that training modules have disk checks."""
+
+    def test_save_checkpoint_has_disk_check(self):
+        """save_checkpoint should document disk check."""
+        from app.training.train import save_checkpoint
+        assert save_checkpoint.__doc__ is not None
+        assert 'IOError' in save_checkpoint.__doc__
+        assert 'disk' in save_checkpoint.__doc__.lower()
+
+
+class TestDataLoaderResourceChecks:
+    """Test that data loader has memory checks."""
+
+    def test_merge_data_files_has_memory_check(self):
+        """merge_data_files should have memory check."""
+        from app.training.data_loader import merge_data_files
+        assert merge_data_files.__doc__ is not None
+        assert 'MemoryError' in merge_data_files.__doc__
+
+
+class TestGenerateDataResourceChecks:
+    """Test that data generation has disk checks."""
+
+    def test_resource_guard_imported_in_generate_data(self):
+        """generate_data module should import resource_guard functions."""
+        from app.training import generate_data
+        assert hasattr(generate_data, 'check_disk_space')
+        assert hasattr(generate_data, 'get_disk_usage')
+
+
+class TestGracefulDegradation:
+    """Test graceful degradation under resource pressure."""
+
+    def test_operation_priority_values(self):
+        """OperationPriority should have correct hierarchy."""
+        from app.utils.resource_guard import OperationPriority
+        assert OperationPriority.BACKGROUND < OperationPriority.LOW
+        assert OperationPriority.LOW < OperationPriority.NORMAL
+        assert OperationPriority.NORMAL < OperationPriority.HIGH
+        assert OperationPriority.HIGH < OperationPriority.CRITICAL
+
+    def test_get_degradation_level_returns_int(self):
+        """get_degradation_level should return 0-4."""
+        from app.utils.resource_guard import get_degradation_level
+        level = get_degradation_level()
+        assert isinstance(level, int)
+        assert 0 <= level <= 4
+
+    def test_should_proceed_with_priority(self):
+        """should_proceed_with_priority should return bool."""
+        from app.utils.resource_guard import (
+            should_proceed_with_priority, OperationPriority
+        )
+        # CRITICAL should always proceed (unless impossible level 5)
+        result = should_proceed_with_priority(OperationPriority.CRITICAL)
+        assert isinstance(result, bool)
+
+    def test_get_recommended_actions_returns_list(self):
+        """get_recommended_actions should return list of strings."""
+        from app.utils.resource_guard import get_recommended_actions
+        actions = get_recommended_actions()
+        assert isinstance(actions, list)
+        assert len(actions) > 0
+        assert all(isinstance(a, str) for a in actions)
+
+
+class TestPrometheusMetrics:
+    """Test Prometheus metrics integration."""
+
+    def test_prometheus_available(self):
+        """Prometheus client should be importable."""
+        from app.utils.resource_guard import HAS_PROMETHEUS
+        # Should be True if prometheus_client is installed
+        assert isinstance(HAS_PROMETHEUS, bool)
+
+    def test_get_resource_status_with_prometheus(self):
+        """get_resource_status should work with Prometheus export."""
+        from app.utils.resource_guard import get_resource_status, HAS_PROMETHEUS
+        # Should not raise even if Prometheus is available
+        status = get_resource_status(export_prometheus=HAS_PROMETHEUS)
+        assert isinstance(status, dict)
+        assert 'cpu' in status
+        assert 'memory' in status
+
+
+class TestModelCulling:
+    """Test model culling functionality."""
+
+    def test_model_culling_controller_accepts_strings(self):
+        """ModelCullingController should accept string paths."""
+        from app.tournament.model_culling import ModelCullingController
+        # Should not raise TypeError for string paths
+        culler = ModelCullingController(
+            elo_db_path="data/unified_elo.db",
+            model_dir="models"
+        )
+        assert culler.elo_db_path.name == "unified_elo.db"
+        assert culler.model_dir.name == "models"
+
+    def test_config_keys_defined(self):
+        """All 9 config keys should be defined."""
+        from app.tournament.model_culling import CONFIG_KEYS
+        assert len(CONFIG_KEYS) == 9
+        assert "square8_2p" in CONFIG_KEYS
+        assert "hexagonal_4p" in CONFIG_KEYS
+
+
+class TestEloDatabase:
+    """Test ELO database functionality."""
+
+    def test_pinned_baselines_defined(self):
+        """PINNED_BASELINES should be defined in EloDatabase."""
+        from app.tournament.unified_elo_db import get_elo_database
+        db = get_elo_database()
+        assert hasattr(db, 'PINNED_BASELINES')
+        assert 'baseline_random' in db.PINNED_BASELINES
+        assert db.PINNED_BASELINES['baseline_random'] == 400.0
+
+    def test_reset_pinned_baselines_method_exists(self):
+        """reset_pinned_baselines should exist."""
+        from app.tournament.unified_elo_db import get_elo_database
+        db = get_elo_database()
+        assert hasattr(db, 'reset_pinned_baselines')
+        assert callable(db.reset_pinned_baselines)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

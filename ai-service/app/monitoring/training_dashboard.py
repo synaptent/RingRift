@@ -568,12 +568,23 @@ class MetricsCollector:
 
         self.db = MetricsDatabase(db_path)
 
-        # Default alert thresholds
+        # Default alert thresholds - aligned with resource_guard limits
+        # Import limits from resource_guard for consistency
+        try:
+            from app.utils.resource_guard import LIMITS as RESOURCE_LIMITS
+            gpu_limit = RESOURCE_LIMITS.GPU_MAX_PERCENT
+            disk_limit = RESOURCE_LIMITS.DISK_MAX_PERCENT
+            cpu_limit = RESOURCE_LIMITS.CPU_MAX_PERCENT
+            memory_limit = RESOURCE_LIMITS.MEMORY_MAX_PERCENT
+        except ImportError:
+            gpu_limit, disk_limit, cpu_limit, memory_limit = 80.0, 70.0, 80.0, 80.0
+
         self.alert_thresholds = alert_thresholds or {
             "loss_spike": 2.0,  # Alert if loss > 2x moving average
-            "gpu_memory_high": 90.0,  # Alert if GPU memory > 90%
-            "disk_high": 85.0,  # Alert if disk > 85%
-            "cpu_high": 95.0,  # Alert if CPU > 95%
+            "gpu_memory_high": gpu_limit,  # Alert at resource_guard limit (80%)
+            "disk_high": disk_limit,  # Alert at resource_guard limit (70%)
+            "cpu_high": cpu_limit,  # Alert at resource_guard limit (80%)
+            "memory_high": memory_limit,  # Alert at resource_guard limit (80%)
             "elo_drop": 50.0,  # Alert if Elo drops > 50
             "games_per_hour_low": 10.0,  # Alert if self-play < 10 games/hour
         }
@@ -701,8 +712,8 @@ class MetricsCollector:
             PROM_CLUSTER_ACTIVE_JOBS.labels(host=host_name).set(active_jobs)
             PROM_SELFPLAY_GAMES_PER_HOUR.labels(host=host_name).set(selfplay_games_per_hour)
 
-        # Check for resource issues
-        self._check_resource_issues(host_name, cpu_percent, gpu_memory_percent, disk_percent)
+        # Check for resource issues against resource_guard 80% limits
+        self._check_resource_issues(host_name, cpu_percent, gpu_memory_percent, disk_percent, memory_percent)
 
     def record_selfplay_stats(
         self,
@@ -769,27 +780,35 @@ class MetricsCollector:
         cpu_percent: float,
         gpu_memory_percent: float,
         disk_percent: float,
+        memory_percent: float = 0.0,
     ):
-        """Check for resource issues."""
+        """Check for resource issues against resource_guard limits."""
         if cpu_percent > self.alert_thresholds["cpu_high"]:
             self._create_alert(
                 "warning", "cluster",
-                f"High CPU usage on {host_name}: {cpu_percent:.1f}%",
-                {"host": host_name, "cpu_percent": cpu_percent}
+                f"High CPU usage on {host_name}: {cpu_percent:.1f}% (limit: {self.alert_thresholds['cpu_high']:.0f}%)",
+                {"host": host_name, "cpu_percent": cpu_percent, "limit": self.alert_thresholds["cpu_high"]}
+            )
+
+        if memory_percent > self.alert_thresholds.get("memory_high", 80.0):
+            self._create_alert(
+                "warning", "cluster",
+                f"High memory usage on {host_name}: {memory_percent:.1f}% (limit: {self.alert_thresholds.get('memory_high', 80.0):.0f}%)",
+                {"host": host_name, "memory_percent": memory_percent, "limit": self.alert_thresholds.get("memory_high", 80.0)}
             )
 
         if gpu_memory_percent > self.alert_thresholds["gpu_memory_high"]:
             self._create_alert(
                 "warning", "cluster",
-                f"High GPU memory on {host_name}: {gpu_memory_percent:.1f}%",
-                {"host": host_name, "gpu_memory_percent": gpu_memory_percent}
+                f"High GPU memory on {host_name}: {gpu_memory_percent:.1f}% (limit: {self.alert_thresholds['gpu_memory_high']:.0f}%)",
+                {"host": host_name, "gpu_memory_percent": gpu_memory_percent, "limit": self.alert_thresholds["gpu_memory_high"]}
             )
 
         if disk_percent > self.alert_thresholds["disk_high"]:
             self._create_alert(
                 "error", "cluster",
-                f"High disk usage on {host_name}: {disk_percent:.1f}%",
-                {"host": host_name, "disk_percent": disk_percent}
+                f"High disk usage on {host_name}: {disk_percent:.1f}% (limit: {self.alert_thresholds['disk_high']:.0f}%)",
+                {"host": host_name, "disk_percent": disk_percent, "limit": self.alert_thresholds["disk_high"]}
             )
 
     def _create_alert(

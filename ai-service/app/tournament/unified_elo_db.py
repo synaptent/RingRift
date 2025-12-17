@@ -599,6 +599,42 @@ class EloDatabase:
             ))
         conn.commit()
 
+    def reset_pinned_baselines(self) -> int:
+        """Reset all pinned baselines to their anchor ELO values.
+
+        This should be called periodically to ensure baseline ratings
+        haven't drifted due to bugs or manual updates.
+
+        Returns:
+            Number of baselines reset
+        """
+        conn = self._get_connection()
+        reset_count = 0
+
+        for prefix, pinned_elo in self.PINNED_BASELINES.items():
+            # Find all participants matching this prefix
+            cursor = conn.execute("""
+                SELECT participant_id, board_type, num_players, rating
+                FROM elo_ratings
+                WHERE participant_id LIKE ?
+            """, (f"{prefix}%",))
+
+            for row in cursor.fetchall():
+                pid, board_type, num_players, current_rating = row
+                if current_rating != pinned_elo:
+                    conn.execute("""
+                        UPDATE elo_ratings
+                        SET rating = ?, last_update = ?
+                        WHERE participant_id = ? AND board_type = ? AND num_players = ?
+                    """, (pinned_elo, time.time(), pid, board_type, num_players))
+                    reset_count += 1
+                    logger.info(
+                        f"Reset {pid} from {current_rating:.0f} to {pinned_elo:.0f}"
+                    )
+
+        conn.commit()
+        return reset_count
+
     # =========================================================================
     # Match Recording and Elo Updates
     # =========================================================================

@@ -2149,6 +2149,25 @@ def train_model(
 
     try:
         for epoch in range(start_epoch, config.epochs_per_iter):
+            # Circuit breaker: Check resources at the start of each epoch
+            # This prevents training from overwhelming the system when resources are constrained
+            if epoch % 5 == 0:  # Check every 5 epochs to minimize overhead
+                try:
+                    from app.utils.resource_guard import can_proceed, wait_for_resources, get_resource_status
+                    if not can_proceed(check_disk=True, check_mem=True, check_cpu_load=True):
+                        status = get_resource_status()
+                        logger.warning(
+                            f"Resource pressure detected at epoch {epoch}: "
+                            f"CPU={status['cpu']['used_percent']:.0f}%, "
+                            f"Memory={status['memory']['used_percent']:.0f}%, "
+                            f"Disk={status['disk']['used_percent']:.0f}%. "
+                            f"Waiting for resources..."
+                        )
+                        if not wait_for_resources(timeout=300.0, mem_required_gb=2.0):
+                            logger.warning("Resources still constrained after 5 min wait, continuing anyway")
+                except ImportError:
+                    pass  # resource_guard not available
+
             # Set epoch for distributed sampler or streaming loader
             if distributed and train_sampler is not None:
                 train_sampler.set_epoch(epoch)
