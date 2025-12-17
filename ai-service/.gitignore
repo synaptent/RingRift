@@ -101,9 +101,18 @@ systemd/ringrift-elo-sync.service
 # Monitoring configs with cluster IPs
 monitoring/prometheus.yml
 monitoring/prometheus/prometheus.yml
+monitoring/grafana/dashboards/ai-cluster.json
+monitoring/grafana/dashboards/ringrift-full.json
 
 # Scripts with cluster-specific tunnel configs
 scripts/tunnel_health_monitor.sh
+scripts/tunnel_metrics.sh
+scripts/tunnel_watchdog.sh
+
+# Documentation with cluster-specific details (use .example templates)
+docs/CLUSTER_OPERATIONS.md
+docs/SSH_ACCESS_GUIDE.md
+docs/ai/CLUSTER_NODE_CONFIGURATION.md
 
 # Archive directories (contain deprecated code with cluster-specific IPs)
 scripts/archive/
