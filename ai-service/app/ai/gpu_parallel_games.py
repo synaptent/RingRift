@@ -987,7 +987,8 @@ class BatchGameState:
             #
             # NOTE: GPU hex kernels use a 25×25 embedding (radius-12 -> 2r+1),
             # so the canonical hex supply must map to board_size=25 as well.
-            starting_rings = {8: 18, 19: 72, 13: 96, 25: 96}.get(board_size, 18)
+            # Hex8 uses 9×9 embedding (radius-4 -> 2*4+1), same ring count as square8.
+            starting_rings = {8: 18, 9: 18, 19: 72, 13: 96, 25: 96}.get(board_size, 18)
 
         rings = torch.zeros(shape_players, dtype=int_dtype, device=device)
         rings[:, 1:num_players+1] = starting_rings
@@ -1110,6 +1111,7 @@ class BatchGameState:
         board_size = {
             BoardType.SQUARE8: 8,
             BoardType.SQUARE19: 19,
+            BoardType.HEX8: 9,  # Hex8 uses 9×9 embedding (radius-4)
             BoardType.HEXAGONAL: 13,  # Hex uses 13 for radius calculation
         }.get(board_type, 8)
 
@@ -1126,7 +1128,7 @@ class BatchGameState:
 
         # Copy board state (Pydantic converts to snake_case for access)
         # Note: Hex boards use 3D coordinates (x,y,z), square boards use 2D (x,y)
-        is_hex = board_type == BoardType.HEXAGONAL
+        is_hex = board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
 
         # mustMoveFromStackKey (TS) -> must_move_from_{y,x} (GPU)
         must_key = getattr(game_state, "must_move_from_stack_key", None)
@@ -1216,19 +1218,21 @@ class BatchGameState:
 
         # Map GPU board_size back to BoardType
         # Note: hex uses 25x25 embedding (radius 12 -> 2*12+1 = 25)
+        # Note: hex8 uses 9x9 embedding (radius 4 -> 2*4+1 = 9)
         board_type_map = {
             8: BoardType.SQUARE8,
+            9: BoardType.HEX8,  # Hex8 9x9 embedding
             19: BoardType.SQUARE19,
             13: BoardType.HEXAGONAL,
             25: BoardType.HEXAGONAL,  # Hex 25x25 embedding
         }
         board_type = board_type_map.get(self.board_size, BoardType.SQUARE8)
 
-        # Hex boards: convert GPU grid coords (row, col in 25x25) to axial (x, y)
-        # CPU hex uses size=13 (radius), GPU uses size=25 (embedding)
-        is_hex = board_type == BoardType.HEXAGONAL
-        hex_center = self.board_size // 2 if is_hex else 0  # 12 for 25x25
-        cpu_board_size = 13 if is_hex else self.board_size
+        # Hex boards: convert GPU grid coords to axial (x, y)
+        # CPU hex uses logical radius, GPU uses 2*radius+1 embedding
+        is_hex = board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
+        hex_center = self.board_size // 2 if is_hex else 0  # 12 for 25x25, 4 for 9x9
+        cpu_board_size = (5 if board_type == BoardType.HEX8 else 13) if is_hex else self.board_size
 
         def grid_to_cpu_coords(row: int, col: int):
             """Convert GPU grid coords to CPU format."""
@@ -1582,6 +1586,7 @@ class BatchGameState:
 
             board_type_map = {
                 8: BoardType.SQUARE8,
+                9: BoardType.HEX8,
                 19: BoardType.SQUARE19,
                 13: BoardType.HEXAGONAL,
             }
@@ -4956,6 +4961,7 @@ def evaluate_positions_batch(
 
     board_type_map = {
         8: BoardType.SQUARE8,
+        9: BoardType.HEX8,
         19: BoardType.SQUARE19,
         13: BoardType.HEXAGONAL,
     }
@@ -6103,7 +6109,7 @@ class ParallelGameRunner:
                 continue
 
             # Hex coordinate conversion helper
-            is_hex = self.board_type and self.board_type.lower() in ("hexagonal", "hex")
+            is_hex = self.board_type and self.board_type.lower() in ("hexagonal", "hex", "hex8")
             hex_center = self.board_size // 2 if is_hex else 0
 
             def to_cpu_coords(row: int, col: int):
@@ -7121,6 +7127,7 @@ class ParallelGameRunner:
 
         board_type_map = {
             8: BoardType.SQUARE8,
+            9: BoardType.HEX8,
             19: BoardType.SQUARE19,
             13: BoardType.HEXAGONAL,
         }
