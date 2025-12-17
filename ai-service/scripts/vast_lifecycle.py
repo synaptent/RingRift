@@ -306,15 +306,25 @@ def restart_workers(instance: Dict) -> bool:
     else:
         path = "~/ringrift/ai-service"  # Default
 
-    # Start new workers with GPU-appropriate board type
+    # Determine engine based on board type and model availability
+    # - square8: use mcts with neural network (GPU) if models exist
+    # - hex8/hexagonal: use descent (CPU) until models are trained
+    if board_type == "square8":
+        engine = "mcts"
+        model_arg = "--model-id ringrift_v5_sq8_2p"  # Use latest square8 model
+    else:
+        engine = "descent"
+        model_arg = ""
+
+    # Start new workers with GPU-appropriate board type and engine
     success, output = run_ssh_command(
         host, port,
         f"""cd {path} &&
-        mkdir -p data/games logs &&
+        mkdir -p data/games logs models &&
         source venv/bin/activate 2>/dev/null || true &&
         PYTHONPATH=. nohup python3 -m app.training.generate_data \\
             --board-type {board_type} --num-games {num_games} \\
-            --engine descent \\
+            --engine {engine} {model_arg} \\
             --record-db data/games/selfplay_{board_type}_{name}.db \\
             > logs/selfplay_{board_type}.log 2>&1 &
         sleep 1 && pgrep -f generate_data | head -1
