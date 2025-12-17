@@ -39,12 +39,17 @@ from typing import Any, Dict, List, Optional, Set
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [Archive] %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("archive_processed_jsonl", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [Archive] %(levelname)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+    )
+    logger = logging.getLogger(__name__)
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 

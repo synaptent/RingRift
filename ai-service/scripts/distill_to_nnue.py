@@ -77,11 +77,16 @@ from app.ai.nnue import (
 from app.models import BoardType, GameState
 from app.db import GameReplayDB
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger("distill_to_nnue")
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("distill_to_nnue", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    logger = logging.getLogger("distill_to_nnue")
 
 
 @dataclass
