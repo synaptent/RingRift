@@ -1,6 +1,6 @@
 # RingRift Training Features Reference
 
-> **Last Updated**: 2025-12-17 (Phase 7: Training enhancements module - anomaly detection, validation intervals, hard example mining, warm restarts, seed management)
+> **Last Updated**: 2025-12-17 (Integrated Training Enhancements - auxiliary tasks, gradient surgery, batch scheduling, background eval, ELO weighting, curriculum learning, reanalysis)
 > **Status**: Active
 
 This document provides a comprehensive reference for all training features, parameters, and techniques available in the RingRift AI training pipeline.
@@ -15,14 +15,15 @@ This document provides a comprehensive reference for all training features, para
 6. [Online Training Techniques](#online-training-techniques)
 7. [Architecture Search & Pretraining](#architecture-search--pretraining)
 8. [Phase 2 Advanced Training Features](#phase-2-advanced-training-features)
-9. [Learning Rate Scheduling](#learning-rate-scheduling)
-10. [Batch Size Management](#batch-size-management)
-11. [Model Architecture Selection](#model-architecture-selection)
-12. [CLI Arguments Reference](#cli-arguments-reference)
-13. [Parallel Selfplay Generation](#parallel-selfplay-generation)
-14. [Temperature Scheduling](#temperature-scheduling)
-15. [Value Calibration Tracking](#value-calibration-tracking)
-16. [Prometheus Metrics Reference](#prometheus-metrics-reference)
+9. [Integrated Training Enhancements](#integrated-training-enhancements-december-2025)
+10. [Learning Rate Scheduling](#learning-rate-scheduling)
+11. [Batch Size Management](#batch-size-management)
+12. [Model Architecture Selection](#model-architecture-selection)
+13. [CLI Arguments Reference](#cli-arguments-reference)
+14. [Parallel Selfplay Generation](#parallel-selfplay-generation)
+15. [Temperature Scheduling](#temperature-scheduling)
+16. [Value Calibration Tracking](#value-calibration-tracking)
+17. [Prometheus Metrics Reference](#prometheus-metrics-reference)
 
 ---
 
@@ -837,6 +838,160 @@ training:
     enabled: true
     plateau_patience: 10
     improvement_threshold: 0.001
+```
+
+---
+
+## Integrated Training Enhancements (December 2025)
+
+A unified module (`app/training/integrated_enhancements.py`) consolidates all advanced training features into a single, configurable system.
+
+### Overview
+
+| Module                    | Purpose                                                       | Status   |
+| ------------------------- | ------------------------------------------------------------- | -------- |
+| **Auxiliary Tasks**       | Multi-task learning heads (game length, piece count, outcome) | Optional |
+| **Gradient Surgery**      | PCGrad for conflicting multi-task gradients                   | Optional |
+| **Batch Scheduling**      | Dynamic batch size (small→large) during training              | Optional |
+| **Background Evaluation** | Continuous Elo tracking with auto-checkpointing               | Optional |
+| **ELO Weighting**         | Weight samples by opponent strength                           | Enabled  |
+| **Curriculum Learning**   | 5-stage progressive difficulty                                | Enabled  |
+| **Data Augmentation**     | D4/D6 symmetry augmentation                                   | Enabled  |
+| **Reanalysis**            | Re-evaluate historical games with current model               | Optional |
+
+### Configuration
+
+```yaml
+# In config/unified_loop.yaml
+enhancements:
+  enabled: true
+
+  # Auxiliary Tasks (Multi-Task Learning)
+  auxiliary_tasks_enabled: false
+  aux_game_length_weight: 0.1
+  aux_piece_count_weight: 0.1
+  aux_outcome_weight: 0.05
+
+  # Gradient Surgery (PCGrad)
+  gradient_surgery_enabled: false
+  gradient_surgery_method: 'pcgrad' # or "cagrad"
+
+  # Batch Scheduling
+  batch_scheduling_enabled: false
+  batch_initial_size: 64
+  batch_final_size: 512
+  batch_schedule_type: 'linear' # "linear", "exponential", "step"
+
+  # Background Evaluation
+  background_eval_enabled: false
+  eval_interval_steps: 1000
+  eval_elo_checkpoint_threshold: 10.0
+
+  # ELO Weighting
+  elo_weighting_enabled: true
+  elo_min_weight: 0.5
+  elo_max_weight: 2.0
+
+  # Curriculum Learning
+  curriculum_learning_enabled: true
+  curriculum_auto_advance: true
+
+  # Data Augmentation
+  augmentation_enabled: true
+  augmentation_mode: 'all' # "all", "random", "light"
+
+  # Reanalysis
+  reanalysis_enabled: false
+  reanalysis_blend_ratio: 0.5
+```
+
+### Usage
+
+```python
+from app.training.integrated_enhancements import (
+    IntegratedTrainingManager,
+    create_integrated_manager,
+)
+
+# Create manager with custom config
+manager = create_integrated_manager(
+    config_dict={
+        "elo_weighting_enabled": True,
+        "curriculum_learning_enabled": True,
+        "batch_scheduling_enabled": True,
+    },
+    board_type="square8",
+)
+
+# Initialize all enabled components
+manager.initialize_all(model=my_model)
+
+# Use as context manager for automatic cleanup
+with manager:
+    for epoch in range(epochs):
+        batch_size = manager.get_batch_size()
+        curriculum = manager.get_curriculum_parameters()
+        sample_weights = manager.compute_sample_weights(opponent_elos)
+        # ... training loop
+        manager.update_step(game_won=True)
+```
+
+### Auxiliary Tasks
+
+Adds prediction heads for game length, piece count, and outcome:
+
+```python
+# Compute auxiliary losses
+aux_loss, loss_breakdown = manager.compute_auxiliary_loss(features, targets)
+# loss_breakdown = {"game_length": 0.12, "piece_count": 0.08, "outcome": 0.05}
+```
+
+### Gradient Surgery (PCGrad)
+
+Resolves conflicting gradients between value and policy heads:
+
+```python
+# Apply gradient surgery for multi-task learning
+combined_loss = manager.apply_gradient_surgery(model, {
+    "policy": policy_loss,
+    "value": value_loss,
+    "auxiliary": aux_loss,
+})
+```
+
+### Curriculum Learning
+
+5-stage progression from beginner to expert:
+
+| Stage    | Max Moves | Opponent Elo Delta | Win Rate Threshold |
+| -------- | --------- | ------------------ | ------------------ |
+| Beginner | 30        | -300               | 60%                |
+| Easy     | 50        | -150               | 55%                |
+| Medium   | 75        | -50                | 52%                |
+| Hard     | 100       | 0                  | 50%                |
+| Expert   | 200       | +50                | 48%                |
+
+Auto-advances when win rate threshold is met with sufficient games.
+
+### ELO Weighting
+
+Prioritizes training on games against stronger opponents:
+
+```python
+# Get sample weights based on opponent Elo
+weights = manager.compute_sample_weights(opponent_elos)
+# Higher Elo opponents → higher weight (up to elo_max_weight)
+```
+
+### Background Evaluation
+
+Continuous evaluation during training with auto-checkpointing:
+
+```python
+# Check if early stopping should trigger
+if manager.should_early_stop():
+    print("Elo dropped significantly, stopping training")
+    break
 ```
 
 ---
@@ -2028,6 +2183,27 @@ python -m app.training.train \
 | 1.0         | Standard softmax                  | Balanced play              |
 | 1.5         | More exploration                  | Opening diversity          |
 | 2.0+        | High exploration                  | Unusual position discovery |
+
+### Per-Sample Temperature Metadata
+
+Dataset files (.npz) now include temperature metadata for temperature-aware training:
+
+| Key               | Shape | Description                                   |
+| ----------------- | ----- | --------------------------------------------- |
+| `effective_temps` | (N,)  | Per-sample effective temperature at move time |
+| `temp_config`     | (4,)  | [base_temp, opening_temp, threshold, decay]   |
+
+**Usage in Training:**
+
+```python
+# Load dataset with temperature metadata
+data = np.load('dataset.npz', allow_pickle=True)
+temps = data['effective_temps']  # Per-sample temperatures
+config = data['temp_config']     # [1.0, 1.5, 30, 1.0] = base, opening, threshold, decay_enabled
+
+# Temperature-weighted loss (lower weight for high-temperature samples)
+weights = 1.0 / (1.0 + 0.5 * (temps - 1.0))  # Example weighting
+```
 
 ---
 

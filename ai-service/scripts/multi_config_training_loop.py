@@ -107,6 +107,21 @@ except ImportError:
     HAS_INCREMENTAL_EXPORT = False
     IncrementalExporter = None
 
+# Integrated Training Enhancements (2025-12)
+# Unified module for auxiliary tasks, gradient surgery, batch scheduling,
+# background eval, ELO weighting, curriculum learning, and data augmentation
+try:
+    from app.training.integrated_enhancements import (
+        IntegratedTrainingManager,
+        IntegratedEnhancementsConfig,
+        create_integrated_manager,
+    )
+    HAS_INTEGRATED_ENHANCEMENTS = True
+except ImportError:
+    HAS_INTEGRATED_ENHANCEMENTS = False
+    IntegratedTrainingManager = None
+    IntegratedEnhancementsConfig = None
+
 # Base paths - auto-detect from script location or use env var
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.environ.get("RINGRIFT_BASE_DIR", os.path.dirname(SCRIPT_DIR))
@@ -1287,6 +1302,28 @@ def run_training(board_type: str, num_players: int, db_paths: List[str],
     # D6 hex symmetry augmentation for hex boards (12x effective data)
     if board_type in ('hex8', 'hexagonal', 'hex'):
         train_cmd.append("--augment-hex-symmetry")
+
+    # 2025-12 Integrated Enhancements - Apply curriculum and ELO weighting
+    if HAS_INTEGRATED_ENHANCEMENTS:
+        try:
+            enhancement_config = IntegratedEnhancementsConfig(
+                elo_weighting_enabled=True,
+                curriculum_learning_enabled=True,
+                augmentation_enabled=True,
+            )
+            enhancement_manager = create_integrated_manager(
+                config_dict={
+                    "elo_weighting_enabled": True,
+                    "curriculum_learning_enabled": True,
+                    "augmentation_enabled": True,
+                },
+                board_type=board_type,
+            )
+            curriculum_params = enhancement_manager.get_curriculum_parameters()
+            if curriculum_params:
+                print(f"  [Enhancements] Curriculum stage: {curriculum_params.get('name', 'default')}", flush=True)
+        except Exception as e:
+            print(f"  [Enhancements] Warning: {e}", flush=True)
 
     # Apply LR multiplier if non-default
     if lr_multiplier != 1.0 and HAS_HYPERPARAMETERS:
