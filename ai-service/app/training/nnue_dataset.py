@@ -408,6 +408,106 @@ class NNUESQLiteDataset(Dataset):
         value = torch.tensor([sample.value], dtype=torch.float32)
         return features, value
 
+    def get_move_numbers(self) -> np.ndarray:
+        """Get move numbers for all samples (for phase-based weighting)."""
+        return np.array([s.move_number for s in self.samples], dtype=np.int32)
+
+    def compute_phase_balanced_weights(
+        self,
+        early_end: int = 40,
+        mid_end: int = 80,
+        target_balance: Tuple[float, float, float] = (0.25, 0.35, 0.40),
+    ) -> np.ndarray:
+        """Compute sample weights to balance early/mid/late game phases.
+
+        This enables training on a more balanced distribution of game phases,
+        counteracting the natural bias toward late-game positions.
+
+        Args:
+            early_end: Move number where early game ends (default 40)
+            mid_end: Move number where mid game ends (default 80)
+            target_balance: Target proportion (early, mid, late) that should
+                           sum to 1.0. Default (0.25, 0.35, 0.40) gives more
+                           weight to early/mid game positions.
+
+        Returns:
+            Array of sample weights for use with WeightedRandomSampler
+        """
+        move_numbers = self.get_move_numbers()
+        n_samples = len(move_numbers)
+
+        if n_samples == 0:
+            return np.array([])
+
+        # Classify samples by phase
+        early_mask = move_numbers < early_end
+        mid_mask = (move_numbers >= early_end) & (move_numbers < mid_end)
+        late_mask = move_numbers >= mid_end
+
+        n_early = np.sum(early_mask)
+        n_mid = np.sum(mid_mask)
+        n_late = np.sum(late_mask)
+
+        logger.info(f"Phase counts - Early: {n_early}, Mid: {n_mid}, Late: {n_late}")
+
+        # Compute weights to achieve target balance
+        weights = np.ones(n_samples, dtype=np.float64)
+
+        target_early, target_mid, target_late = target_balance
+
+        # Weight = (target_proportion * total) / actual_count
+        # This makes expected samples per phase proportional to target
+        if n_early > 0:
+            weights[early_mask] = (target_early * n_samples) / n_early
+        if n_mid > 0:
+            weights[mid_mask] = (target_mid * n_samples) / n_mid
+        if n_late > 0:
+            weights[late_mask] = (target_late * n_samples) / n_late
+
+        # Normalize to sum to 1 (for sampling probabilities)
+        weights = weights / weights.sum()
+
+        # Log effective balance
+        eff_early = weights[early_mask].sum() if n_early > 0 else 0
+        eff_mid = weights[mid_mask].sum() if n_mid > 0 else 0
+        eff_late = weights[late_mask].sum() if n_late > 0 else 0
+        logger.info(
+            f"Effective phase balance - Early: {eff_early:.1%}, "
+            f"Mid: {eff_mid:.1%}, Late: {eff_late:.1%}"
+        )
+
+        return weights
+
+    def get_balanced_sampler(
+        self,
+        early_end: int = 40,
+        mid_end: int = 80,
+        target_balance: Tuple[float, float, float] = (0.25, 0.35, 0.40),
+    ) -> "torch.utils.data.WeightedRandomSampler":
+        """Get a WeightedRandomSampler that balances game phases.
+
+        Args:
+            early_end: Move number where early game ends
+            mid_end: Move number where mid game ends
+            target_balance: Target (early, mid, late) proportions
+
+        Returns:
+            WeightedRandomSampler for use with DataLoader
+        """
+        from torch.utils.data import WeightedRandomSampler
+
+        weights = self.compute_phase_balanced_weights(
+            early_end=early_end,
+            mid_end=mid_end,
+            target_balance=target_balance,
+        )
+
+        return WeightedRandomSampler(
+            weights=torch.from_numpy(weights).double(),
+            num_samples=len(self.samples),
+            replacement=True,
+        )
+
 
 class NNUEStreamingDataset(IterableDataset):
     """Streaming dataset for large-scale NNUE training.
