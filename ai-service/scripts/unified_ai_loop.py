@@ -2684,8 +2684,9 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Warning: Failed to initialize execution backend: {e}")
 
         # Local selfplay generator (parallel with Gumbel-MCTS support)
+        # Skip in coordinator-only mode to prevent local CPU/memory usage
         self.local_selfplay: Optional[LocalSelfplayGenerator] = None
-        if HAS_LOCAL_SELFPLAY:
+        if HAS_LOCAL_SELFPLAY and not DISABLE_LOCAL_TASKS:
             try:
                 num_workers = getattr(config, 'selfplay_workers', None)
                 self.local_selfplay = LocalSelfplayGenerator(
@@ -2696,6 +2697,8 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Local selfplay generator initialized (workers={num_workers or 'auto'})")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize local selfplay: {e}")
+        elif DISABLE_LOCAL_TASKS:
+            print("[UnifiedLoop] Local selfplay disabled (coordinator-only mode)")
 
         # Resource optimizer - cooperative cluster-wide utilization targeting (60-80%)
         self.resource_optimizer: Optional[ResourceOptimizer] = None
@@ -4770,8 +4773,15 @@ class UnifiedAILoop:
                     print(f"[DiverseTournament] Distributed execution failed ({e}), falling back to local")
 
             # Fall back to local execution if distributed didn't work
+            # Skip local fallback in coordinator-only mode
             if results is None:
-                results = run_tournament_round_local(configs)
+                if DISABLE_LOCAL_TASKS:
+                    print("[DiverseTournament] Skipping local fallback (coordinator-only mode)")
+                    results = []
+                elif run_tournament_round_local:
+                    results = run_tournament_round_local(configs)
+                else:
+                    results = []
 
             # Aggregate results
             total_games = sum(r.games_completed for r in results)
@@ -5964,6 +5974,11 @@ class UnifiedAILoop:
         Returns:
             Dict with generation results
         """
+        # Guard against local work in coordinator-only mode
+        if DISABLE_LOCAL_TASKS:
+            print("[LocalSelfplay] Skipping local selfplay (coordinator-only mode)")
+            return {"success": False, "error": "Coordinator-only mode", "games": 0, "samples": 0}
+
         if self.local_selfplay is None:
             print("[LocalSelfplay] Local selfplay generator not available")
             return {"success": False, "error": "Local selfplay not available", "games": 0, "samples": 0}
@@ -7339,6 +7354,14 @@ def main():
             print("[UnifiedLoop] Warning: psutil not installed, cannot check memory")
         except Exception as e:
             print(f"[UnifiedLoop] Warning: Could not check system memory: {e}")
+
+        # Always show coordinator-only mode status at startup
+        if DISABLE_LOCAL_TASKS:
+            print("[UnifiedLoop] ════════════════════════════════════════════════════════════")
+            print("[UnifiedLoop] COORDINATOR-ONLY MODE (RINGRIFT_DISABLE_LOCAL_TASKS=true)")
+            print("[UnifiedLoop] Local selfplay, training, and tournaments will be delegated to cluster")
+            print("[UnifiedLoop] ════════════════════════════════════════════════════════════")
+
         if config.dry_run:
             print("[UnifiedLoop] DRY RUN MODE - no actual operations will be performed")
 

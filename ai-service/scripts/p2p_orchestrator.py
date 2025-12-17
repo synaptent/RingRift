@@ -483,6 +483,22 @@ except ImportError:
     load_remote_hosts = None
     filter_ready_hosts = None
 
+# PFSP (Prioritized Fictitious Self-Play) opponent pool
+try:
+    from app.training.advanced_training import (
+        PFSPOpponentPool,
+        OpponentStats,
+        CMAESAutoTuner,
+        PlateauConfig,
+    )
+    HAS_PFSP = True
+except ImportError:
+    HAS_PFSP = False
+    PFSPOpponentPool = None
+    OpponentStats = None
+    CMAESAutoTuner = None
+    PlateauConfig = None
+
 # ============================================
 # Configuration
 # ============================================
@@ -894,6 +910,44 @@ class P2POrchestrator:
                 print(f"[P2P] EloSyncManager initialized (db: {db_path})")
             except Exception as e:
                 print(f"[P2P] Failed to initialize EloSyncManager: {e}")
+
+        # PFSP (Prioritized Fictitious Self-Play) opponent pool (leader-only)
+        # Maintains a pool of historical models weighted by difficulty for diverse training
+        self.pfsp_pools: Dict[str, Any] = {}  # config_key -> PFSPOpponentPool
+        if HAS_PFSP:
+            try:
+                for config_key in ["square8_2p", "square8_4p", "hex8_2p", "hexagonal_2p"]:
+                    self.pfsp_pools[config_key] = PFSPOpponentPool(
+                        max_pool_size=30,
+                        hard_opponent_weight=0.6,
+                        diversity_weight=0.25,
+                        recency_weight=0.15,
+                    )
+                print(f"[P2P] PFSP opponent pools initialized for {len(self.pfsp_pools)} configs")
+            except Exception as e:
+                print(f"[P2P] Failed to initialize PFSP pools: {e}")
+
+        # CMA-ES Auto-Tuner (leader-only)
+        # Automatically triggers hyperparameter optimization when Elo plateaus
+        self.cmaes_auto_tuners: Dict[str, Any] = {}  # config_key -> CMAESAutoTuner
+        self.last_cmaes_elo: Dict[str, float] = {}  # config_key -> last recorded Elo
+        if HAS_PFSP and CMAESAutoTuner:
+            try:
+                for config_key in ["square8_2p", "square8_4p", "hex8_2p", "hexagonal_2p"]:
+                    parts = config_key.rsplit("_", 1)
+                    board_type = parts[0]
+                    num_players = int(parts[1].replace("p", ""))
+                    plateau_cfg = PlateauConfig(patience=10)
+                    self.cmaes_auto_tuners[config_key] = CMAESAutoTuner(
+                        board_type=board_type,
+                        num_players=num_players,
+                        plateau_config=plateau_cfg,
+                        min_epochs_between_tuning=50,
+                        max_auto_tunes=3,
+                    )
+                print(f"[P2P] CMA-ES auto-tuners initialized for {len(self.cmaes_auto_tuners)} configs")
+            except Exception as e:
+                print(f"[P2P] Failed to initialize CMA-ES auto-tuners: {e}")
 
         # Locks for thread safety
         # Use RLock (reentrant lock) to allow nested acquisitions from same thread
@@ -11404,6 +11458,22 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                     job.board_type, job.num_players,
                                     output_path, job.data_games_count or 0
                                 )
+                            # PFSP: Add trained model to opponent pool for diverse selfplay
+                            config_key = f"{job.board_type}_{job.num_players}p"
+                            if HAS_PFSP and config_key in self.pfsp_pools:
+                                try:
+                                    model_id = Path(output_path).stem
+                                    self.pfsp_pools[config_key].add_opponent(
+                                        model_id=model_id,
+                                        model_path=output_path,
+                                        elo=1500.0,  # Initial Elo, updated after evaluation
+                                        win_rate=0.5,
+                                    )
+                                    print(f"[P2P/PFSP] Added {model_id} to opponent pool for {config_key}")
+                                except Exception as e:
+                                    print(f"[P2P/PFSP] Error adding model to pool: {e}")
+                            # CMA-ES: Check for Elo plateau and trigger auto-tuning
+                            asyncio.create_task(self._check_cmaes_auto_tuning(config_key))
                         else:
                             job.status = "failed"
                             job.error_message = stderr.decode()[:500]
@@ -11715,6 +11785,90 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         except Exception as e:
             print(f"[P2P] Baseline promotion error: {e}")
+
+    async def _check_cmaes_auto_tuning(self, config_key: str):
+        """Check if CMA-ES auto-tuning should be triggered for a config.
+
+        Monitors Elo progression and triggers hyperparameter optimization
+        when the model's improvement plateaus.
+        """
+        if not HAS_PFSP or config_key not in self.cmaes_auto_tuners:
+            return
+
+        try:
+            # Get current Elo from unified database
+            from app.tournament.unified_elo_db import get_elo_database
+            db = get_elo_database()
+
+            parts = config_key.rsplit("_", 1)
+            board_type = parts[0]
+            num_players = int(parts[1].replace("p", ""))
+
+            # Find best model for this config
+            best_model = None
+            best_elo = 1500.0
+            models_dir = Path(self.ringrift_path) / "ai-service" / "models" / "nnue"
+            pattern = f"nnue_{board_type}_{num_players}p*.pt"
+
+            for model_path in models_dir.glob(pattern):
+                model_id = model_path.stem
+                elo = db.get_elo(model_id)
+                if elo and elo > best_elo:
+                    best_elo = elo
+                    best_model = model_id
+
+            if not best_model:
+                return
+
+            # Check for plateau
+            auto_tuner = self.cmaes_auto_tuners[config_key]
+            last_elo = self.last_cmaes_elo.get(config_key, 1500.0)
+
+            # Record Elo history for plateau detection
+            should_tune = auto_tuner.check_plateau(best_elo)
+            self.last_cmaes_elo[config_key] = best_elo
+
+            if should_tune:
+                print(f"[P2P/CMA-ES] Elo plateau detected for {config_key} (Elo: {best_elo:.0f})")
+                print(f"[P2P/CMA-ES] Triggering auto hyperparameter optimization...")
+
+                # Trigger CMA-ES via existing distributed infrastructure
+                await self._trigger_auto_cmaes(board_type, num_players)
+
+        except Exception as e:
+            print(f"[P2P/CMA-ES] Auto-tuning check error for {config_key}: {e}")
+
+    def get_pfsp_opponent(self, config_key: str) -> Optional[str]:
+        """Get a PFSP-sampled opponent model for selfplay.
+
+        Returns path to an opponent model sampled from the PFSP pool,
+        weighted by difficulty (harder opponents sampled more frequently).
+        """
+        if not HAS_PFSP or config_key not in self.pfsp_pools:
+            return None
+
+        try:
+            pool = self.pfsp_pools[config_key]
+            opponent = pool.sample_opponent()
+            if opponent:
+                return opponent.model_path
+        except Exception as e:
+            print(f"[P2P/PFSP] Error sampling opponent: {e}")
+        return None
+
+    def update_pfsp_stats(self, config_key: str, model_id: str, win_rate: float, elo: float):
+        """Update PFSP stats for a model after evaluation games.
+
+        Called after tournament/evaluation to update opponent difficulty metrics.
+        """
+        if not HAS_PFSP or config_key not in self.pfsp_pools:
+            return
+
+        try:
+            self.pfsp_pools[config_key].update_stats(model_id, win_rate=win_rate, elo=elo)
+            print(f"[P2P/PFSP] Updated stats for {model_id}: win_rate={win_rate:.2f}, elo={elo:.0f}")
+        except Exception as e:
+            print(f"[P2P/PFSP] Error updating stats: {e}")
 
     async def _handle_tournament_completion(
         self,

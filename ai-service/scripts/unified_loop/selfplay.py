@@ -25,6 +25,9 @@ if TYPE_CHECKING:
 # Path constants
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 
+# Coordinator-only mode - skip local CPU-intensive work
+DISABLE_LOCAL_TASKS = os.environ.get("RINGRIFT_DISABLE_LOCAL_TASKS", "").lower() in ("1", "true", "yes", "on")
+
 logger = logging.getLogger(__name__)
 
 # Import parallel selfplay module
@@ -131,6 +134,16 @@ class LocalSelfplayGenerator:
         Returns:
             Dict with generation results
         """
+        # Guard against local work in coordinator-only mode
+        if DISABLE_LOCAL_TASKS:
+            logger.info("[LocalSelfplay] Skipping local selfplay (RINGRIFT_DISABLE_LOCAL_TASKS=true)")
+            return {
+                "success": False,
+                "error": "Coordinator-only mode",
+                "games": 0,
+                "samples": 0,
+            }
+
         if not HAS_PARALLEL_SELFPLAY:
             return {
                 "success": False,

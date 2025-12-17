@@ -206,6 +206,54 @@ When the Prometheus client is installed, the loop exports metrics on port 9090:
 5. **Promotion**: If new model beats current by 20+ Elo, it's deployed (15min cooldown)
 6. **Curriculum**: Training weights are adjusted based on Elo performance
 
+## Coordinator-Only Mode
+
+For machines that should only orchestrate the cluster without performing local compute-intensive tasks (selfplay, training, tournaments), set the `RINGRIFT_DISABLE_LOCAL_TASKS` environment variable:
+
+```bash
+# Enable coordinator-only mode
+export RINGRIFT_DISABLE_LOCAL_TASKS=true
+
+# Start the unified loop
+python scripts/unified_ai_loop.py --start
+```
+
+### What Coordinator-Only Mode Disables
+
+| Component              | Behavior in Coordinator Mode                      |
+| ---------------------- | ------------------------------------------------- |
+| **Local Selfplay**     | Skipped - games generated on cluster nodes only   |
+| **Local Training**     | Skipped - training delegated to GPU nodes         |
+| **Local Tournaments**  | Skipped - tournaments run on remote hosts         |
+| **Data Collection**    | Active - syncs games from cluster nodes           |
+| **Model Distribution** | Active - pushes models to cluster nodes           |
+| **Metrics Export**     | Active - Prometheus metrics still available       |
+| **Tournament Service** | Active - orchestrates remote tournament execution |
+
+### Setting Up Persistent Coordinator Mode
+
+Add to your shell profile (`~/.zshrc` or `~/.bashrc`):
+
+```bash
+# RingRift: Run this machine as coordinator only
+export RINGRIFT_DISABLE_LOCAL_TASKS=true
+```
+
+### Startup Message
+
+When coordinator-only mode is enabled, the unified loop displays:
+
+```
+[UnifiedLoop] ════════════════════════════════════════════════════════════
+[UnifiedLoop] COORDINATOR-ONLY MODE (RINGRIFT_DISABLE_LOCAL_TASKS=true)
+[UnifiedLoop] Local selfplay, training, and tournaments will be delegated to cluster
+[UnifiedLoop] ════════════════════════════════════════════════════════════
+```
+
+### Low-Memory Machines
+
+On machines with less than 32GB RAM, the unified loop will suggest coordinator-only mode if not already set. This prevents OOM kills during memory-intensive operations.
+
 ## Related Documentation
 
 - [Training Features](TRAINING_FEATURES.md) - Training configuration options

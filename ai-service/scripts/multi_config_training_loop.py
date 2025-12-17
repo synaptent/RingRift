@@ -72,6 +72,30 @@ try:
 except ImportError:
     HAS_HYPERPARAMETERS = False
 
+# PFSP (Prioritized Fictitious Self-Play) opponent pool for diverse training
+try:
+    from app.training.advanced_training import (
+        PFSPOpponentPool,
+        OpponentStats,
+    )
+    HAS_PFSP = True
+except ImportError:
+    HAS_PFSP = False
+    PFSPOpponentPool = None
+    OpponentStats = None
+
+# CMA-ES Auto-Tuner for hyperparameter optimization on Elo plateau
+try:
+    from app.training.advanced_training import (
+        CMAESAutoTuner,
+        PlateauConfig,
+    )
+    HAS_CMAES = True
+except ImportError:
+    HAS_CMAES = False
+    CMAESAutoTuner = None
+    PlateauConfig = None
+
 # Base paths - auto-detect from script location or use env var
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.environ.get("RINGRIFT_BASE_DIR", os.path.dirname(SCRIPT_DIR))
@@ -297,6 +321,24 @@ last_trained_counts: Dict[Tuple[str, int], int] = {k: 0 for k in THRESHOLDS}
 
 # Unified ELO database path
 UNIFIED_ELO_DB = os.path.join(DATA_DIR, "unified_elo.db")
+
+# PFSP opponent pools per config (for diverse selfplay training)
+PFSP_POOLS: Dict[Tuple[str, int], Any] = {}
+if HAS_PFSP:
+    for config in [("square8", 2), ("square8", 4), ("hex8", 2), ("hexagonal", 2)]:
+        try:
+            PFSP_POOLS[config] = PFSPOpponentPool(
+                max_pool_size=30,
+                hard_opponent_weight=0.6,
+                diversity_weight=0.25,
+                recency_weight=0.15,
+            )
+        except Exception as e:
+            print(f"[PFSP] Failed to initialize pool for {config}: {e}")
+
+# CMA-ES Auto-Tuners per config (for hyperparameter optimization on plateau)
+CMAES_TUNERS: Dict[Tuple[str, int], Any] = {}
+LAST_CMAES_ELO: Dict[Tuple[str, int], float] = {}
 
 # Board type name variants for model file matching
 BOARD_VARIANTS = {
@@ -885,6 +927,122 @@ def get_config_counts() -> Dict[Tuple[str, int], Tuple[int, List[str], int, List
     return results
 
 
+def check_cmaes_auto_tuning(board_type: str, num_players: int, iteration: int) -> None:
+    """Check for Elo plateau and trigger CMA-ES auto-tuning if needed.
+
+    This monitors Elo progression and automatically triggers hyperparameter
+    optimization when a plateau is detected (no Elo gain over several iterations).
+    """
+    if not HAS_CMAES:
+        return
+
+    key = (board_type, num_players)
+    short = short_name(board_type, num_players)
+    current_elo = get_config_elo(board_type, num_players)
+
+    # Check every 5 iterations to avoid too frequent checks
+    if iteration % 5 != 0:
+        return
+
+    # Check if Elo has improved since last check
+    last_elo = LAST_CMAES_ELO.get(key, 0.0)
+    LAST_CMAES_ELO[key] = current_elo
+
+    if last_elo == 0.0:
+        return  # First check, no comparison
+
+    elo_delta = current_elo - last_elo
+
+    # Detect plateau: less than 5 Elo gain over check period
+    if elo_delta < 5.0:
+        print(f"  [CMA-ES] Elo plateau detected for {short}: {last_elo:.0f} -> {current_elo:.0f} (delta={elo_delta:.1f})", flush=True)
+
+        # Check if already running a tuner for this config
+        if key in CMAES_TUNERS and CMAES_TUNERS[key] is not None:
+            print(f"  [CMA-ES] Auto-tuner already active for {short}", flush=True)
+            return
+
+        # Initialize and trigger CMA-ES auto-tuning
+        try:
+            plateau_config = PlateauConfig(
+                patience=3,
+                min_improvement=5.0,
+                window_size=5,
+            )
+            tuner = CMAESAutoTuner(
+                plateau_config=plateau_config,
+                population_size=8,
+                sigma=0.3,
+            )
+            CMAES_TUNERS[key] = tuner
+
+            # Trigger HP tuning via the standard mechanism
+            print(f"  [CMA-ES] Triggering auto-tuning for {short} due to plateau", flush=True)
+            trigger_hp_tuning(board_type, num_players, trials=15)
+
+        except Exception as e:
+            print(f"  [CMA-ES] Failed to initialize auto-tuner: {e}", flush=True)
+
+    elif elo_delta >= 10.0:
+        # Clear tuner if Elo is improving again
+        if key in CMAES_TUNERS:
+            print(f"  [CMA-ES] Elo improving for {short}: +{elo_delta:.1f}, clearing plateau state", flush=True)
+            CMAES_TUNERS[key] = None
+
+
+def get_pfsp_opponent(board_type: str, num_players: int) -> Optional[str]:
+    """Get a PFSP-weighted opponent for selfplay.
+
+    Returns model path selected based on PFSP prioritization (hard opponents
+    with some diversity and recency weighting).
+    """
+    if not HAS_PFSP:
+        return None
+
+    key = (board_type, num_players)
+    if key not in PFSP_POOLS:
+        return None
+
+    try:
+        pool = PFSP_POOLS[key]
+        opponent = pool.sample_opponent()
+        if opponent:
+            return opponent.model_path
+    except Exception:
+        pass
+
+    return None
+
+
+def update_pfsp_stats(board_type: str, num_players: int, model_id: str,
+                       win: bool, game_length: int) -> None:
+    """Update PFSP opponent statistics after a game.
+
+    Args:
+        board_type: Board type for the config
+        num_players: Number of players
+        model_id: ID of the opponent model
+        win: Whether the current model won against this opponent
+        game_length: Number of moves in the game
+    """
+    if not HAS_PFSP:
+        return
+
+    key = (board_type, num_players)
+    if key not in PFSP_POOLS:
+        return
+
+    try:
+        pool = PFSP_POOLS[key]
+        pool.update_opponent_stats(
+            model_id=model_id,
+            win=win,
+            game_length=game_length,
+        )
+    except Exception:
+        pass
+
+
 def run_training(board_type: str, num_players: int, db_paths: List[str],
                   jsonl_paths: List[str], current_count: int, iteration: int = 0) -> bool:
     """Run export and training for a config using DB and/or JSONL sources.
@@ -1096,6 +1254,19 @@ def run_training(board_type: str, num_players: int, db_paths: List[str],
         # --pruning (post-training structured pruning)
         # --self-play (integrated self-play data generation)
         # --distillation (knowledge distillation from teacher)
+        # 2024-12 Phase 4: Training Stability
+        "--adaptive-accumulation",  # Dynamic gradient accumulation based on memory
+        # Note: Optional Phase 4 features:
+        # --curriculum-schedule (automatic progression through difficulty)
+        # --loss-landscape-smoothing (better convergence)
+        # --gradient-noise-injection (regularization via noise)
+        # 2024-12 Phase 5: Production Optimization
+        "--dynamic-loss-scaling",  # Adaptive FP16 loss scaling for stability
+        # Note: Optional Phase 5 features:
+        # --activation-checkpointing (memory efficiency for large models)
+        # --flash-attention (faster attention when available)
+        # --streaming-npz (for very large datasets)
+        # --profiling (detailed training profiler)
     ]
 
     # D6 hex symmetry augmentation for hex boards (12x effective data)
@@ -1136,6 +1307,27 @@ def run_training(board_type: str, num_players: int, db_paths: List[str],
 
     print(f"  {short} training complete!", flush=True)
     last_trained_counts[key] = current_count
+
+    # PFSP: Add trained model to opponent pool for diverse selfplay
+    if HAS_PFSP and key in PFSP_POOLS:
+        try:
+            # Find the trained model path (latest in run_dir)
+            model_files = glob.glob(os.path.join(run_dir, "*.pth"))
+            if model_files:
+                latest_model = max(model_files, key=os.path.getmtime)
+                model_id = Path(latest_model).stem
+                PFSP_POOLS[key].add_opponent(
+                    model_id=model_id,
+                    model_path=latest_model,
+                    elo=get_config_elo(board_type, num_players),
+                    win_rate=0.5,  # Start with 50% assumed win rate
+                )
+                print(f"  [PFSP] Added {model_id} to opponent pool for {short}", flush=True)
+        except Exception as e:
+            print(f"  [PFSP] Warning: Failed to add model to pool: {e}", flush=True)
+
+    # CMA-ES: Check for Elo plateau and trigger auto-tuning if needed
+    check_cmaes_auto_tuning(board_type, num_players, iteration)
 
     # Check if HP tuning should be recommended
     hp_recommendation = check_hp_tuning_recommendation(board_type, num_players, current_count)
@@ -1261,6 +1453,17 @@ def main():
               f"coverage>={POLICY_KL_MIN_COVERAGE:.0%}, min={POLICY_KL_MIN_SAMPLES} samples)", flush=True)
     else:
         print(f"  - Policy Training: disabled (set RINGRIFT_ENABLE_POLICY_TRAINING=1)", flush=True)
+    # PFSP status
+    if HAS_PFSP:
+        pfsp_configs = list(PFSP_POOLS.keys())
+        print(f"  - PFSP Opponent Pools: ENABLED ({len(pfsp_configs)} configs)", flush=True)
+    else:
+        print(f"  - PFSP Opponent Pools: disabled (import failed)", flush=True)
+    # CMA-ES status
+    if HAS_CMAES:
+        print(f"  - CMA-ES Auto-Tuning: ENABLED (plateau detection)", flush=True)
+    else:
+        print(f"  - CMA-ES Auto-Tuning: disabled (import failed)", flush=True)
 
     # Show hyperparameter status for all configs
     if HAS_HYPERPARAMETERS:
