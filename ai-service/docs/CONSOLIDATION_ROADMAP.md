@@ -92,6 +92,7 @@ Updated core modules to import from `app/config/thresholds.py`:
 | `app/training/feedback_accelerator.py` | INITIAL_ELO_RATING                                  | ✅ Complete |
 | `app/training/unified_orchestrator.py` | INITIAL_ELO_RATING                                  | ✅ Complete |
 | `app/config/unified_config.py`         | INITIAL_ELO_RATING, ELO_K_FACTOR, etc.              | ✅ Complete |
+| `scripts/unified_loop/config.py`       | INITIAL_ELO_RATING, ELO_DROP_ROLLBACK               | ✅ Complete |
 
 **Pattern Used:**
 
