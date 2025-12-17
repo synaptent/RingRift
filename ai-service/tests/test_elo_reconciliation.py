@@ -13,6 +13,7 @@ import pytest
 
 from app.training.elo_reconciliation import (
     ConflictResolution,
+    DriftHistory,
     EloDrift,
     EloReconciler,
     ReconciliationReport,
@@ -426,6 +427,96 @@ class TestEloReconciler:
         assert len(report.nodes_failed) == 0
         assert report.total_matches_added == 0
 
+    def test_drift_history_tracking_enabled(self):
+        """Test that drift history is recorded when enabled."""
+        participants = {"player1": 1500, "player2": 1600}
+        self._create_elo_db(self.local_db, participants)
+        self._create_elo_db(self.remote_db, {"player1": 1550, "player2": 1550})
+
+        reconciler = EloReconciler(local_db_path=self.local_db, track_history=True)
+
+        # First drift check
+        reconciler.check_drift(remote_db_path=self.remote_db, board_type="square8", num_players=2)
+        # Second drift check
+        reconciler.check_drift(remote_db_path=self.remote_db, board_type="square8", num_players=2)
+
+        history = reconciler.get_drift_history("square8_2")
+        assert history is not None
+        assert len(history.snapshots) == 2
+
+    def test_drift_history_tracking_disabled(self):
+        """Test that drift history is not recorded when disabled."""
+        participants = {"player1": 1500, "player2": 1600}
+        self._create_elo_db(self.local_db, participants)
+
+        reconciler = EloReconciler(local_db_path=self.local_db, track_history=False)
+        reconciler.check_drift(board_type="square8", num_players=2)
+
+        history = reconciler.get_drift_history("square8_2")
+        assert history is None
+
+    def test_get_all_drift_histories(self):
+        """Test getting all drift histories."""
+        self._create_elo_db(self.local_db, {"player1": 1500})
+
+        reconciler = EloReconciler(local_db_path=self.local_db, track_history=True)
+
+        # Check drift for different configs
+        reconciler.check_drift(board_type="square8", num_players=2)
+        reconciler.check_drift(board_type="square10", num_players=4)
+        reconciler.check_drift()  # All configs
+
+        histories = reconciler.get_all_drift_histories()
+        assert len(histories) == 3
+        assert "square8_2" in histories
+        assert "square10_4" in histories
+        assert "all_all" in histories
+
+    def test_drift_history_persistence(self):
+        """Test that drift history is persisted to disk and reloaded."""
+        self._create_elo_db(self.local_db, {"player1": 1500, "player2": 1600})
+        self._create_elo_db(self.remote_db, {"player1": 1550, "player2": 1550})
+
+        # Create reconciler and check drift (should persist)
+        reconciler1 = EloReconciler(
+            local_db_path=self.local_db,
+            track_history=True,
+            persist_history=True,
+        )
+        reconciler1.check_drift(remote_db_path=self.remote_db, board_type="square8", num_players=2)
+        reconciler1.check_drift(remote_db_path=self.remote_db, board_type="square8", num_players=2)
+
+        # Verify file was created
+        history_path = self.local_db.parent / "elo_drift_history.json"
+        assert history_path.exists()
+
+        # Create new reconciler - should load history
+        reconciler2 = EloReconciler(
+            local_db_path=self.local_db,
+            track_history=True,
+            persist_history=True,
+        )
+
+        # Verify history was loaded
+        history = reconciler2.get_drift_history("square8_2")
+        assert history is not None
+        assert len(history.snapshots) == 2
+
+    def test_drift_history_no_persistence(self):
+        """Test that drift history is not persisted when disabled."""
+        self._create_elo_db(self.local_db, {"player1": 1500})
+
+        reconciler = EloReconciler(
+            local_db_path=self.local_db,
+            track_history=True,
+            persist_history=False,
+        )
+        reconciler.check_drift(board_type="square8", num_players=2)
+
+        # Verify file was NOT created
+        history_path = self.local_db.parent / "elo_drift_history.json"
+        assert not history_path.exists()
+
 
 class TestConvenienceFunctions:
     """Test module-level convenience functions."""
@@ -461,6 +552,220 @@ class TestConvenienceFunctions:
 
         assert isinstance(drift, EloDrift)
         assert drift.participants_in_source == 1
+
+
+class TestDriftHistory:
+    """Test DriftHistory class for historical drift tracking."""
+
+    def test_basic_creation(self):
+        """Test basic drift history creation."""
+        history = DriftHistory(config_key="square8_2p")
+        assert history.config_key == "square8_2p"
+        assert history.snapshots == []
+        assert history.max_snapshots == 100
+
+    def test_add_snapshot(self):
+        """Test adding a drift snapshot."""
+        history = DriftHistory(config_key="square8_2p")
+        drift = EloDrift(
+            source="local.db", target="remote.db",
+            checked_at="2024-01-01T12:00:00",
+            participants_in_source=100, participants_in_target=95, participants_in_both=90,
+            rating_diffs={"player1": 30.0, "player2": -20.0},
+        )
+        history.add_snapshot(drift)
+
+        assert len(history.snapshots) == 1
+        assert history.snapshots[0]["checked_at"] == "2024-01-01T12:00:00"
+        assert history.snapshots[0]["max_rating_diff"] == 30.0
+        assert history.snapshots[0]["avg_rating_diff"] == 25.0
+        assert history.snapshots[0]["is_significant"] is False
+        assert history.snapshots[0]["participants"] == 90
+
+    def test_max_snapshots_limit(self):
+        """Test that snapshots are pruned when exceeding max_snapshots."""
+        history = DriftHistory(config_key="square8_2p", max_snapshots=5)
+
+        for i in range(10):
+            drift = EloDrift(
+                source="local.db", target="remote.db",
+                checked_at=f"2024-01-01T{i:02d}:00:00",
+                participants_in_source=100, participants_in_target=100, participants_in_both=100,
+                rating_diffs={"player1": float(i)},
+            )
+            history.add_snapshot(drift)
+
+        # Should keep only the last 5 snapshots
+        assert len(history.snapshots) == 5
+        # First snapshot should be from hour 5
+        assert history.snapshots[0]["checked_at"] == "2024-01-01T05:00:00"
+        assert history.snapshots[-1]["checked_at"] == "2024-01-01T09:00:00"
+
+    def test_trend_unknown_insufficient_data(self):
+        """Test trend returns 'unknown' with insufficient data."""
+        history = DriftHistory(config_key="square8_2p")
+        assert history.trend == "unknown"
+
+        # Add only 2 snapshots
+        for i in range(2):
+            drift = EloDrift(
+                source="a", target="b", checked_at=f"2024-01-01T{i:02d}:00:00",
+                participants_in_source=10, participants_in_target=10, participants_in_both=10,
+                rating_diffs={"p1": float(i * 10)},
+            )
+            history.add_snapshot(drift)
+
+        assert history.trend == "unknown"
+
+    def test_trend_improving(self):
+        """Test trend detection when drift is improving (decreasing)."""
+        history = DriftHistory(config_key="square8_2p")
+
+        # Add snapshots with decreasing drift
+        drift_values = [100, 90, 80, 40, 20]  # Clearly decreasing
+        for i, val in enumerate(drift_values):
+            drift = EloDrift(
+                source="a", target="b", checked_at=f"2024-01-01T{i:02d}:00:00",
+                participants_in_source=10, participants_in_target=10, participants_in_both=10,
+                rating_diffs={"p1": float(val)},
+            )
+            history.add_snapshot(drift)
+
+        assert history.trend == "improving"
+
+    def test_trend_worsening(self):
+        """Test trend detection when drift is worsening (increasing)."""
+        history = DriftHistory(config_key="square8_2p")
+
+        # Add snapshots with increasing drift
+        drift_values = [20, 40, 60, 90, 100]  # Clearly increasing
+        for i, val in enumerate(drift_values):
+            drift = EloDrift(
+                source="a", target="b", checked_at=f"2024-01-01T{i:02d}:00:00",
+                participants_in_source=10, participants_in_target=10, participants_in_both=10,
+                rating_diffs={"p1": float(val)},
+            )
+            history.add_snapshot(drift)
+
+        assert history.trend == "worsening"
+
+    def test_trend_stable(self):
+        """Test trend detection when drift is stable."""
+        history = DriftHistory(config_key="square8_2p")
+
+        # Add snapshots with similar drift values
+        drift_values = [30, 32, 28, 31, 29]  # Stable values
+        for i, val in enumerate(drift_values):
+            drift = EloDrift(
+                source="a", target="b", checked_at=f"2024-01-01T{i:02d}:00:00",
+                participants_in_source=10, participants_in_target=10, participants_in_both=10,
+                rating_diffs={"p1": float(val)},
+            )
+            history.add_snapshot(drift)
+
+        assert history.trend == "stable"
+
+    def test_persistent_drift_false(self):
+        """Test persistent_drift is False with insufficient data."""
+        history = DriftHistory(config_key="square8_2p")
+        assert history.persistent_drift is False
+
+        # Add only 2 snapshots
+        for i in range(2):
+            drift = EloDrift(
+                source="a", target="b", checked_at=f"2024-01-01T{i:02d}:00:00",
+                participants_in_source=10, participants_in_target=10, participants_in_both=10,
+                rating_diffs={"p1": 100.0},  # Significant
+            )
+            history.add_snapshot(drift)
+
+        assert history.persistent_drift is False
+
+    def test_persistent_drift_true(self):
+        """Test persistent_drift is True when last 3 checks are significant."""
+        history = DriftHistory(config_key="square8_2p")
+
+        # Add 3 significant drift snapshots
+        for i in range(3):
+            drift = EloDrift(
+                source="a", target="b", checked_at=f"2024-01-01T{i:02d}:00:00",
+                participants_in_source=10, participants_in_target=10, participants_in_both=10,
+                rating_diffs={"p1": 100.0},  # > 50 threshold = significant
+            )
+            history.add_snapshot(drift)
+
+        assert history.persistent_drift is True
+
+    def test_persistent_drift_mixed(self):
+        """Test persistent_drift is False when not all last 3 are significant."""
+        history = DriftHistory(config_key="square8_2p")
+
+        # Add mixed significant/non-significant snapshots
+        drifts = [100.0, 100.0, 10.0]  # Last one is not significant
+        for i, val in enumerate(drifts):
+            drift = EloDrift(
+                source="a", target="b", checked_at=f"2024-01-01T{i:02d}:00:00",
+                participants_in_source=10, participants_in_target=10, participants_in_both=10,
+                rating_diffs={"p1": val},
+            )
+            history.add_snapshot(drift)
+
+        assert history.persistent_drift is False
+
+    def test_avg_drift_last_hour_empty(self):
+        """Test avg_drift_last_hour with no snapshots."""
+        history = DriftHistory(config_key="square8_2p")
+        assert history.avg_drift_last_hour == 0.0
+
+    def test_avg_drift_last_hour_single(self):
+        """Test avg_drift_last_hour with single snapshot."""
+        history = DriftHistory(config_key="square8_2p")
+        drift = EloDrift(
+            source="a", target="b", checked_at="2024-01-01T12:00:00",
+            participants_in_source=10, participants_in_target=10, participants_in_both=10,
+            rating_diffs={"p1": 50.0},
+        )
+        history.add_snapshot(drift)
+
+        assert history.avg_drift_last_hour == 50.0
+
+    def test_avg_drift_last_hour_multiple(self):
+        """Test avg_drift_last_hour averages last 2 snapshots."""
+        history = DriftHistory(config_key="square8_2p")
+
+        # Add 5 snapshots - should only use last 2 for "last hour"
+        drift_values = [10, 20, 30, 40, 60]
+        for i, val in enumerate(drift_values):
+            drift = EloDrift(
+                source="a", target="b", checked_at=f"2024-01-01T{i:02d}:00:00",
+                participants_in_source=10, participants_in_target=10, participants_in_both=10,
+                rating_diffs={"p1": float(val)},
+            )
+            history.add_snapshot(drift)
+
+        # Average of last 2: (40 + 60) / 2 = 50
+        assert history.avg_drift_last_hour == 50.0
+
+    def test_to_dict(self):
+        """Test serialization to dict."""
+        history = DriftHistory(config_key="square8_2p")
+
+        # Add some snapshots
+        for i in range(5):
+            drift = EloDrift(
+                source="a", target="b", checked_at=f"2024-01-01T{i:02d}:00:00",
+                participants_in_source=10, participants_in_target=10, participants_in_both=10,
+                rating_diffs={"p1": float(i * 10)},
+            )
+            history.add_snapshot(drift)
+
+        d = history.to_dict()
+
+        assert d["config_key"] == "square8_2p"
+        assert d["trend"] == "worsening"  # 0, 10, 20, 30, 40 - increasing
+        assert d["snapshot_count"] == 5
+        assert "recent_snapshots" in d
+        assert len(d["recent_snapshots"]) == 5
 
 
 class TestConflictResolution:

@@ -399,7 +399,8 @@ class NNUEPolicyTrainer:
         from_scores = torch.gather(from_logits, 1, from_indices)
         to_scores = torch.gather(to_logits, 1, to_indices)
         move_scores = (from_scores + to_scores) / self.temperature
-        move_scores = move_scores.masked_fill(~move_mask, float('-inf'))
+        # Use large negative instead of -inf to avoid numerical issues with label smoothing
+        move_scores = move_scores.masked_fill(~move_mask, -1e9)
 
         policy_loss = self.policy_criterion(move_scores, target_move_idx)
 
@@ -436,7 +437,8 @@ class NNUEPolicyTrainer:
             from_scores = torch.gather(from_logits, 1, from_indices)
             to_scores = torch.gather(to_logits, 1, to_indices)
             move_scores = from_scores + to_scores
-            move_scores = move_scores.masked_fill(~move_mask, float('-inf'))
+            # Use large negative instead of -inf to avoid numerical issues
+            move_scores = move_scores.masked_fill(~move_mask, -1e9)
 
             policy_loss = self.policy_criterion(move_scores, target_move_idx)
 
@@ -462,12 +464,228 @@ import json
 import logging
 import os
 import sqlite3
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+from multiprocessing import cpu_count
 from torch.utils.data import Dataset
+from typing import Dict, Any
 
 from .nnue import extract_features_from_gamestate
 
 logger = logging.getLogger(__name__)
+
+
+def _process_game_batch(
+    db_path: str,
+    game_ids: List[str],
+    config_dict: Dict[str, Any],
+    board_size: int,
+) -> List[Dict[str, Any]]:
+    """Worker function to process a batch of games in a separate process.
+
+    Returns serialized sample dicts (not NNUEPolicySample objects) to avoid
+    pickling issues with numpy arrays.
+    """
+    import numpy as np
+    from ..models import GameState, Move, BoardType
+    from ..rules.default_engine import DefaultRulesEngine
+
+    # Reconstruct config from dict
+    board_type = BoardType(config_dict['board_type'])
+    sample_every_n = config_dict['sample_every_n_moves']
+    min_game_length = config_dict['min_game_length']
+    max_moves = config_dict['max_moves_per_position']
+    include_draws = config_dict['include_draws']
+    distill_from_winners = config_dict['distill_from_winners']
+    winner_weight_boost = config_dict['winner_weight_boost']
+
+    samples = []
+    engine = DefaultRulesEngine()
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    for game_id in game_ids:
+        try:
+            # Get game info
+            cursor.execute(
+                "SELECT winner FROM games WHERE game_id = ?",
+                (game_id,)
+            )
+            game_row = cursor.fetchone()
+            if not game_row:
+                continue
+            winner = game_row['winner']
+
+            # Get initial state
+            cursor.execute(
+                "SELECT initial_state_json, compressed FROM game_initial_state WHERE game_id = ?",
+                (game_id,)
+            )
+            initial_row = cursor.fetchone()
+            if not initial_row:
+                continue
+
+            initial_json = initial_row['initial_state_json']
+            if initial_row['compressed']:
+                try:
+                    if isinstance(initial_json, (bytes, bytearray)):
+                        initial_json = gzip.decompress(bytes(initial_json)).decode("utf-8")
+                    else:
+                        initial_json = gzip.decompress(str(initial_json).encode("utf-8")).decode("utf-8")
+                except Exception:
+                    continue
+
+            state_dict = json.loads(initial_json)
+            state = GameState(**state_dict)
+
+            # Get all moves
+            cursor.execute(
+                "SELECT move_number, move_json FROM game_moves WHERE game_id = ? ORDER BY move_number",
+                (game_id,)
+            )
+            moves = cursor.fetchall()
+
+            if not moves:
+                continue
+
+            # Replay and sample
+            for move_row in moves:
+                move_number = move_row['move_number']
+                move_json_str = move_row['move_json']
+
+                if move_number % sample_every_n == 0:
+                    current_player = state.current_player or 1
+                    is_winner = winner == current_player
+
+                    if is_winner:
+                        value = 1.0
+                    elif winner is None or winner == 0:
+                        value = 0.0
+                    else:
+                        value = -1.0
+
+                    # Filtering
+                    should_include = True
+                    if distill_from_winners and not is_winner:
+                        should_include = False
+                    elif value == 0.0 and not include_draws:
+                        should_include = False
+
+                    if should_include:
+                        try:
+                            legal_moves = engine.get_valid_moves(state, current_player)
+                            if legal_moves:
+                                move_dict = json.loads(move_json_str)
+                                played_move = Move(**move_dict)
+
+                                # Find move index
+                                target_idx = _find_move_index_static(played_move, legal_moves)
+
+                                # Skip if target is beyond max_moves encoding limit
+                                if target_idx >= 0 and target_idx < max_moves:
+                                    features = extract_features_from_gamestate(state, current_player)
+                                    from_indices, to_indices, move_mask = _encode_legal_moves_static(
+                                        legal_moves, board_size, max_moves, board_type
+                                    )
+
+                                    sample_weight = winner_weight_boost if is_winner and winner_weight_boost > 1.0 else 1.0
+
+                                    # Store as dict for pickling
+                                    samples.append({
+                                        'features': features.tolist(),
+                                        'value': value,
+                                        'from_indices': from_indices.tolist(),
+                                        'to_indices': to_indices.tolist(),
+                                        'move_mask': move_mask.tolist(),
+                                        'target_move_idx': target_idx,
+                                        'player_number': current_player,
+                                        'game_id': game_id,
+                                        'move_number': move_number,
+                                        'sample_weight': sample_weight,
+                                    })
+                        except Exception:
+                            pass
+
+                # Advance state
+                try:
+                    move_dict = json.loads(move_json_str)
+                    move = Move(**move_dict)
+                    state = engine.apply_move(state, move)
+                except Exception:
+                    break
+
+        except Exception:
+            continue
+
+    conn.close()
+    return samples
+
+
+def _find_move_index_static(played_move, legal_moves: list) -> int:
+    """Static version of move index finding for multiprocessing."""
+    played_type = getattr(played_move, 'type', None)
+    played_from = getattr(played_move, 'from_pos', None)
+    played_to = getattr(played_move, 'to', None)
+
+    for i, legal in enumerate(legal_moves):
+        legal_type = getattr(legal, 'type', None)
+        legal_from = getattr(legal, 'from_pos', None)
+        legal_to = getattr(legal, 'to', None)
+
+        if played_type != legal_type:
+            continue
+        if played_from is not None and legal_from is not None:
+            if played_from.x != legal_from.x or played_from.y != legal_from.y:
+                continue
+        elif played_from is not None or legal_from is not None:
+            continue
+        if played_to is not None and legal_to is not None:
+            if played_to.x != legal_to.x or played_to.y != legal_to.y:
+                continue
+        elif played_to is not None or legal_to is not None:
+            continue
+        return i
+    return -1
+
+
+def _encode_legal_moves_static(
+    legal_moves: list,
+    board_size: int,
+    max_moves: int,
+    board_type,
+) -> tuple:
+    """Static version of move encoding for multiprocessing."""
+    import numpy as np
+
+    center = board_size // 2
+    center_idx = center * board_size + center
+
+    from_indices = np.zeros(max_moves, dtype=np.int64)
+    to_indices = np.zeros(max_moves, dtype=np.int64)
+    move_mask = np.zeros(max_moves, dtype=bool)
+
+    for i, move in enumerate(legal_moves[:max_moves]):
+        from_pos = getattr(move, 'from_pos', None)
+        if from_pos is None:
+            from_idx = center_idx
+        else:
+            from_idx = pos_to_flat_index(from_pos, board_size, board_type)
+
+        to_pos = getattr(move, 'to', None)
+        if to_pos is None:
+            to_pos = from_pos
+        if to_pos is None:
+            to_idx = center_idx
+        else:
+            to_idx = pos_to_flat_index(to_pos, board_size, board_type)
+
+        from_indices[i] = from_idx
+        to_indices[i] = to_idx
+        move_mask[i] = True
+
+    return from_indices, to_indices, move_mask
 
 
 @dataclass
@@ -505,6 +723,8 @@ class NNUEPolicyDataset(Dataset):
 
     Loads games from SQLite, replays them to get legal moves at each
     position, and encodes the move that was played for policy supervision.
+
+    Supports parallel extraction via num_workers parameter for faster loading.
     """
 
     def __init__(
@@ -512,10 +732,12 @@ class NNUEPolicyDataset(Dataset):
         db_paths: List[str],
         config: Optional[NNUEPolicyDatasetConfig] = None,
         max_samples: Optional[int] = None,
+        num_workers: int = 0,
     ):
         self.db_paths = db_paths
         self.config = config or NNUEPolicyDatasetConfig()
         self.max_samples = max_samples
+        self.num_workers = num_workers if num_workers > 0 else max(1, cpu_count() - 2)
         self.board_size = get_board_size(self.config.board_type)
         self.feature_dim = get_feature_dim(self.config.board_type)
         self.samples: List[NNUEPolicySample] = []
@@ -523,8 +745,12 @@ class NNUEPolicyDataset(Dataset):
         self._extract_samples()
 
     def _extract_samples(self) -> None:
-        """Extract training samples from SQLite databases."""
-        logger.info(f"Extracting policy samples from {len(self.db_paths)} databases")
+        """Extract training samples from SQLite databases.
+
+        Uses parallel processing when num_workers > 1 for significantly faster
+        extraction from large databases.
+        """
+        logger.info(f"Extracting policy samples from {len(self.db_paths)} databases (workers={self.num_workers})")
 
         for db_path in self.db_paths:
             if not os.path.exists(db_path):
@@ -532,7 +758,10 @@ class NNUEPolicyDataset(Dataset):
                 continue
 
             try:
-                samples = self._extract_from_db(db_path)
+                if self.num_workers > 1:
+                    samples = self._extract_from_db_parallel(db_path)
+                else:
+                    samples = self._extract_from_db(db_path)
                 self.samples.extend(samples)
                 logger.info(f"Extracted {len(samples)} policy samples from {db_path}")
             except Exception as e:
@@ -543,6 +772,112 @@ class NNUEPolicyDataset(Dataset):
                 break
 
         logger.info(f"Total policy samples: {len(self.samples)}")
+
+    def _extract_from_db_parallel(self, db_path: str) -> List[NNUEPolicySample]:
+        """Extract samples using parallel processing across multiple workers."""
+        import numpy as np
+
+        # Get list of game IDs to process
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Detect schema
+        cursor.execute("PRAGMA table_info(games)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        moves_col = 'total_moves' if 'total_moves' in columns else 'move_count'
+
+        board_type_str = self.config.board_type.value.lower()
+        query = f"""
+            SELECT game_id
+            FROM games
+            WHERE game_status = 'completed'
+              AND winner IS NOT NULL
+              AND board_type = ?
+              AND num_players = ?
+              AND {moves_col} >= ?
+        """
+        cursor.execute(query, (
+            board_type_str,
+            self.config.num_players,
+            self.config.min_game_length,
+        ))
+        game_ids = [row['game_id'] for row in cursor.fetchall()]
+        conn.close()
+
+        if not game_ids:
+            return []
+
+        # Estimate games needed based on max_samples
+        if self.max_samples:
+            # Rough estimate: ~10 samples per game on average
+            games_needed = min(len(game_ids), self.max_samples // 5 + 100)
+            game_ids = game_ids[:games_needed]
+
+        logger.info(f"Processing {len(game_ids)} games with {self.num_workers} workers")
+
+        # Split games into batches for each worker
+        batch_size = max(1, len(game_ids) // self.num_workers)
+        batches = []
+        for i in range(0, len(game_ids), batch_size):
+            batches.append(game_ids[i:i + batch_size])
+
+        # Prepare config dict for pickling
+        config_dict = {
+            'board_type': self.config.board_type.value,
+            'sample_every_n_moves': self.config.sample_every_n_moves,
+            'min_game_length': self.config.min_game_length,
+            'max_moves_per_position': self.config.max_moves_per_position,
+            'include_draws': self.config.include_draws,
+            'distill_from_winners': self.config.distill_from_winners,
+            'winner_weight_boost': self.config.winner_weight_boost,
+        }
+
+        # Process batches in parallel
+        all_sample_dicts = []
+        with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
+            futures = {
+                executor.submit(
+                    _process_game_batch,
+                    db_path,
+                    batch,
+                    config_dict,
+                    self.board_size,
+                ): i for i, batch in enumerate(batches)
+            }
+
+            completed = 0
+            for future in as_completed(futures):
+                try:
+                    batch_samples = future.result()
+                    all_sample_dicts.extend(batch_samples)
+                    completed += 1
+                    if completed % 5 == 0 or completed == len(batches):
+                        logger.info(f"  Completed {completed}/{len(batches)} batches, {len(all_sample_dicts)} samples")
+                except Exception as e:
+                    logger.warning(f"Batch failed: {e}")
+
+                # Early exit if we have enough samples
+                if self.max_samples and len(all_sample_dicts) >= self.max_samples:
+                    break
+
+        # Convert dicts back to NNUEPolicySample objects
+        samples = []
+        for d in all_sample_dicts[:self.max_samples] if self.max_samples else all_sample_dicts:
+            samples.append(NNUEPolicySample(
+                features=np.array(d['features'], dtype=np.float32),
+                value=d['value'],
+                from_indices=np.array(d['from_indices'], dtype=np.int64),
+                to_indices=np.array(d['to_indices'], dtype=np.int64),
+                move_mask=np.array(d['move_mask'], dtype=bool),
+                target_move_idx=d['target_move_idx'],
+                player_number=d['player_number'],
+                game_id=d['game_id'],
+                move_number=d['move_number'],
+                sample_weight=d['sample_weight'],
+            ))
+
+        return samples
 
     def _extract_from_db(self, db_path: str) -> List[NNUEPolicySample]:
         """Extract samples from a single database via game replay."""
@@ -655,7 +990,8 @@ class NNUEPolicyDataset(Dataset):
                                     played_move, legal_moves
                                 )
 
-                                if target_idx >= 0:
+                                # Skip if target is beyond max_moves encoding limit
+                                if target_idx >= 0 and target_idx < self.config.max_moves_per_position:
                                     # Extract features
                                     features = extract_features_from_gamestate(
                                         state, current_player

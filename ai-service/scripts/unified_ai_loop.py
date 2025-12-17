@@ -762,6 +762,18 @@ except ImportError:
     EloReconciler = None
     check_elo_drift = None
 
+# Automatic rollback monitoring for promoted models
+try:
+    from app.training.promotion_controller import (
+        RollbackCriteria,
+        RollbackMonitor,
+    )
+    HAS_ROLLBACK_MONITOR = True
+except ImportError:
+    HAS_ROLLBACK_MONITOR = False
+    RollbackCriteria = None
+    RollbackMonitor = None
+
 # Model registry synchronization for cluster-wide consistency
 try:
     from app.training.registry_sync_manager import RegistrySyncManager
@@ -2765,6 +2777,27 @@ class UnifiedAILoop:
                 print("[UnifiedLoop] EloReconciler initialized for drift detection (last-write-wins)")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize EloReconciler: {e}")
+
+        # Automatic rollback monitoring for promoted models
+        self.rollback_monitor: Optional[RollbackMonitor] = None
+        self._rollback_check_interval: float = 900.0  # 15 minutes
+        self._last_rollback_check: float = 0.0
+        self._promoted_models: Dict[str, Dict[str, Any]] = {}  # config_key -> {model_id, baseline_elo, promoted_at}
+        if HAS_ROLLBACK_MONITOR:
+            try:
+                self.rollback_monitor = RollbackMonitor(
+                    criteria=RollbackCriteria(
+                        elo_regression_threshold=-30.0,
+                        min_games_for_regression=20,
+                        consecutive_checks_required=3,
+                        min_win_rate=0.40,
+                    )
+                )
+                # Subscribe to promotion events to register models for monitoring
+                self.event_bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_for_rollback_monitor)
+                print("[UnifiedLoop] RollbackMonitor initialized for automatic regression detection")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize RollbackMonitor: {e}")
 
         # Model registry synchronization for cluster-wide consistency
         self.registry_sync_manager: Optional[RegistrySyncManager] = None
@@ -6400,6 +6433,11 @@ class UnifiedAILoop:
                     self._last_elo_reconcile = now
                     await self._run_elo_reconciliation()
 
+                # Check if enough time has passed since last rollback check
+                if self.rollback_monitor and now - self._last_rollback_check >= self._rollback_check_interval:
+                    self._last_rollback_check = now
+                    await self._run_rollback_check()
+
             except Exception as e:
                 print(f"[EloSync] Error in sync loop: {e}")
 
@@ -6462,6 +6500,166 @@ class UnifiedAILoop:
 
         except Exception as e:
             print(f"[EloReconcile] Error during reconciliation: {e}")
+
+    async def _run_rollback_check(self):
+        """Check promoted models for regression and trigger rollback if needed.
+
+        Periodically checks all recently promoted models for performance regression.
+        If significant regression is detected, automatically rolls back to the
+        previous model.
+        """
+        if not self.rollback_monitor or not self._promoted_models:
+            return
+
+        try:
+            for config_key, promotion_info in list(self._promoted_models.items()):
+                model_id = promotion_info.get("model_id")
+                previous_model_id = promotion_info.get("previous_model_id")
+                baseline_elo = promotion_info.get("baseline_elo")
+
+                if not model_id:
+                    continue
+
+                # Parse config key to get board_type and num_players
+                parts = config_key.rsplit("_", 1)
+                if len(parts) == 2 and parts[1].endswith("p"):
+                    board_type = parts[0]
+                    num_players = int(parts[1][:-1])
+                else:
+                    board_type = "square8"
+                    num_players = 2
+
+                # Run regression check
+                should_rollback, event = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self.rollback_monitor.check_for_regression(
+                        model_id=model_id,
+                        board_type=board_type,
+                        num_players=num_players,
+                        previous_model_id=previous_model_id,
+                        baseline_elo=baseline_elo,
+                    )
+                )
+
+                # Get regression status for logging
+                status = self.rollback_monitor.get_regression_status(model_id)
+
+                if status.get("at_risk"):
+                    print(
+                        f"[RollbackMonitor] WARNING: {model_id} at risk of rollback - "
+                        f"{status.get('consecutive_regressions')} consecutive regressions, "
+                        f"avg regression: {status.get('avg_regression', 0):.1f}"
+                    )
+
+                if should_rollback and event:
+                    print(
+                        f"[RollbackMonitor] TRIGGERING ROLLBACK: {event.current_model_id} -> "
+                        f"{event.rollback_model_id} (reason: {event.reason})"
+                    )
+
+                    # Execute rollback
+                    success = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: self.rollback_monitor.execute_rollback(event)
+                    )
+
+                    if success:
+                        # Remove from promoted models tracking
+                        del self._promoted_models[config_key]
+
+                        # Emit rollback event
+                        await self.event_bus.publish(DataEvent(
+                            event_type=DataEventType.QUALITY_CHECK_FAILED,
+                            payload={
+                                "check_type": "auto_rollback",
+                                "config_key": config_key,
+                                "from_model": event.current_model_id,
+                                "to_model": event.rollback_model_id,
+                                "reason": event.reason,
+                                "elo_regression": event.elo_regression,
+                            }
+                        ))
+                        print(f"[RollbackMonitor] Rollback successful for {config_key}")
+                    else:
+                        print(f"[RollbackMonitor] ERROR: Rollback failed for {config_key}")
+                else:
+                    print(
+                        f"[RollbackMonitor] {model_id} healthy - "
+                        f"checks: {status.get('checks', 0)}, "
+                        f"consecutive regressions: {status.get('consecutive_regressions', 0)}"
+                    )
+
+        except Exception as e:
+            print(f"[RollbackMonitor] Error during rollback check: {e}")
+
+    def register_promoted_model(
+        self,
+        config_key: str,
+        model_id: str,
+        previous_model_id: Optional[str] = None,
+        baseline_elo: Optional[float] = None,
+    ) -> None:
+        """Register a newly promoted model for rollback monitoring.
+
+        Args:
+            config_key: Configuration key (e.g., 'square8_2p')
+            model_id: ID of the newly promoted model
+            previous_model_id: ID of the model it replaced (for rollback target)
+            baseline_elo: Elo rating at promotion time
+        """
+        import time
+        self._promoted_models[config_key] = {
+            "model_id": model_id,
+            "previous_model_id": previous_model_id,
+            "baseline_elo": baseline_elo,
+            "promoted_at": time.time(),
+        }
+        print(f"[RollbackMonitor] Registered {model_id} for monitoring (config: {config_key})")
+
+    async def _on_promotion_for_rollback_monitor(self, event: DataEvent):
+        """Register promoted models for automatic rollback monitoring.
+
+        When a model is promoted, we register it for monitoring so that
+        if it shows regression, we can automatically roll back to the
+        previous model.
+        """
+        if not self.rollback_monitor:
+            return
+
+        try:
+            payload = event.payload
+            model_id = payload.get('model_id')
+            config_key = payload.get('config', '')
+            elo_gain = payload.get('elo_gain', 0)
+            new_elo = payload.get('new_elo')
+            previous_model_id = payload.get('previous_model_id')
+
+            # Skip tier promotions (they have different semantics)
+            if payload.get('type') == 'tier_promotion':
+                return
+
+            if not model_id or not config_key:
+                return
+
+            # Calculate baseline Elo (new Elo - gain = baseline)
+            baseline_elo = None
+            if new_elo is not None:
+                baseline_elo = new_elo
+            elif elo_gain:
+                # We don't have the actual new Elo, but we can use the gain
+                # The actual baseline check will use the Elo service
+                pass
+
+            # Register for monitoring
+            self.register_promoted_model(
+                config_key=config_key,
+                model_id=model_id,
+                previous_model_id=previous_model_id,
+                baseline_elo=baseline_elo,
+            )
+
+        except Exception as e:
+            print(f"[RollbackMonitor] Error registering promoted model: {e}")
 
     async def _registry_sync_loop(self):
         """Model registry synchronization loop for cluster-wide consistency.

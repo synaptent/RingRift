@@ -14,7 +14,11 @@ from app.training.promotion_controller import (
     PromotionCriteria,
     PromotionDecision,
     PromotionType,
+    RollbackCriteria,
+    RollbackEvent,
+    RollbackMonitor,
     get_promotion_controller,
+    get_rollback_monitor,
 )
 
 
@@ -402,6 +406,379 @@ class TestGetPromotionController:
         criteria = PromotionCriteria(min_games_played=200)
         controller = get_promotion_controller(criteria=criteria)
         assert controller.criteria.min_games_played == 200
+
+
+class TestRollbackCriteria:
+    """Test RollbackCriteria dataclass."""
+
+    def test_default_values(self):
+        """Test default rollback criteria values."""
+        criteria = RollbackCriteria()
+        assert criteria.elo_regression_threshold == -30.0
+        assert criteria.min_games_for_regression == 20
+        assert criteria.consecutive_checks_required == 3
+        assert criteria.min_win_rate == 0.40
+        assert criteria.time_window_seconds == 3600
+
+    def test_custom_values(self):
+        """Test custom rollback criteria values."""
+        criteria = RollbackCriteria(
+            elo_regression_threshold=-50.0,
+            min_games_for_regression=50,
+            consecutive_checks_required=5,
+        )
+        assert criteria.elo_regression_threshold == -50.0
+        assert criteria.min_games_for_regression == 50
+        assert criteria.consecutive_checks_required == 5
+
+
+class TestRollbackEvent:
+    """Test RollbackEvent dataclass."""
+
+    def test_basic_creation(self):
+        """Test basic rollback event creation."""
+        event = RollbackEvent(
+            triggered_at="2024-01-01T12:00:00",
+            current_model_id="model_v42",
+            rollback_model_id="model_v41",
+            reason="Elo regression detected",
+        )
+        assert event.current_model_id == "model_v42"
+        assert event.rollback_model_id == "model_v41"
+        assert event.auto_triggered is True
+
+    def test_with_metrics(self):
+        """Test rollback event with metrics."""
+        event = RollbackEvent(
+            triggered_at="2024-01-01T12:00:00",
+            current_model_id="model_v42",
+            rollback_model_id="model_v41",
+            reason="Win rate too low",
+            elo_regression=-45.0,
+            games_played=100,
+            win_rate=0.35,
+        )
+        assert event.elo_regression == -45.0
+        assert event.games_played == 100
+        assert event.win_rate == 0.35
+
+    def test_to_dict(self):
+        """Test serialization to dict."""
+        event = RollbackEvent(
+            triggered_at="2024-01-01T12:00:00",
+            current_model_id="model_v42",
+            rollback_model_id="model_v41",
+            reason="Test rollback",
+            elo_regression=-40.0,
+        )
+        d = event.to_dict()
+
+        assert d["triggered_at"] == "2024-01-01T12:00:00"
+        assert d["current_model_id"] == "model_v42"
+        assert d["rollback_model_id"] == "model_v41"
+        assert d["elo_regression"] == -40.0
+        assert d["auto_triggered"] is True
+
+
+class TestRollbackMonitor:
+    """Test RollbackMonitor functionality."""
+
+    def test_initialization_default(self):
+        """Test default initialization."""
+        monitor = RollbackMonitor()
+        assert monitor.criteria is not None
+        assert monitor.criteria.elo_regression_threshold == -30.0
+
+    def test_initialization_custom_criteria(self):
+        """Test initialization with custom criteria."""
+        criteria = RollbackCriteria(elo_regression_threshold=-50.0)
+        monitor = RollbackMonitor(criteria=criteria)
+        assert monitor.criteria.elo_regression_threshold == -50.0
+
+    def test_initialization_with_controller(self):
+        """Test initialization with injected controller."""
+        mock_controller = MagicMock()
+        monitor = RollbackMonitor(promotion_controller=mock_controller)
+        assert monitor._controller is mock_controller
+
+    def test_check_insufficient_games(self):
+        """Test regression check returns False with insufficient games."""
+        mock_elo = MagicMock()
+        mock_rating = MagicMock()
+        mock_rating.rating = 1450
+        mock_rating.games_played = 5  # Below min_games_for_regression
+        mock_rating.win_rate = 0.50
+        mock_elo.get_rating.return_value = mock_rating
+
+        mock_controller = MagicMock()
+        mock_controller.elo_service = mock_elo
+
+        monitor = RollbackMonitor(promotion_controller=mock_controller)
+        should_rollback, event = monitor.check_for_regression(
+            model_id="model_v42",
+            previous_model_id="model_v41",
+        )
+
+        assert should_rollback is False
+        assert event is None
+
+    def test_check_no_regression(self):
+        """Test regression check with stable performance."""
+        mock_elo = MagicMock()
+
+        # Current model
+        mock_rating = MagicMock()
+        mock_rating.rating = 1550
+        mock_rating.games_played = 50
+        mock_rating.win_rate = 0.55
+
+        # Previous model
+        mock_prev_rating = MagicMock()
+        mock_prev_rating.rating = 1500  # 50 points improvement
+
+        mock_elo.get_rating.side_effect = [mock_rating, mock_prev_rating]
+
+        mock_controller = MagicMock()
+        mock_controller.elo_service = mock_elo
+
+        monitor = RollbackMonitor(promotion_controller=mock_controller)
+        should_rollback, event = monitor.check_for_regression(
+            model_id="model_v42",
+            previous_model_id="model_v41",
+        )
+
+        assert should_rollback is False
+        assert event is None
+
+    def test_check_severe_regression(self):
+        """Test regression check triggers on severe regression."""
+        mock_elo = MagicMock()
+
+        mock_rating = MagicMock()
+        mock_rating.rating = 1400  # 100 points below baseline
+        mock_rating.games_played = 50
+        mock_rating.win_rate = 0.45
+
+        mock_prev_rating = MagicMock()
+        mock_prev_rating.rating = 1500
+
+        mock_elo.get_rating.side_effect = [mock_rating, mock_prev_rating]
+
+        mock_controller = MagicMock()
+        mock_controller.elo_service = mock_elo
+
+        # Threshold * 2 = -60, regression is -100, so should trigger
+        monitor = RollbackMonitor(promotion_controller=mock_controller)
+        should_rollback, event = monitor.check_for_regression(
+            model_id="model_v42",
+            previous_model_id="model_v41",
+        )
+
+        assert should_rollback is True
+        assert event is not None
+        assert event.current_model_id == "model_v42"
+        assert event.rollback_model_id == "model_v41"
+        assert "Severe Elo regression" in event.reason
+
+    def test_check_low_win_rate(self):
+        """Test regression check triggers on low win rate."""
+        mock_elo = MagicMock()
+
+        mock_rating = MagicMock()
+        mock_rating.rating = 1480
+        mock_rating.games_played = 50
+        mock_rating.win_rate = 0.30  # Below 0.40 threshold
+
+        mock_elo.get_rating.return_value = mock_rating
+
+        mock_controller = MagicMock()
+        mock_controller.elo_service = mock_elo
+
+        monitor = RollbackMonitor(promotion_controller=mock_controller)
+        should_rollback, event = monitor.check_for_regression(
+            model_id="model_v42",
+            previous_model_id="model_v41",
+        )
+
+        assert should_rollback is True
+        assert event is not None
+        assert "Win rate" in event.reason
+
+    def test_check_consecutive_regression(self):
+        """Test regression check triggers on consecutive regressions."""
+        mock_elo = MagicMock()
+
+        mock_rating = MagicMock()
+        mock_rating.rating = 1460
+        mock_rating.games_played = 50
+        mock_rating.win_rate = 0.45
+
+        mock_prev_rating = MagicMock()
+        mock_prev_rating.rating = 1500  # -40 regression, above threshold
+
+        mock_elo.get_rating.side_effect = lambda *args, **kwargs: (
+            mock_rating if args[0] == "model_v42" else mock_prev_rating
+        )
+
+        mock_controller = MagicMock()
+        mock_controller.elo_service = mock_elo
+
+        criteria = RollbackCriteria(consecutive_checks_required=3)
+        monitor = RollbackMonitor(criteria=criteria, promotion_controller=mock_controller)
+
+        # First two checks - should not trigger
+        for _ in range(2):
+            should_rollback, event = monitor.check_for_regression(
+                model_id="model_v42",
+                previous_model_id="model_v41",
+            )
+            # Reset mock for next call
+            mock_elo.get_rating.side_effect = lambda *args, **kwargs: (
+                mock_rating if args[0] == "model_v42" else mock_prev_rating
+            )
+
+        # Third check - should trigger consecutive regression
+        should_rollback, event = monitor.check_for_regression(
+            model_id="model_v42",
+            previous_model_id="model_v41",
+        )
+
+        assert should_rollback is True
+        assert event is not None
+        assert "Consecutive" in event.reason
+
+    def test_execute_rollback_dry_run(self):
+        """Test rollback dry run."""
+        mock_controller = MagicMock()
+        monitor = RollbackMonitor(promotion_controller=mock_controller)
+
+        event = RollbackEvent(
+            triggered_at="2024-01-01T12:00:00",
+            current_model_id="model_v42",
+            rollback_model_id="model_v41",
+            reason="Test rollback",
+        )
+
+        result = monitor.execute_rollback(event, dry_run=True)
+
+        assert result is True
+        mock_controller.execute_promotion.assert_not_called()
+
+    def test_execute_rollback_success(self):
+        """Test successful rollback execution."""
+        mock_controller = MagicMock()
+        mock_controller.execute_promotion.return_value = True
+
+        monitor = RollbackMonitor(promotion_controller=mock_controller)
+
+        event = RollbackEvent(
+            triggered_at="2024-01-01T12:00:00",
+            current_model_id="model_v42",
+            rollback_model_id="model_v41",
+            reason="Test rollback",
+        )
+
+        result = monitor.execute_rollback(event)
+
+        assert result is True
+        mock_controller.execute_promotion.assert_called_once()
+        assert len(monitor.get_rollback_history()) == 1
+
+    def test_get_regression_status_no_history(self):
+        """Test regression status with no history."""
+        monitor = RollbackMonitor()
+        status = monitor.get_regression_status("unknown_model")
+
+        assert status["model_id"] == "unknown_model"
+        assert status["checks"] == 0
+        assert status["consecutive_regressions"] == 0
+        assert status["at_risk"] is False
+
+    def test_get_regression_status_with_history(self):
+        """Test regression status with regression history."""
+        mock_elo = MagicMock()
+
+        mock_rating = MagicMock()
+        mock_rating.rating = 1460
+        mock_rating.games_played = 50
+        mock_rating.win_rate = 0.45
+
+        mock_prev_rating = MagicMock()
+        mock_prev_rating.rating = 1500
+
+        mock_elo.get_rating.side_effect = lambda *args, **kwargs: (
+            mock_rating if args[0] == "model_v42" else mock_prev_rating
+        )
+
+        mock_controller = MagicMock()
+        mock_controller.elo_service = mock_elo
+
+        criteria = RollbackCriteria(consecutive_checks_required=3)
+        monitor = RollbackMonitor(criteria=criteria, promotion_controller=mock_controller)
+
+        # Perform two regression checks
+        for _ in range(2):
+            monitor.check_for_regression(
+                model_id="model_v42",
+                previous_model_id="model_v41",
+            )
+            mock_elo.get_rating.side_effect = lambda *args, **kwargs: (
+                mock_rating if args[0] == "model_v42" else mock_prev_rating
+            )
+
+        status = monitor.get_regression_status("model_v42")
+
+        assert status["model_id"] == "model_v42"
+        assert status["checks"] == 2
+        assert status["consecutive_regressions"] == 2
+        assert status["at_risk"] is True  # 2 >= 3-1
+
+    def test_get_rollback_history_empty(self):
+        """Test rollback history when empty."""
+        monitor = RollbackMonitor()
+        history = monitor.get_rollback_history()
+        assert history == []
+
+    def test_baseline_elo_comparison(self):
+        """Test regression check with baseline Elo provided."""
+        mock_elo = MagicMock()
+
+        mock_rating = MagicMock()
+        mock_rating.rating = 1400
+        mock_rating.games_played = 50
+        mock_rating.win_rate = 0.45
+
+        mock_elo.get_rating.return_value = mock_rating
+
+        mock_controller = MagicMock()
+        mock_controller.elo_service = mock_elo
+
+        monitor = RollbackMonitor(promotion_controller=mock_controller)
+        should_rollback, event = monitor.check_for_regression(
+            model_id="model_v42",
+            baseline_elo=1500.0,  # 100 point regression
+            previous_model_id="model_v41",
+        )
+
+        assert should_rollback is True
+        assert event is not None
+        assert event.elo_regression == -100.0
+
+
+class TestGetRollbackMonitor:
+    """Test convenience function."""
+
+    def test_get_monitor_default(self):
+        """Test getting monitor with defaults."""
+        monitor = get_rollback_monitor()
+        assert isinstance(monitor, RollbackMonitor)
+        assert monitor.criteria.elo_regression_threshold == -30.0
+
+    def test_get_monitor_custom_criteria(self):
+        """Test getting monitor with custom criteria."""
+        criteria = RollbackCriteria(min_games_for_regression=50)
+        monitor = get_rollback_monitor(criteria=criteria)
+        assert monitor.criteria.min_games_for_regression == 50
 
 
 if __name__ == "__main__":

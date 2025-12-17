@@ -83,6 +83,8 @@ class EloDrift:
     participants_in_target: int
     participants_in_both: int
     rating_diffs: Dict[str, float] = field(default_factory=dict)
+    board_type: Optional[str] = None
+    num_players: Optional[int] = None
 
     @property
     def max_rating_diff(self) -> float:
@@ -115,6 +117,79 @@ class EloDrift:
             "avg_rating_diff": self.avg_rating_diff,
             "is_significant": self.is_significant,
             "rating_diffs": self.rating_diffs,
+            "board_type": self.board_type,
+            "num_players": self.num_players,
+        }
+
+
+@dataclass
+class DriftHistory:
+    """Historical drift tracking for trend analysis."""
+    config_key: str  # e.g., "square8_2p"
+    snapshots: List[Dict[str, Any]] = field(default_factory=list)
+    max_snapshots: int = 100  # Keep last 100 snapshots
+
+    def add_snapshot(self, drift: EloDrift) -> None:
+        """Add a drift snapshot to history."""
+        snapshot = {
+            "checked_at": drift.checked_at,
+            "max_rating_diff": drift.max_rating_diff,
+            "avg_rating_diff": drift.avg_rating_diff,
+            "is_significant": drift.is_significant,
+            "participants": drift.participants_in_both,
+        }
+        self.snapshots.append(snapshot)
+        # Keep only the most recent snapshots
+        if len(self.snapshots) > self.max_snapshots:
+            self.snapshots = self.snapshots[-self.max_snapshots:]
+
+    @property
+    def trend(self) -> str:
+        """Analyze drift trend over recent snapshots.
+
+        Returns: 'improving', 'stable', 'worsening', or 'unknown'
+        """
+        if len(self.snapshots) < 3:
+            return "unknown"
+
+        recent = self.snapshots[-5:]  # Last 5 snapshots
+        diffs = [s["max_rating_diff"] for s in recent]
+
+        # Calculate trend
+        if len(diffs) >= 2:
+            first_half_avg = sum(diffs[:len(diffs)//2]) / (len(diffs)//2)
+            second_half_avg = sum(diffs[len(diffs)//2:]) / (len(diffs) - len(diffs)//2)
+
+            if second_half_avg < first_half_avg * 0.8:
+                return "improving"
+            elif second_half_avg > first_half_avg * 1.2:
+                return "worsening"
+
+        return "stable"
+
+    @property
+    def persistent_drift(self) -> bool:
+        """Check if drift has been significant for multiple consecutive checks."""
+        if len(self.snapshots) < 3:
+            return False
+        return all(s["is_significant"] for s in self.snapshots[-3:])
+
+    @property
+    def avg_drift_last_hour(self) -> float:
+        """Average max drift over approximately the last hour (assumes 30-min intervals)."""
+        recent = self.snapshots[-2:] if len(self.snapshots) >= 2 else self.snapshots
+        if not recent:
+            return 0.0
+        return sum(s["max_rating_diff"] for s in recent) / len(recent)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "config_key": self.config_key,
+            "trend": self.trend,
+            "persistent_drift": self.persistent_drift,
+            "avg_drift_last_hour": self.avg_drift_last_hour,
+            "snapshot_count": len(self.snapshots),
+            "recent_snapshots": self.snapshots[-5:] if self.snapshots else [],
         }
 
 
@@ -192,6 +267,8 @@ class EloReconciler:
     - LAST_WRITE_WINS: Accept match with more recent timestamp
     - FIRST_WRITE_WINS: Keep existing record, skip incoming
     - RAISE: Raise an exception on conflict
+
+    Also tracks drift history for trend analysis and persistent drift detection.
     """
 
     def __init__(
@@ -200,11 +277,91 @@ class EloReconciler:
         remote_hosts_config: Optional[Path] = None,
         ssh_timeout: int = 30,
         conflict_resolution: ConflictResolution = ConflictResolution.SKIP,
+        track_history: bool = True,
+        persist_history: bool = True,
     ):
         self.local_db_path = local_db_path or (AI_SERVICE_ROOT / "data" / "unified_elo.db")
         self.remote_hosts_config = remote_hosts_config or (AI_SERVICE_ROOT / "config" / "remote_hosts.yaml")
         self.ssh_timeout = ssh_timeout
         self.conflict_resolution = conflict_resolution
+        self.track_history = track_history
+        self.persist_history = persist_history
+        self._drift_history: Dict[str, DriftHistory] = {}  # config_key -> DriftHistory
+
+        # Load persisted history if available
+        if self.track_history and self.persist_history:
+            self.load_drift_history()
+
+    @property
+    def _drift_history_path(self) -> Path:
+        """Path to persisted drift history file."""
+        return self.local_db_path.parent / "elo_drift_history.json"
+
+    def save_drift_history(self) -> None:
+        """Persist drift history to disk."""
+        if not self.persist_history or not self._drift_history:
+            return
+
+        try:
+            data = {
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+                "histories": {
+                    key: {
+                        "config_key": hist.config_key,
+                        "max_snapshots": hist.max_snapshots,
+                        "snapshots": hist.snapshots,
+                    }
+                    for key, hist in self._drift_history.items()
+                }
+            }
+            self._drift_history_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._drift_history_path, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            # Non-fatal - history is a nice-to-have
+            print(f"[EloReconciler] Warning: Failed to save drift history: {e}")
+
+    def load_drift_history(self) -> None:
+        """Load persisted drift history from disk."""
+        if not self._drift_history_path.exists():
+            return
+
+        try:
+            with open(self._drift_history_path) as f:
+                data = json.load(f)
+
+            histories = data.get("histories", {})
+            for key, hist_data in histories.items():
+                self._drift_history[key] = DriftHistory(
+                    config_key=hist_data.get("config_key", key),
+                    snapshots=hist_data.get("snapshots", []),
+                    max_snapshots=hist_data.get("max_snapshots", 100),
+                )
+        except Exception as e:
+            # Non-fatal - start fresh if history is corrupted
+            print(f"[EloReconciler] Warning: Failed to load drift history: {e}")
+
+    def get_drift_history(self, config_key: str) -> Optional[DriftHistory]:
+        """Get drift history for a specific configuration."""
+        return self._drift_history.get(config_key)
+
+    def get_all_drift_histories(self) -> Dict[str, DriftHistory]:
+        """Get all drift histories."""
+        return self._drift_history.copy()
+
+    def _record_drift(self, drift: EloDrift, board_type: Optional[str], num_players: Optional[int]) -> None:
+        """Record drift in history."""
+        if not self.track_history:
+            return
+
+        config_key = f"{board_type or 'all'}_{num_players or 'all'}"
+        if config_key not in self._drift_history:
+            self._drift_history[config_key] = DriftHistory(config_key=config_key)
+
+        self._drift_history[config_key].add_snapshot(drift)
+
+        # Persist to disk
+        self.save_drift_history()
 
     def check_drift(
         self,
@@ -223,24 +380,32 @@ class EloReconciler:
             EloDrift object with comparison details
         """
         if not self.local_db_path.exists():
-            return EloDrift(
+            drift = EloDrift(
                 source=str(self.local_db_path),
                 target=str(remote_db_path) if remote_db_path else "N/A",
                 checked_at=datetime.now(timezone.utc).isoformat(),
                 participants_in_source=0,
                 participants_in_target=0,
                 participants_in_both=0,
+                board_type=board_type,
+                num_players=num_players,
             )
+            self._record_drift(drift, board_type, num_players)
+            return drift
 
         if remote_db_path and not remote_db_path.exists():
-            return EloDrift(
+            drift = EloDrift(
                 source=str(self.local_db_path),
                 target=str(remote_db_path),
                 checked_at=datetime.now(timezone.utc).isoformat(),
                 participants_in_source=self._count_participants(self.local_db_path, board_type, num_players),
                 participants_in_target=0,
                 participants_in_both=0,
+                board_type=board_type,
+                num_players=num_players,
             )
+            self._record_drift(drift, board_type, num_players)
+            return drift
 
         # Get ratings from local DB
         local_ratings = self._get_ratings(self.local_db_path, board_type, num_players)
@@ -268,7 +433,12 @@ class EloReconciler:
             participants_in_target=len(remote_ratings),
             participants_in_both=len(common),
             rating_diffs=rating_diffs,
+            board_type=board_type,
+            num_players=num_players,
         )
+
+        # Record drift history
+        self._record_drift(drift, board_type, num_players)
 
         # Emit drift metrics
         self._emit_drift_metrics(drift, board_type, num_players)

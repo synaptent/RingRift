@@ -281,6 +281,15 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
              "Filters to decisive wins only. (default: 0 = all wins)",
     )
 
+    # Performance
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=0,
+        help="Number of worker processes for parallel sample extraction. "
+             "0 = auto-detect (cpu_count - 2), 1 = sequential (default: 0)",
+    )
+
     # Other
     parser.add_argument(
         "--seed",
@@ -339,6 +348,7 @@ def train_nnue_policy(
     label_smoothing: float = 0.1,
     distill_from_winners: bool = False,
     winner_weight_boost: float = 1.0,
+    num_workers: int = 0,
 ) -> Dict[str, Any]:
     """Train NNUE policy model and return training report."""
     seed_all(seed)
@@ -356,10 +366,14 @@ def train_nnue_policy(
 
     if distill_from_winners:
         logger.info(f"Distillation mode: training on winners only (weight boost: {winner_weight_boost}x)")
+    if num_workers != 1:
+        worker_count = num_workers if num_workers > 0 else "auto"
+        logger.info(f"Using parallel sample extraction with {worker_count} workers")
     dataset = NNUEPolicyDataset(
         db_paths=db_paths,
         config=config,
         max_samples=max_samples,
+        num_workers=num_workers,
     )
 
     if len(dataset) == 0:
@@ -511,7 +525,7 @@ def train_nnue_policy(
         train_policy_losses = []
 
         for batch in train_loader:
-            features, values, from_idx, to_idx, mask, target = batch
+            features, values, from_idx, to_idx, mask, target, _sample_weights = batch
             features = features.to(device)
             values = values.to(device)
             from_idx = from_idx.to(device)
@@ -537,7 +551,7 @@ def train_nnue_policy(
         val_accuracies = []
 
         for batch in val_loader:
-            features, values, from_idx, to_idx, mask, target = batch
+            features, values, from_idx, to_idx, mask, target, _sample_weights = batch
             features = features.to(device)
             values = values.to(device)
             from_idx = from_idx.to(device)
@@ -703,6 +717,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         label_smoothing=args.label_smoothing,
         distill_from_winners=args.distill_from_winners,
         winner_weight_boost=args.winner_weight_boost,
+        num_workers=args.num_workers,
     )
 
     # Add metadata to report

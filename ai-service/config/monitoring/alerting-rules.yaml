@@ -152,6 +152,60 @@ groups:
           runbook: 'Run full reconciliation. Check for network partitions or database corruption.'
 
       # ==========================================================================
+      # Automatic Rollback Alerts
+      # ==========================================================================
+
+      - alert: AutoRollbackTriggered
+        expr: increase(ringrift_auto_rollbacks_total{result="success"}[1h]) > 0
+        for: 0m
+        labels:
+          severity: high
+        annotations:
+          summary: 'Automatic rollback triggered'
+          description: 'Model {{ $labels.from_model }} was automatically rolled back to {{ $labels.to_model }} due to regression.'
+          runbook: 'Review model performance metrics. Investigate root cause of regression. Check training data quality.'
+
+      - alert: AutoRollbackFailed
+        expr: increase(ringrift_auto_rollbacks_total{result="failure"}[1h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Automatic rollback FAILED'
+          description: 'Attempted to rollback {{ $labels.from_model }} to {{ $labels.to_model }} but the rollback failed. Manual intervention required.'
+          runbook: 'Manually verify model registry state. Check for file system issues. May need to manually restore previous model.'
+
+      - alert: ModelAtRiskOfRollback
+        expr: ringrift_rollback_at_risk == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Model at risk of automatic rollback'
+          description: 'Model {{ $labels.model_id }} is showing regression and is at risk of being rolled back.'
+          runbook: 'Monitor model performance closely. Consider manual intervention if regression continues.'
+
+      - alert: SevereEloRegression
+        expr: ringrift_rollback_elo_regression < -50
+        for: 10m
+        labels:
+          severity: high
+        annotations:
+          summary: 'Severe Elo regression detected'
+          description: 'Model {{ $labels.model_id }} has regressed by {{ $value | humanize }} Elo points. Automatic rollback may trigger soon.'
+          runbook: 'Investigate cause of regression. Check training data, model artifacts, and game outcomes.'
+
+      - alert: MultipleRollbacksInDay
+        expr: increase(ringrift_auto_rollbacks_total{result="success"}[24h]) >= 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Multiple automatic rollbacks in 24 hours'
+          description: '{{ $value }} automatic rollbacks have occurred in the last 24 hours. Training pipeline may have systemic issues.'
+          runbook: 'Review training data quality. Check for data pipeline issues. Consider pausing automatic promotions.'
+
+      # ==========================================================================
       # Warning Alerts - Monitor closely
       # ==========================================================================
 

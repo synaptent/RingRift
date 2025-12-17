@@ -40,6 +40,17 @@ from app.training.elo_reconciliation import (
     sync_elo_from_remote,
 )
 
+try:
+    from app.training.promotion_controller import (
+        RollbackCriteria,
+        RollbackMonitor,
+    )
+    HAS_ROLLBACK = True
+except ImportError:
+    HAS_ROLLBACK = False
+    RollbackCriteria = None
+    RollbackMonitor = None
+
 
 def format_drift_report(drift: EloDrift, verbose: bool = False) -> str:
     """Format drift report for console output."""
@@ -177,6 +188,231 @@ def cmd_reconcile_all(args: argparse.Namespace) -> int:
                 print(format_sync_result(result))
 
     return 1 if report.nodes_failed else 0
+
+
+def cmd_drift_history(args: argparse.Namespace) -> int:
+    """Show drift history with trend analysis."""
+    reconciler = EloReconciler(
+        local_db_path=Path(args.local_db) if args.local_db else None,
+        track_history=True,
+        persist_history=True,
+    )
+
+    histories = reconciler.get_all_drift_histories()
+
+    if not histories:
+        print("No drift history found. Run check-drift to start tracking.")
+        return 0
+
+    if args.json:
+        output = {key: hist.to_dict() for key, hist in histories.items()}
+        print(json.dumps(output, indent=2))
+    else:
+        print("=== Drift History Report ===\n")
+        for config_key, history in sorted(histories.items()):
+            print(f"Configuration: {config_key}")
+            print(f"  Snapshots: {len(history.snapshots)}")
+            print(f"  Trend: {history.trend}")
+            print(f"  Persistent drift: {'YES' if history.persistent_drift else 'No'}")
+            print(f"  Avg drift (last hour): {history.avg_drift_last_hour:.1f}")
+
+            if args.verbose and history.snapshots:
+                print("  Recent snapshots:")
+                for snap in history.snapshots[-5:]:
+                    sig = "*" if snap["is_significant"] else " "
+                    print(f"    {sig} {snap['checked_at'][:19]}: max={snap['max_rating_diff']:.1f}")
+            print()
+
+    return 0
+
+
+def cmd_check_regression(args: argparse.Namespace) -> int:
+    """Check if a model is showing regression."""
+    if not HAS_ROLLBACK:
+        print("ERROR: Rollback monitoring not available. Install promotion_controller.")
+        return 1
+
+    monitor = RollbackMonitor(
+        criteria=RollbackCriteria(
+            elo_regression_threshold=args.threshold,
+            min_games_for_regression=args.min_games,
+        )
+    )
+
+    should_rollback, event = monitor.check_for_regression(
+        model_id=args.model_id,
+        board_type=args.board_type,
+        num_players=args.num_players,
+        previous_model_id=args.previous_model_id,
+        baseline_elo=args.baseline_elo,
+    )
+
+    status = monitor.get_regression_status(args.model_id)
+
+    if args.json:
+        output = {
+            "model_id": args.model_id,
+            "should_rollback": should_rollback,
+            "event": event.to_dict() if event else None,
+            "status": status,
+        }
+        print(json.dumps(output, indent=2))
+    else:
+        print(f"=== Regression Check: {args.model_id} ===\n")
+        print(f"Board type: {args.board_type}")
+        print(f"Players: {args.num_players}")
+        print(f"Previous model: {args.previous_model_id or 'N/A'}")
+        print(f"Baseline Elo: {args.baseline_elo or 'N/A'}")
+        print()
+        print(f"Checks performed: {status.get('checks', 0)}")
+        print(f"Consecutive regressions: {status.get('consecutive_regressions', 0)}")
+        print(f"Average regression: {status.get('avg_regression', 0):.1f}")
+        print(f"At risk: {'YES' if status.get('at_risk') else 'No'}")
+        print()
+
+        if should_rollback:
+            print("RESULT: ROLLBACK RECOMMENDED")
+            if event:
+                print(f"  Reason: {event.reason}")
+                print(f"  Rollback to: {event.rollback_model_id}")
+        else:
+            print("RESULT: Model is healthy")
+
+    return 1 if should_rollback else 0
+
+
+def cmd_rollback(args: argparse.Namespace) -> int:
+    """Manually trigger a rollback."""
+    if not HAS_ROLLBACK:
+        print("ERROR: Rollback monitoring not available. Install promotion_controller.")
+        return 1
+
+    from app.training.promotion_controller import RollbackEvent
+
+    monitor = RollbackMonitor()
+
+    # Create rollback event
+    from datetime import datetime
+    event = RollbackEvent(
+        triggered_at=datetime.now().isoformat(),
+        current_model_id=args.from_model,
+        rollback_model_id=args.to_model,
+        reason=args.reason or "Manual rollback via CLI",
+        auto_triggered=False,
+    )
+
+    if args.dry_run:
+        print(f"[DRY RUN] Would rollback {args.from_model} -> {args.to_model}")
+        print(f"  Reason: {event.reason}")
+        return 0
+
+    if not args.force:
+        confirm = input(f"Rollback {args.from_model} -> {args.to_model}? (y/N): ")
+        if confirm.lower() != 'y':
+            print("Aborted.")
+            return 0
+
+    success = monitor.execute_rollback(event)
+
+    if args.json:
+        print(json.dumps({"success": success, "event": event.to_dict()}, indent=2))
+    else:
+        if success:
+            print(f"SUCCESS: Rolled back {args.from_model} -> {args.to_model}")
+        else:
+            print(f"FAILED: Rollback {args.from_model} -> {args.to_model}")
+
+    return 0 if success else 1
+
+
+def cmd_rollback_status(args: argparse.Namespace) -> int:
+    """Show rollback history and at-risk models."""
+    if not HAS_ROLLBACK:
+        print("ERROR: Rollback monitoring not available. Install promotion_controller.")
+        return 1
+
+    monitor = RollbackMonitor()
+
+    history = monitor.get_rollback_history()
+
+    if args.json:
+        output = {
+            "rollback_history": [e.to_dict() for e in history],
+            "total_rollbacks": len(history),
+        }
+        print(json.dumps(output, indent=2))
+    else:
+        print("=== Rollback Status ===\n")
+        print(f"Total rollbacks: {len(history)}")
+
+        if history:
+            print("\nRecent rollbacks:")
+            for event in history[-10:]:
+                print(f"  {event.triggered_at[:19]}: {event.current_model_id} -> {event.rollback_model_id}")
+                print(f"    Reason: {event.reason}")
+                if event.elo_regression:
+                    print(f"    Elo regression: {event.elo_regression:.1f}")
+        else:
+            print("\nNo rollbacks recorded.")
+
+    return 0
+
+
+def cmd_compare_baselines(args: argparse.Namespace) -> int:
+    """Compare a model against multiple baseline models."""
+    if not HAS_ROLLBACK:
+        print("ERROR: Rollback monitoring not available. Install promotion_controller.")
+        return 1
+
+    monitor = RollbackMonitor(
+        criteria=RollbackCriteria(elo_regression_threshold=args.threshold)
+    )
+
+    # Parse baseline models if provided
+    baseline_ids = None
+    if args.baselines:
+        baseline_ids = [b.strip() for b in args.baselines.split(",")]
+
+    result = monitor.check_against_baselines(
+        model_id=args.model_id,
+        board_type=args.board_type,
+        num_players=args.num_players,
+        baseline_model_ids=baseline_ids,
+        num_baselines=args.num_baselines,
+    )
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        if "error" in result:
+            print(f"ERROR: {result['error']}")
+            return 1
+
+        print(f"=== Multi-Baseline Comparison: {args.model_id} ===\n")
+        print(f"Current Elo: {result.get('current_elo', 'N/A')}")
+        print(f"Games played: {result.get('games_played', 'N/A')}")
+        print()
+
+        baselines = result.get("baselines", [])
+        if baselines:
+            print("Baseline comparisons:")
+            for comp in baselines:
+                if "error" in comp:
+                    print(f"  {comp['baseline_id']}: {comp['error']}")
+                else:
+                    status = "REGRESSION" if comp.get("is_regression") else "OK"
+                    diff = comp.get("elo_diff", 0)
+                    sign = "+" if diff >= 0 else ""
+                    print(f"  {comp['baseline_id']}: {sign}{diff:.1f} ({status})")
+            print()
+
+        print(f"Summary: {result.get('summary', 'unknown')}")
+        print(f"  Regressions: {result.get('regressions', 0)}/{result.get('total_baselines', 0)}")
+        print(f"  Avg diff: {result.get('avg_diff', 0):.1f}")
+        print(f"  Min diff: {result.get('min_diff', 0):.1f}")
+        print(f"  Max diff: {result.get('max_diff', 0):.1f}")
+
+    return 0 if result.get("summary") != "regression_against_all" else 1
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -334,8 +570,145 @@ def main():
         help="Show current status and configuration",
     )
 
+    # drift-history command
+    history_parser = subparsers.add_parser(
+        "drift-history",
+        help="Show drift history with trend analysis",
+    )
+
+    # check-regression command
+    regression_parser = subparsers.add_parser(
+        "check-regression",
+        help="Check if a model is showing regression",
+    )
+    regression_parser.add_argument(
+        "--model-id",
+        type=str,
+        required=True,
+        help="Model ID to check",
+    )
+    regression_parser.add_argument(
+        "--board-type",
+        type=str,
+        default="square8",
+        help="Board type (default: square8)",
+    )
+    regression_parser.add_argument(
+        "--num-players",
+        type=int,
+        default=2,
+        help="Number of players (default: 2)",
+    )
+    regression_parser.add_argument(
+        "--previous-model-id",
+        type=str,
+        help="Previous model ID for rollback target",
+    )
+    regression_parser.add_argument(
+        "--baseline-elo",
+        type=float,
+        help="Baseline Elo at promotion time",
+    )
+    regression_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=-30.0,
+        help="Elo regression threshold (default: -30.0)",
+    )
+    regression_parser.add_argument(
+        "--min-games",
+        type=int,
+        default=20,
+        help="Minimum games for regression check (default: 20)",
+    )
+
+    # rollback command
+    rollback_parser = subparsers.add_parser(
+        "rollback",
+        help="Manually trigger a rollback",
+    )
+    rollback_parser.add_argument(
+        "--from-model",
+        type=str,
+        required=True,
+        help="Model to rollback from",
+    )
+    rollback_parser.add_argument(
+        "--to-model",
+        type=str,
+        required=True,
+        help="Model to rollback to",
+    )
+    rollback_parser.add_argument(
+        "--reason",
+        type=str,
+        help="Reason for rollback",
+    )
+    rollback_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Only print what would happen",
+    )
+    rollback_parser.add_argument(
+        "--force", "-f",
+        action="store_true",
+        help="Skip confirmation prompt",
+    )
+
+    # rollback-status command
+    rollback_status_parser = subparsers.add_parser(
+        "rollback-status",
+        help="Show rollback history and at-risk models",
+    )
+
+    # compare-baselines command
+    compare_parser = subparsers.add_parser(
+        "compare-baselines",
+        help="Compare a model against multiple baseline models",
+    )
+    compare_parser.add_argument(
+        "--model-id",
+        type=str,
+        required=True,
+        help="Model ID to compare",
+    )
+    compare_parser.add_argument(
+        "--board-type",
+        type=str,
+        default="square8",
+        help="Board type (default: square8)",
+    )
+    compare_parser.add_argument(
+        "--num-players",
+        type=int,
+        default=2,
+        help="Number of players (default: 2)",
+    )
+    compare_parser.add_argument(
+        "--baselines",
+        type=str,
+        help="Comma-separated list of baseline model IDs (optional, auto-detect if not provided)",
+    )
+    compare_parser.add_argument(
+        "--num-baselines",
+        type=int,
+        default=3,
+        help="Number of recent models to compare against (default: 3)",
+    )
+    compare_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=-30.0,
+        help="Elo regression threshold (default: -30.0)",
+    )
+
     # Add common args to all subparsers for convenience
-    for subparser in [drift_parser, sync_parser, reconcile_parser, status_parser]:
+    all_parsers = [
+        drift_parser, sync_parser, reconcile_parser, status_parser,
+        history_parser, regression_parser, rollback_parser, rollback_status_parser,
+        compare_parser
+    ]
+    for subparser in all_parsers:
         subparser.add_argument(
             "--json",
             action="store_true",
@@ -367,6 +740,16 @@ def main():
         return cmd_reconcile_all(args)
     elif args.command == "status":
         return cmd_status(args)
+    elif args.command == "drift-history":
+        return cmd_drift_history(args)
+    elif args.command == "check-regression":
+        return cmd_check_regression(args)
+    elif args.command == "rollback":
+        return cmd_rollback(args)
+    elif args.command == "rollback-status":
+        return cmd_rollback_status(args)
+    elif args.command == "compare-baselines":
+        return cmd_compare_baselines(args)
     else:
         parser.print_help()
         return 1

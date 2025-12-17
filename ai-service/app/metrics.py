@@ -273,6 +273,31 @@ ELO_DRIFT_SIGNIFICANT: Final[Gauge] = Gauge(
     labelnames=("board_type", "num_players"),
 )
 
+# Rollback monitoring metrics
+ROLLBACK_CHECKS: Final[Counter] = Counter(
+    "ringrift_rollback_checks_total",
+    "Total regression checks performed, labeled by trigger status.",
+    labelnames=("model_id", "triggered"),  # triggered: true/false
+)
+
+AUTO_ROLLBACKS: Final[Counter] = Counter(
+    "ringrift_auto_rollbacks_total",
+    "Total automatic rollbacks, labeled by result.",
+    labelnames=("from_model", "to_model", "result"),  # result: success/failure/dry_run
+)
+
+ROLLBACK_ELO_REGRESSION: Final[Gauge] = Gauge(
+    "ringrift_rollback_elo_regression",
+    "Current Elo regression for monitored models (negative = regression).",
+    labelnames=("model_id",),
+)
+
+ROLLBACK_AT_RISK: Final[Gauge] = Gauge(
+    "ringrift_rollback_at_risk",
+    "Whether a model is at risk of rollback (1=at risk, 0=healthy).",
+    labelnames=("model_id",),
+)
+
 # Pre-initialize one labeled time series for the core /ai/move metrics so the
 # /metrics endpoint exposes histogram buckets even before the first request.
 # This keeps smoke tests and local Prometheus setups stable.
@@ -446,6 +471,54 @@ def record_elo_drift(
     ELO_DRIFT_SIGNIFICANT.labels(board_type, np_str).set(1 if is_significant else 0)
 
 
+def record_rollback_check(
+    model_id: str,
+    triggered: bool,
+    elo_regression: float = 0.0,
+    at_risk: bool = False,
+) -> None:
+    """Record metrics for a rollback regression check.
+
+    Args:
+        model_id: Model being checked
+        triggered: Whether rollback was triggered
+        elo_regression: Current Elo regression (negative = regression)
+        at_risk: Whether model is at risk of rollback
+    """
+    ROLLBACK_CHECKS.labels(model_id, str(triggered).lower()).inc()
+    ROLLBACK_ELO_REGRESSION.labels(model_id).set(elo_regression)
+    ROLLBACK_AT_RISK.labels(model_id).set(1 if at_risk else 0)
+
+
+def record_auto_rollback(
+    from_model: str,
+    to_model: str,
+    success: bool,
+    dry_run: bool = False,
+    reason: str = "",
+) -> None:
+    """Record metrics for an automatic rollback execution.
+
+    Args:
+        from_model: Model being rolled back from
+        to_model: Model being rolled back to
+        success: Whether rollback succeeded
+        dry_run: Whether this was a dry run
+        reason: Reason for rollback (for logging)
+    """
+    if dry_run:
+        result = "dry_run"
+    elif success:
+        result = "success"
+    else:
+        result = "failure"
+    AUTO_ROLLBACKS.labels(from_model, to_model, result).inc()
+
+    # Clear the at-risk status for the model we rolled back from
+    if success and not dry_run:
+        ROLLBACK_AT_RISK.labels(from_model).set(0)
+
+
 __all__ = [
     "AI_MOVE_REQUESTS",
     "AI_MOVE_LATENCY",
@@ -492,4 +565,11 @@ __all__ = [
     "record_promotion_execution",
     "record_elo_sync",
     "record_elo_drift",
+    # Rollback metrics
+    "ROLLBACK_CHECKS",
+    "AUTO_ROLLBACKS",
+    "ROLLBACK_ELO_REGRESSION",
+    "ROLLBACK_AT_RISK",
+    "record_rollback_check",
+    "record_auto_rollback",
 ]

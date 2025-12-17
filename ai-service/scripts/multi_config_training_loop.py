@@ -794,27 +794,46 @@ def run_training(board_type: str, num_players: int, db_paths: List[str],
     # Export from DB if available (and JSONL didn't produce enough)
     if has_db:
         db_npz = os.path.join(BASE_DIR, f"data/training/db_{short}_{ts}.npz")
-        exp_cmd = [
-            sys.executable, os.path.join(BASE_DIR, "scripts/export_replay_dataset.py"),
-            "--board-type", board_type,
-            "--num-players", str(num_players),
-            "--output", db_npz,
-            "--sample-every", str(sample_every),
-            "--max-games", str(max_games),
-        ]
+
+        # Use parallel export for hex boards (10-20x faster)
+        use_parallel = board_type == "hexagonal"
+        parallel_script = os.path.join(BASE_DIR, "scripts/export_replay_dataset_parallel.py")
+
+        if use_parallel and os.path.exists(parallel_script):
+            exp_cmd = [
+                sys.executable, parallel_script,
+                "--board-type", board_type,
+                "--num-players", str(num_players),
+                "--output", db_npz,
+                "--sample-every", str(sample_every),
+                "--max-games", str(max_games),
+                "--encoder-version", "v3",
+            ]
+            export_mode = "DB (parallel)"
+        else:
+            exp_cmd = [
+                sys.executable, os.path.join(BASE_DIR, "scripts/export_replay_dataset.py"),
+                "--board-type", board_type,
+                "--num-players", str(num_players),
+                "--output", db_npz,
+                "--sample-every", str(sample_every),
+                "--max-games", str(max_games),
+            ]
+            export_mode = "DB"
+
         for db_path in db_paths:
             exp_cmd.extend(["--db", db_path])
 
-        print(f"  Exporting from DB...", flush=True)
+        print(f"  Exporting from {export_mode}...", flush=True)
         try:
             r = subprocess.run(exp_cmd, capture_output=True, text=True, timeout=export_timeout, env=env)
             if r.returncode == 0 and os.path.exists(db_npz):
                 npz_files.append(db_npz)
-                print(f"  DB export complete", flush=True)
+                print(f"  {export_mode} export complete", flush=True)
             else:
-                print(f"  DB export failed: {r.stderr[:300] if r.stderr else r.stdout[:300]}", flush=True)
+                print(f"  {export_mode} export failed: {r.stderr[:300] if r.stderr else r.stdout[:300]}", flush=True)
         except subprocess.TimeoutExpired:
-            print(f"  DB export timeout", flush=True)
+            print(f"  {export_mode} export timeout", flush=True)
 
     # Check if we have any data
     if not npz_files:
