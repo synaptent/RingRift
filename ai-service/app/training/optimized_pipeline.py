@@ -170,6 +170,20 @@ except ImportError:
     PlateauConfig = None
     create_advanced_training_suite = None
 
+# Unified signals for cross-system training decisions
+try:
+    from .unified_signals import (
+        get_signal_computer,
+        TrainingUrgency,
+        TrainingSignals,
+    )
+    HAS_UNIFIED_SIGNALS = True
+except ImportError:
+    HAS_UNIFIED_SIGNALS = False
+    get_signal_computer = None
+    TrainingUrgency = None
+    TrainingSignals = None
+
 
 @dataclass
 class PipelineResult:
@@ -208,6 +222,9 @@ class OptimizedTrainingPipeline:
         self._health = get_training_health_monitor() if HAS_HEALTH_MONITOR else None
         self._triggers = TrainingTriggers(TriggerConfig()) if HAS_TRAINING_TRIGGERS else None
 
+        # Unified signal computer for cross-system consistency
+        self._signal_computer = get_signal_computer() if HAS_UNIFIED_SIGNALS else None
+
         # Track active training and recent results
         self._active_locks: Dict[str, Any] = {}
         self._recent_results: List[PipelineResult] = []
@@ -231,20 +248,68 @@ class OptimizedTrainingPipeline:
                     f"multi_task={HAS_MULTI_TASK}, distributed={HAS_DISTRIBUTED_TRAINING}, "
                     f"advanced={HAS_ADVANCED_TRAINING}")
 
-    def should_train(self, config_key: str, games_since_training: int = 0) -> Tuple[bool, str]:
+    def should_train(
+        self,
+        config_key: str,
+        games_since_training: int = 0,
+        current_elo: float = 1500.0,
+    ) -> Tuple[bool, str]:
         """Check if training should run for a config.
+
+        Uses unified signals when available for consistent decisions.
 
         Returns:
             Tuple of (should_train, reason)
         """
+        # Prefer unified signals if available
+        if self._signal_computer is not None:
+            signals = self._signal_computer.compute_signals(
+                current_games=games_since_training,
+                current_elo=current_elo,
+                config_key=config_key,
+            )
+            return signals.should_train, signals.reason
+
+        # Fall back to training triggers
         if self._triggers:
             decision = self._triggers.should_train(config_key)
             return decision.should_train, decision.reason
 
-        # Fallback to simple threshold
+        # Final fallback to simple threshold
         threshold = 500
         should = games_since_training >= threshold
         return should, f"games={games_since_training} >= threshold={threshold}"
+
+    def get_unified_signals(
+        self,
+        config_key: str,
+        current_games: int,
+        current_elo: float,
+    ) -> Optional["TrainingSignals"]:
+        """Get unified training signals for a config.
+
+        Returns None if unified signals not available.
+        """
+        if self._signal_computer is None:
+            return None
+        return self._signal_computer.compute_signals(
+            current_games=current_games,
+            current_elo=current_elo,
+            config_key=config_key,
+        )
+
+    def get_training_urgency(
+        self,
+        config_key: str,
+        current_games: int,
+        current_elo: float,
+    ) -> Optional["TrainingUrgency"]:
+        """Get unified training urgency for a config.
+
+        Returns None if unified signals not available.
+        """
+        signals = self.get_unified_signals(config_key, current_games, current_elo)
+        return signals.urgency if signals else None
 
     def get_export_settings(
         self,

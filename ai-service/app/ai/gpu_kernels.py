@@ -155,92 +155,97 @@ def generate_normal_moves_vectorized(
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Generate all valid normal (non-capture) moves for the batch.
 
+    Optimized to minimize GPU-CPU synchronization:
+    - Single GPU->CPU transfer at start
+    - All computation on CPU with numpy
+    - Single CPU->GPU transfer at end
+
     Returns:
         Tuple of (game_idx, from_y, from_x, to_y, to_x, num_moves_per_game)
     """
+    import numpy as np
+
     device = stack_owner.device
     batch_size, board_size, _ = stack_owner.shape
-    dir_y, dir_x = get_directions(device)
+
+    # === SINGLE GPU->CPU TRANSFER ===
+    # Move all tensors to CPU once to avoid per-element .item() syncs
+    stack_owner_np = stack_owner.cpu().numpy()
+    stack_height_np = stack_height.cpu().numpy()
+    current_player_np = current_player.cpu().numpy()
+    active_mask_np = active_mask.cpu().numpy()
+
+    # Direction vectors (8 directions: N, NE, E, SE, S, SW, W, NW)
+    dir_y_np = np.array([-1, -1, 0, 1, 1, 1, 0, -1], dtype=np.int32)
+    dir_x_np = np.array([0, 1, 1, 1, 0, -1, -1, -1], dtype=np.int32)
 
     # Find all stacks controlled by current players
-    # Create player ownership mask
-    player_mask = torch.zeros_like(stack_owner, dtype=torch.bool)
-    for b in range(batch_size):
-        if active_mask[b]:
-            player_mask[b] = (stack_owner[b] == current_player[b])
-
-    # Get positions of player's stacks
-    stack_positions = torch.nonzero(player_mask, as_tuple=False)  # (N, 3)
-
-    if stack_positions.shape[0] == 0:
-        return (
-            torch.tensor([], dtype=torch.int32, device=device),
-            torch.tensor([], dtype=torch.int32, device=device),
-            torch.tensor([], dtype=torch.int32, device=device),
-            torch.tensor([], dtype=torch.int32, device=device),
-            torch.tensor([], dtype=torch.int32, device=device),
-            torch.zeros(batch_size, dtype=torch.int32, device=device),
-        )
-
-    # For each stack, generate moves in all 8 directions
     all_game_idx = []
     all_from_y = []
     all_from_x = []
     all_to_y = []
     all_to_x = []
 
-    for i in range(stack_positions.shape[0]):
-        g = stack_positions[i, 0].item()
-        from_y = stack_positions[i, 1].item()
-        from_x = stack_positions[i, 2].item()
-        height = stack_height[g, from_y, from_x].item()
-
-        if height <= 0:
+    for b in range(batch_size):
+        if not active_mask_np[b]:
             continue
 
-        player = current_player[g].item()
+        player = current_player_np[b]
+        owner_board = stack_owner_np[b]
+        height_board = stack_height_np[b]
 
-        # Check all 8 directions
-        for d in range(8):
-            dy = dir_y[d].item()
-            dx = dir_x[d].item()
+        # Find player's stacks using numpy
+        player_stacks = np.argwhere(owner_board == player)
 
-            # Move distance >= stack height for normal moves
-            for dist in range(height, board_size):
-                to_y = from_y + dy * dist
-                to_x = from_x + dx * dist
+        for pos in player_stacks:
+            from_y, from_x = pos
+            height = height_board[from_y, from_x]
 
-                # Bounds check
-                if not (0 <= to_y < board_size and 0 <= to_x < board_size):
-                    break
+            if height <= 0:
+                continue
 
-                # Path check - must be clear
-                path_blocked = False
-                for step in range(1, dist):
-                    check_y = from_y + dy * step
-                    check_x = from_x + dx * step
-                    cell_owner = stack_owner[g, check_y, check_x].item()
-                    if cell_owner != 0 and cell_owner != player:
-                        path_blocked = True
+            # Check all 8 directions
+            for d in range(8):
+                dy = dir_y_np[d]
+                dx = dir_x_np[d]
+
+                # Move distance >= stack height for normal moves
+                for dist in range(height, board_size):
+                    to_y = from_y + dy * dist
+                    to_x = from_x + dx * dist
+
+                    # Bounds check
+                    if not (0 <= to_y < board_size and 0 <= to_x < board_size):
                         break
 
-                if path_blocked:
-                    break
+                    # Path check - must be clear
+                    path_blocked = False
+                    for step in range(1, dist):
+                        check_y = from_y + dy * step
+                        check_x = from_x + dx * step
+                        cell_owner = owner_board[check_y, check_x]
+                        if cell_owner != 0 and cell_owner != player:
+                            path_blocked = True
+                            break
 
-                # Destination check - must be empty for normal move
-                dest_owner = stack_owner[g, to_y, to_x].item()
-                if dest_owner == 0:
-                    # Valid normal move
-                    all_game_idx.append(g)
-                    all_from_y.append(from_y)
-                    all_from_x.append(from_x)
-                    all_to_y.append(to_y)
-                    all_to_x.append(to_x)
-                elif dest_owner != player:
-                    # Opponent stack - can't pass
-                    break
-                # Own stack - can pass over
+                    if path_blocked:
+                        break
 
+                    # Destination check - must be empty for normal move
+                    dest_owner = owner_board[to_y, to_x]
+                    if dest_owner == 0:
+                        # Valid normal move
+                        all_game_idx.append(b)
+                        all_from_y.append(from_y)
+                        all_from_x.append(from_x)
+                        all_to_y.append(to_y)
+                        all_to_x.append(to_x)
+                    elif dest_owner != player:
+                        # Opponent stack - can't pass
+                        break
+                    # Own stack - can pass over
+
+    # === SINGLE CPU->GPU TRANSFER ===
     if len(all_game_idx) == 0:
         return (
             torch.tensor([], dtype=torch.int32, device=device),
@@ -274,30 +279,28 @@ def generate_capture_moves_vectorized(
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Generate all valid capture moves for the batch.
 
+    Optimized to minimize GPU-CPU synchronization:
+    - Single GPU->CPU transfer at start
+    - All computation on CPU with numpy
+    - Single CPU->GPU transfer at end
+
     Returns:
         Tuple of (game_idx, from_y, from_x, to_y, to_x, num_moves_per_game)
     """
+    import numpy as np
+
     device = stack_owner.device
     batch_size, board_size, _ = stack_owner.shape
-    dir_y, dir_x = get_directions(device)
 
-    # Find all stacks controlled by current players
-    player_mask = torch.zeros_like(stack_owner, dtype=torch.bool)
-    for b in range(batch_size):
-        if active_mask[b]:
-            player_mask[b] = (stack_owner[b] == current_player[b])
+    # === SINGLE GPU->CPU TRANSFER ===
+    stack_owner_np = stack_owner.cpu().numpy()
+    stack_height_np = stack_height.cpu().numpy()
+    current_player_np = current_player.cpu().numpy()
+    active_mask_np = active_mask.cpu().numpy()
 
-    stack_positions = torch.nonzero(player_mask, as_tuple=False)
-
-    if stack_positions.shape[0] == 0:
-        return (
-            torch.tensor([], dtype=torch.int32, device=device),
-            torch.tensor([], dtype=torch.int32, device=device),
-            torch.tensor([], dtype=torch.int32, device=device),
-            torch.tensor([], dtype=torch.int32, device=device),
-            torch.tensor([], dtype=torch.int32, device=device),
-            torch.zeros(batch_size, dtype=torch.int32, device=device),
-        )
+    # Direction vectors
+    dir_y_np = np.array([-1, -1, 0, 1, 1, 1, 0, -1], dtype=np.int32)
+    dir_x_np = np.array([0, 1, 1, 1, 0, -1, -1, -1], dtype=np.int32)
 
     all_game_idx = []
     all_from_y = []
@@ -305,55 +308,63 @@ def generate_capture_moves_vectorized(
     all_to_y = []
     all_to_x = []
 
-    for i in range(stack_positions.shape[0]):
-        g = stack_positions[i, 0].item()
-        from_y = stack_positions[i, 1].item()
-        from_x = stack_positions[i, 2].item()
-        my_height = stack_height[g, from_y, from_x].item()
-
-        if my_height <= 0:
+    for b in range(batch_size):
+        if not active_mask_np[b]:
             continue
 
-        player = current_player[g].item()
+        player = current_player_np[b]
+        owner_board = stack_owner_np[b]
+        height_board = stack_height_np[b]
 
-        for d in range(8):
-            dy = dir_y[d].item()
-            dx = dir_x[d].item()
+        # Find player's stacks
+        player_stacks = np.argwhere(owner_board == player)
 
-            for dist in range(my_height, board_size):
-                to_y = from_y + dy * dist
-                to_x = from_x + dx * dist
+        for pos in player_stacks:
+            from_y, from_x = pos
+            my_height = height_board[from_y, from_x]
 
-                if not (0 <= to_y < board_size and 0 <= to_x < board_size):
-                    break
+            if my_height <= 0:
+                continue
 
-                # Check path
-                path_blocked = False
-                for step in range(1, dist):
-                    check_y = from_y + dy * step
-                    check_x = from_x + dx * step
-                    cell_owner = stack_owner[g, check_y, check_x].item()
-                    if cell_owner != 0 and cell_owner != player:
-                        path_blocked = True
+            for d in range(8):
+                dy = dir_y_np[d]
+                dx = dir_x_np[d]
+
+                for dist in range(my_height, board_size):
+                    to_y = from_y + dy * dist
+                    to_x = from_x + dx * dist
+
+                    if not (0 <= to_y < board_size and 0 <= to_x < board_size):
                         break
 
-                if path_blocked:
-                    break
+                    # Check path
+                    path_blocked = False
+                    for step in range(1, dist):
+                        check_y = from_y + dy * step
+                        check_x = from_x + dx * step
+                        cell_owner = owner_board[check_y, check_x]
+                        if cell_owner != 0 and cell_owner != player:
+                            path_blocked = True
+                            break
 
-                # Check destination for capture
-                dest_owner = stack_owner[g, to_y, to_x].item()
-                if dest_owner != 0 and dest_owner != player:
-                    dest_height = stack_height[g, to_y, to_x].item()
-                    if my_height >= dest_height:
-                        # Valid capture
-                        all_game_idx.append(g)
-                        all_from_y.append(from_y)
-                        all_from_x.append(from_x)
-                        all_to_y.append(to_y)
-                        all_to_x.append(to_x)
-                    # Can't continue past opponent
-                    break
+                    if path_blocked:
+                        break
 
+                    # Check destination for capture
+                    dest_owner = owner_board[to_y, to_x]
+                    if dest_owner != 0 and dest_owner != player:
+                        dest_height = height_board[to_y, to_x]
+                        if my_height >= dest_height:
+                            # Valid capture
+                            all_game_idx.append(b)
+                            all_from_y.append(from_y)
+                            all_from_x.append(from_x)
+                            all_to_y.append(to_y)
+                            all_to_x.append(to_x)
+                        # Can't continue past opponent
+                        break
+
+    # === SINGLE CPU->GPU TRANSFER ===
     if len(all_game_idx) == 0:
         return (
             torch.tensor([], dtype=torch.int32, device=device),

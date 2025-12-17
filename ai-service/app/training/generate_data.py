@@ -40,6 +40,142 @@ from app.training.hex_augmentation import (
 from app.utils.progress_reporter import SoakProgressReporter
 from app.utils.resource_guard import check_disk_space, get_disk_usage, LIMITS
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Data Quality Tracking (Section 4.4: Self-Play Data Quality)
+# =============================================================================
+
+# Minimum unique positions per game for quality threshold
+MIN_UNIQUE_POSITIONS_PER_GAME = 50
+
+
+class DataQualityTracker:
+    """Track data quality metrics during self-play generation.
+
+    This tracker monitors position uniqueness to ensure training data
+    diversity. Per Section 4.4 of the action plan, games with fewer than
+    MIN_UNIQUE_POSITIONS_PER_GAME unique positions may indicate issues
+    like repetitive play patterns or search instabilities.
+    """
+
+    def __init__(self):
+        # Per-game tracking
+        self._game_position_hashes: set[int] = set()
+        self._game_move_count: int = 0
+
+        # Aggregate tracking across all games
+        self._all_unique_positions_counts: list[int] = []
+        self._all_move_counts: list[int] = []
+        self._low_uniqueness_games: int = 0
+        self._total_games: int = 0
+
+    def start_game(self) -> None:
+        """Reset per-game tracking for a new game."""
+        self._game_position_hashes = set()
+        self._game_move_count = 0
+
+    def record_position(self, zobrist_hash: int) -> None:
+        """Record a position during self-play.
+
+        Args:
+            zobrist_hash: The zobrist hash of the current game state.
+        """
+        if zobrist_hash != 0:  # Ignore uninitialized hashes
+            self._game_position_hashes.add(zobrist_hash)
+        self._game_move_count += 1
+
+    def finish_game(self) -> dict:
+        """Finish tracking for the current game and return metrics.
+
+        Returns:
+            dict with keys:
+                - unique_positions: Number of unique positions seen
+                - total_moves: Total moves in the game
+                - uniqueness_ratio: unique_positions / total_moves
+                - below_threshold: Whether unique_positions < MIN_UNIQUE_POSITIONS_PER_GAME
+        """
+        unique_count = len(self._game_position_hashes)
+        move_count = self._game_move_count
+
+        # Avoid division by zero
+        uniqueness_ratio = unique_count / max(move_count, 1)
+        below_threshold = unique_count < MIN_UNIQUE_POSITIONS_PER_GAME
+
+        # Update aggregate stats
+        self._all_unique_positions_counts.append(unique_count)
+        self._all_move_counts.append(move_count)
+        self._total_games += 1
+        if below_threshold:
+            self._low_uniqueness_games += 1
+
+        return {
+            "unique_positions": unique_count,
+            "total_moves": move_count,
+            "uniqueness_ratio": uniqueness_ratio,
+            "below_threshold": below_threshold,
+        }
+
+    def get_summary(self) -> dict:
+        """Get summary statistics across all tracked games.
+
+        Returns:
+            dict with aggregate data quality metrics.
+        """
+        if not self._all_unique_positions_counts:
+            return {
+                "total_games": 0,
+                "avg_unique_positions": 0.0,
+                "min_unique_positions": 0,
+                "max_unique_positions": 0,
+                "avg_uniqueness_ratio": 0.0,
+                "low_uniqueness_games": 0,
+                "low_uniqueness_pct": 0.0,
+            }
+
+        unique_arr = np.array(self._all_unique_positions_counts)
+        move_arr = np.array(self._all_move_counts)
+
+        # Avoid division by zero
+        with np.errstate(divide='ignore', invalid='ignore'):
+            ratios = np.where(move_arr > 0, unique_arr / move_arr, 0.0)
+
+        return {
+            "total_games": self._total_games,
+            "avg_unique_positions": float(np.mean(unique_arr)),
+            "std_unique_positions": float(np.std(unique_arr)),
+            "min_unique_positions": int(np.min(unique_arr)),
+            "max_unique_positions": int(np.max(unique_arr)),
+            "avg_uniqueness_ratio": float(np.mean(ratios)),
+            "low_uniqueness_games": self._low_uniqueness_games,
+            "low_uniqueness_pct": 100.0 * self._low_uniqueness_games / max(self._total_games, 1),
+        }
+
+    def log_summary(self) -> None:
+        """Log a summary of data quality metrics."""
+        summary = self.get_summary()
+        if summary["total_games"] == 0:
+            return
+
+        logger.info(
+            f"Data Quality Summary: "
+            f"games={summary['total_games']}, "
+            f"avg_unique_positions={summary['avg_unique_positions']:.1f}±{summary['std_unique_positions']:.1f}, "
+            f"range=[{summary['min_unique_positions']}, {summary['max_unique_positions']}], "
+            f"low_uniqueness_games={summary['low_uniqueness_games']} ({summary['low_uniqueness_pct']:.1f}%)"
+        )
+
+        # Warn if too many games have low uniqueness
+        if summary["low_uniqueness_pct"] > 10.0:
+            logger.warning(
+                f"DATA_QUALITY_WARNING: {summary['low_uniqueness_pct']:.1f}% of games "
+                f"have fewer than {MIN_UNIQUE_POSITIONS_PER_GAME} unique positions. "
+                f"This may indicate repetitive play patterns or search issues."
+            )
+
 
 def extract_mcts_visit_distribution(
     ai: MCTSAI,
@@ -705,6 +841,9 @@ def generate_dataset(
         context_label=f"generate_data_{board_type.value}",
     )
 
+    # Initialize data quality tracker (Section 4.4: Self-Play Data Quality)
+    quality_tracker = DataQualityTracker()
+
     games_recorded = 0
 
     # Optional JSONL export of per-game GameRecord entries.
@@ -738,6 +877,12 @@ def generate_dataset(
         game_seed = seed + game_idx if seed is not None else None
         state = env.reset(seed=game_seed)
         game_history = []
+
+        # Start data quality tracking for this game
+        quality_tracker.start_game()
+        # Record initial position hash
+        if hasattr(state, 'zobrist_hash') and state.zobrist_hash:
+            quality_tracker.record_position(state.zobrist_hash)
 
         # Track initial state and moves for DB recording
         initial_state = state.model_copy(deep=True)
@@ -1024,6 +1169,10 @@ def generate_dataset(
 
             state, _, done, step_info = env.step(move)
 
+            # Record position hash for data quality tracking
+            if hasattr(state, 'zobrist_hash') and state.zobrist_hash:
+                quality_tracker.record_position(state.zobrist_hash)
+
             # Include any bookkeeping moves (e.g., no_territory_action) that
             # the host/rules stack may have appended based on phase
             # requirements per RR-CANON-R075/R076. These are critical for
@@ -1042,6 +1191,17 @@ def generate_dataset(
 
         winner = state.winner
         print(f"Game {game_idx+1} finished. Winner: {winner}")
+
+        # Finish data quality tracking for this game and get metrics
+        quality_metrics = quality_tracker.finish_game()
+        if quality_metrics["below_threshold"]:
+            logger.warning(
+                f"LOW_POSITION_UNIQUENESS [game {game_idx+1}]: "
+                f"unique_positions={quality_metrics['unique_positions']}, "
+                f"total_moves={quality_metrics['total_moves']}, "
+                f"ratio={quality_metrics['uniqueness_ratio']:.2f} "
+                f"(threshold: {MIN_UNIQUE_POSITIONS_PER_GAME})"
+            )
 
         # Log error/warning for games that hit max_moves without a winner
         if move_count >= max_moves and winner is None:
@@ -1178,6 +1338,7 @@ def generate_dataset(
 
     # Emit final progress summary and close JSONL (if any).
     progress_reporter.finish()
+    quality_tracker.log_summary()
     if jsonl_file is not None:
         jsonl_file.close()
 

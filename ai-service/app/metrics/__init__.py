@@ -61,10 +61,14 @@ if _spec and _spec.loader:
             # Export the app-level metrics
             AI_MOVE_REQUESTS = _metrics_base.AI_MOVE_REQUESTS
             AI_MOVE_LATENCY = _metrics_base.AI_MOVE_LATENCY
+            AI_ERRORS = _metrics_base.AI_ERRORS
+            AI_FALLBACKS = _metrics_base.AI_FALLBACKS
             AI_INSTANCE_CACHE_SIZE = _metrics_base.AI_INSTANCE_CACHE_SIZE
             AI_INSTANCE_CACHE_LOOKUPS = _metrics_base.AI_INSTANCE_CACHE_LOOKUPS
             PYTHON_INVARIANT_VIOLATIONS = _metrics_base.PYTHON_INVARIANT_VIOLATIONS
             observe_ai_move_start = _metrics_base.observe_ai_move_start
+            record_ai_error = _metrics_base.record_ai_error
+            record_ai_fallback = _metrics_base.record_ai_fallback
             # Export promotion and Elo reconciliation metrics
             record_promotion_decision = _metrics_base.record_promotion_decision
             record_promotion_execution = _metrics_base.record_promotion_execution
@@ -179,10 +183,14 @@ __all__ = [
     # App-level metrics (from metrics.py)
     "AI_MOVE_REQUESTS",
     "AI_MOVE_LATENCY",
+    "AI_ERRORS",
+    "AI_FALLBACKS",
     "AI_INSTANCE_CACHE_SIZE",
     "AI_INSTANCE_CACHE_LOOKUPS",
     "PYTHON_INVARIANT_VIOLATIONS",
     "observe_ai_move_start",
+    "record_ai_error",
+    "record_ai_fallback",
     # Promotion and Elo reconciliation metrics
     "record_promotion_decision",
     "record_promotion_execution",

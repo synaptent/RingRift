@@ -54,6 +54,7 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.models import BoardType
+from app.training.env import get_theoretical_max_moves
 
 
 def check_nn_quality_gate(
@@ -297,7 +298,7 @@ def run_cmaes_iteration(
     output_dir: str,
     baseline_path: Optional[str] = None,
     seed: int = 42,
-    max_moves: int = 200,
+    max_moves: Optional[int] = None,  # Auto-calculated if not specified
     eval_randomness: float = 0.02,
     progress_interval_sec: int = 30,
     no_record: bool = False,
@@ -500,7 +501,7 @@ def run_iterative_pipeline(
     profiles_path: str,
     state_pool_id: Optional[str] = None,
     seed: int = 42,
-    max_moves: int = 200,
+    max_moves: Optional[int] = None,  # Auto-calculated if not specified
     eval_randomness: float = 0.02,
     no_record: bool = False,
     sigma: float = 0.5,
@@ -937,6 +938,11 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    # Auto-calculate max_moves if not specified
+    if args.max_moves is None:
+        args.max_moves = get_theoretical_max_moves(args.board, args.num_players)
+        print(f"[Auto] max_moves={args.max_moves} for {args.board} {args.num_players}p")
 
     # Validate NN quality gate arguments
     if args.nn_quality_gate is not None and args.nn_model is None:

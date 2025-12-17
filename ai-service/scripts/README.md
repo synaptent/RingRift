@@ -254,6 +254,32 @@ Features:
   - Provides early feedback without waiting for full Elo calibration
   - Start: `python scripts/shadow_tournament_service.py --daemon`
 
+### Dashboard & Monitoring
+
+- `dashboard_server.py` - **RingRift Dashboard Server** (24KB)
+  - Unified web interface for training monitoring and replay
+  - Start: `python scripts/dashboard_server.py --port 8080`
+  - **Dashboard URLs** (default port 8080):
+    - `/` - Main Dashboard (Elo leaderboard, cluster status)
+    - `/training` - Training Metrics (loss curves, throughput, LR schedule)
+    - `/replay` - Game Replay Viewer (move-by-move with AI annotations)
+    - `/compare` - Model Comparison (side-by-side performance)
+    - `/tensorboard` - TensorBoard (auto-starts if not running)
+  - **API Endpoints**:
+    - `/api/leaderboard` - Elo rankings
+    - `/api/cluster/status` - Cluster health
+    - `/api/training/loss-curves` - Training loss data
+    - `/api/elo/progression` - Elo over time
+    - `/api/replay/games` - Game list for replay
+    - `/api/tensorboard/status` - TensorBoard status
+- `dashboard_assets/` - Dashboard frontend assets
+  - `model_dashboard.html` - Main dashboard page
+  - `training_dashboard.html` - Training metrics page
+  - `replay_viewer.html` - Game replay interface
+  - `model_comparison.html` - Model comparison page
+  - `board_renderer.js` - Board rendering (square/hex)
+  - `replay_viewer.js` - Replay navigation logic
+
 ### Data Validation
 
 - `training_preflight_check.py` - **Pre-training validation** (12KB)
@@ -392,6 +418,68 @@ for i in range(num_games):
 | `RINGRIFT_ENABLE_AUTO_HP_TUNING`  | Enable hyperparameter auto-tuning           | `0`     |
 | `RINGRIFT_SOCKS_PROXY`            | SOCKS5 proxy URL for P2P                    | (none)  |
 | `RINGRIFT_P2P_VERBOSE`            | Enable verbose P2P logging                  | `false` |
+
+## Cluster Node Requirements
+
+### Hardware Requirements
+
+| Component | Minimum               | Recommended     | Notes                     |
+| --------- | --------------------- | --------------- | ------------------------- |
+| GPU       | NVIDIA GTX 1080 (8GB) | RTX 3090 / A100 | CUDA 11.7+ required       |
+| RAM       | 16GB                  | 32GB+           | For large batch training  |
+| Storage   | 50GB SSD              | 200GB+ NVMe     | Fast I/O for data loading |
+| Network   | 100Mbps               | 1Gbps           | P2P sync bandwidth        |
+
+### Software Requirements
+
+- **Python 3.10+** with PyTorch 2.0+
+- **CUDA 11.7+** (for GPU training)
+- **Tailscale** (P2P mesh networking)
+- **rsync** (data synchronization)
+
+### Node Roles
+
+| Role                | Description                        | Resources              |
+| ------------------- | ---------------------------------- | ---------------------- |
+| **Coordinator**     | Leader election, task distribution | Low GPU, high network  |
+| **Trainer**         | Neural network training            | High GPU, high RAM     |
+| **Selfplay Worker** | Game generation                    | Medium GPU, medium RAM |
+| **Evaluator**       | Model evaluation, gauntlet         | Medium GPU             |
+
+### Network Ports
+
+| Port | Service               | Protocol |
+| ---- | --------------------- | -------- |
+| 8770 | P2P Orchestrator      | TCP      |
+| 8080 | Dashboard Server      | HTTP     |
+| 6006 | TensorBoard           | HTTP     |
+| 5432 | PostgreSQL (optional) | TCP      |
+
+### Quick Setup
+
+```bash
+# 1. Install Tailscale for P2P mesh
+curl -fsSL https://tailscale.com/install.sh | sh
+tailscale up
+
+# 2. Clone and setup
+git clone <repo> && cd ai-service
+pip install -r requirements.txt
+
+# 3. Start P2P orchestrator
+python scripts/p2p_orchestrator.py --node-id $(hostname) --peers <coordinator>:8770
+
+# 4. Verify connectivity
+python scripts/p2p_orchestrator.py --status
+```
+
+### Vast.ai Specific
+
+For Vast.ai GPU instances:
+
+- Use `vast_p2p_sync.py --full` to auto-configure instances
+- Keepalive: `vast_keepalive.py --auto` (prevents idle termination)
+- Minimum: RTX 3090 / A5000 instances recommended
 
 ## Configuration
 

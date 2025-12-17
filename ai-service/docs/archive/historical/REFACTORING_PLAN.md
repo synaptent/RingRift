@@ -4,17 +4,18 @@ This document outlines the recommended refactoring strategy for the large monoli
 
 ## Target Files
 
-| File | Lines | Functions | Priority |
-|------|-------|-----------|----------|
-| `scripts/p2p_orchestrator.py` | 25,516 | 499+ | High |
-| `scripts/unified_ai_loop.py` | 8,742 | 176+ | Medium |
-| `scripts/run_improvement_loop.py` | 2,649 | 40+ | Low |
+| File                              | Lines  | Functions | Priority |
+| --------------------------------- | ------ | --------- | -------- |
+| `scripts/p2p_orchestrator.py`     | 25,516 | 499+      | High     |
+| `scripts/unified_ai_loop.py`      | 8,742  | 176+      | Medium   |
+| `scripts/run_improvement_loop.py` | 2,649  | 40+       | Low      |
 
 ## p2p_orchestrator.py Refactoring Plan
 
 ### Current Structure
 
 The file contains:
+
 1. **Utility functions** (lines 137-310): Systemd notifications, resource checks
 2. **Enums and Data Classes** (lines 758-1435): NodeRole, JobType, NodeInfo, ClusterJob, etc.
 3. **P2POrchestrator class** (line 1561+): Main orchestrator (~23,000 lines)
@@ -66,12 +67,14 @@ scripts/p2p/
 ### Backward Compatibility
 
 The refactored code must maintain:
+
 - Same CLI interface (`python scripts/p2p_orchestrator.py`)
 - Same HTTP API endpoints
 - Same state file format
 - Same log message patterns
 
 Create `scripts/p2p/__init__.py`:
+
 ```python
 # Backward compatibility - import everything from submodules
 from .types import NodeRole, JobType
@@ -88,6 +91,7 @@ __all__ = ['P2POrchestrator', 'NodeRole', 'JobType', 'NodeInfo', ...]
 ### Current Structure
 
 The file mixes:
+
 - Data collection from cluster
 - Training orchestration
 - Tournament management
@@ -112,6 +116,7 @@ scripts/unified_loop/
 ### Current Structure
 
 The file handles:
+
 - Selfplay stage
 - Training stage
 - Evaluation stage
@@ -151,6 +156,7 @@ For each refactoring phase:
 ## Timeline
 
 This refactoring should be done incrementally over multiple sessions:
+
 - Phase 1 (Types): Can be done immediately
 - Phase 2 (Utilities): After Phase 1 is validated
 - Phase 3 (Job Types): Requires careful testing
@@ -159,6 +165,7 @@ This refactoring should be done incrementally over multiple sessions:
 ## Acceptance Criteria
 
 Refactoring is complete when:
+
 1. No single file exceeds 2,000 lines
 2. Each module has single responsibility
 3. All existing tests pass

@@ -46,6 +46,14 @@ except ImportError:
     get_min_elo_improvement = lambda: 25.0  # Fallback default
     get_training_threshold = lambda: 500  # Fallback default
 
+# Import PromotionCriteria for unified thresholds
+try:
+    from app.training.promotion_controller import PromotionCriteria as UnifiedCriteria
+    HAS_PROMOTION_CRITERIA = True
+except ImportError:
+    HAS_PROMOTION_CRITERIA = False
+    UnifiedCriteria = None
+
 # Import unified signals for cross-system consistency
 try:
     from app.training.unified_signals import (
@@ -159,11 +167,50 @@ class PromotionGate:
     Evaluates whether a model should be promoted.
 
     Implements multi-criteria decision making for model promotion.
+    Uses PromotionCriteria from promotion_controller.py for unified thresholds
+    when available, falling back to LifecycleConfig values.
     """
 
-    def __init__(self, config: LifecycleConfig):
+    def __init__(
+        self,
+        config: LifecycleConfig,
+        criteria: Optional["UnifiedCriteria"] = None
+    ):
         self.config = config
         self._evaluation_history: Dict[str, List[EvaluationResult]] = {}
+
+        # Use provided criteria or load from PromotionCriteria for unified thresholds
+        if criteria is not None:
+            self._criteria = criteria
+        elif HAS_PROMOTION_CRITERIA and UnifiedCriteria is not None:
+            self._criteria = UnifiedCriteria(
+                min_elo_improvement=config.min_elo_improvement,
+                min_games_played=config.min_games_for_production,
+                min_win_rate=config.min_win_rate_vs_production,
+            )
+        else:
+            self._criteria = None
+
+    @property
+    def min_elo_improvement(self) -> float:
+        """Get unified Elo improvement threshold."""
+        if self._criteria is not None:
+            return self._criteria.min_elo_improvement
+        return self.config.min_elo_improvement
+
+    @property
+    def min_games_for_production(self) -> int:
+        """Get unified games threshold for production."""
+        if self._criteria is not None:
+            return self._criteria.min_games_played
+        return self.config.min_games_for_production
+
+    @property
+    def min_win_rate(self) -> float:
+        """Get unified win rate threshold."""
+        if self._criteria is not None:
+            return self._criteria.min_win_rate
+        return self.config.min_win_rate_vs_production
 
     def evaluate_for_staging(self, result: EvaluationResult) -> Tuple[PromotionDecision, str]:
         """
@@ -215,11 +262,12 @@ class PromotionGate:
 
         Returns: (decision, reason)
         """
-        # Check minimum games
-        if result.games_played < self.config.min_games_for_production:
+        # Check minimum games (use unified property)
+        min_games = self.min_games_for_production
+        if result.games_played < min_games:
             return (
                 PromotionDecision.HOLD,
-                f"Insufficient games: {result.games_played}/{self.config.min_games_for_production}"
+                f"Insufficient games: {result.games_played}/{min_games}"
             )
 
         # If no production model, promote if staging passed
@@ -233,9 +281,10 @@ class PromotionGate:
                 f"Insufficient head-to-head games: {result.games_vs_production}/50"
             )
 
-        # Check Elo improvement
+        # Check Elo improvement (use unified property)
+        min_elo = self.min_elo_improvement
         if result.elo_vs_production is not None:
-            if result.elo_vs_production < self.config.min_elo_improvement:
+            if result.elo_vs_production < min_elo:
                 if result.elo_vs_production < self.config.regression_threshold_elo:
                     return (
                         PromotionDecision.REJECT,
@@ -243,15 +292,16 @@ class PromotionGate:
                     )
                 return (
                     PromotionDecision.HOLD,
-                    f"Insufficient Elo improvement: {result.elo_vs_production:+.0f} < {self.config.min_elo_improvement}"
+                    f"Insufficient Elo improvement: {result.elo_vs_production:+.0f} < {min_elo}"
                 )
 
-        # Check win rate
+        # Check win rate (use unified property)
+        min_wr = self.min_win_rate
         if result.win_rate_vs_production is not None:
-            if result.win_rate_vs_production < self.config.min_win_rate_vs_production:
+            if result.win_rate_vs_production < min_wr:
                 return (
                     PromotionDecision.HOLD,
-                    f"Win rate too low: {result.win_rate_vs_production:.1%} < {self.config.min_win_rate_vs_production:.1%}"
+                    f"Win rate too low: {result.win_rate_vs_production:.1%} < {min_wr:.1%}"
                 )
 
         # Check for value MSE regression

@@ -13,6 +13,55 @@ from typing import Callable, Dict, List, Optional
 
 import pytest
 
+
+# =============================================================================
+# PROMETHEUS REGISTRY FIX
+# =============================================================================
+# Fix for "Duplicated timeseries in CollectorRegistry" errors during test collection.
+# This happens when multiple test files import modules that register Prometheus metrics.
+# We patch the registry to silently handle re-registration of identical metrics.
+
+
+def _patch_prometheus_registry():
+    """Patch Prometheus registry to handle duplicate metric registration gracefully.
+
+    This is needed because:
+    1. app/metrics.py and app/metrics/orchestrator.py register metrics at import time
+    2. Different test files may import these via different paths
+    3. Python's import system can re-execute module-level code in edge cases
+
+    The patch makes re-registration of identical metrics a no-op instead of an error.
+    """
+    try:
+        from prometheus_client import REGISTRY
+        from prometheus_client.registry import CollectorRegistry
+
+        _original_register = CollectorRegistry.register
+
+        def _safe_register(self, collector):
+            """Register collector, ignoring duplicates."""
+            try:
+                return _original_register(self, collector)
+            except ValueError as e:
+                if "Duplicated timeseries" in str(e):
+                    # Already registered, ignore
+                    pass
+                else:
+                    raise
+
+        # Only patch once
+        if not getattr(CollectorRegistry, '_patched_for_tests', False):
+            CollectorRegistry.register = _safe_register
+            CollectorRegistry._patched_for_tests = True
+
+    except ImportError:
+        # prometheus_client not installed, no patching needed
+        pass
+
+
+# Apply patch immediately at conftest load time (before test collection)
+_patch_prometheus_registry()
+
 # Ensure ai-service root is on sys.path so `import app` works when running
 # pytest either from the repository root or from the ai-service directory.
 # This avoids ModuleNotFoundError in tests/conftest.py when the pytest

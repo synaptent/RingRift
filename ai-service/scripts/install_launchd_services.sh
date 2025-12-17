@@ -4,6 +4,7 @@
 # ============================================================================
 #
 # This script installs RingRift daemon services as macOS LaunchAgents.
+# Compatible with macOS default bash (3.x) and newer versions.
 #
 # Usage:
 #   ./scripts/install_launchd_services.sh [--service NAME] [--uninstall]
@@ -30,10 +31,23 @@ LAUNCHAGENTS_DIR="$HOME/Library/LaunchAgents"
 PYTHON_PATH="${PYTHON_PATH:-$(which python3)}"
 NODE_ID="${NODE_ID:-$(hostname -s)}"
 
-# Services
-declare -A SERVICES
-SERVICES["data-aggregator"]="com.ringrift.data-aggregator"
-SERVICES["p2p-orchestrator"]="com.ringrift.p2p-orchestrator"
+# Service definitions (bash 3.x compatible)
+SERVICE_NAMES="data-aggregator p2p-orchestrator"
+
+get_service_label() {
+    local name="$1"
+    case "$name" in
+        data-aggregator)
+            echo "com.ringrift.data-aggregator"
+            ;;
+        p2p-orchestrator)
+            echo "com.ringrift.p2p-orchestrator"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
 
 usage() {
     echo "Usage: $0 [--service NAME] [--uninstall]"
@@ -49,8 +63,9 @@ usage() {
 }
 
 install_service() {
-    local name=$1
-    local label=${SERVICES[$name]}
+    local name="$1"
+    local label
+    label=$(get_service_label "$name")
 
     if [ -z "$label" ]; then
         echo "Unknown service: $name"
@@ -93,7 +108,7 @@ install_service() {
 
     # Check if running
     sleep 1
-    if launchctl list | grep -q "$label"; then
+    if launchctl list 2>/dev/null | grep -q "$label"; then
         echo "  -> Status: RUNNING"
     else
         echo "  -> Status: NOT RUNNING (check logs)"
@@ -103,8 +118,9 @@ install_service() {
 }
 
 uninstall_service() {
-    local name=$1
-    local label=${SERVICES[$name]}
+    local name="$1"
+    local label
+    label=$(get_service_label "$name")
     local plist_dst="$LAUNCHAGENTS_DIR/$label.plist"
 
     echo "Uninstalling $name service..."
@@ -124,8 +140,9 @@ show_status() {
     echo "========================"
     echo ""
 
-    for name in "${!SERVICES[@]}"; do
-        local label=${SERVICES[$name]}
+    for name in $SERVICE_NAMES; do
+        local label
+        label=$(get_service_label "$name")
         local plist_dst="$LAUNCHAGENTS_DIR/$label.plist"
 
         printf "%-20s " "$name:"
@@ -149,8 +166,8 @@ SERVICE=""
 UNINSTALL=false
 STATUS=false
 
-while [[ $# -gt 0 ]]; do
-    case $1 in
+while [ $# -gt 0 ]; do
+    case "$1" in
         --service)
             SERVICE="$2"
             shift 2
@@ -198,7 +215,7 @@ fi
 
 # Handle 'all' service
 if [ "$SERVICE" = "all" ]; then
-    for name in "${!SERVICES[@]}"; do
+    for name in $SERVICE_NAMES; do
         if $UNINSTALL; then
             uninstall_service "$name"
         else

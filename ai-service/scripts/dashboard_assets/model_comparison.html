@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RingRift Model Comparison</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #00d4ff;
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+        .nav-links {
+            margin-top: 10px;
+        }
+        .nav-links a {
+            color: #00d4ff;
+            text-decoration: none;
+            margin: 0 15px;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .controls select {
+            background: #16213e;
+            color: #eee;
+            border: 1px solid #333;
+            padding: 8px 12px;
+            border-radius: 6px;
+            min-width: 200px;
+        }
+        .controls button {
+            background: #00d4ff;
+            color: #1a1a2e;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .controls button:hover {
+            background: #00b8e6;
+        }
+        .comparison-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .model-card {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            position: relative;
+        }
+        .model-card.winner {
+            border: 2px solid #00ff88;
+        }
+        .model-card .model-name {
+            color: #00d4ff;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            word-break: break-all;
+        }
+        .model-card .badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #00ff88;
+            color: #1a1a2e;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #333;
+        }
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+        .stat-row .label {
+            color: #888;
+        }
+        .stat-row .value {
+            font-weight: 600;
+        }
+        .stat-row .value.positive {
+            color: #00ff88;
+        }
+        .stat-row .value.negative {
+            color: #ff6b6b;
+        }
+        .chart-section {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            max-width: 1400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .chart-section h2 {
+            color: #00d4ff;
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+        }
+        .chart-container {
+            height: 300px;
+        }
+        .head-to-head {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            text-align: center;
+        }
+        .head-to-head h2 {
+            color: #00d4ff;
+            margin-bottom: 15px;
+        }
+        .h2h-stats {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            flex-wrap: wrap;
+        }
+        .h2h-stat {
+            text-align: center;
+        }
+        .h2h-stat .value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        .h2h-stat .label {
+            color: #888;
+            font-size: 0.9rem;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #888;
+        }
+        .empty-state h2 {
+            color: #00d4ff;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Model Comparison</h1>
+        <p style="color: #888;">Compare model performance side-by-side</p>
+        <div class="nav-links">
+            <a href="/">Main Dashboard</a>
+            <a href="/training">Training Metrics</a>
+            <a href="/replay">Game Replay</a>
+            <a href="/compare">Model Comparison</a>
+        </div>
+    </div>
+
+    <div class="controls">
+        <select id="model-a">
+            <option value="">Select Model A</option>
+        </select>
+        <select id="model-b">
+            <option value="">Select Model B</option>
+        </select>
+        <button onclick="compareModels()">Compare</button>
+    </div>
+
+    <div id="comparison-content">
+        <div class="empty-state">
+            <h2>Select Two Models</h2>
+            <p>Choose models from the dropdowns above to compare their performance</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let modelData = {};
+
+        async function loadModels() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/leaderboard?board=square8&players=2`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                const selectA = document.getElementById('model-a');
+                const selectB = document.getElementById('model-b');
+
+                data.forEach((model, i) => {
+                    modelData[model.model_id] = model;
+
+                    const optA = document.createElement('option');
+                    optA.value = model.model_id;
+                    optA.textContent = `${model.model_id.substring(0, 25)} (Elo: ${model.rating.toFixed(0)})`;
+                    selectA.appendChild(optA);
+
+                    const optB = document.createElement('option');
+                    optB.value = model.model_id;
+                    optB.textContent = `${model.model_id.substring(0, 25)} (Elo: ${model.rating.toFixed(0)})`;
+                    selectB.appendChild(optB);
+                });
+
+                // Auto-select top 2 if available
+                if (data.length >= 2) {
+                    selectA.value = data[0].model_id;
+                    selectB.value = data[1].model_id;
+                }
+            } catch (e) {
+                console.error('Error loading models:', e);
+            }
+        }
+
+        function compareModels() {
+            const modelAId = document.getElementById('model-a').value;
+            const modelBId = document.getElementById('model-b').value;
+
+            if (!modelAId || !modelBId) {
+                alert('Please select both models');
+                return;
+            }
+
+            const modelA = modelData[modelAId];
+            const modelB = modelData[modelBId];
+
+            if (!modelA || !modelB) {
+                alert('Model data not found');
+                return;
+            }
+
+            const winner = modelA.rating > modelB.rating ? 'A' : 'B';
+            const eloDiff = Math.abs(modelA.rating - modelB.rating).toFixed(0);
+
+            const content = document.getElementById('comparison-content');
+            content.innerHTML = `
+                <div class="comparison-container">
+                    <div class="model-card ${winner === 'A' ? 'winner' : ''}">
+                        ${winner === 'A' ? '<div class="badge">BETTER</div>' : ''}
+                        <div class="model-name">${modelA.model_id}</div>
+                        <div class="stat-row">
+                            <span class="label">Elo Rating</span>
+                            <span class="value">${modelA.rating.toFixed(0)}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Rating Deviation</span>
+                            <span class="value">${modelA.rating_deviation.toFixed(1)}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Games Played</span>
+                            <span class="value">${modelA.games_played}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Win Rate</span>
+                            <span class="value ${modelA.win_rate > 0.5 ? 'positive' : ''}">${(modelA.win_rate * 100).toFixed(1)}%</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Wins / Losses / Draws</span>
+                            <span class="value">${modelA.wins} / ${modelA.losses} / ${modelA.draws}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Confidence Interval</span>
+                            <span class="value">${modelA.ci_lower.toFixed(0)} - ${modelA.ci_upper.toFixed(0)}</span>
+                        </div>
+                    </div>
+                    <div class="model-card ${winner === 'B' ? 'winner' : ''}">
+                        ${winner === 'B' ? '<div class="badge">BETTER</div>' : ''}
+                        <div class="model-name">${modelB.model_id}</div>
+                        <div class="stat-row">
+                            <span class="label">Elo Rating</span>
+                            <span class="value">${modelB.rating.toFixed(0)}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Rating Deviation</span>
+                            <span class="value">${modelB.rating_deviation.toFixed(1)}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Games Played</span>
+                            <span class="value">${modelB.games_played}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Win Rate</span>
+                            <span class="value ${modelB.win_rate > 0.5 ? 'positive' : ''}">${(modelB.win_rate * 100).toFixed(1)}%</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Wins / Losses / Draws</span>
+                            <span class="value">${modelB.wins} / ${modelB.losses} / ${modelB.draws}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="label">Confidence Interval</span>
+                            <span class="value">${modelB.ci_lower.toFixed(0)} - ${modelB.ci_upper.toFixed(0)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="head-to-head">
+                    <h2>Head-to-Head Summary</h2>
+                    <div class="h2h-stats">
+                        <div class="h2h-stat">
+                            <div class="value" style="color: ${winner === 'A' ? '#00ff88' : '#ff6b6b'}">+${eloDiff}</div>
+                            <div class="label">Elo Difference</div>
+                        </div>
+                        <div class="h2h-stat">
+                            <div class="value">${((modelA.games_played + modelB.games_played) / 2).toFixed(0)}</div>
+                            <div class="label">Avg Games Played</div>
+                        </div>
+                        <div class="h2h-stat">
+                            <div class="value">${(((modelA.win_rate + modelB.win_rate) / 2) * 100).toFixed(1)}%</div>
+                            <div class="label">Avg Win Rate</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Initialize
+        loadModels();
+    </script>
+</body>
+</html>

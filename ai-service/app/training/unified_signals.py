@@ -796,3 +796,214 @@ def get_training_intensity(
         base_intensity *= 1.2  # Regressing, push harder
 
     return max(0.5, min(2.0, base_intensity))
+
+
+# ==============================================================================
+# Prometheus Metrics Export
+# ==============================================================================
+
+try:
+    from prometheus_client import Gauge, Counter, Histogram
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+
+
+class SignalMetricsExporter:
+    """Export training signals to Prometheus.
+
+    Usage:
+        exporter = SignalMetricsExporter()
+
+        # In your training loop:
+        signals = get_signal_computer().compute_signals(...)
+        exporter.update(signals)
+    """
+
+    def __init__(self, namespace: str = "ringrift_training"):
+        """Initialize Prometheus metrics.
+
+        Args:
+            namespace: Prefix for all metric names
+        """
+        self._initialized = False
+
+        if not PROMETHEUS_AVAILABLE:
+            logger.warning(
+                "prometheus_client not installed, metrics will not be exported. "
+                "Install with: pip install prometheus-client"
+            )
+            return
+
+        # Gauge metrics (current values)
+        self.games_since_training = Gauge(
+            f"{namespace}_games_since_training",
+            "Number of games since last training",
+            ["config_key"]
+        )
+
+        self.current_elo = Gauge(
+            f"{namespace}_current_elo",
+            "Current model Elo rating",
+            ["config_key"]
+        )
+
+        self.elo_trend = Gauge(
+            f"{namespace}_elo_trend",
+            "Elo change per hour (positive = improving)",
+            ["config_key"]
+        )
+
+        self.training_urgency = Gauge(
+            f"{namespace}_urgency",
+            "Training urgency level (0=NONE, 1=LOW, 2=NORMAL, 3=HIGH, 4=CRITICAL)",
+            ["config_key"]
+        )
+
+        self.training_priority = Gauge(
+            f"{namespace}_priority",
+            "Numeric training priority (higher = more urgent)",
+            ["config_key"]
+        )
+
+        self.win_rate = Gauge(
+            f"{namespace}_win_rate",
+            "Current model win rate",
+            ["config_key"]
+        )
+
+        self.model_count = Gauge(
+            f"{namespace}_model_count",
+            "Number of models for this config",
+            ["config_key"]
+        )
+
+        self.staleness_hours = Gauge(
+            f"{namespace}_staleness_hours",
+            "Hours since last training",
+            ["config_key"]
+        )
+
+        # Counter metrics (cumulative)
+        self.training_triggers = Counter(
+            f"{namespace}_triggers_total",
+            "Number of times training was triggered",
+            ["config_key", "urgency"]
+        )
+
+        self.regression_events = Counter(
+            f"{namespace}_regression_events_total",
+            "Number of regression events detected",
+            ["config_key", "type"]
+        )
+
+        # Histogram for signal computation time
+        self.computation_time = Histogram(
+            f"{namespace}_signal_computation_seconds",
+            "Time to compute training signals",
+            buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]
+        )
+
+        self._initialized = True
+        logger.info(f"SignalMetricsExporter initialized with namespace '{namespace}'")
+
+    def update(self, signals: TrainingSignals) -> None:
+        """Update Prometheus metrics from signals.
+
+        Args:
+            signals: Computed TrainingSignals to export
+        """
+        if not self._initialized:
+            return
+
+        config_key = signals.config_key or "default"
+
+        # Update gauges
+        self.games_since_training.labels(config_key=config_key).set(
+            signals.games_since_last_training
+        )
+        self.current_elo.labels(config_key=config_key).set(signals.current_elo)
+        self.elo_trend.labels(config_key=config_key).set(signals.elo_trend)
+        self.training_priority.labels(config_key=config_key).set(signals.priority)
+        self.win_rate.labels(config_key=config_key).set(signals.win_rate)
+        self.model_count.labels(config_key=config_key).set(signals.model_count)
+        self.staleness_hours.labels(config_key=config_key).set(signals.staleness_hours)
+
+        # Map urgency to numeric value for graphing
+        urgency_value = {
+            TrainingUrgency.NONE: 0,
+            TrainingUrgency.LOW: 1,
+            TrainingUrgency.NORMAL: 2,
+            TrainingUrgency.HIGH: 3,
+            TrainingUrgency.CRITICAL: 4,
+        }.get(signals.urgency, 0)
+        self.training_urgency.labels(config_key=config_key).set(urgency_value)
+
+        # Track regression events
+        if signals.elo_regression_detected:
+            self.regression_events.labels(
+                config_key=config_key,
+                type="elo"
+            ).inc()
+
+        if signals.win_rate_regression:
+            self.regression_events.labels(
+                config_key=config_key,
+                type="win_rate"
+            ).inc()
+
+    def record_training_triggered(
+        self,
+        config_key: str,
+        urgency: TrainingUrgency
+    ) -> None:
+        """Record that training was triggered.
+
+        Args:
+            config_key: Config identifier
+            urgency: Urgency level that triggered training
+        """
+        if not self._initialized:
+            return
+
+        self.training_triggers.labels(
+            config_key=config_key or "default",
+            urgency=urgency.value
+        ).inc()
+
+    def time_computation(self):
+        """Context manager to time signal computation.
+
+        Usage:
+            with exporter.time_computation():
+                signals = computer.compute_signals(...)
+        """
+        if not self._initialized:
+            from contextlib import nullcontext
+            return nullcontext()
+
+        return self.computation_time.time()
+
+
+# Singleton exporter instance
+_metrics_exporter: Optional[SignalMetricsExporter] = None
+_metrics_exporter_lock = threading.Lock()
+
+
+def get_metrics_exporter() -> SignalMetricsExporter:
+    """Get the singleton metrics exporter instance."""
+    global _metrics_exporter
+    if _metrics_exporter is None:
+        with _metrics_exporter_lock:
+            if _metrics_exporter is None:
+                _metrics_exporter = SignalMetricsExporter()
+    return _metrics_exporter
+
+
+def export_signals_to_prometheus(signals: TrainingSignals) -> None:
+    """Convenience function to export signals to Prometheus.
+
+    Args:
+        signals: Computed TrainingSignals to export
+    """
+    get_metrics_exporter().update(signals)

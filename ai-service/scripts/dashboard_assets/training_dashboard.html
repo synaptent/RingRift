@@ -208,6 +208,7 @@
             <a href="/">Main Dashboard</a>
             <a href="/replay">Game Replay</a>
             <a href="/training">Training Metrics</a>
+            <a href="/tensorboard" target="_blank">TensorBoard</a>
         </div>
     </div>
 
@@ -328,6 +329,23 @@
                     <div class="progress-bar">
                         <div class="progress-bar-fill" id="mem-bar" style="width: 0%"></div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>TensorBoard</h2>
+            <div id="tensorboard-status">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                    <div id="tb-indicator" style="width: 12px; height: 12px; border-radius: 50%; background: #666;"></div>
+                    <span id="tb-status-text">Checking...</span>
+                </div>
+                <div style="margin-bottom: 10px; color: #888; font-size: 0.9rem;">
+                    <span id="tb-run-count">-</span> training runs available
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="openTensorBoard()" style="flex: 1; background: #00d4ff; color: #1a1a2e; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: 600;">Open TensorBoard</button>
+                    <button onclick="toggleTensorBoard()" id="tb-toggle-btn" style="background: #16213e; color: #eee; border: 1px solid #333; padding: 10px 15px; border-radius: 6px; cursor: pointer;">Start</button>
                 </div>
             </div>
         </div>
@@ -609,13 +627,67 @@
             fetchLossCurves();
         });
 
+        // TensorBoard functions
+        let tbRunning = false;
+        let tbUrl = null;
+
+        async function fetchTensorBoardStatus() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/tensorboard/status`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                tbRunning = data.running;
+                tbUrl = data.url;
+
+                const indicator = document.getElementById('tb-indicator');
+                const statusText = document.getElementById('tb-status-text');
+                const toggleBtn = document.getElementById('tb-toggle-btn');
+                const runCount = document.getElementById('tb-run-count');
+
+                if (data.running) {
+                    indicator.style.background = '#00ff88';
+                    statusText.textContent = 'Running';
+                    toggleBtn.textContent = 'Stop';
+                } else {
+                    indicator.style.background = '#ff6b6b';
+                    statusText.textContent = 'Stopped';
+                    toggleBtn.textContent = 'Start';
+                }
+
+                runCount.textContent = data.run_count || 0;
+            } catch (e) {
+                console.log('Could not fetch TensorBoard status:', e);
+            }
+        }
+
+        async function toggleTensorBoard() {
+            const endpoint = tbRunning ? '/api/tensorboard/stop' : '/api/tensorboard/start';
+            try {
+                await fetch(`${API_BASE}${endpoint}`, { method: 'POST' });
+                await fetchTensorBoardStatus();
+            } catch (e) {
+                console.log('Could not toggle TensorBoard:', e);
+            }
+        }
+
+        function openTensorBoard() {
+            if (tbUrl) {
+                window.open(tbUrl, '_blank');
+            } else {
+                window.open('/tensorboard', '_blank');
+            }
+        }
+
         // Initialize
         initCharts();
         fetchModels();
         refreshData();
+        fetchTensorBoardStatus();
 
         // Auto-refresh every 30 seconds
         setInterval(refreshData, 30000);
+        setInterval(fetchTensorBoardStatus, 10000);
     </script>
 </body>
 </html>

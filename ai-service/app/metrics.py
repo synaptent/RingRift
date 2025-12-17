@@ -46,6 +46,24 @@ AI_MOVE_LATENCY: Final[Histogram] = Histogram(
 )
 
 
+AI_ERRORS: Final[Counter] = Counter(
+    "ringrift_ai_errors_total",
+    (
+        "Total AI error counts by type, labeled by error_type, "
+        "difficulty, and board_type."
+    ),
+    labelnames=("error_type", "difficulty", "board_type"),
+)
+
+AI_FALLBACKS: Final[Counter] = Counter(
+    "ringrift_ai_fallbacks_total",
+    (
+        "Total AI fallback events when primary strategy fails, labeled by "
+        "ai_type, fallback_method, and board_type."
+    ),
+    labelnames=("ai_type", "fallback_method", "board_type"),
+)
+
 PYTHON_INVARIANT_VIOLATIONS: Final[Counter] = Counter(
     "ringrift_python_invariant_violations_total",
     (
@@ -306,6 +324,8 @@ ROLLBACK_AT_RISK: Final[Gauge] = Gauge(
 # labeled child is sufficient to emit zero-valued samples.
 AI_MOVE_REQUESTS.labels("init", "0", "init")  # type: ignore[arg-type]
 AI_MOVE_LATENCY.labels("init", "0")  # type: ignore[arg-type]
+AI_ERRORS.labels("init", "0", "init")  # type: ignore[arg-type]
+AI_FALLBACKS.labels("init", "init", "init")  # type: ignore[arg-type]
 
 
 def observe_ai_move_start(ai_type: str, difficulty: int) -> tuple[str, str]:
@@ -317,6 +337,36 @@ def observe_ai_move_start(ai_type: str, difficulty: int) -> tuple[str, str]:
     """
 
     return ai_type, str(difficulty)
+
+
+def record_ai_error(
+    error_type: str,
+    difficulty: int | str,
+    board_type: str = "unknown",
+) -> None:
+    """Record an AI error occurrence.
+
+    Args:
+        error_type: Error type code (e.g., "AI_FALLBACK", "AI_TIMEOUT")
+        difficulty: AI difficulty level
+        board_type: Board type (e.g., "square8", "hexagonal")
+    """
+    AI_ERRORS.labels(error_type, str(difficulty), board_type).inc()
+
+
+def record_ai_fallback(
+    ai_type: str,
+    fallback_method: str,
+    board_type: str = "unknown",
+) -> None:
+    """Record an AI fallback event.
+
+    Args:
+        ai_type: AI type that failed (e.g., "mcts", "descent")
+        fallback_method: Method used as fallback (e.g., "random", "heuristic")
+        board_type: Board type (e.g., "square8", "hexagonal")
+    """
+    AI_FALLBACKS.labels(ai_type, fallback_method, board_type).inc()
 
 
 def record_game_outcome(
@@ -522,6 +572,8 @@ def record_auto_rollback(
 __all__ = [
     "AI_MOVE_REQUESTS",
     "AI_MOVE_LATENCY",
+    "AI_ERRORS",
+    "AI_FALLBACKS",
     "AI_INSTANCE_CACHE_LOOKUPS",
     "AI_INSTANCE_CACHE_SIZE",
     "PYTHON_INVARIANT_VIOLATIONS",
@@ -558,6 +610,8 @@ __all__ = [
     "ELO_DRIFT_SIGNIFICANT",
     # Helper functions
     "observe_ai_move_start",
+    "record_ai_error",
+    "record_ai_fallback",
     "record_game_outcome",
     "record_training_sample",
     "report_cluster_node",

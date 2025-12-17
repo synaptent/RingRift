@@ -36,6 +36,18 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# Import unified signals for regression detection
+try:
+    from app.training.unified_signals import (
+        get_signal_computer,
+        TrainingUrgency,
+        TrainingSignals,
+    )
+    HAS_UNIFIED_SIGNALS = True
+except ImportError:
+    HAS_UNIFIED_SIGNALS = False
+    get_signal_computer = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -130,6 +142,8 @@ class PromotionController:
         self._model_registry = model_registry
         self._lifecycle_manager = None
         self._tier_registry = None
+        # Unified signal computer for regression detection
+        self._signal_computer = get_signal_computer() if HAS_UNIFIED_SIGNALS else None
 
     @property
     def elo_service(self):
@@ -399,12 +413,46 @@ class PromotionController:
         board_type: str,
         num_players: int,
         regression_threshold: Optional[float] = None,
+        current_games: Optional[int] = None,
         **kwargs,
     ) -> PromotionDecision:
-        """Evaluate whether to rollback to a previous model."""
-        threshold = regression_threshold or -30.0
+        """Evaluate whether to rollback to a previous model.
 
-        # Get recent Elo trend
+        Uses unified signals when available for faster regression detection.
+        """
+        threshold = regression_threshold or -30.0
+        config_key = f"{board_type}_{num_players}p"
+
+        # Try unified signals first (cached, fast)
+        if self._signal_computer is not None and current_games is not None:
+            try:
+                # Get current Elo from elo service
+                current_elo = None
+                if self.elo_service:
+                    rating = self.elo_service.get_rating(model_id, board_type, num_players)
+                    if rating:
+                        current_elo = rating.rating
+
+                if current_elo is not None:
+                    signals = self._signal_computer.compute_signals(
+                        current_games=current_games,
+                        current_elo=current_elo,
+                        config_key=config_key,
+                    )
+
+                    if signals.elo_regression_detected and signals.elo_drop_magnitude > abs(threshold):
+                        return PromotionDecision(
+                            model_id=model_id,
+                            promotion_type=PromotionType.ROLLBACK,
+                            should_promote=True,
+                            reason=f"Unified signals: Elo regression {signals.elo_trend:.1f}/hr detected",
+                            current_elo=current_elo,
+                            elo_improvement=-signals.elo_drop_magnitude,
+                        )
+            except Exception as e:
+                logger.debug(f"Unified signals rollback check failed: {e}")
+
+        # Fallback to direct Elo history check
         if self.elo_service:
             try:
                 history = self.elo_service.get_rating_history(
@@ -432,6 +480,24 @@ class PromotionController:
             promotion_type=PromotionType.ROLLBACK,
             should_promote=False,
             reason="No significant regression detected",
+        )
+
+    def get_unified_signals(
+        self,
+        config_key: str,
+        current_games: int,
+        current_elo: float,
+    ) -> Optional[TrainingSignals]:
+        """Get unified training signals for a config.
+
+        Useful for callers that want to see the full signal state.
+        """
+        if self._signal_computer is None:
+            return None
+        return self._signal_computer.compute_signals(
+            current_games=current_games,
+            current_elo=current_elo,
+            config_key=config_key,
         )
 
     def execute_promotion(

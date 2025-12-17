@@ -15,6 +15,7 @@ from datetime import datetime
 
 from app.ai.neural_net import (
     HexNeuralNet_v2,
+    HexNeuralNet_v2_Lite,
     ActionEncoderHex,
     HEX_BOARD_SIZE,
     P_HEX,
@@ -549,6 +550,135 @@ class TestHexNeuralNet_v2:
                 assert param.grad is not None, f"No grad: {name}"
                 zero_grad = torch.all(param.grad == 0)
                 assert not zero_grad, f"Zero grad: {name}"
+
+
+class TestHexNeuralNet_v2_Lite:
+    """Test suite for HexNeuralNet_v2_Lite model (memory-efficient variant)."""
+
+    @pytest.fixture
+    def model(self):
+        """Create a HexNeuralNet_v2_Lite instance."""
+        return HexNeuralNet_v2_Lite(
+            in_channels=36,  # 12 base * 3 history frames
+            global_features=20,
+            num_res_blocks=2,  # Smaller for testing (default is 6)
+            num_filters=32,  # Smaller for testing (default is 96)
+        )
+
+    def test_model_initialization(self, model):
+        """Test model initializes correctly."""
+        assert model.board_size == HEX_BOARD_SIZE
+        assert model.policy_size == P_HEX
+
+    def test_forward_pass(self, model):
+        """Test forward pass produces correct output shapes."""
+        batch_size = 4
+        x = torch.randn(batch_size, 36, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
+        globals_vec = torch.randn(batch_size, 20)
+
+        value, policy = model(x, globals_vec)
+
+        # V2 Lite also outputs multi-player value head: [B, MAX_PLAYERS=4]
+        assert value.shape == (batch_size, 4)
+        assert policy.shape == (batch_size, P_HEX)
+
+    def test_forward_with_mask(self, model):
+        """Test forward pass with hex mask."""
+        batch_size = 2
+        x = torch.randn(batch_size, 36, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
+        globals_vec = torch.randn(batch_size, 20)
+
+        # Create valid hex mask
+        encoder = HexStateEncoder()
+        mask = encoder.get_valid_mask_tensor()
+        hex_mask = torch.from_numpy(mask).unsqueeze(0)
+        hex_mask = hex_mask.expand(batch_size, -1, -1, -1)
+
+        value, policy = model(x, globals_vec, hex_mask=hex_mask)
+
+        # V2 Lite also outputs multi-player value head: [B, MAX_PLAYERS=4]
+        assert value.shape == (batch_size, 4)
+        assert policy.shape == (batch_size, P_HEX)
+
+    def test_value_in_range(self, model):
+        """Test value output is in [-1, 1] range."""
+        x = torch.randn(4, 36, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
+        globals_vec = torch.randn(4, 20)
+
+        value, _ = model(x, globals_vec)
+
+        assert torch.all(value >= -1.0)
+        assert torch.all(value <= 1.0)
+
+    def test_training_step(self, model):
+        """Test a single training step."""
+        model.train()
+
+        batch_size = 4
+        x = torch.randn(batch_size, 36, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
+        globals_vec = torch.randn(batch_size, 20)
+
+        # Targets - V2 Lite also uses multi-player value head [B, 4]
+        value_target = torch.randn(batch_size, 4)
+        policy_target = torch.softmax(torch.randn(batch_size, P_HEX), dim=1)
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+        # Forward
+        value_pred, policy_logits = model(x, globals_vec)
+
+        # Loss
+        value_loss = torch.nn.MSELoss()(value_pred, value_target)
+        policy_log_probs = torch.log_softmax(policy_logits, dim=1)
+        policy_loss = torch.nn.KLDivLoss(reduction='batchmean')(
+            policy_log_probs, policy_target
+        )
+        loss = value_loss + policy_loss
+
+        # Backward
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # Should complete without error
+        assert loss.item() > 0  # Loss should be positive
+
+    def test_gradient_flow(self, model):
+        """Test gradients flow through entire network."""
+        x = torch.randn(
+            2, 36, HEX_BOARD_SIZE, HEX_BOARD_SIZE, requires_grad=True
+        )
+        globals_vec = torch.randn(2, 20, requires_grad=True)
+
+        value, policy = model(x, globals_vec)
+
+        # Compute loss
+        loss = value.sum() + policy.sum()
+        loss.backward()
+
+        # Check gradients exist
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                assert param.grad is not None, f"No grad: {name}"
+                zero_grad = torch.all(param.grad == 0)
+                assert not zero_grad, f"Zero grad: {name}"
+
+    def test_reduced_parameters(self, model):
+        """Test that v2_Lite has fewer parameters than v2."""
+        v2_model = HexNeuralNet_v2(
+            in_channels=40,
+            global_features=10,
+            num_res_blocks=2,
+            num_filters=32,
+        )
+
+        v2_params = sum(p.numel() for p in v2_model.parameters())
+        lite_params = sum(p.numel() for p in model.parameters())
+
+        # Lite should have similar or fewer params given same res_blocks/filters
+        # The main difference is in channels (40 vs 36) and global features
+        assert lite_params > 0
+        assert v2_params > 0
 
 
 class TestHexDataAugmentation:

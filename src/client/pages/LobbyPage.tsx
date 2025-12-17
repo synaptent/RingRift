@@ -858,7 +858,7 @@ export default function LobbyPage() {
                   value={form.boardType}
                   onChange={(e) => handleChange('boardType', e.target.value as BoardType)}
                 >
-                  <option value="square8">8x8 (compact)</option>
+                  <option value="square8">8x8 (compact) — Recommended for new players</option>
                   <option value="square19">19x19 (full)</option>
                   <option value="hex8">Hex 8 (small)</option>
                   <option value="hexagonal">Hexagonal</option>
@@ -877,6 +877,11 @@ export default function LobbyPage() {
                     </option>
                   ))}
                 </Select>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {form.maxPlayers === 2 && '2-player: Pure strategy, no politics'}
+                  {form.maxPlayers === 3 && '3-player: Moderate politics, dynamic alliances'}
+                  {form.maxPlayers === 4 && '4-player: High politics, kingmaking possible'}
+                </p>
               </div>
 
               <div>

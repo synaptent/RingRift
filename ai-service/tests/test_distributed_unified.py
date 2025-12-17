@@ -45,9 +45,9 @@ class TestUnifiedDistributedConfig:
         config = UnifiedDistributedConfig()
         assert config.world_size == 1
         assert config.backend == "nccl"
-        assert config.gradient_compression is True
+        assert config.compress_gradients is False  # Disabled by default
         assert config.async_sgd is False
-        assert config.mixed_precision is True
+        assert config.use_amp is True
 
     def test_custom_config_values(self):
         """Test custom configuration values."""
@@ -59,13 +59,13 @@ class TestUnifiedDistributedConfig:
         config = UnifiedDistributedConfig(
             world_size=4,
             backend="gloo",
-            gradient_compression=False,
+            compress_gradients=True,
             async_sgd=True,
             compression_ratio=0.1,
         )
         assert config.world_size == 4
         assert config.backend == "gloo"
-        assert config.gradient_compression is False
+        assert config.compress_gradients is True
         assert config.async_sgd is True
         assert config.compression_ratio == 0.1
 
@@ -87,7 +87,6 @@ class TestUnifiedDistributedTrainer:
         trainer = UnifiedDistributedTrainer(model=mock_model, config=config)
 
         assert trainer.config.world_size == 1
-        assert trainer.is_distributed is False or trainer.config.world_size == 1
 
     @patch.dict(os.environ, {"WORLD_SIZE": "1", "RANK": "0", "LOCAL_RANK": "0"})
     def test_trainer_env_detection(self, mock_model):
@@ -118,10 +117,10 @@ class TestGradientCompression:
             pytest.skip("distributed_unified not available")
 
         config = UnifiedDistributedConfig(
-            gradient_compression=True,
+            compress_gradients=True,
             compression_ratio=0.01,
         )
-        assert config.gradient_compression is True
+        assert config.compress_gradients is True
         assert config.compression_ratio == 0.01
 
     def test_top_k_compression_mock(self):
@@ -149,11 +148,10 @@ class TestAsyncSGD:
 
         config = UnifiedDistributedConfig(
             async_sgd=True,
-            staleness_threshold=3,
+            max_staleness=3,
         )
         assert config.async_sgd is True
-        if hasattr(config, 'staleness_threshold'):
-            assert config.staleness_threshold == 3
+        assert config.max_staleness == 3
 
     def test_async_sgd_disabled_by_default(self):
         """Test that async SGD is disabled by default."""
@@ -177,15 +175,14 @@ class TestMixedPrecision:
             pytest.skip("distributed_unified not available")
 
         config = UnifiedDistributedConfig(
-            mixed_precision=True,
+            use_amp=True,
             amp_dtype="float16",
         )
-        assert config.mixed_precision is True
-        if hasattr(config, 'amp_dtype'):
-            assert config.amp_dtype == "float16"
+        assert config.use_amp is True
+        assert config.amp_dtype == "float16"
 
     def test_mixed_precision_scaler_creation(self, mock_model):
-        """Test that GradScaler is created for AMP."""
+        """Test that GradScaler is created for AMP when setup is called."""
         try:
             from app.training.distributed_unified import (
                 UnifiedDistributedTrainer,
@@ -194,12 +191,13 @@ class TestMixedPrecision:
         except ImportError:
             pytest.skip("distributed_unified not available")
 
-        config = UnifiedDistributedConfig(mixed_precision=True)
+        config = UnifiedDistributedConfig(use_amp=True)
         trainer = UnifiedDistributedTrainer(model=mock_model, config=config)
 
-        # Check for scaler attribute
-        if hasattr(trainer, 'scaler') or hasattr(trainer, '_scaler'):
-            assert trainer.scaler is not None or trainer._scaler is not None
+        # Scaler is lazily created; verify config is set correctly
+        assert trainer.config.use_amp is True
+        # The _scaler attribute exists (may be None until setup())
+        assert hasattr(trainer, '_scaler')
 
 
 class TestDistributedHelpers:

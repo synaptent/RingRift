@@ -1,7 +1,7 @@
 # RingRift Documentation Index
 
-> **Last Updated:** 2025-12-16
-> **Organization:** 13 core docs in root, 6 in `/docs/` root, detailed docs in `/docs/` subdirectories
+> **Last Updated:** 2025-12-17
+> **Organization:** Core docs in root, organized subdirectories in `/docs/` and `/ai-service/docs/`
 
 This index catalogs all project documentation organized by topic and location. For a lightweight landing page, see `docs/INDEX.md`.
 
@@ -15,11 +15,18 @@ This index catalogs all project documentation organized by topic and location. F
 | [QUICKSTART.md](QUICKSTART.md)             | Local development setup            |
 | [CONTRIBUTING.md](CONTRIBUTING.md)         | Contribution guidelines            |
 | [SECURITY.md](SECURITY.md)                 | Security policy and implementation |
-| [TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md) | Terms of Service (placeholder)     |
-| [PRIVACY_POLICY.md](PRIVACY_POLICY.md)     | Privacy Policy (placeholder)       |
+| [TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md) | Terms of Service                   |
+| [PRIVACY_POLICY.md](PRIVACY_POLICY.md)     | Privacy Policy                     |
 | [TODO.md](TODO.md)                         | Active task tracker                |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md)         | Current bugs and gaps              |
-| [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) | Comprehensive improvement roadmap  |
+
+### Getting Started (New Players)
+
+| Document                                                                | Purpose                 |
+| ----------------------------------------------------------------------- | ----------------------- |
+| [Learn in 2 Minutes](docs/getting-started/LEARN_IN_2_MINUTES.md)        | Ultra-quick rules intro |
+| [Guided First Game](docs/getting-started/GUIDED_FIRST_GAME_TUTORIAL.md) | Interactive tutorial    |
+| [Audience](docs/getting-started/AUDIENCE.md)                            | Who RingRift is for     |
 
 ---
 
@@ -27,18 +34,15 @@ This index catalogs all project documentation organized by topic and location. F
 
 ### Project Status & Planning
 
-- [CURRENT_STATE_ASSESSMENT.md](CURRENT_STATE_ASSESSMENT.md) - Implementation status snapshot relative to the goals in PROJECT_GOALS; does not define new goals
-- [STRATEGIC_ROADMAP.md](docs/planning/STRATEGIC_ROADMAP.md) - Phased roadmap & SLOs that operationalise the goals in PROJECT_GOALS
-- [PROJECT_GOALS.md](PROJECT_GOALS.md) - Canonical project goals, v1.0 success criteria, and scope boundaries (authoritative source for goals/scope)
-- [WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md](docs/archive/assessments/WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md) - Canonical weakest-aspect & hardest-problem assessment snapshot (archived)
-- [NEXT_WAVE_REMEDIATION_PLAN.md](docs/archive/plans/NEXT_WAVE_REMEDIATION_PLAN.md) - Next-wave remediation plan derived from weakest-aspect / hardest-problem assessment (archived)
+- [PROJECT_GOALS.md](PROJECT_GOALS.md) - Canonical project goals, v1.0 success criteria, and scope boundaries
+- [STRATEGIC_ROADMAP.md](docs/planning/STRATEGIC_ROADMAP.md) - Phased roadmap & SLOs
 
 ### Rules & Game Design
 
 - [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md) - Authoritative rules specification
-- [ringrift_complete_rules.md](ringrift_complete_rules.md) - Full rulebook
-- [ringrift_simple_human_rules.md](ringrift_simple_human_rules.md) - Human-readable rules
-- [ringrift_compact_rules.md](ringrift_compact_rules.md) - Implementation-focused summary
+- [docs/rules/COMPLETE_RULES.md](docs/rules/COMPLETE_RULES.md) - Full rulebook
+- [docs/rules/HUMAN_RULES.md](docs/rules/HUMAN_RULES.md) - Human-readable rules
+- [docs/rules/COMPACT_RULES.md](docs/rules/COMPACT_RULES.md) - Implementation-focused summary
 
 ### Architecture
 
@@ -48,6 +52,27 @@ This index catalogs all project documentation organized by topic and location. F
 ---
 
 ## /docs/ Directory Structure
+
+### /docs/getting-started/
+
+New player onboarding and tutorials.
+
+| Document                                                                            | Purpose                 |
+| ----------------------------------------------------------------------------------- | ----------------------- |
+| [LEARN_IN_2_MINUTES.md](docs/getting-started/LEARN_IN_2_MINUTES.md)                 | Ultra-quick rules intro |
+| [GUIDED_FIRST_GAME_TUTORIAL.md](docs/getting-started/GUIDED_FIRST_GAME_TUTORIAL.md) | Interactive tutorial    |
+| [AUDIENCE.md](docs/getting-started/AUDIENCE.md)                                     | Target audience         |
+
+### /docs/production/
+
+Production deployment and release management.
+
+| Document                                                                               | Purpose                 |
+| -------------------------------------------------------------------------------------- | ----------------------- |
+| [PRODUCTION_READINESS_CHECKLIST.md](docs/production/PRODUCTION_READINESS_CHECKLIST.md) | Pre-launch verification |
+| [PRODUCTION_RUNBOOK.md](docs/production/PRODUCTION_RUNBOOK.md)                         | Day-to-day operations   |
+| [RELEASE_INSTRUCTIONS.md](docs/production/RELEASE_INSTRUCTIONS.md)                     | Release process         |
+| [RELEASE_NOTES_v0.1.0-beta.md](docs/production/RELEASE_NOTES_v0.1.0-beta.md)           | Current release notes   |
 
 ### /docs/architecture/
 

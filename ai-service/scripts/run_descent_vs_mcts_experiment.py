@@ -33,6 +33,7 @@ from app.models import BoardType
 from app.training.generate_data import generate_dataset
 from app.training.train import train_from_file
 from app.training.config import TrainConfig
+from app.training.env import get_theoretical_max_moves
 
 # Unified logging setup
 try:
@@ -52,6 +53,7 @@ def run_experiment(
     output_dir: str = "experiments/descent_vs_mcts",
     seed: int = 42,
     think_time: int = 500,
+    max_moves: int = None,  # Auto-calculated if not specified
 ) -> dict:
     """
     Run the full Descent vs MCTS experiment.
@@ -59,6 +61,12 @@ def run_experiment(
     Returns:
         Dict with experiment results and file paths.
     """
+    # Auto-calculate max_moves if not specified
+    if max_moves is None:
+        board_str = board_type.value if isinstance(board_type, BoardType) else str(board_type)
+        max_moves = get_theoretical_max_moves(board_str, num_players)
+        logger.info(f"[Auto] max_moves={max_moves} for {board_str} {num_players}p")
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = Path(output_dir) / f"run_{timestamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -99,7 +107,7 @@ def run_experiment(
         output_file=str(descent_data_path),
         board_type=board_type,
         seed=seed,
-        max_moves=200,
+        max_moves=max_moves,
         num_players=num_players,
         engine="descent",
         engine_mix="single",
@@ -125,7 +133,7 @@ def run_experiment(
         output_file=str(mcts_data_path),
         board_type=board_type,
         seed=seed + 10000,  # Different seed for variety
-        max_moves=200,
+        max_moves=max_moves,
         num_players=num_players,
         engine="mcts",
         engine_mix="single",
@@ -220,7 +228,7 @@ def run_experiment(
             checkpoint_path2=None,
             cmaes_weights_path=None,
             minimax_depth=3,
-            max_moves_per_game=200,
+            max_moves_per_game=max_moves,
             verbose=False,
         )
         results["descent"]["vs_heuristic"] = {
@@ -242,7 +250,7 @@ def run_experiment(
             checkpoint_path2=None,
             cmaes_weights_path=None,
             minimax_depth=3,
-            max_moves_per_game=200,
+            max_moves_per_game=max_moves,
             verbose=False,
         )
         results["mcts"]["vs_heuristic"] = {
@@ -264,7 +272,7 @@ def run_experiment(
             checkpoint_path2=str(mcts_model_path),
             cmaes_weights_path=None,
             minimax_depth=3,
-            max_moves_per_game=200,
+            max_moves_per_game=max_moves,
             verbose=False,
         )
         results["comparison"]["descent_vs_mcts"] = {

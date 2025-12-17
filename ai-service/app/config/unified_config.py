@@ -819,6 +819,78 @@ class UnifiedConfig:
             base_path = Path(__file__).parent.parent.parent
         return base_path / self.elo_db
 
+    def validate(self) -> List[str]:
+        """Validate configuration values and return list of errors.
+
+        Returns:
+            List of error messages. Empty list means valid.
+        """
+        errors: List[str] = []
+
+        # Training thresholds
+        if self.training.trigger_threshold_games < 10:
+            errors.append(f"training.trigger_threshold_games={self.training.trigger_threshold_games} too low (min: 10)")
+        if self.training.trigger_threshold_games > 100000:
+            errors.append(f"training.trigger_threshold_games={self.training.trigger_threshold_games} too high (max: 100000)")
+        if self.training.min_interval_seconds < 60:
+            errors.append(f"training.min_interval_seconds={self.training.min_interval_seconds} too low (min: 60)")
+        if self.training.validation_split < 0 or self.training.validation_split > 0.5:
+            errors.append(f"training.validation_split={self.training.validation_split} out of range (0-0.5)")
+
+        # Evaluation thresholds
+        if self.evaluation.shadow_games_per_config < 1:
+            errors.append(f"evaluation.shadow_games_per_config={self.evaluation.shadow_games_per_config} too low (min: 1)")
+        if self.evaluation.min_games_for_elo < 1:
+            errors.append(f"evaluation.min_games_for_elo={self.evaluation.min_games_for_elo} too low (min: 1)")
+        if self.evaluation.elo_k_factor < 1 or self.evaluation.elo_k_factor > 100:
+            errors.append(f"evaluation.elo_k_factor={self.evaluation.elo_k_factor} out of range (1-100)")
+
+        # Promotion thresholds
+        if self.promotion.elo_threshold < 0:
+            errors.append(f"promotion.elo_threshold={self.promotion.elo_threshold} cannot be negative")
+        if self.promotion.significance_level < 0.001 or self.promotion.significance_level > 0.5:
+            errors.append(f"promotion.significance_level={self.promotion.significance_level} out of range (0.001-0.5)")
+
+        # Curriculum weights
+        if self.curriculum.max_weight_multiplier < 1.0:
+            errors.append(f"curriculum.max_weight_multiplier={self.curriculum.max_weight_multiplier} must be >= 1.0")
+        if self.curriculum.min_weight_multiplier > 1.0:
+            errors.append(f"curriculum.min_weight_multiplier={self.curriculum.min_weight_multiplier} must be <= 1.0")
+        if self.curriculum.min_weight_multiplier > self.curriculum.max_weight_multiplier:
+            errors.append("curriculum.min_weight_multiplier > max_weight_multiplier")
+
+        # Safeguards
+        if self.safeguards.max_python_processes_per_host < 1:
+            errors.append(f"safeguards.max_python_processes_per_host={self.safeguards.max_python_processes_per_host} too low")
+        if self.safeguards.max_process_age_hours < 0.5:
+            errors.append(f"safeguards.max_process_age_hours={self.safeguards.max_process_age_hours} too low (min: 0.5)")
+
+        # Safety thresholds
+        if self.safety.overfit_threshold < 0 or self.safety.overfit_threshold > 1:
+            errors.append(f"safety.overfit_threshold={self.safety.overfit_threshold} out of range (0-1)")
+        if self.safety.data_quality_score_min < 0 or self.safety.data_quality_score_min > 1:
+            errors.append(f"safety.data_quality_score_min={self.safety.data_quality_score_min} out of range (0-1)")
+
+        # Tournament config
+        if self.tournament.k_factor < 1 or self.tournament.k_factor > 100:
+            errors.append(f"tournament.k_factor={self.tournament.k_factor} out of range (1-100)")
+        if self.tournament.initial_elo < 0:
+            errors.append(f"tournament.initial_elo={self.tournament.initial_elo} cannot be negative")
+
+        # Selfplay config
+        if self.selfplay.mcts_simulations < 1:
+            errors.append(f"selfplay.mcts_simulations={self.selfplay.mcts_simulations} too low (min: 1)")
+        if self.selfplay.temperature < 0:
+            errors.append(f"selfplay.temperature={self.selfplay.temperature} cannot be negative")
+
+        return errors
+
+    def validate_or_raise(self) -> None:
+        """Validate and raise ValueError if invalid."""
+        errors = self.validate()
+        if errors:
+            raise ValueError(f"Config validation failed:\n  " + "\n  ".join(errors))
+
     def apply_env_overrides(self) -> None:
         """Apply environment variable overrides."""
         # Training threshold override

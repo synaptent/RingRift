@@ -14,13 +14,15 @@ Usage:
 import argparse
 import json
 import os
+import signal
 import sqlite3
+import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, redirect, request, send_from_directory
 from flask_cors import CORS
 
 # Setup paths
@@ -29,9 +31,14 @@ AI_SERVICE_ROOT = SCRIPT_DIR.parent
 DASHBOARD_ASSETS = SCRIPT_DIR / "dashboard_assets"
 ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 GAMES_DB_PATH = AI_SERVICE_ROOT / "data" / "games" / "selfplay.db"
+TENSORBOARD_LOGDIR = AI_SERVICE_ROOT / "runs"
+TENSORBOARD_PORT = 6006
 
 app = Flask(__name__, static_folder=str(DASHBOARD_ASSETS))
 CORS(app)
+
+# TensorBoard process management
+_tensorboard_process: Optional[subprocess.Popen] = None
 
 
 # ============================================================================
@@ -433,6 +440,12 @@ def replay_game(game_id):
     return send_from_directory(str(DASHBOARD_ASSETS), "replay_viewer.html")
 
 
+@app.route("/compare")
+def compare_models():
+    """Serve the model comparison page."""
+    return send_from_directory(str(DASHBOARD_ASSETS), "model_comparison.html")
+
+
 @app.route("/api/replay/games")
 def api_replay_games():
     """List games for replay."""
@@ -608,6 +621,180 @@ def api_replay_game_moves(game_id):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/replay/games/<game_id>/eval")
+def api_replay_game_eval(game_id):
+    """Get AI evaluation for a position in a game.
+
+    This endpoint provides:
+    - Win probability from current player's perspective
+    - Value head output (raw)
+    - Best move suggestion
+    - Quality of actual move played (if applicable)
+    """
+    move_number = request.args.get("move_number", 0, type=int)
+
+    if not GAMES_DB_PATH.exists():
+        return jsonify({"error": "Game database not found"}), 404
+
+    try:
+        conn = sqlite3.connect(str(GAMES_DB_PATH))
+        conn.row_factory = sqlite3.Row
+
+        # Check if we have cached evaluation data
+        cursor = conn.execute("""
+            SELECT eval_json
+            FROM game_history_entries
+            WHERE game_id = ? AND move_number = ?
+        """, (game_id, move_number))
+
+        row = cursor.fetchone()
+        eval_data = None
+
+        if row and row["eval_json"]:
+            try:
+                eval_data = json.loads(row["eval_json"])
+            except Exception:
+                pass
+
+        conn.close()
+
+        # If we have cached eval data, return it
+        if eval_data:
+            return jsonify({
+                "winProbability": eval_data.get("win_prob", 0.5),
+                "value": eval_data.get("value", 0.0),
+                "bestMove": eval_data.get("best_move"),
+                "moveQuality": eval_data.get("move_quality"),
+                "policyEntropy": eval_data.get("policy_entropy"),
+                "cached": True,
+            })
+
+        # Otherwise return placeholder data (real-time eval would require model loading)
+        # In production, this would call the inference service
+        return jsonify({
+            "winProbability": 0.5,
+            "value": 0.0,
+            "bestMove": None,
+            "moveQuality": None,
+            "cached": False,
+            "message": "Real-time evaluation not available - no cached data",
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================================
+# TensorBoard Integration
+# ============================================================================
+
+def _is_tensorboard_running() -> bool:
+    """Check if TensorBoard is running on the expected port."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex(("127.0.0.1", TENSORBOARD_PORT))
+            return result == 0
+    except Exception:
+        return False
+
+
+def _start_tensorboard() -> bool:
+    """Start TensorBoard process if not running."""
+    global _tensorboard_process
+
+    if _is_tensorboard_running():
+        return True
+
+    # Create logs directory if needed
+    TENSORBOARD_LOGDIR.mkdir(parents=True, exist_ok=True)
+
+    try:
+        _tensorboard_process = subprocess.Popen(
+            [
+                sys.executable, "-m", "tensorboard",
+                "--logdir", str(TENSORBOARD_LOGDIR),
+                "--port", str(TENSORBOARD_PORT),
+                "--bind_all",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        # Give it a moment to start
+        import time
+        time.sleep(2)
+        return _is_tensorboard_running()
+    except Exception as e:
+        print(f"Failed to start TensorBoard: {e}")
+        return False
+
+
+def _stop_tensorboard() -> bool:
+    """Stop TensorBoard process if running."""
+    global _tensorboard_process
+
+    if _tensorboard_process:
+        try:
+            _tensorboard_process.terminate()
+            _tensorboard_process.wait(timeout=5)
+        except Exception:
+            _tensorboard_process.kill()
+        _tensorboard_process = None
+        return True
+    return False
+
+
+@app.route("/api/tensorboard/status")
+def api_tensorboard_status():
+    """Get TensorBoard status."""
+    running = _is_tensorboard_running()
+    log_dir_exists = TENSORBOARD_LOGDIR.exists()
+
+    # Count run directories
+    run_count = 0
+    if log_dir_exists:
+        run_count = len([d for d in TENSORBOARD_LOGDIR.iterdir() if d.is_dir()])
+
+    return jsonify({
+        "running": running,
+        "port": TENSORBOARD_PORT,
+        "url": f"http://localhost:{TENSORBOARD_PORT}" if running else None,
+        "logdir": str(TENSORBOARD_LOGDIR),
+        "logdir_exists": log_dir_exists,
+        "run_count": run_count,
+    })
+
+
+@app.route("/api/tensorboard/start", methods=["POST"])
+def api_tensorboard_start():
+    """Start TensorBoard."""
+    success = _start_tensorboard()
+    return jsonify({
+        "success": success,
+        "running": _is_tensorboard_running(),
+        "url": f"http://localhost:{TENSORBOARD_PORT}" if success else None,
+    })
+
+
+@app.route("/api/tensorboard/stop", methods=["POST"])
+def api_tensorboard_stop():
+    """Stop TensorBoard."""
+    success = _stop_tensorboard()
+    return jsonify({
+        "success": success,
+        "running": _is_tensorboard_running(),
+    })
+
+
+@app.route("/tensorboard")
+def tensorboard_redirect():
+    """Redirect to TensorBoard (starts it if needed)."""
+    if not _is_tensorboard_running():
+        _start_tensorboard()
+    return redirect(f"http://localhost:{TENSORBOARD_PORT}")
 
 
 # ============================================================================

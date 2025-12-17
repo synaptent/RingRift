@@ -360,5 +360,107 @@ function debounce(fn, delay) {
     };
 }
 
+/**
+ * Fetch AI evaluation for current position
+ */
+async function fetchAIEval() {
+    if (!currentGameId || currentMove === undefined) {
+        return;
+    }
+
+    const state = stateCache[currentMove];
+    if (!state) {
+        console.log('No state cached for current move');
+        return;
+    }
+
+    // Show loading state
+    document.getElementById('ai-winprob').textContent = '...';
+    document.getElementById('ai-value').textContent = '...';
+    document.getElementById('ai-bestmove').textContent = '...';
+    document.getElementById('ai-quality').textContent = '...';
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/replay/games/${currentGameId}/eval?move_number=${currentMove}`);
+        if (!resp.ok) {
+            throw new Error('Failed to fetch evaluation');
+        }
+        const data = await resp.json();
+
+        // Update display
+        const winProb = data.winProbability || 0.5;
+        const winPct = (winProb * 100).toFixed(1);
+        document.getElementById('ai-winprob').textContent = `${winPct}%`;
+        document.getElementById('ai-winbar').style.width = `${winPct}%`;
+
+        // Color the win prob based on value
+        const winEl = document.getElementById('ai-winprob');
+        if (winProb > 0.6) {
+            winEl.style.color = '#00ff88';
+        } else if (winProb < 0.4) {
+            winEl.style.color = '#ff6b6b';
+        } else {
+            winEl.style.color = '#00d4ff';
+        }
+
+        const value = data.value !== undefined ? data.value.toFixed(3) : '--';
+        document.getElementById('ai-value').textContent = value;
+
+        if (data.bestMove) {
+            const from = data.bestMove.from;
+            const to = data.bestMove.to;
+            document.getElementById('ai-bestmove').textContent =
+                `(${from?.x || '?'},${from?.y || '?'}) -> (${to?.x || '?'},${to?.y || '?'})`;
+        } else {
+            document.getElementById('ai-bestmove').textContent = '--';
+        }
+
+        // Move quality comparison
+        if (data.moveQuality !== undefined) {
+            const quality = data.moveQuality;
+            let qualityText = 'Unknown';
+            let qualityColor = '#888';
+
+            if (quality >= 0.95) {
+                qualityText = 'Excellent';
+                qualityColor = '#00ff88';
+            } else if (quality >= 0.8) {
+                qualityText = 'Good';
+                qualityColor = '#00d4ff';
+            } else if (quality >= 0.5) {
+                qualityText = 'OK';
+                qualityColor = '#ffd93d';
+            } else {
+                qualityText = 'Mistake';
+                qualityColor = '#ff6b6b';
+            }
+
+            const qualityEl = document.getElementById('ai-quality');
+            qualityEl.textContent = qualityText;
+            qualityEl.style.color = qualityColor;
+        } else {
+            document.getElementById('ai-quality').textContent = '--';
+        }
+
+    } catch (e) {
+        console.error('Error fetching AI eval:', e);
+        document.getElementById('ai-winprob').textContent = 'N/A';
+        document.getElementById('ai-value').textContent = 'N/A';
+        document.getElementById('ai-bestmove').textContent = 'N/A';
+        document.getElementById('ai-quality').textContent = 'N/A';
+    }
+}
+
+/**
+ * Reset AI eval display
+ */
+function resetAIEval() {
+    document.getElementById('ai-winprob').textContent = '--%';
+    document.getElementById('ai-winbar').style.width = '50%';
+    document.getElementById('ai-value').textContent = '--';
+    document.getElementById('ai-bestmove').textContent = '--';
+    document.getElementById('ai-quality').textContent = '--';
+}
+
 // Initialize on load
 document.addEventListener('DOMContentLoaded', init);
