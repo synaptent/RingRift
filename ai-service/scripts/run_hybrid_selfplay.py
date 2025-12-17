@@ -397,6 +397,43 @@ def run_hybrid_selfplay(
             logger.warning(f"Descent AI not available: {e}. Falling back to heuristic.")
             descent_ai = None
 
+    # Initialize Policy-Only AI for fast NN-based selfplay (no search, ~100x faster)
+    policy_only_ai = None
+    if "policy-only" in all_engine_modes:
+        try:
+            from app.ai.policy_only_ai import PolicyOnlyAI
+            from app.models.core import AIConfig, AIType
+            policy_config = AIConfig(
+                ai_type=AIType.POLICY_ONLY,
+                difficulty=4,
+                policy_temperature=1.0,  # Exploratory temperature for diversity
+                use_neural_net=True,
+            )
+            policy_only_ai = PolicyOnlyAI(player_number=1, config=policy_config, board_type=board_type)
+            logger.info("Policy-Only AI initialized for fast selfplay (no search)")
+        except ImportError as e:
+            logger.warning(f"Policy-Only AI not available: {e}. Falling back to heuristic.")
+            policy_only_ai = None
+
+    # Initialize Gumbel MCTS AI for efficient search-based selfplay
+    gumbel_mcts_ai = None
+    if "gumbel-mcts" in all_engine_modes:
+        try:
+            from app.ai.gumbel_mcts_ai import GumbelMCTSAI
+            from app.models.core import AIConfig, AIType
+            gumbel_config = AIConfig(
+                ai_type=AIType.GUMBEL_MCTS,
+                difficulty=7,
+                gumbel_num_sampled_actions=16,
+                gumbel_simulation_budget=100,
+                use_neural_net=True,
+            )
+            gumbel_mcts_ai = GumbelMCTSAI(player_number=1, config=gumbel_config, board_type=board_type)
+            logger.info("Gumbel MCTS AI initialized (m=16, budget=100)")
+        except ImportError as e:
+            logger.warning(f"Gumbel MCTS AI not available: {e}. Falling back to heuristic.")
+            gumbel_mcts_ai = None
+
     # Build per-player engine mode mapping for asymmetric matches
     player_engine_modes = {
         1: engine_mode,
@@ -617,6 +654,30 @@ def run_hybrid_selfplay(
                                     best_move = valid_moves[0]
                         except Exception as e:
                             logger.debug(f"Descent error: {e}, falling back to heuristic")
+                            best_move = valid_moves[np.random.randint(len(valid_moves))]
+                    elif current_engine == "policy-only" and policy_only_ai is not None:
+                        # Policy-Only mode: Fast NN policy without search (~100x faster)
+                        try:
+                            # Update AI's player number for current player
+                            policy_only_ai.player_number = current_player
+                            best_move = policy_only_ai.select_move(game_state)
+                            if best_move is None or best_move not in valid_moves:
+                                # Fallback to random if policy-only fails
+                                best_move = valid_moves[np.random.randint(len(valid_moves))]
+                        except Exception as e:
+                            logger.debug(f"Policy-Only error: {e}, falling back to random")
+                            best_move = valid_moves[np.random.randint(len(valid_moves))]
+                    elif current_engine == "gumbel-mcts" and gumbel_mcts_ai is not None:
+                        # Gumbel MCTS mode: Efficient search with Sequential Halving
+                        try:
+                            # Update AI's player number for current player
+                            gumbel_mcts_ai.player_number = current_player
+                            best_move = gumbel_mcts_ai.select_move(game_state)
+                            if best_move is None or best_move not in valid_moves:
+                                # Fallback to random if gumbel fails
+                                best_move = valid_moves[np.random.randint(len(valid_moves))]
+                        except Exception as e:
+                            logger.debug(f"Gumbel MCTS error: {e}, falling back to random")
                             best_move = valid_moves[np.random.randint(len(valid_moves))]
                     else:
                         # heuristic-only (default): Evaluate moves (hybrid CPU/GPU)
@@ -1024,28 +1085,28 @@ def main():
         "--engine-mode",
         type=str,
         default="heuristic-only",
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent"],
-        help="Engine mode for P1: random-only (uniform random), heuristic-only (GPU heuristic), mixed (probabilistic blend), nnue-guided (NNUE neural network), or mcts (Monte Carlo Tree Search)",
+        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts"],
+        help="Engine mode for P1: random-only, heuristic-only, mixed, nnue-guided, mcts, nn-minimax, nn-descent, policy-only (fast NN, no search), or gumbel-mcts (efficient search)",
     )
     parser.add_argument(
         "--p2-engine-mode",
         type=str,
         default=None,
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent"],
+        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts"],
         help="Engine mode for Player 2 (if different from P1 for asymmetric matches)",
     )
     parser.add_argument(
         "--p3-engine-mode",
         type=str,
         default=None,
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent"],
+        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts"],
         help="Engine mode for Player 3 (for 3-4 player games)",
     )
     parser.add_argument(
         "--p4-engine-mode",
         type=str,
         default=None,
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent"],
+        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts"],
         help="Engine mode for Player 4 (for 4 player games)",
     )
     parser.add_argument(
