@@ -1736,9 +1736,9 @@ class GameEngine:
 
         Uses model_construct for ~5x faster creation by skipping validation.
         """
-        # Use construct to skip Pydantic validation (faster) - Pydantic v1 API
+        # Use model_construct to skip Pydantic validation (faster) - Pydantic v2 API
         # We copy all dict/list fields to avoid mutating the original
-        hyp = BoardState.construct(
+        hyp = BoardState.model_construct(
             type=board.type,
             size=board.size,
             stacks=dict(board.stacks),
@@ -2229,8 +2229,8 @@ class GameEngine:
         # _get_capture_moves identifies the attacker at from_pos (it
         # looks at the last move's .to when no chain_capture_state is
         # active).
-        # Use construct for faster creation (skips validation) - Pydantic v1 API
-        synthetic_move = Move.construct(
+        # Use model_construct for faster creation (skips validation) - Pydantic v2 API
+        synthetic_move = Move.model_construct(
             id="hypothetical-placement",
             type=MoveType.PLACE_RING,
             player=player_number,
