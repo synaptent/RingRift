@@ -93,6 +93,60 @@ except ImportError:
     HAS_DISTRIBUTED_LOCK = False
     DistributedLock = None
 
+# Training enhancements
+try:
+    from .training_enhancements import (
+        CheckpointAverager,
+        GradientAccumulator,
+        DataQualityScorer,
+        AdaptiveLRScheduler,
+        EnhancedEarlyStopping,
+        EWCRegularizer,
+        ModelEnsemble,
+        CalibrationAutomation,
+        create_training_enhancements,
+    )
+    HAS_TRAINING_ENHANCEMENTS = True
+except ImportError:
+    HAS_TRAINING_ENHANCEMENTS = False
+    CheckpointAverager = None
+    GradientAccumulator = None
+    DataQualityScorer = None
+    AdaptiveLRScheduler = None
+    EnhancedEarlyStopping = None
+    EWCRegularizer = None
+    ModelEnsemble = None
+    CalibrationAutomation = None
+    create_training_enhancements = None
+
+try:
+    from .multi_task_learning import (
+        MultiTaskConfig,
+        MultiTaskHead,
+        MultiTaskLoss,
+        MultiTaskModelWrapper,
+    )
+    HAS_MULTI_TASK = True
+except ImportError:
+    HAS_MULTI_TASK = False
+    MultiTaskConfig = None
+    MultiTaskHead = None
+    MultiTaskLoss = None
+    MultiTaskModelWrapper = None
+
+try:
+    from .distributed_training import (
+        DistributedTrainer,
+        DistributedConfig,
+        GradientCompressor,
+    )
+    HAS_DISTRIBUTED_TRAINING = True
+except ImportError:
+    HAS_DISTRIBUTED_TRAINING = False
+    DistributedTrainer = None
+    DistributedConfig = None
+    GradientCompressor = None
+
 
 @dataclass
 class PipelineResult:
@@ -136,10 +190,17 @@ class OptimizedTrainingPipeline:
         self._recent_results: List[PipelineResult] = []
         self._max_recent = 50
 
+        # Training enhancements
+        self._checkpoint_averager = CheckpointAverager() if HAS_TRAINING_ENHANCEMENTS else None
+        self._quality_scorer = DataQualityScorer() if HAS_TRAINING_ENHANCEMENTS else None
+        self._calibration = CalibrationAutomation() if HAS_TRAINING_ENHANCEMENTS else None
+
         logger.info(f"OptimizedTrainingPipeline initialized with: "
                     f"cache={HAS_EXPORT_CACHE}, dynamic={HAS_DYNAMIC_EXPORT}, "
                     f"curriculum={HAS_CURRICULUM_FEEDBACK}, locks={HAS_DISTRIBUTED_LOCK}, "
-                    f"health={HAS_HEALTH_MONITOR}, registry={HAS_MODEL_REGISTRY}")
+                    f"health={HAS_HEALTH_MONITOR}, registry={HAS_MODEL_REGISTRY}, "
+                    f"enhancements={HAS_TRAINING_ENHANCEMENTS}, "
+                    f"multi_task={HAS_MULTI_TASK}, distributed={HAS_DISTRIBUTED_TRAINING}")
 
     def should_train(self, config_key: str, games_since_training: int = 0) -> Tuple[bool, str]:
         """Check if training should run for a config.
@@ -478,12 +539,115 @@ class OptimizedTrainingPipeline:
                 "health_monitor": HAS_HEALTH_MONITOR,
                 "model_registry": HAS_MODEL_REGISTRY,
                 "training_triggers": HAS_TRAINING_TRIGGERS,
+                "training_enhancements": HAS_TRAINING_ENHANCEMENTS,
+                "multi_task_learning": HAS_MULTI_TASK,
+                "distributed_training": HAS_DISTRIBUTED_TRAINING,
             },
             active_training=list(self._active_locks.keys()),
             health_status=health_status,
             curriculum_weights=curriculum_weights,
             recent_results=self._recent_results[-10:],
         )
+
+    def get_training_enhancements(
+        self,
+        model: Any,
+        optimizer: Any,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Get training enhancement objects for a training run.
+
+        Args:
+            model: Model being trained
+            optimizer: Optimizer being used
+            config: Optional configuration overrides
+
+        Returns:
+            Dictionary of enhancement objects or None if not available
+        """
+        if not HAS_TRAINING_ENHANCEMENTS or create_training_enhancements is None:
+            return None
+
+        return create_training_enhancements(model, optimizer, config)
+
+    def get_checkpoint_averager(self, num_checkpoints: int = 5) -> Optional[Any]:
+        """Get a checkpoint averager for model weight averaging.
+
+        Args:
+            num_checkpoints: Number of checkpoints to average
+
+        Returns:
+            CheckpointAverager or None if not available
+        """
+        if not HAS_TRAINING_ENHANCEMENTS or CheckpointAverager is None:
+            return None
+        return CheckpointAverager(num_checkpoints=num_checkpoints)
+
+    def get_gradient_accumulator(
+        self,
+        accumulation_steps: int = 4,
+        max_grad_norm: float = 1.0,
+    ) -> Optional[Any]:
+        """Get a gradient accumulator for larger effective batch sizes.
+
+        Args:
+            accumulation_steps: Number of steps to accumulate
+            max_grad_norm: Maximum gradient norm for clipping
+
+        Returns:
+            GradientAccumulator or None if not available
+        """
+        if not HAS_TRAINING_ENHANCEMENTS or GradientAccumulator is None:
+            return None
+        return GradientAccumulator(
+            accumulation_steps=accumulation_steps,
+            max_grad_norm=max_grad_norm,
+        )
+
+    def get_model_ensemble(
+        self,
+        model_class: type,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Any]:
+        """Get a model ensemble for diverse self-play opponents.
+
+        Args:
+            model_class: Class to instantiate models from
+            model_kwargs: Arguments for model constructor
+
+        Returns:
+            ModelEnsemble or None if not available
+        """
+        if not HAS_TRAINING_ENHANCEMENTS or ModelEnsemble is None:
+            return None
+        return ModelEnsemble(model_class=model_class, model_kwargs=model_kwargs)
+
+    def should_recalibrate(self, epoch: int = 0) -> bool:
+        """Check if value head recalibration is needed.
+
+        Args:
+            epoch: Current epoch number
+
+        Returns:
+            True if recalibration is recommended
+        """
+        if self._calibration:
+            return self._calibration.should_recalibrate(epoch)
+        return False
+
+    def add_calibration_samples(
+        self,
+        predictions: Any,
+        outcomes: Any,
+    ) -> None:
+        """Add samples for calibration monitoring.
+
+        Args:
+            predictions: Model value predictions
+            outcomes: Actual game outcomes
+        """
+        if self._calibration:
+            self._calibration.add_samples(predictions, outcomes)
 
 
 # Singleton instance
