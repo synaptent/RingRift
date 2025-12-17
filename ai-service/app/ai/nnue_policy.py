@@ -359,8 +359,11 @@ class NNUEPolicyTrainer:
         swa_start_epoch: int = 0,
         swa_lr: Optional[float] = None,
         progressive_batch_callback: Optional[Callable[[int, int], int]] = None,
+        gradient_accumulation_steps: int = 1,
     ):
         self.model = model.to(device)
+        self.gradient_accumulation_steps = max(1, gradient_accumulation_steps)
+        self._accumulation_step = 0  # Track current step for gradient accumulation
         self.device = device
         self.value_weight = value_weight
         self.policy_weight = policy_weight
@@ -601,7 +604,10 @@ class NNUEPolicyTrainer:
             Tuple of (total_loss, value_loss, policy_loss)
         """
         self.model.train()
-        self.optimizer.zero_grad()
+
+        # Only zero gradients at start of accumulation cycle
+        if self._accumulation_step == 0:
+            self.optimizer.zero_grad()
 
         # Mixed precision forward pass
         with autocast(enabled=self.use_amp):
@@ -654,24 +660,41 @@ class NNUEPolicyTrainer:
             # Combined loss
             total_loss = self.value_weight * value_loss + self.policy_weight * policy_loss
 
+            # Scale loss for gradient accumulation
+            if self.gradient_accumulation_steps > 1:
+                total_loss = total_loss / self.gradient_accumulation_steps
+
         # Backward pass with gradient scaling for AMP
         if self.use_amp and self.scaler is not None:
             self.scaler.scale(total_loss).backward()
-            if self.grad_clip > 0:
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
         else:
             total_loss.backward()
-            if self.grad_clip > 0:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-            self.optimizer.step()
 
-        # Update EMA model
-        self._update_ema()
+        # Increment accumulation step
+        self._accumulation_step += 1
 
-        return total_loss.item(), value_loss.item(), policy_loss.item()
+        # Only step optimizer every gradient_accumulation_steps
+        if self._accumulation_step >= self.gradient_accumulation_steps:
+            if self.use_amp and self.scaler is not None:
+                if self.grad_clip > 0:
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                if self.grad_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                self.optimizer.step()
+
+            self.optimizer.zero_grad()
+            self._accumulation_step = 0
+
+            # Update EMA model only after optimizer step
+            self._update_ema()
+
+        # Return unscaled loss for logging
+        unscaled_total = total_loss.item() * self.gradient_accumulation_steps
+        return unscaled_total, value_loss.item(), policy_loss.item()
 
     def validate(
         self,
@@ -866,6 +889,201 @@ def progressive_batch_schedule(
         batch = max_batch
     # Round to nearest power of 2 for efficiency
     return min(max_batch, max(min_batch, 2 ** int(np.log2(batch))))
+
+
+class LearningRateFinder:
+    """Find optimal learning rate using the learning rate range test.
+
+    Runs a short training sweep with exponentially increasing learning rate,
+    recording loss at each step. The optimal LR is where loss decreases fastest
+    (steepest negative gradient) before diverging.
+
+    Usage:
+        finder = LearningRateFinder(model, optimizer, criterion)
+        optimal_lr = finder.find(train_loader, device, start_lr=1e-7, end_lr=10)
+        finder.plot("lr_finder.png")
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        trainer: "NNUEPolicyTrainer",
+    ):
+        """Initialize LR finder.
+
+        Args:
+            model: The model to train
+            optimizer: Optimizer (will have LR modified during sweep)
+            trainer: NNUEPolicyTrainer for train_step method
+        """
+        self.model = model
+        self.optimizer = optimizer
+        self.trainer = trainer
+        self.lrs: List[float] = []
+        self.losses: List[float] = []
+        self._initial_state: Optional[dict] = None
+
+    def _save_state(self) -> None:
+        """Save model and optimizer state."""
+        self._initial_state = {
+            "model": {k: v.clone() for k, v in self.model.state_dict().items()},
+            "optimizer": {k: v if not isinstance(v, torch.Tensor) else v.clone()
+                         for k, v in self.optimizer.state_dict().items()},
+        }
+
+    def _restore_state(self) -> None:
+        """Restore model and optimizer state."""
+        if self._initial_state is not None:
+            self.model.load_state_dict(self._initial_state["model"])
+            self.optimizer.load_state_dict(self._initial_state["optimizer"])
+
+    def find(
+        self,
+        train_loader: "DataLoader",
+        device: torch.device,
+        start_lr: float = 1e-7,
+        end_lr: float = 10.0,
+        num_iter: int = 100,
+        smooth_factor: float = 0.05,
+        diverge_threshold: float = 5.0,
+    ) -> float:
+        """Run learning rate range test.
+
+        Args:
+            train_loader: Training data loader
+            device: Device to train on
+            start_lr: Starting learning rate (very small)
+            end_lr: Ending learning rate (where we expect divergence)
+            num_iter: Number of iterations for sweep
+            smooth_factor: Smoothing factor for loss (0-1)
+            diverge_threshold: Stop when loss exceeds this multiple of min loss
+
+        Returns:
+            Suggested optimal learning rate
+        """
+        self._save_state()
+        self.lrs = []
+        self.losses = []
+
+        # Compute LR multiplier per step for exponential growth
+        lr_mult = (end_lr / start_lr) ** (1 / num_iter)
+
+        # Set initial LR
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = start_lr
+
+        self.model.train()
+        best_loss = float('inf')
+        smoothed_loss = 0.0
+        data_iter = iter(train_loader)
+
+        for iteration in range(num_iter):
+            # Get next batch (cycle through dataset)
+            try:
+                batch = next(data_iter)
+            except StopIteration:
+                data_iter = iter(train_loader)
+                batch = next(data_iter)
+
+            # Unpack batch
+            features, values, from_idx, to_idx, mask, target, sample_weights, mcts_probs = batch
+            features = features.to(device)
+            values = values.to(device)
+            from_idx = from_idx.to(device)
+            to_idx = to_idx.to(device)
+            mask = mask.to(device)
+            target = target.to(device)
+            sample_weights = sample_weights.to(device)
+
+            # Train step
+            total_loss, _, _ = self.trainer.train_step(
+                features, values, from_idx, to_idx, mask, target, None, sample_weights
+            )
+
+            # Smooth the loss
+            if iteration == 0:
+                smoothed_loss = total_loss
+            else:
+                smoothed_loss = smooth_factor * total_loss + (1 - smooth_factor) * smoothed_loss
+
+            # Record LR and loss
+            current_lr = self.optimizer.param_groups[0]['lr']
+            self.lrs.append(current_lr)
+            self.losses.append(smoothed_loss)
+
+            # Check for divergence
+            if smoothed_loss < best_loss:
+                best_loss = smoothed_loss
+            if smoothed_loss > best_loss * diverge_threshold:
+                break
+
+            # Increase learning rate
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] *= lr_mult
+
+        # Restore original state
+        self._restore_state()
+
+        # Find optimal LR (steepest descent point)
+        return self._find_optimal_lr()
+
+    def _find_optimal_lr(self) -> float:
+        """Find optimal LR from recorded data.
+
+        Uses the point of steepest descent (most negative gradient)
+        as the suggested learning rate.
+        """
+        if len(self.lrs) < 10:
+            return self.lrs[len(self.lrs) // 2] if self.lrs else 1e-3
+
+        # Compute gradients in log space
+        log_lrs = np.log10(self.lrs)
+        losses = np.array(self.losses)
+
+        # Smooth gradients
+        gradients = np.gradient(losses, log_lrs)
+
+        # Find point of steepest descent (most negative gradient)
+        # Avoid very early points (noisy) and very late (diverging)
+        start_idx = len(gradients) // 10
+        end_idx = len(gradients) * 8 // 10
+        search_range = gradients[start_idx:end_idx]
+
+        if len(search_range) == 0:
+            return self.lrs[len(self.lrs) // 2]
+
+        min_grad_idx = start_idx + np.argmin(search_range)
+
+        # Return LR slightly before the minimum gradient point
+        suggested_idx = max(0, min_grad_idx - 2)
+        return self.lrs[suggested_idx]
+
+    def plot(self, path: str) -> None:
+        """Plot LR vs Loss curve and save to file."""
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.plot(self.lrs, self.losses)
+            ax.set_xscale('log')
+            ax.set_xlabel('Learning Rate')
+            ax.set_ylabel('Loss')
+            ax.set_title('Learning Rate Finder')
+            ax.grid(True)
+
+            # Mark suggested LR
+            optimal_lr = self._find_optimal_lr()
+            ax.axvline(x=optimal_lr, color='r', linestyle='--', label=f'Suggested LR: {optimal_lr:.2e}')
+            ax.legend()
+
+            plt.tight_layout()
+            plt.savefig(path, dpi=150)
+            plt.close()
+        except ImportError:
+            pass  # matplotlib not available
 
 
 class HexBoardAugmenter:

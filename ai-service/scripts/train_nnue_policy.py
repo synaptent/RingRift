@@ -58,6 +58,7 @@ from app.ai.nnue_policy import (
     NNUEPolicyDatasetConfig,
     get_hidden_dim_for_board,
     HexBoardAugmenter,
+    LearningRateFinder,
 )
 from app.models import BoardType
 from app.training.seed_utils import seed_all
@@ -482,6 +483,27 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Number of augmented copies per sample (1-12 for D6 symmetry, default: 6)",
     )
 
+    # Gradient accumulation
+    parser.add_argument(
+        "--gradient-accumulation-steps",
+        type=int,
+        default=1,
+        help="Number of steps to accumulate gradients (effective batch = batch_size * steps, default: 1)",
+    )
+
+    # Learning rate finder
+    parser.add_argument(
+        "--find-lr",
+        action="store_true",
+        help="Run learning rate finder before training to suggest optimal LR",
+    )
+    parser.add_argument(
+        "--lr-finder-iterations",
+        type=int,
+        default=100,
+        help="Number of iterations for LR finder sweep (default: 100)",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -663,6 +685,9 @@ def train_nnue_policy(
     hex_augment: bool = False,
     hex_augment_count: int = 6,
     policy_dropout: float = 0.1,
+    gradient_accumulation_steps: int = 1,
+    find_lr: bool = False,
+    lr_finder_iterations: int = 100,
 ) -> Dict[str, Any]:
     """Train NNUE policy model and return training report."""
     seed_all(seed)
@@ -867,7 +892,28 @@ def train_nnue_policy(
         swa_start_epoch=swa_start_epoch,
         swa_lr=swa_lr,
         progressive_batch_callback=progressive_callback,
+        gradient_accumulation_steps=gradient_accumulation_steps,
     )
+
+    # Run learning rate finder if requested
+    if find_lr:
+        logger.info(f"Running learning rate finder ({lr_finder_iterations} iterations)...")
+        lr_finder = LearningRateFinder(model, trainer.optimizer, trainer)
+        suggested_lr = lr_finder.find(
+            train_loader, device, num_iter=lr_finder_iterations
+        )
+        logger.info(f"Suggested learning rate: {suggested_lr:.2e}")
+
+        # Save LR finder plot
+        lr_plot_path = os.path.join(run_dir, "lr_finder.png")
+        lr_finder.plot(lr_plot_path)
+        logger.info(f"LR finder plot saved to: {lr_plot_path}")
+
+        # Update learning rate if found
+        if suggested_lr > 0:
+            for param_group in trainer.optimizer.param_groups:
+                param_group['lr'] = suggested_lr
+            logger.info(f"Updated learning rate to: {suggested_lr:.2e}")
 
     logger.info(f"Temperature annealing: {temperature_start} -> {temperature_end} ({temperature_schedule})")
     logger.info(f"Label smoothing: {label_smoothing}" + (f" (warmup: {label_smoothing_warmup} epochs)" if label_smoothing_warmup > 0 else ""))
@@ -883,6 +929,9 @@ def train_nnue_policy(
         logger.info(f"SWA enabled (start epoch={swa_start_epoch if swa_start_epoch > 0 else 'auto'})")
     if progressive_batch:
         logger.info(f"Progressive batch sizing: {min_batch_size} -> {max_batch_size}")
+    if gradient_accumulation_steps > 1:
+        effective_batch = batch_size * gradient_accumulation_steps
+        logger.info(f"Gradient accumulation: {gradient_accumulation_steps} steps (effective batch={effective_batch})")
 
     # Training loop
     best_val_loss = float("inf")
@@ -1164,6 +1213,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         hex_augment=args.hex_augment,
         hex_augment_count=args.hex_augment_count,
         policy_dropout=args.policy_dropout,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        find_lr=args.find_lr,
+        lr_finder_iterations=args.lr_finder_iterations,
     )
 
     # Add metadata to report
