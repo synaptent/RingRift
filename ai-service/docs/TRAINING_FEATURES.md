@@ -1,6 +1,6 @@
 # RingRift Training Features Reference
 
-> **Last Updated**: 2025-12-17 (Phase 7: Consolidated feedback state, PFSP selfplay integration, parity-aware thresholds)
+> **Last Updated**: 2025-12-17 (Phase 7: Training enhancements module - anomaly detection, validation intervals, hard example mining, warm restarts, seed management)
 > **Status**: Active
 
 This document provides a comprehensive reference for all training features, parameters, and techniques available in the RingRift AI training pipeline.
@@ -19,6 +19,10 @@ This document provides a comprehensive reference for all training features, para
 10. [Batch Size Management](#batch-size-management)
 11. [Model Architecture Selection](#model-architecture-selection)
 12. [CLI Arguments Reference](#cli-arguments-reference)
+13. [Parallel Selfplay Generation](#parallel-selfplay-generation)
+14. [Temperature Scheduling](#temperature-scheduling)
+15. [Value Calibration Tracking](#value-calibration-tracking)
+16. [Prometheus Metrics Reference](#prometheus-metrics-reference)
 
 ---
 
@@ -1898,27 +1902,541 @@ The urgency score (0-1) determines training prioritization:
 
 ## Implementation Locations
 
-| Component                 | File                                    | Purpose                                  |
-| ------------------------- | --------------------------------------- | ---------------------------------------- |
-| Phase 1-3 Classes         | `scripts/train_nnue.py`                 | Core training implementations            |
-| Phase 4-5 Classes         | `app/training/advanced_training.py`     | Advanced utilities                       |
-| Phase 6 Optimizations     | `app/training/train.py`                 | Bottleneck fixes, auto-tuning            |
-| Batch Size Auto-tuning    | `app/training/config.py`                | BatchSizeAutoTuner class                 |
-| Parallel Selfplay         | `app/training/parallel_selfplay.py`     | Multi-process game generation            |
-| Value Calibration         | `app/training/value_calibration.py`     | CalibrationTracker and utilities         |
-| Local Selfplay            | `scripts/unified_loop/selfplay.py`      | LocalSelfplayGenerator                   |
-| Config Options            | `scripts/unified_loop/config.py`        | TrainingConfig dataclass                 |
-| Orchestrator Integration  | `scripts/unified_loop/training.py`      | TrainingScheduler                        |
-| P2P Integration           | `scripts/p2p_orchestrator.py`           | Distributed training                     |
-| Multi-config Loop         | `scripts/multi_config_training_loop.py` | Batch training                           |
-| Streaming Pipeline        | `app/training/streaming_pipeline.py`    | Async DB polling with dual buffers       |
-| Async Shadow Validation   | `app/ai/shadow_validation.py`           | Non-blocking GPU/CPU parity check        |
-| Connection Pooling        | `app/distributed/unified_wal.py`        | Thread-local SQLite connection pool      |
-| Batched Loss Extraction   | `app/models/multitask_heads.py`         | Batched .item() calls for GPU sync       |
-| Data Loader Optimizations | `app/training/data_loader.py`           | Vectorized policy conversion, pin memory |
-| FeedbackState             | `scripts/unified_loop/config.py`        | Consolidated feedback signals dataclass  |
-| Feedback Integration      | `scripts/unified_loop/training.py`      | Feedback state management methods        |
-| PFSP Selfplay             | `scripts/unified_loop/selfplay.py`      | PFSP opponent selection + priorities     |
+| Component                 | File                                     | Purpose                                  |
+| ------------------------- | ---------------------------------------- | ---------------------------------------- |
+| Phase 1-3 Classes         | `scripts/train_nnue.py`                  | Core training implementations            |
+| Phase 4-5 Classes         | `app/training/advanced_training.py`      | Advanced utilities                       |
+| Phase 6 Optimizations     | `app/training/train.py`                  | Bottleneck fixes, auto-tuning            |
+| Batch Size Auto-tuning    | `app/training/config.py`                 | BatchSizeAutoTuner class                 |
+| Parallel Selfplay         | `app/training/parallel_selfplay.py`      | Multi-process game generation            |
+| Value Calibration         | `app/training/value_calibration.py`      | CalibrationTracker and utilities         |
+| Local Selfplay            | `scripts/unified_loop/selfplay.py`       | LocalSelfplayGenerator                   |
+| Config Options            | `scripts/unified_loop/config.py`         | TrainingConfig dataclass                 |
+| Orchestrator Integration  | `scripts/unified_loop/training.py`       | TrainingScheduler                        |
+| P2P Integration           | `scripts/p2p_orchestrator.py`            | Distributed training                     |
+| Multi-config Loop         | `scripts/multi_config_training_loop.py`  | Batch training                           |
+| Streaming Pipeline        | `app/training/streaming_pipeline.py`     | Async DB polling with dual buffers       |
+| Async Shadow Validation   | `app/ai/shadow_validation.py`            | Non-blocking GPU/CPU parity check        |
+| Connection Pooling        | `app/distributed/unified_wal.py`         | Thread-local SQLite connection pool      |
+| Batched Loss Extraction   | `app/models/multitask_heads.py`          | Batched .item() calls for GPU sync       |
+| Data Loader Optimizations | `app/training/data_loader.py`            | Vectorized policy conversion, pin memory |
+| FeedbackState             | `scripts/unified_loop/config.py`         | Consolidated feedback signals dataclass  |
+| Feedback Integration      | `scripts/unified_loop/training.py`       | Feedback state management methods        |
+| PFSP Selfplay             | `scripts/unified_loop/selfplay.py`       | PFSP opponent selection + priorities     |
+| Temperature Scheduling    | `app/training/temperature_scheduling.py` | Multiple temperature schedule types      |
+| Gumbel-MCTS AI            | `app/ai/gumbel_mcts_ai.py`               | High-quality soft policy targets         |
+| GPU Parallel Games        | `app/ai/gpu_parallel_games.py`           | Batched GPU game generation              |
+
+---
+
+## Parallel Selfplay Generation
+
+> **Added**: 2025-12-17 (Bottleneck Fix Phase 6)
+
+The parallel selfplay module provides 4-8x speedup over sequential game generation using multiple worker processes.
+
+### Usage
+
+```python
+from app.training.parallel_selfplay import generate_dataset_parallel
+from app.models import BoardType
+
+samples = generate_dataset_parallel(
+    num_games=1000,
+    output_file="data/dataset.npz",
+    num_workers=8,
+    board_type=BoardType.SQUARE8,
+    engine="descent",  # or "mcts", "gumbel"
+    temperature=1.0,
+    use_temperature_decay=True,
+    opening_temperature=1.5,
+)
+```
+
+### Engine Selection
+
+| Engine  | Quality | Speed  | Use Case                          |
+| ------- | ------- | ------ | --------------------------------- |
+| descent | Medium  | Fast   | Bulk data generation              |
+| mcts    | High    | Medium | Standard training data            |
+| gumbel  | Highest | Slow   | Final polish, soft policy targets |
+
+### Configuration Parameters
+
+| Parameter                  | Type | Default | Description                          |
+| -------------------------- | ---- | ------- | ------------------------------------ |
+| `selfplay_engine`          | str  | descent | Engine for local selfplay            |
+| `selfplay_num_workers`     | int  | auto    | Worker processes (default: CPU-1)    |
+| `selfplay_games_per_batch` | int  | 20      | Games per local batch                |
+| `gumbel_simulations`       | int  | 64      | Simulations per move for Gumbel-MCTS |
+| `gumbel_top_k`             | int  | 16      | Top-k actions for sequential halving |
+
+### Adaptive Engine Selection
+
+The `LocalSelfplayGenerator` automatically selects engine based on training proximity:
+
+```python
+# High priority configs (close to training) use gumbel for quality
+# Low priority configs use descent for throughput
+engine = selfplay_generator.get_adaptive_engine(config_key)
+```
+
+---
+
+## Temperature Scheduling
+
+> **Added**: 2025-12-17 (Exploration Enhancement)
+
+Temperature scheduling controls the exploration/exploitation tradeoff during selfplay, producing more diverse training positions early in games.
+
+### Schedule Types
+
+| Schedule Type | Description                                      |
+| ------------- | ------------------------------------------------ |
+| Constant      | Fixed temperature throughout game                |
+| LinearDecay   | Linear decrease from opening to base temperature |
+| Exponential   | Exponential decay schedule                       |
+| Cosine        | Cosine annealing with optional warm restarts     |
+| Adaptive      | Dynamic adjustment based on game complexity      |
+| Curriculum    | Training progress-based scheduling               |
+
+### Configuration
+
+```yaml
+# In unified_loop.yaml
+training:
+  selfplay_temperature: 1.0 # Base temperature
+  selfplay_use_temperature_decay: true
+  selfplay_move_temp_threshold: 30 # High temp for first N moves
+  selfplay_opening_temperature: 1.5 # Opening temperature
+```
+
+### CLI Usage
+
+```bash
+python -m app.training.train \
+  --data-path data/dataset.npz \
+  --track-calibration \
+  --auto-tune-batch-size
+```
+
+### Temperature Effect on Exploration
+
+| Temperature | Effect                            | Use Case                   |
+| ----------- | --------------------------------- | -------------------------- |
+| 0.5         | More deterministic (exploitation) | Final evaluation           |
+| 1.0         | Standard softmax                  | Balanced play              |
+| 1.5         | More exploration                  | Opening diversity          |
+| 2.0+        | High exploration                  | Unusual position discovery |
+
+---
+
+## Value Calibration Tracking
+
+> **Added**: 2025-12-17 (Training Quality Metrics)
+
+The calibration tracker monitors value head prediction quality during training.
+
+### Metrics
+
+| Metric         | Description                                        | Good Value |
+| -------------- | -------------------------------------------------- | ---------- |
+| ECE            | Expected Calibration Error (average bin deviation) | < 0.05     |
+| MCE            | Maximum Calibration Error (worst bin deviation)    | < 0.15     |
+| Overconfidence | Predictions too confident on average               | < 0.02     |
+
+### Usage
+
+```python
+from app.training.value_calibration import CalibrationTracker
+
+tracker = CalibrationTracker(window_size=5000)
+
+# During training
+for pred, actual in zip(predictions, outcomes):
+    tracker.add_sample(pred, actual)
+
+# Periodically check calibration
+report = tracker.compute_current_calibration()
+if report:
+    print(f"ECE: {report.ece:.4f}, MCE: {report.mce:.4f}")
+    if report.optimal_temperature:
+        print(f"Optimal temperature: {report.optimal_temperature:.3f}")
+```
+
+### Configuration
+
+```yaml
+training:
+  track_calibration: true # Enable calibration tracking
+  calibration_window_size: 5000 # Rolling window size
+```
+
+### Temperature Scaling
+
+If calibration detects systematic over/under-confidence, apply temperature scaling:
+
+```python
+# Post-hoc calibration
+calibrated_pred = original_pred ** (1 / optimal_temperature)
+```
+
+---
+
+## Prometheus Metrics Reference
+
+### Training Metrics
+
+| Metric                                     | Type      | Labels            | Description                 |
+| ------------------------------------------ | --------- | ----------------- | --------------------------- |
+| `ringrift_training_epochs_total`           | Counter   | config            | Total epochs completed      |
+| `ringrift_training_loss`                   | Gauge     | config, loss_type | Current loss values         |
+| `ringrift_training_batch_size`             | Gauge     | config            | Current batch size          |
+| `ringrift_training_samples_total`          | Counter   | config            | Total samples processed     |
+| `ringrift_training_epoch_duration_seconds` | Histogram | config            | Epoch duration distribution |
+| `ringrift_calibration_ece`                 | Gauge     | config            | Expected Calibration Error  |
+| `ringrift_calibration_mce`                 | Gauge     | config            | Maximum Calibration Error   |
+
+### Selfplay Metrics
+
+| Metric                                     | Type      | Labels         | Description             |
+| ------------------------------------------ | --------- | -------------- | ----------------------- |
+| `ringrift_local_selfplay_games_total`      | Counter   | config, engine | Total games generated   |
+| `ringrift_local_selfplay_samples_total`    | Counter   | config, engine | Total samples generated |
+| `ringrift_local_selfplay_duration_seconds` | Histogram | config, engine | Generation duration     |
+
+### Resource Metrics
+
+| Metric                                  | Type  | Labels | Description                |
+| --------------------------------------- | ----- | ------ | -------------------------- |
+| `ringrift_resource_cpu_used_percent`    | Gauge | -      | CPU utilization            |
+| `ringrift_resource_memory_used_percent` | Gauge | -      | Memory utilization         |
+| `ringrift_resource_gpu_used_percent`    | Gauge | -      | GPU utilization            |
+| `ringrift_resource_degradation_level`   | Gauge | -      | Resource degradation (0-2) |
+
+### Grafana Dashboard
+
+Import the provided dashboard for real-time monitoring:
+
+```bash
+# Dashboard JSON location
+ai-service/monitoring/grafana/training_dashboard.json
+```
+
+---
+
+## Phase 7: Training Enhancements Module (2025-12-17)
+
+The `app/training/training_enhancements.py` module provides a comprehensive suite of training utilities.
+
+### TrainingConfig Dataclass
+
+Consolidated configuration for all training enhancements:
+
+```python
+from app.training.training_enhancements import TrainingConfig
+
+config = TrainingConfig(
+    learning_rate=0.001,
+    batch_size=256,
+    use_mixed_precision=True,
+    lr_scheduler="warm_restarts",
+    validation_interval_steps=500,
+    use_hard_example_mining=True,
+    seed=42,
+)
+
+# Convert to dict for create_training_enhancements
+enhancements = create_training_enhancements(model, optimizer, config.to_dict())
+```
+
+**Key Configuration Groups:**
+
+| Group           | Parameters                                            | Description                        |
+| --------------- | ----------------------------------------------------- | ---------------------------------- |
+| Core            | `learning_rate`, `batch_size`, `epochs`, `seed`       | Basic training settings            |
+| Mixed Precision | `use_mixed_precision`, `mixed_precision_dtype`        | FP16/BF16 training                 |
+| Gradient        | `accumulation_steps`, `max_grad_norm`                 | Gradient accumulation and clipping |
+| LR Schedule     | `lr_scheduler`, `warmup_epochs`, `min_lr`, `max_lr`   | Learning rate scheduling           |
+| Warm Restarts   | `warm_restart_t0`, `warm_restart_t_mult`              | SGDR schedule parameters           |
+| Early Stopping  | `early_stopping_patience`, `elo_patience`             | Convergence detection              |
+| Data Quality    | `freshness_decay_hours`, `freshness_weight`           | Sample quality weighting           |
+| Hard Mining     | `hard_example_buffer_size`, `hard_example_fraction`   | Curriculum learning                |
+| Anomaly         | `loss_spike_threshold`, `gradient_norm_threshold`     | Training stability                 |
+| Validation      | `validation_interval_steps`, `validation_subset_size` | Configurable validation            |
+
+### Training Anomaly Detection
+
+Real-time detection of training anomalies:
+
+```python
+from app.training.training_enhancements import TrainingAnomalyDetector
+
+detector = TrainingAnomalyDetector(
+    loss_spike_threshold=3.0,      # Standard deviations
+    gradient_norm_threshold=100.0, # Max gradient norm
+    halt_on_nan=True,              # Raise exception on NaN
+    max_consecutive_anomalies=5,   # Halt after N consecutive
+)
+
+for step, batch in enumerate(dataloader):
+    loss = model(batch)
+
+    # Check for anomalies
+    if detector.check_loss(loss.item(), step):
+        logger.warning(f"Loss anomaly at step {step}")
+        continue  # Skip batch
+
+    loss.backward()
+    grad_norm = compute_grad_norm(model)
+
+    if detector.check_gradient_norm(grad_norm, step):
+        optimizer.zero_grad()  # Skip update
+        continue
+
+# Get summary of anomalies
+summary = detector.get_summary()
+```
+
+**Anomaly Types:**
+
+| Type               | Detection                        | Action              |
+| ------------------ | -------------------------------- | ------------------- |
+| NaN/Inf            | `math.isnan()` or `math.isinf()` | Halt or skip batch  |
+| Loss Spike         | > N standard deviations          | Skip batch          |
+| Gradient Explosion | Norm > threshold                 | Skip optimizer step |
+| Consecutive        | > N anomalies in a row           | Halt training       |
+
+### Configurable Validation Intervals
+
+Step-based or epoch-based validation with adaptive frequency:
+
+```python
+from app.training.training_enhancements import ValidationIntervalManager
+
+val_manager = ValidationIntervalManager(
+    validation_fn=lambda model: validate(model, val_loader),
+    interval_steps=1000,           # Validate every 1000 steps
+    subset_size=0.1,               # Use 10% of validation data
+    adaptive_interval=True,        # Adjust based on loss variance
+    warmup_steps=500,              # Skip first 500 steps
+)
+
+for step, batch in enumerate(dataloader):
+    # Training step...
+
+    if val_manager.should_validate(step, epoch):
+        result = val_manager.validate(model, step, epoch)
+
+        if result.is_improvement:
+            save_checkpoint(model)
+
+        logger.info(f"Val loss: {result.val_loss:.4f}, best: {val_manager.get_best()[0]:.4f}")
+```
+
+**Features:**
+
+- Step-based or epoch-based intervals
+- Validation subset for faster checks
+- Adaptive interval based on loss variance (validate more when unstable)
+- Best model tracking
+
+### Hard Example Mining
+
+Focus training on difficult samples:
+
+```python
+from app.training.training_enhancements import HardExampleMiner
+
+miner = HardExampleMiner(
+    buffer_size=10000,              # Track up to 10K examples
+    hard_fraction=0.3,              # 30% hard examples in batches
+    loss_threshold_percentile=80.0, # Top 20% hardest
+    min_samples_before_mining=1000, # Warmup period
+)
+
+for step, (indices, inputs, targets) in enumerate(dataloader):
+    outputs = model(inputs)
+    losses = compute_per_sample_loss(outputs, targets)
+
+    # Record losses for mining
+    miner.record_batch(indices, losses)
+
+    # Every N steps, create a hard example batch
+    if step % 10 == 0:
+        hard_indices = miner.get_hard_indices(batch_size)
+        hard_batch = dataset[hard_indices]
+        # Extra training on hard examples...
+
+# Get mining statistics
+stats = miner.get_statistics()
+```
+
+**Mining Features:**
+
+- Loss-based hardness tracking
+- Uncertainty weighting (policy entropy)
+- Staleness decay (old losses matter less)
+- Over-sampling protection (max times sampled)
+
+### Warm Restarts Learning Rate Schedule
+
+Cosine annealing with warm restarts (SGDR):
+
+```python
+from app.training.training_enhancements import WarmRestartsScheduler
+
+scheduler = WarmRestartsScheduler(
+    optimizer=optimizer,
+    T_0=10,          # First restart after 10 epochs
+    T_mult=2,        # Double period after each restart
+    eta_min=1e-6,    # Minimum LR
+    warmup_steps=500,# Linear warmup before cosine
+)
+
+for epoch in range(epochs):
+    for batch in dataloader:
+        train_step()
+        scheduler.step()  # Update LR
+
+    # Get schedule info
+    info = scheduler.get_schedule_info()
+    logger.info(f"Epoch {epoch}: LR={info['current_lr']:.6f}, restart #{info['restart_count']}")
+```
+
+**Schedule Behavior:**
+
+```
+LR ^
+   |   /\      /\          /\
+   |  /  \    /  \        /  \
+   | /    \  /    \      /    \
+   |/      \/      \    /      \
+   +-------|-------|---|--------|---> epochs
+           T0     2*T0  4*T0    8*T0
+```
+
+### Seed Management for Reproducibility
+
+Comprehensive seed management:
+
+```python
+from app.training.training_enhancements import SeedManager, set_reproducible_seed
+
+# Quick setup
+seed_manager = set_reproducible_seed(42, deterministic=True)
+
+# Or detailed configuration
+seed_manager = SeedManager(
+    seed=42,
+    deterministic=True,  # CuDNN deterministic (slower)
+    benchmark=False,     # Disable CuDNN benchmark
+)
+seed_manager.set_global_seed()
+
+# Get worker init function for DataLoader
+dataloader = DataLoader(
+    dataset,
+    num_workers=4,
+    worker_init_fn=seed_manager.get_worker_init_fn(),
+)
+
+# Save/load RNG state for checkpointing
+state = seed_manager.save_state()
+# ... later ...
+seed_manager.load_state(state)
+
+# Get seed info for experiment tracking
+info = seed_manager.get_seed_info()
+# Returns: initial_seed, pytorch_version, cuda_version, etc.
+```
+
+**Seed Features:**
+
+- Python random, NumPy, PyTorch (CPU + CUDA)
+- CuDNN deterministic mode option
+- Worker-specific reproducible seeds
+- RNG state save/restore for checkpointing
+
+### Data Quality Freshness Scoring
+
+Time-based weighting for training data freshness:
+
+```python
+from app.training.training_enhancements import DataQualityScorer
+
+scorer = DataQualityScorer(
+    freshness_decay_hours=24.0,  # Half-life of 24 hours
+    freshness_weight=0.2,        # 20% weight in total score
+)
+
+# Score a game with timestamp
+score = scorer.score_game(
+    game_id="game_123",
+    game_length=85,
+    winner=1,
+    elo_p1=1600,
+    elo_p2=1550,
+    game_timestamp=time.time() - 3600,  # 1 hour ago
+)
+
+# Freshness score is exponential decay
+# game_timestamp=now     -> freshness_score=1.0
+# game_timestamp=24h ago -> freshness_score=0.37 (1/e)
+# game_timestamp=48h ago -> freshness_score=0.14
+```
+
+### create_training_enhancements Function
+
+Factory function to create all enhancements at once:
+
+```python
+from app.training.training_enhancements import create_training_enhancements
+
+enhancements = create_training_enhancements(
+    model=model,
+    optimizer=optimizer,
+    config={
+        'seed': 42,
+        'lr_scheduler': 'warm_restarts',
+        'warm_restart_t0': 10,
+        'validation_interval_steps': 500,
+        'hard_example_fraction': 0.3,
+        'loss_spike_threshold': 3.0,
+    },
+    validation_fn=lambda m: validate(m, val_loader),
+)
+
+# Access components
+enhancements['anomaly_detector'].check_loss(loss, step)
+enhancements['validation_manager'].should_validate(step, epoch)
+enhancements['hard_example_miner'].record_batch(indices, losses)
+enhancements['warm_restarts_scheduler'].step()
+enhancements['seed_manager'].set_global_seed()
+```
+
+### Training Enhancement Configuration Reference
+
+| Parameter                      | Type  | Default  | Description                        |
+| ------------------------------ | ----- | -------- | ---------------------------------- |
+| `seed`                         | int   | None     | Random seed for reproducibility    |
+| `deterministic`                | bool  | False    | CuDNN deterministic mode           |
+| `lr_scheduler`                 | str   | "cosine" | LR scheduler type                  |
+| `warm_restart_t0`              | int   | 10       | Initial SGDR period                |
+| `warm_restart_t_mult`          | int   | 2        | SGDR period multiplier             |
+| `validation_interval_steps`    | int   | 1000     | Steps between validations          |
+| `validation_subset_size`       | float | 1.0      | Fraction of val data to use        |
+| `adaptive_validation_interval` | bool  | False    | Adjust interval by loss variance   |
+| `use_hard_example_mining`      | bool  | True     | Enable hard example mining         |
+| `hard_example_buffer_size`     | int   | 10000    | Max tracked examples               |
+| `hard_example_fraction`        | float | 0.3      | Fraction of hard examples in batch |
+| `hard_example_percentile`      | float | 80.0     | Percentile threshold for hardness  |
+| `loss_spike_threshold`         | float | 3.0      | Std devs for spike detection       |
+| `gradient_norm_threshold`      | float | 100.0    | Max gradient norm                  |
+| `halt_on_nan`                  | bool  | True     | Halt training on NaN               |
+| `max_consecutive_anomalies`    | int   | 5        | Max anomalies before halt          |
+| `freshness_decay_hours`        | float | 24.0     | Freshness score half-life          |
+| `freshness_weight`             | float | 0.2      | Freshness weight in quality score  |
 
 ---
 
