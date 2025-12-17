@@ -8419,15 +8419,27 @@ print(wins / total)
             async with self._tournament_match_semaphore:
                 print(f"[P2P] Semaphore acquired, running match...")
                 # Run the match in a thread pool to avoid blocking
+                # Add 5-minute timeout to prevent hung matches
                 loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(
-                    None,
-                    self._play_elo_match_sync,
-                    agent_a_config,
-                    agent_b_config,
-                    board_type_str,
-                    num_players,
-                )
+                try:
+                    result = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,
+                            self._play_elo_match_sync,
+                            agent_a_config,
+                            agent_b_config,
+                            board_type_str,
+                            num_players,
+                        ),
+                        timeout=300.0,  # 5 minute timeout for tournament matches
+                    )
+                except asyncio.TimeoutError:
+                    print(f"[P2P] Elo match {match_id} timed out after 5 minutes")
+                    return web.json_response({
+                        "success": False,
+                        "error": "Match timed out after 5 minutes",
+                        "match_id": match_id,
+                    }, status=504)
 
             duration = time.time() - start_time
 
@@ -8537,12 +8549,17 @@ print(wins / total)
                     return MCTSAI(player_num, config, board_type)
 
                 elif ai_type in ("descent", "aitype.descent"):
-                    # Descent AI is CPU-based and lightweight
+                    # Descent AI is CPU-based but can be slow at high difficulty
+                    # Cap at difficulty 5 for tournament matches (~1.1s/move)
                     from app.ai.descent_ai import DescentAI
+                    requested_diff = agent_config.get("difficulty", 5)
+                    capped_diff = min(requested_diff, 5)  # Cap at 5 for tournaments
+                    if capped_diff < requested_diff:
+                        print(f"[P2P] Descent AI difficulty capped from {requested_diff} to {capped_diff} for tournament")
                     config = AIConfig(
                         ai_type=AIType.DESCENT,
                         board_type=board_type,
-                        difficulty=agent_config.get("difficulty", 5),
+                        difficulty=capped_diff,
                     )
                     return DescentAI(player_num, config, board_type)
 

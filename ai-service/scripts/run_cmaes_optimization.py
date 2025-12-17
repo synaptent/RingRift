@@ -141,6 +141,14 @@ try:
 except ImportError:
     DISTRIBUTED_AVAILABLE = False
 
+# Model registry integration (optional - for tracking CMA-ES runs)
+try:
+    from app.training.cmaes_registry_integration import register_cmaes_result
+    REGISTRY_AVAILABLE = True
+except ImportError:
+    REGISTRY_AVAILABLE = False
+    register_cmaes_result = None  # type: ignore
+
 # Deployment modes for host selection
 VALID_MODES = ["local", "lan", "aws", "hybrid"]
 
@@ -2447,6 +2455,31 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         fitness=best_fitness,
         generation=final_generation,
     )
+
+    # Register in model registry for tracking and promotion
+    if REGISTRY_AVAILABLE and register_cmaes_result is not None:
+        try:
+            from pathlib import Path
+            model_id, version = register_cmaes_result(
+                weights_path=Path(config.output_path),
+                board_type=config.board_type.value,
+                num_players=config.num_players,
+                fitness=best_fitness,
+                generation=final_generation,
+                cmaes_config={
+                    "population_size": config.population_size,
+                    "sigma": config.sigma,
+                    "generations": config.generations,
+                    "games_per_eval": config.games_per_eval,
+                    "opponent_mode": config.opponent_mode,
+                    "eval_mode": config.eval_mode,
+                    "run_id": run_id,
+                },
+                auto_promote=True,
+            )
+            print(f"Registered in model registry: {model_id}:v{version}")
+        except Exception as e:
+            print(f"Warning: Failed to register in model registry: {e}")
 
     # Cleanup queue connection if used
     if queue_evaluator is not None:

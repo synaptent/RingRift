@@ -748,6 +748,14 @@ except ImportError:
     sync_elo_after_games = None
     ensure_elo_synced = None
 
+# Model registry synchronization for cluster-wide consistency
+try:
+    from app.training.registry_sync_manager import RegistrySyncManager
+    HAS_REGISTRY_SYNC = True
+except ImportError:
+    HAS_REGISTRY_SYNC = False
+    RegistrySyncManager = None
+
 # Memory and local task configuration
 MIN_MEMORY_GB = 64  # Minimum RAM to run the unified loop
 DISABLE_LOCAL_TASKS = os.environ.get("RINGRIFT_DISABLE_LOCAL_TASKS", "").lower() in ("1", "true", "yes", "on")
@@ -1238,6 +1246,23 @@ if HAS_PROMETHEUS:
         'ringrift_model_registry_promotions_total', Counter,
         'Total model stage promotions in registry',
         ['from_stage', 'to_stage']
+    )
+
+    # CMA-ES optimization metrics
+    CMAES_RUNS_TOTAL = _get_or_create(
+        'ringrift_cmaes_runs_total', Counter,
+        'Total CMA-ES optimization runs registered',
+        ['config', 'board_type']
+    )
+    CMAES_BEST_FITNESS = _get_or_create(
+        'ringrift_cmaes_best_fitness', Gauge,
+        'Best fitness achieved by CMA-ES for each config',
+        ['config', 'board_type']
+    )
+    CMAES_GENERATIONS = _get_or_create(
+        'ringrift_cmaes_generations_total', Counter,
+        'Total CMA-ES generations completed',
+        ['config']
     )
 
 
@@ -2706,6 +2731,21 @@ class UnifiedAILoop:
                 print("[UnifiedLoop] EloSyncManager initialized for cluster-wide Elo consistency")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize EloSyncManager: {e}")
+
+        # Model registry synchronization for cluster-wide consistency
+        self.registry_sync_manager: Optional[RegistrySyncManager] = None
+        self._registry_sync_interval: float = 600.0  # 10 minutes
+        self._last_registry_sync: float = 0.0
+        if HAS_REGISTRY_SYNC and HAS_MODEL_REGISTRY and self.model_registry:
+            try:
+                registry_db_path = AI_SERVICE_ROOT / "data" / "model_registry.db"
+                self.registry_sync_manager = RegistrySyncManager(
+                    registry_path=registry_db_path,
+                    coordinator_host="lambda-h100"
+                )
+                print("[UnifiedLoop] RegistrySyncManager initialized for cluster-wide registry consistency")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize RegistrySyncManager: {e}")
 
     def _setup_stage_event_bridge(self):
         """Bridge StageEventBus events to the main EventBus for unified coordination.
@@ -6314,6 +6354,61 @@ class UnifiedAILoop:
             except asyncio.TimeoutError:
                 pass
 
+    async def _registry_sync_loop(self):
+        """Model registry synchronization loop for cluster-wide consistency.
+
+        Periodically syncs the model_registry.db with other nodes in the cluster
+        to ensure all nodes have consistent model lifecycle information.
+        """
+        if not HAS_REGISTRY_SYNC or self.registry_sync_manager is None:
+            print("[RegistrySync] Not available - skipping")
+            return
+
+        # Initial delay to let other systems stabilize
+        await asyncio.sleep(60)
+
+        # Initialize the sync manager
+        try:
+            await self.registry_sync_manager.initialize()
+            print(f"[RegistrySync] Initialized - {self.registry_sync_manager.state.local_model_count} models, "
+                  f"{self.registry_sync_manager.state.local_version_count} versions")
+        except Exception as e:
+            print(f"[RegistrySync] Initialization failed: {e}")
+            return
+
+        print(f"[RegistrySync] Cluster-wide registry sync loop started (interval: {self._registry_sync_interval}s)")
+
+        while self._running:
+            try:
+                now = time.time()
+
+                # Check if enough time has passed since last sync
+                if now - self._last_registry_sync >= self._registry_sync_interval:
+                    self._last_registry_sync = now
+
+                    # Perform sync
+                    result = await self.registry_sync_manager.sync_with_cluster()
+                    if result['success']:
+                        print(
+                            f"[RegistrySync] Sync complete: {result['nodes_synced']} nodes, "
+                            f"{result['models_merged']} models merged, "
+                            f"{result['versions_merged']} versions merged"
+                        )
+                    else:
+                        print(f"[RegistrySync] Sync had failures: {result['nodes_failed']} nodes failed")
+
+            except Exception as e:
+                print(f"[RegistrySync] Error in sync loop: {e}")
+
+            try:
+                await asyncio.wait_for(
+                    self._shutdown_event.wait(),
+                    timeout=120  # Check shutdown every 2 minutes
+                )
+                break
+            except asyncio.TimeoutError:
+                pass
+
     async def _cross_process_event_loop(self):
         """Poll for cross-process events from other daemons.
 
@@ -6566,7 +6661,7 @@ class UnifiedAILoop:
                 "curriculum", "metrics", "health_check", "utilization_optimization",
                 "hp_tuning_sync", "external_drive_sync", "pbt", "nas",
                 "per", "cross_process_event", "health_recovery", "gauntlet_culling",
-                "elo_sync", "holdout_validation", "parity_validation"
+                "elo_sync", "holdout_validation", "parity_validation", "registry_sync"
             ]
             results = await asyncio.gather(
                 self._data_collection_loop(),
@@ -6588,6 +6683,7 @@ class UnifiedAILoop:
                 self._elo_sync_loop(),  # Cluster-wide Elo database consistency
                 self._holdout_validation_loop(),  # Phase 3.2: Continuous holdout validation
                 self._parity_validation_loop(),  # Non-blocking parity validation
+                self._registry_sync_loop(),  # Cluster-wide model registry consistency
                 return_exceptions=True,  # Don't crash if one loop fails
             )
             # Log any exceptions from loops

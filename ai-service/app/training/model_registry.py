@@ -65,6 +65,7 @@ class ModelType(Enum):
     ENSEMBLE = "ensemble"            # Ensemble of models
     COMPRESSED = "compressed"        # Quantized/pruned model
     EXPERIMENTAL = "experimental"    # Research models
+    HEURISTIC = "heuristic"          # CMA-ES optimized heuristic weights
 
 
 @dataclass

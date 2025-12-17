@@ -423,9 +423,15 @@ def run_match_via_p2p(
 
     url = f"http://{node_ip}:8770/tournament/play_elo_match"
 
+    # Get full config for each agent
+    agent_a_config = AI_TYPE_CONFIGS.get(agent_a, {"ai_type": agent_a})
+    agent_b_config = AI_TYPE_CONFIGS.get(agent_b, {"ai_type": agent_b})
+
     payload = {
         "agent_a": agent_a,
         "agent_b": agent_b,
+        "agent_a_config": agent_a_config,
+        "agent_b_config": agent_b_config,
         "board_type": board_type,
         "use_ramdrive": use_ramdrive,
     }
