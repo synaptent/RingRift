@@ -19,7 +19,7 @@ As of December 6, 2025, the canonical hex board geometry was updated:
 - Radius: 12
 - Side length: 13
 - Total cells: 469
-- Rings per player: 48
+- Rings per player: 96
 - Neural network: 25×25 grid, P_HEX = 91,876
 
 ## Deprecated Artifacts

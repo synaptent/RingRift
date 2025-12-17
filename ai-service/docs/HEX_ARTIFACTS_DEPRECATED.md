@@ -15,7 +15,7 @@ This file documents **hexagonal** artifacts that were produced under the **old**
 - **Radius 12** (25×25 embedding)
 - **469 cells**
 - **96 rings per player**
-- **Policy size:** 54,244
+- **Policy size:** 91,876
 
 ## Deprecated hex artifacts (old radius-10 geometry, deleted)
 
