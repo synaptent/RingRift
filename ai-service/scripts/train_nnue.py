@@ -111,11 +111,16 @@ except ImportError:
     OperationPriority = type('OperationPriority', (), {'HIGH': 3})()
     get_resource_status = lambda: {'can_proceed': True}
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("train_nnue", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    logger = logging.getLogger(__name__)
 
 # Board-specific hyperparameters config path
 HYPERPARAMS_CONFIG = Path(__file__).parent.parent / "config" / "training_hyperparams.yaml"
@@ -1378,12 +1383,14 @@ try:
         HardExampleMiner,
         TrainingAnomalyDetector,
         SeedManager,
+        AdaptiveGradientClipper,
     )
 except ImportError:
     # Fallback for standalone execution
     HardExampleMiner = None
     TrainingAnomalyDetector = None
     SeedManager = None
+    AdaptiveGradientClipper = None
 
 
 class DynamicBatchScheduler:
@@ -1472,55 +1479,7 @@ class AdaptiveWarmup:
         return np.clip(warmup_epochs, self.min_warmup_epochs, self.max_warmup_epochs)
 
 
-class AdaptiveGradientClipper:
-    """Adaptive gradient clipping based on gradient norm history.
-
-    Automatically adjusts clipping threshold based on recent gradient statistics.
-    Prevents both gradient explosion and overly aggressive clipping.
-    """
-
-    def __init__(
-        self,
-        initial_max_norm: float = 1.0,
-        percentile: float = 90.0,
-        history_size: int = 100,
-        min_clip: float = 0.1,
-        max_clip: float = 10.0,
-    ):
-        self.current_max_norm = initial_max_norm
-        self.percentile = percentile
-        self.history_size = history_size
-        self.min_clip = min_clip
-        self.max_clip = max_clip
-        self.grad_norms: List[float] = []
-
-    def update_and_clip(self, parameters) -> float:
-        """Update history and clip gradients, returning the actual grad norm."""
-        total_norm = 0.0
-        for p in parameters:
-            if p.grad is not None:
-                param_norm = p.grad.data.norm(2)
-                total_norm += param_norm.item() ** 2
-        total_norm = total_norm ** 0.5
-
-        self.grad_norms.append(total_norm)
-        if len(self.grad_norms) > self.history_size:
-            self.grad_norms.pop(0)
-
-        if len(self.grad_norms) >= 10:
-            threshold = np.percentile(self.grad_norms, self.percentile)
-            self.current_max_norm = np.clip(threshold * 1.5, self.min_clip, self.max_clip)
-
-        torch.nn.utils.clip_grad_norm_(parameters, self.current_max_norm)
-        return total_norm
-
-    def get_stats(self) -> Dict[str, float]:
-        """Get current clipping statistics."""
-        return {
-            'current_clip_norm': self.current_max_norm,
-            'mean_grad_norm': np.mean(self.grad_norms) if self.grad_norms else 0,
-            'max_grad_norm': max(self.grad_norms) if self.grad_norms else 0,
-        }
+# AdaptiveGradientClipper is now imported from training_enhancements for consolidation
 
 
 class Lookahead(optim.Optimizer):

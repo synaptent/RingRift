@@ -210,11 +210,16 @@ def get_models_for_ai_type(pool: List[ModelPoolEntry], ai_type: str) -> List[Mod
     return [m for m in pool if ai_type in m.ai_types]
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("run_distributed_selfplay", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    logger = logging.getLogger(__name__)
 
 
 @dataclass

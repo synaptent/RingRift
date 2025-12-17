@@ -52,11 +52,15 @@ logger = logging.getLogger(__name__)
 def setup_logging(verbose: bool = False):
     """Configure logging for tournament execution."""
     level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    try:
+        from app.core.logging_config import setup_logging as _setup_logging
+        _setup_logging("run_tournament", level=level, log_dir="logs")
+    except ImportError:
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
 
 
 def create_parser() -> argparse.ArgumentParser:

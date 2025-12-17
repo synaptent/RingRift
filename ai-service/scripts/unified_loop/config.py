@@ -1047,3 +1047,52 @@ def create_integrated_manager_from_config(
             f"[Config] Failed to import integrated enhancements: {e}"
         )
         return None
+
+
+# =============================================================================
+# Integration with app.config.unified_config
+# =============================================================================
+
+def sync_with_unified_config(loop_config: UnifiedLoopConfig) -> UnifiedLoopConfig:
+    """Sync defaults from app.config.unified_config to keep values aligned.
+
+    This ensures that the unified loop uses the same canonical values as the
+    rest of the codebase. Call this after loading a UnifiedLoopConfig.
+
+    Args:
+        loop_config: The config to sync
+
+    Returns:
+        The same config with any unset values populated from unified_config
+    """
+    try:
+        from app.config.unified_config import get_config as get_unified_config
+
+        unified = get_unified_config()
+
+        # Sync training thresholds if using defaults
+        if loop_config.training.trigger_threshold_games == 500:  # Default
+            loop_config.training.trigger_threshold_games = unified.training.trigger_threshold_games
+
+        # Sync promotion thresholds if using defaults
+        if loop_config.promotion.elo_threshold == 25:  # Default
+            loop_config.promotion.elo_threshold = int(unified.promotion.min_elo_improvement)
+
+        return loop_config
+
+    except ImportError:
+        # app.config.unified_config not available, use local defaults
+        return loop_config
+
+
+def get_canonical_training_threshold() -> int:
+    """Get the canonical training threshold from unified_config.
+
+    Returns:
+        Training threshold from unified_config, or default (500)
+    """
+    try:
+        from app.config.unified_config import get_training_threshold
+        return get_training_threshold()
+    except ImportError:
+        return 500  # Default
