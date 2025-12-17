@@ -85,10 +85,12 @@ class RingRiftNNUEWithPolicy(nn.Module):
         board_type: BoardType = BoardType.SQUARE8,
         hidden_dim: Optional[int] = None,
         num_hidden_layers: int = 2,
+        policy_dropout: float = 0.1,
     ):
         super().__init__()
         self.board_type = board_type
         self.board_size = get_board_size(board_type)
+        self.policy_dropout_rate = policy_dropout
 
         # Auto-select hidden dimension if not specified
         if hidden_dim is None:
@@ -113,10 +115,11 @@ class RingRiftNNUEWithPolicy(nn.Module):
         # Value head: single scalar output
         self.value_head = nn.Linear(32, 1)
 
-        # Policy heads: from/to position logits
+        # Policy heads: from/to position logits with dropout for regularization
         self.policy_hidden = nn.Sequential(
             nn.Linear(32, 64),
             ClippedReLU(),
+            nn.Dropout(policy_dropout),
         )
         self.from_head = nn.Linear(64, num_positions)
         self.to_head = nn.Linear(64, num_positions)

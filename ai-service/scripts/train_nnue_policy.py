@@ -48,7 +48,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 import torch
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 
 from app.ai.nnue import RingRiftNNUE, clear_nnue_cache, get_board_size
 from app.ai.nnue_policy import (
@@ -188,6 +188,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         type=int,
         default=2,
         help="Number of NNUE hidden layers (default: 2)",
+    )
+    parser.add_argument(
+        "--policy-dropout",
+        type=float,
+        default=0.1,
+        help="Dropout rate for policy head (default: 0.1, 0=disabled)",
     )
 
     # Pre-training / fine-tuning
@@ -479,6 +485,51 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def split_by_game_id(
+    dataset: "NNUEPolicyDataset",
+    val_split: float,
+    seed: int,
+) -> tuple:
+    """Split dataset into train/val sets at the game level.
+
+    Groups samples by game_id and splits games (not samples) into train/val,
+    preventing data leakage from having samples from the same game in both sets.
+
+    Returns:
+        Tuple of (train_indices, val_indices)
+    """
+    import random
+    from collections import defaultdict
+
+    # Group sample indices by game_id
+    game_to_indices = defaultdict(list)
+    for idx, sample in enumerate(dataset.samples):
+        game_to_indices[sample.game_id].append(idx)
+
+    # Get list of game_ids
+    game_ids = list(game_to_indices.keys())
+
+    # Shuffle games with seed
+    rng = random.Random(seed)
+    rng.shuffle(game_ids)
+
+    # Split games
+    num_val_games = int(len(game_ids) * val_split)
+    val_game_ids = set(game_ids[:num_val_games])
+    train_game_ids = set(game_ids[num_val_games:])
+
+    # Collect indices
+    train_indices = []
+    val_indices = []
+    for game_id, indices in game_to_indices.items():
+        if game_id in val_game_ids:
+            val_indices.extend(indices)
+        else:
+            train_indices.extend(indices)
+
+    return train_indices, val_indices
+
+
 def collate_policy_batch(batch):
     """Custom collate function for policy dataset batches."""
     features = torch.stack([b[0] for b in batch])
@@ -611,6 +662,7 @@ def train_nnue_policy(
     jsonl_paths: Optional[List[str]] = None,
     hex_augment: bool = False,
     hex_augment_count: int = 6,
+    policy_dropout: float = 0.1,
 ) -> Dict[str, Any]:
     """Train NNUE policy model and return training report."""
     seed_all(seed)
@@ -664,16 +716,16 @@ def train_nnue_policy(
             logger.info(f"KL loss not auto-enabled (coverage {mcts_stats['mcts_coverage']:.1%} < {kl_min_coverage:.0%} "
                        f"or {mcts_stats['samples_with_mcts']} samples < {kl_min_samples})")
 
-    # Split into train/val
-    val_size = int(len(dataset) * val_split)
-    train_size = len(dataset) - val_size
-    train_dataset, val_dataset = random_split(
-        dataset,
-        [train_size, val_size],
-        generator=torch.Generator().manual_seed(seed),
-    )
+    # Split into train/val at game level (prevents data leakage)
+    train_indices, val_indices = split_by_game_id(dataset, val_split, seed)
+    train_dataset = torch.utils.data.Subset(dataset, train_indices)
+    val_dataset = torch.utils.data.Subset(dataset, val_indices)
 
-    logger.info(f"Train size: {len(train_dataset)}, Val size: {len(val_dataset)}")
+    # Count unique games in each split
+    train_game_ids = set(dataset.samples[i].game_id for i in train_indices)
+    val_game_ids = set(dataset.samples[i].game_id for i in val_indices)
+    logger.info(f"Train size: {len(train_dataset)} samples from {len(train_game_ids)} games")
+    logger.info(f"Val size: {len(val_dataset)} samples from {len(val_game_ids)} games")
 
     # Create data loaders
     train_loader = DataLoader(
@@ -760,6 +812,7 @@ def train_nnue_policy(
                 board_type=board_type,
                 hidden_dim=actual_hidden_dim,
                 num_hidden_layers=num_hidden_layers,
+                policy_dropout=policy_dropout,
             )
         else:
             model = RingRiftNNUEWithPolicy.from_value_only(
@@ -771,6 +824,7 @@ def train_nnue_policy(
             board_type=board_type,
             hidden_dim=actual_hidden_dim,
             num_hidden_layers=num_hidden_layers,
+            policy_dropout=policy_dropout,
         )
 
     total_params = sum(p.numel() for p in model.parameters())
@@ -1109,6 +1163,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         jsonl_paths=jsonl_paths,
         hex_augment=args.hex_augment,
         hex_augment_count=args.hex_augment_count,
+        policy_dropout=args.policy_dropout,
     )
 
     # Add metadata to report
