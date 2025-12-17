@@ -800,6 +800,8 @@ class GPUSelfPlayGenerator:
                     )
 
         finally:
+            # Flush any remaining buffered records before closing
+            flush_write_buffer()
             if file_handle:
                 file_handle.close()
 

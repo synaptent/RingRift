@@ -32,7 +32,7 @@ import os
 import sqlite3
 import threading
 import time
-from collections import deque
+from collections import deque, OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -335,7 +335,8 @@ class StreamingDataPipeline:
         # Tracking
         self._running = False
         self._poll_task: Optional[asyncio.Task] = None
-        self._seen_hashes: Set[str] = set()
+        # Use OrderedDict for O(1) FIFO eviction (faster than set + list conversion)
+        self._seen_hashes: OrderedDict[str, float] = OrderedDict()
         self._total_samples_ingested: int = 0
         self._total_batches_yielded: int = 0
 
@@ -373,20 +374,18 @@ class StreamingDataPipeline:
                         samples = extract_samples_from_game(game)
                         new_samples.extend(samples)
 
-                    # Deduplicate
+                    # Deduplicate using OrderedDict for O(1) FIFO eviction
                     if self.config.dedupe_enabled:
                         unique_samples = []
+                        current_time = time.time()
                         for sample in new_samples:
                             if sample.state_hash not in self._seen_hashes:
-                                self._seen_hashes.add(sample.state_hash)
+                                self._seen_hashes[sample.state_hash] = current_time
                                 unique_samples.append(sample)
 
-                                # Maintain window size
-                                if len(self._seen_hashes) > self.config.dedupe_window:
-                                    # Remove oldest (approximate - just clear some)
-                                    to_remove = list(self._seen_hashes)[:1000]
-                                    for h in to_remove:
-                                        self._seen_hashes.discard(h)
+                                # Maintain window size with O(1) eviction
+                                while len(self._seen_hashes) > self.config.dedupe_window:
+                                    self._seen_hashes.popitem(last=False)
 
                         new_samples = unique_samples
 

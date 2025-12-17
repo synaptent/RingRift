@@ -597,6 +597,29 @@ class StreamingDataLoader:
             policy[indices_arr] = values_arr
         return policy
 
+    def _batch_sparse_to_dense_policies(
+        self,
+        pol_indices_list: List[np.ndarray],
+        pol_values_list: List[np.ndarray],
+        batch_size: int,
+    ) -> np.ndarray:
+        """
+        Convert batch of sparse policies to dense in optimized operation.
+
+        This is significantly faster than calling _sparse_to_dense_policy
+        per-sample because it:
+        1. Pre-allocates the full batch array once
+        2. Uses vectorized numpy indexing
+        3. Avoids repeated array creation overhead
+        """
+        policies = np.zeros((batch_size, self.policy_size), dtype=np.float32)
+        for i, (indices, values) in enumerate(zip(pol_indices_list, pol_values_list)):
+            if len(indices) > 0:
+                idx_arr = np.asarray(indices, dtype=np.int64)
+                val_arr = np.asarray(values, dtype=np.float32)
+                policies[i, idx_arr] = val_arr
+        return policies
+
     def __iter__(self) -> Iterator[Tuple[
         Tuple[torch.Tensor, torch.Tensor],
         Tuple[torch.Tensor, torch.Tensor]
@@ -657,15 +680,16 @@ class StreamingDataLoader:
                     file_groups[f_idx] = []
                 file_groups[f_idx].append((batch_pos, l_idx))
 
-            # Pre-allocate batch arrays
+            # Pre-allocate batch arrays (policies handled by batch conversion)
             batch_size_actual = len(batch_indices)
             features_batch = np.zeros((batch_size_actual, 1), dtype=np.float32)
             globals_batch = np.zeros((batch_size_actual, 1), dtype=np.float32)
             values_batch = np.zeros(batch_size_actual, dtype=np.float32)
-            policies_batch = np.zeros(
-                (batch_size_actual, self.policy_size), dtype=np.float32
-            )
             initialized = False
+
+            # Collect all policy data for batch conversion
+            all_pol_indices: List[np.ndarray] = [None] * batch_size_actual
+            all_pol_values: List[np.ndarray] = [None] * batch_size_actual
 
             # Load from each file
             for file_idx, positions in file_groups.items():
@@ -688,20 +712,32 @@ class StreamingDataLoader:
                     )
                     initialized = True
 
-                # Place samples in correct batch positions
+                # Place samples in correct batch positions (excluding policies)
                 for i, (batch_pos, _) in enumerate(positions):
                     features_batch[batch_pos] = features[i]
                     globals_batch[batch_pos] = globals_vec[i]
                     values_batch[batch_pos] = values[i]
-                    policies_batch[batch_pos] = self._sparse_to_dense_policy(
-                        pol_indices[i], pol_values[i]
-                    )
+                    # Collect policy data for batch conversion
+                    all_pol_indices[batch_pos] = pol_indices[i]
+                    all_pol_values[batch_pos] = pol_values[i]
 
-            # Convert to torch tensors
+            # Batch convert all sparse policies to dense (optimized)
+            policies_batch = self._batch_sparse_to_dense_policies(
+                all_pol_indices, all_pol_values, batch_size_actual
+            )
+
+            # Convert to torch tensors with pinned memory for faster GPU transfer
             features_tensor = torch.from_numpy(features_batch)
             globals_tensor = torch.from_numpy(globals_batch)
             values_tensor = torch.from_numpy(values_batch).unsqueeze(1)
             policies_tensor = torch.from_numpy(policies_batch)
+
+            # Pin memory if CUDA is available (enables async CPU->GPU transfer)
+            if torch.cuda.is_available():
+                features_tensor = features_tensor.pin_memory()
+                globals_tensor = globals_tensor.pin_memory()
+                values_tensor = values_tensor.pin_memory()
+                policies_tensor = policies_tensor.pin_memory()
 
             yield (
                 (features_tensor, globals_tensor),
@@ -823,9 +859,9 @@ class StreamingDataLoader:
             features_batch = np.zeros((batch_size_actual, 1), dtype=np.float32)
             globals_batch = np.zeros((batch_size_actual, 1), dtype=np.float32)
             values_batch = np.zeros(batch_size_actual, dtype=np.float32)
-            policies_batch = np.zeros(
-                (batch_size_actual, self.policy_size), dtype=np.float32
-            )
+            # Collect sparse policies for batch conversion (optimized)
+            all_pol_indices: List[np.ndarray] = [np.array([], dtype=np.int64)] * batch_size_actual
+            all_pol_values: List[np.ndarray] = [np.array([], dtype=np.float32)] * batch_size_actual
             values_mp_batch: Optional[np.ndarray] = None
             num_players_batch: Optional[np.ndarray] = None
             if use_mp:
@@ -862,12 +898,16 @@ class StreamingDataLoader:
                     features_batch[batch_pos] = features[i]
                     globals_batch[batch_pos] = globals_vec[i]
                     values_batch[batch_pos] = values[i]
-                    policies_batch[batch_pos] = self._sparse_to_dense_policy(
-                        pol_indices[i], pol_values[i]
-                    )
+                    all_pol_indices[batch_pos] = pol_indices[i]
+                    all_pol_values[batch_pos] = pol_values[i]
                     if use_mp and file_values_mp is not None:
                         values_mp_batch[batch_pos] = file_values_mp[i]
                         num_players_batch[batch_pos] = file_num_players[i]
+
+            # Batch convert all sparse policies to dense (optimized)
+            policies_batch = self._batch_sparse_to_dense_policies(
+                all_pol_indices, all_pol_values, batch_size_actual
+            )
 
             # Convert to torch tensors
             features_tensor = torch.from_numpy(features_batch)
@@ -1449,9 +1489,9 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
             features_batch = np.zeros((batch_size_actual, 1), dtype=np.float32)
             globals_batch = np.zeros((batch_size_actual, 1), dtype=np.float32)
             values_batch = np.zeros(batch_size_actual, dtype=np.float32)
-            policies_batch = np.zeros(
-                (batch_size_actual, self.policy_size), dtype=np.float32
-            )
+            # Collect sparse policies for batch conversion (optimized)
+            all_pol_indices: List[np.ndarray] = [np.array([], dtype=np.int64)] * batch_size_actual
+            all_pol_values: List[np.ndarray] = [np.array([], dtype=np.float32)] * batch_size_actual
             initialized = False
 
             for file_idx, positions in file_groups.items():
@@ -1476,9 +1516,13 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
                     features_batch[batch_pos] = features[i]
                     globals_batch[batch_pos] = globals_vec[i]
                     values_batch[batch_pos] = values[i]
-                    policies_batch[batch_pos] = self._sparse_to_dense_policy(
-                        pol_indices[i], pol_values[i]
-                    )
+                    all_pol_indices[batch_pos] = pol_indices[i]
+                    all_pol_values[batch_pos] = pol_values[i]
+
+            # Batch convert all sparse policies to dense (optimized)
+            policies_batch = self._batch_sparse_to_dense_policies(
+                all_pol_indices, all_pol_values, batch_size_actual
+            )
 
             features_tensor = torch.from_numpy(features_batch)
             globals_tensor = torch.from_numpy(globals_batch)

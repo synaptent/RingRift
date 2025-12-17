@@ -79,6 +79,10 @@ CREATE INDEX IF NOT EXISTS idx_games_winner ON games(winner);
 CREATE INDEX IF NOT EXISTS idx_games_termination ON games(termination_reason);
 CREATE INDEX IF NOT EXISTS idx_games_created ON games(created_at);
 CREATE INDEX IF NOT EXISTS idx_games_source ON games(source);
+-- Composite indexes for common query patterns (training data filtering)
+CREATE INDEX IF NOT EXISTS idx_games_board_players ON games(board_type, num_players);
+CREATE INDEX IF NOT EXISTS idx_games_created_board ON games(created_at, board_type);
+CREATE INDEX IF NOT EXISTS idx_games_board_created ON games(board_type, created_at);
 
 -- Per-player metadata
 CREATE TABLE IF NOT EXISTS game_players (
