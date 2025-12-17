@@ -12,6 +12,7 @@ Designed for distributed execution across cluster nodes.
 Features:
 - Game recording: Records games to SQLite database for training data extraction
 - Quality filtering: Only records games where model wins (high-quality games)
+- Auto-promotion: Automatically promote top performers to production
 
 Usage:
     # Run full two-stage gauntlet
@@ -28,6 +29,18 @@ Usage:
 
     # Disable game recording
     python scripts/two_stage_gauntlet.py --run --no-record
+
+    # Aggregate results from distributed run
+    python scripts/two_stage_gauntlet.py --aggregate --board square8 --players 2
+
+    # Promote top gauntlet performers
+    python scripts/two_stage_gauntlet.py --promote --board square8 --players 2
+
+    # Promote with custom threshold (80% confidence lower bound, top 5 models)
+    python scripts/two_stage_gauntlet.py --promote --promote-threshold 0.80 --promote-top-n 5
+
+    # Run gauntlet with auto-promotion at end (single shard only)
+    python scripts/two_stage_gauntlet.py --run --promote --board square8 --players 2
 """
 
 from __future__ import annotations
@@ -641,6 +654,123 @@ def aggregate_results(board_type: str, num_players: int) -> List[ModelResult]:
     return all_results
 
 
+# Promotion directory for gauntlet winners
+PROMOTED_DIR = AI_SERVICE_ROOT / "models" / "gauntlet_promoted"
+PROMOTED_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def promote_gauntlet_winners(
+    board_type: str,
+    num_players: int,
+    threshold: float = 0.70,
+    top_n: int = 3,
+    dry_run: bool = False,
+) -> List[Dict[str, Any]]:
+    """Promote top gauntlet performers to production.
+
+    Args:
+        board_type: Board type to promote for
+        num_players: Number of players
+        threshold: Minimum confidence lower bound for promotion (default 70%)
+        top_n: Maximum number of models to promote (default 3)
+        dry_run: If True, only report what would be promoted
+
+    Returns:
+        List of promoted model info dicts
+    """
+    import shutil
+
+    results = aggregate_results(board_type, num_players)
+    if not results:
+        print(f"No gauntlet results found for {board_type} {num_players}p")
+        return []
+
+    # Filter by threshold and take top N
+    candidates = [r for r in results if r.confidence_lower >= threshold]
+    to_promote = candidates[:top_n]
+
+    if not to_promote:
+        print(f"No models meet threshold {threshold:.1%} for promotion")
+        print(f"Top models:")
+        for i, r in enumerate(results[:5]):
+            print(f"  {i+1}. {r.model_name}: CI=[{r.confidence_lower:.3f}, {r.confidence_upper:.3f}]")
+        return []
+
+    promoted = []
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    for i, result in enumerate(to_promote):
+        src_path = Path(result.model_path)
+        if not src_path.exists():
+            print(f"  [SKIP] Source not found: {src_path}")
+            continue
+
+        # Create promoted filename with rank
+        promoted_name = f"gauntlet_top{i+1}_{board_type}_{num_players}p_{timestamp}{src_path.suffix}"
+        dst_path = PROMOTED_DIR / promoted_name
+
+        info = {
+            "rank": i + 1,
+            "model_name": result.model_name,
+            "model_type": result.model_type,
+            "source_path": str(src_path),
+            "promoted_path": str(dst_path),
+            "confidence_lower": result.confidence_lower,
+            "confidence_upper": result.confidence_upper,
+            "final_score": result.final_score,
+            "stage2_games": result.stage2_games,
+            "timestamp": timestamp,
+        }
+
+        if dry_run:
+            print(f"  [DRY RUN] Would promote: {result.model_name}")
+            print(f"            CI=[{result.confidence_lower:.3f}, {result.confidence_upper:.3f}]")
+            print(f"            -> {dst_path}")
+        else:
+            shutil.copy2(src_path, dst_path)
+            print(f"  [PROMOTED] {result.model_name}")
+            print(f"             CI=[{result.confidence_lower:.3f}, {result.confidence_upper:.3f}]")
+            print(f"             -> {dst_path}")
+
+            # Try to register in model registry
+            try:
+                from app.training.model_registry import ModelRegistry, ModelStage
+                registry = ModelRegistry()
+                registry.register_model(
+                    model_path=str(dst_path),
+                    board_type=board_type,
+                    num_players=num_players,
+                    stage=ModelStage.PRODUCTION,
+                    metadata={
+                        "source": "gauntlet",
+                        "gauntlet_rank": i + 1,
+                        "confidence_lower": result.confidence_lower,
+                        "confidence_upper": result.confidence_upper,
+                        "original_model": result.model_name,
+                    },
+                )
+                print(f"             Registered in model registry")
+            except Exception as e:
+                print(f"             Warning: Could not register in registry: {e}")
+
+        promoted.append(info)
+
+    # Save promotion manifest
+    if promoted and not dry_run:
+        manifest_path = PROMOTED_DIR / f"promotion_{board_type}_{num_players}p_{timestamp}.json"
+        with open(manifest_path, "w") as f:
+            json.dump({
+                "board_type": board_type,
+                "num_players": num_players,
+                "threshold": threshold,
+                "timestamp": timestamp,
+                "promoted": promoted,
+            }, f, indent=2)
+        print(f"\nPromotion manifest: {manifest_path}")
+
+    return promoted
+
+
 def discover_models_for_gauntlet(
     board_type: str,
     num_players: int,
@@ -674,6 +804,7 @@ def main():
     parser.add_argument("--stage1", action="store_true", help="Run stage 1 only")
     parser.add_argument("--stage2", action="store_true", help="Run stage 2 only")
     parser.add_argument("--aggregate", action="store_true", help="Aggregate results from shards")
+    parser.add_argument("--promote", action="store_true", help="Promote top gauntlet performers")
     parser.add_argument("--board", type=str, default="square8", help="Board type")
     parser.add_argument("--players", type=int, default=2, help="Number of players")
     parser.add_argument("--stage1-games", type=int, default=10, help="Games per baseline in stage 1")
@@ -683,6 +814,11 @@ def main():
     parser.add_argument("--num-shards", type=int, default=1, help="Total number of shards")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of models (0 = no limit)")
     parser.add_argument("--no-record", action="store_true", help="Disable game recording")
+    parser.add_argument("--promote-threshold", type=float, default=0.70,
+                        help="Minimum confidence lower bound for promotion (default 0.70)")
+    parser.add_argument("--promote-top-n", type=int, default=3,
+                        help="Maximum number of models to promote (default 3)")
+    parser.add_argument("--dry-run", action="store_true", help="Show what would be done without making changes")
 
     args = parser.parse_args()
 
@@ -699,6 +835,25 @@ def main():
         print("-" * 90)
         for i, r in enumerate(results[:20]):
             print(f"{i+1:<5} {r.model_name[:48]:<50} {r.final_score:.3f}    {r.confidence_lower:.3f}      {r.confidence_upper:.3f}")
+        return
+
+    if args.promote:
+        print(f"\n{'='*60}")
+        print(f"GAUNTLET PROMOTION: {args.board} {args.players}p")
+        print(f"Threshold: {args.promote_threshold:.0%} confidence lower bound")
+        print(f"Top N: {args.promote_top_n}")
+        print(f"{'='*60}\n")
+
+        promoted = promote_gauntlet_winners(
+            board_type=args.board,
+            num_players=args.players,
+            threshold=args.promote_threshold,
+            top_n=args.promote_top_n,
+            dry_run=args.dry_run,
+        )
+
+        if promoted:
+            print(f"\nPromoted {len(promoted)} models to {PROMOTED_DIR}")
         return
 
     # Discover models
@@ -741,6 +896,21 @@ def main():
         passed.sort(key=lambda r: r.confidence_lower, reverse=True)
         for i, r in enumerate(passed[:10]):
             print(f"  {i+1}. {r.model_name}: {r.final_score:.3f} [{r.confidence_lower:.3f}, {r.confidence_upper:.3f}]")
+
+    # Auto-promote if requested and this is a single-shard run (to avoid race conditions)
+    if args.promote and args.num_shards == 1:
+        print(f"\n{'='*60}")
+        print(f"AUTO-PROMOTION")
+        print(f"{'='*60}")
+        promoted = promote_gauntlet_winners(
+            board_type=args.board,
+            num_players=args.players,
+            threshold=args.promote_threshold,
+            top_n=args.promote_top_n,
+            dry_run=args.dry_run,
+        )
+        if promoted:
+            print(f"Promoted {len(promoted)} models")
 
 
 if __name__ == "__main__":
