@@ -746,13 +746,13 @@ class AIConfig(BaseModel):
         ),
     )
     gumbel_simulation_budget: Optional[int] = Field(
-        default=150,
+        default=100,
         ge=10,
         le=1000,
         description=(
             "Total simulation budget for Gumbel MCTS Sequential Halving. "
             "Budget is divided across phases to progressively narrow down "
-            "the best action. Default is 150."
+            "the best action. Default is 100 (tuned for optimal speed/quality)."
         ),
     )
 

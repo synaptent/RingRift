@@ -4257,7 +4257,7 @@ class NeuralNetAI(BaseAI):
         with torch.no_grad():
             assert self.model is not None
             if use_autocast:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     out = self.model(tensor_input, globals_input)
             else:
                 out = self.model(tensor_input, globals_input)

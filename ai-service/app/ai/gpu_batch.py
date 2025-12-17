@@ -523,7 +523,7 @@ class GPUBatchEvaluator:
 
         # Run inference with optional mixed precision
         if self.use_mixed_precision:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast('cuda'):
                 values, policies = self._forward(features, globals_t)
         else:
             values, policies = self._forward(features, globals_t)
@@ -591,7 +591,7 @@ class GPUBatchEvaluator:
             chunk_globals = globals_t[i:end_idx] if globals_t is not None else None
 
             if self.use_mixed_precision:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     values, policies = self._forward(chunk_features, chunk_globals)
             else:
                 values, policies = self._forward(chunk_features, chunk_globals)
