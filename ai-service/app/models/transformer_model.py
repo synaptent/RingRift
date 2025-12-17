@@ -616,7 +616,7 @@ def create_model(
     num_heads: int = 8,
     num_layers: int = 6,
     num_policy_actions: int = 64
-) -> nn.Module:
+) -> "nn.Module":
     """
     Create a transformer model.
 

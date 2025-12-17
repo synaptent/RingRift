@@ -522,6 +522,11 @@ describe('SandboxGameHost (React host behaviour)', () => {
           player: sandboxState.currentPlayer,
         } as Move,
       ]),
+      // Chain capture context for current player
+      getChainCaptureContextForCurrentPlayer: jest.fn(() => ({
+        from: { x: 0, y: 0 },
+        landings: [{ x: 1, y: 1 }],
+      })),
     };
 
     mockSandboxValue = createMockSandboxContext({

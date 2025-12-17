@@ -1,1240 +1,511 @@
 {
   "archived_models": [
     {
-      "model_id": "sq8_2p_nn_baseline_20251214_154431",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.614497,
-      "reason": "culled_below_top_25pct"
-    },
-    {
       "model_id": "baseline_random_square8_2p",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.5660071,
+      "archived_at": 1765931512.786934,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "baseline_heuristic_square8_2p",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.576997,
+      "archived_at": 1765931512.78529,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v4_sq8_2p_20251212_093419",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.5425332,
+      "archived_at": 1765931512.77586,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v4_sq8_2p_20251212_092557",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.545037,
+      "archived_at": 1765931512.778395,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v4_sq8_2p_20251212_091646",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.5056808,
+      "archived_at": 1765931512.774611,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v4_sq8_2p",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.479767,
+      "archived_at": 1765931512.7647989,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v4_sq8_2p_20251212_095153",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.4602811,
+      "archived_at": 1765931512.765221,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v4_sq8_2p_h100",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.556221,
+      "archived_at": 1765931512.778054,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v5_sq8_2p_2xh100",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.382436,
+      "archived_at": 1765931512.770367,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251212_111725_20251212_051727",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.578329,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "ringrift_v6_sq8_2p_5090quad",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.308438,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251214_160753",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.334176,
+      "archived_at": 1765931512.78127,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251214_160753_20251214_100754",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.324815,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251214_154430_20251214_094431",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.328529,
+      "archived_at": 1765931512.765919,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v1_20251212_204417",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.34146,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_145543_20251212_152836",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5123389,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "v7_sq8_2p_large_20251213_030649",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.374466,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "ringrift_v5_sq8_2p_20251213_174455",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.613339,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "v7_sq8_2p_large_20251213_030927",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.552408,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "ringrift_v1_20251208_192542",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.608562,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "v6_sq8_2p_20251213_025159",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.598899,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "v8_sq8_2p_20251213_031442",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.304863,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "ringrift_v1_20251212_204227",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.554903,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "ringrift_v1_20251212_204331",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.3232782,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "v7_sq8_2p_large_20251213_030934",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.482676,
+      "archived_at": 1765931512.764229,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "v7_sq8_2p_large_20251213_030530",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.535709,
+      "archived_at": 1765931512.762683,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_trained_20251214",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.568442,
+      "archived_at": 1765931512.77278,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "v8_sq8_2p",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.606074,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_50ep_20251214_025419",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.373198,
+      "archived_at": 1765931512.783798,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "v8_sq8_2p_20251213_032114",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.364871,
+      "archived_at": 1765933826.743526,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v5_sq8_2p_2xh100_20251212_190221",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.503053,
+      "archived_at": 1765933826.743201,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251212_145543_20251212_150039",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.5627031,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251214_082850_20251214_082853",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.31532,
+      "archived_at": 1765931512.7771,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251212_145543_20251212_154052",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.575614,
+      "archived_at": 1765931512.7809548,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_201729",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.571958,
+      "archived_at": 1765931512.779665,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_192937",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.527555,
+      "archived_at": 1765931512.775232,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v5_sq8_2p_2xh100_20251214_110350",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.596333,
+      "archived_at": 1765931512.781912,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251212_145543_20251212_145657",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.570868,
+      "archived_at": 1765931512.777735,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_195329",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.429271,
+      "archived_at": 1765931512.7736971,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251215_024030_20251215_030640",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.424208,
+      "archived_at": 1765931512.773391,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251215_024030",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.396725,
+      "archived_at": 1765931512.772474,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251214_082518_20251214_082657",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.494698,
+      "archived_at": 1765933826.741813,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251212_145543_20251212_155642",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.6012459,
+      "archived_at": 1765931512.786609,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "v6_sq8_2p_20251213_024802",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.602602,
+      "archived_at": 1765931512.785648,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_production",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.3760378,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "ringrift_v1",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5463092,
+      "archived_at": 1765931512.774306,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_195807",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.55911,
+      "archived_at": 1765931512.770893,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251213_192544",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.488349,
+      "archived_at": 1765933826.7425542,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_195705",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.543819,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_195004",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.463843,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_194730",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.356501,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_194223",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.443878,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_193948",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5649621,
+      "archived_at": 1765931512.779976,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_201611",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.583816,
+      "archived_at": 1765931512.77492,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_201452",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.547563,
+      "archived_at": 1765931512.7637398,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_200942",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.620354,
+      "archived_at": 1765931512.7849119,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_200825",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.448699,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251213_192544_20251213_200316",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.339019,
+      "archived_at": 1765933826.7422101,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "baseline_mcts_100_square8_2p",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.508422,
+      "archived_at": 1765931512.786294,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_best_sq8_2p",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.5224059,
+      "archived_at": 1765931512.7831721,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251214_062159",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.5512671,
+      "archived_at": 1765933826.7428842,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251214_062159_20251214_062214",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.609858,
+      "archived_at": 1765931512.780295,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251214_062159_20251214_062208",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.534529,
+      "archived_at": 1765931512.779357,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251214_072040",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.327447,
+      "archived_at": 1765931512.77003,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251214_072040_20251214_072220",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.41858,
+      "archived_at": 1765931512.771206,
       "reason": "culled_below_top_25pct"
     },
     {
-      "model_id": "sq8_2p_nn_baseline_20251214_082518",
+      "model_id": "ringrift_best_sq8_2p_v2",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.3198879,
+      "archived_at": 1765931512.776468,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "baseline_mcts_500_square8_2p",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.4314969,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251214_092235",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.346421,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "ringrift_v1_20251212_204303",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.2978518,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_noearlystop_50ep_20251214_082041",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.313057,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "v6_sq8_2p_20251213_025010",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.56715,
+      "archived_at": 1765931512.783492,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_v4_large_test_20251214_114155",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.540948,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "ringrift_v5_sq8_2p_20251213_175454",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5575838,
+      "archived_at": 1765931512.777409,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_v4_large_test",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.532007,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "ringrift_v5_sq8_2p_2xh100_20251212_185946",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.4005811,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251214_092235_20251214_092326",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.392375,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_145543_20251212_152119",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.592702,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251214_154430",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.336521,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251214_153418_20251214_093419",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.342898,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251214_153418",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.353748,
+      "archived_at": 1765931512.776782,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251214_152415_20251214_092416",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.3690581,
+      "archived_at": 1765931512.77216,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251214_152415",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.370228,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_111725",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.587181,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_111422_20251212_051425",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5804312,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_111422",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5731788,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_111212_20251212_051213",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.56165,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_111212",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5536,
+      "archived_at": 1765931512.771517,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251212_110907_20251212_050908",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.607348,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_110907",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.548757,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_110604_20251212_050606",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5382452,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_110604",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5333152,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_105750_20251212_045751",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.524655,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_105750",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.519402,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_105337_20251212_045339",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.362255,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_105337",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.498523,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_104243_20251212_044245",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.492456,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_104243",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.4747689,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_103942_20251212_043946",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.4676878,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251212_103942",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.455148,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "ringrift_v3_sq8_2p_20251212_005103_20251212_012024",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.579371,
+      "archived_at": 1765931512.778723,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251215_024030_20251215_030353",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.360609,
+      "archived_at": 1765931512.766249,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251215_024030_20251215_030200",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.316501,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_191518_20251211_131520",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.302988,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_191518",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.310029,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_191210_20251211_131212",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.314174,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_191210",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.31763,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_190909_20251211_130911",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.321105,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251215_024030_20251215_030122",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.3013902,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_190909",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.3222091,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_190703_20251211_130705",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.326108,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_190703",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.33077,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_190458_20251211_130459",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.331866,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_190458",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.3330472,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_165444_20251211_105445",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.335246,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_165444",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.337742,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_165047",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.340157,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_163524",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.344078,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_162514_20251211_102516",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.3486521,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_162514",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.349727,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_162449_20251211_102451",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.350911,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251211_162449",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.352252,
+      "archived_at": 1765933826.743843,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251210_184921",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.615704,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_232350_20251210_172352",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.329704,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_184921_20251210_163904",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.6110039,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_184921_20251210_162811",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.6049979,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_184921_20251210_161805",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.594964,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_184921_20251210_160549",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.6179671,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_184921_20251210_155325",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5639691,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_184921_20251210_153041",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.539454,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_202556",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.296211,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_184921_20251210_142315",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.591626,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_202301",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.290533,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_184921_20251210_133732",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.593817,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_184921_20251210_132750",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.58488,
+      "archived_at": 1765943709.132392,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251210_184921_20251210_131805",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.5999758,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_184921_20251210_125909",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.585912,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251215_024030_20251215_025855",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.378995,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251215_024030_20251215_025633",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.363672,
+      "archived_at": 1765931512.781582,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251215_024030_20251215_024523",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.603749,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_183915_20251210_124803",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.619082,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251215_024030_20251215_025046",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.29424,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251215_024030_20251215_024852",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.536978,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251215_024030_20251215_025208",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.355087,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_183915",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.6122408,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_140411_20251210_080412",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.292346,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_140411",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.299819,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_140316_20251210_080321",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.3065898,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251210_140316",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.3117518,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "ringrift_v1_20251212_204131",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5696,
+      "archived_at": 1765931512.784487,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_best_sq8_2p_new",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.560464,
+      "archived_at": 1765931512.785974,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251216_070958_20251216_071026",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.405494,
+      "archived_at": 1765931512.779045,
+      "reason": "culled_below_top_25pct"
+    },
+    {
+      "model_id": "sq8_2p_nn_baseline_20251216_025032_20251216_025036",
+      "board_type": "square8",
+      "num_players": 2,
+      "archived_at": 1765931512.774001,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251216_021830_20251216_021833",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.5883808,
+      "archived_at": 1765931512.7828622,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251216_020024",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.5307221,
+      "archived_at": 1765931512.776164,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251216_072352_20251216_072418",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.435442,
+      "archived_at": 1765931512.7655702,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251216_034626",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.582756,
+      "archived_at": 1765931512.782536,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251216_044507",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.471811,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251216_011603_20251216_011650",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.366404,
+      "archived_at": 1765931512.7696252,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251216_063834_20251216_064006",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.371624,
+      "archived_at": 1765931512.7755468,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v1_20251212_204956",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.5975418,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251215_095844_20251215_095846",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.3452318,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "v7_sq8_2p_large_20251213_030718",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.526248,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251216_002047",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.574513,
+      "archived_at": 1765931512.780624,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "ringrift_v2_sq8_2p_20251214",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.367691,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "v8_sq8_2p_20251213_031559",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5893672,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "v6_sq8_2p_20251213_024712",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.4105349,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251216_023956",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.358152,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "v8_sq8_2p_20251213_031928",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.4382899,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251216_015318_20251216_015325",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.5497742,
+      "archived_at": 1765931512.782224,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251214_092435_20251214_092611",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.387309,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251216_125249",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.581573,
+      "archived_at": 1765931512.771842,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251216_111239_20251216_111354",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.318815,
+      "archived_at": 1765931512.76339,
       "reason": "culled_below_top_25pct"
     },
     {
       "model_id": "sq8_2p_nn_baseline_20251216_144825_20251216_144850",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.3594282,
+      "archived_at": 1765931512.773084,
       "reason": "culled_below_top_25pct"
     },
     {
-      "model_id": "sq8_2p_nn_baseline_20251216_030116_20251216_030133",
+      "model_id": "sq8_2p_nn_baseline_20251216_185302_20251216_185423",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.590549,
+      "archived_at": 1765933826.7453198,
       "reason": "culled_below_top_25pct"
     },
     {
-      "model_id": "sq8_2p_v4_best",
+      "model_id": "sq8_2p_nn_baseline_20251216_210346_20251216_210403",
       "board_type": "square8",
       "num_players": 2,
-      "archived_at": 1765929342.347573,
-      "reason": "culled_below_top_25pct"
-    },
-    {
-      "model_id": "sq8_2p_nn_baseline_20251216_162654_20251216_162722",
-      "board_type": "square8",
-      "num_players": 2,
-      "archived_at": 1765929342.412972,
+      "archived_at": 1765933826.7447722,
       "reason": "culled_below_top_25pct"
     }
   ],
   "archived_ids": [
-    "sq8_2p_nn_baseline_20251214_154431",
     "baseline_random_square8_2p",
     "baseline_heuristic_square8_2p",
     "ringrift_v4_sq8_2p_20251212_093419",
@@ -1245,29 +516,14 @@
     "ringrift_v4_sq8_2p_h100",
     "ringrift_v5_sq8_2p_2xh100",
     "sq8_2p_nn_baseline_20251212_111725_20251212_051727",
-    "ringrift_v6_sq8_2p_5090quad",
-    "sq8_2p_nn_baseline_20251214_160753",
     "sq8_2p_nn_baseline_20251214_160753_20251214_100754",
-    "sq8_2p_nn_baseline_20251214_154430_20251214_094431",
     "ringrift_v1_20251212_204417",
-    "sq8_2p_nn_baseline_20251212_145543_20251212_152836",
-    "v7_sq8_2p_large_20251213_030649",
-    "ringrift_v5_sq8_2p_20251213_174455",
-    "v7_sq8_2p_large_20251213_030927",
-    "ringrift_v1_20251208_192542",
-    "v6_sq8_2p_20251213_025159",
-    "v8_sq8_2p_20251213_031442",
-    "ringrift_v1_20251212_204227",
-    "ringrift_v1_20251212_204331",
-    "v7_sq8_2p_large_20251213_030934",
     "v7_sq8_2p_large_20251213_030530",
     "sq8_2p_trained_20251214",
     "v8_sq8_2p",
-    "sq8_2p_50ep_20251214_025419",
     "v8_sq8_2p_20251213_032114",
     "ringrift_v5_sq8_2p_2xh100_20251212_190221",
     "sq8_2p_nn_baseline_20251212_145543_20251212_150039",
-    "sq8_2p_nn_baseline_20251214_082850_20251214_082853",
     "sq8_2p_nn_baseline_20251212_145543_20251212_154052",
     "sq8_2p_nn_baseline_20251213_192544_20251213_201729",
     "sq8_2p_nn_baseline_20251213_192544_20251213_192937",
@@ -1280,19 +536,13 @@
     "sq8_2p_nn_baseline_20251212_145543_20251212_155642",
     "v6_sq8_2p_20251213_024802",
     "sq8_2p_production",
-    "ringrift_v1",
     "sq8_2p_nn_baseline_20251213_192544_20251213_195807",
     "sq8_2p_nn_baseline_20251213_192544",
     "sq8_2p_nn_baseline_20251213_192544_20251213_195705",
-    "sq8_2p_nn_baseline_20251213_192544_20251213_195004",
-    "sq8_2p_nn_baseline_20251213_192544_20251213_194730",
-    "sq8_2p_nn_baseline_20251213_192544_20251213_194223",
-    "sq8_2p_nn_baseline_20251213_192544_20251213_193948",
     "sq8_2p_nn_baseline_20251213_192544_20251213_201611",
     "sq8_2p_nn_baseline_20251213_192544_20251213_201452",
     "sq8_2p_nn_baseline_20251213_192544_20251213_200942",
     "sq8_2p_nn_baseline_20251213_192544_20251213_200825",
-    "sq8_2p_nn_baseline_20251213_192544_20251213_200316",
     "baseline_mcts_100_square8_2p",
     "ringrift_best_sq8_2p",
     "sq8_2p_nn_baseline_20251214_062159",
@@ -1300,117 +550,35 @@
     "sq8_2p_nn_baseline_20251214_062159_20251214_062208",
     "sq8_2p_nn_baseline_20251214_072040",
     "sq8_2p_nn_baseline_20251214_072040_20251214_072220",
-    "sq8_2p_nn_baseline_20251214_082518",
+    "ringrift_best_sq8_2p_v2",
     "baseline_mcts_500_square8_2p",
-    "sq8_2p_nn_baseline_20251214_092235",
-    "ringrift_v1_20251212_204303",
-    "sq8_2p_noearlystop_50ep_20251214_082041",
-    "v6_sq8_2p_20251213_025010",
     "sq8_2p_v4_large_test_20251214_114155",
-    "ringrift_v5_sq8_2p_20251213_175454",
     "sq8_2p_v4_large_test",
-    "ringrift_v5_sq8_2p_2xh100_20251212_185946",
-    "sq8_2p_nn_baseline_20251214_092235_20251214_092326",
-    "sq8_2p_nn_baseline_20251212_145543_20251212_152119",
-    "sq8_2p_nn_baseline_20251214_154430",
-    "sq8_2p_nn_baseline_20251214_153418_20251214_093419",
-    "sq8_2p_nn_baseline_20251214_153418",
     "sq8_2p_nn_baseline_20251214_152415_20251214_092416",
     "sq8_2p_nn_baseline_20251214_152415",
-    "sq8_2p_nn_baseline_20251212_111725",
-    "sq8_2p_nn_baseline_20251212_111422_20251212_051425",
-    "sq8_2p_nn_baseline_20251212_111422",
-    "sq8_2p_nn_baseline_20251212_111212_20251212_051213",
-    "sq8_2p_nn_baseline_20251212_111212",
     "sq8_2p_nn_baseline_20251212_110907_20251212_050908",
-    "sq8_2p_nn_baseline_20251212_110907",
-    "sq8_2p_nn_baseline_20251212_110604_20251212_050606",
-    "sq8_2p_nn_baseline_20251212_110604",
-    "sq8_2p_nn_baseline_20251212_105750_20251212_045751",
-    "sq8_2p_nn_baseline_20251212_105750",
-    "sq8_2p_nn_baseline_20251212_105337_20251212_045339",
-    "sq8_2p_nn_baseline_20251212_105337",
-    "sq8_2p_nn_baseline_20251212_104243_20251212_044245",
-    "sq8_2p_nn_baseline_20251212_104243",
-    "sq8_2p_nn_baseline_20251212_103942_20251212_043946",
-    "sq8_2p_nn_baseline_20251212_103942",
-    "ringrift_v3_sq8_2p_20251212_005103_20251212_012024",
     "sq8_2p_nn_baseline_20251215_024030_20251215_030353",
     "sq8_2p_nn_baseline_20251215_024030_20251215_030200",
-    "sq8_2p_nn_baseline_20251211_191518_20251211_131520",
-    "sq8_2p_nn_baseline_20251211_191518",
-    "sq8_2p_nn_baseline_20251211_191210_20251211_131212",
-    "sq8_2p_nn_baseline_20251211_191210",
-    "sq8_2p_nn_baseline_20251211_190909_20251211_130911",
-    "sq8_2p_nn_baseline_20251215_024030_20251215_030122",
-    "sq8_2p_nn_baseline_20251211_190909",
-    "sq8_2p_nn_baseline_20251211_190703_20251211_130705",
-    "sq8_2p_nn_baseline_20251211_190703",
-    "sq8_2p_nn_baseline_20251211_190458_20251211_130459",
-    "sq8_2p_nn_baseline_20251211_190458",
-    "sq8_2p_nn_baseline_20251211_165444_20251211_105445",
-    "sq8_2p_nn_baseline_20251211_165444",
-    "sq8_2p_nn_baseline_20251211_165047",
-    "sq8_2p_nn_baseline_20251211_163524",
-    "sq8_2p_nn_baseline_20251211_162514_20251211_102516",
-    "sq8_2p_nn_baseline_20251211_162514",
-    "sq8_2p_nn_baseline_20251211_162449_20251211_102451",
-    "sq8_2p_nn_baseline_20251211_162449",
     "sq8_2p_nn_baseline_20251210_184921",
-    "sq8_2p_nn_baseline_20251210_232350_20251210_172352",
-    "sq8_2p_nn_baseline_20251210_184921_20251210_163904",
-    "sq8_2p_nn_baseline_20251210_184921_20251210_162811",
-    "sq8_2p_nn_baseline_20251210_184921_20251210_161805",
-    "sq8_2p_nn_baseline_20251210_184921_20251210_160549",
-    "sq8_2p_nn_baseline_20251210_184921_20251210_155325",
-    "sq8_2p_nn_baseline_20251210_184921_20251210_153041",
-    "sq8_2p_nn_baseline_20251210_202556",
-    "sq8_2p_nn_baseline_20251210_184921_20251210_142315",
-    "sq8_2p_nn_baseline_20251210_202301",
-    "sq8_2p_nn_baseline_20251210_184921_20251210_133732",
-    "sq8_2p_nn_baseline_20251210_184921_20251210_132750",
     "sq8_2p_nn_baseline_20251210_184921_20251210_131805",
-    "sq8_2p_nn_baseline_20251210_184921_20251210_125909",
-    "sq8_2p_nn_baseline_20251215_024030_20251215_025855",
-    "sq8_2p_nn_baseline_20251215_024030_20251215_025633",
     "sq8_2p_nn_baseline_20251215_024030_20251215_024523",
-    "sq8_2p_nn_baseline_20251210_183915_20251210_124803",
-    "sq8_2p_nn_baseline_20251215_024030_20251215_025046",
-    "sq8_2p_nn_baseline_20251215_024030_20251215_024852",
-    "sq8_2p_nn_baseline_20251215_024030_20251215_025208",
-    "sq8_2p_nn_baseline_20251210_183915",
-    "sq8_2p_nn_baseline_20251210_140411_20251210_080412",
-    "sq8_2p_nn_baseline_20251210_140411",
-    "sq8_2p_nn_baseline_20251210_140316_20251210_080321",
-    "sq8_2p_nn_baseline_20251210_140316",
-    "ringrift_v1_20251212_204131",
     "ringrift_best_sq8_2p_new",
     "sq8_2p_nn_baseline_20251216_070958_20251216_071026",
+    "sq8_2p_nn_baseline_20251216_025032_20251216_025036",
     "sq8_2p_nn_baseline_20251216_021830_20251216_021833",
     "sq8_2p_nn_baseline_20251216_020024",
     "sq8_2p_nn_baseline_20251216_072352_20251216_072418",
     "sq8_2p_nn_baseline_20251216_034626",
     "sq8_2p_nn_baseline_20251216_044507",
-    "sq8_2p_nn_baseline_20251216_011603_20251216_011650",
     "sq8_2p_nn_baseline_20251216_063834_20251216_064006",
     "ringrift_v1_20251212_204956",
-    "sq8_2p_nn_baseline_20251215_095844_20251215_095846",
-    "v7_sq8_2p_large_20251213_030718",
-    "sq8_2p_nn_baseline_20251216_002047",
     "ringrift_v2_sq8_2p_20251214",
-    "v8_sq8_2p_20251213_031559",
-    "v6_sq8_2p_20251213_024712",
-    "sq8_2p_nn_baseline_20251216_023956",
-    "v8_sq8_2p_20251213_031928",
-    "sq8_2p_nn_baseline_20251216_015318_20251216_015325",
     "sq8_2p_nn_baseline_20251214_092435_20251214_092611",
-    "sq8_2p_nn_baseline_20251216_125249",
     "sq8_2p_nn_baseline_20251216_111239_20251216_111354",
     "sq8_2p_nn_baseline_20251216_144825_20251216_144850",
-    "sq8_2p_nn_baseline_20251216_030116_20251216_030133",
-    "sq8_2p_v4_best",
-    "sq8_2p_nn_baseline_20251216_162654_20251216_162722"
+    "sq8_2p_nn_baseline_20251216_185302_20251216_185423",
+    "sq8_2p_nn_baseline_20251216_210346_20251216_210403"
   ],
-  "updated_at": 1765929342.621644,
-  "total_count": 176
+  "updated_at": 1765943709.1328409,
+  "total_count": 72
 }

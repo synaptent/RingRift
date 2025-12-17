@@ -7,8 +7,9 @@ describe('VictoryConditionsPanel', () => {
     render(<VictoryConditionsPanel />);
 
     expect(screen.getByTestId('victory-conditions-help')).toBeInTheDocument();
-    expect(screen.getByText('Victory')).toBeInTheDocument();
+    expect(screen.getByText('Victory Conditions')).toBeInTheDocument();
     expect(screen.getByText(/Ring Elimination/i)).toBeInTheDocument();
     expect(screen.getByText(/Territory Control/i)).toBeInTheDocument();
+    expect(screen.getByText(/Last Player Standing/i)).toBeInTheDocument();
   });
 });

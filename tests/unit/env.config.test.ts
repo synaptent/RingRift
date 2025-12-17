@@ -253,10 +253,10 @@ describe('EnvSchema', () => {
   });
 
   describe('AI service configuration', () => {
-    it('should default AI_SERVICE_REQUEST_TIMEOUT_MS to 5000', () => {
+    it('should default AI_SERVICE_REQUEST_TIMEOUT_MS to 30000', () => {
       const result = parseEnv(baseValidEnv);
       expect(result.success).toBe(true);
-      expect(result.data?.AI_SERVICE_REQUEST_TIMEOUT_MS).toBe(5000);
+      expect(result.data?.AI_SERVICE_REQUEST_TIMEOUT_MS).toBe(30000);
     });
 
     it('should default AI_MAX_CONCURRENT_REQUESTS to 16', () => {

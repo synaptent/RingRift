@@ -171,8 +171,8 @@ describe('BoardView', () => {
         <BoardView boardType="square8" board={board} validTargets={validTargets} />
       );
 
-      // Check that valid targets have outline styling
-      const highlightedCells = container.querySelectorAll('.outline-emerald-300\\/90');
+      // Check that valid targets have outline styling (square boards use emerald-400/95)
+      const highlightedCells = container.querySelectorAll('.outline-emerald-400\\/95');
       expect(highlightedCells.length).toBeGreaterThanOrEqual(2);
     });
   });
@@ -1117,7 +1117,8 @@ describe('BoardView', () => {
       const { container } = render(<BoardView boardType="square8" board={board} />);
 
       const boardView = screen.getByTestId('board-view');
-      expect(boardView).toHaveAttribute('role', 'grid');
+      // Board container uses region role with descriptive aria-label for navigation instructions
+      expect(boardView).toHaveAttribute('role', 'region');
       expect(boardView).toHaveAttribute('aria-label');
 
       // Check that cells have proper roles and labels

@@ -40,6 +40,7 @@ jest.mock('../../src/server/middleware/rateLimiter', () => ({
   dataExportRateLimiter: (_req: Request, _res: Response, next: () => void) => next(),
   userRatingRateLimiter: (_req: Request, _res: Response, next: () => void) => next(),
   userSearchRateLimiter: (_req: Request, _res: Response, next: () => void) => next(),
+  sandboxAiRateLimiter: (_req: Request, _res: Response, next: () => void) => next(),
 }));
 
 // Silence HTTP route logging for these tests.
