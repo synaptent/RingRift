@@ -43,6 +43,24 @@ except ImportError:
     HAS_FEEDBACK_ACCELERATOR = False
 
 try:
+    from app.training.dynamic_export import get_export_settings as get_dynamic_export_settings
+    HAS_DYNAMIC_EXPORT = True
+except ImportError:
+    HAS_DYNAMIC_EXPORT = False
+
+try:
+    from app.coordination.distributed_lock import DistributedLock
+    HAS_DISTRIBUTED_LOCK = True
+except ImportError:
+    HAS_DISTRIBUTED_LOCK = False
+
+try:
+    from app.training.training_registry import register_trained_model
+    HAS_MODEL_REGISTRY = True
+except ImportError:
+    HAS_MODEL_REGISTRY = False
+
+try:
     from app.config.hyperparameters import (
         get_hyperparameters,
         is_optimized,
@@ -220,6 +238,38 @@ EXPORT_SETTINGS: Dict[Tuple[str, int], Tuple[int, int, int]] = {
 DEFAULT_MAX_GAMES = 50
 DEFAULT_SAMPLE_EVERY = 20
 DEFAULT_EPOCHS = 5
+
+
+def get_export_settings_for_config(
+    board_type: str,
+    num_players: int,
+    db_paths: Optional[List[str]] = None,
+) -> Tuple[int, int, int]:
+    """Get export settings for a config, using dynamic settings if available.
+
+    Returns:
+        Tuple of (max_games, sample_every, epochs)
+    """
+    # Try dynamic export first (computes optimal settings based on data size)
+    if HAS_DYNAMIC_EXPORT and db_paths:
+        try:
+            settings = get_dynamic_export_settings(db_paths, board_type, num_players)
+            max_games = settings.max_games if settings.max_games else DEFAULT_MAX_GAMES
+            sample_every = settings.sample_every
+            epochs = settings.epochs
+            print(f"  [dynamic_export] {board_type}_{num_players}p: "
+                  f"tier={settings.data_tier}, max_games={max_games}, "
+                  f"sample_every={sample_every}, epochs={epochs}", flush=True)
+            return (max_games, sample_every, epochs)
+        except Exception as e:
+            print(f"  [dynamic_export] Failed to compute settings: {e}", flush=True)
+
+    # Fall back to static settings
+    return EXPORT_SETTINGS.get(
+        (board_type, num_players),
+        (DEFAULT_MAX_GAMES, DEFAULT_SAMPLE_EVERY, DEFAULT_EPOCHS)
+    )
+
 
 # Track last training count per config
 last_trained_counts: Dict[Tuple[str, int], int] = {k: 0 for k in THRESHOLDS}
@@ -764,9 +814,10 @@ def run_training(board_type: str, num_players: int, db_paths: List[str],
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     short = short_name(board_type, num_players)
 
-    # Get config-specific export settings
-    max_games, sample_every, epochs = EXPORT_SETTINGS.get(
-        key, (DEFAULT_MAX_GAMES, DEFAULT_SAMPLE_EVERY, DEFAULT_EPOCHS)
+    # Get config-specific export settings (uses dynamic settings if available)
+    all_db_paths = db_paths if db_paths else []
+    max_games, sample_every, epochs = get_export_settings_for_config(
+        board_type, num_players, all_db_paths
     )
 
     env = os.environ.copy()
@@ -1009,9 +1060,10 @@ def run_policy_training(board_type: str, num_players: int, db_paths: List[str],
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     short = short_name(board_type, num_players)
 
-    # Get config-specific export settings
-    max_games, sample_every, epochs = EXPORT_SETTINGS.get(
-        key, (DEFAULT_MAX_GAMES, DEFAULT_SAMPLE_EVERY, DEFAULT_EPOCHS)
+    # Get config-specific export settings (uses dynamic settings if available)
+    all_db_paths = db_paths if db_paths else []
+    max_games, sample_every, epochs = get_export_settings_for_config(
+        board_type, num_players, all_db_paths
     )
 
     env = os.environ.copy()

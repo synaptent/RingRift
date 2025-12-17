@@ -30,6 +30,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+# Add ai-service to path for imports
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.training.export_cache import ExportCache
+from app.coordination.distributed_lock import DistributedLock
+from app.training.training_registry import register_trained_model
+
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = AI_SERVICE_ROOT / "data"
 GAMES_DIR = DATA_DIR / "games"
@@ -619,52 +626,96 @@ def run_pipeline(
     else:
         logger.info("Skipping backfill")
 
-    # Step 3: Train model
+    # Step 3: Train model (with distributed lock)
     model_path = None
+    config_key = f"{board_type}_{num_players}p"
+
     if not skip_train:
         logger.info("")
-        if use_optimized:
-            logger.info("STEP 3: Training NN model with optimized settings...")
-            # Export data to NPZ for optimized training
-            npz_path = DATA_DIR / "training" / f"{board_type}_{num_players}p_auto.npz"
-            npz_path.parent.mkdir(parents=True, exist_ok=True)
 
-            if output_db.exists() and not npz_path.exists():
-                # Export from DB to NPZ
-                logger.info(f"  Exporting data to {npz_path}...")
-                export_cmd = [
-                    "python", str(AI_SERVICE_ROOT / "scripts" / "export_replay_dataset.py"),
-                    "--db", str(output_db),
-                    "--output", str(npz_path),
-                    "--board-type", board_type,
-                    "--num-players", str(num_players),
-                    "--sample-every", "2",
-                    "--require-completed",
-                ]
-                try:
-                    subprocess.run(
-                        export_cmd,
-                        cwd=str(AI_SERVICE_ROOT),
-                        capture_output=True,
-                        timeout=1800,
-                        env={**os.environ, "PYTHONPATH": str(AI_SERVICE_ROOT)},
-                    )
-                except Exception as e:
-                    logger.error(f"  Export failed: {e}")
-
-            if npz_path.exists():
-                model_path = train_nn_optimized(
-                    npz_path, board_type, num_players, dry_run,
-                    batch_size=batch_size, sampling_weights=sampling_weights,
-                )
-            else:
-                logger.warning(f"NPZ data not found: {npz_path}")
+        # Acquire distributed lock to prevent concurrent training on same config
+        lock = DistributedLock(f"training:{config_key}", lock_timeout=7200)  # 2 hour timeout
+        if not lock.acquire(timeout=60, blocking=True):
+            logger.warning(f"Could not acquire training lock for {config_key}, another training may be in progress")
+            logger.info("Skipping training due to lock contention")
         else:
-            logger.info("STEP 3: Training NNUE model...")
-            if output_db.exists():
-                model_path = train_nnue(output_db, board_type, num_players, dry_run)
-            else:
-                logger.warning(f"Training DB not found: {output_db}")
+            try:
+                if use_optimized:
+                    logger.info("STEP 3: Training NN model with optimized settings...")
+                    # Export data to NPZ for optimized training
+                    npz_path = DATA_DIR / "training" / f"{board_type}_{num_players}p_auto.npz"
+                    npz_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    if output_db.exists():
+                        # Check if export is needed using cache
+                        export_cache = ExportCache()
+                        needs_export = export_cache.needs_export(
+                            db_paths=[str(output_db)],
+                            output_path=str(npz_path),
+                            board_type=board_type,
+                            num_players=num_players,
+                        )
+
+                        if needs_export or not npz_path.exists():
+                            # Export from DB to NPZ with cache and parallel processing
+                            logger.info(f"  Exporting data to {npz_path}...")
+                            export_cmd = [
+                                "python", str(AI_SERVICE_ROOT / "scripts" / "export_replay_dataset.py"),
+                                "--db", str(output_db),
+                                "--output", str(npz_path),
+                                "--board-type", board_type,
+                                "--num-players", str(num_players),
+                                "--sample-every", "2",
+                                "--require-completed",
+                                "--use-cache",  # Enable incremental cache
+                                "--parallel",   # Enable parallel processing
+                                "--workers", "4",
+                            ]
+                            try:
+                                subprocess.run(
+                                    export_cmd,
+                                    cwd=str(AI_SERVICE_ROOT),
+                                    capture_output=True,
+                                    timeout=1800,
+                                    env={**os.environ, "PYTHONPATH": str(AI_SERVICE_ROOT)},
+                                )
+                            except Exception as e:
+                                logger.error(f"  Export failed: {e}")
+                        else:
+                            logger.info(f"  Export cache valid, skipping re-export of {npz_path}")
+
+                    if npz_path.exists():
+                        model_path = train_nn_optimized(
+                            npz_path, board_type, num_players, dry_run,
+                            batch_size=batch_size, sampling_weights=sampling_weights,
+                        )
+                    else:
+                        logger.warning(f"NPZ data not found: {npz_path}")
+                else:
+                    logger.info("STEP 3: Training NNUE model...")
+                    if output_db.exists():
+                        model_path = train_nnue(output_db, board_type, num_players, dry_run)
+                    else:
+                        logger.warning(f"Training DB not found: {output_db}")
+
+                # Register trained model in registry
+                if model_path and not dry_run:
+                    try:
+                        model_id = register_trained_model(
+                            model_path=str(model_path),
+                            board_type=board_type,
+                            num_players=num_players,
+                            training_config={"batch_size": batch_size, "source": "auto_pipeline"},
+                            metrics=None,
+                            source_data_paths=[str(output_db)],
+                        )
+                        if model_id:
+                            logger.info(f"  Registered model in registry: {model_id}")
+                    except Exception as e:
+                        logger.warning(f"  Could not register model: {e}")
+            finally:
+                lock.release()
+                logger.debug(f"Released training lock for {config_key}")
     else:
         logger.info("Skipping training")
 

@@ -136,6 +136,22 @@ except ImportError:
     TriggerConfig = None
     TriggerDecision = None
 
+# Curriculum feedback loop (2024-12)
+try:
+    from app.training.curriculum_feedback import (
+        CurriculumFeedback,
+        get_curriculum_feedback,
+        record_selfplay_game,
+        get_curriculum_weights,
+    )
+    HAS_CURRICULUM_FEEDBACK = True
+except ImportError:
+    HAS_CURRICULUM_FEEDBACK = False
+    CurriculumFeedback = None
+    get_curriculum_feedback = None
+    record_selfplay_game = None
+    get_curriculum_weights = None
+
 
 class TrainingScheduler:
     """Schedules and manages training runs with cluster-wide coordination."""
@@ -189,6 +205,12 @@ class TrainingScheduler:
             )
             self._simplified_triggers = TrainingTriggers(trigger_cfg)
             print("[Training] Using simplified 3-signal trigger system")
+
+        # Curriculum feedback loop (2024-12)
+        self._curriculum_feedback: Optional[Any] = None
+        if HAS_CURRICULUM_FEEDBACK:
+            self._curriculum_feedback = get_curriculum_feedback()
+            print("[Training] Using curriculum feedback loop for adaptive weights")
 
     def _get_dynamic_threshold(self, config_key: str) -> int:
         """Calculate dynamic training threshold based on promotion velocity."""
@@ -321,6 +343,19 @@ class TrainingScheduler:
                     print(f"[Training] WIN_RATE_DECLINING: {config_key} win rate declining ({win_rate_trend:+.1%}) "
                           f"- threshold {old_threshold} → {final_threshold}")
 
+        # Curriculum feedback weight adjustment (2024-12)
+        # Applies weight from recent selfplay performance (0.5 to 2.0)
+        curriculum_weight = self.get_curriculum_weight(config_key)
+        if curriculum_weight != 1.0:
+            old_threshold = final_threshold
+            # Weight > 1.0 = needs more training (lower threshold)
+            # Weight < 1.0 = already strong (higher threshold)
+            final_threshold = int(final_threshold / curriculum_weight)
+            final_threshold = max(min_threshold, min(max_threshold, final_threshold))
+            if final_threshold != old_threshold:
+                print(f"[Training] CURRICULUM_WEIGHT: {config_key} weight={curriculum_weight:.2f} "
+                      f"- threshold {old_threshold} → {final_threshold}")
+
         if final_threshold != base_threshold:
             print(f"[Training] Dynamic threshold for {config_key}: {final_threshold} (base: {base_threshold}, adj: {adjustment:.2f})")
 
@@ -389,6 +424,49 @@ class TrainingScheduler:
         now = time.time()
         self._training_history.append(now)
         self._training_history = [t for t in self._training_history if now - t < 86400]
+
+    def record_selfplay_result(
+        self,
+        config_key: str,
+        winner: int,
+        model_elo: float = 1500.0,
+    ) -> None:
+        """Record a selfplay game result for curriculum feedback.
+
+        Args:
+            config_key: Config identifier (e.g., "square8_2p")
+            winner: 1 = model won, -1 = model lost, 0 = draw
+            model_elo: Current model Elo rating
+        """
+        if self._curriculum_feedback is not None:
+            self._curriculum_feedback.record_game(
+                config_key, winner, model_elo, opponent_type="selfplay"
+            )
+
+    def get_curriculum_weights(self) -> Dict[str, float]:
+        """Get curriculum weights for all configs.
+
+        Returns:
+            Dict mapping config_key → weight (0.5 to 2.0)
+            Higher weight = more training attention needed
+        """
+        if self._curriculum_feedback is not None:
+            return self._curriculum_feedback.get_curriculum_weights()
+        return {}
+
+    def get_curriculum_weight(self, config_key: str) -> float:
+        """Get curriculum weight for a specific config.
+
+        Returns:
+            Weight between 0.5 (de-prioritize) and 2.0 (high priority)
+        """
+        weights = self.get_curriculum_weights()
+        return weights.get(config_key, 1.0)
+
+    def record_training_complete_for_curriculum(self, config_key: str) -> None:
+        """Record training completion for curriculum feedback."""
+        if self._curriculum_feedback is not None:
+            self._curriculum_feedback.record_training(config_key)
 
     def set_feedback_controller(self, feedback: "PipelineFeedbackController"):
         """Set the feedback controller (called after initialization)."""
