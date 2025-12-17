@@ -513,7 +513,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     }
 
     # Log enabled improvements
-    enabled = [k for k, v in training_improvements.items() if v and k not in ['cyclic_lr_period', 'amp_dtype', 'value_whitening_momentum', 'ema_decay', 'stochastic_depth_prob', 'hard_example_top_k']]
+    enabled = [k for k, v in training_improvements.items() if v and k not in ['cyclic_lr_period', 'amp_dtype', 'value_whitening_momentum', 'ema_decay', 'stochastic_depth_prob', 'hard_example_top_k', 'policy_label_smoothing']]
+    if training_improvements.get('policy_label_smoothing', 0) > 0:
+        enabled.append(f"policy_label_smoothing={training_improvements['policy_label_smoothing']}")
     if enabled:
         print(f"[Training] 2024-12 improvements enabled: {', '.join(enabled)}")
 
