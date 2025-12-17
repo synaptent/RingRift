@@ -322,6 +322,46 @@ python scripts/train_nnue_policy.py \
 - Better policy calibration for uncertain positions
 - Improved move ranking across all candidates
 
+### Automated Training Pipeline
+
+The `scripts/auto_training_pipeline.py` provides a complete training workflow including data collection, value training, policy training, A/B testing, and model distribution:
+
+```bash
+# Full pipeline
+python scripts/auto_training_pipeline.py \
+    --board-type square8 \
+    --num-players 2
+
+# Dry run to see what would be done
+python scripts/auto_training_pipeline.py \
+    --dry-run --board-type hexagonal
+
+# Skip steps selectively
+python scripts/auto_training_pipeline.py \
+    --skip-collect --skip-backfill \
+    --board-type square8
+```
+
+**Pipeline Steps:**
+
+| Step             | Flag to Skip      | Description                    |
+| ---------------- | ----------------- | ------------------------------ |
+| 1. Collect       | `--skip-collect`  | Gather data from cluster nodes |
+| 2. Backfill      | `--skip-backfill` | Add missing snapshots          |
+| 3. Train Value   | `--skip-train`    | Train NNUE value model         |
+| 3b. Train Policy | `--skip-policy`   | Train NNUE policy model        |
+| 3c. A/B Test     | `--skip-ab-test`  | Validate policy improvement    |
+| 3d. Selfplay     | `--skip-selfplay` | Generate policy-guided games   |
+| 4. Sync          | `--skip-sync`     | Distribute models to nodes     |
+
+**Policy Training Options:**
+
+```bash
+--use-curriculum         # Use staged curriculum training (default)
+--no-curriculum          # Use direct training
+--selfplay-games 100     # Games for policy selfplay
+```
+
 ### Multi-Config Training Loop
 
 The `scripts/multi_config_training_loop.py` orchestrates training across board/player configurations:

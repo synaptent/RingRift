@@ -98,10 +98,23 @@ Features:
 - `training_completion_watcher.py` - **Auto-Elo trigger daemon**
   - Monitors training logs and triggers Elo tournaments on completion
   - Start: `python scripts/training_completion_watcher.py --daemon`
-- `auto_training_pipeline.py` - **Automated pipeline with optimized settings**
-  - Victory-type balanced sampling, higher batch sizes
-  - Auto-triggers Elo calibration
-  - Start: `python scripts/auto_training_pipeline.py --board square8 --num-players 2`
+- `auto_training_pipeline.py` - **Automated training pipeline** (40KB)
+  - Complete workflow: data collection → value training → policy training → A/B test → selfplay → sync
+  - Curriculum-based policy training with staged progression (endgame → opening)
+  - A/B testing to validate policy model improvements before deployment
+  - Policy-guided selfplay for high-quality training data generation
+  - Start: `python scripts/auto_training_pipeline.py --board-type square8 --num-players 2`
+  - Dry run: `python scripts/auto_training_pipeline.py --dry-run --board-type square8`
+  - Policy only: `python scripts/auto_training_pipeline.py --skip-collect --skip-backfill --skip-train`
+- `train_nnue_policy_curriculum.py` - **Staged curriculum policy training** (17KB)
+  - Progressive training: endgame → late-mid → midgame → opening → full
+  - Transfer learning between stages
+  - Board-specific max_moves_per_position auto-selection
+  - Start: `python scripts/train_nnue_policy_curriculum.py --db data/games/*.db --board-type square8`
+- `ab_test_policy_models.py` - **A/B testing for policy models** (12KB)
+  - Compare policy model against baseline
+  - Multi-think-time testing (50ms, 100ms, 200ms, 500ms)
+  - Start: `python scripts/ab_test_policy_models.py --model-a models/nnue/policy.pt --board-type square8`
 - `reanalyze_mcts_policy.py` - **MCTS policy reanalysis**
   - Adds MCTS visit distributions to existing games for KL loss training
   - Start: `python scripts/reanalyze_mcts_policy.py --input games.jsonl --output mcts_games.jsonl`

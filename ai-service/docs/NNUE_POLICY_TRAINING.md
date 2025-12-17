@@ -448,8 +448,79 @@ Enable mixed precision and parallel data loading:
 --num-workers 4
 ```
 
+## Automated Training Pipeline
+
+The `scripts/auto_training_pipeline.py` integrates policy training into the full training workflow:
+
+```bash
+# Full pipeline with policy training
+python scripts/auto_training_pipeline.py \
+    --board-type square8 \
+    --num-players 2
+
+# Skip specific steps
+python scripts/auto_training_pipeline.py \
+    --skip-collect --skip-backfill \
+    --board-type square8
+
+# Policy-only mode (skip value training)
+python scripts/auto_training_pipeline.py \
+    --skip-collect --skip-backfill --skip-train \
+    --board-type square8
+```
+
+**Pipeline Steps:**
+
+1. **Data Collection**: Gather game data from cluster nodes
+2. **Backfill**: Add missing snapshots to database
+3. **Value Training**: Train NNUE value model
+4. **Policy Training**: Train NNUE policy model (with curriculum)
+5. **A/B Test**: Validate policy model improvement
+6. **Policy Selfplay**: Generate quality data with policy model
+7. **Sync**: Distribute models to all nodes
+
+**Policy-Specific Options:**
+
+```bash
+--skip-policy            # Skip policy training
+--skip-ab-test           # Skip A/B validation
+--skip-selfplay          # Skip policy-guided selfplay
+--selfplay-games 100     # Games to generate (default: 100)
+--use-curriculum         # Use staged curriculum training (default)
+--no-curriculum          # Use direct training instead
+```
+
+## A/B Testing
+
+Validate policy model improvements before deployment:
+
+```bash
+# Run A/B test against baseline
+python scripts/ab_test_policy_models.py \
+    --model-a models/nnue/nnue_policy_square8_2p.pt \
+    --board-type square8 \
+    --num-games 20 \
+    --think-time 200
+```
+
+**Multi-Time A/B Testing:**
+
+Test at multiple think times to validate policy benefits:
+
+```bash
+# Quick tests at 50ms, 100ms, 200ms
+python scripts/ab_test_policy_models.py \
+    --model-a models/nnue/nnue_policy_square8_2p.pt \
+    --board-type square8 \
+    --think-times 50 100 200 500
+```
+
+Policy models typically show greater improvements at shorter think times.
+
 ## See Also
 
 - `docs/TRAINING_PIPELINE.md` - Full training pipeline
 - `docs/MCTS_INTEGRATION.md` - MCTS system details
 - `scripts/train_nnue_policy_curriculum.py` - Curriculum-based training
+- `scripts/auto_training_pipeline.py` - Automated training workflow
+- `scripts/ab_test_policy_models.py` - A/B testing validation
