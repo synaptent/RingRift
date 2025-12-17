@@ -462,9 +462,9 @@ class StreamingDataCollector:
         if hosts_with_new_data:
             print(f"[DataCollector] {len(hosts_with_new_data)} hosts have new data to sync")
 
-        # Phase 3: Sync hosts with new data (limited concurrency to avoid network saturation)
+        # Phase 3: Sync hosts with new data (increased concurrency for faster ingestion)
         total_new = 0
-        max_concurrent_syncs = 4  # Limit concurrent rsync operations
+        max_concurrent_syncs = 10  # Increased from 4 for 2.5x faster data ingestion
 
         semaphore = asyncio.Semaphore(max_concurrent_syncs)
 

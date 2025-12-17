@@ -19,7 +19,12 @@
   "links": [],
   "panels": [
     {
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
       "options": {
         "content": "# RingRift AI Self-Improvement Loop\nReal-time monitoring of the unified AI training pipeline.",
@@ -29,33 +34,65 @@
       "type": "text"
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 4 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 4
+      },
       "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
-      "targets": [{ "expr": "ringrift_uptime_seconds", "legendFormat": "Uptime" }],
+      "targets": [
+        {
+          "expr": "ringrift_uptime_seconds",
+          "legendFormat": "Uptime"
+        }
+      ],
       "title": "Uptime",
       "type": "stat",
-      "fieldConfig": { "defaults": { "unit": "s" } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 4 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 4
+      },
       "id": 3,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
-      "targets": [{ "expr": "ringrift_hosts_active", "legendFormat": "Active Hosts" }],
+      "targets": [
+        {
+          "expr": "ringrift_hosts_active",
+          "legendFormat": "Active Hosts"
+        }
+      ],
       "title": "Active Hosts",
       "type": "stat",
       "fieldConfig": {
@@ -63,43 +100,78 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 5 },
-              { "color": "green", "value": 10 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "green",
+                "value": 10
+              }
             ]
           }
         }
       }
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 4 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 4
+      },
       "id": 4,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
-        { "expr": "sum(increase(ringrift_games_synced_total[1h]))", "legendFormat": "Games/hr" }
+        {
+          "expr": "sum(increase(ringrift_games_synced_total[1h]))",
+          "legendFormat": "Games/hr"
+        }
       ],
       "title": "Games Synced (1h)",
       "type": "stat"
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 4 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 4
+      },
       "id": 5,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
-      "targets": [{ "expr": "sum(ringrift_games_pending_training)", "legendFormat": "Pending" }],
+      "targets": [
+        {
+          "expr": "sum(ringrift_games_pending_training)",
+          "legendFormat": "Pending"
+        }
+      ],
       "title": "Games Pending Training",
       "type": "stat",
       "fieldConfig": {
@@ -107,23 +179,41 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 500 },
-              { "color": "red", "value": 2000 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
             ]
           }
         }
       }
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 4 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 4
+      },
       "id": 6,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
@@ -136,18 +226,30 @@
       "type": "stat"
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 4 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 4
+      },
       "id": 7,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
-        { "expr": "sum(increase(ringrift_promotions_total[24h]))", "legendFormat": "Promotions" }
+        {
+          "expr": "sum(increase(ringrift_promotions_total[24h]))",
+          "legendFormat": "Promotions"
+        }
       ],
       "title": "Promotions (24h)",
       "type": "stat",
@@ -156,92 +258,189 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "yellow", "value": null },
-              { "color": "green", "value": 1 }
+              {
+                "color": "yellow",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
             ]
           }
         }
       }
     },
     {
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
       "id": 10,
       "options": {
-        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
-      "targets": [{ "expr": "ringrift_current_elo{model=\"best\"}", "legendFormat": "{{config}}" }],
+      "targets": [
+        {
+          "expr": "ringrift_current_elo{model=\"best\"}",
+          "legendFormat": "{{config}}"
+        }
+      ],
       "title": "Elo Ratings by Configuration",
       "type": "timeseries",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          },
           "unit": "none"
         }
       }
     },
     {
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
       "id": 11,
       "options": {
-        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
-      "targets": [{ "expr": "ringrift_elo_trend", "legendFormat": "{{config}}" }],
+      "targets": [
+        {
+          "expr": "ringrift_elo_trend",
+          "legendFormat": "{{config}}"
+        }
+      ],
       "title": "Elo Trend (Improvement Rate)",
       "type": "timeseries",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
         }
       }
     },
     {
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
       "id": 12,
       "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
-        { "expr": "rate(ringrift_games_synced_total[5m]) * 60", "legendFormat": "{{host}}" }
+        {
+          "expr": "rate(ringrift_games_synced_total[5m]) * 60",
+          "legendFormat": "{{host}}"
+        }
       ],
       "title": "Games Synced per Minute by Host",
       "type": "timeseries",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 1, "fillOpacity": 20 }
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 20
+          }
         }
       }
     },
     {
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
       "id": 13,
       "options": {
-        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
-      "targets": [{ "expr": "ringrift_curriculum_weight", "legendFormat": "{{config}}" }],
+      "targets": [
+        {
+          "expr": "ringrift_curriculum_weight",
+          "legendFormat": "{{config}}"
+        }
+      ],
       "title": "Curriculum Weights",
       "type": "timeseries",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          },
           "min": 0,
           "max": 3
         }
       }
     },
     {
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 24
+      },
       "id": 14,
       "options": {
-        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -251,14 +450,29 @@
       ],
       "title": "Sync Duration (p95)",
       "type": "timeseries",
-      "fieldConfig": { "defaults": { "unit": "s" } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
     },
     {
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 24
+      },
       "id": 15,
       "options": {
-        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -268,14 +482,29 @@
       ],
       "title": "Training Duration (p95)",
       "type": "timeseries",
-      "fieldConfig": { "defaults": { "unit": "s" } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
     },
     {
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 24
+      },
       "id": 16,
       "options": {
-        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -285,14 +514,29 @@
       ],
       "title": "Evaluation Duration (p95)",
       "type": "timeseries",
-      "fieldConfig": { "defaults": { "unit": "s" } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
     },
     {
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 32 },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
       "id": 17,
       "options": {
-        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -302,14 +546,32 @@
       ],
       "title": "Sync Errors per Minute",
       "type": "timeseries",
-      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "red" } } }
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        }
+      }
     },
     {
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 32 },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
       "id": 18,
       "options": {
-        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -319,14 +581,32 @@
       ],
       "title": "Loop Errors per Minute",
       "type": "timeseries",
-      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "red" } } }
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        }
+      }
     },
     {
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 38 },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
       "id": 20,
       "options": {
-        "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "right" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": ["mean", "last"],
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -336,10 +616,21 @@
       ],
       "title": "Average Elo Gain on Promotion",
       "type": "timeseries",
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } }
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      }
     },
     {
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 46 },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
       "id": 21,
       "options": {
         "content": "## P2P Gossip Protocol\nReal-time monitoring of cluster gossip protocol, compression, and sync intervals.",
@@ -349,48 +640,88 @@
       "type": "text"
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 50 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 50
+      },
       "id": 22,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
-      "targets": [{ "expr": "ringrift_gossip_messages_sent", "legendFormat": "Sent" }],
+      "targets": [
+        {
+          "expr": "ringrift_gossip_messages_sent",
+          "legendFormat": "Sent"
+        }
+      ],
       "title": "Gossip Messages Sent",
       "type": "stat"
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 50 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 50
+      },
       "id": 23,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
-      "targets": [{ "expr": "ringrift_gossip_messages_received", "legendFormat": "Received" }],
+      "targets": [
+        {
+          "expr": "ringrift_gossip_messages_received",
+          "legendFormat": "Received"
+        }
+      ],
       "title": "Gossip Messages Received",
       "type": "stat"
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 50 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 50
+      },
       "id": 24,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
-        { "expr": "ringrift_gossip_compression_ratio * 100", "legendFormat": "Compression %" }
+        {
+          "expr": "ringrift_gossip_compression_ratio * 100",
+          "legendFormat": "Compression %"
+        }
       ],
       "title": "Compression Ratio",
       "type": "stat",
@@ -400,57 +731,113 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "yellow", "value": null },
-              { "color": "green", "value": 60 }
+              {
+                "color": "yellow",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 60
+              }
             ]
           }
         }
       }
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 50 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 50
+      },
       "id": 25,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
-      "targets": [{ "expr": "ringrift_gossip_bytes_saved_kb", "legendFormat": "KB Saved" }],
+      "targets": [
+        {
+          "expr": "ringrift_gossip_bytes_saved_kb",
+          "legendFormat": "KB Saved"
+        }
+      ],
       "title": "Bytes Saved (KB)",
       "type": "stat",
-      "fieldConfig": { "defaults": { "unit": "KBs" } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "KBs"
+        }
+      }
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 50 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 50
+      },
       "id": 26,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
-      "targets": [{ "expr": "ringrift_sync_interval_data", "legendFormat": "Data Sync" }],
+      "targets": [
+        {
+          "expr": "ringrift_sync_interval_data",
+          "legendFormat": "Data Sync"
+        }
+      ],
       "title": "Data Sync Interval",
       "type": "stat",
-      "fieldConfig": { "defaults": { "unit": "s" } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
     },
     {
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 50 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 50
+      },
       "id": 27,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
-      "targets": [{ "expr": "ringrift_sync_activity_factor", "legendFormat": "Activity Factor" }],
+      "targets": [
+        {
+          "expr": "ringrift_sync_activity_factor",
+          "legendFormat": "Activity Factor"
+        }
+      ],
       "title": "Activity Factor",
       "type": "stat",
       "fieldConfig": {
@@ -458,46 +845,393 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1.0 },
-              { "color": "red", "value": 1.5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.0
+              },
+              {
+                "color": "red",
+                "value": 1.5
+              }
             ]
           }
         }
       }
     },
     {
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 54 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 54
+      },
       "id": 28,
       "options": {
-        "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "right" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": ["mean", "last"],
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
-        { "expr": "ringrift_dedup_files_skipped", "legendFormat": "Files Skipped" },
-        { "expr": "ringrift_dedup_bytes_saved_mb", "legendFormat": "MB Saved" }
+        {
+          "expr": "ringrift_dedup_files_skipped",
+          "legendFormat": "Files Skipped"
+        },
+        {
+          "expr": "ringrift_dedup_bytes_saved_mb",
+          "legendFormat": "MB Saved"
+        }
       ],
       "title": "Data Deduplication",
       "type": "timeseries"
     },
     {
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 54 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 54
+      },
       "id": 29,
       "options": {
-        "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "right" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "calcs": ["mean", "last"],
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
-      "targets": [{ "expr": "ringrift_leader_agreement", "legendFormat": "Leader Agreement" }],
+      "targets": [
+        {
+          "expr": "ringrift_leader_agreement",
+          "legendFormat": "Leader Agreement"
+        }
+      ],
       "title": "Leader Consensus",
       "type": "timeseries"
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      },
+      "id": 30,
+      "options": {
+        "content": "## Resource Monitoring\nReal-time resource utilization and degradation status.",
+        "mode": "markdown"
+      },
+      "title": "",
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 64
+      },
+      "id": 31,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "ringrift_resource_cpu_percent",
+          "legendFormat": "CPU"
+        }
+      ],
+      "title": "CPU Usage %",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 64
+      },
+      "id": 32,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "ringrift_resource_memory_percent",
+          "legendFormat": "Memory"
+        }
+      ],
+      "title": "Memory Usage %",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 64
+      },
+      "id": 33,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "ringrift_resource_disk_percent",
+          "legendFormat": "Disk"
+        }
+      ],
+      "title": "Disk Usage %",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 70
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 64
+      },
+      "id": 34,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "ringrift_resource_degradation_level",
+          "legendFormat": "Level"
+        }
+      ],
+      "title": "Degradation Level",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Normal",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "Light",
+                  "color": "yellow"
+                },
+                "2": {
+                  "text": "Moderate",
+                  "color": "orange"
+                },
+                "3": {
+                  "text": "Heavy",
+                  "color": "red"
+                },
+                "4": {
+                  "text": "Critical",
+                  "color": "dark-red"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 68
+      },
+      "id": 35,
+      "options": {},
+      "targets": [
+        {
+          "expr": "ringrift_resource_cpu_percent",
+          "legendFormat": "CPU"
+        },
+        {
+          "expr": "ringrift_resource_memory_percent",
+          "legendFormat": "Memory"
+        },
+        {
+          "expr": "ringrift_resource_disk_percent",
+          "legendFormat": "Disk"
+        }
+      ],
+      "title": "Resource Usage Over Time",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100
+        }
+      }
+    },
+    {
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 68
+      },
+      "id": 36,
+      "options": {},
+      "targets": [
+        {
+          "expr": "ringrift_resource_available{resource_type=\"cpu\"}",
+          "legendFormat": "CPU OK"
+        },
+        {
+          "expr": "ringrift_resource_available{resource_type=\"memory\"}",
+          "legendFormat": "Memory OK"
+        },
+        {
+          "expr": "ringrift_resource_available{resource_type=\"disk\"}",
+          "legendFormat": "Disk OK"
+        }
+      ],
+      "title": "Resource Availability",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Exceeded",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "OK",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        }
+      }
     }
   ],
   "refresh": "30s",
   "schemaVersion": 27,
   "style": "dark",
   "tags": ["ringrift", "ai", "training"],
-  "templating": { "list": [] },
-  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "title": "RingRift AI Self-Improvement Loop",
