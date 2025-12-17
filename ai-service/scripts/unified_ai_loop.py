@@ -5095,24 +5095,41 @@ class UnifiedAILoop:
         while self._running:
             try:
                 if use_external:
-                    # External sync mode: just count games in synced directory
-                    synced_dir = AI_SERVICE_ROOT / "data" / "games" / "synced"
+                    # External sync mode: count games in synced dir AND main games dir
+                    import sqlite3
                     new_games = 0
                     current_count = 0
+
+                    # Check synced directory (if external sync is populating it)
+                    synced_dir = AI_SERVICE_ROOT / "data" / "games" / "synced"
                     if synced_dir.exists():
                         for db_path in synced_dir.rglob("*.db"):
                             if "schema" in db_path.name:
                                 continue
                             try:
-                                import sqlite3
                                 conn = sqlite3.connect(db_path)
                                 count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
                                 conn.close()
                                 current_count += count
                             except Exception:
                                 pass
-                        new_games = max(0, current_count - _last_game_count)
-                        _last_game_count = current_count
+
+                    # Also check main games directory for consolidated databases
+                    games_dir = AI_SERVICE_ROOT / "data" / "games"
+                    if games_dir.exists():
+                        for db_path in games_dir.glob("*.db"):
+                            if "schema" in db_path.name or db_path.name.startswith("."):
+                                continue
+                            try:
+                                conn = sqlite3.connect(db_path)
+                                count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+                                conn.close()
+                                current_count += count
+                            except Exception:
+                                pass
+
+                    new_games = max(0, current_count - _last_game_count)
+                    _last_game_count = current_count
                     self.health_tracker.record_success("data_collector")
                     if new_games > 0:
                         print(f"[DataCollection] External sync detected {new_games} new games (total: {current_count})")

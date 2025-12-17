@@ -179,6 +179,32 @@ python scripts/cluster_control.py status
 python scripts/cluster_control.py selfplay start --board hex8 --games 500
 ```
 
+### 6. UNIFIED LOOP NOT DETECTING GAMES (Critical) - FIXED
+
+**Symptom**: Unified AI loop showed 0 data syncs and 0 training runs despite 784K games available.
+
+**Root Cause**: When `use_external_sync=true`, the loop only checked `data/games/synced/` directory. After disk cleanup, this directory was deleted but games existed in `data/games/*.db`.
+
+**Fix Applied** (in `scripts/unified_ai_loop.py`):
+
+- Modified external sync mode to check BOTH directories:
+  - `data/games/synced/` (for incoming synced data)
+  - `data/games/*.db` (for consolidated databases)
+- Loop now correctly detects 784K+ games and triggers training
+
+**Result**: Training triggers properly, evaluations running.
+
+## Current System Status (2025-12-17)
+
+| Component         | Status     | Details                                    |
+| ----------------- | ---------- | ------------------------------------------ |
+| Unified AI Loop   | Running    | Detecting 784K games, triggering training  |
+| Data Sync Service | Running    | Port 8772, 28 hosts configured             |
+| Training          | Active     | square8_2p, square8_3p training on GH200-k |
+| Elo Evaluation    | Active     | 7,685 matches, recent evaluations          |
+| Cluster Nodes     | 34/47      | Updated with latest code                   |
+| Disk Space        | 114GB free | Synced data moved to Mac Studio            |
+
 ## Related Documentation
 
 - [UNIFIED_AI_LOOP.md](UNIFIED_AI_LOOP.md) - Training loop configuration
