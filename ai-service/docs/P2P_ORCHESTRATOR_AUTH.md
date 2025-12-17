@@ -88,12 +88,15 @@ See [PIPELINE_ORCHESTRATOR.md](PIPELINE_ORCHESTRATOR.md) for full pipeline docum
 
 ### Core Arguments
 
-| Argument          | Description                   | Default     |
-| ----------------- | ----------------------------- | ----------- |
-| `--node-id`       | Unique node identifier        | hostname    |
-| `--port`          | HTTP API port                 | 8770        |
-| `--peers`         | Comma-separated peer URLs     | -           |
-| `--ringrift-path` | Path to RingRift installation | auto-detect |
+| Argument           | Description                      | Default      |
+| ------------------ | -------------------------------- | ------------ |
+| `--node-id`        | Unique node identifier           | hostname     |
+| `--host`           | Host address to bind to          | 0.0.0.0      |
+| `--port`           | HTTP API port                    | 8770         |
+| `--advertise-host` | Host address advertised to peers | auto-detect  |
+| `--advertise-port` | Port advertised to peers         | same as port |
+| `--peers`          | Comma-separated peer URLs        | -            |
+| `--ringrift-path`  | Path to RingRift installation    | auto-detect  |
 
 ### Authentication Arguments
 
@@ -107,7 +110,6 @@ See [PIPELINE_ORCHESTRATOR.md](PIPELINE_ORCHESTRATOR.md) for full pipeline docum
 | Argument        | Description                       | Default |
 | --------------- | --------------------------------- | ------- |
 | `--relay-peers` | Relay peers for NAT-blocked nodes | -       |
-| `--gossip-port` | Gossip protocol port              | 8771    |
 
 ### Storage Arguments
 
@@ -163,11 +165,13 @@ When using ramdrive, data is synced to disk periodically:
 
 ### Gossip Protocol
 
-The P2P orchestrator uses a gossip protocol on port 8771 for:
+The P2P orchestrator uses a gossip protocol for:
 
 - Peer discovery
 - Data replication
 - Health propagation
+
+Gossip runs over the main HTTP API port.
 
 ## Related Documentation
 
