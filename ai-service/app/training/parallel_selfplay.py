@@ -69,7 +69,15 @@ class GameResult:
 
 
 def _worker_init(config_dict: dict) -> None:
-    """Initialize worker process with config."""
+    """Initialize worker process with config and PYTHONPATH."""
+    import sys
+    from pathlib import Path
+
+    # Add ai-service root to path for worker processes
+    ai_service_root = Path(__file__).resolve().parents[2]
+    if str(ai_service_root) not in sys.path:
+        sys.path.insert(0, str(ai_service_root))
+
     global _worker_config
     _worker_config = config_dict
 
@@ -92,6 +100,13 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
 
     try:
         start_time = time.time()
+
+        # Ensure ai-service is in path for worker subprocess
+        import sys
+        import os
+        ai_service_root = os.environ.get('RINGRIFT_AI_SERVICE_ROOT')
+        if ai_service_root and ai_service_root not in sys.path:
+            sys.path.insert(0, ai_service_root)
 
         # Import dependencies in worker (avoid serialization issues)
         from app.env import RingRiftEnv
