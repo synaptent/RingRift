@@ -126,12 +126,14 @@ def run_training_stage(
         logger.error(f"Stage '{stage.name}' failed with return code {result.returncode}")
         return str(model_path), {"error": f"Training failed with code {result.returncode}"}
 
-    # Load report if exists
-    report_path = stage_dir / "training_report.json"
+    # Load report if exists (try both naming conventions)
     report = {}
-    if report_path.exists():
-        with open(report_path) as f:
-            report = json.load(f)
+    for report_name in ["nnue_policy_training_report.json", "training_report.json"]:
+        report_path = stage_dir / report_name
+        if report_path.exists():
+            with open(report_path) as f:
+                report = json.load(f)
+            break
 
     return str(model_path), report
 

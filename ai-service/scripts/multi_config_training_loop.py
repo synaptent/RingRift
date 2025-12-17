@@ -232,6 +232,7 @@ BOARD_VARIANTS = {
     "square8": ["square8", "sq8"],
     "square19": ["square19", "sq19"],
     "hexagonal": ["hex", "hexagonal"],
+    "hex8": ["hex8"],
 }
 
 # Short names for display - must be unique per board type
@@ -239,6 +240,7 @@ BOARD_SHORT_NAMES = {
     "square8": "sq8",
     "square19": "sq19",
     "hexagonal": "hex",
+    "hex8": "hex8",
 }
 
 

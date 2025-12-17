@@ -34,12 +34,80 @@ if PROJECT_ROOT not in sys.path:
 
 from app.models import BoardType, GameState, Move
 from app.rules.default_engine import DefaultRulesEngine
+from app.mcts.improved_mcts import GameState as MCTSGameState
+from app.training.generate_data import create_initial_state
+import hashlib
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+class GameStateAdapter(MCTSGameState):
+    """Adapts app.models.GameState to MCTS GameState interface.
+
+    MCTS expects integer move indices, but our game uses Move objects.
+    This adapter maintains a bidirectional mapping between them.
+    """
+
+    def __init__(self, real_state, engine, move_list=None):
+        """
+        Args:
+            real_state: The actual GameState from app.models
+            engine: The rules engine for move generation/application
+            move_list: Optional pre-computed list of legal moves
+        """
+        self.real_state = real_state
+        self.engine = engine
+        self._current_player = real_state.current_player or 1
+        if move_list is not None:
+            self._legal_moves = move_list
+        else:
+            self._legal_moves = engine.get_valid_moves(real_state, self._current_player)
+
+    def get_legal_moves(self) -> List[int]:
+        """Return indices [0, 1, 2, ...] for legal moves."""
+        return list(range(len(self._legal_moves)))
+
+    def apply_move(self, move_idx: int) -> 'GameStateAdapter':
+        """Apply move by index and return new adapted state."""
+        if move_idx < 0 or move_idx >= len(self._legal_moves):
+            raise ValueError(f"Invalid move index {move_idx}, have {len(self._legal_moves)} moves")
+        move = self._legal_moves[move_idx]
+        new_real_state = self.engine.apply_move(
+            self.real_state.model_copy(deep=True), move
+        )
+        return GameStateAdapter(new_real_state, self.engine)
+
+    def is_terminal(self) -> bool:
+        """Check if game is over."""
+        return self.real_state.game_status != "active"
+
+    def get_outcome(self, player: int) -> float:
+        """Get outcome for specified player."""
+        if self.real_state.winner == player:
+            return 1.0
+        elif self.real_state.winner is not None:
+            return -1.0
+        return 0.0
+
+    def current_player(self) -> int:
+        """Get current player (0-indexed for MCTS)."""
+        return (self._current_player - 1) % 2
+
+    def hash(self) -> str:
+        """Generate unique hash for transposition table."""
+        board_str = str(self.real_state.board)
+        player_str = str(self._current_player)
+        return hashlib.md5(f"{board_str}:{player_str}".encode()).hexdigest()
+
+    def get_move_by_index(self, idx: int):
+        """Get the actual Move object for an index."""
+        if 0 <= idx < len(self._legal_moves):
+            return self._legal_moves[idx]
+        return None
 
 
 class HeuristicNetworkWrapper:
@@ -50,27 +118,30 @@ class HeuristicNetworkWrapper:
         self.engine = engine
         self.board_size = board_size
 
-    def evaluate(self, state) -> tuple:
-        """Return uniform policy over legal moves and heuristic value."""
-        from typing import List, Tuple
+    def evaluate(self, state: GameStateAdapter) -> tuple:
+        """Return uniform policy over legal moves and heuristic value.
 
-        current_player = state.current_player or 1
-        legal_moves = self.engine.get_valid_moves(state, current_player)
+        Policy indices match the legal move indices from GameStateAdapter.
+        """
+        # Get real state and legal moves from adapter
+        real_state = state.real_state
+        current_player = state._current_player
+        legal_moves = state._legal_moves
+        num_legal = len(legal_moves)
 
-        # Create uniform policy over legal moves
-        max_moves = self.board_size * self.board_size * 4
-        policy = [0.0] * max_moves
+        # Create policy - indexed by move position in legal_moves
+        max_policy_size = max(num_legal, self.board_size * self.board_size * 4)
+        policy = [0.0] * max_policy_size
 
-        if legal_moves:
-            prob = 1.0 / len(legal_moves)
-            for i, move in enumerate(legal_moves):
-                if i < max_moves:
-                    policy[i] = prob
+        if num_legal > 0:
+            prob = 1.0 / num_legal
+            for i in range(num_legal):
+                policy[i] = prob
 
         # Use heuristic evaluation for value
         try:
             move_scores = self.evaluator.evaluate_moves(
-                state, legal_moves, current_player, self.engine
+                real_state, legal_moves, current_player, self.engine
             )
             if move_scores:
                 scores = [s for _, s in move_scores]
@@ -136,15 +207,9 @@ def reanalyze_game(
         try:
             state = GameState(**initial_state_dict)
         except Exception:
-            state = GameState.create_initial_state(
-                board_type=board_type,
-                num_players=num_players,
-            )
+            state = create_initial_state(board_type, num_players)
     else:
-        state = GameState.create_initial_state(
-            board_type=board_type,
-            num_players=num_players,
-        )
+        state = create_initial_state(board_type, num_players)
 
     moves = game.get("moves", [])
     reanalyzed_moves = []
@@ -156,18 +221,27 @@ def reanalyze_game(
         # Only analyze every Nth move
         if i % sample_every == 0 and state.game_status == "active":
             try:
-                # Run MCTS search to get policy
-                mcts.search(state, add_noise=False)
-                policy = mcts.get_policy(temperature=1.0)
+                # Get valid moves for this position
+                current_player = state.current_player or 1
+                valid_moves = engine.get_valid_moves(state, current_player)
 
-                # Convert to sparse dict (only non-zero probs)
-                mcts_policy = {
-                    idx: prob for idx, prob in enumerate(policy)
-                    if prob > 1e-6
-                }
+                if valid_moves:
+                    # Wrap state in adapter for MCTS
+                    adapted_state = GameStateAdapter(state, engine, valid_moves)
 
-                if mcts_policy:
-                    new_move["mcts_policy"] = mcts_policy
+                    # Run MCTS search to get policy
+                    mcts.search(adapted_state, add_noise=False)
+                    policy = mcts.get_policy(temperature=1.0)
+
+                    # Convert to sparse dict (only non-zero probs)
+                    # Indices are positions in valid_moves list
+                    mcts_policy = {
+                        idx: prob for idx, prob in enumerate(policy)
+                        if prob > 1e-6
+                    }
+
+                    if mcts_policy:
+                        new_move["mcts_policy"] = mcts_policy
 
             except Exception as e:
                 logger.debug(f"Failed to analyze move {i}: {e}")
@@ -254,11 +328,15 @@ def main():
     # Initialize components
     logger.info("Initializing MCTS and evaluator...")
 
-    from app.ai.heuristic import HybridEvaluator
+    from app.ai.hybrid_gpu import create_hybrid_evaluator
     from app.mcts.improved_mcts import ImprovedMCTS, MCTSConfig
 
     engine = DefaultRulesEngine()
-    evaluator = HybridEvaluator()
+    evaluator = create_hybrid_evaluator(
+        board_type=args.board_type or "square8",
+        num_players=args.num_players or 2,
+        prefer_gpu=False  # Use CPU for reanalysis to avoid memory issues
+    )
 
     # Track statistics
     games_processed = 0

@@ -59,8 +59,15 @@ STAGE1_DIR = AI_SERVICE_ROOT / "data" / "gauntlet_stage1"
 STAGE2_DIR = AI_SERVICE_ROOT / "data" / "gauntlet_stage2"
 FINAL_RESULTS = AI_SERVICE_ROOT / "data" / "gauntlet_final_results.json"
 
+# Game recording directory
+GAUNTLET_GAMES_DIR = AI_SERVICE_ROOT / "data" / "gauntlet_games"
+
 STAGE1_DIR.mkdir(parents=True, exist_ok=True)
 STAGE2_DIR.mkdir(parents=True, exist_ok=True)
+GAUNTLET_GAMES_DIR.mkdir(parents=True, exist_ok=True)
+
+# Global flag for game recording (set by --no-record flag)
+RECORD_GAMES = True
 
 
 @dataclass
@@ -174,6 +181,12 @@ class ModelResult:
         self.confidence_upper = ws.upper_bound
 
 
+def get_gauntlet_db_path(board_type: str, num_players: int, shard: int = 0) -> Path:
+    """Get path to gauntlet games database for this shard."""
+    hostname = socket.gethostname()
+    return GAUNTLET_GAMES_DIR / f"gauntlet_{board_type}_{num_players}p_{hostname}_shard{shard}.db"
+
+
 def play_game(
     model_path: str,
     model_type: str,
@@ -181,8 +194,24 @@ def play_game(
     board_type: BoardType,
     num_players: int = 2,
     model_plays_first: bool = True,
+    record_games: bool = True,
+    db_path: Optional[str] = None,
 ) -> Optional[int]:
-    """Play a single game, return winner or None for error."""
+    """Play a single game, optionally record to database, return winner or None for error.
+
+    Args:
+        model_path: Path to the model file
+        model_type: "nn" or "nnue"
+        opponent_type: "random", "heuristic", or "mcts"
+        board_type: Board type
+        num_players: Number of players
+        model_plays_first: Whether the model plays first
+        record_games: Whether to record games to database (only model wins)
+        db_path: Path to games database (optional)
+
+    Returns:
+        Winner player number, or None if error
+    """
     try:
         from app.game_engine import GameEngine
         from app.main import _create_ai_instance
@@ -190,6 +219,7 @@ def play_game(
         from app.training.generate_data import create_initial_state
 
         state = create_initial_state(board_type=board_type, num_players=num_players)
+        initial_state = state  # Keep reference for recording
         engine = GameEngine()
 
         # Opponent setup
@@ -230,6 +260,10 @@ def play_game(
 
         ais = {model_player: model_ai, opp_player: opponent}
 
+        # Collect moves and states for recording
+        game_moves = []
+        game_states = [state]
+
         for _ in range(300):
             if state.game_status == GameStatus.COMPLETED:
                 break
@@ -246,12 +280,95 @@ def play_game(
             if move is None:
                 break
 
+            state_before = state
             state = engine.apply_move(state, move)
 
-        return state.winner
+            # Record move and state
+            game_moves.append((move, state_before, state))
+            game_states.append(state)
+
+        winner = state.winner
+
+        # Record game if model won (high-quality training data)
+        if record_games and RECORD_GAMES and winner == model_player and db_path:
+            try:
+                _record_game(
+                    db_path=db_path,
+                    initial_state=initial_state,
+                    final_state=state,
+                    moves=game_moves,
+                    model_name=model_name,
+                    model_type=model_type,
+                    opponent_type=opponent_type,
+                    model_player=model_player,
+                    winner=winner,
+                )
+            except Exception as e:
+                # Don't fail the game if recording fails
+                pass
+
+        return winner
 
     except Exception as e:
         return None
+
+
+def _record_game(
+    db_path: str,
+    initial_state: "GameState",
+    final_state: "GameState",
+    moves: List[Tuple["Move", "GameState", "GameState"]],
+    model_name: str,
+    model_type: str,
+    opponent_type: str,
+    model_player: int,
+    winner: int,
+) -> None:
+    """Record a completed game to the database.
+
+    Args:
+        db_path: Path to the database
+        initial_state: Initial game state
+        final_state: Final game state
+        moves: List of (move, state_before, state_after) tuples
+        model_name: Name of the model
+        model_type: "nn" or "nnue"
+        opponent_type: "random", "heuristic", or "mcts"
+        model_player: Which player the model was (1 or 2)
+        winner: Winner player number
+    """
+    from app.db.game_replay import GameReplayDB
+
+    db = GameReplayDB(db_path, snapshot_interval=10)
+    game_id = f"gauntlet_{model_name}_{opponent_type}_{uuid.uuid4().hex[:8]}"
+
+    writer = db.store_game_incremental(
+        game_id=game_id,
+        initial_state=initial_state,
+        all_snapshots=False,
+        store_history_entries=True,
+    )
+
+    for move, state_before, state_after in moves:
+        writer.add_move(
+            move=move,
+            state_after=state_after,
+            state_before=state_before,
+        )
+
+    # Finalize with metadata
+    metadata = {
+        "source": "gauntlet",
+        "model_name": model_name,
+        "model_type": model_type,
+        "opponent_type": opponent_type,
+        "model_player": model_player,
+        "winner": winner,
+        "hostname": socket.gethostname(),
+        "recorded_at": datetime.now().isoformat(),
+    }
+
+    writer.finalize(final_state=final_state, metadata=metadata)
 
 
 def run_stage1_for_model(
@@ -260,6 +377,7 @@ def run_stage1_for_model(
     num_players: int,
     games_per_baseline: int = 10,
     early_exit_threshold: float = 0.3,
+    db_path: Optional[str] = None,
 ) -> ModelResult:
     """Run stage 1 screening for a model.
 
@@ -285,6 +403,7 @@ def run_stage1_for_model(
             board_type=board_type,
             num_players=num_players,
             model_plays_first=model_first,
+            db_path=db_path,
         )
 
         if winner is not None:
@@ -312,6 +431,7 @@ def run_stage1_for_model(
             board_type=board_type,
             num_players=num_players,
             model_plays_first=model_first,
+            db_path=db_path,
         )
 
         if winner is not None:
@@ -331,6 +451,7 @@ def run_stage2_for_model(
     result: ModelResult,
     board_type: BoardType,
     games_per_baseline: int = 50,
+    db_path: Optional[str] = None,
 ) -> ModelResult:
     """Run stage 2 deep evaluation for a model that passed stage 1."""
 
@@ -349,6 +470,7 @@ def run_stage2_for_model(
                 board_type=board_type,
                 num_players=result.num_players,
                 model_plays_first=model_first,
+                db_path=db_path,
             )
 
             if winner is not None:
@@ -374,13 +496,32 @@ def run_two_stage_gauntlet(
     parallel: int = 16,
     shard: int = 0,
     num_shards: int = 1,
+    record_games: bool = True,
 ) -> List[ModelResult]:
-    """Run two-stage gauntlet with parallelization."""
+    """Run two-stage gauntlet with parallelization.
+
+    Args:
+        models: List of model dicts with path, name, type
+        board_type: Board type enum
+        num_players: Number of players
+        stage1_games: Games per baseline in stage 1
+        stage2_games: Games per baseline in stage 2
+        parallel: Number of parallel workers
+        shard: Shard index for distributed execution
+        num_shards: Total number of shards
+        record_games: Whether to record winning games to database
+    """
 
     # Shard models for distributed execution
     if num_shards > 1:
         models = [m for i, m in enumerate(models) if i % num_shards == shard]
         print(f"Shard {shard}/{num_shards}: Processing {len(models)} models")
+
+    # Set up game recording database
+    db_path = None
+    if record_games and RECORD_GAMES:
+        db_path = str(get_gauntlet_db_path(board_type.value, num_players, shard))
+        print(f"Recording winning games to: {db_path}")
 
     results = []
     passed_stage1 = []
@@ -393,7 +534,9 @@ def run_two_stage_gauntlet(
     with ProcessPoolExecutor(max_workers=parallel) as executor:
         futures = {
             executor.submit(
-                run_stage1_for_model, model, board_type, num_players, stage1_games
+                run_stage1_for_model, model, board_type, num_players, stage1_games,
+                0.3,  # early_exit_threshold
+                db_path,
             ): model
             for model in models
         }
@@ -426,7 +569,7 @@ def run_two_stage_gauntlet(
 
         with ProcessPoolExecutor(max_workers=parallel) as executor:
             futures = {
-                executor.submit(run_stage2_for_model, r, board_type, stage2_games): r
+                executor.submit(run_stage2_for_model, r, board_type, stage2_games, db_path): r
                 for r in passed_stage1
             }
 
@@ -437,6 +580,17 @@ def run_two_stage_gauntlet(
                       f"score={ws.point_estimate:.2f} CI=[{ws.lower_bound:.2f}, {ws.upper_bound:.2f}]")
 
         save_stage2_results(passed_stage1, board_type, num_players, shard)
+
+    # Print game recording stats
+    if db_path:
+        try:
+            from app.db.game_replay import GameReplayDB
+            db = GameReplayDB(db_path)
+            with db._get_conn() as conn:
+                count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+                print(f"\nRecorded {count} winning games to database")
+        except Exception:
+            pass
 
     return results
 
@@ -513,6 +667,8 @@ def discover_models_for_gauntlet(
 
 
 def main():
+    global RECORD_GAMES
+
     parser = argparse.ArgumentParser(description="Two-Stage Gauntlet with Statistical Confidence")
     parser.add_argument("--run", action="store_true", help="Run full two-stage gauntlet")
     parser.add_argument("--stage1", action="store_true", help="Run stage 1 only")
@@ -526,8 +682,13 @@ def main():
     parser.add_argument("--shard", type=int, default=0, help="Shard index for distributed execution")
     parser.add_argument("--num-shards", type=int, default=1, help="Total number of shards")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of models (0 = no limit)")
+    parser.add_argument("--no-record", action="store_true", help="Disable game recording")
 
     args = parser.parse_args()
+
+    # Set global recording flag
+    if args.no_record:
+        RECORD_GAMES = False
 
     board_type = BoardType(args.board) if args.board in [bt.value for bt in BoardType] else BoardType.SQUARE8
 
@@ -561,6 +722,7 @@ def main():
         parallel=args.parallel,
         shard=args.shard,
         num_shards=args.num_shards,
+        record_games=not args.no_record,
     )
 
     # Print summary

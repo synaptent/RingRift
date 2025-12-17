@@ -16,11 +16,12 @@ Training:
 """
 
 import math
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.cuda.amp import GradScaler, autocast
 
 from ..models import BoardType, Position
 from .nnue import (
@@ -340,6 +341,11 @@ class NNUEPolicyTrainer:
         grad_clip: float = 1.0,
         lr_scheduler: str = "plateau",
         total_epochs: int = 100,
+        use_amp: bool = True,
+        use_ema: bool = False,
+        ema_decay: float = 0.999,
+        focal_gamma: float = 0.0,
+        label_smoothing_warmup: int = 0,
     ):
         self.model = model.to(device)
         self.device = device
@@ -348,9 +354,31 @@ class NNUEPolicyTrainer:
         self.temperature = temperature
         self.initial_temperature = temperature
         self.label_smoothing = label_smoothing
+        self.target_label_smoothing = label_smoothing
+        self.label_smoothing_warmup = label_smoothing_warmup
         self.use_kl_loss = use_kl_loss
         self.grad_clip = grad_clip
         self.lr_scheduler_type = lr_scheduler
+        self.focal_gamma = focal_gamma
+
+        # Mixed precision training (AMP)
+        self.use_amp = use_amp and device.type == "cuda"
+        self.scaler = GradScaler() if self.use_amp else None
+
+        # Exponential Moving Average
+        self.use_ema = use_ema
+        self.ema_decay = ema_decay
+        self.ema_model = None
+        if use_ema:
+            self._init_ema()
+
+        # Learning history for plotting
+        self.history: Dict[str, List[float]] = {
+            "train_loss": [], "val_loss": [],
+            "train_value_loss": [], "val_value_loss": [],
+            "train_policy_loss": [], "val_policy_loss": [],
+            "val_accuracy": [], "learning_rate": [],
+        }
 
         self.optimizer = torch.optim.AdamW(
             model.parameters(),
@@ -381,6 +409,40 @@ class NNUEPolicyTrainer:
 
         self.value_criterion = nn.MSELoss()
         self.policy_criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+
+    def _init_ema(self) -> None:
+        """Initialize EMA model as a copy of the main model."""
+        import copy
+        self.ema_model = copy.deepcopy(self.model)
+        self.ema_model.eval()
+        for p in self.ema_model.parameters():
+            p.requires_grad_(False)
+
+    def _update_ema(self) -> None:
+        """Update EMA model weights."""
+        if not self.use_ema or self.ema_model is None:
+            return
+        with torch.no_grad():
+            for ema_p, model_p in zip(self.ema_model.parameters(), self.model.parameters()):
+                ema_p.data.mul_(self.ema_decay).add_(model_p.data, alpha=1 - self.ema_decay)
+
+    def get_ema_model(self) -> Optional[RingRiftNNUEWithPolicy]:
+        """Get the EMA model for inference."""
+        return self.ema_model
+
+    def update_label_smoothing(self, epoch: int) -> None:
+        """Warm up label smoothing over epochs."""
+        if self.label_smoothing_warmup > 0 and epoch < self.label_smoothing_warmup:
+            progress = epoch / self.label_smoothing_warmup
+            self.label_smoothing = self.target_label_smoothing * progress
+            self.policy_criterion = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
+
+    def _focal_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Compute focal loss for hard sample mining."""
+        ce_loss = torch.nn.functional.cross_entropy(logits, targets, reduction='none')
+        pt = torch.exp(-ce_loss)
+        focal_loss = ((1 - pt) ** self.focal_gamma) * ce_loss
+        return focal_loss.mean()
 
     def set_temperature(self, temperature: float) -> None:
         """Set the temperature for policy softmax."""
@@ -447,42 +509,56 @@ class NNUEPolicyTrainer:
         self.model.train()
         self.optimizer.zero_grad()
 
-        # Forward pass with policy
-        pred_value, from_logits, to_logits = self.model(features, return_policy=True)
+        # Mixed precision forward pass
+        with autocast(enabled=self.use_amp):
+            # Forward pass with policy
+            pred_value, from_logits, to_logits = self.model(features, return_policy=True)
 
-        # Value loss
-        value_loss = self.value_criterion(pred_value, values)
+            # Value loss
+            value_loss = self.value_criterion(pred_value, values)
 
-        # Policy loss: compute move scores and apply cross-entropy or KL divergence
-        # Apply temperature scaling (higher temp = softer targets, lower = sharper)
-        from_scores = torch.gather(from_logits, 1, from_indices)
-        to_scores = torch.gather(to_logits, 1, to_indices)
-        move_scores = (from_scores + to_scores) / self.temperature
-        # Use large negative instead of -inf to avoid numerical issues with label smoothing
-        move_scores = move_scores.masked_fill(~move_mask, -1e9)
+            # Policy loss: compute move scores and apply cross-entropy or KL divergence
+            # Apply temperature scaling (higher temp = softer targets, lower = sharper)
+            from_scores = torch.gather(from_logits, 1, from_indices)
+            to_scores = torch.gather(to_logits, 1, to_indices)
+            move_scores = (from_scores + to_scores) / self.temperature
+            # Use large negative instead of -inf to avoid numerical issues with label smoothing
+            move_scores = move_scores.masked_fill(~move_mask, -1e9)
 
-        # Use KL divergence if enabled and MCTS probs available
-        if self.use_kl_loss and mcts_probs is not None:
-            # KL divergence: KL(mcts_probs || softmax(move_scores))
-            log_policy = torch.log_softmax(move_scores, dim=-1)
-            # Add small epsilon to avoid log(0)
-            mcts_probs_safe = mcts_probs.clamp(min=1e-8)
-            policy_loss = torch.nn.functional.kl_div(
-                log_policy, mcts_probs_safe, reduction='batchmean'
-            )
+            # Use KL divergence if enabled and MCTS probs available
+            if self.use_kl_loss and mcts_probs is not None:
+                # KL divergence: KL(mcts_probs || softmax(move_scores))
+                log_policy = torch.log_softmax(move_scores, dim=-1)
+                # Add small epsilon to avoid log(0)
+                mcts_probs_safe = mcts_probs.clamp(min=1e-8)
+                policy_loss = torch.nn.functional.kl_div(
+                    log_policy, mcts_probs_safe, reduction='batchmean'
+                )
+            elif self.focal_gamma > 0:
+                # Focal loss for hard sample mining
+                policy_loss = self._focal_loss(move_scores, target_move_idx)
+            else:
+                policy_loss = self.policy_criterion(move_scores, target_move_idx)
+
+            # Combined loss
+            total_loss = self.value_weight * value_loss + self.policy_weight * policy_loss
+
+        # Backward pass with gradient scaling for AMP
+        if self.use_amp and self.scaler is not None:
+            self.scaler.scale(total_loss).backward()
+            if self.grad_clip > 0:
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
         else:
-            policy_loss = self.policy_criterion(move_scores, target_move_idx)
+            total_loss.backward()
+            if self.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+            self.optimizer.step()
 
-        # Combined loss
-        total_loss = self.value_weight * value_loss + self.policy_weight * policy_loss
-
-        total_loss.backward()
-
-        # Gradient clipping to prevent exploding gradients
-        if self.grad_clip > 0:
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-
-        self.optimizer.step()
+        # Update EMA model
+        self._update_ema()
 
         return total_loss.item(), value_loss.item(), policy_loss.item()
 
@@ -558,6 +634,86 @@ class NNUEPolicyTrainer:
     def get_lr(self) -> float:
         """Get current learning rate."""
         return self.optimizer.param_groups[0]['lr']
+
+    def record_epoch(
+        self,
+        train_loss: float,
+        train_value_loss: float,
+        train_policy_loss: float,
+        val_loss: float,
+        val_value_loss: float,
+        val_policy_loss: float,
+        val_accuracy: float,
+    ) -> None:
+        """Record metrics for one epoch."""
+        self.history["train_loss"].append(train_loss)
+        self.history["train_value_loss"].append(train_value_loss)
+        self.history["train_policy_loss"].append(train_policy_loss)
+        self.history["val_loss"].append(val_loss)
+        self.history["val_value_loss"].append(val_value_loss)
+        self.history["val_policy_loss"].append(val_policy_loss)
+        self.history["val_accuracy"].append(val_accuracy)
+        self.history["learning_rate"].append(self.get_lr())
+
+    def save_learning_curves(self, path: str) -> None:
+        """Save learning curves to JSON file."""
+        import json
+        with open(path, "w") as f:
+            json.dump(self.history, f, indent=2)
+
+    def plot_learning_curves(self, path: str) -> None:
+        """Plot and save learning curves as PNG."""
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+
+            fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+            # Loss curves
+            ax = axes[0, 0]
+            ax.plot(self.history["train_loss"], label="Train")
+            ax.plot(self.history["val_loss"], label="Val")
+            ax.set_xlabel("Epoch")
+            ax.set_ylabel("Total Loss")
+            ax.set_title("Total Loss")
+            ax.legend()
+            ax.grid(True)
+
+            # Policy loss
+            ax = axes[0, 1]
+            ax.plot(self.history["train_policy_loss"], label="Train")
+            ax.plot(self.history["val_policy_loss"], label="Val")
+            ax.set_xlabel("Epoch")
+            ax.set_ylabel("Policy Loss")
+            ax.set_title("Policy Loss")
+            ax.legend()
+            ax.grid(True)
+
+            # Accuracy
+            ax = axes[1, 0]
+            ax.plot(self.history["val_accuracy"], label="Val Accuracy", color="green")
+            ax.set_xlabel("Epoch")
+            ax.set_ylabel("Accuracy")
+            ax.set_title("Policy Accuracy")
+            ax.legend()
+            ax.grid(True)
+
+            # Learning rate
+            ax = axes[1, 1]
+            ax.plot(self.history["learning_rate"], label="LR", color="orange")
+            ax.set_xlabel("Epoch")
+            ax.set_ylabel("Learning Rate")
+            ax.set_title("Learning Rate Schedule")
+            ax.set_yscale("log")
+            ax.legend()
+            ax.grid(True)
+
+            plt.tight_layout()
+            plt.savefig(path, dpi=150)
+            plt.close()
+        except ImportError:
+            pass  # matplotlib not available
 
 
 # =============================================================================
