@@ -43,6 +43,54 @@ from typing import Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # ============================================
+# Prometheus Metrics (optional)
+# ============================================
+
+try:
+    from prometheus_client import Gauge, Counter
+    HAS_PROMETHEUS = True
+except ImportError:
+    HAS_PROMETHEUS = False
+
+# Initialize Prometheus metrics if available
+if HAS_PROMETHEUS:
+    PROM_CPU_USAGE = Gauge(
+        'ringrift_resource_cpu_percent',
+        'Current CPU usage percent'
+    )
+    PROM_MEMORY_USAGE = Gauge(
+        'ringrift_resource_memory_percent',
+        'Current memory usage percent'
+    )
+    PROM_DISK_USAGE = Gauge(
+        'ringrift_resource_disk_percent',
+        'Current disk usage percent'
+    )
+    PROM_GPU_USAGE = Gauge(
+        'ringrift_resource_gpu_percent',
+        'Current GPU memory usage percent'
+    )
+    PROM_RESOURCE_LIMIT = Gauge(
+        'ringrift_resource_limit_percent',
+        'Resource limit threshold',
+        ['resource_type']
+    )
+    PROM_RESOURCE_OK = Gauge(
+        'ringrift_resource_available',
+        'Whether resources are available (1=ok, 0=exceeded)',
+        ['resource_type']
+    )
+    PROM_RESOURCE_WAIT_COUNT = Counter(
+        'ringrift_resource_wait_total',
+        'Number of times we had to wait for resources'
+    )
+    PROM_RESOURCE_BACKOFF_COUNT = Counter(
+        'ringrift_resource_backoff_total',
+        'Number of resource backoff events',
+        ['resource_type']
+    )
+
+# ============================================
 # Resource Limits - 80% max utilization
 # ============================================
 
@@ -402,6 +450,10 @@ def wait_for_resources(
     Returns:
         True if resources became available, False if timeout
     """
+    # Increment Prometheus wait counter
+    if HAS_PROMETHEUS:
+        PROM_RESOURCE_WAIT_COUNT.inc()
+
     start = time.time()
 
     while time.time() - start < timeout:
@@ -426,8 +478,11 @@ def wait_for_resources(
 # Resource Status Report
 # ============================================
 
-def get_resource_status() -> dict:
+def get_resource_status(export_prometheus: bool = True) -> dict:
     """Get current resource status as a dictionary.
+
+    Args:
+        export_prometheus: Whether to export metrics to Prometheus
 
     Returns:
         Dict with resource usage and status
@@ -437,33 +492,55 @@ def get_resource_status() -> dict:
     cpu_pct, load_per_cpu, cpu_count = get_cpu_usage()
     gpu_pct, gpu_avail, gpu_total = get_gpu_memory_usage()
 
+    disk_ok = disk_pct < LIMITS.DISK_MAX_PERCENT
+    mem_ok = mem_pct < LIMITS.MEMORY_MAX_PERCENT
+    cpu_ok = cpu_pct < LIMITS.CPU_MAX_PERCENT and load_per_cpu < LIMITS.LOAD_MAX_FACTOR
+    gpu_ok = gpu_pct < LIMITS.GPU_MAX_PERCENT or gpu_total == 0
+
+    # Export to Prometheus if available
+    if export_prometheus and HAS_PROMETHEUS:
+        PROM_CPU_USAGE.set(cpu_pct)
+        PROM_MEMORY_USAGE.set(mem_pct)
+        PROM_DISK_USAGE.set(disk_pct)
+        PROM_GPU_USAGE.set(gpu_pct)
+        # Set limit thresholds (only once, but safe to repeat)
+        PROM_RESOURCE_LIMIT.labels(resource_type='cpu').set(LIMITS.CPU_MAX_PERCENT)
+        PROM_RESOURCE_LIMIT.labels(resource_type='memory').set(LIMITS.MEMORY_MAX_PERCENT)
+        PROM_RESOURCE_LIMIT.labels(resource_type='disk').set(LIMITS.DISK_MAX_PERCENT)
+        PROM_RESOURCE_LIMIT.labels(resource_type='gpu').set(LIMITS.GPU_MAX_PERCENT)
+        # Set availability status
+        PROM_RESOURCE_OK.labels(resource_type='cpu').set(1 if cpu_ok else 0)
+        PROM_RESOURCE_OK.labels(resource_type='memory').set(1 if mem_ok else 0)
+        PROM_RESOURCE_OK.labels(resource_type='disk').set(1 if disk_ok else 0)
+        PROM_RESOURCE_OK.labels(resource_type='gpu').set(1 if gpu_ok else 0)
+
     return {
         "disk": {
             "used_percent": round(disk_pct, 1),
             "available_gb": round(disk_avail, 1),
             "total_gb": round(disk_total, 1),
-            "ok": disk_pct < LIMITS.DISK_MAX_PERCENT,
+            "ok": disk_ok,
             "limit_percent": LIMITS.DISK_MAX_PERCENT,
         },
         "memory": {
             "used_percent": round(mem_pct, 1),
             "available_gb": round(mem_avail, 1),
             "total_gb": round(mem_total, 1),
-            "ok": mem_pct < LIMITS.MEMORY_MAX_PERCENT,
+            "ok": mem_ok,
             "limit_percent": LIMITS.MEMORY_MAX_PERCENT,
         },
         "cpu": {
             "used_percent": round(cpu_pct, 1),
             "load_per_cpu": round(load_per_cpu, 2),
             "cpu_count": cpu_count,
-            "ok": cpu_pct < LIMITS.CPU_MAX_PERCENT and load_per_cpu < LIMITS.LOAD_MAX_FACTOR,
+            "ok": cpu_ok,
             "limit_percent": LIMITS.CPU_MAX_PERCENT,
         },
         "gpu": {
             "used_percent": round(gpu_pct, 1),
             "available_gb": round(gpu_avail, 1),
             "total_gb": round(gpu_total, 1),
-            "ok": gpu_pct < LIMITS.GPU_MAX_PERCENT or gpu_total == 0,
+            "ok": gpu_ok,
             "limit_percent": LIMITS.GPU_MAX_PERCENT,
         },
         "can_proceed": can_proceed(check_gpu=False),
@@ -817,6 +894,144 @@ def respect_resource_limits(
     return decorator
 
 
+# ============================================
+# Graceful Degradation under Resource Constraints
+# ============================================
+
+class OperationPriority:
+    """Priority levels for operations during resource constraints.
+
+    When resources are limited, lower priority operations are paused first.
+    Higher number = higher priority = more likely to continue running.
+    """
+    BACKGROUND = 0     # Optional cleanup, stats collection
+    LOW = 1            # Extra selfplay, backfill tasks
+    NORMAL = 2         # Regular selfplay, data generation
+    HIGH = 3           # Training, model evaluation
+    CRITICAL = 4       # Data sync, model promotion, health checks
+
+
+def get_degradation_level() -> int:
+    """Get current degradation level based on resource pressure.
+
+    Returns:
+        0: Normal - all operations can proceed
+        1: Light pressure - pause BACKGROUND operations
+        2: Moderate pressure - pause LOW priority operations
+        3: Heavy pressure - pause NORMAL operations
+        4: Critical - only CRITICAL operations allowed
+    """
+    disk_pct, _, _ = get_disk_usage()
+    mem_pct, _, _ = get_memory_usage()
+    cpu_pct, _, _ = get_cpu_usage()
+
+    # Worst-case resource
+    max_pct = max(
+        disk_pct / LIMITS.DISK_MAX_PERCENT,  # Normalized to limit
+        mem_pct / LIMITS.MEMORY_MAX_PERCENT,
+        cpu_pct / LIMITS.CPU_MAX_PERCENT,
+    )
+
+    if max_pct < 0.7:  # Below 70% of limit
+        return 0  # Normal
+    elif max_pct < 0.85:  # 70-85% of limit
+        return 1  # Light pressure
+    elif max_pct < 0.95:  # 85-95% of limit
+        return 2  # Moderate pressure
+    elif max_pct < 1.0:  # 95-100% of limit
+        return 3  # Heavy pressure
+    else:  # Over limit
+        return 4  # Critical
+
+
+def should_proceed_with_priority(priority: int) -> bool:
+    """Check if an operation with given priority should proceed.
+
+    Args:
+        priority: Operation priority (use OperationPriority constants)
+
+    Returns:
+        True if the operation should proceed, False if it should be paused
+
+    Example:
+        if should_proceed_with_priority(OperationPriority.LOW):
+            run_backfill_selfplay()
+        else:
+            logger.info("Pausing backfill due to resource pressure")
+    """
+    degradation = get_degradation_level()
+
+    # At degradation level N, operations with priority <= N are paused
+    # CRITICAL (4) always proceeds unless at degradation level 5 (impossible)
+    return priority > degradation
+
+
+def get_recommended_actions() -> list:
+    """Get list of recommended actions based on current resource state.
+
+    Returns:
+        List of string recommendations for the operator/system
+    """
+    status = get_resource_status()
+    actions = []
+
+    # Disk recommendations
+    if not status["disk"]["ok"]:
+        actions.append("CRITICAL: Disk above 70% - run disk cleanup immediately")
+        actions.append("  - Remove old model checkpoints")
+        actions.append("  - Clean up old JSONL files")
+        actions.append("  - Remove database backups")
+    elif status["disk"]["used_percent"] > 60:
+        actions.append("WARNING: Disk at {:.0f}% - consider cleanup soon".format(
+            status["disk"]["used_percent"]))
+
+    # Memory recommendations
+    if not status["memory"]["ok"]:
+        actions.append("CRITICAL: Memory above 80% - reduce concurrent processes")
+        actions.append("  - Stop low-priority selfplay")
+        actions.append("  - Reduce batch sizes")
+    elif status["memory"]["used_percent"] > 70:
+        actions.append("WARNING: Memory at {:.0f}% - monitor closely".format(
+            status["memory"]["used_percent"]))
+
+    # CPU recommendations
+    if not status["cpu"]["ok"]:
+        actions.append("CRITICAL: CPU above 80% - reduce concurrent processes")
+        actions.append("  - Pause background tasks")
+        actions.append("  - Reduce selfplay parallelism")
+
+    # GPU recommendations
+    if not status["gpu"]["ok"]:
+        actions.append("CRITICAL: GPU memory above 80% - reduce GPU workload")
+        actions.append("  - Reduce batch sizes")
+        actions.append("  - Stop extra GPU selfplay")
+
+    if not actions:
+        degradation = get_degradation_level()
+        if degradation == 0:
+            actions.append("OK: All resources within normal limits")
+        else:
+            actions.append(f"INFO: Degradation level {degradation} - some operations may be paused")
+
+    return actions
+
+
 if __name__ == "__main__":
     # Print status when run directly
     print_resource_status()
+
+    # Also show degradation level and recommendations
+    print("\n" + "=" * 50)
+    print("GRACEFUL DEGRADATION STATUS")
+    print("=" * 50)
+    level = get_degradation_level()
+    print(f"Degradation level: {level}")
+    print(f"BACKGROUND operations: {'PAUSED' if level >= 1 else 'OK'}")
+    print(f"LOW priority operations: {'PAUSED' if level >= 2 else 'OK'}")
+    print(f"NORMAL operations: {'PAUSED' if level >= 3 else 'OK'}")
+    print(f"HIGH priority operations: {'PAUSED' if level >= 4 else 'OK'}")
+    print(f"CRITICAL operations: OK")
+
+    print("\nRecommended actions:")
+    for action in get_recommended_actions():
+        print(f"  {action}")
