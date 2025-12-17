@@ -348,3 +348,81 @@ Added missing parameters:
 
 **Phase 2 audit completed by Claude Code**
 **Date:** 2025-12-17
+
+---
+
+## Phase 3 Audit (2025-12-17 Late)
+
+### TRAINING_FEATURES.md - Major Update
+
+Added comprehensive documentation for 2024-12 Advanced Training Improvements:
+
+#### New Sections Added
+
+1. **Advanced Optimizer Enhancements**
+   - Lookahead Optimizer (k=5, alpha=0.5)
+   - Adaptive Gradient Clipping
+   - Gradient Noise Injection
+
+2. **Online Training Techniques**
+   - Online Bootstrapping with soft labels
+   - Cross-Board Transfer Learning
+
+3. **Architecture Search & Pretraining**
+   - Board-Specific NAS (Neural Architecture Search)
+   - Self-Supervised Pre-training with contrastive learning
+
+#### New CLI Arguments Documented
+
+| Category          | Arguments Added                                      |
+| ----------------- | ---------------------------------------------------- |
+| Value Calibration | `--value-whitening`, `--ema`, `--ema-decay`          |
+| Regularization    | `--stochastic-depth`, `--hard-example-mining`        |
+| Optimizers        | `--lookahead`, `--adaptive-clip`, `--gradient-noise` |
+| Online Techniques | `--online-bootstrap`, `--bootstrap-temperature`      |
+| Architecture      | `--board-nas`, `--self-supervised`, `--ss-epochs`    |
+| Transfer Learning | `--transfer-from`, `--transfer-freeze-epochs`        |
+
+#### Classes Now Documented
+
+| Class                      | Location              | Purpose                         |
+| -------------------------- | --------------------- | ------------------------------- |
+| `OnlineBootstrapper`       | scripts/train_nnue.py | Soft label self-distillation    |
+| `SelfSupervisedPretrainer` | scripts/train_nnue.py | Contrastive pre-training        |
+| `BoardSpecificNAS`         | scripts/train_nnue.py | Auto architecture selection     |
+| `Lookahead`                | scripts/train_nnue.py | Optimizer wrapper               |
+| `AdaptiveGradientClipper`  | scripts/train_nnue.py | Dynamic gradient clipping       |
+| `GradientNoiseInjector`    | scripts/train_nnue.py | Noise for escaping sharp minima |
+| `HardExampleMiner`         | scripts/train_nnue.py | Difficult sample mining         |
+| `ValueWhitener`            | scripts/train_nnue.py | Value head normalization        |
+| `ModelEMA`                 | scripts/train_nnue.py | Exponential moving average      |
+| `DynamicBatchScheduler`    | scripts/train_nnue.py | Progressive batch sizing        |
+
+### Updated Table of Contents
+
+TRAINING_FEATURES.md now has 11 major sections (was 8):
+
+1. Training Configuration
+2. Label Smoothing
+3. Hex Board Augmentation
+4. Advanced Regularization
+5. **Advanced Optimizer Enhancements** (NEW)
+6. **Online Training Techniques** (NEW)
+7. **Architecture Search & Pretraining** (NEW)
+8. Learning Rate Scheduling
+9. Batch Size Management
+10. Model Architecture Selection
+11. CLI Arguments Reference
+
+### Remaining Documentation Gaps
+
+**Still needs documentation:**
+
+- `app/training/curriculum.py` - Curriculum learning orchestrator
+- `app/training/value_calibration.py` - Value calibration system
+- Environment variables for new training features
+
+---
+
+**Phase 3 audit completed by Claude Code**
+**Date:** 2025-12-17
