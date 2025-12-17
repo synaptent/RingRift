@@ -1,0 +1,428 @@
+"""Ramdrive (tmpfs) utility for high-speed I/O operations.
+
+This module provides utilities for using RAM-backed storage (/dev/shm)
+to accelerate I/O-heavy operations like selfplay data generation and
+model training. RAM storage is particularly useful on cloud instances
+with limited or slow disk but ample RAM.
+
+Key features:
+- Auto-detection of ramdrive availability and capacity
+- Automatic fallback to disk when ramdrive unavailable
+- Periodic sync to persistent storage
+- Graceful handling of space constraints
+
+Usage:
+    from app.utils.ramdrive import get_data_directory, RamdriveConfig
+
+    # Simple usage with auto-detection
+    data_dir = get_data_directory(prefer_ramdrive=True)
+
+    # With explicit configuration
+    config = RamdriveConfig(
+        prefer_ramdrive=True,
+        min_free_gb=2.0,
+        sync_interval=300,
+        sync_target="/path/to/persistent/storage"
+    )
+    data_dir = get_data_directory(config=config)
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+import subprocess
+import threading
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional, Callable, List
+
+logger = logging.getLogger(__name__)
+
+# Standard ramdrive locations
+RAMDRIVE_PATHS = [
+    "/dev/shm",      # Linux default
+    "/run/shm",      # Some Linux distros
+    "/tmp",          # macOS (often tmpfs)
+]
+
+# Default subdirectory for RingRift data
+RINGRIFT_SUBDIR = "ringrift"
+
+
+@dataclass
+class RamdriveConfig:
+    """Configuration for ramdrive usage."""
+
+    # Whether to prefer ramdrive over disk storage
+    prefer_ramdrive: bool = True
+
+    # Minimum free space required (GB) to use ramdrive
+    min_free_gb: float = 1.0
+
+    # Maximum space to use on ramdrive (GB), 0 = no limit
+    max_use_gb: float = 0.0
+
+    # Interval for syncing to persistent storage (seconds), 0 = no sync
+    sync_interval: int = 0
+
+    # Target path for periodic sync (if empty, no sync)
+    sync_target: str = ""
+
+    # Subdirectory within ramdrive for this application
+    subdirectory: str = "data"
+
+    # Fallback path if ramdrive unavailable
+    fallback_path: str = ""
+
+    # Callback when sync completes
+    on_sync_complete: Optional[Callable[[Path, Path, bool], None]] = None
+
+
+@dataclass
+class RamdriveStatus:
+    """Status information about ramdrive."""
+    available: bool = False
+    path: Optional[Path] = None
+    total_gb: float = 0.0
+    free_gb: float = 0.0
+    used_gb: float = 0.0
+    is_tmpfs: bool = False
+
+
+def detect_ramdrive() -> RamdriveStatus:
+    """Detect available ramdrive and its status.
+
+    Returns:
+        RamdriveStatus with availability and capacity info.
+    """
+    for path_str in RAMDRIVE_PATHS:
+        path = Path(path_str)
+        if not path.exists():
+            continue
+
+        try:
+            # Check if it's actually a tmpfs/ramfs
+            is_tmpfs = False
+            if os.path.exists("/proc/mounts"):
+                with open("/proc/mounts", "r") as f:
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) >= 3 and parts[1] == path_str:
+                            is_tmpfs = parts[2] in ("tmpfs", "ramfs")
+                            break
+
+            # Get disk usage
+            usage = shutil.disk_usage(path)
+            total_gb = usage.total / (1024 ** 3)
+            free_gb = usage.free / (1024 ** 3)
+            used_gb = usage.used / (1024 ** 3)
+
+            # Consider it available if writable and has some space
+            if os.access(path, os.W_OK) and free_gb > 0.1:
+                return RamdriveStatus(
+                    available=True,
+                    path=path,
+                    total_gb=total_gb,
+                    free_gb=free_gb,
+                    used_gb=used_gb,
+                    is_tmpfs=is_tmpfs,
+                )
+        except (OSError, PermissionError) as e:
+            logger.debug(f"Cannot access {path}: {e}")
+            continue
+
+    return RamdriveStatus(available=False)
+
+
+def get_data_directory(
+    prefer_ramdrive: bool = False,
+    config: Optional[RamdriveConfig] = None,
+    base_name: str = "data",
+) -> Path:
+    """Get the appropriate data directory based on configuration.
+
+    Args:
+        prefer_ramdrive: Whether to prefer ramdrive over disk.
+        config: Optional detailed configuration.
+        base_name: Base name for the data directory (e.g., "data", "games").
+
+    Returns:
+        Path to the data directory (created if necessary).
+    """
+    if config is None:
+        config = RamdriveConfig(prefer_ramdrive=prefer_ramdrive)
+
+    # Check ramdrive availability
+    if config.prefer_ramdrive:
+        status = detect_ramdrive()
+
+        if status.available and status.free_gb >= config.min_free_gb:
+            ramdrive_dir = status.path / RINGRIFT_SUBDIR / config.subdirectory / base_name
+            try:
+                ramdrive_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(
+                    f"Using ramdrive at {ramdrive_dir} "
+                    f"(free: {status.free_gb:.1f}GB, total: {status.total_gb:.1f}GB)"
+                )
+                return ramdrive_dir
+            except (OSError, PermissionError) as e:
+                logger.warning(f"Cannot create ramdrive directory: {e}")
+        elif status.available:
+            logger.warning(
+                f"Ramdrive available but insufficient space: "
+                f"{status.free_gb:.1f}GB < {config.min_free_gb:.1f}GB required"
+            )
+        else:
+            logger.info("Ramdrive not available, using disk storage")
+
+    # Fallback to disk storage
+    if config.fallback_path:
+        fallback = Path(config.fallback_path) / base_name
+    else:
+        # Use ai-service/data as default
+        fallback = Path(__file__).resolve().parents[2] / "data" / base_name
+
+    fallback.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Using disk storage at {fallback}")
+    return fallback
+
+
+def get_games_directory(prefer_ramdrive: bool = False, config: Optional[RamdriveConfig] = None) -> Path:
+    """Get the games data directory."""
+    return get_data_directory(prefer_ramdrive, config, base_name="games")
+
+
+def get_logs_directory(prefer_ramdrive: bool = False, config: Optional[RamdriveConfig] = None) -> Path:
+    """Get the logs directory."""
+    return get_data_directory(prefer_ramdrive, config, base_name="logs")
+
+
+def get_models_directory(prefer_ramdrive: bool = False, config: Optional[RamdriveConfig] = None) -> Path:
+    """Get the models directory."""
+    return get_data_directory(prefer_ramdrive, config, base_name="models")
+
+
+def get_checkpoints_directory(prefer_ramdrive: bool = False, config: Optional[RamdriveConfig] = None) -> Path:
+    """Get the checkpoints directory."""
+    return get_data_directory(prefer_ramdrive, config, base_name="checkpoints")
+
+
+class RamdriveSyncer:
+    """Background syncer for ramdrive data to persistent storage."""
+
+    def __init__(
+        self,
+        source_dir: Path,
+        target_dir: Path,
+        interval: int = 300,
+        patterns: Optional[List[str]] = None,
+        on_complete: Optional[Callable[[Path, Path, bool], None]] = None,
+    ):
+        """Initialize the syncer.
+
+        Args:
+            source_dir: Source directory (ramdrive).
+            target_dir: Target directory (persistent storage).
+            interval: Sync interval in seconds.
+            patterns: File patterns to sync (e.g., ["*.db", "*.jsonl"]).
+            on_complete: Callback when sync completes (source, target, success).
+        """
+        self.source_dir = Path(source_dir)
+        self.target_dir = Path(target_dir)
+        self.interval = interval
+        self.patterns = patterns or ["*.db", "*.jsonl", "*.npz"]
+        self.on_complete = on_complete
+
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._last_sync_time = 0.0
+        self._sync_count = 0
+        self._error_count = 0
+
+    def start(self) -> None:
+        """Start background sync thread."""
+        if self._running:
+            return
+
+        self._running = True
+        self._thread = threading.Thread(target=self._sync_loop, daemon=True)
+        self._thread.start()
+        logger.info(f"Started ramdrive syncer: {self.source_dir} -> {self.target_dir} (every {self.interval}s)")
+
+    def stop(self, final_sync: bool = True) -> None:
+        """Stop background sync and optionally perform final sync."""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=5.0)
+
+        if final_sync:
+            logger.info("Performing final sync before shutdown...")
+            self.sync_now()
+
+    def sync_now(self) -> bool:
+        """Perform immediate sync."""
+        try:
+            self.target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Use rsync if available for efficiency
+            if shutil.which("rsync"):
+                success = self._rsync_files()
+            else:
+                success = self._copy_files()
+
+            self._last_sync_time = time.time()
+            self._sync_count += 1
+
+            if self.on_complete:
+                self.on_complete(self.source_dir, self.target_dir, success)
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Sync failed: {e}")
+            self._error_count += 1
+            if self.on_complete:
+                self.on_complete(self.source_dir, self.target_dir, False)
+            return False
+
+    def _sync_loop(self) -> None:
+        """Background sync loop."""
+        while self._running:
+            time.sleep(self.interval)
+            if self._running:
+                self.sync_now()
+
+    def _rsync_files(self) -> bool:
+        """Sync using rsync."""
+        try:
+            # Build include patterns
+            includes = []
+            for pattern in self.patterns:
+                includes.extend(["--include", pattern])
+
+            cmd = [
+                "rsync", "-av", "--delete",
+                *includes,
+                "--exclude", "*",
+                str(self.source_dir) + "/",
+                str(self.target_dir) + "/",
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+            if result.returncode == 0:
+                logger.debug(f"Rsync completed: {self.source_dir} -> {self.target_dir}")
+                return True
+            else:
+                logger.warning(f"Rsync failed: {result.stderr}")
+                return False
+
+        except subprocess.TimeoutExpired:
+            logger.error("Rsync timed out")
+            return False
+        except Exception as e:
+            logger.error(f"Rsync error: {e}")
+            return False
+
+    def _copy_files(self) -> bool:
+        """Sync using Python copy (fallback)."""
+        try:
+            synced = 0
+            for pattern in self.patterns:
+                for src_file in self.source_dir.glob(f"**/{pattern}"):
+                    rel_path = src_file.relative_to(self.source_dir)
+                    dst_file = self.target_dir / rel_path
+                    dst_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dst_file)
+                    synced += 1
+
+            logger.debug(f"Copied {synced} files: {self.source_dir} -> {self.target_dir}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Copy failed: {e}")
+            return False
+
+    @property
+    def stats(self) -> dict:
+        """Get sync statistics."""
+        return {
+            "sync_count": self._sync_count,
+            "error_count": self._error_count,
+            "last_sync_time": self._last_sync_time,
+            "source_dir": str(self.source_dir),
+            "target_dir": str(self.target_dir),
+            "interval": self.interval,
+        }
+
+
+def add_ramdrive_args(parser) -> None:
+    """Add standard ramdrive arguments to an argparse parser.
+
+    Args:
+        parser: argparse.ArgumentParser instance.
+    """
+    group = parser.add_argument_group("Storage Options")
+    group.add_argument(
+        "--ram-storage", "--ramdrive",
+        action="store_true",
+        help="Use RAM-backed storage (/dev/shm) for faster I/O"
+    )
+    group.add_argument(
+        "--data-dir",
+        type=str,
+        default="",
+        help="Override data directory path"
+    )
+    group.add_argument(
+        "--sync-interval",
+        type=int,
+        default=0,
+        help="Sync ramdrive to disk every N seconds (0 = no sync)"
+    )
+    group.add_argument(
+        "--sync-target",
+        type=str,
+        default="",
+        help="Target directory for ramdrive sync"
+    )
+
+
+def get_config_from_args(args) -> RamdriveConfig:
+    """Create RamdriveConfig from parsed arguments.
+
+    Args:
+        args: Parsed argparse namespace with ramdrive arguments.
+
+    Returns:
+        RamdriveConfig instance.
+    """
+    return RamdriveConfig(
+        prefer_ramdrive=getattr(args, "ram_storage", False),
+        fallback_path=getattr(args, "data_dir", ""),
+        sync_interval=getattr(args, "sync_interval", 0),
+        sync_target=getattr(args, "sync_target", ""),
+    )
+
+
+# Module-level convenience for checking ramdrive status
+_cached_status: Optional[RamdriveStatus] = None
+
+
+def is_ramdrive_available(min_free_gb: float = 1.0) -> bool:
+    """Quick check if ramdrive is available with sufficient space."""
+    global _cached_status
+    if _cached_status is None:
+        _cached_status = detect_ramdrive()
+    return _cached_status.available and _cached_status.free_gb >= min_free_gb
+
+
+def get_ramdrive_path() -> Optional[Path]:
+    """Get the ramdrive path if available."""
+    global _cached_status
+    if _cached_status is None:
+        _cached_status = detect_ramdrive()
+    return _cached_status.path if _cached_status.available else None

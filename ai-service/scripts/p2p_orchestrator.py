@@ -8315,6 +8315,118 @@ print(wins / total)
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
 
+    async def handle_play_elo_match(self, request: web.Request) -> web.Response:
+        """Play a single Elo calibration match between two AI configurations.
+
+        This endpoint supports playing games between different AI types
+        (random, heuristic, minimax, mcts, policy_only, gumbel_mcts, descent)
+        for Elo calibration purposes.
+
+        Request body:
+            match_id: Unique match identifier
+            agent_a: Agent A identifier (e.g., "random", "mcts_neural")
+            agent_b: Agent B identifier
+            agent_a_config: Full AI configuration for agent A
+            agent_b_config: Full AI configuration for agent B
+            board_type: Board type (default: square8)
+            num_players: Number of players (default: 2)
+
+        Returns:
+            success: True if match completed
+            winner: "agent_a", "agent_b", or "draw"
+            game_length: Number of moves
+            duration_sec: Game duration in seconds
+        """
+        try:
+            data = await request.json()
+
+            match_id = data.get("match_id", str(uuid.uuid4())[:8])
+            agent_a = data.get("agent_a", "random")
+            agent_b = data.get("agent_b", "heuristic")
+            agent_a_config = data.get("agent_a_config", {"ai_type": agent_a})
+            agent_b_config = data.get("agent_b_config", {"ai_type": agent_b})
+            board_type_str = data.get("board_type", "square8")
+            num_players = data.get("num_players", 2)
+
+            print(f"[P2P] Playing Elo match {match_id}: {agent_a} vs {agent_b}")
+            start_time = time.time()
+
+            # Run the match in a thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                self._play_elo_match_sync,
+                agent_a_config,
+                agent_b_config,
+                board_type_str,
+                num_players,
+            )
+
+            duration = time.time() - start_time
+
+            if result is None:
+                return web.json_response({
+                    "success": False,
+                    "error": "Match failed to complete",
+                    "match_id": match_id,
+                }, status=500)
+
+            winner_map = {
+                "model_a": "agent_a",
+                "model_b": "agent_b",
+                "draw": "draw",
+            }
+
+            response = {
+                "success": True,
+                "match_id": match_id,
+                "agent_a": agent_a,
+                "agent_b": agent_b,
+                "winner": winner_map.get(result.get("winner", "draw"), "draw"),
+                "game_length": result.get("game_length", 0),
+                "duration_sec": duration,
+                "worker_node": self.node_id,
+            }
+
+            print(f"[P2P] Elo match {match_id} complete: {agent_a} vs {agent_b} -> {response['winner']} ({result.get('game_length', 0)} moves)")
+            return web.json_response(response)
+
+        except Exception as e:
+            import traceback
+            print(f"[P2P] Elo match error: {e}")
+            traceback.print_exc()
+            return web.json_response({"error": str(e)}, status=500)
+
+    def _play_elo_match_sync(
+        self,
+        agent_a_config: dict,
+        agent_b_config: dict,
+        board_type_str: str,
+        num_players: int,
+    ) -> Optional[dict]:
+        """Synchronous wrapper for playing an Elo match."""
+        try:
+            from scripts.run_model_elo_tournament import play_model_vs_model_game
+            from app.models import BoardType
+
+            board_type = BoardType(board_type_str)
+
+            result = play_model_vs_model_game(
+                model_a=agent_a_config,
+                model_b=agent_b_config,
+                board_type=board_type,
+                num_players=num_players,
+                save_game_history=False,  # Don't save for calibration matches
+            )
+
+            return result
+
+        except Exception as e:
+            import traceback
+            print(f"[P2P] _play_elo_match_sync error: {e}")
+            traceback.print_exc()
+            return None
+
     async def handle_ssh_tournament_start(self, request: web.Request) -> web.Response:
         """Start an SSH-distributed difficulty-tier tournament (leader only).
 
@@ -24367,6 +24479,7 @@ print(json.dumps({{
         # Distributed tournament routes
         app.router.add_post('/tournament/start', self.handle_tournament_start)
         app.router.add_post('/tournament/match', self.handle_tournament_match)
+        app.router.add_post('/tournament/play_elo_match', self.handle_play_elo_match)
         app.router.add_get('/tournament/status', self.handle_tournament_status)
         app.router.add_post('/tournament/result', self.handle_tournament_result)
         app.router.add_post('/tournament/ssh_start', self.handle_ssh_tournament_start)
