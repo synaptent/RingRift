@@ -16,6 +16,21 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+# Add project to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Unified resource guard - 80% utilization limits (enforced 2025-12-16)
+try:
+    from app.utils.resource_guard import (
+        get_disk_usage as unified_get_disk_usage,
+        LIMITS as RESOURCE_LIMITS,
+    )
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    unified_get_disk_usage = None
+    RESOURCE_LIMITS = None
+
 PROJECT_DIR = Path(__file__).parent.parent
 LOG_FILE = Path("/tmp/watchdog.log")
 STATE_FILE = Path("/tmp/watchdog_state.json")
@@ -106,6 +121,20 @@ def restart_selfplay_if_needed(state):
         save_state(state)
 
 def get_disk_usage():
+    """Get disk usage percentage.
+
+    Uses unified resource_guard utilities when available for consistent
+    80% max utilization enforcement across the codebase.
+    """
+    # Use unified utilities when available
+    if HAS_RESOURCE_GUARD and unified_get_disk_usage is not None:
+        try:
+            percent, _, _ = unified_get_disk_usage(str(PROJECT_DIR))
+            return f"{percent:.1f}%"
+        except Exception:
+            pass  # Fall through to original implementation
+
+    # Fallback to original implementation
     result = subprocess.run(["df", "-h", str(PROJECT_DIR)], capture_output=True, text=True)
     lines = result.stdout.strip().split("\n")
     if len(lines) >= 2:
@@ -136,11 +165,11 @@ def main():
             # Restart selfplay if needed
             restart_selfplay_if_needed(state)
             
-            # Check disk space warning
+            # Check disk space warning - 70% limit enforced 2025-12-16
             if disk != "unknown":
                 pct = int(disk.replace("%", ""))
-                if pct > 90:
-                    log(f"WARNING: Disk usage at {disk}!")
+                if pct > 70:
+                    log(f"WARNING: Disk usage at {disk}! (limit: 70%)")
             
             log(f"State: restarts={state['restarts']}")
             

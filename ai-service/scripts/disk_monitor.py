@@ -28,6 +28,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
+# Unified resource guard - 80% utilization limits (enforced 2025-12-16)
+try:
+    from app.utils.resource_guard import (
+        get_disk_usage as unified_get_disk_usage,
+        LIMITS as RESOURCE_LIMITS,
+    )
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    unified_get_disk_usage = None
+    RESOURCE_LIMITS = None
+
 
 @dataclass
 class CleanupResult:
@@ -39,7 +51,22 @@ class CleanupResult:
 
 
 def get_disk_usage(path: str = "/") -> Tuple[int, int, float]:
-    """Get disk usage stats. Returns (used_bytes, total_bytes, percent_used)."""
+    """Get disk usage stats. Returns (used_bytes, total_bytes, percent_used).
+
+    Uses unified resource_guard utilities when available for consistent
+    80% max utilization enforcement across the codebase.
+    """
+    # Use unified utilities when available
+    if HAS_RESOURCE_GUARD and unified_get_disk_usage is not None:
+        try:
+            percent, _, total_gb = unified_get_disk_usage(path)
+            total = int(total_gb * 1024**3)
+            used = int(total * percent / 100)
+            return used, total, percent
+        except Exception:
+            pass  # Fall through to original implementation
+
+    # Fallback to original implementation
     stat = os.statvfs(path)
     total = stat.f_blocks * stat.f_frsize
     free = stat.f_bavail * stat.f_frsize

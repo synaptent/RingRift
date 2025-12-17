@@ -343,11 +343,11 @@ class HealthRegistry:
                 "disk_free_gb": disk.free / (1024**3),
             }
 
-            # Check thresholds
+            # Check thresholds - 80% max utilization (enforced 2025-12-16)
             issues = []
-            if cpu_percent > 90:
+            if cpu_percent > 80:
                 issues.append(f"High CPU usage: {cpu_percent}%")
-            if memory.percent > 90:
+            if memory.percent > 80:
                 issues.append(f"High memory usage: {memory.percent}%")
             if disk.percent > 70:  # 70% limit enforced 2025-12-15
                 issues.append(f"High disk usage: {disk.percent}%")

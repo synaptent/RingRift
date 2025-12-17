@@ -21,6 +21,8 @@ from typing import Any, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 
+from app.utils.resource_guard import check_memory, get_memory_usage, LIMITS
+
 try:
     import h5py
     HDF5_AVAILABLE = True
@@ -1434,22 +1436,35 @@ def merge_data_files(
     output_path: str,
     max_samples: Optional[int] = None,
     use_hdf5: bool = False,
+    memory_check_interval: int = 10000,
 ) -> int:
     """
     Merge multiple data files into a single file.
 
     Useful for consolidating distributed training data or converting
-    between formats.
+    between formats. Includes memory monitoring to prevent OOM conditions.
 
     Args:
         input_paths: List of input file paths
         output_path: Path for merged output file
         max_samples: Optional maximum number of samples to include
         use_hdf5: If True, output as HDF5; otherwise NPZ
+        memory_check_interval: Check memory every N samples (default: 10000)
 
     Returns:
         Number of samples in merged file
+
+    Raises:
+        MemoryError: If memory usage exceeds 80% during merge
     """
+    # Check memory before starting
+    if not check_memory(required_gb=2.0, log_warning=True):
+        mem_pct, _, _ = get_memory_usage()
+        raise MemoryError(
+            f"Insufficient memory to start merge (usage: {mem_pct:.1f}%, "
+            f"limit: {LIMITS.MEMORY_MAX_PERCENT}%)"
+        )
+
     # Collect all data
     all_features: List[np.ndarray] = []
     all_globals: List[np.ndarray] = []
@@ -1469,6 +1484,18 @@ def merge_data_files(
         for i in range(handle.num_samples):
             if max_samples is not None and total_count >= max_samples:
                 break
+
+            # Periodic memory check to prevent OOM
+            if total_count > 0 and total_count % memory_check_interval == 0:
+                if not check_memory(required_gb=1.0, log_warning=False):
+                    mem_pct, _, _ = get_memory_usage()
+                    logger.warning(
+                        f"Memory pressure at {mem_pct:.1f}% during merge "
+                        f"(stopping at {total_count} samples)"
+                    )
+                    handle.close()
+                    # Return with samples collected so far rather than crashing
+                    break
 
             feat, glob, val, pol_idx, pol_val = handle.get_sample(i)
             all_features.append(feat)

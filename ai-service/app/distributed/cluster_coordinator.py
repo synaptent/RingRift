@@ -99,13 +99,18 @@ class TaskRole(Enum):
 
 @dataclass
 class ProcessLimits:
-    """Process limits per host to prevent resource exhaustion."""
+    """Process limits per host to prevent resource exhaustion.
+
+    Note: Memory and CPU limits are inherited from app.utils.resource_guard
+    to ensure consistent 80% utilization limits across the codebase.
+    """
     max_python_processes: int = 50  # Maximum Python processes
     max_selfplay_workers: int = 16  # Maximum selfplay worker processes
     max_training_workers: int = 4  # Maximum concurrent training jobs
     max_tournament_workers: int = 8  # Maximum tournament workers
+    # Use consistent 80% limits from resource_guard (previously was 90% for CPU)
     max_memory_percent: float = 80.0  # Max memory usage before throttling
-    max_cpu_percent: float = 90.0  # Max CPU usage before throttling
+    max_cpu_percent: float = 80.0  # Max CPU usage before throttling (fixed from 90%)
 
 
 @dataclass

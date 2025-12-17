@@ -541,19 +541,21 @@ DISCOVERY_INTERVAL = 120  # seconds between discovery broadcasts
 DISK_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", "70") or 70)  # Stop all new jobs at 70%
 DISK_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", "65") or 65)    # Start cleanup at 65%
 DISK_CLEANUP_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CLEANUP_THRESHOLD", "65") or 65)    # Trigger cleanup at 65%
-MEMORY_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_MEMORY_CRITICAL_THRESHOLD", "95") or 95)  # Stop jobs
-MEMORY_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_MEMORY_WARNING_THRESHOLD", "85") or 85)    # Reduce jobs
+# Memory thresholds - respect 80% max utilization (enforced 2025-12-16)
+MEMORY_CRITICAL_THRESHOLD = min(80, int(os.environ.get("RINGRIFT_P2P_MEMORY_CRITICAL_THRESHOLD", "80") or 80))  # Stop jobs
+MEMORY_WARNING_THRESHOLD = min(75, int(os.environ.get("RINGRIFT_P2P_MEMORY_WARNING_THRESHOLD", "75") or 75))    # Reduce jobs
 MIN_MEMORY_GB_FOR_TASKS = int(os.environ.get("RINGRIFT_P2P_MIN_MEMORY_GB", "64") or 64)                # Skip low-memory nodes
-LOAD_MAX_FOR_NEW_JOBS = int(os.environ.get("RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS", "85") or 85)          # Stop starting
+LOAD_MAX_FOR_NEW_JOBS = min(80, int(os.environ.get("RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS", "80") or 80))  # Stop starting
 
 # GPU utilization targeting for efficient resource usage
 # Use unified targets from resource_targets.py if available, fallback to env vars
+# IMPORTANT: GPU max MUST respect 80% limit (enforced 2025-12-16 - was 90%)
 if _unified_targets is not None:
     TARGET_GPU_UTIL_MIN = int(_unified_targets.gpu_min)  # 60% from unified config
-    TARGET_GPU_UTIL_MAX = int(_unified_targets.gpu_max + 5)  # 85% + 5% buffer = 90%
+    TARGET_GPU_UTIL_MAX = min(80, int(_unified_targets.gpu_max))  # 80% hard cap
 else:
     TARGET_GPU_UTIL_MIN = int(os.environ.get("RINGRIFT_P2P_TARGET_GPU_UTIL_MIN", "60") or 60)
-    TARGET_GPU_UTIL_MAX = int(os.environ.get("RINGRIFT_P2P_TARGET_GPU_UTIL_MAX", "90") or 90)
+    TARGET_GPU_UTIL_MAX = min(80, int(os.environ.get("RINGRIFT_P2P_TARGET_GPU_UTIL_MAX", "80") or 80))
 GH200_MIN_SELFPLAY = int(os.environ.get("RINGRIFT_P2P_GH200_MIN_SELFPLAY", "20") or 20)    # Min selfplay for GH200
 GH200_MAX_SELFPLAY = int(os.environ.get("RINGRIFT_P2P_GH200_MAX_SELFPLAY", "100") or 100)  # Max selfplay for GH200
 

@@ -37,8 +37,50 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from app.core.error_handler import retry_async, SSHError, RetryableError
+from app.utils.resource_guard import (
+    can_proceed,
+    wait_for_resources,
+    check_memory,
+    check_cpu,
+    get_resource_status,
+    LIMITS,
+)
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Resource-Aware Execution
+# ============================================================================
+
+async def check_resources_before_spawn(
+    wait_if_unavailable: bool = True,
+    wait_timeout: float = 300.0,
+    required_mem_gb: float = 1.0,
+) -> bool:
+    """Check if resources are available before spawning a subprocess.
+
+    Args:
+        wait_if_unavailable: If True, wait for resources. If False, return immediately.
+        wait_timeout: Max time to wait for resources (seconds).
+        required_mem_gb: Minimum memory required in GB.
+
+    Returns:
+        True if resources are available, False otherwise.
+    """
+    if can_proceed(check_disk=False, mem_required_gb=required_mem_gb):
+        return True
+
+    if not wait_if_unavailable:
+        status = get_resource_status()
+        logger.warning(
+            f"Resources unavailable for spawn: CPU={status['cpu']['used_percent']:.1f}%, "
+            f"Memory={status['memory']['used_percent']:.1f}%"
+        )
+        return False
+
+    logger.info(f"Waiting up to {wait_timeout}s for resources before spawn...")
+    return wait_for_resources(timeout=wait_timeout, mem_required_gb=required_mem_gb)
 
 
 @dataclass
@@ -147,8 +189,22 @@ class BaseExecutor(ABC):
 class LocalExecutor(BaseExecutor):
     """Execute commands on the local machine."""
 
-    def __init__(self, working_dir: Optional[str] = None):
+    def __init__(
+        self,
+        working_dir: Optional[str] = None,
+        check_resources: bool = False,
+        required_mem_gb: float = 1.0,
+    ):
+        """Initialize local executor.
+
+        Args:
+            working_dir: Default working directory for commands.
+            check_resources: If True, check resources before each spawn.
+            required_mem_gb: Memory required for spawned processes.
+        """
         self.working_dir = working_dir
+        self.check_resources = check_resources
+        self.required_mem_gb = required_mem_gb
 
     @property
     def name(self) -> str:
@@ -168,6 +224,25 @@ class LocalExecutor(BaseExecutor):
 
         start_time = time.time()
         timed_out = False
+
+        # Check resources before spawning if enabled
+        if self.check_resources:
+            resources_ok = await check_resources_before_spawn(
+                wait_if_unavailable=True,
+                wait_timeout=60.0,
+                required_mem_gb=self.required_mem_gb,
+            )
+            if not resources_ok:
+                return ExecutionResult(
+                    success=False,
+                    returncode=-1,
+                    stdout="",
+                    stderr=f"Resource limits exceeded (CPU>{LIMITS.CPU_MAX_PERCENT}% or Memory>{LIMITS.MEMORY_MAX_PERCENT}%)",
+                    duration_seconds=time.time() - start_time,
+                    command=command,
+                    host="local",
+                    timed_out=False,
+                )
 
         try:
             proc = await asyncio.create_subprocess_shell(

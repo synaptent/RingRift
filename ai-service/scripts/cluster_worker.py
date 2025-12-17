@@ -61,6 +61,20 @@ from scripts.run_cmaes_optimization import (
 )
 from app.distributed.game_collector import InMemoryGameCollector
 
+# Unified resource guard - 80% utilization limits (enforced 2025-12-16)
+try:
+    from app.utils.resource_guard import (
+        get_memory_usage as unified_get_memory_usage,
+        check_memory,
+        LIMITS as RESOURCE_LIMITS,
+    )
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    unified_get_memory_usage = None
+    check_memory = None
+    RESOURCE_LIMITS = None
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -88,6 +102,9 @@ BOARD_MEMORY_REQUIREMENTS: Dict[str, int] = {
 def get_memory_info() -> Dict[str, Any]:
     """Get memory information for this machine.
 
+    Uses unified resource_guard utilities when available for consistent
+    80% max utilization enforcement across the codebase.
+
     Returns dict with:
         - total_gb: Total physical RAM in GB
         - available_gb: Available RAM in GB (free + inactive/reclaimable)
@@ -96,44 +113,55 @@ def get_memory_info() -> Dict[str, Any]:
     total_gb = 8
     available_gb = 4
 
-    try:
-        # macOS: use sysctl for total
-        result = subprocess.run(
-            ["sysctl", "-n", "hw.memsize"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            bytes_total = int(result.stdout.strip())
-            total_gb = bytes_total // (1024**3)
+    # Try unified resource_guard first
+    if HAS_RESOURCE_GUARD and unified_get_memory_usage is not None:
+        try:
+            _, avail_gb, total_gb_res = unified_get_memory_usage()
+            total_gb = int(total_gb_res)
+            available_gb = int(avail_gb)
+        except Exception:
+            pass  # Fall through to platform-specific implementations
 
-        # macOS: use vm_stat for available (free + inactive pages)
-        result = subprocess.run(
-            ["vm_stat"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            page_size = 4096  # Default
-            free_pages = 0
-            inactive_pages = 0
+    # Fallback to platform-specific implementations if resource_guard failed
+    if total_gb == 8:  # Still at default, resource_guard didn't work
+        try:
+            # macOS: use sysctl for total
+            result = subprocess.run(
+                ["sysctl", "-n", "hw.memsize"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                bytes_total = int(result.stdout.strip())
+                total_gb = bytes_total // (1024**3)
 
-            for line in result.stdout.split("\n"):
-                if "page size of" in line:
-                    match = re.search(r"page size of (\d+)", line)
-                    if match:
-                        page_size = int(match.group(1))
-                elif "Pages free:" in line:
-                    free_pages = int(line.split(":")[1].strip().rstrip("."))
-                elif "Pages inactive:" in line:
-                    inactive_pages = int(line.split(":")[1].strip().rstrip("."))
+            # macOS: use vm_stat for available (free + inactive pages)
+            result = subprocess.run(
+                ["vm_stat"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                page_size = 4096  # Default
+                free_pages = 0
+                inactive_pages = 0
 
-            available_bytes = (free_pages + inactive_pages) * page_size
-            available_gb = available_bytes // (1024**3)
-    except Exception:
-        pass
+                for line in result.stdout.split("\n"):
+                    if "page size of" in line:
+                        match = re.search(r"page size of (\d+)", line)
+                        if match:
+                            page_size = int(match.group(1))
+                    elif "Pages free:" in line:
+                        free_pages = int(line.split(":")[1].strip().rstrip("."))
+                    elif "Pages inactive:" in line:
+                        inactive_pages = int(line.split(":")[1].strip().rstrip("."))
+
+                available_bytes = (free_pages + inactive_pages) * page_size
+                available_gb = available_bytes // (1024**3)
+        except Exception:
+            pass
 
     # Fallback: try Linux /proc/meminfo
     if total_gb == 8:

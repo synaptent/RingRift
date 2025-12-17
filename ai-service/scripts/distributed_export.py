@@ -71,6 +71,24 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# Unified resource guard - 80% utilization limits (enforced 2025-12-16)
+try:
+    from app.utils.resource_guard import (
+        can_proceed as resource_can_proceed,
+        check_disk_space,
+        check_memory,
+        require_resources,
+        LIMITS as RESOURCE_LIMITS,
+    )
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    resource_can_proceed = lambda **kwargs: True  # type: ignore
+    check_disk_space = lambda *args, **kwargs: True  # type: ignore
+    check_memory = lambda *args, **kwargs: True  # type: ignore
+    require_resources = lambda *args, **kwargs: True  # type: ignore
+    RESOURCE_LIMITS = None  # type: ignore
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",

@@ -78,8 +78,8 @@ class ResourceMetrics:
 
     @property
     def is_overloaded(self) -> bool:
-        """Check if node is overloaded."""
-        return self.load_score > 85 or self.memory_percent > 90
+        """Check if node is overloaded (80% max utilization enforced 2025-12-16)."""
+        return self.load_score > 80 or self.memory_percent > 80
 
     def to_dict(self) -> Dict[str, Any]:
         return {

@@ -48,6 +48,7 @@ from app.ai.neural_net import (
 )
 from app.training.config import TrainConfig
 from app.models import BoardType
+from app.utils.resource_guard import check_disk_space, get_disk_usage, LIMITS
 from app.training.hex_augmentation import HexSymmetryTransform
 from app.training.distributed import (  # noqa: E402
     setup_distributed,
@@ -434,9 +435,21 @@ def save_checkpoint(
         scheduler: Optional LR scheduler to save state from
         early_stopping: Optional early stopping tracker to save state from
         use_versioning: Whether to include versioning metadata (default True)
+
+    Raises:
+        IOError: If disk space is insufficient (>70% used or <1GB available)
     """
-    # Ensure directory exists
+    # Check disk space before saving (checkpoints can be 50-200MB)
     dir_path = os.path.dirname(path) if os.path.dirname(path) else '.'
+    if not check_disk_space(required_gb=1.0, path=dir_path, log_warning=False):
+        disk_pct, available_gb, _ = get_disk_usage(dir_path)
+        raise IOError(
+            f"Insufficient disk space to save checkpoint: "
+            f"{disk_pct:.1f}% used (limit: {LIMITS.DISK_MAX_PERCENT}%), "
+            f"{available_gb:.1f}GB available. Path: {path}"
+        )
+
+    # Ensure directory exists
     os.makedirs(dir_path, exist_ok=True)
 
     if use_versioning:

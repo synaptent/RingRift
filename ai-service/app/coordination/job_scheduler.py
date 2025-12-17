@@ -45,11 +45,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 logger = logging.getLogger(__name__)
 
-# Utilization targets for job scheduling
+# Utilization targets for job scheduling - 80% max (enforced 2025-12-16)
 TARGET_GPU_UTILIZATION_MIN = 60  # Start more jobs if GPU below this %
-TARGET_GPU_UTILIZATION_MAX = 90  # Don't start more jobs if GPU above this %
+TARGET_GPU_UTILIZATION_MAX = 80  # Don't start more jobs if GPU above this % (fixed from 90%)
 TARGET_CPU_UTILIZATION_MIN = 60  # Start more jobs if CPU below this %
-TARGET_CPU_UTILIZATION_MAX = 85  # Don't start more jobs if CPU above this %
+TARGET_CPU_UTILIZATION_MAX = 80  # Don't start more jobs if CPU above this % (fixed from 85%)
 MIN_MEMORY_GB_FOR_TASKS = 64  # Skip nodes with less than this to avoid OOM
 
 # Elo curriculum configuration
@@ -244,7 +244,7 @@ class PriorityJobScheduler:
                 continue
             if _get_disk(status) > 70:  # 70% limit enforced 2025-12-15
                 continue
-            if _get_mem(status) > 90:
+            if _get_mem(status) > 80:  # 80% limit enforced 2025-12-16
                 continue
             # Skip low-memory hosts to avoid OOM
             mem_gb = _get_memory_gb(host)

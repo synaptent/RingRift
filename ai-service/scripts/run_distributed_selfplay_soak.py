@@ -87,6 +87,24 @@ except ImportError:
     def release_sync_lock(host: str) -> None:
         pass
 
+# Unified resource guard - 80% utilization limits (enforced 2025-12-16)
+try:
+    from app.utils.resource_guard import (
+        can_proceed as resource_can_proceed,
+        check_disk_space,
+        check_memory,
+        require_resources,
+        LIMITS as RESOURCE_LIMITS,
+    )
+    HAS_RESOURCE_GUARD = True
+except ImportError:
+    HAS_RESOURCE_GUARD = False
+    resource_can_proceed = lambda **kwargs: True  # type: ignore
+    check_disk_space = lambda *args, **kwargs: True  # type: ignore
+    check_memory = lambda *args, **kwargs: True  # type: ignore
+    require_resources = lambda *args, **kwargs: True  # type: ignore
+    RESOURCE_LIMITS = None  # type: ignore
+
 # Board configurations with appropriate max moves
 BOARD_CONFIGS: Dict[str, Dict[int, int]] = {
     # board_type: {num_players: max_moves}
@@ -1308,6 +1326,15 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Entry point resource validation (enforced 2025-12-16)
+    # Check local resources before starting distributed work
+    if HAS_RESOURCE_GUARD and not args.dry_run:
+        if not resource_can_proceed(check_disk=True, check_mem=True):
+            print("ERROR: Insufficient local resources to start distributed soak.")
+            print("       Disk or memory usage exceeds 80% limit.")
+            print("       Free up resources or use --dry-run to preview jobs.")
+            sys.exit(1)
 
     # Load remote host configuration
     global REMOTE_HOSTS

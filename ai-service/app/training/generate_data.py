@@ -38,6 +38,7 @@ from app.training.hex_augmentation import (
     augment_hex_sample,
 )
 from app.utils.progress_reporter import SoakProgressReporter
+from app.utils.resource_guard import check_disk_space, get_disk_usage, LIMITS
 
 
 def extract_mcts_visit_distribution(
@@ -1478,6 +1479,17 @@ def generate_dataset(
                 "num_players": new_num_players_arr,
             }
         )
+
+    # Check disk space before writing (datasets can be 100MB-2GB)
+    output_dir = os.path.dirname(output_path) or '.'
+    if not check_disk_space(required_gb=2.0, path=output_dir, log_warning=False):
+        disk_pct, available_gb, _ = get_disk_usage(output_dir)
+        raise IOError(
+            f"Insufficient disk space to save dataset: "
+            f"{disk_pct:.1f}% used (limit: {LIMITS.DISK_MAX_PERCENT}%), "
+            f"{available_gb:.1f}GB available. Path: {output_path}"
+        )
+
     np.savez_compressed(output_path, **save_kwargs)
 
 
@@ -1766,7 +1778,17 @@ def generate_dataset_gpu_parallel(
             os.path.dirname(__file__),
             output_file,
         )
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_dir = os.path.dirname(output_path) or '.'
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Check disk space before writing
+    if not check_disk_space(required_gb=2.0, path=output_dir, log_warning=False):
+        disk_pct, available_gb, _ = get_disk_usage(output_dir)
+        raise IOError(
+            f"Insufficient disk space to save dataset: "
+            f"{disk_pct:.1f}% used (limit: {LIMITS.DISK_MAX_PERCENT}%), "
+            f"{available_gb:.1f}GB available. Path: {output_path}"
+        )
 
     np.savez_compressed(
         output_path,
