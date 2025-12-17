@@ -233,17 +233,44 @@ class NodeStatus:
     has_p2p: bool
     selfplay_jobs: int
     can_run_tournament: bool
+    gpu: str = "Unknown"
 
 
 def check_node_health(node_id: str, config: dict) -> NodeStatus:
-    """Check if a node is healthy and can run tournament matches."""
+    """Check if a node is healthy and can run tournament matches.
+
+    First tries direct HTTP health check (fast), then falls back to SSH.
+    """
+    import urllib.request
+    import urllib.error
+
     ip = config["ip"]
     user = config["user"]
     port = config.get("ssh_port", 22)
-    via_proxy = config.get("via_ssh_proxy", False)
+    gpu = config.get("gpu", "Unknown")
 
+    # Try direct HTTP health check first (faster than SSH)
     try:
-        # Build SSH command with proper port handling
+        url = f"http://{ip}:8770/health"
+        req = urllib.request.Request(url, method='GET')
+        with urllib.request.urlopen(req, timeout=5) as response:
+            health = json.loads(response.read().decode('utf-8'))
+            return NodeStatus(
+                node_id=node_id,
+                ip=ip,
+                is_alive=True,
+                has_p2p=health.get("healthy", False),
+                selfplay_jobs=health.get("selfplay_jobs", 0),
+                can_run_tournament=health.get("healthy", False),
+                gpu=gpu,
+            )
+    except (urllib.error.URLError, urllib.error.HTTPError):
+        pass
+    except Exception:
+        pass
+
+    # Fallback to SSH-based check
+    try:
         ssh_args = [
             "ssh",
             "-o", "StrictHostKeyChecking=no",
@@ -269,17 +296,18 @@ def check_node_health(node_id: str, config: dict) -> NodeStatus:
                     has_p2p=health.get("healthy", False),
                     selfplay_jobs=health.get("selfplay_jobs", 0),
                     can_run_tournament=health.get("healthy", False),
+                    gpu=gpu,
                 )
             except json.JSONDecodeError:
                 pass
     except subprocess.TimeoutExpired:
         pass
-    except Exception as e:
+    except Exception:
         pass
 
     return NodeStatus(
         node_id=node_id, ip=ip, is_alive=False,
-        has_p2p=False, selfplay_jobs=0, can_run_tournament=False
+        has_p2p=False, selfplay_jobs=0, can_run_tournament=False, gpu=gpu
     )
 
 
@@ -360,6 +388,66 @@ fi
         return False
 
 
+def run_match_via_p2p(
+    node_id: str,
+    node_ip: str,
+    agent_a: str,
+    agent_b: str,
+    match_id: str,
+    board_type: str = "square8",
+    use_ramdrive: bool = False,
+) -> Optional[MatchResult]:
+    """Run a single match on a remote node via P2P orchestrator endpoint.
+
+    Uses the /tournament/play_elo_match endpoint on port 8770 which supports
+    all AI types including MCTS, Descent, Policy-Only, and Gumbel MCTS.
+    """
+    import urllib.request
+    import urllib.error
+
+    url = f"http://{node_ip}:8770/tournament/play_elo_match"
+
+    payload = {
+        "agent_a": agent_a,
+        "agent_b": agent_b,
+        "board_type": board_type,
+        "use_ramdrive": use_ramdrive,
+    }
+
+    try:
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={'Content-Type': 'application/json'},
+            method='POST'
+        )
+
+        with urllib.request.urlopen(req, timeout=300) as response:
+            result = json.loads(response.read().decode('utf-8'))
+
+            if result.get("success"):
+                return MatchResult(
+                    match_id=result.get("match_id", match_id),
+                    agent_a=agent_a,
+                    agent_b=agent_b,
+                    winner=result.get("winner", "draw"),
+                    game_length=result.get("game_length", 0),
+                    duration_sec=result.get("duration_sec", 0),
+                    worker_node=result.get("worker_node", node_id),
+                )
+    except urllib.error.URLError:
+        pass
+    except urllib.error.HTTPError:
+        pass
+    except json.JSONDecodeError:
+        pass
+    except Exception:
+        pass
+
+    return None
+
+
 def run_match_on_node(
     node_id: str,
     config: dict,
@@ -369,30 +457,45 @@ def run_match_on_node(
     board_type: str = "square8",
     use_ramdrive: bool = False,
 ) -> Optional[MatchResult]:
-    """Run a single match on a remote node via direct Python execution."""
+    """Run a single match on a remote node.
+
+    First tries the P2P orchestrator endpoint (fast, supports all AI types),
+    falls back to SSH if P2P is unavailable.
+    """
     ip = config["ip"]
+
+    # Try P2P endpoint first (preferred - supports all AI types)
+    result = run_match_via_p2p(
+        node_id=node_id,
+        node_ip=ip,
+        agent_a=agent_a,
+        agent_b=agent_b,
+        match_id=match_id,
+        board_type=board_type,
+        use_ramdrive=use_ramdrive,
+    )
+
+    if result:
+        return result
+
+    # Fallback to SSH for nodes without P2P (limited AI type support)
     user = config["user"]
     port = config.get("ssh_port", 22)
     path = config.get("path", "~/ringrift/ai-service")
 
-    # Map agent names to AI types
+    # SSH fallback only supports simple AI types
     ai_type_map = {
         "random": ("RANDOM", "RandomAI", 1),
         "heuristic": ("HEURISTIC", "HeuristicAI", 5),
-        "minimax_heuristic": ("MINIMAX", "MinimaxAI", 3),
-        "minimax_nnue": ("MINIMAX", "MinimaxAI", 4),
-        "mcts_heuristic": ("MCTS", "MCTSAI", 5),
-        "mcts_neural": ("MCTS", "MCTSAI", 6),
-        "mcts_neural_high": ("MCTS", "MCTSAI", 7),
-        "policy_only": ("POLICY_ONLY", "PolicyOnlyAI", 3),
-        "gumbel_mcts": ("GUMBEL_MCTS", "GumbelMCTSAI", 7),
-        "descent": ("DESCENT", "DescentAI", 9),
     }
 
-    a_info = ai_type_map.get(agent_a, ("RANDOM", "RandomAI", 1))
-    b_info = ai_type_map.get(agent_b, ("HEURISTIC", "HeuristicAI", 5))
+    # Skip SSH fallback for complex AI types
+    if agent_a not in ai_type_map or agent_b not in ai_type_map:
+        return None
 
-    # Build Python script - use double quotes for outer shell, escape inner quotes
+    a_info = ai_type_map[agent_a]
+    b_info = ai_type_map[agent_b]
+
     python_script = f'''
 import sys, json, time
 sys.path.insert(0, ".")
@@ -409,15 +512,8 @@ engine = DefaultRulesEngine()
 cfg_a = AIConfig(ai_type=AIType.{a_info[0]}, board_type=board_type, difficulty={a_info[2]})
 cfg_b = AIConfig(ai_type=AIType.{b_info[0]}, board_type=board_type, difficulty={b_info[2]})
 
-if "{a_info[0]}" == "RANDOM":
-    ai_a = RandomAI(1, cfg_a)
-else:
-    ai_a = HeuristicAI(1, cfg_a)
-
-if "{b_info[0]}" == "RANDOM":
-    ai_b = RandomAI(2, cfg_b)
-else:
-    ai_b = HeuristicAI(2, cfg_b)
+ai_a = {"RandomAI(1, cfg_a)" if a_info[1] == "RandomAI" else "HeuristicAI(1, cfg_a)"}
+ai_b = {"RandomAI(2, cfg_b)" if b_info[1] == "RandomAI" else "HeuristicAI(2, cfg_b)"}
 
 start = time.time()
 moves = 0
@@ -438,7 +534,6 @@ elif state.winner == 2:
 print(json.dumps({{"winner": winner, "moves": moves, "dur": round(time.time() - start, 2)}}))
 '''
 
-    # Build SSH command
     ssh_args = [
         "ssh",
         "-o", "StrictHostKeyChecking=no",
@@ -449,7 +544,6 @@ print(json.dumps({{"winner": winner, "moves": moves, "dur": round(time.time() - 
         ssh_args.extend(["-p", str(port)])
 
     ssh_args.append(f"{user}@{ip}")
-    # Use heredoc-style to avoid escaping issues
     cmd = f'cd {path} && source venv/bin/activate 2>/dev/null; python3 -c "{python_script}"'
     ssh_args.append(cmd)
 
@@ -458,7 +552,6 @@ print(json.dumps({{"winner": winner, "moves": moves, "dur": round(time.time() - 
 
         if result.returncode == 0 and result.stdout.strip():
             try:
-                # Find the JSON line in output
                 for line in result.stdout.strip().split("\n"):
                     if line.startswith("{"):
                         data = json.loads(line)
