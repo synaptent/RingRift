@@ -458,6 +458,25 @@ def main(argv: Optional[list[str]] = None) -> int:
     report_path = os.path.join(run_dir, "nn_training_report.json")
     _write_report(report_path, report)
 
+    # Register model in the model registry for tracking
+    try:
+        from app.training.training_registry import register_trained_model
+        registered_id = register_trained_model(
+            model_path=save_path,
+            board_type=args.board,
+            num_players=num_players,
+            training_config=report["training_params"],
+            metrics=report.get("metrics"),
+            description=f"Baseline training {mode} mode",
+            tags=["baseline", mode],
+            source="nn_training_baseline",
+            data_path=data_path,
+        )
+        if registered_id:
+            print(f"[Registry] Registered model as {registered_id}")
+    except Exception as e:
+        print(f"[Registry] Warning: Could not register model: {e}")
+
     # For future tooling, return 0 on success so tests can assert on main().
     return 0
 
