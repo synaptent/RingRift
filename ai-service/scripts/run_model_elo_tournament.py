@@ -1574,11 +1574,21 @@ def main():
     parser.add_argument("--training-mode", action="store_true",
                         help="Training mode: tag games as 'elo_selfplay' so they feed into training pool instead of being filtered as holdout")
 
+    # Performance optimization
+    parser.add_argument("--no-compile", action="store_true",
+                        help="Disable torch.compile() for faster startup (reduces per-game overhead at cost of inference speed)")
+
     args = parser.parse_args()
 
     # Handle --no-both-ai-types flag (overrides default True for --both-ai-types)
     if args.no_both_ai_types:
         args.both_ai_types = False
+
+    # Handle --no-compile flag to disable torch.compile() for faster startup
+    if args.no_compile:
+        import os
+        os.environ["RINGRIFT_DISABLE_TORCH_COMPILE"] = "1"
+        print("[Tournament] torch.compile() disabled for faster startup")
 
     # === TRAINING MODE: Change source tag so games feed into training pool ===
     global GAME_SOURCE_TAG
