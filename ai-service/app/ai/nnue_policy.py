@@ -1645,11 +1645,17 @@ class NNUEPolicyDataset(Dataset):
 
         This is particularly useful for MCTS selfplay data that includes
         mcts_policy distributions in the move records.
+
+        For GPU selfplay data, automatically expands moves to canonical format
+        by inserting required phase-handling moves (line/territory processing,
+        skip_capture, etc.) that GPU selfplay omits.
         """
         import numpy as np
         from ..models import GameState, Move, MoveType, Position
+        from ..models.core import GamePhase
         from ..rules.default_engine import DefaultRulesEngine
         from ..training.generate_data import create_initial_state
+        from ..game_engine import GameEngine
 
         samples: List[NNUEPolicySample] = []
         engine = DefaultRulesEngine()
@@ -1659,6 +1665,76 @@ class NNUEPolicyDataset(Dataset):
         extraction_start = _time.time()
         games_processed = 0
         games_skipped = 0
+
+        def _auto_advance_phase(state: GameState) -> GameState:
+            """Auto-advance through phase-handling moves until at a playable phase.
+
+            GPU selfplay skips explicit phase moves (line/territory processing).
+            This helper inserts the required bookkeeping moves to advance the state.
+            """
+            safety = 0
+            while state.game_status.value == "active" and safety < 100:
+                safety += 1
+                phase = state.current_phase
+                player = state.current_player
+
+                if phase == GamePhase.LINE_PROCESSING:
+                    # Auto-process lines
+                    line_moves = GameEngine._get_line_processing_moves(state, player)
+                    if line_moves:
+                        choose_moves = [m for m in line_moves if m.type == MoveType.CHOOSE_LINE_OPTION]
+                        process_moves = [m for m in line_moves if m.type == MoveType.PROCESS_LINE]
+                        picked = choose_moves[0] if choose_moves else (process_moves[0] if process_moves else None)
+                        if picked:
+                            state = GameEngine.apply_move(state, picked)
+                            continue
+                    # No lines - insert NO_LINE_ACTION
+                    no_line = Move(
+                        id="auto-no-line",
+                        type=MoveType.NO_LINE_ACTION,
+                        player=player,
+                        timestamp=state.last_move.timestamp if state.last_move else None,
+                        think_time=0,
+                        move_number=0,
+                    )
+                    state = GameEngine.apply_move(state, no_line)
+                    continue
+
+                if phase == GamePhase.TERRITORY_PROCESSING:
+                    # Auto-process territory
+                    terr_moves = GameEngine._get_territory_processing_moves(state, player)
+                    if terr_moves:
+                        state = GameEngine.apply_move(state, terr_moves[0])
+                        continue
+                    # No territory to process
+                    no_terr = Move(
+                        id="auto-no-territory",
+                        type=MoveType.NO_TERRITORY_ACTION,
+                        player=player,
+                        timestamp=state.last_move.timestamp if state.last_move else None,
+                        think_time=0,
+                        move_number=0,
+                    )
+                    state = GameEngine.apply_move(state, no_terr)
+                    continue
+
+                # Check for phase requirements
+                requirement = GameEngine.get_phase_requirement(state, player)
+                if requirement is not None:
+                    synthesized = GameEngine.synthesize_bookkeeping_move(requirement, state)
+                    if synthesized:
+                        state = GameEngine.apply_move(state, synthesized)
+                        continue
+
+                # At a playable phase (placement, movement, capture)
+                break
+
+            return state
+
+        # Check for hex board + GPU selfplay incompatibility
+        # GPU selfplay uses 8-directional grid movement, hex boards require 6-directional hex movement
+        is_hex_board = self.config.board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
+        hex_gpu_warned = False
 
         with open(jsonl_path, 'r') as f:
             for line_num, line in enumerate(f):
@@ -1686,6 +1762,22 @@ class NNUEPolicyDataset(Dataset):
                     games_skipped += 1
                     continue
 
+                # Detect GPU selfplay data
+                is_gpu_selfplay = game.get("source", "").startswith("run_gpu") or game.get("engine_mode") == "gpu_heuristic"
+
+                # Skip GPU selfplay hex data - movement rules are incompatible
+                # GPU uses 8-directional grid movement, hex requires 6-directional hex movement
+                if is_hex_board and is_gpu_selfplay:
+                    if not hex_gpu_warned:
+                        logger.warning(
+                            f"Skipping GPU selfplay JSONL for hex board ({self.config.board_type.value}). "
+                            "GPU uses 8-dir grid movement, hex requires 6-dir hex movement. "
+                            "Use DB data from CPU/MCTS selfplay instead."
+                        )
+                        hex_gpu_warned = True
+                    games_skipped += 1
+                    continue
+
                 winner = game.get("winner")
                 moves = game.get("moves", [])
                 game_id = game.get("game_id", f"jsonl_{line_num}")
@@ -1709,8 +1801,15 @@ class NNUEPolicyDataset(Dataset):
                 for move_idx, move_dict in enumerate(moves):
                     move_number = move_idx + 1
 
+                    # Auto-advance through phase-handling moves for GPU selfplay
+                    if is_gpu_selfplay and state.game_status.value == "active":
+                        try:
+                            state = _auto_advance_phase(state)
+                        except Exception:
+                            break  # Can't continue if phase advance fails
+
                     # Sample every Nth position
-                    if move_number % self.config.sample_every_n_moves == 0 and state.game_status == "active":
+                    if move_number % self.config.sample_every_n_moves == 0 and state.game_status.value == "active":
                         current_player = state.current_player or 1
 
                         # Calculate value from perspective of current player
@@ -1734,7 +1833,7 @@ class NNUEPolicyDataset(Dataset):
                         if not skip_sample:
                             try:
                                 # Get legal moves at this position
-                                legal_moves = engine.get_valid_moves(state, current_player)
+                                legal_moves = GameEngine.get_valid_moves(state, current_player)
                                 if legal_moves:
                                     # Parse the move that was played
                                     played_move = self._parse_jsonl_move(move_dict, move_number)
@@ -1790,7 +1889,11 @@ class NNUEPolicyDataset(Dataset):
                     try:
                         move = self._parse_jsonl_move(move_dict, move_idx)
                         if move is not None:
-                            state = engine.apply_move(state, move)
+                            # Use GameEngine for consistent phase handling
+                            state = GameEngine.apply_move(state, move)
+                            # Auto-advance through any resulting phase transitions for GPU selfplay
+                            if is_gpu_selfplay and state.game_status.value == "active":
+                                state = _auto_advance_phase(state)
                     except Exception:
                         break  # Can't continue if move application fails
 

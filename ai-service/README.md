@@ -367,6 +367,109 @@ larger region.
 
 Clear cached AI instances
 
+## Cluster Setup (Self-Hosted Training)
+
+This section describes how to set up your own GPU cluster for distributed training and selfplay.
+
+### Prerequisites
+
+- Python 3.11+
+- SSH key-based authentication between nodes
+- NVIDIA GPU with CUDA support (recommended: H100, GH200, A100, or RTX 4090)
+- [Tailscale](https://tailscale.com/) (optional but recommended for mesh networking)
+
+### Quick Start
+
+1. **Configure your hosts:**
+
+   ```bash
+   # Copy example configs
+   cp config/remote_hosts.yaml.example config/remote_hosts.yaml
+   cp config/distributed_hosts.yaml.example config/distributed_hosts.yaml
+   cp config/sync_hosts.env.example config/sync_hosts.env
+
+   # Edit with your actual IPs and hostnames
+   vim config/remote_hosts.yaml
+   ```
+
+2. **Set up SSH config** (on your local machine):
+
+   ```bash
+   # Add to ~/.ssh/config
+   Host gpu-primary
+       HostName 10.0.0.1  # Your primary GPU IP
+       User ubuntu
+       IdentityFile ~/.ssh/id_cluster
+
+   Host gpu-worker-*
+       User ubuntu
+       IdentityFile ~/.ssh/id_cluster
+   ```
+
+3. **Deploy code to cluster:**
+
+   ```bash
+   python scripts/update_cluster_code.py --auto-stash
+   ```
+
+4. **Start training pipeline:**
+
+   ```bash
+   # Start unified AI loop (main orchestrator)
+   ssh gpu-primary 'cd ~/ringrift/ai-service && \
+     nohup python scripts/unified_ai_loop.py --start > logs/loop.log 2>&1 &'
+
+   # Start selfplay workers
+   ssh gpu-worker-1 'cd ~/ringrift/ai-service && \
+     nohup python scripts/run_gpu_selfplay.py --board-type square8 \
+       --num-players 2 --num-games 10000 > logs/selfplay.log 2>&1 &'
+   ```
+
+5. **Set up cron for data sync:**
+
+   ```bash
+   # Edit config/sync_hosts.env with your hosts
+   # Then install crontab
+   crontab config/crontab_training.txt
+   ```
+
+### Configuration Files
+
+| File                            | Purpose                  |
+| ------------------------------- | ------------------------ |
+| `config/remote_hosts.yaml`      | SSH host definitions     |
+| `config/distributed_hosts.yaml` | P2P orchestrator hosts   |
+| `config/sync_hosts.env`         | Data sync configuration  |
+| `config/unified_loop.yaml`      | Training loop parameters |
+
+All `*.yaml` and `*.env` config files with IPs are gitignored. Use the `.example` templates.
+
+### Supported Hardware
+
+| GPU Type      | VRAM  | Recommended Role            |
+| ------------- | ----- | --------------------------- |
+| NVIDIA H100   | 80GB  | Training, tournaments       |
+| NVIDIA GH200  | 96GB  | Selfplay, training          |
+| NVIDIA A100   | 40GB+ | Training, selfplay          |
+| RTX 4090/4080 | 24GB  | Selfplay, small training    |
+| RTX 3090/3080 | 24GB  | Selfplay                    |
+| Apple Silicon | -     | MPS training (M1/M2/M3 Max) |
+
+### Monitoring
+
+```bash
+# Check cluster status
+python scripts/cluster_status.py
+
+# View training progress
+python scripts/unified_ai_loop.py --status
+
+# Check game counts
+sqlite3 data/games/selfplay.db "SELECT board_type, COUNT(*) FROM games GROUP BY 1"
+```
+
+See [docs/TRAINING_PIPELINE.md](docs/TRAINING_PIPELINE.md) for detailed pipeline documentation.
+
 ## Development Setup
 
 ### Local Development (without Docker)

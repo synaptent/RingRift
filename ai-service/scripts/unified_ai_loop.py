@@ -1265,6 +1265,33 @@ if HAS_PROMETHEUS:
         ['config']
     )
 
+    # Consolidated FeedbackState metrics (Phase 7)
+    FEEDBACK_URGENCY_SCORE = _get_or_create(
+        'ringrift_feedback_urgency_score', Gauge,
+        'Training urgency score (0-1) per config from FeedbackState',
+        ['config']
+    )
+    FEEDBACK_PLATEAU_COUNT = _get_or_create(
+        'ringrift_feedback_plateau_count', Gauge,
+        'Consecutive Elo plateaus per config',
+        ['config']
+    )
+    FEEDBACK_CURRICULUM_WEIGHT = _get_or_create(
+        'ringrift_feedback_curriculum_weight', Gauge,
+        'Curriculum weight (0.5-2.0) per config',
+        ['config']
+    )
+    FEEDBACK_GLOBAL_PARITY_RATE = _get_or_create(
+        'ringrift_feedback_global_parity_rate', Gauge,
+        'Global parity failure rate from TrainingScheduler',
+        []
+    )
+    FEEDBACK_DATA_QUALITY = _get_or_create(
+        'ringrift_feedback_data_quality', Gauge,
+        'Data quality score (0-1) per config',
+        ['config']
+    )
+
     # Model registry metrics
     MODEL_REGISTRY_COUNT = _get_or_create(
         'ringrift_model_registry_count', Gauge,
@@ -3331,6 +3358,17 @@ class UnifiedAILoop:
                     config_state.consecutive_high_win_rate = 0
                     if win_rate < 0.5:
                         print(f"[WinRateFeedback] {config_key} low win rate: {win_rate:.1%} - prioritizing training")
+
+            # Phase 7: Update consolidated FeedbackState via TrainingScheduler
+            if hasattr(self, 'training_scheduler') and self.training_scheduler and config_key:
+                self.training_scheduler.update_config_feedback(
+                    config_key,
+                    elo=elo,
+                    win_rate=win_rate,
+                )
+                # Check for CMA-ES trigger based on plateau detection
+                if self.training_scheduler.should_trigger_cmaes_for_config(config_key):
+                    print(f"[FeedbackState] {config_key} has plateau - CMA-ES may be beneficial")
 
             # Forward to feedback controller
             await self.feedback.on_stage_complete('evaluation', {
@@ -5547,6 +5585,16 @@ class UnifiedAILoop:
                                     PARITY_VALIDATIONS.labels(config=config_key, result=result_label).inc()
                                     PARITY_GAMES_CHECKED.labels(config=config_key).set(result.get("total_games_checked", 0))
                                     PARITY_FAILURE_RATE.labels(config=config_key).set(result.get("failure_rate", 0.0))
+
+                                # Phase 7: Update consolidated FeedbackState with parity result
+                                if hasattr(self, 'training_scheduler') and self.training_scheduler:
+                                    parity_passed = result.get("passed", False)
+                                    self.training_scheduler.update_config_feedback(
+                                        config_key,
+                                        parity_passed=parity_passed,
+                                    )
+                                    # Also update global parity failure tracking
+                                    self.training_scheduler.record_parity_failure(config_key, parity_passed)
 
                         except Exception as e:
                             print(f"[ParityValidation] Error validating {config_key}: {e}")

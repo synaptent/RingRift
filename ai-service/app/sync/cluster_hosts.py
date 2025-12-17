@@ -174,8 +174,14 @@ def get_coordinator_address() -> Tuple[str, int]:
     if coord_node and coord_node.best_ip:
         return coord_node.best_ip, sync_config.sync_port
 
-    # Fallback to mac-studio default
-    return "100.107.168.125", 8766
+    # Check environment variable fallback
+    import os
+    fallback_ip = os.environ.get("RINGRIFT_COORDINATOR_IP")
+    if fallback_ip:
+        return fallback_ip, sync_config.sync_port
+
+    # No coordinator configured
+    return None, sync_config.sync_port
 
 
 def check_http_endpoint(ip: str, port: int, path: str = "/status", timeout: int = 5) -> Optional[Dict]:
