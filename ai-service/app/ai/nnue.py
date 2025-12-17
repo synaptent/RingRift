@@ -128,7 +128,7 @@ class RingRiftNNUE(nn.Module):
     to enable fast inference without GPU.
     """
 
-    ARCHITECTURE_VERSION = "v1.1.0"
+    ARCHITECTURE_VERSION = "v1.2.0"
 
     def __init__(
         self,
@@ -137,11 +137,13 @@ class RingRiftNNUE(nn.Module):
         num_hidden_layers: int = 2,
         use_spectral_norm: bool = False,
         use_batch_norm: bool = False,
+        num_heads: int = 1,
     ):
         super().__init__()
         self.board_type = board_type
         self.use_spectral_norm = use_spectral_norm
         self.use_batch_norm = use_batch_norm
+        self.num_heads = num_heads
         input_dim = get_feature_dim(board_type)
 
         # Helper to optionally apply spectral normalization
@@ -150,16 +152,29 @@ class RingRiftNNUE(nn.Module):
                 return nn.utils.spectral_norm(layer)
             return layer
 
-        # Accumulator layer (like Half-King-Piece-Square in chess NNUE)
-        # Projects sparse input to dense hidden representation
-        self.accumulator = maybe_spectral_norm(nn.Linear(input_dim, hidden_dim, bias=True))
+        # Multi-head feature projection
+        if num_heads > 1:
+            # Split features into num_heads groups (e.g., by player)
+            # Each head projects its subset independently
+            head_dim = hidden_dim // num_heads
+            self.head_projections = nn.ModuleList([
+                maybe_spectral_norm(nn.Linear(input_dim // num_heads, head_dim, bias=True))
+                for _ in range(num_heads)
+            ])
+            self.accumulator = None  # Using head projections instead
+            acc_output_dim = hidden_dim
+        else:
+            # Single accumulator (original behavior)
+            self.accumulator = maybe_spectral_norm(nn.Linear(input_dim, hidden_dim, bias=True))
+            self.head_projections = None
+            acc_output_dim = hidden_dim
 
         # Optional batch normalization after accumulator
-        self.acc_batch_norm = nn.BatchNorm1d(hidden_dim) if use_batch_norm else None
+        self.acc_batch_norm = nn.BatchNorm1d(acc_output_dim) if use_batch_norm else None
 
         # Hidden layers with ClippedReLU
         layers = []
-        current_dim = hidden_dim * 2  # Concatenate player perspectives
+        current_dim = acc_output_dim * 2  # Concatenate player perspectives
         for i in range(num_hidden_layers):
             out_dim = 32 if i < num_hidden_layers - 1 else 32
             layers.append(maybe_spectral_norm(nn.Linear(current_dim, out_dim)))
@@ -180,8 +195,18 @@ class RingRiftNNUE(nn.Module):
         Returns:
             Shape (batch, 1) values in [-1, 1]
         """
-        # Accumulator projection
-        acc = self.accumulator(features)
+        # Multi-head or single accumulator projection
+        if self.head_projections is not None:
+            # Split features into chunks for each head
+            chunk_size = features.shape[-1] // self.num_heads
+            chunks = [features[..., i*chunk_size:(i+1)*chunk_size] for i in range(self.num_heads)]
+            # Project each chunk through its head
+            head_outputs = [proj(chunk) for proj, chunk in zip(self.head_projections, chunks)]
+            # Concatenate head outputs
+            acc = torch.cat(head_outputs, dim=-1)
+        else:
+            # Single accumulator (original behavior)
+            acc = self.accumulator(features)
 
         # Optional batch normalization before activation
         if self.acc_batch_norm is not None:

@@ -513,6 +513,35 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Log gradient norms every N batches (default: 100)",
     )
     parser.add_argument(
+        "--num-heads",
+        type=int,
+        default=1,
+        help="Number of heads for multi-head feature projection (default: 1 = single head)",
+    )
+    parser.add_argument(
+        "--knowledge-distill",
+        action="store_true",
+        help="Enable knowledge distillation from teacher model",
+    )
+    parser.add_argument(
+        "--teacher-model",
+        type=str,
+        default=None,
+        help="Path to teacher model for knowledge distillation",
+    )
+    parser.add_argument(
+        "--distill-alpha",
+        type=float,
+        default=0.5,
+        help="Knowledge distillation weight (0=pure label, 1=pure teacher) (default: 0.5)",
+    )
+    parser.add_argument(
+        "--distill-temperature",
+        type=float,
+        default=2.0,
+        help="Knowledge distillation temperature (default: 2.0)",
+    )
+    parser.add_argument(
         "--mixed-precision",
         action="store_true",
         help="Enable mixed precision training (FP16/BF16) for faster training on GPU",
@@ -933,6 +962,13 @@ class NNUETrainer:
         gradient_accumulation: int = 1,
         use_gradient_checkpointing: bool = False,
         async_pipeline: bool = False,
+        use_lars: bool = False,
+        lars_trust_coef: float = 0.001,
+        gradient_profiling: bool = False,
+        gradient_profile_freq: int = 100,
+        teacher_model: Optional[nn.Module] = None,
+        distill_alpha: float = 0.5,
+        distill_temperature: float = 2.0,
     ):
         self.model = model.to(device)
         self.device = device
@@ -976,11 +1012,35 @@ class NNUETrainer:
         if async_pipeline:
             logger.info("Async pipeline: using non-blocking GPU transfers")
 
-        self.optimizer = optim.AdamW(
-            model.parameters(),
-            lr=learning_rate if lr_schedule != "warmup_cosine" else 1e-7,  # Start low for warmup
-            weight_decay=weight_decay,
-        )
+        # Gradient profiling
+        self.gradient_profiling = gradient_profiling
+        self.gradient_profile_freq = gradient_profile_freq
+        self.gradient_norms_history = []
+
+        # Knowledge distillation
+        self.teacher_model = teacher_model
+        self.distill_alpha = distill_alpha
+        self.distill_temperature = distill_temperature
+        if teacher_model is not None:
+            logger.info(f"Knowledge distillation enabled: alpha={distill_alpha}, temp={distill_temperature}")
+
+        # Choose optimizer: LARS for distributed large-batch, AdamW otherwise
+        initial_lr = learning_rate if lr_schedule != "warmup_cosine" else 1e-7
+        if use_lars:
+            self.optimizer = LARS(
+                model.parameters(),
+                lr=initial_lr,
+                momentum=0.9,
+                weight_decay=weight_decay,
+                trust_coef=lars_trust_coef,
+            )
+            logger.info(f"Using LARS optimizer with trust_coef={lars_trust_coef}")
+        else:
+            self.optimizer = optim.AdamW(
+                model.parameters(),
+                lr=initial_lr,
+                weight_decay=weight_decay,
+            )
 
         # Set up learning rate scheduler based on schedule type
         if lr_schedule == "plateau":
@@ -1031,7 +1091,22 @@ class NNUETrainer:
                 # Mixed precision forward pass
                 with torch.amp.autocast(device_type="cuda", dtype=self.amp_dtype):
                     predictions = self.model(features)
-                    loss = self.criterion(predictions, values)
+                    label_loss = self.criterion(predictions, values)
+
+                    # Knowledge distillation: blend label loss with teacher matching
+                    if self.teacher_model is not None:
+                        with torch.no_grad():
+                            teacher_outputs = self.teacher_model(features)
+                        # Temperature-scaled distillation loss
+                        temp = self.distill_temperature
+                        distill_loss = self.criterion(
+                            predictions / temp, teacher_outputs / temp
+                        ) * (temp ** 2)
+                        # Combined loss
+                        loss = (1 - self.distill_alpha) * label_loss + self.distill_alpha * distill_loss
+                    else:
+                        loss = label_loss
+
                     if accum_steps > 1:
                         loss = loss / accum_steps
 
@@ -1044,10 +1119,38 @@ class NNUETrainer:
             else:
                 # Standard precision
                 predictions = self.model(features)
-                loss = self.criterion(predictions, values)
+                label_loss = self.criterion(predictions, values)
+
+                # Knowledge distillation: blend label loss with teacher matching
+                if self.teacher_model is not None:
+                    with torch.no_grad():
+                        teacher_outputs = self.teacher_model(features)
+                    # Temperature-scaled distillation loss
+                    temp = self.distill_temperature
+                    distill_loss = self.criterion(
+                        predictions / temp, teacher_outputs / temp
+                    ) * (temp ** 2)
+                    # Combined loss
+                    loss = (1 - self.distill_alpha) * label_loss + self.distill_alpha * distill_loss
+                else:
+                    loss = label_loss
+
                 if accum_steps > 1:
                     loss = loss / accum_steps
                 loss.backward()
+
+            # Gradient profiling before optimizer step
+            if self.gradient_profiling and (batch_idx + 1) % self.gradient_profile_freq == 0:
+                total_norm = 0.0
+                for p in self.model.parameters():
+                    if p.grad is not None:
+                        param_norm = p.grad.data.norm(2)
+                        total_norm += param_norm.item() ** 2
+                total_norm = total_norm ** 0.5
+                self.gradient_norms_history.append(total_norm)
+                if len(self.gradient_norms_history) % 10 == 0:
+                    avg_norm = sum(self.gradient_norms_history[-10:]) / 10
+                    logger.debug(f"Gradient norm (last 10 avg): {avg_norm:.4f}")
 
             # Step optimizer every accum_steps batches or at end
             if (batch_idx + 1) % accum_steps == 0 or (batch_idx + 1) == len(dataloader):
@@ -1199,6 +1302,11 @@ def train_nnue(
     lars_trust_coef: float = 0.001,
     gradient_profiling: bool = False,
     gradient_profile_freq: int = 100,
+    num_heads: int = 1,
+    knowledge_distill: bool = False,
+    teacher_model: Optional[str] = None,
+    distill_alpha: float = 0.5,
+    distill_temperature: float = 2.0,
 ) -> Dict[str, Any]:
     """Train NNUE model and return training report."""
     seed_all(seed)
@@ -1381,12 +1489,42 @@ def train_nnue(
         num_hidden_layers=num_hidden_layers,
         use_spectral_norm=spectral_norm,
         use_batch_norm=batch_norm,
+        num_heads=num_heads,
     )
     if spectral_norm:
         logger.info("Spectral normalization enabled for gradient stability")
     if batch_norm:
         logger.info("Batch normalization enabled after accumulator")
+    if num_heads > 1:
+        logger.info(f"Multi-head feature projection enabled: {num_heads} heads")
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    # Load teacher model for knowledge distillation
+    teacher_model_loaded = None
+    if knowledge_distill:
+        if teacher_model is None:
+            logger.warning("Knowledge distillation enabled but no teacher model specified")
+        elif not os.path.exists(teacher_model):
+            logger.warning(f"Teacher model not found: {teacher_model}")
+        else:
+            try:
+                teacher_checkpoint = torch.load(teacher_model, map_location=device)
+                teacher_hidden_dim = teacher_checkpoint.get("hidden_dim", hidden_dim)
+                teacher_num_layers = teacher_checkpoint.get("num_hidden_layers", num_hidden_layers)
+                teacher_model_loaded = RingRiftNNUE(
+                    board_type=board_type,
+                    hidden_dim=teacher_hidden_dim,
+                    num_hidden_layers=teacher_num_layers,
+                )
+                teacher_model_loaded.load_state_dict(teacher_checkpoint["model_state_dict"])
+                teacher_model_loaded = teacher_model_loaded.to(device)
+                teacher_model_loaded.eval()
+                for param in teacher_model_loaded.parameters():
+                    param.requires_grad = False
+                logger.info(f"Loaded teacher model from {teacher_model} "
+                           f"(hidden={teacher_hidden_dim}, layers={teacher_num_layers})")
+            except Exception as e:
+                logger.warning(f"Failed to load teacher model: {e}")
 
     # Adaptive batch sizing - find optimal batch size for GPU
     actual_batch_size = batch_size
@@ -1489,6 +1627,13 @@ def train_nnue(
         gradient_accumulation=gradient_accumulation,
         use_gradient_checkpointing=gradient_checkpointing,
         async_pipeline=async_pipeline,
+        use_lars=lars,
+        lars_trust_coef=lars_trust_coef,
+        gradient_profiling=gradient_profiling,
+        gradient_profile_freq=gradient_profile_freq,
+        teacher_model=teacher_model_loaded,
+        distill_alpha=distill_alpha,
+        distill_temperature=distill_temperature,
     )
 
     # Training loop
@@ -1999,6 +2144,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         progressive_accum_start=args.progressive_accum_start,
         cyclic_lr=args.cyclic_lr,
         cyclic_lr_period=args.cyclic_lr_period,
+        val_augmentation=args.val_augmentation,
+        lars=args.lars,
+        lars_trust_coef=args.lars_trust_coef,
+        gradient_profiling=args.gradient_profiling,
+        gradient_profile_freq=args.gradient_profile_freq,
+        num_heads=args.num_heads,
+        knowledge_distill=args.knowledge_distill,
+        teacher_model=args.teacher_model,
+        distill_alpha=args.distill_alpha,
+        distill_temperature=args.distill_temperature,
     )
 
     # Add metadata to report

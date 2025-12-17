@@ -112,6 +112,16 @@ CONFIG_DATABASES: Dict[Tuple[str, int], List[str]] = {
     ("hexagonal", 4): [
         "data/games/selfplay.db",
     ],
+    # Hex8 (radius 4 hexagonal) configs - use policy_c selfplay
+    ("hex8", 2): [
+        "data/selfplay/hex8_policy_c/games.db",
+    ],
+    ("hex8", 3): [
+        "data/selfplay/hex8_policy_c/games.db",
+    ],
+    ("hex8", 4): [
+        "data/selfplay/hex8_policy_c/games.db",
+    ],
 }
 
 # JSONL source directories for each config
@@ -155,6 +165,16 @@ CONFIG_JSONL_DIRS: Dict[Tuple[str, int], List[str]] = {
         "data/selfplay/canonical",
         "data/games",
     ],
+    # Hex8 configs - use hex8-specific selfplay directories
+    ("hex8", 2): [
+        "data/selfplay/hex8_policy_c",
+    ],
+    ("hex8", 3): [
+        "data/selfplay/hex8_policy_c",
+    ],
+    ("hex8", 4): [
+        "data/selfplay/hex8_policy_c",
+    ],
 }
 
 # Training thresholds - trigger training when this many NEW games are available
@@ -169,6 +189,10 @@ THRESHOLDS: Dict[Tuple[str, int], int] = {
     ("hexagonal", 2): 30,
     ("hexagonal", 3): 30,
     ("hexagonal", 4): 30,
+    # Hex8 thresholds - start low to get initial models quickly
+    ("hex8", 2): 30,
+    ("hex8", 3): 30,
+    ("hex8", 4): 30,
 }
 
 # Export settings per config: (max_games, sample_every, epochs)
@@ -186,6 +210,10 @@ EXPORT_SETTINGS: Dict[Tuple[str, int], Tuple[int, int, int]] = {
     ("hexagonal", 2): (50, 5, 5),
     ("hexagonal", 3): (50, 5, 5),
     ("hexagonal", 4): (50, 5, 5),
+    # Hex8 (radius 4): ~100-200 moves per game
+    ("hex8", 2): (50, 5, 5),
+    ("hex8", 3): (50, 5, 5),
+    ("hex8", 4): (50, 5, 5),
 }
 
 # Default settings if config not found

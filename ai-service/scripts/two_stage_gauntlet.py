@@ -9,6 +9,10 @@ for clearly weak models and confident ranking of strong ones.
 
 Designed for distributed execution across cluster nodes.
 
+Features:
+- Game recording: Records games to SQLite database for training data extraction
+- Quality filtering: Only records games where model wins (high-quality games)
+
 Usage:
     # Run full two-stage gauntlet
     python scripts/two_stage_gauntlet.py --run --board square8 --players 2
@@ -21,6 +25,9 @@ Usage:
 
     # Distributed mode - process subset of models
     python scripts/two_stage_gauntlet.py --run --shard 0 --num-shards 10
+
+    # Disable game recording
+    python scripts/two_stage_gauntlet.py --run --no-record
 """
 
 from __future__ import annotations
@@ -29,8 +36,10 @@ import argparse
 import json
 import math
 import os
+import socket
 import sys
 import time
+import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from datetime import datetime

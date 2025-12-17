@@ -220,6 +220,23 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Load optimized hyperparameters from config/hyperparameters.json.",
     )
+    parser.add_argument(
+        "--sampling-weights",
+        type=str,
+        default="uniform",
+        choices=["uniform", "late_game", "phase_emphasis", "combined", "victory_type"],
+        help=(
+            "Position sampling strategy: 'uniform' (default), 'late_game' "
+            "(bias toward endgame), 'phase_emphasis' (weight by game phase), "
+            "'combined' (late_game + phase_emphasis), 'victory_type' "
+            "(balance across victory types like territory, elimination, etc.)."
+        ),
+    )
+    parser.add_argument(
+        "--use-streaming",
+        action="store_true",
+        help="Use StreamingDataLoader for memory-efficient large dataset training.",
+    )
     return parser.parse_args(argv)
 
 
@@ -376,9 +393,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     warmup = 0 if args.demo else train_cfg.warmup_epochs
     lr_sched = "none" if args.demo else train_cfg.lr_scheduler
 
+    sampling_weights = args.sampling_weights if not args.demo else 'uniform'
+    use_streaming = args.use_streaming if not args.demo else False
+
     print(f"[Training] Starting with lr={train_cfg.learning_rate:.6f}, "
           f"batch={train_cfg.batch_size}, epochs={train_cfg.epochs_per_iter}, "
-          f"early_stop={early_stop}, warmup={warmup}, scheduler={lr_sched}")
+          f"early_stop={early_stop}, warmup={warmup}, scheduler={lr_sched}, "
+          f"sampling={sampling_weights}")
 
     train_model(
         config=train_cfg,
@@ -392,6 +413,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         multi_player=use_multi_player,
         num_players=num_players,
         model_version=args.model_version,
+        sampling_weights=sampling_weights,
+        use_streaming=use_streaming,
     )
 
     created_at = datetime.now(timezone.utc).isoformat()
@@ -418,6 +441,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             "seed": train_cfg.seed,
             "model_version": args.model_version,
             "hyperparameter_source": hp_source,
+            "sampling_weights": sampling_weights,
+            "use_streaming": use_streaming,
         },
         # Metrics are intentionally minimal for this baseline demo. We do not
         # currently plumb the final validation loss out of train_model; this

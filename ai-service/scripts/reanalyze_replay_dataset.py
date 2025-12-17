@@ -19,6 +19,7 @@ import numpy as np
 from app.db import GameReplayDB
 from app.models import AIConfig, BoardType, GameState, Move
 from app.ai.neural_net import NeuralNetAI, INVALID_MOVE_INDEX, encode_move_for_board
+from app.training.encoding import get_encoder_for_board_type
 
 from scripts.export_replay_dataset import (
     BOARD_TYPE_MAP,
@@ -29,7 +30,7 @@ from scripts.export_replay_dataset import (
 )
 
 
-def _build_encoder(board_type: BoardType, nn_model_id: Optional[str]) -> NeuralNetAI:
+def _build_encoder(board_type: BoardType, nn_model_id: Optional[str], encoder_version: str = "v3") -> NeuralNetAI:
     os.environ.setdefault("RINGRIFT_FORCE_CPU", "1")
     cfg = AIConfig(
         difficulty=5,
@@ -45,6 +46,13 @@ def _build_encoder(board_type: BoardType, nn_model_id: Optional[str]) -> NeuralN
         BoardType.HEX8: 9,
         BoardType.HEXAGONAL: 25,
     }.get(board_type, 8)
+
+    # For hex boards, attach specialized encoder for consistent feature shapes
+    if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
+        effective_version = encoder_version if encoder_version in ("v2", "v3") else "v3"
+        enc._hex_encoder = get_encoder_for_board_type(board_type, effective_version)
+        enc._hex_encoder_version = effective_version
+
     return enc
 
 
