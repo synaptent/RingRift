@@ -1626,7 +1626,7 @@ class ConfigPriorityQueue:
         counts: Dict[str, int] = {}
 
         # Initialize all configs to 0
-        for board in ["square8", "square19", "hexagonal"]:
+        for board in ["square8", "square19", "hexagonal", "hex8"]:
             for players in [2, 3, 4]:
                 counts[f"{board}_{players}p"] = 0
 
@@ -1636,8 +1636,8 @@ class ConfigPriorityQueue:
             if models_dir.exists():
                 for model_file in models_dir.glob("*.pt"):
                     name = model_file.stem.lower()
-                    # Match patterns like square8_2p, hex_3p, square19_4p
-                    for board in ["square8", "square19", "hex"]:
+                    # Match patterns like square8_2p, hex_3p, square19_4p, hex8_2p
+                    for board in ["square8", "square19", "hex", "hex8"]:
                         for players in [2, 3, 4]:
                             patterns = [
                                 f"{board}_{players}p",
@@ -1652,7 +1652,7 @@ class ConfigPriorityQueue:
                 # Also count .pth files
                 for model_file in models_dir.glob("*.pth"):
                     name = model_file.stem.lower()
-                    for board in ["square8", "square19", "hex"]:
+                    for board in ["square8", "square19", "hex", "hex8"]:
                         for players in [2, 3, 4]:
                             patterns = [
                                 f"{board}_{players}p",

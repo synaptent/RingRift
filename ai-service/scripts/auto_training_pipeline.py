@@ -328,6 +328,83 @@ def train_nnue(db_path: Path, board_type: str = "square8", num_players: int = 2,
         return None
 
 
+def train_nn_optimized(
+    data_path: Path,
+    board_type: str = "square8",
+    num_players: int = 2,
+    dry_run: bool = False,
+    batch_size: int = 256,
+    epochs: int = 50,
+    sampling_weights: str = "victory_type",
+) -> Optional[Path]:
+    """Train neural network model with optimized settings.
+
+    Uses the new optimized training pipeline with:
+    - Victory-type balanced sampling
+    - Higher batch sizes for GPU utilization
+    - Warmup epochs and cosine annealing
+    - Board-specific hyperparameters from config/hyperparameters.json
+    """
+    logger.info(f"Training NN model for {board_type}_{num_players}p with optimized settings...")
+    logger.info(f"  batch_size={batch_size}, epochs={epochs}, sampling={sampling_weights}")
+
+    if dry_run:
+        logger.info("  Would train NN model with optimized settings")
+        return None
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = RUNS_DIR / f"{board_type}_{num_players}p_{timestamp}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    model_id = f"{board_type}_{num_players}p_v3_{timestamp}"
+
+    try:
+        cmd = [
+            "python", str(AI_SERVICE_ROOT / "scripts" / "run_nn_training_baseline.py"),
+            "--board", board_type,
+            "--num-players", str(num_players),
+            "--data-path", str(data_path),
+            "--run-dir", str(run_dir),
+            "--model-id", model_id,
+            "--model-version", "v3",
+            "--epochs", str(epochs),
+            "--batch-size", str(batch_size),
+            "--sampling-weights", sampling_weights,
+            "--use-optimized-hyperparams",
+            "--warmup-epochs", "5",
+        ]
+
+        result = subprocess.run(
+            cmd,
+            cwd=str(AI_SERVICE_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=7200,  # 2 hour timeout for full training
+            env={**os.environ, "PYTHONPATH": str(AI_SERVICE_ROOT)},
+        )
+        if result.returncode == 0:
+            # Find the saved model path
+            model_path = AI_SERVICE_ROOT / "models" / f"{model_id}.pth"
+            if model_path.exists():
+                logger.info(f"  Training complete: {model_path}")
+                return model_path
+            # Also check alternate location
+            alt_path = run_dir / f"{model_id}.pth"
+            if alt_path.exists():
+                logger.info(f"  Training complete: {alt_path}")
+                return alt_path
+            logger.warning(f"  Training finished but model not found at expected paths")
+            return None
+        else:
+            logger.error(f"  Training failed: {result.stderr[:500]}")
+            return None
+    except subprocess.TimeoutExpired:
+        logger.error("  Training timed out after 2 hours")
+        return None
+    except Exception as e:
+        logger.error(f"  Training error: {e}")
+        return None
+
+
 def sync_model_to_nodes(model_path: Path, dry_run: bool = False) -> int:
     """Sync trained model to all nodes."""
     logger.info(f"Syncing model {model_path.name} to nodes...")
@@ -379,6 +456,9 @@ def run_pipeline(
     dry_run: bool = False,
     board_type: str = "square8",
     num_players: int = 2,
+    use_optimized: bool = True,
+    batch_size: int = 256,
+    sampling_weights: str = "victory_type",
 ):
     """Run the full training pipeline."""
     logger.info("=" * 60)
@@ -430,15 +510,52 @@ def run_pipeline(
     else:
         logger.info("Skipping backfill")
 
-    # Step 3: Train NNUE
+    # Step 3: Train model
     model_path = None
     if not skip_train:
         logger.info("")
-        logger.info("STEP 3: Training NNUE model...")
-        if output_db.exists():
-            model_path = train_nnue(output_db, board_type, num_players, dry_run)
+        if use_optimized:
+            logger.info("STEP 3: Training NN model with optimized settings...")
+            # Export data to NPZ for optimized training
+            npz_path = DATA_DIR / "training" / f"{board_type}_{num_players}p_auto.npz"
+            npz_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if output_db.exists() and not npz_path.exists():
+                # Export from DB to NPZ
+                logger.info(f"  Exporting data to {npz_path}...")
+                export_cmd = [
+                    "python", str(AI_SERVICE_ROOT / "scripts" / "export_replay_dataset.py"),
+                    "--db", str(output_db),
+                    "--output", str(npz_path),
+                    "--board-type", board_type,
+                    "--num-players", str(num_players),
+                    "--sample-every", "2",
+                    "--require-completed",
+                ]
+                try:
+                    subprocess.run(
+                        export_cmd,
+                        cwd=str(AI_SERVICE_ROOT),
+                        capture_output=True,
+                        timeout=1800,
+                        env={**os.environ, "PYTHONPATH": str(AI_SERVICE_ROOT)},
+                    )
+                except Exception as e:
+                    logger.error(f"  Export failed: {e}")
+
+            if npz_path.exists():
+                model_path = train_nn_optimized(
+                    npz_path, board_type, num_players, dry_run,
+                    batch_size=batch_size, sampling_weights=sampling_weights,
+                )
+            else:
+                logger.warning(f"NPZ data not found: {npz_path}")
         else:
-            logger.warning(f"Training DB not found: {output_db}")
+            logger.info("STEP 3: Training NNUE model...")
+            if output_db.exists():
+                model_path = train_nnue(output_db, board_type, num_players, dry_run)
+            else:
+                logger.warning(f"Training DB not found: {output_db}")
     else:
         logger.info("Skipping training")
 
@@ -459,18 +576,31 @@ def run_pipeline(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Automated NNUE Training Pipeline")
+    parser = argparse.ArgumentParser(description="Automated Training Pipeline")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
     parser.add_argument("--skip-collect", action="store_true", help="Skip data collection")
     parser.add_argument("--skip-backfill", action="store_true", help="Skip snapshot backfill")
-    parser.add_argument("--skip-train", action="store_true", help="Skip NNUE training")
+    parser.add_argument("--skip-train", action="store_true", help="Skip training")
     parser.add_argument("--skip-sync", action="store_true", help="Skip model sync to nodes")
     parser.add_argument("--board-type", default="square8", help="Board type for training")
     parser.add_argument("--num-players", type=int, default=2, help="Number of players")
+    # Optimized training settings
+    parser.add_argument("--use-optimized", action="store_true", default=True,
+                        help="Use optimized NN training (default: True)")
+    parser.add_argument("--use-nnue", action="store_true",
+                        help="Use legacy NNUE training instead of optimized NN")
+    parser.add_argument("--batch-size", type=int, default=256,
+                        help="Batch size for optimized training (default: 256)")
+    parser.add_argument("--sampling-weights", type=str, default="victory_type",
+                        choices=["uniform", "late_game", "phase_emphasis", "combined", "victory_type"],
+                        help="Sampling strategy (default: victory_type)")
 
     args = parser.parse_args()
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    # --use-nnue overrides --use-optimized
+    use_optimized = not args.use_nnue
 
     run_pipeline(
         skip_collect=args.skip_collect,
@@ -480,6 +610,9 @@ def main():
         dry_run=args.dry_run,
         board_type=args.board_type,
         num_players=args.num_players,
+        use_optimized=use_optimized,
+        batch_size=args.batch_size,
+        sampling_weights=args.sampling_weights,
     )
 
 
