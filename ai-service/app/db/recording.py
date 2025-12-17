@@ -215,6 +215,7 @@ def record_completed_game(
     metadata: Optional[Dict[str, Any]] = None,
     game_id: Optional[str] = None,
     store_history_entries: bool = True,
+    snapshot_interval: Optional[int] = None,
 ) -> str:
     """Record a completed game in one shot.
 
@@ -231,11 +232,18 @@ def record_completed_game(
         store_history_entries: If True (default), store full before/after state
             snapshots for each move. Set to False for lean recording (~100x smaller)
             that still stores initial state, moves, and final state for training.
+        snapshot_interval: Store snapshots every N moves for NNUE training.
+            Defaults to 20 (via RINGRIFT_SNAPSHOT_INTERVAL env var).
+            Set to 0 to disable periodic snapshots.
 
     Returns:
         The game ID that was stored
     """
     gid = game_id or str(uuid.uuid4())
+
+    # Determine snapshot interval (default to 20 for NNUE training support)
+    if snapshot_interval is None:
+        snapshot_interval = int(os.environ.get("RINGRIFT_SNAPSHOT_INTERVAL", "20"))
 
     # As with GameRecorder, ensure the stored "initial" state does not carry
     # a pre-populated move_history from a longer game. For replay and
@@ -254,6 +262,7 @@ def record_completed_game(
         moves=moves,
         metadata=enriched_metadata,
         store_history_entries=store_history_entries,
+        snapshot_interval=snapshot_interval,
     )
     return gid
 
@@ -331,6 +340,7 @@ def record_completed_game_with_parity_check(
     game_id: Optional[str] = None,
     parity_mode: Optional[str] = None,
     store_history_entries: bool = True,
+    snapshot_interval: Optional[int] = None,
 ) -> str:
     """Record a completed game and optionally validate parity with TS engine.
 
@@ -353,6 +363,9 @@ def record_completed_game_with_parity_check(
         store_history_entries: If True (default), store full before/after state
             snapshots for each move. Set to False for lean recording (~100x smaller)
             that still stores initial state, moves, and final state for training.
+        snapshot_interval: Store snapshots every N moves for NNUE training.
+            Defaults to 20 (via RINGRIFT_SNAPSHOT_INTERVAL env var).
+            Set to 0 to disable periodic snapshots.
 
     Returns:
         The game ID that was stored
@@ -369,6 +382,7 @@ def record_completed_game_with_parity_check(
         metadata=metadata,
         game_id=game_id,
         store_history_entries=store_history_entries,
+        snapshot_interval=snapshot_interval,
     )
 
     # Then validate parity if enabled

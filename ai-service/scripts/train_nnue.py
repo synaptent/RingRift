@@ -593,7 +593,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Resource guard: Training is HIGH priority (3)
     # Check resources before starting memory-intensive training
+    # Brief warmup delay to let process launch CPU spike settle
     if HAS_RESOURCE_GUARD:
+        import time
+        time.sleep(1)  # Allow transient CPU spike from process launch to settle
         degradation = get_degradation_level()
         if degradation >= 4:  # CRITICAL - resources at/above limits
             logger.error("Resources at critical levels (degradation=4), aborting training")

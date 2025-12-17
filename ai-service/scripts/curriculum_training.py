@@ -68,6 +68,13 @@ except ImportError:
     wait_for_resources = lambda *args, **kwargs: True  # type: ignore
     RESOURCE_LIMITS = None  # type: ignore
 
+# Model hygiene: validation at startup
+try:
+    from scripts.validate_models import run_startup_validation
+    HAS_MODEL_VALIDATION = True
+except ImportError:
+    HAS_MODEL_VALIDATION = False
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -728,6 +735,13 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Model hygiene: validate and clean up corrupted models at startup
+    if HAS_MODEL_VALIDATION:
+        models_dir = AI_SERVICE_ROOT / "models"
+        if models_dir.exists():
+            logger.info("Running startup model validation...")
+            run_startup_validation(models_dir, cleanup=True)
 
     if args.list_stages:
         print("\nCurriculum Stages:")

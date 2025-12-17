@@ -909,6 +909,7 @@ class GameReplayDB:
         metadata: Optional[dict] = None,
         store_history_entries: bool = True,
         compress_states: bool = False,
+        snapshot_interval: int = 20,
     ) -> None:
         """Store a complete game with all associated data.
 
@@ -922,6 +923,7 @@ class GameReplayDB:
             store_history_entries: If True (default), store history entries with
                                    full before/after state snapshots for each move
             compress_states: If True, gzip compress state JSON in history entries
+            snapshot_interval: Store snapshots every N moves for NNUE training (default 20)
         """
         # Import here to avoid circular imports
         from app.game_engine import GameEngine
@@ -951,6 +953,10 @@ class GameReplayDB:
             prev_state = initial_state
             prev_state_hash = _compute_state_hash(initial_state) if store_history_entries else None
 
+            # Track state for snapshots even if not storing full history entries
+            # This enables NNUE training from lean-db games
+            need_state_tracking = store_history_entries or snapshot_interval > 0
+
             for i, move in enumerate(moves):
                 if move.player != current_player:
                     turn_number += 1
@@ -970,14 +976,13 @@ class GameReplayDB:
                     phase=phase_hint,
                 )
 
-                # Store history entry with before/after states (v4 feature)
-                # Only apply moves when storing history entries - this requires
-                # canonical move sequences. When store_history_entries=False,
-                # we skip move application and state tracking entirely, allowing
-                # raw fixture data to be stored for basic CRUD tests.
-                if store_history_entries:
-                    # Compute state after applying this move
+                # Compute state after applying this move (needed for history OR snapshots)
+                state_after = None
+                if need_state_tracking:
                     state_after = GameEngine.apply_move(prev_state, move)
+
+                # Store history entry with before/after states (v4 feature)
+                if store_history_entries and state_after is not None:
                     state_hash_after = _compute_state_hash(state_after)
 
                     self._store_history_entry_conn(
@@ -994,7 +999,20 @@ class GameReplayDB:
                     )
 
                     prev_state_hash = state_hash_after
-                    # Update prev_state for next iteration
+
+                # Store periodic snapshots for NNUE training (even in lean-db mode)
+                if snapshot_interval > 0 and state_after is not None:
+                    move_num = i + 1  # 1-indexed for interval check
+                    if move_num % snapshot_interval == 0:
+                        self._store_snapshot_conn(
+                            conn,
+                            game_id=game_id,
+                            move_number=i,
+                            state=state_after,
+                        )
+
+                # Update prev_state for next iteration
+                if state_after is not None:
                     prev_state = state_after
 
             # Store choices
