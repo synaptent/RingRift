@@ -216,6 +216,63 @@ TRAINING_POSITION_ENTROPY: Final[Gauge] = Gauge(
     labelnames=("board_type", "num_players"),
 )
 
+# Model promotion metrics
+PROMOTION_DECISIONS: Final[Counter] = Counter(
+    "ringrift_promotion_decisions_total",
+    "Total promotion decisions, labeled by type and outcome.",
+    labelnames=("promotion_type", "outcome"),  # outcome: approved/rejected
+)
+
+PROMOTION_EXECUTIONS: Final[Counter] = Counter(
+    "ringrift_promotion_executions_total",
+    "Total promotion executions, labeled by type and result.",
+    labelnames=("promotion_type", "result"),  # result: success/failure/dry_run
+)
+
+PROMOTION_ELO_IMPROVEMENT: Final[Histogram] = Histogram(
+    "ringrift_promotion_elo_improvement",
+    "Elo improvement at time of promotion decision.",
+    labelnames=("promotion_type",),
+    buckets=(-50, -25, 0, 10, 25, 50, 75, 100, 150, 200),
+)
+
+# Elo reconciliation metrics
+ELO_SYNC_OPERATIONS: Final[Counter] = Counter(
+    "ringrift_elo_sync_operations_total",
+    "Total Elo sync operations, labeled by result.",
+    labelnames=("remote_host", "result"),  # result: success/failure
+)
+
+ELO_SYNC_MATCHES_ADDED: Final[Counter] = Counter(
+    "ringrift_elo_sync_matches_added_total",
+    "Total matches added via Elo sync.",
+    labelnames=("remote_host",),
+)
+
+ELO_SYNC_CONFLICTS: Final[Counter] = Counter(
+    "ringrift_elo_sync_conflicts_total",
+    "Total conflicts detected during Elo sync.",
+    labelnames=("remote_host",),
+)
+
+ELO_DRIFT_MAX: Final[Gauge] = Gauge(
+    "ringrift_elo_drift_max",
+    "Maximum Elo drift detected across participants.",
+    labelnames=("board_type", "num_players"),
+)
+
+ELO_DRIFT_AVG: Final[Gauge] = Gauge(
+    "ringrift_elo_drift_avg",
+    "Average Elo drift detected across participants.",
+    labelnames=("board_type", "num_players"),
+)
+
+ELO_DRIFT_SIGNIFICANT: Final[Gauge] = Gauge(
+    "ringrift_elo_drift_significant",
+    "Whether significant Elo drift is detected (1=yes, 0=no).",
+    labelnames=("board_type", "num_players"),
+)
+
 # Pre-initialize one labeled time series for the core /ai/move metrics so the
 # /metrics endpoint exposes histogram buckets even before the first request.
 # This keeps smoke tests and local Prometheus setups stable.
@@ -303,6 +360,92 @@ def record_training_sample(
     TRAINING_SAMPLES_BY_MOVE_NUMBER.labels(board_type, np_str).observe(move_number)
 
 
+def record_promotion_decision(
+    promotion_type: str,
+    approved: bool,
+    elo_improvement: float | None = None,
+) -> None:
+    """Record metrics for a promotion decision.
+
+    Args:
+        promotion_type: Type of promotion (staging, production, tier, champion, rollback)
+        approved: Whether the promotion was approved
+        elo_improvement: Elo improvement at decision time (if available)
+    """
+    outcome = "approved" if approved else "rejected"
+    PROMOTION_DECISIONS.labels(promotion_type, outcome).inc()
+
+    if elo_improvement is not None:
+        PROMOTION_ELO_IMPROVEMENT.labels(promotion_type).observe(elo_improvement)
+
+
+def record_promotion_execution(
+    promotion_type: str,
+    success: bool,
+    dry_run: bool = False,
+) -> None:
+    """Record metrics for a promotion execution.
+
+    Args:
+        promotion_type: Type of promotion
+        success: Whether the execution succeeded
+        dry_run: Whether this was a dry run
+    """
+    if dry_run:
+        result = "dry_run"
+    elif success:
+        result = "success"
+    else:
+        result = "failure"
+    PROMOTION_EXECUTIONS.labels(promotion_type, result).inc()
+
+
+def record_elo_sync(
+    remote_host: str,
+    success: bool,
+    matches_added: int = 0,
+    conflicts: int = 0,
+) -> None:
+    """Record metrics for an Elo sync operation.
+
+    Args:
+        remote_host: Remote host synced from
+        success: Whether the sync succeeded
+        matches_added: Number of matches added
+        conflicts: Number of conflicts detected
+    """
+    result = "success" if success else "failure"
+    ELO_SYNC_OPERATIONS.labels(remote_host, result).inc()
+
+    if matches_added > 0:
+        ELO_SYNC_MATCHES_ADDED.labels(remote_host).inc(matches_added)
+
+    if conflicts > 0:
+        ELO_SYNC_CONFLICTS.labels(remote_host).inc(conflicts)
+
+
+def record_elo_drift(
+    board_type: str,
+    num_players: int,
+    max_drift: float,
+    avg_drift: float,
+    is_significant: bool,
+) -> None:
+    """Record metrics for Elo drift detection.
+
+    Args:
+        board_type: Board type
+        num_players: Number of players
+        max_drift: Maximum rating drift
+        avg_drift: Average rating drift
+        is_significant: Whether drift is significant
+    """
+    np_str = str(num_players)
+    ELO_DRIFT_MAX.labels(board_type, np_str).set(max_drift)
+    ELO_DRIFT_AVG.labels(board_type, np_str).set(avg_drift)
+    ELO_DRIFT_SIGNIFICANT.labels(board_type, np_str).set(1 if is_significant else 0)
+
+
 __all__ = [
     "AI_MOVE_REQUESTS",
     "AI_MOVE_LATENCY",
@@ -329,9 +472,24 @@ __all__ = [
     "TRAINING_DATA_RECENCY",
     "TRAINING_UNIQUE_POSITIONS",
     "TRAINING_POSITION_ENTROPY",
+    # Promotion metrics
+    "PROMOTION_DECISIONS",
+    "PROMOTION_EXECUTIONS",
+    "PROMOTION_ELO_IMPROVEMENT",
+    # Elo reconciliation metrics
+    "ELO_SYNC_OPERATIONS",
+    "ELO_SYNC_MATCHES_ADDED",
+    "ELO_SYNC_CONFLICTS",
+    "ELO_DRIFT_MAX",
+    "ELO_DRIFT_AVG",
+    "ELO_DRIFT_SIGNIFICANT",
     # Helper functions
     "observe_ai_move_start",
     "record_game_outcome",
     "record_training_sample",
     "report_cluster_node",
+    "record_promotion_decision",
+    "record_promotion_execution",
+    "record_elo_sync",
+    "record_elo_drift",
 ]

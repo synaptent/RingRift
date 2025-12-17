@@ -84,6 +84,74 @@ groups:
           runbook: 'Check network connectivity. Review host logs for errors.'
 
       # ==========================================================================
+      # Model Promotion Alerts
+      # ==========================================================================
+
+      - alert: PromotionExecutionFailures
+        expr: increase(ringrift_promotion_executions_total{result="failure"}[1h]) > 2
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: 'Multiple promotion execution failures'
+          description: '{{ $value }} promotion executions have failed for {{ $labels.promotion_type }} in the last hour.'
+          runbook: 'Check model registry. Verify model files exist. Review promotion logs for errors.'
+
+      - alert: HighPromotionRejectionRate
+        expr: sum(rate(ringrift_promotion_decisions_total{outcome="rejected"}[1h])) / sum(rate(ringrift_promotion_decisions_total[1h])) > 0.8
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'High promotion rejection rate'
+          description: 'More than 80% of promotion candidates are being rejected. Training may not be improving models.'
+          runbook: 'Review promotion criteria. Check Elo improvement trends. Consider adjusting thresholds.'
+
+      # ==========================================================================
+      # Elo Reconciliation Alerts
+      # ==========================================================================
+
+      - alert: SignificantEloDrift
+        expr: ringrift_elo_drift_significant == 1
+        for: 30m
+        labels:
+          severity: high
+        annotations:
+          summary: 'Significant Elo drift detected'
+          description: 'Significant Elo drift detected for {{ $labels.board_type }}/{{ $labels.num_players }}p. Max drift: {{ with query "ringrift_elo_drift_max" }}{{ . | first | value }}{{ end }}.'
+          runbook: 'Run manual reconciliation: python scripts/elo_reconciliation_cli.py reconcile-all. Investigate data inconsistencies.'
+
+      - alert: EloSyncFailureSpike
+        expr: increase(ringrift_elo_sync_operations_total{result="failure"}[1h]) > 5
+        for: 10m
+        labels:
+          severity: high
+        annotations:
+          summary: 'Multiple Elo sync failures'
+          description: '{{ $value }} Elo sync operations have failed for {{ $labels.remote_host }} in the last hour.'
+          runbook: 'Check SSH connectivity to remote hosts. Verify remote databases are accessible.'
+
+      - alert: EloSyncConflicts
+        expr: increase(ringrift_elo_sync_conflicts_total[1h]) > 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Elo sync conflicts detected'
+          description: '{{ $value }} match conflicts detected during sync from {{ $labels.remote_host }}. Data integrity may be compromised.'
+          runbook: 'Review conflicting matches. May need manual resolution or database repair.'
+
+      - alert: HighEloDriftPersistent
+        expr: ringrift_elo_drift_max > 100
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Persistent high Elo drift'
+          description: 'Elo drift of {{ $value | humanize }} points has persisted for over 1 hour for {{ $labels.board_type }}/{{ $labels.num_players }}p.'
+          runbook: 'Run full reconciliation. Check for network partitions or database corruption.'
+
+      # ==========================================================================
       # Warning Alerts - Monitor closely
       # ==========================================================================
 

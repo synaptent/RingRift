@@ -65,6 +65,11 @@ if _spec and _spec.loader:
             AI_INSTANCE_CACHE_LOOKUPS = _metrics_base.AI_INSTANCE_CACHE_LOOKUPS
             PYTHON_INVARIANT_VIOLATIONS = _metrics_base.PYTHON_INVARIANT_VIOLATIONS
             observe_ai_move_start = _metrics_base.observe_ai_move_start
+            # Export promotion and Elo reconciliation metrics
+            record_promotion_decision = _metrics_base.record_promotion_decision
+            record_promotion_execution = _metrics_base.record_promotion_execution
+            record_elo_sync = _metrics_base.record_elo_sync
+            record_elo_drift = _metrics_base.record_elo_drift
 
 from app.metrics.orchestrator import (
     # Selfplay metrics
@@ -178,6 +183,11 @@ __all__ = [
     "AI_INSTANCE_CACHE_LOOKUPS",
     "PYTHON_INVARIANT_VIOLATIONS",
     "observe_ai_move_start",
+    # Promotion and Elo reconciliation metrics
+    "record_promotion_decision",
+    "record_promotion_execution",
+    "record_elo_sync",
+    "record_elo_drift",
     # Selfplay metrics
     "SELFPLAY_GAMES_TOTAL",
     "SELFPLAY_GAMES_PER_SECOND",
