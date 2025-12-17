@@ -11,8 +11,8 @@ The unified loop coordinates five major subsystems:
 
 | Component                     | Interval          | Purpose                                  |
 | ----------------------------- | ----------------- | ---------------------------------------- |
-| **Streaming Data Collection** | 60s               | Incremental rsync from all remote hosts  |
-| **Shadow Tournament Service** | 15min             | Lightweight evaluation (10 games/config) |
+| **Streaming Data Collection** | 30s               | Incremental rsync from all remote hosts  |
+| **Shadow Tournament Service** | 5min              | Lightweight evaluation (15 games/config) |
 | **Training Scheduler**        | Threshold-based   | Auto-trigger when data thresholds met    |
 | **Model Promoter**            | After tournaments | Auto-deploy on Elo threshold             |
 | **Adaptive Curriculum**       | 1 hour            | Elo-weighted training focus              |
@@ -105,36 +105,38 @@ Configuration is specified in `config/unified_loop.yaml`:
 ```yaml
 # Data ingestion from remote hosts
 data_ingestion:
-  poll_interval_seconds: 60 # How often to check for new games
+  poll_interval_seconds: 30 # Check every 30s (optimized for fast feedback)
   sync_method: 'incremental' # "incremental" (rsync append) or "full"
   deduplication: true # Deduplicate games by ID
-  min_games_per_sync: 10 # Only sync if at least this many new games
+  min_games_per_sync: 5 # Sync smaller batches more frequently
+  use_external_sync: true # Use unified_data_sync.py with P2P fallback
 
 # Automatic training triggers
 training:
-  trigger_threshold_games: 1000 # Start training when this many new games
-  min_interval_seconds: 1800 # At least 30 min between training runs
+  trigger_threshold_games: 300 # Start training when this many new games (optimized)
+  min_interval_seconds: 1200 # 20 min between training runs (optimized)
   max_concurrent_jobs: 1 # Only one training job at a time
   prefer_gpu_hosts: true # Schedule training on GPU hosts
 
 # Continuous evaluation
 evaluation:
-  shadow_interval_seconds: 900 # 15 minutes between shadow evals
-  shadow_games_per_config: 10 # Games per shadow tournament
+  shadow_interval_seconds: 300 # 5 min between shadow evals (optimized: 3x faster parallel)
+  shadow_games_per_config: 15 # Games per shadow tournament (increased for lower variance)
   full_tournament_interval_seconds: 3600 # 1 hour between full tournaments
 
 # Automatic model promotion
 promotion:
   auto_promote: true # Enable automatic promotion
   elo_threshold: 20 # Must beat current best by this many Elo
-  min_games: 50 # Minimum games before promotion eligible
+  min_games: 40 # Minimum games before promotion eligible (Wilson CI provides safety)
   significance_level: 0.05 # Statistical significance requirement
+  cooldown_seconds: 900 # 15 min cooldown between promotions (optimized)
 
 # Adaptive curriculum (Elo-weighted training)
 curriculum:
   adaptive: true # Enable adaptive curriculum
   rebalance_interval_seconds: 3600
-  max_weight_multiplier: 2.0 # Max boost for underperforming configs
+  max_weight_multiplier: 1.5 # Reduced to avoid over-rotation
 
 # Board/player configurations
 configurations:
@@ -145,6 +147,8 @@ configurations:
   - board_type: 'hexagonal'
     num_players: [2, 3, 4]
 ```
+
+> **Note:** The above values are optimized defaults. See `config/unified_loop.yaml` for the complete configuration with all advanced options.
 
 ## Related Services
 
@@ -170,20 +174,20 @@ When the Prometheus client is installed, the loop exports metrics on port 9090:
 
 ## Data Flow
 
-1. **Collection**: Every 60s, rsync pulls new games from all configured hosts
+1. **Collection**: Every 30s, rsync pulls new games from all configured hosts
 2. **Validation**: Games are validated against canonical gates before ingestion
-3. **Tournament**: Every 15min, shadow tournaments evaluate model strength
-4. **Training**: When game threshold is met, training is auto-triggered
-5. **Promotion**: If new model beats current by Elo threshold, it's deployed
+3. **Tournament**: Every 5min, shadow tournaments evaluate model strength (15 games/config)
+4. **Training**: When 300+ new games accumulated, training is auto-triggered
+5. **Promotion**: If new model beats current by 20+ Elo, it's deployed (15min cooldown)
 6. **Curriculum**: Training weights are adjusted based on Elo performance
 
 ## Related Documentation
 
-- [Pipeline Orchestrator](PIPELINE_ORCHESTRATOR.md) - Lower-level phase orchestration
+- [Pipeline Orchestrator](PIPELINE_ORCHESTRATOR.md) - ⚠️ _Archived; replaced by unified loop_
 - [Distributed Selfplay](DISTRIBUTED_SELFPLAY.md) - Remote host configuration
 - [Training Data Registry](../TRAINING_DATA_REGISTRY.md) - Canonical data management
 - [Self-Improvement Optimization](self_improvement_optimization_plan.md) - Performance tuning
 
 ---
 
-_Last updated: 2025-12-14_
+_Last updated: 2025-12-16_

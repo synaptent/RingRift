@@ -507,27 +507,30 @@ class NeuralAI:
             n.value_sum += value
 ```
 
-### 6.2 Training Script Entry Point
+### 6.2 Training Script Entry Points
 
 ```bash
-# Train from scratch on 8x8 2-player
-python -m app.training.train_neural \
+# Export training data from selfplay games
+python scripts/export_replay_dataset.py \
+    --db data/games/cluster_merged.db \
+    --output data/training_data/
+
+# Train neural network baseline
+python scripts/run_nn_training_baseline.py \
     --board square8 \
     --num-players 2 \
-    --simulations 400 \
-    --batch-size 256 \
-    --lr 0.001 \
-    --games-per-iteration 1000 \
+    --data-dir data/training_data/ \
     --output models/neural_v1
 
-# Fine-tune on 19x19
-python -m app.training.train_neural \
-    --board square19 \
+# Train NNUE-style network
+python scripts/train_nnue.py \
+    --board square8 \
     --num-players 2 \
-    --pretrained models/neural_v1/best.pt \
-    --simulations 800 \
-    --output models/neural_v1_19x19
+    --checkpoint models/neural_v1/best.pt \
+    --output models/nnue_v1
 ```
+
+> **Note:** The legacy `app.training.train_neural` module has been replaced by the scripts above. See `config/unified_loop.yaml` for the canonical training configuration.
 
 ---
 

@@ -6,22 +6,22 @@ This guide covers deploying and operating the unified AI self-improvement loop a
 
 The unified AI loop is a single daemon that coordinates all aspects of the AI improvement cycle:
 
-- **Streaming Data Collection** - 60-second incremental sync from all hosts
-- **Shadow Tournaments** - 15-minute lightweight Elo evaluation
-- **Training Scheduler** - Auto-trigger training when data thresholds are met
-- **Model Promoter** - Auto-deploy models that exceed Elo thresholds
+- **Streaming Data Collection** - 30-second incremental sync from all hosts (optimized)
+- **Shadow Tournaments** - 5-minute lightweight Elo evaluation (15 games/config)
+- **Training Scheduler** - Auto-trigger training when 300+ new games accumulated
+- **Model Promoter** - Auto-deploy models that exceed 20+ Elo threshold (15min cooldown)
 - **Adaptive Curriculum** - Elo-weighted training focus on underperforming configs
 - **Regression Gate** - Block promotions that fail regression tests
 
 ### Performance Targets
 
-| Metric                  | Before          | After                  |
-| ----------------------- | --------------- | ---------------------- |
-| Data sync latency       | 30 min          | ~2 min                 |
-| Elo evaluation feedback | 6 hours         | 15 min                 |
-| Training trigger        | Manual          | Auto (threshold-based) |
-| Model deployment        | Manual          | Auto (Elo threshold)   |
-| Model reload in workers | Process restart | Hot reload             |
+| Metric                  | Before          | After (Optimized)          |
+| ----------------------- | --------------- | -------------------------- |
+| Data sync latency       | 30 min          | ~30 sec                    |
+| Elo evaluation feedback | 6 hours         | 5 min                      |
+| Training trigger        | Manual          | Auto (300 games threshold) |
+| Model deployment        | Manual          | Auto (20+ Elo, 15min cool) |
+| Model reload in workers | Process restart | Hot reload                 |
 
 ## Prerequisites
 
