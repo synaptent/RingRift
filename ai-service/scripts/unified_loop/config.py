@@ -152,6 +152,25 @@ class TrainingConfig:
     use_quantized_eval: bool = True  # Quantized inference for validation
     use_contrastive: bool = False  # Contrastive representation learning
     contrastive_weight: float = 0.1  # Contrastive loss weight
+    # Phase 3 Advanced Training (2024-12)
+    use_sam: bool = False  # Sharpness-Aware Minimization for better generalization
+    sam_rho: float = 0.05  # SAM neighborhood size
+    use_td_lambda: bool = False  # TD(lambda) value learning
+    td_lambda_value: float = 0.95  # Lambda value for TD learning
+    use_dynamic_batch_gradient: bool = False  # Gradient noise-based batch sizing
+    dynamic_batch_max: int = 4096  # Maximum batch size for dynamic batching
+    use_pruning: bool = False  # Structured pruning after training
+    pruning_ratio: float = 0.3  # Fraction of neurons to prune
+    use_game_phase_network: bool = False  # Phase-specialized sub-networks
+    use_auxiliary_targets: bool = False  # Auxiliary value targets
+    auxiliary_weight: float = 0.1  # Auxiliary loss weight
+    use_grokking_detection: bool = True  # Monitor for delayed generalization
+    use_self_play: bool = False  # Integrated self-play data generation
+    self_play_buffer: int = 100000  # Self-play position buffer size
+    use_distillation: bool = False  # Knowledge distillation
+    distillation_teacher_path: Optional[str] = None  # Path to teacher model
+    distillation_temp: float = 4.0  # Distillation temperature
+    distillation_alpha: float = 0.7  # Soft vs hard targets weight
     # NNUE policy training script
     nnue_policy_script: str = "scripts/train_nnue_policy.py"
     nnue_curriculum_script: str = "scripts/train_nnue_policy_curriculum.py"

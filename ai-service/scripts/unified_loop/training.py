@@ -1119,6 +1119,45 @@ class TrainingScheduler:
                     "--contrastive-pretrain",
                     "--contrastive-weight", str(getattr(self.config, 'contrastive_weight', 0.1)),
                 ])
+            # Phase 3 Advanced Training Improvements (2024-12)
+            if getattr(self.config, 'use_sam', False):
+                cmd.extend([
+                    "--use-sam",
+                    "--sam-rho", str(getattr(self.config, 'sam_rho', 0.05)),
+                ])
+            if getattr(self.config, 'use_td_lambda', False):
+                cmd.extend([
+                    "--td-lambda",
+                    "--td-lambda-value", str(getattr(self.config, 'td_lambda_value', 0.95)),
+                ])
+            if getattr(self.config, 'use_grokking_detection', True):
+                cmd.append("--grokking-detection")
+            if getattr(self.config, 'use_auxiliary_targets', False):
+                cmd.extend([
+                    "--auxiliary-targets",
+                    "--auxiliary-weight", str(getattr(self.config, 'auxiliary_weight', 0.1)),
+                ])
+            if getattr(self.config, 'use_pruning', False):
+                cmd.extend([
+                    "--pruning",
+                    "--pruning-ratio", str(getattr(self.config, 'pruning_ratio', 0.3)),
+                ])
+            if getattr(self.config, 'use_game_phase_network', False):
+                cmd.append("--game-phase-network")
+            if getattr(self.config, 'use_self_play', False):
+                cmd.extend([
+                    "--self-play",
+                    "--self-play-buffer", str(getattr(self.config, 'self_play_buffer', 100000)),
+                ])
+            if getattr(self.config, 'use_distillation', False):
+                teacher_path = getattr(self.config, 'distillation_teacher_path', None)
+                if teacher_path:
+                    cmd.extend([
+                        "--distillation",
+                        "--teacher-path", str(teacher_path),
+                        "--distill-temp", str(getattr(self.config, 'distillation_temp', 4.0)),
+                        "--distill-alpha", str(getattr(self.config, 'distillation_alpha', 0.7)),
+                    ])
 
             print(f"[Training] Starting training for {model_id}...")
 

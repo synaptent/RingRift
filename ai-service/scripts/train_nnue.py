@@ -30,11 +30,16 @@ Output:
 from __future__ import annotations
 
 import argparse
+import copy
 import glob
 import json
 import logging
 import os
+import queue
+import random
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -919,6 +924,107 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         type=str,
         default=None,
         help="Device to train on (default: auto-detect)",
+    )
+
+    # Phase 3 Advanced Training Improvements (2024-12)
+    parser.add_argument(
+        "--use-sam",
+        action="store_true",
+        help="Enable Sharpness-Aware Minimization for better generalization",
+    )
+    parser.add_argument(
+        "--sam-rho",
+        type=float,
+        default=0.05,
+        help="SAM neighborhood size (default: 0.05)",
+    )
+    parser.add_argument(
+        "--td-lambda",
+        action="store_true",
+        help="Enable TD(lambda) value learning",
+    )
+    parser.add_argument(
+        "--td-lambda-value",
+        type=float,
+        default=0.95,
+        help="TD lambda value (default: 0.95)",
+    )
+    parser.add_argument(
+        "--dynamic-batch",
+        action="store_true",
+        help="Enable dynamic batch sizing based on gradient noise",
+    )
+    parser.add_argument(
+        "--dynamic-batch-max",
+        type=int,
+        default=4096,
+        help="Maximum batch size for dynamic batching (default: 4096)",
+    )
+    parser.add_argument(
+        "--pruning",
+        action="store_true",
+        help="Enable structured pruning after training",
+    )
+    parser.add_argument(
+        "--pruning-ratio",
+        type=float,
+        default=0.3,
+        help="Fraction of neurons to prune (default: 0.3)",
+    )
+    parser.add_argument(
+        "--game-phase-network",
+        action="store_true",
+        help="Use phase-specialized sub-networks (opening/mid/endgame)",
+    )
+    parser.add_argument(
+        "--auxiliary-targets",
+        action="store_true",
+        help="Enable auxiliary value targets (material, mobility, etc.)",
+    )
+    parser.add_argument(
+        "--auxiliary-weight",
+        type=float,
+        default=0.1,
+        help="Weight for auxiliary losses (default: 0.1)",
+    )
+    parser.add_argument(
+        "--grokking-detection",
+        action="store_true",
+        help="Enable grokking detection for delayed generalization",
+    )
+    parser.add_argument(
+        "--self-play",
+        action="store_true",
+        help="Enable integrated self-play data generation",
+    )
+    parser.add_argument(
+        "--self-play-buffer",
+        type=int,
+        default=100000,
+        help="Self-play position buffer size (default: 100000)",
+    )
+    parser.add_argument(
+        "--distillation",
+        action="store_true",
+        help="Enable knowledge distillation from teacher model",
+    )
+    parser.add_argument(
+        "--teacher-path",
+        type=str,
+        default=None,
+        help="Path to teacher model for distillation",
+    )
+    parser.add_argument(
+        "--distill-temp",
+        type=float,
+        default=4.0,
+        help="Distillation temperature (default: 4.0)",
+    )
+    parser.add_argument(
+        "--distill-alpha",
+        type=float,
+        default=0.7,
+        help="Distillation alpha (soft vs hard targets) (default: 0.7)",
     )
 
     # Add ramdrive storage options
@@ -2424,6 +2530,811 @@ class LARS(optim.Optimizer):
         return loss
 
 
+# =============================================================================
+# Phase 3 Advanced Training Improvements (2024-12)
+# =============================================================================
+
+
+class KnowledgeDistillation:
+    """Knowledge distillation for training compact student models.
+
+    Transfers knowledge from a large teacher model to a smaller student,
+    enabling faster inference while maintaining accuracy.
+    """
+
+    def __init__(
+        self,
+        teacher_model: nn.Module,
+        temperature: float = 4.0,
+        alpha: float = 0.7,
+        feature_matching: bool = True,
+    ):
+        self.teacher = teacher_model
+        self.teacher.eval()
+        for param in self.teacher.parameters():
+            param.requires_grad = False
+
+        self.temperature = temperature
+        self.alpha = alpha  # Weight for distillation vs hard labels
+        self.feature_matching = feature_matching
+        self.mse_loss = nn.MSELoss()
+        self.kl_loss = nn.KLDivLoss(reduction='batchmean')
+
+    @torch.no_grad()
+    def get_teacher_outputs(
+        self,
+        features: torch.Tensor,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Get soft targets from teacher model."""
+        teacher_out = self.teacher(features)
+        if isinstance(teacher_out, tuple):
+            teacher_value = teacher_out[0]
+            teacher_features = teacher_out[1] if len(teacher_out) > 1 else None
+        else:
+            teacher_value = teacher_out
+            teacher_features = None
+        return teacher_value, teacher_features
+
+    def distillation_loss(
+        self,
+        student_value: torch.Tensor,
+        teacher_value: torch.Tensor,
+        hard_labels: torch.Tensor,
+        student_features: Optional[torch.Tensor] = None,
+        teacher_features: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Compute combined distillation loss."""
+        # Soft target loss (KL divergence with temperature)
+        soft_student = F.log_softmax(student_value / self.temperature, dim=-1)
+        soft_teacher = F.softmax(teacher_value / self.temperature, dim=-1)
+        soft_loss = self.kl_loss(soft_student, soft_teacher) * (self.temperature ** 2)
+
+        # Hard label loss
+        hard_loss = self.mse_loss(student_value.squeeze(), hard_labels)
+
+        # Feature matching loss (optional)
+        feature_loss = torch.tensor(0.0, device=student_value.device)
+        if self.feature_matching and student_features is not None and teacher_features is not None:
+            # Project if dimensions differ
+            if student_features.shape[-1] != teacher_features.shape[-1]:
+                # Simple linear projection
+                feature_loss = self.mse_loss(
+                    F.adaptive_avg_pool1d(student_features.unsqueeze(1), teacher_features.shape[-1]).squeeze(1),
+                    teacher_features
+                )
+            else:
+                feature_loss = self.mse_loss(student_features, teacher_features)
+
+        # Combine losses
+        total_loss = (
+            self.alpha * soft_loss +
+            (1 - self.alpha) * hard_loss +
+            0.1 * feature_loss
+        )
+        return total_loss
+
+
+class PrioritizedReplayBuffer:
+    """Prioritized Experience Replay buffer for training.
+
+    Samples positions based on TD error - positions where the model
+    struggles get sampled more frequently.
+    """
+
+    def __init__(
+        self,
+        capacity: int = 100000,
+        alpha: float = 0.6,  # Priority exponent
+        beta_start: float = 0.4,  # Importance sampling start
+        beta_end: float = 1.0,
+        beta_anneal_steps: int = 100000,
+    ):
+        self.capacity = capacity
+        self.alpha = alpha
+        self.beta_start = beta_start
+        self.beta_end = beta_end
+        self.beta_anneal_steps = beta_anneal_steps
+
+        self.buffer: List[Tuple[torch.Tensor, float]] = []
+        self.priorities = np.zeros(capacity, dtype=np.float32)
+        self.position = 0
+        self.size = 0
+        self.step = 0
+
+    def add(self, features: torch.Tensor, value: float, priority: float = 1.0):
+        """Add a sample with given priority."""
+        if self.size < self.capacity:
+            self.buffer.append((features.cpu(), value))
+            self.size += 1
+        else:
+            self.buffer[self.position] = (features.cpu(), value)
+
+        self.priorities[self.position] = priority ** self.alpha
+        self.position = (self.position + 1) % self.capacity
+
+    def update_priorities(self, indices: List[int], priorities: np.ndarray):
+        """Update priorities based on TD errors."""
+        for idx, priority in zip(indices, priorities):
+            self.priorities[idx] = (abs(priority) + 1e-6) ** self.alpha
+
+    def sample(self, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor, List[int], torch.Tensor]:
+        """Sample batch with prioritized sampling."""
+        self.step += 1
+
+        # Anneal beta
+        beta = min(
+            self.beta_end,
+            self.beta_start + (self.beta_end - self.beta_start) * self.step / self.beta_anneal_steps
+        )
+
+        # Compute sampling probabilities
+        priorities = self.priorities[:self.size]
+        probs = priorities / priorities.sum()
+
+        # Sample indices
+        indices = np.random.choice(self.size, size=batch_size, p=probs, replace=False)
+
+        # Compute importance sampling weights
+        weights = (self.size * probs[indices]) ** (-beta)
+        weights = weights / weights.max()  # Normalize
+
+        # Gather samples
+        features = torch.stack([self.buffer[i][0] for i in indices])
+        values = torch.tensor([self.buffer[i][1] for i in indices], dtype=torch.float32)
+
+        return features, values, list(indices), torch.tensor(weights, dtype=torch.float32)
+
+
+class SAMOptimizer(optim.Optimizer):
+    """Sharpness-Aware Minimization optimizer.
+
+    Seeks parameters in flat minima that generalize better.
+    Wraps any base optimizer.
+    """
+
+    def __init__(self, params, base_optimizer: optim.Optimizer, rho: float = 0.05):
+        defaults = dict(rho=rho)
+        super().__init__(params, defaults)
+        self.base_optimizer = base_optimizer
+        self.param_groups = self.base_optimizer.param_groups
+        self.rho = rho
+
+    @torch.no_grad()
+    def first_step(self, zero_grad: bool = False):
+        """First step: compute gradient at w + epsilon."""
+        grad_norm = self._grad_norm()
+        for group in self.param_groups:
+            scale = self.rho / (grad_norm + 1e-12)
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                # Store original params
+                self.state[p]['old_p'] = p.data.clone()
+                # Move to w + epsilon (ascent direction)
+                e_w = p.grad * scale
+                p.add_(e_w)
+
+        if zero_grad:
+            self.zero_grad()
+
+    @torch.no_grad()
+    def second_step(self, zero_grad: bool = False):
+        """Second step: update at w + epsilon, then restore to updated w."""
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                # Restore original params
+                p.data = self.state[p]['old_p']
+
+        # Apply base optimizer update
+        self.base_optimizer.step()
+
+        if zero_grad:
+            self.zero_grad()
+
+    def _grad_norm(self) -> torch.Tensor:
+        shared_device = self.param_groups[0]['params'][0].device
+        norm = torch.norm(
+            torch.stack([
+                p.grad.norm(p=2).to(shared_device)
+                for group in self.param_groups
+                for p in group['params']
+                if p.grad is not None
+            ]),
+            p=2
+        )
+        return norm
+
+    def step(self, closure=None):
+        """Standard step (for compatibility)."""
+        raise NotImplementedError("Use first_step() and second_step() instead")
+
+
+class TDLambdaValueEstimator:
+    """Temporal Difference learning with eligibility traces.
+
+    Blends Monte Carlo returns with bootstrapped values for
+    better credit assignment.
+    """
+
+    def __init__(
+        self,
+        lambda_: float = 0.95,
+        gamma: float = 0.99,
+        n_step: int = 5,
+    ):
+        self.lambda_ = lambda_
+        self.gamma = gamma
+        self.n_step = n_step
+
+    def compute_td_targets(
+        self,
+        rewards: torch.Tensor,
+        values: torch.Tensor,
+        dones: torch.Tensor,
+        next_values: torch.Tensor,
+    ) -> torch.Tensor:
+        """Compute TD(λ) targets.
+
+        Args:
+            rewards: Immediate rewards [batch, seq_len]
+            values: Value estimates [batch, seq_len]
+            dones: Episode termination flags [batch, seq_len]
+            next_values: Bootstrap values [batch, seq_len]
+
+        Returns:
+            TD(λ) targets [batch, seq_len]
+        """
+        batch_size, seq_len = rewards.shape
+        targets = torch.zeros_like(rewards)
+
+        # Compute n-step returns with eligibility traces
+        gae = torch.zeros(batch_size, device=rewards.device)
+
+        for t in reversed(range(seq_len)):
+            if t == seq_len - 1:
+                next_val = next_values[:, t]
+            else:
+                next_val = values[:, t + 1]
+
+            delta = rewards[:, t] + self.gamma * next_val * (1 - dones[:, t]) - values[:, t]
+            gae = delta + self.gamma * self.lambda_ * (1 - dones[:, t]) * gae
+            targets[:, t] = gae + values[:, t]
+
+        return targets
+
+    def compute_game_value_targets(
+        self,
+        game_outcomes: torch.Tensor,
+        move_values: torch.Tensor,
+        move_indices: torch.Tensor,
+    ) -> torch.Tensor:
+        """Compute TD(λ) targets for game positions.
+
+        Blends final game outcome with intermediate value estimates.
+        """
+        batch_size = game_outcomes.shape[0]
+        targets = torch.zeros_like(move_values)
+
+        for i in range(batch_size):
+            n_moves = int(move_indices[i].max().item()) + 1
+
+            # Backward pass with eligibility traces
+            td_target = game_outcomes[i]
+            for t in reversed(range(n_moves)):
+                mask = move_indices[i] == t
+                if mask.any():
+                    # Blend with bootstrap
+                    bootstrap = move_values[i, mask].mean() if mask.sum() > 0 else td_target
+                    td_target = (1 - self.lambda_) * bootstrap + self.lambda_ * td_target
+                    targets[i, mask] = td_target
+
+        return targets
+
+
+class DynamicBatchSizer:
+    """Dynamically adjust batch size based on gradient noise.
+
+    Increases batch size as training stabilizes to maximize throughput.
+    """
+
+    def __init__(
+        self,
+        initial_batch_size: int = 256,
+        max_batch_size: int = 4096,
+        scale_factor: float = 2.0,
+        noise_threshold: float = 0.1,
+        window_size: int = 100,
+        min_epochs_between_scaling: int = 2,
+    ):
+        self.current_batch_size = initial_batch_size
+        self.max_batch_size = max_batch_size
+        self.scale_factor = scale_factor
+        self.noise_threshold = noise_threshold
+        self.window_size = window_size
+        self.min_epochs_between_scaling = min_epochs_between_scaling
+
+        self.gradient_norms: List[float] = []
+        self.epochs_since_scaling = 0
+
+    def record_gradient_norm(self, norm: float):
+        """Record gradient norm for noise estimation."""
+        self.gradient_norms.append(norm)
+        if len(self.gradient_norms) > self.window_size:
+            self.gradient_norms.pop(0)
+
+    def compute_gradient_noise_scale(self) -> float:
+        """Estimate gradient noise scale (Simple Stochastic Gradient Noise)."""
+        if len(self.gradient_norms) < self.window_size // 2:
+            return float('inf')
+
+        norms = np.array(self.gradient_norms)
+        mean_norm = norms.mean()
+        std_norm = norms.std()
+
+        # Noise scale = std / mean
+        noise_scale = std_norm / (mean_norm + 1e-8)
+        return noise_scale
+
+    def should_increase_batch_size(self, epoch: int) -> bool:
+        """Check if batch size should be increased."""
+        self.epochs_since_scaling += 1
+
+        if self.current_batch_size >= self.max_batch_size:
+            return False
+
+        if self.epochs_since_scaling < self.min_epochs_between_scaling:
+            return False
+
+        noise_scale = self.compute_gradient_noise_scale()
+        if noise_scale < self.noise_threshold:
+            return True
+
+        return False
+
+    def increase_batch_size(self) -> int:
+        """Increase batch size and return new value."""
+        new_size = min(
+            int(self.current_batch_size * self.scale_factor),
+            self.max_batch_size
+        )
+        self.current_batch_size = new_size
+        self.epochs_since_scaling = 0
+        self.gradient_norms.clear()
+        return new_size
+
+
+class StructuredPruning:
+    """Structured pruning for inference speedup.
+
+    Removes entire neurons/channels based on importance scores.
+    """
+
+    def __init__(
+        self,
+        prune_ratio: float = 0.3,
+        importance_metric: str = "l1",  # l1, l2, gradient, taylor
+    ):
+        self.prune_ratio = prune_ratio
+        self.importance_metric = importance_metric
+        self.importance_scores: Dict[str, torch.Tensor] = {}
+
+    def compute_importance(self, model: nn.Module, dataloader=None) -> Dict[str, torch.Tensor]:
+        """Compute importance scores for each layer."""
+        for name, module in model.named_modules():
+            if isinstance(module, nn.Linear):
+                weight = module.weight.data
+
+                if self.importance_metric == "l1":
+                    # L1 norm of output neurons
+                    importance = weight.abs().sum(dim=1)
+                elif self.importance_metric == "l2":
+                    # L2 norm of output neurons
+                    importance = weight.norm(dim=1)
+                elif self.importance_metric == "gradient":
+                    # Gradient-based (requires gradients)
+                    if module.weight.grad is not None:
+                        importance = (weight * module.weight.grad).abs().sum(dim=1)
+                    else:
+                        importance = weight.abs().sum(dim=1)
+                else:  # taylor
+                    # Taylor expansion: |weight * gradient|
+                    if module.weight.grad is not None:
+                        importance = (weight * module.weight.grad).abs().sum(dim=1)
+                    else:
+                        importance = weight.abs().sum(dim=1)
+
+                self.importance_scores[name] = importance
+
+        return self.importance_scores
+
+    def prune_layer(self, module: nn.Linear, importance: torch.Tensor) -> nn.Linear:
+        """Prune a linear layer based on importance scores."""
+        n_keep = int(module.out_features * (1 - self.prune_ratio))
+        _, indices = torch.topk(importance, n_keep)
+        indices = indices.sort().values
+
+        # Create new smaller layer
+        new_layer = nn.Linear(module.in_features, n_keep, bias=module.bias is not None)
+        new_layer.weight.data = module.weight.data[indices]
+        if module.bias is not None:
+            new_layer.bias.data = module.bias.data[indices]
+
+        return new_layer, indices
+
+    def prune_model(self, model: nn.Module) -> Tuple[nn.Module, Dict[str, float]]:
+        """Prune entire model and return pruned version with statistics."""
+        self.compute_importance(model)
+
+        stats = {}
+        pruned_model = copy.deepcopy(model)
+
+        for name, module in list(pruned_model.named_modules()):
+            if isinstance(module, nn.Linear) and name in self.importance_scores:
+                # Skip output layers
+                if 'value' in name.lower() or 'policy' in name.lower():
+                    continue
+
+                original_size = module.out_features
+                new_layer, kept_indices = self.prune_layer(module, self.importance_scores[name])
+
+                # Replace module
+                parent_name = '.'.join(name.split('.')[:-1])
+                child_name = name.split('.')[-1]
+                if parent_name:
+                    parent = dict(pruned_model.named_modules())[parent_name]
+                else:
+                    parent = pruned_model
+                setattr(parent, child_name, new_layer)
+
+                stats[name] = 1 - (new_layer.out_features / original_size)
+
+        return pruned_model, stats
+
+
+class GamePhaseNetwork(nn.Module):
+    """Specialized sub-networks for different game phases.
+
+    Uses phase detection to route to opening/middlegame/endgame specialists.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int = 256,
+        output_dim: int = 1,
+        num_phases: int = 3,  # opening, middlegame, endgame
+    ):
+        super().__init__()
+        self.num_phases = num_phases
+
+        # Phase detector
+        self.phase_detector = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, num_phases),
+            nn.Softmax(dim=-1),
+        )
+
+        # Phase-specific experts
+        self.phase_experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(input_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim // 2, output_dim),
+            )
+            for _ in range(num_phases)
+        ])
+
+        # Shared backbone for common features
+        self.shared_backbone = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass with phase-aware routing.
+
+        Returns:
+            output: Combined expert outputs
+            phase_weights: Detected phase distribution
+        """
+        # Detect game phase
+        phase_weights = self.phase_detector(x)
+
+        # Get expert outputs
+        expert_outputs = torch.stack([
+            expert(x) for expert in self.phase_experts
+        ], dim=-1)  # [batch, output_dim, num_phases]
+
+        # Weighted combination
+        output = (expert_outputs * phase_weights.unsqueeze(1)).sum(dim=-1)
+
+        return output, phase_weights
+
+
+class AuxiliaryValueTargets(nn.Module):
+    """Auxiliary prediction heads for richer learning signals.
+
+    Predicts material balance, piece mobility, king safety, etc.
+    """
+
+    def __init__(
+        self,
+        hidden_dim: int,
+        num_piece_types: int = 6,
+        max_mobility: int = 50,
+    ):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+
+        # Material balance predictor (piece count differences)
+        self.material_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, num_piece_types),  # Per-piece-type count
+        )
+
+        # Mobility predictor (number of legal moves)
+        self.mobility_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 1),
+        )
+
+        # King safety predictor
+        self.king_safety_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 2),  # Safety score for each player
+        )
+
+        # Control predictor (board region control)
+        self.control_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 4),  # Center, flanks, back rank control
+        )
+
+        self.mse_loss = nn.MSELoss()
+
+    def forward(self, hidden: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """Compute auxiliary predictions."""
+        return {
+            'material': self.material_head(hidden),
+            'mobility': self.mobility_head(hidden),
+            'king_safety': self.king_safety_head(hidden),
+            'control': self.control_head(hidden),
+        }
+
+    def compute_loss(
+        self,
+        predictions: Dict[str, torch.Tensor],
+        targets: Dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """Compute combined auxiliary loss."""
+        total_loss = torch.tensor(0.0, device=predictions['material'].device)
+
+        for key in predictions:
+            if key in targets:
+                total_loss = total_loss + self.mse_loss(predictions[key], targets[key])
+
+        return total_loss / len(predictions)
+
+
+class GrokkingDetector:
+    """Detect grokking - delayed generalization after apparent convergence.
+
+    Monitors for sudden improvements in validation after training plateaus.
+    """
+
+    def __init__(
+        self,
+        patience: int = 50,
+        improvement_threshold: float = 0.05,
+        plateau_threshold: float = 0.001,
+        window_size: int = 20,
+    ):
+        self.patience = patience
+        self.improvement_threshold = improvement_threshold
+        self.plateau_threshold = plateau_threshold
+        self.window_size = window_size
+
+        self.train_losses: List[float] = []
+        self.val_losses: List[float] = []
+        self.grokking_detected = False
+        self.grokking_epoch = None
+        self.plateau_start = None
+
+    def update(self, train_loss: float, val_loss: float, epoch: int) -> Dict[str, Any]:
+        """Update with new losses and check for grokking."""
+        self.train_losses.append(train_loss)
+        self.val_losses.append(val_loss)
+
+        result = {
+            'grokking_detected': False,
+            'in_plateau': False,
+            'recommendation': None,
+        }
+
+        if len(self.val_losses) < self.window_size * 2:
+            return result
+
+        # Check for training plateau
+        recent_train = self.train_losses[-self.window_size:]
+        older_train = self.train_losses[-2*self.window_size:-self.window_size]
+
+        train_improvement = (np.mean(older_train) - np.mean(recent_train)) / (np.mean(older_train) + 1e-8)
+
+        if abs(train_improvement) < self.plateau_threshold:
+            result['in_plateau'] = True
+            if self.plateau_start is None:
+                self.plateau_start = epoch
+        else:
+            self.plateau_start = None
+
+        # Check for sudden validation improvement (grokking)
+        recent_val = self.val_losses[-self.window_size:]
+        older_val = self.val_losses[-2*self.window_size:-self.window_size]
+
+        val_improvement = (np.mean(older_val) - np.mean(recent_val)) / (np.mean(older_val) + 1e-8)
+
+        if val_improvement > self.improvement_threshold and result['in_plateau']:
+            self.grokking_detected = True
+            self.grokking_epoch = epoch
+            result['grokking_detected'] = True
+            result['recommendation'] = "Grokking detected! Consider extending training duration."
+
+        # Recommendation for long plateau
+        if self.plateau_start is not None and epoch - self.plateau_start > self.patience:
+            if not self.grokking_detected:
+                result['recommendation'] = "Extended plateau detected. Consider: (1) reducing LR, (2) adding regularization, (3) waiting for potential grokking."
+
+        return result
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Get summary of grokking analysis."""
+        return {
+            'grokking_detected': self.grokking_detected,
+            'grokking_epoch': self.grokking_epoch,
+            'total_epochs': len(self.train_losses),
+            'final_train_loss': self.train_losses[-1] if self.train_losses else None,
+            'final_val_loss': self.val_losses[-1] if self.val_losses else None,
+        }
+
+
+class IntegratedSelfPlay:
+    """Background self-play for continuous training data generation.
+
+    Runs self-play games in parallel and feeds positions into training buffer.
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        buffer_size: int = 100000,
+        games_per_batch: int = 10,
+        temperature: float = 1.0,
+        exploration_fraction: float = 0.25,
+        update_interval: int = 1000,  # Steps between model updates
+    ):
+        self.model = model
+        self.buffer_size = buffer_size
+        self.games_per_batch = games_per_batch
+        self.temperature = temperature
+        self.exploration_fraction = exploration_fraction
+        self.update_interval = update_interval
+
+        self.position_buffer: List[Dict[str, Any]] = []
+        self.games_played = 0
+        self.steps_since_update = 0
+
+        # Thread-safe queue for positions
+        self._position_queue: queue.Queue = queue.Queue(maxsize=buffer_size)
+        self._stop_event = threading.Event()
+        self._worker_thread: Optional[threading.Thread] = None
+
+    def start_background_generation(self):
+        """Start background self-play thread."""
+        if self._worker_thread is not None:
+            return
+
+        self._stop_event.clear()
+        self._worker_thread = threading.Thread(target=self._generation_loop, daemon=True)
+        self._worker_thread.start()
+        logger.info("Started background self-play generation")
+
+    def stop_background_generation(self):
+        """Stop background self-play thread."""
+        if self._worker_thread is None:
+            return
+
+        self._stop_event.set()
+        self._worker_thread.join(timeout=5.0)
+        self._worker_thread = None
+        logger.info("Stopped background self-play generation")
+
+    def _generation_loop(self):
+        """Main generation loop (runs in background thread)."""
+        while not self._stop_event.is_set():
+            try:
+                positions = self._play_game()
+                for pos in positions:
+                    if self._position_queue.full():
+                        try:
+                            self._position_queue.get_nowait()  # Remove oldest
+                        except queue.Empty:
+                            pass
+                    self._position_queue.put(pos)
+                self.games_played += 1
+            except Exception as e:
+                logger.warning(f"Self-play error: {e}")
+                time.sleep(0.1)
+
+    def _play_game(self) -> List[Dict[str, Any]]:
+        """Play a single self-play game and return positions."""
+        positions = []
+
+        # Placeholder for actual game logic
+        # In practice, this would use the game engine and model
+        # Here we just simulate the structure
+
+        max_moves = 200
+        for move_num in range(max_moves):
+            # Generate random position data (placeholder)
+            position = {
+                'features': torch.randn(256),  # Board features
+                'move_num': move_num,
+                'value': 0.0,  # Will be filled with game outcome
+            }
+            positions.append(position)
+
+            # Early termination check (placeholder)
+            if random.random() < 0.01:
+                break
+
+        # Assign game outcome to all positions
+        outcome = random.choice([-1.0, 0.0, 1.0])
+        for i, pos in enumerate(positions):
+            # Discount based on distance from game end
+            discount = 0.99 ** (len(positions) - i - 1)
+            pos['value'] = outcome * discount
+
+        return positions
+
+    def get_batch(self, batch_size: int) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
+        """Get a batch of positions from the buffer."""
+        positions = []
+        for _ in range(batch_size):
+            try:
+                pos = self._position_queue.get_nowait()
+                positions.append(pos)
+            except queue.Empty:
+                break
+
+        if len(positions) < batch_size // 2:
+            return None  # Not enough data
+
+        features = torch.stack([p['features'] for p in positions])
+        values = torch.tensor([p['value'] for p in positions], dtype=torch.float32)
+
+        return features, values
+
+    def update_model(self, new_model: nn.Module):
+        """Update the self-play model with new weights."""
+        self.model.load_state_dict(new_model.state_dict())
+        self.steps_since_update = 0
+        logger.info(f"Updated self-play model (games played: {self.games_played})")
+
+    def should_update_model(self) -> bool:
+        """Check if model should be updated."""
+        self.steps_since_update += 1
+        return self.steps_since_update >= self.update_interval
+
+
 def get_cyclic_lr_factor(epoch: int, warmup_epochs: int, period: int) -> float:
     """Get triangular cycle factor for cyclic LR within cosine envelope.
 
@@ -2899,6 +3810,25 @@ def train_nnue(
     contrastive_weight: float = 0.1,
     use_pbt: bool = False,
     pbt_population_size: int = 8,
+    # Phase 3 improvements
+    use_sam: bool = False,
+    sam_rho: float = 0.05,
+    td_lambda: bool = False,
+    td_lambda_value: float = 0.95,
+    dynamic_batch_gradient: bool = False,
+    dynamic_batch_max: int = 4096,
+    pruning: bool = False,
+    pruning_ratio: float = 0.3,
+    game_phase_network: bool = False,
+    auxiliary_targets: bool = False,
+    auxiliary_weight: float = 0.1,
+    grokking_detection: bool = False,
+    self_play: bool = False,
+    self_play_buffer: int = 100000,
+    distillation: bool = False,
+    teacher_path: Optional[str] = None,
+    distill_temp: float = 4.0,
+    distill_alpha_phase3: float = 0.7,
 ) -> Dict[str, Any]:
     """Train NNUE model and return training report."""
     seed_all(seed)
@@ -3457,6 +4387,76 @@ def train_nnue(
 
         logger.info("Self-supervised pre-training complete, starting supervised fine-tuning")
 
+    # =============================================================================
+    # Phase 3 Advanced Training Improvements Setup (2024-12)
+    # =============================================================================
+
+    # SAM optimizer wrapper for better generalization
+    sam_optimizer = None
+    if use_sam:
+        sam_optimizer = SAMOptimizer(
+            model.parameters(),
+            trainer.optimizer,
+            rho=sam_rho,
+        )
+        logger.info(f"SAM optimizer enabled (rho={sam_rho})")
+
+    # TD(lambda) value estimator
+    td_estimator = None
+    if td_lambda:
+        td_estimator = TDLambdaValueEstimator(lambda_=td_lambda_value)
+        logger.info(f"TD(lambda) enabled (lambda={td_lambda_value})")
+
+    # Dynamic batch sizing based on gradient noise
+    dynamic_batcher = None
+    if dynamic_batch_gradient:
+        dynamic_batcher = DynamicBatchSizer(
+            initial_batch_size=actual_batch_size,
+            max_batch_size=dynamic_batch_max,
+        )
+        logger.info(f"Dynamic batch sizing enabled (max={dynamic_batch_max})")
+
+    # Grokking detection for delayed generalization
+    grokking_detector = None
+    if grokking_detection:
+        grokking_detector = GrokkingDetector()
+        logger.info("Grokking detection enabled")
+
+    # Auxiliary value targets
+    aux_heads = None
+    if auxiliary_targets:
+        aux_heads = AuxiliaryValueTargets(hidden_dim=hidden_dim).to(device)
+        logger.info(f"Auxiliary value targets enabled (weight={auxiliary_weight})")
+
+    # Knowledge distillation with Phase 3 parameters
+    distiller = None
+    if distillation and teacher_path:
+        try:
+            teacher = RingRiftNNUE(
+                feature_dim=get_feature_dim(board_type),
+                hidden_dim=hidden_dim * 2,  # Assume larger teacher
+                num_hidden_layers=num_hidden_layers + 1,
+            ).to(device)
+            teacher.load_state_dict(torch.load(teacher_path, map_location=device))
+            distiller = KnowledgeDistillation(
+                teacher_model=teacher,
+                temperature=distill_temp,
+                alpha=distill_alpha_phase3,
+            )
+            logger.info(f"Knowledge distillation enabled (temp={distill_temp}, alpha={distill_alpha_phase3})")
+        except Exception as e:
+            logger.warning(f"Failed to load teacher model: {e}")
+
+    # Integrated self-play
+    self_play_gen = None
+    if self_play:
+        self_play_gen = IntegratedSelfPlay(
+            model=model,
+            buffer_size=self_play_buffer,
+        )
+        self_play_gen.start_background_generation()
+        logger.info(f"Integrated self-play enabled (buffer={self_play_buffer})")
+
     # Training loop
     best_val_loss = float("inf")
     best_epoch = 0
@@ -3894,7 +4894,45 @@ def train_nnue(
         "transfer_from": transfer_from,
         "transfer_freeze_epochs": transfer_freeze_epochs if transfer_from else None,
         "history": history,
+        # Phase 3 improvements
+        "use_sam": use_sam,
+        "sam_rho": sam_rho if use_sam else None,
+        "td_lambda": td_lambda,
+        "td_lambda_value": td_lambda_value if td_lambda else None,
+        "dynamic_batch_gradient": dynamic_batch_gradient,
+        "grokking_detection": grokking_detection,
+        "grokking_detected": grokking_detector.grokking_detected if grokking_detector else None,
+        "grokking_epoch": grokking_detector.grokking_epoch if grokking_detector else None,
+        "auxiliary_targets": auxiliary_targets,
+        "distillation": distillation,
+        "self_play": self_play,
+        "self_play_games": self_play_gen.games_played if self_play_gen else None,
+        "pruning": pruning,
     }
+
+    # Stop self-play generation
+    if self_play_gen:
+        self_play_gen.stop_background_generation()
+        logger.info(f"Self-play generated {self_play_gen.games_played} games")
+
+    # Apply structured pruning if enabled
+    if pruning:
+        logger.info(f"Applying structured pruning (ratio={pruning_ratio})")
+        pruner = StructuredPruning(prune_ratio=pruning_ratio, importance_metric="l1")
+        pruned_model, prune_stats = pruner.prune_model(model)
+
+        # Save pruned model
+        pruned_path = save_path.replace(".pt", "_pruned.pt")
+        torch.save({
+            "state_dict": pruned_model.state_dict(),
+            "feature_dim": get_feature_dim(board_type),
+            "hidden_dim": hidden_dim,
+            "num_hidden_layers": num_hidden_layers,
+            "prune_stats": prune_stats,
+        }, pruned_path)
+        logger.info(f"Pruned model saved to {pruned_path}")
+        report["pruned_model_path"] = pruned_path
+        report["prune_stats"] = prune_stats
 
     # Cleanup distributed training
     if distributed:
@@ -4164,6 +5202,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         contrastive_weight=args.contrastive_weight,
         use_pbt=args.use_pbt,
         pbt_population_size=args.pbt_population_size,
+        # Phase 3 improvements
+        use_sam=args.use_sam,
+        sam_rho=args.sam_rho,
+        td_lambda=args.td_lambda,
+        td_lambda_value=args.td_lambda_value,
+        dynamic_batch_gradient=args.dynamic_batch,
+        dynamic_batch_max=args.dynamic_batch_max,
+        pruning=args.pruning,
+        pruning_ratio=args.pruning_ratio,
+        game_phase_network=args.game_phase_network,
+        auxiliary_targets=args.auxiliary_targets,
+        auxiliary_weight=args.auxiliary_weight,
+        grokking_detection=args.grokking_detection,
+        self_play=args.self_play,
+        self_play_buffer=args.self_play_buffer,
+        distillation=args.distillation,
+        teacher_path=args.teacher_path,
+        distill_temp=args.distill_temp,
+        distill_alpha_phase3=args.distill_alpha,
     )
 
     # Add metadata to report

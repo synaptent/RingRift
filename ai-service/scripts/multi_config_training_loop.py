@@ -999,6 +999,8 @@ def run_training(board_type: str, num_players: int, db_paths: List[str],
         # 2025-12 Training Improvements
         "--policy-label-smoothing", "0.05",  # Prevent overconfident predictions
         "--sampling-weights", "victory_type",  # Balance across victory types for better generalization
+        # 2024-12 Phase 3 Advanced Training
+        "--grokking-detection",  # Monitor for delayed generalization
     ]
 
     # D6 hex symmetry augmentation for hex boards (12x effective data)

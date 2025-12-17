@@ -1101,6 +1101,8 @@ def train_model(
         "--prefetch-gpu",  # GPU prefetching for improved throughput
         "--difficulty-curriculum",  # Difficulty-aware curriculum learning
         "--quantized-eval",  # Fast quantized inference for validation
+        # 2024-12 Phase 3 Advanced Training
+        "--grokking-detection",  # Monitor for delayed generalization
     ]
 
     # Resume from best model if it exists (warm-start fine-tuning)
