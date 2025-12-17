@@ -651,14 +651,48 @@ def run_distributed_tournament(
     board_type: str = "square8",
     use_ramdrive: bool = False,
     max_parallel_per_node: int = 2,
+    min_ram_gb: int = 0,
+    retry_failed: bool = True,
+    max_node_failures: int = 10,
 ) -> Tuple[List[MatchResult], Dict[str, float]]:
-    """Run distributed tournament across all healthy nodes."""
+    """Run distributed tournament across all healthy nodes.
+
+    Args:
+        agents: List of agent names to include in tournament
+        games_per_pairing: Number of games per agent pairing
+        board_type: Board type (square8, square19, hexagonal)
+        use_ramdrive: Use ramdrive for faster execution
+        max_parallel_per_node: Max parallel matches per node
+        min_ram_gb: Minimum RAM in GB required for node (for heavyweight agents)
+        retry_failed: Retry failed matches on different nodes
+        max_node_failures: Skip node after this many failures
+    """
 
     # Discover nodes
     nodes, all_hosts = discover_healthy_nodes()
     if not nodes:
         print("[Tournament] ERROR: No healthy nodes found!")
         return [], {}
+
+    # Filter nodes by minimum RAM if specified
+    if min_ram_gb > 0:
+        filtered_nodes = []
+        for node in nodes:
+            config = all_hosts.get(node.node_id, {})
+            # Estimate RAM from GPU name or config
+            gpu = config.get("gpu", "")
+            # High-RAM GPUs: A40 (1TB), H100 (645GB), GH200 (96GB)
+            high_ram_gpus = ["A40", "H100", "GH200", "5090", "4080"]
+            if any(g in gpu for g in high_ram_gpus):
+                filtered_nodes.append(node)
+            elif "Lambda" in node.node_id or "lambda" in node.node_id:
+                filtered_nodes.append(node)  # Lambda nodes have 80GB+ RAM
+
+        if filtered_nodes:
+            print(f"[Tournament] Filtered to {len(filtered_nodes)} high-RAM nodes (>={min_ram_gb}GB)")
+            nodes = filtered_nodes
+        else:
+            print(f"[Tournament] WARNING: No nodes meet {min_ram_gb}GB RAM requirement, using all nodes")
 
     # Setup ramdrive if requested
     if use_ramdrive:
@@ -706,11 +740,21 @@ def run_distributed_tournament(
     from collections import Counter
     error_counts: Counter = Counter()
     node_failures: Counter = Counter()
+    disabled_nodes: Set[str] = set()
 
     # Round-robin node assignment with parallel execution
+    def get_available_nodes():
+        """Get nodes that haven't exceeded failure threshold."""
+        return [n for n in nodes if n.node_id not in disabled_nodes]
+
     def process_match(args):
         idx, (agent_a, agent_b), node = args
         match_id = f"{tournament_id}_{idx}"
+
+        # Check if node is still available
+        if node.node_id in disabled_nodes:
+            return None, f"Node {node.node_id} disabled due to failures"
+
         config = all_hosts.get(node.node_id, {})
         if not config:
             return None, "No config for node"
@@ -746,10 +790,22 @@ def run_distributed_tournament(
                     error_key = error[:50] if error else "Unknown"
                     error_counts[error_key] += 1
                     node_failures[node.node_id] += 1
+
+                    # Disable node if too many failures
+                    if node_failures[node.node_id] >= max_node_failures:
+                        if node.node_id not in disabled_nodes:
+                            disabled_nodes.add(node.node_id)
+                            print(f"  [!] Node {node.node_id} disabled after {max_node_failures} failures")
             except Exception as e:
                 failed += 1
                 error_counts[f"Exception: {type(e).__name__}"] += 1
                 node_failures[node.node_id] += 1
+
+                # Disable node if too many failures
+                if node_failures[node.node_id] >= max_node_failures:
+                    if node.node_id not in disabled_nodes:
+                        disabled_nodes.add(node.node_id)
+                        print(f"  [!] Node {node.node_id} disabled after {max_node_failures} failures")
 
             # Progress update every 10 matches
             if (completed + failed) % 10 == 0:
@@ -759,10 +815,53 @@ def run_distributed_tournament(
                 print(f"  Progress: {completed}/{total} ({failed} failed) - {rate:.1f} matches/sec - ETA: {eta:.0f}s")
 
     elapsed = time.time() - start_time
-    print(f"\n[Tournament] Completed!")
+    print(f"\n[Tournament] Initial pass completed!")
     print(f"  Total: {completed} matches in {elapsed:.1f}s")
     print(f"  Failed: {failed}")
     print(f"  Rate: {completed/elapsed:.2f} matches/sec")
+
+    # Retry failed matches on different nodes if enabled
+    if retry_failed and failed > 0:
+        available_nodes = get_available_nodes()
+        if available_nodes and failed < total:
+            print(f"\n[Tournament] Retrying {failed} failed matches on {len(available_nodes)} available nodes...")
+
+            # Collect failed matches
+            completed_indices = set()
+            for r in results:
+                # Extract index from match_id
+                try:
+                    idx = int(r.match_id.split("_")[-1])
+                    completed_indices.add(idx)
+                except (ValueError, IndexError):
+                    pass
+
+            # Create retry work items
+            retry_items = []
+            for idx, matchup in enumerate(matchups):
+                if idx not in completed_indices:
+                    node = available_nodes[len(retry_items) % len(available_nodes)]
+                    retry_items.append((idx, matchup, node))
+
+            retry_completed = 0
+            retry_failed = 0
+
+            with ThreadPoolExecutor(max_workers=min(len(available_nodes) * 2, 10)) as executor:
+                futures = {executor.submit(process_match, item): item for item in retry_items}
+                for future in as_completed(futures):
+                    try:
+                        result, error = future.result()
+                        if result:
+                            results.append(result)
+                            retry_completed += 1
+                        else:
+                            retry_failed += 1
+                    except Exception:
+                        retry_failed += 1
+
+            completed += retry_completed
+            failed = retry_failed  # Update failed count
+            print(f"  Retry: {retry_completed} succeeded, {retry_failed} still failed")
 
     # Print error breakdown if there were failures
     if error_counts:
@@ -813,6 +912,9 @@ def main():
     parser.add_argument("--max-parallel", type=int, default=2, help="Max parallel matches per node")
     parser.add_argument("--agents", type=str, help="Comma-separated list of agents (default: lightweight)")
     parser.add_argument("--heavyweight", action="store_true", help="Include heavyweight NN-based agents")
+    parser.add_argument("--min-ram", type=int, default=0, help="Minimum RAM in GB for nodes (filters to high-capacity nodes)")
+    parser.add_argument("--no-retry", action="store_true", help="Don't retry failed matches")
+    parser.add_argument("--max-node-failures", type=int, default=10, help="Disable node after N failures")
 
     args = parser.parse_args()
 
@@ -833,6 +935,8 @@ def main():
     print(f"[Tournament] Agents: {agents}")
     print(f"[Tournament] Games per pairing: {args.games}")
     print(f"[Tournament] Ramdrive: {'enabled' if args.ramdrive else 'disabled'}")
+    print(f"[Tournament] Retry failed: {not args.no_retry}")
+    print(f"[Tournament] Min RAM filter: {args.min_ram}GB" if args.min_ram > 0 else "[Tournament] Min RAM filter: disabled")
 
     results, ratings = run_distributed_tournament(
         agents=agents,
@@ -840,6 +944,9 @@ def main():
         board_type=args.board,
         use_ramdrive=args.ramdrive,
         max_parallel_per_node=args.max_parallel,
+        min_ram_gb=args.min_ram,
+        retry_failed=not args.no_retry,
+        max_node_failures=args.max_node_failures,
     )
 
     if ratings:
