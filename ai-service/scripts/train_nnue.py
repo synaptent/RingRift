@@ -600,7 +600,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Resource guard: Training is HIGH priority (3)
     # Check resources before starting memory-intensive training
     # Brief warmup delay to let process launch CPU spike settle
-    if HAS_RESOURCE_GUARD:
+    skip_resource_guard = os.environ.get("RINGRIFT_SKIP_RESOURCE_GUARD", "").lower() in ("1", "true", "yes")
+    if HAS_RESOURCE_GUARD and not skip_resource_guard:
         import time
         time.sleep(1)  # Allow transient CPU spike from process launch to settle
         degradation = get_degradation_level()
