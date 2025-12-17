@@ -1,0 +1,42 @@
+# Unified Promotion Daemon Configuration
+# See scripts/unified_promotion_daemon.py for usage
+
+daemon:
+  # How often to check for new models (seconds)
+  check_interval_seconds: 300
+  # Directory to watch for models (relative to ai-service/)
+  models_dir: 'models'
+
+gauntlet:
+  # Games to play against each baseline opponent
+  games_per_baseline: 10
+  # Baseline opponents to test against
+  baselines:
+    - 'random'
+    - 'heuristic'
+  # Skip slow MCTS baseline for faster evaluation
+  fast_mode: true
+
+promotion:
+  # Minimum Elo improvement required for promotion
+  elo_threshold: 25.0
+  # Minimum games played before considering promotion
+  min_games: 50
+  # Minimum win rate against heuristic baseline
+  min_win_rate: 0.52
+  # Statistical confidence level for promotion decisions
+  confidence_level: 0.95
+
+cluster_sync:
+  # Whether to sync promoted models to cluster nodes
+  enabled: true
+  # Whether to restart P2P after model sync
+  restart_p2p: false
+
+notifications:
+  # Slack webhook URL (use environment variable)
+  slack_webhook: '${SLACK_WEBHOOK_URL}'
+  # Send notification on successful promotion
+  on_promotion: true
+  # Send notification on model rejection
+  on_rejection: false

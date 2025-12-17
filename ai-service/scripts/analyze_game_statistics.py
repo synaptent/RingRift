@@ -1060,6 +1060,7 @@ def collect_stats_from_jsonl(
     quarantine_writer: QuarantineWriter | None = None,
     data_quality: DataQualityMetrics | None = None,
     exclude_quarantined: bool = True,
+    ai_types_filter: set[str] | None = None,
 ) -> None:
     """Collect statistics from JSONL files and add to report."""
     for jsonl_path in jsonl_files:
@@ -1073,6 +1074,11 @@ def collect_stats_from_jsonl(
             data_quality=data_quality,
             exclude_quarantined=exclude_quarantined,
         ):
+            # Filter by AI type if specified
+            if ai_types_filter:
+                game_ai_type = game.get("_ai_type", "unknown")
+                if game_ai_type not in ai_types_filter:
+                    continue
             any_games = True
             board_type = game.get("board_type", "unknown")
             num_players = int(game.get("num_players", 2) or 2)
@@ -1372,6 +1378,7 @@ def collect_stats(
     quarantine_writer: QuarantineWriter | None = None,
     data_quality: DataQualityMetrics | None = None,
     exclude_quarantined: bool = True,
+    ai_types_filter: set[str] | None = None,
 ) -> AnalysisReport:
     """Collect statistics from all subdirectories in data_dir and optional JSONL files."""
     report = AnalysisReport()
@@ -1389,6 +1396,7 @@ def collect_stats(
             quarantine_writer=quarantine_writer,
             data_quality=data_quality,
             exclude_quarantined=exclude_quarantined,
+            ai_types_filter=ai_types_filter,
         )
 
     if data_dir.exists():
@@ -1494,7 +1502,8 @@ def generate_markdown_report(report: AnalysisReport) -> str:
         if stats.total_games == 0:
             continue
         territory = stats.victory_types.get("territory", 0)
-        ring_elim = stats.victory_types.get("ring_elimination", 0)
+        # "elimination" and "ring_elimination" may both exist depending on normalization
+        elimination = stats.victory_types.get("elimination", 0) + stats.victory_types.get("ring_elimination", 0)
         lps = stats.victory_types.get("lps", 0)
         stalemate = stats.victory_types.get("stalemate", 0)
         timeout = stats.victory_types.get("timeout", 0)
@@ -1509,7 +1518,7 @@ def generate_markdown_report(report: AnalysisReport) -> str:
         games_col = str(stats.total_games).rjust(5)
         lines.append(
             f"| {board_col} | {games_col} | "
-            f"{fmt_pct(territory)} | {fmt_pct(ring_elim)} | "
+            f"{fmt_pct(territory)} | {fmt_pct(elimination)} | "
             f"{fmt_pct(lps, 10)} | {fmt_pct(stalemate)} | {fmt_pct(timeout, 10)} |"
         )
 
@@ -2265,6 +2274,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Include records that have a winner but no moves/termination fields (often non-game logs).",
     )
     parser.add_argument(
+        "--ai-types",
+        type=str,
+        nargs="+",
+        help="Only include games with these AI types (e.g., --ai-types neural_net nn-minimax nnue-guided).",
+    )
+    parser.add_argument(
         "--quarantine-dir",
         type=Path,
         help="Directory to write quarantined records (malformed, timeout, unknown_board, no_winner).",
@@ -2412,6 +2427,9 @@ def main(argv: list[str] | None = None) -> int:
             if has_jsonl:
                 print(f"Including {len(jsonl_files)} JSONL file(s)...", file=sys.stderr)
 
+        # Convert AI types filter to set if provided
+        ai_types_filter = set(args.ai_types) if args.ai_types else None
+
         report = collect_stats(
             args.data_dir,
             jsonl_files if has_jsonl else None,
@@ -2421,6 +2439,7 @@ def main(argv: list[str] | None = None) -> int:
             quarantine_writer=quarantine_writer,
             data_quality=data_quality,
             exclude_quarantined=exclude_quarantined,
+            ai_types_filter=ai_types_filter,
         )
 
         if report.total_games() == 0 and not args.allow_empty:

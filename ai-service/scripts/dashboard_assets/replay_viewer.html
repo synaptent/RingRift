@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RingRift Game Replay</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        .header {
+            text-align: center;
+            padding: 20px;
+            border-bottom: 1px solid #333;
+        }
+        .header h1 {
+            color: #00d4ff;
+            font-size: 1.8rem;
+            margin-bottom: 5px;
+        }
+        .nav-links {
+            margin-top: 10px;
+        }
+        .nav-links a {
+            color: #00d4ff;
+            text-decoration: none;
+            margin: 0 15px;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .main-container {
+            display: grid;
+            grid-template-columns: 300px 1fr 280px;
+            min-height: calc(100vh - 80px);
+        }
+        /* Game Browser Panel */
+        .game-browser {
+            background: #16213e;
+            padding: 15px;
+            border-right: 1px solid #333;
+            overflow-y: auto;
+            max-height: calc(100vh - 80px);
+        }
+        .game-browser h3 {
+            color: #00d4ff;
+            margin-bottom: 15px;
+            font-size: 1rem;
+        }
+        .filters {
+            margin-bottom: 15px;
+        }
+        .filters select, .filters input {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            background: #0f3460;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #eee;
+        }
+        .game-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .game-item {
+            padding: 10px;
+            background: #0f3460;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .game-item:hover {
+            background: #1f3b6e;
+        }
+        .game-item.selected {
+            background: #00d4ff;
+            color: #1a1a2e;
+        }
+        .game-item .game-id {
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .game-item .game-info {
+            font-size: 0.75rem;
+            color: #888;
+            margin-top: 3px;
+        }
+        .game-item.selected .game-info {
+            color: #16213e;
+        }
+        /* Board Container */
+        .board-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: #0f3460;
+        }
+        .board-wrapper {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        #board {
+            display: grid;
+            gap: 2px;
+        }
+        .cell {
+            width: 50px;
+            height: 50px;
+            background: #1a1a2e;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .cell.highlight-from {
+            box-shadow: inset 0 0 0 3px #ffd93d;
+        }
+        .cell.highlight-to {
+            box-shadow: inset 0 0 0 3px #00ff88;
+        }
+        .ring {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+            position: relative;
+        }
+        .ring.player-1 { background: #00d4ff; color: #1a1a2e; }
+        .ring.player-2 { background: #ff6b6b; color: #fff; }
+        .ring.player-3 { background: #4ecdc4; color: #1a1a2e; }
+        .ring.player-4 { background: #ffd93d; color: #1a1a2e; }
+        .ring-stack {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            background: rgba(0,0,0,0.5);
+            color: #fff;
+            font-size: 0.7rem;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        .marker {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            position: absolute;
+            bottom: 4px;
+            right: 4px;
+        }
+        .marker.player-1 { background: #00d4ff; }
+        .marker.player-2 { background: #ff6b6b; }
+        .marker.player-3 { background: #4ecdc4; }
+        .marker.player-4 { background: #ffd93d; }
+        /* Replay Controls */
+        .replay-controls {
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .replay-controls button {
+            background: #00d4ff;
+            color: #1a1a2e;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+        .replay-controls button:hover {
+            background: #00b8e6;
+        }
+        .replay-controls button:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+        .move-counter {
+            color: #888;
+            font-size: 0.9rem;
+            min-width: 100px;
+            text-align: center;
+        }
+        .move-slider {
+            width: 200px;
+            cursor: pointer;
+        }
+        /* Info Panel */
+        .info-panel {
+            background: #16213e;
+            padding: 15px;
+            border-left: 1px solid #333;
+            overflow-y: auto;
+            max-height: calc(100vh - 80px);
+        }
+        .info-panel h3 {
+            color: #00d4ff;
+            margin-bottom: 15px;
+            font-size: 1rem;
+        }
+        .game-meta {
+            margin-bottom: 20px;
+        }
+        .game-meta p {
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+            color: #888;
+        }
+        .game-meta span {
+            color: #eee;
+        }
+        .move-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .move-entry {
+            padding: 6px 10px;
+            font-size: 0.8rem;
+            border-radius: 4px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            background: #0f3460;
+        }
+        .move-entry:hover {
+            background: #1f3b6e;
+        }
+        .move-entry.current {
+            background: #00d4ff;
+            color: #1a1a2e;
+        }
+        .move-entry .move-num {
+            color: #888;
+            margin-right: 8px;
+        }
+        .move-entry.current .move-num {
+            color: #16213e;
+        }
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            color: #888;
+            padding: 40px;
+        }
+        .empty-state h2 {
+            color: #00d4ff;
+            margin-bottom: 10px;
+        }
+        /* Hex board (SVG) */
+        #hex-board {
+            width: 500px;
+            height: 500px;
+        }
+        #hex-board .hex {
+            fill: #1a1a2e;
+            stroke: #333;
+            stroke-width: 1;
+        }
+        #hex-board .hex.highlight-from {
+            stroke: #ffd93d;
+            stroke-width: 3;
+        }
+        #hex-board .hex.highlight-to {
+            stroke: #00ff88;
+            stroke-width: 3;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Game Replay Viewer</h1>
+        <div class="nav-links">
+            <a href="/">Main Dashboard</a>
+            <a href="/training">Training Metrics</a>
+            <a href="/replay">Game Replay</a>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="game-browser">
+            <h3>Game Browser</h3>
+            <div class="filters">
+                <select id="board-filter">
+                    <option value="">All Board Types</option>
+                    <option value="square8">Square 8x8</option>
+                    <option value="square19">Square 19x19</option>
+                    <option value="hexagonal">Hexagonal</option>
+                </select>
+                <select id="winner-filter">
+                    <option value="">All Outcomes</option>
+                    <option value="1">Player 1 Won</option>
+                    <option value="2">Player 2 Won</option>
+                    <option value="draw">Draw</option>
+                </select>
+                <input type="text" id="game-search" placeholder="Search by game ID...">
+            </div>
+            <div class="game-list" id="game-list">
+                <p style="color: #888; padding: 10px;">Loading games...</p>
+            </div>
+            <button onclick="loadMoreGames()" style="width: 100%; margin-top: 10px; padding: 8px; background: #0f3460; border: 1px solid #333; color: #eee; border-radius: 4px; cursor: pointer;">
+                Load More
+            </button>
+        </div>
+
+        <div class="board-container">
+            <div id="board-area">
+                <div class="empty-state">
+                    <h2>No Game Selected</h2>
+                    <p>Select a game from the browser to view the replay</p>
+                </div>
+            </div>
+            <div class="replay-controls" id="controls" style="display: none;">
+                <button id="btn-first" onclick="goToMove(0)">|&lt;</button>
+                <button id="btn-prev" onclick="prevMove()">&lt;</button>
+                <span class="move-counter" id="move-counter">Move 0 / 0</span>
+                <button id="btn-next" onclick="nextMove()">&gt;</button>
+                <button id="btn-last" onclick="goToMove(totalMoves)">&gt;|</button>
+                <input type="range" class="move-slider" id="move-slider" min="0" max="0" value="0" oninput="goToMove(this.value)">
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <h3>Game Info</h3>
+            <div class="game-meta" id="game-meta">
+                <p>Board: <span id="meta-board">--</span></p>
+                <p>Players: <span id="meta-players">--</span></p>
+                <p>Winner: <span id="meta-winner">--</span></p>
+                <p>Moves: <span id="meta-moves">--</span></p>
+                <p>Duration: <span id="meta-duration">--</span></p>
+            </div>
+            <h3>Move List</h3>
+            <div class="move-list" id="move-list">
+                <p style="color: #888; font-size: 0.85rem;">Select a game to see moves</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="board_renderer.js"></script>
+    <script src="replay_viewer.js"></script>
+</body>
+</html>

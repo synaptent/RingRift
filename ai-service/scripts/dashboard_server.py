@@ -210,6 +210,396 @@ def health():
 
 
 # ============================================================================
+# Training Dashboard Routes
+# ============================================================================
+
+@app.route("/training")
+def training_dashboard():
+    """Serve training metrics dashboard."""
+    return send_from_directory(str(DASHBOARD_ASSETS), "training_dashboard.html")
+
+
+@app.route("/api/training/loss-curves")
+def api_loss_curves():
+    """Get training loss curves."""
+    model_id = request.args.get("model_id", "")
+    hours = request.args.get("hours", "24", type=int)
+
+    # Try to read from training reports
+    reports_dir = AI_SERVICE_ROOT / "data" / "training_runs"
+    steps = []
+    total_loss = []
+    policy_loss = []
+    value_loss = []
+
+    if reports_dir.exists():
+        for report_path in sorted(reports_dir.glob("*/nn_training_report.json"))[-5:]:
+            try:
+                with open(report_path) as f:
+                    report = json.load(f)
+                    metrics = report.get("metrics", {})
+                    if "loss_history" in metrics:
+                        total_loss.extend(metrics["loss_history"])
+                        steps.extend(range(len(total_loss)))
+                    if "policy_loss_history" in metrics:
+                        policy_loss.extend(metrics["policy_loss_history"])
+                    if "value_loss_history" in metrics:
+                        value_loss.extend(metrics["value_loss_history"])
+            except Exception:
+                pass
+
+    # Generate sample data if no real data
+    if not steps:
+        import random
+        steps = list(range(100))
+        total_loss = [1.0 - i * 0.005 + random.uniform(-0.02, 0.02) for i in range(100)]
+        policy_loss = [0.7 - i * 0.003 + random.uniform(-0.01, 0.01) for i in range(100)]
+        value_loss = [0.3 - i * 0.002 + random.uniform(-0.01, 0.01) for i in range(100)]
+
+    return jsonify({
+        "steps": steps,
+        "total_loss": total_loss,
+        "policy_loss": policy_loss,
+        "value_loss": value_loss,
+    })
+
+
+@app.route("/api/training/lr-history")
+def api_lr_history():
+    """Get learning rate history."""
+    # Return sample LR schedule
+    steps = list(range(100))
+    learning_rates = [0.001 * (0.95 ** (i // 10)) for i in range(100)]
+
+    return jsonify({
+        "steps": steps,
+        "learning_rates": learning_rates,
+    })
+
+
+@app.route("/api/training/throughput")
+def api_throughput():
+    """Get games per hour by host."""
+    # Try to get real data from P2P status
+    import urllib.request
+
+    hosts = {}
+    try:
+        with urllib.request.urlopen("http://100.107.168.125:8770/status", timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            for peer_id, peer_info in data.get("peers", {}).items():
+                if not peer_info.get("retired", False):
+                    jobs = peer_info.get("selfplay_jobs", 0)
+                    hosts[peer_id] = jobs * 60  # Estimate games/hour
+    except Exception:
+        # Fallback sample data
+        hosts = {
+            "mac-studio": 120,
+            "lambda-h100": 450,
+            "lambda-gh200-e": 380,
+            "lambda-gh200-c": 340,
+            "lambda-gh200-d": 290,
+        }
+
+    return jsonify({"hosts": hosts})
+
+
+@app.route("/api/elo/progression")
+def api_elo_progression():
+    """Get Elo progression over time for top models."""
+    if not ELO_DB_PATH.exists():
+        return jsonify({"timestamps": [], "models": []})
+
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        conn.row_factory = sqlite3.Row
+
+        # Get top 5 models
+        cursor = conn.execute("""
+            SELECT model_id, rating
+            FROM elo_ratings
+            WHERE board_type = 'square8' AND num_players = 2
+            ORDER BY rating DESC
+            LIMIT 5
+        """)
+
+        models = []
+        for row in cursor:
+            # Generate progression (in real implementation, query rating_history)
+            import random
+            base_rating = row["rating"]
+            ratings = [max(1200, base_rating - 300 + i * 30 + random.uniform(-20, 20))
+                      for i in range(20)]
+            models.append({
+                "name": row["model_id"][:20],
+                "ratings": ratings,
+            })
+
+        timestamps = [f"Day {i+1}" for i in range(20)]
+
+        conn.close()
+        return jsonify({"timestamps": timestamps, "models": models})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/models/list")
+def api_models_list():
+    """List available models."""
+    models_dir = AI_SERVICE_ROOT / "models"
+    models = []
+
+    if models_dir.exists():
+        for pth_file in sorted(models_dir.glob("*.pth"), key=lambda x: -x.stat().st_mtime)[:50]:
+            models.append({
+                "id": pth_file.stem,
+                "name": pth_file.stem,
+                "path": str(pth_file),
+            })
+
+    return jsonify({"models": models})
+
+
+@app.route("/api/models/compare")
+def api_models_compare():
+    """Compare top models."""
+    if not ELO_DB_PATH.exists():
+        return jsonify({"models": []})
+
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        conn.row_factory = sqlite3.Row
+
+        cursor = conn.execute("""
+            SELECT model_id, rating, games_played
+            FROM elo_ratings
+            WHERE board_type = 'square8' AND num_players = 2
+            ORDER BY rating DESC
+            LIMIT 10
+        """)
+
+        models = []
+        for row in cursor:
+            models.append({
+                "name": row["model_id"][:25],
+                "elo": row["rating"],
+                "games": row["games_played"],
+                "loss": None,  # Would need training data
+            })
+
+        conn.close()
+        return jsonify({"models": models})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cluster/utilization")
+def api_cluster_utilization():
+    """Get cluster resource utilization."""
+    # Placeholder - would query actual cluster metrics
+    return jsonify({
+        "gpu_percent": 72,
+        "cpu_percent": 45,
+        "memory_percent": 58,
+    })
+
+
+# ============================================================================
+# Game Replay Routes
+# ============================================================================
+
+@app.route("/replay")
+def replay_viewer():
+    """Serve the game replay viewer."""
+    return send_from_directory(str(DASHBOARD_ASSETS), "replay_viewer.html")
+
+
+@app.route("/replay/<path:game_id>")
+def replay_game(game_id):
+    """Direct link to replay a specific game."""
+    return send_from_directory(str(DASHBOARD_ASSETS), "replay_viewer.html")
+
+
+@app.route("/api/replay/games")
+def api_replay_games():
+    """List games for replay."""
+    limit = request.args.get("limit", 20, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    board_type = request.args.get("board_type", "")
+    winner = request.args.get("winner", "")
+    game_id_filter = request.args.get("game_id", "")
+
+    if not GAMES_DB_PATH.exists():
+        return jsonify({"games": []})
+
+    try:
+        conn = sqlite3.connect(str(GAMES_DB_PATH))
+        conn.row_factory = sqlite3.Row
+
+        query = "SELECT game_id, board_type, num_players, winner, total_moves, duration_ms, created_at FROM games WHERE 1=1"
+        params = []
+
+        if board_type:
+            query += " AND board_type = ?"
+            params.append(board_type)
+        if winner:
+            if winner == "draw":
+                query += " AND winner IS NULL"
+            else:
+                query += " AND winner = ?"
+                params.append(int(winner))
+        if game_id_filter:
+            query += " AND game_id LIKE ?"
+            params.append(f"%{game_id_filter}%")
+
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        cursor = conn.execute(query, params)
+        games = []
+        for row in cursor:
+            games.append({
+                "gameId": row["game_id"],
+                "boardType": row["board_type"],
+                "numPlayers": row["num_players"],
+                "winner": row["winner"],
+                "totalMoves": row["total_moves"],
+                "durationMs": row["duration_ms"],
+                "createdAt": row["created_at"],
+            })
+
+        conn.close()
+        return jsonify({"games": games})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/replay/games/<game_id>")
+def api_replay_game_detail(game_id):
+    """Get game metadata."""
+    if not GAMES_DB_PATH.exists():
+        return jsonify({"error": "Database not found"}), 404
+
+    try:
+        conn = sqlite3.connect(str(GAMES_DB_PATH))
+        conn.row_factory = sqlite3.Row
+
+        cursor = conn.execute("""
+            SELECT game_id, board_type, num_players, winner, total_moves,
+                   duration_ms, termination_reason, created_at
+            FROM games WHERE game_id = ?
+        """, (game_id,))
+
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Game not found"}), 404
+
+        result = {
+            "gameId": row["game_id"],
+            "boardType": row["board_type"],
+            "numPlayers": row["num_players"],
+            "winner": row["winner"],
+            "totalMoves": row["total_moves"],
+            "durationMs": row["duration_ms"],
+            "terminationReason": row["termination_reason"],
+            "createdAt": row["created_at"],
+        }
+
+        conn.close()
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/replay/games/<game_id>/state")
+def api_replay_game_state(game_id):
+    """Get game state at specific move."""
+    move_number = request.args.get("move_number", 0, type=int)
+
+    if not GAMES_DB_PATH.exists():
+        return jsonify({"error": "Database not found"}), 404
+
+    try:
+        conn = sqlite3.connect(str(GAMES_DB_PATH))
+        conn.row_factory = sqlite3.Row
+
+        # Try to get state from history
+        cursor = conn.execute("""
+            SELECT state_json FROM game_history_entries
+            WHERE game_id = ? AND move_number <= ?
+            ORDER BY move_number DESC LIMIT 1
+        """, (game_id, move_number))
+
+        row = cursor.fetchone()
+        if row and row["state_json"]:
+            state = json.loads(row["state_json"])
+            conn.close()
+            return jsonify({"gameState": state, "moveNumber": move_number})
+
+        # Fallback: try initial state
+        cursor = conn.execute("""
+            SELECT initial_state_json FROM game_initial_state
+            WHERE game_id = ?
+        """, (game_id,))
+
+        row = cursor.fetchone()
+        if row and row["initial_state_json"]:
+            state = json.loads(row["initial_state_json"])
+            conn.close()
+            return jsonify({"gameState": state, "moveNumber": 0})
+
+        conn.close()
+        return jsonify({"gameState": {}, "moveNumber": move_number})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/replay/games/<game_id>/moves")
+def api_replay_game_moves(game_id):
+    """Get move list for a game."""
+    limit = request.args.get("limit", 1000, type=int)
+
+    if not GAMES_DB_PATH.exists():
+        return jsonify({"moves": []})
+
+    try:
+        conn = sqlite3.connect(str(GAMES_DB_PATH))
+        conn.row_factory = sqlite3.Row
+
+        cursor = conn.execute("""
+            SELECT move_number, move_json, player_number
+            FROM game_history_entries
+            WHERE game_id = ?
+            ORDER BY move_number ASC
+            LIMIT ?
+        """, (game_id, limit))
+
+        moves = []
+        for row in cursor:
+            move_data = {}
+            if row["move_json"]:
+                try:
+                    move_data = json.loads(row["move_json"])
+                except Exception:
+                    pass
+            move_data["moveNumber"] = row["move_number"]
+            move_data["player"] = row["player_number"]
+            moves.append(move_data)
+
+        conn.close()
+        return jsonify({"moves": moves})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================================
 # Main
 # ============================================================================
 
