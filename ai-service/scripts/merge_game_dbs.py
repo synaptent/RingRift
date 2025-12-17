@@ -61,16 +61,69 @@ From the ``ai-service`` root::
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import sqlite3
 import sys
 import uuid
-from typing import Any, Dict, List, Set
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
 
 # Allow imports from app/
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db import GameReplayDB  # noqa: E402
 from app.models import GameState, Move  # noqa: E402
+
+
+# Merge state tracking file
+MERGE_STATE_FILE = ".merge_state.json"
+
+
+def _enable_wal_mode(db_path: str) -> None:
+    """Enable WAL mode for better concurrency and crash recovery."""
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+        conn.close()
+    except Exception as e:
+        print(f"[merge_game_dbs] Warning: Could not enable WAL mode: {e}")
+
+
+def _load_merge_state(output_path: str) -> Dict[str, Any]:
+    """Load merge state from previous run for crash recovery."""
+    state_file = Path(output_path).parent / MERGE_STATE_FILE
+    if state_file.exists():
+        try:
+            with open(state_file) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"processed_dbs": [], "seen_game_ids": []}
+
+
+def _save_merge_state(output_path: str, state: Dict[str, Any]) -> None:
+    """Save merge state for crash recovery."""
+    state_file = Path(output_path).parent / MERGE_STATE_FILE
+    state["updated_at"] = datetime.now().isoformat()
+    try:
+        with open(state_file, "w") as f:
+            json.dump(state, f)
+    except Exception as e:
+        print(f"[merge_game_dbs] Warning: Could not save merge state: {e}")
+
+
+def _clear_merge_state(output_path: str) -> None:
+    """Clear merge state after successful completion."""
+    state_file = Path(output_path).parent / MERGE_STATE_FILE
+    try:
+        if state_file.exists():
+            state_file.unlink()
+    except Exception:
+        pass
 
 
 def _load_final_state(
@@ -167,8 +220,6 @@ def _merge_single_db(
         metadata: Dict[str, Any] = {}
         if raw_meta_json:
             try:
-                import json
-
                 metadata = json.loads(raw_meta_json)
             except Exception:
                 metadata = {}
@@ -258,6 +309,17 @@ def main() -> None:
         action="store_true",
         help="Disable state compression in the output DB.",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from previous interrupted merge (uses state file).",
+    )
+    parser.add_argument(
+        "--wal-mode",
+        action="store_true",
+        default=True,
+        help="Enable WAL mode for better crash recovery (default: enabled).",
+    )
 
     args = parser.parse_args()
 
@@ -270,16 +332,30 @@ def main() -> None:
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
+    # Enable WAL mode for crash recovery
+    if args.wal_mode:
+        _enable_wal_mode(args.output)
+
     dest_db = GameReplayDB(args.output)
 
     total_stats = {"total": 0, "merged": 0, "skipped_conflict": 0, "skipped_dedupe": 0, "errors": 0}
 
+    # Load previous state for crash recovery
+    merge_state = _load_merge_state(args.output) if args.resume else {"processed_dbs": [], "seen_game_ids": []}
+    processed_dbs = set(merge_state.get("processed_dbs", []))
+
     # Initialize cross-source deduplication set if enabled
-    seen_game_ids: Set[str] | None = set() if args.dedupe_by_game_id else None
+    seen_game_ids: Set[str] | None = None
+    if args.dedupe_by_game_id:
+        seen_game_ids = set(merge_state.get("seen_game_ids", []))
 
     print(f"[merge_game_dbs] Merging {len(args.db)} database(s) into {args.output}")
+    if args.resume and processed_dbs:
+        print(f"[merge_game_dbs] Resuming: {len(processed_dbs)} DBs already processed")
     if args.dedupe_by_game_id:
         print("[merge_game_dbs] Cross-source deduplication enabled")
+    if args.wal_mode:
+        print("[merge_game_dbs] WAL mode enabled for crash recovery")
     if args.store_history_entries:
         print(
             "[merge_game_dbs] WARNING: --store-history-entries enabled; output DBs can grow very large.",
@@ -289,6 +365,11 @@ def main() -> None:
     compress_states = bool(args.compress_states) and not bool(args.no_compress_states)
 
     for src in args.db:
+        # Skip already processed DBs when resuming
+        src_norm = os.path.normpath(os.path.abspath(src))
+        if src_norm in processed_dbs:
+            print(f"[merge_game_dbs] Skipping (already processed): {src}")
+            continue
         if not os.path.exists(src):
             print(f"[merge_game_dbs] WARNING: Source DB not found: {src}, skipping")
             continue
@@ -304,6 +385,17 @@ def main() -> None:
         )
         for key in total_stats:
             total_stats[key] += stats.get(key, 0)
+
+        # Save state after each DB for crash recovery
+        processed_dbs.add(src_norm)
+        _save_merge_state(args.output, {
+            "processed_dbs": list(processed_dbs),
+            "seen_game_ids": list(seen_game_ids) if seen_game_ids else [],
+            "total_stats": total_stats,
+        })
+
+    # Clear state file on successful completion
+    _clear_merge_state(args.output)
 
     print("\n[merge_game_dbs] Merge complete.")
     print(f"  Total games seen:     {total_stats['total']}")
