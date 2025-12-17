@@ -322,17 +322,18 @@ class IntegratedTrainingManager:
         """Initialize ELO-weighted sampling."""
         try:
             from app.training.elo_weighting import (
-                EloWeightedSampler,
                 EloWeightConfig,
+                compute_elo_weights,
             )
 
-            elo_config = EloWeightConfig(
+            # Store config for use in compute_sample_weights
+            self._elo_config = EloWeightConfig(
                 base_elo=self.config.elo_base_rating,
-                weight_scale=self.config.elo_weight_scale,
+                elo_scale=self.config.elo_weight_scale,
                 min_weight=self.config.elo_min_weight,
                 max_weight=self.config.elo_max_weight,
             )
-            self._elo_sampler = EloWeightedSampler(elo_config)
+            self._elo_sampler = True  # Flag that ELO weighting is enabled
             logger.info("[IntegratedEnhancements] ELO weighting initialized")
         except Exception as e:
             logger.warning(f"[IntegratedEnhancements] Failed to init ELO weighting: {e}")
@@ -430,7 +431,7 @@ class IntegratedTrainingManager:
                 return
 
             reanalysis_config = ReanalysisConfig(
-                blend_ratio=self.config.reanalysis_blend_ratio,
+                value_blend_ratio=self.config.reanalysis_blend_ratio,
                 batch_size=self.config.reanalysis_batch_size,
             )
             self._reanalysis_engine = ReanalysisEngine(self.model, reanalysis_config)
@@ -457,17 +458,24 @@ class IntegratedTrainingManager:
     def compute_sample_weights(
         self,
         opponent_elos: np.ndarray,
+        model_elo: float = 1500.0,
     ) -> np.ndarray:
         """Compute sample weights based on opponent ELO.
 
         Args:
             opponent_elos: Array of opponent ELO ratings
+            model_elo: Current model ELO rating
 
         Returns:
             Array of sample weights
         """
-        if self._elo_sampler is not None:
-            return self._elo_sampler.compute_weights(opponent_elos)
+        if self._elo_sampler is not None and hasattr(self, '_elo_config'):
+            from app.training.elo_weighting import compute_elo_weights
+            return compute_elo_weights(
+                opponent_elos,
+                model_elo=model_elo,
+                elo_scale=self._elo_config.elo_scale,
+            )
         return np.ones(len(opponent_elos))
 
     def augment_batch(
