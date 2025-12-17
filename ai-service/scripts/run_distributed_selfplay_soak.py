@@ -111,6 +111,7 @@ BOARD_CONFIGS: Dict[str, Dict[int, int]] = {
     "square8": {2: 400, 3: 600, 4: 800},
     "square19": {2: 2000, 3: 3000, 4: 4000},
     "hexagonal": {2: 2000, 3: 3000, 4: 4000},
+    "hex8": {2: 400, 3: 600, 4: 800},  # Small hex board, similar to square8
 }
 
 # Memory requirements per board type (in GB)
@@ -122,6 +123,7 @@ BOARD_MEMORY_REQUIREMENTS: Dict[str, int] = {
     "square8": 8,  # 8GB minimum for 8x8 games
     "square19": 48,  # 48GB minimum for 19x19 games (64GB machine has pressure)
     "hexagonal": 48,  # 48GB minimum for hex games
+    "hex8": 8,  # 8GB minimum for small hex (similar to square8)
 }
 
 # Default config file paths (relative to ai-service/)

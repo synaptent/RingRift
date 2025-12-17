@@ -209,6 +209,8 @@ configurations:
     num_players: [2, 3, 4]
   - board_type: 'hexagonal'
     num_players: [2, 3, 4]
+  - board_type: 'hex8'
+    num_players: [2, 3, 4]
 
 # External drive sync (Mac Studio only)
 external_drive_sync:
@@ -370,6 +372,26 @@ selfplay:
   mcts_simulations: 200
   temperature: 0.5
   noise_fraction: 0.25
+
+  # Board type weights (even distribution with hex8)
+  # Used for balanced training data across all board types
+  board_type_weights:
+    square8: 0.25
+    square19: 0.25
+    hexagonal: 0.25
+    hex8: 0.25
+
+  # AI type weights (prioritize NN-guided for higher quality games)
+  # Goal: 60%+ NN-guided games for better training signal
+  ai_type_weights:
+    gumbel_mcts: 0.30 # 30% - Highest quality search
+    policy_only: 0.30 # 30% - Fast NN-only (volume)
+    nnue_guided: 0.15 # 15% - NNUE evaluation
+    mcts: 0.10 # 10% - Traditional MCTS
+    descent: 0.05 # 5% - Gradient search
+    heuristic: 0.05 # 5% - Baseline comparison
+    minimax: 0.03 # 3% - Paranoid search
+    random: 0.02 # 2% - Weak baseline (minimal)
 
 # Tournament settings (shared across all tournament scripts)
 tournament:

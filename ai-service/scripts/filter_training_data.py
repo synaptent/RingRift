@@ -65,6 +65,22 @@ class GameQuality:
     winner_elo: Optional[float]
     num_moves: int
     quality_weight: float
+    ai_type: str = "unknown"
+    victory_type: str = "unknown"
+    is_timeout: bool = False
+
+
+# NN-guided AI types for filtering
+NN_GUIDED_AI_TYPES = {
+    "gumbel_mcts", "gumbel-mcts",
+    "policy_only", "policy-only",
+    "nnue_guided", "nnue-guided",
+    "neural_net", "neural-net",
+    "nn_vs_nn_tournament",
+    "nn-minimax", "nn_minimax",
+    "nn-descent", "nn_descent",
+    "descent",  # Also NN-guided
+}
 
 
 def get_elo_ratings() -> Dict[str, float]:
@@ -174,6 +190,22 @@ def analyze_game(
         # Calculate quality weight
         quality_weight = calculate_quality_weight(avg_elo, min_elo)
 
+        # Extract AI type
+        ai_type = game_data.get("ai_type", game_data.get("_ai_type", "unknown"))
+        if ai_type == "unknown":
+            # Try to infer from source or participants
+            source = game_data.get("source", "")
+            if "gumbel" in source.lower():
+                ai_type = "gumbel_mcts"
+            elif "policy" in source.lower():
+                ai_type = "policy_only"
+            elif "nnue" in source.lower():
+                ai_type = "nnue_guided"
+
+        # Extract victory type and timeout status
+        victory_type = game_data.get("victory_type", game_data.get("termination_reason", "unknown"))
+        is_timeout = "timeout" in str(victory_type).lower()
+
         return GameQuality(
             game_id=game_id,
             file_path=file_path,
@@ -185,6 +217,9 @@ def analyze_game(
             winner_elo=winner_elo,
             num_moves=num_moves,
             quality_weight=quality_weight,
+            ai_type=ai_type,
+            victory_type=victory_type,
+            is_timeout=is_timeout,
         )
 
     except Exception as e:
@@ -199,18 +234,32 @@ def analyze_jsonl_file(
     games = []
 
     try:
-        opener = gzip.open if file_path.suffix == ".gz" else open
-        with opener(file_path, "rt") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    game_data = json.loads(line)
-                    quality = analyze_game(game_data, str(file_path), elo_ratings)
-                    if quality:
-                        games.append(quality)
-                except json.JSONDecodeError:
-                    continue
+        # Detect gzip by magic bytes or extension
+        is_gzip = str(file_path).endswith('.gz')
+        if not is_gzip:
+            try:
+                with open(file_path, 'rb') as check_f:
+                    magic = check_f.read(2)
+                    is_gzip = magic == b'\x1f\x8b'
+            except Exception:
+                pass
+
+        opener = gzip.open if is_gzip else open
+        with opener(file_path, "rt", encoding="utf-8") as f:
+            try:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        game_data = json.loads(line)
+                        quality = analyze_game(game_data, str(file_path), elo_ratings)
+                        if quality:
+                            games.append(quality)
+                    except json.JSONDecodeError:
+                        continue
+            except (EOFError, OSError):
+                # Handle truncated gzip files
+                pass
     except Exception as e:
         print(f"Error reading {file_path}: {e}")
 
@@ -222,6 +271,9 @@ def filter_games(
     min_avg_elo: float = DEFAULT_MIN_AVG_ELO,
     min_winner_elo: float = DEFAULT_MIN_WINNER_ELO,
     min_moves: int = 10,
+    ai_types_filter: Optional[set] = None,
+    exclude_timeout: bool = False,
+    exclude_random: bool = False,
 ) -> List[GameQuality]:
     """Filter games based on quality criteria."""
     filtered = []
@@ -237,6 +289,18 @@ def filter_games(
 
         # Filter by minimum moves (avoid trivial games)
         if game.num_moves < min_moves:
+            continue
+
+        # Filter by AI type if specified
+        if ai_types_filter and game.ai_type not in ai_types_filter:
+            continue
+
+        # Exclude timeout games
+        if exclude_timeout and game.is_timeout:
+            continue
+
+        # Exclude games with random opponent
+        if exclude_random and "random" in game.ai_type.lower():
             continue
 
         filtered.append(game)
@@ -333,11 +397,28 @@ def main():
     parser = argparse.ArgumentParser(description="Filter training data by quality")
     parser.add_argument("--board", type=str, help="Filter specific board type")
     parser.add_argument("--players", type=int, help="Filter specific player count")
+    parser.add_argument("--data-dir", type=str, help="Data directory to scan (default: data/selfplay)")
     parser.add_argument("--min-avg-elo", type=float, default=DEFAULT_MIN_AVG_ELO, help=f"Minimum average Elo (default: {DEFAULT_MIN_AVG_ELO})")
     parser.add_argument("--min-winner-elo", type=float, default=DEFAULT_MIN_WINNER_ELO, help=f"Minimum winner Elo (default: {DEFAULT_MIN_WINNER_ELO})")
     parser.add_argument("--stats", action="store_true", help="Show statistics only")
     parser.add_argument("--create-weighted-npz", action="store_true", help="Create weighted training data")
     parser.add_argument("--output-dir", type=str, help="Output directory for filtered data")
+    parser.add_argument(
+        "--ai-types",
+        type=str,
+        nargs="+",
+        help="Only include games with these AI types (e.g., --ai-types gumbel_mcts policy_only nnue-guided)",
+    )
+    parser.add_argument(
+        "--exclude-timeout",
+        action="store_true",
+        help="Exclude games that ended in timeout",
+    )
+    parser.add_argument(
+        "--exclude-random",
+        action="store_true",
+        help="Exclude games with random AI opponent",
+    )
 
     args = parser.parse_args()
 
@@ -346,19 +427,20 @@ def main():
     print(f"Loaded {len(elo_ratings)} Elo ratings")
 
     # Find JSONL files
-    print("\nScanning training data...")
+    data_dir = Path(args.data_dir) if args.data_dir else SELFPLAY_DIR
+    print(f"\nScanning training data in {data_dir}...")
     all_games = []
 
     patterns = []
     if args.board and args.players:
-        patterns.append(f"*{args.board}*{args.players}p*.jsonl")
+        patterns.append(f"*{args.board}*{args.players}p*.jsonl*")
     elif args.board:
-        patterns.append(f"*{args.board}*.jsonl")
+        patterns.append(f"*{args.board}*.jsonl*")
     else:
-        patterns.append("*.jsonl")
+        patterns.append("*.jsonl*")
 
     for pattern in patterns:
-        for jsonl_file in SELFPLAY_DIR.rglob(pattern):
+        for jsonl_file in data_dir.rglob(pattern):
             games = analyze_jsonl_file(jsonl_file, elo_ratings)
             all_games.extend(games)
             if games:
@@ -366,16 +448,43 @@ def main():
 
     print(f"\nTotal games found: {len(all_games)}")
 
+    # Build AI types filter set
+    ai_types_filter = set(args.ai_types) if args.ai_types else None
+    if ai_types_filter:
+        print(f"Filtering to AI types: {ai_types_filter}")
+
     if args.stats:
         print_quality_stats(all_games, "All Training Data")
 
         # Also show filtered stats
-        filtered = filter_games(all_games, args.min_avg_elo, args.min_winner_elo)
-        print_quality_stats(filtered, f"Filtered (avg Elo >= {args.min_avg_elo})")
+        filtered = filter_games(
+            all_games,
+            args.min_avg_elo,
+            args.min_winner_elo,
+            ai_types_filter=ai_types_filter,
+            exclude_timeout=args.exclude_timeout,
+            exclude_random=args.exclude_random,
+        )
+        filter_desc = f"Filtered (avg Elo >= {args.min_avg_elo}"
+        if ai_types_filter:
+            filter_desc += f", AI types: {len(ai_types_filter)}"
+        if args.exclude_timeout:
+            filter_desc += ", no timeout"
+        if args.exclude_random:
+            filter_desc += ", no random"
+        filter_desc += ")"
+        print_quality_stats(filtered, filter_desc)
         return
 
     # Filter games
-    filtered = filter_games(all_games, args.min_avg_elo, args.min_winner_elo)
+    filtered = filter_games(
+        all_games,
+        args.min_avg_elo,
+        args.min_winner_elo,
+        ai_types_filter=ai_types_filter,
+        exclude_timeout=args.exclude_timeout,
+        exclude_random=args.exclude_random,
+    )
     print(f"\nFiltered to {len(filtered)} high-quality games")
 
     print_quality_stats(filtered)

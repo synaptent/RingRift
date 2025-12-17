@@ -90,19 +90,19 @@ WEAK_AI_TYPES = [
 ]
 
 # GPU-optimized weight distribution
-# Prioritizes GPU-heavy types for 36-44% GPU utilization
+# Prioritizes NN-guided types for high-quality training data (75% NN-guided)
 GPU_OPTIMIZED_WEIGHTS: Dict[str, float] = {
-    "gumbel_mcts": 0.20,    # 20% - Top priority, best quality
-    "policy_only": 0.15,    # 15% - Fast GPU policy
-    "gpu_minimax": 0.12,    # 12% - GPU batched search
-    "mcts": 0.10,           # 10% - MCTS exploration
-    "descent": 0.10,        # 10% - Gradient search
-    "minimax": 0.08,        # 8% - Paranoid search
-    "maxn": 0.08,           # 8% - Max-N search
-    "brs": 0.07,            # 7% - Fast best-reply
-    "heuristic": 0.05,      # 5% - Baseline
-    "random": 0.03,         # 3% - Weak diversity
-    "neural_demo": 0.02,    # 2% - Experimental
+    "gumbel_mcts": 0.30,    # 30% - Top priority, best quality search
+    "policy_only": 0.30,    # 30% - Fast GPU policy (volume)
+    "gpu_minimax": 0.08,    # 8% - GPU batched search
+    "mcts": 0.08,           # 8% - MCTS exploration
+    "descent": 0.07,        # 7% - Gradient search (NN-guided)
+    "minimax": 0.05,        # 5% - Paranoid search
+    "maxn": 0.04,           # 4% - Max-N search
+    "brs": 0.03,            # 3% - Fast best-reply
+    "heuristic": 0.03,      # 3% - Baseline
+    "random": 0.01,         # 1% - Weak diversity (minimal)
+    "neural_demo": 0.01,    # 1% - Experimental
 }
 
 # CPU-optimized weight distribution (for CPU-only nodes)
