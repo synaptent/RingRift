@@ -1649,6 +1649,9 @@ def generate_dataset_gpu_parallel(
     all_policy_indices = []
     all_policy_values = []
 
+    # Initialize data quality tracker (Section 4.4: Self-Play Data Quality)
+    quality_tracker = DataQualityTracker()
+
     # Process games in batches
     num_batches = (num_games + gpu_batch_size - 1) // gpu_batch_size
     games_generated = 0
@@ -1706,6 +1709,11 @@ def generate_dataset_gpu_parallel(
             env = make_env(env_config)
             game_seed = batch_seed + g if batch_seed is not None else None
             state = env.reset(seed=game_seed)
+
+            # Start data quality tracking for this game
+            quality_tracker.start_game()
+            if hasattr(state, 'zobrist_hash') and state.zobrist_hash:
+                quality_tracker.record_position(state.zobrist_hash)
 
             game_samples = []
             history_buffer = []
@@ -1792,10 +1800,23 @@ def generate_dataset_gpu_parallel(
                 # Apply move to advance state
                 try:
                     state, _, done, _ = env.step(move)
+                    # Record position hash for data quality tracking
+                    if hasattr(state, 'zobrist_hash') and state.zobrist_hash:
+                        quality_tracker.record_position(state.zobrist_hash)
                     if done:
                         break
                 except Exception:
                     break
+
+            # Finish data quality tracking for this game
+            quality_metrics = quality_tracker.finish_game()
+            if quality_metrics["below_threshold"]:
+                logger.warning(
+                    f"LOW_POSITION_UNIQUENESS [GPU batch {batch_idx+1}, game {g+1}]: "
+                    f"unique_positions={quality_metrics['unique_positions']}, "
+                    f"total_moves={quality_metrics['total_moves']}, "
+                    f"ratio={quality_metrics['uniqueness_ratio']:.2f}"
+                )
 
             # Calculate outcomes and add to dataset
             total_game_moves = len(game_samples)
@@ -1828,6 +1849,7 @@ def generate_dataset_gpu_parallel(
 
     # Save to NPZ
     print(f"\nGPU Parallel: Generated {len(all_values)} total samples from {games_generated} games")
+    quality_tracker.log_summary()
 
     output_path = output_file
     if not os.path.isabs(output_file):

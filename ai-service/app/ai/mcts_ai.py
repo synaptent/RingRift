@@ -44,6 +44,84 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Module-level cache for NNUE policy models to avoid reloading per MCTSAI instance
+# Key: (board_type.value, num_players) -> RingRiftNNUEWithPolicy model
+_NNUE_POLICY_CACHE: Dict[Tuple[str, int], Any] = {}
+_NNUE_POLICY_CACHE_LOCK = None  # Lazy init threading lock
+
+
+def _get_cached_nnue_policy(board_type: BoardType, num_players: int) -> Optional[Any]:
+    """Get cached NNUE policy model or load and cache it."""
+    global _NNUE_POLICY_CACHE_LOCK
+
+    cache_key = (board_type.value, num_players)
+
+    # Fast path - already cached
+    if cache_key in _NNUE_POLICY_CACHE:
+        return _NNUE_POLICY_CACHE[cache_key]
+
+    # Lazy init lock
+    if _NNUE_POLICY_CACHE_LOCK is None:
+        import threading
+        _NNUE_POLICY_CACHE_LOCK = threading.Lock()
+
+    with _NNUE_POLICY_CACHE_LOCK:
+        # Double-check after acquiring lock
+        if cache_key in _NNUE_POLICY_CACHE:
+            return _NNUE_POLICY_CACHE[cache_key]
+
+        try:
+            import torch
+            from .nnue_policy import RingRiftNNUEWithPolicy
+            import re
+
+            model_path = os.path.join(
+                os.path.dirname(__file__), "..", "..",
+                "models", "nnue", f"nnue_policy_{board_type.value}_{num_players}p.pt"
+            )
+            model_path = os.path.normpath(model_path)
+
+            if os.path.exists(model_path):
+                state_dict = torch.load(model_path, map_location="cpu", weights_only=False)
+
+                # Extract hidden dim from checkpoint
+                hidden_dim = 128
+                num_hidden_layers = 2
+                if isinstance(state_dict, dict):
+                    for key in state_dict.keys():
+                        match = re.match(r"fc1\.weight", key)
+                        if match and hasattr(state_dict[key], "shape"):
+                            hidden_dim = state_dict[key].shape[0]
+                            break
+                    num_fc_keys = sum(1 for k in state_dict.keys() if k.startswith("fc") and k.endswith(".weight"))
+                    if num_fc_keys >= 2:
+                        num_hidden_layers = num_fc_keys - 1
+
+                model = RingRiftNNUEWithPolicy(
+                    board_type=board_type,
+                    hidden_dim=hidden_dim,
+                    num_hidden_layers=num_hidden_layers,
+                )
+                model.load_state_dict(state_dict)
+                model.eval()
+
+                _NNUE_POLICY_CACHE[cache_key] = model
+                logger.info(
+                    f"NNUE Policy Cache: Loaded model for {board_type.value}_{num_players}p "
+                    f"(hidden={hidden_dim}, layers={num_hidden_layers})"
+                )
+                return model
+            else:
+                # Mark as None to avoid repeated load attempts
+                _NNUE_POLICY_CACHE[cache_key] = None
+                logger.debug(f"NNUE Policy Cache: No model at {model_path}")
+                return None
+
+        except Exception as e:
+            logger.warning(f"NNUE Policy Cache: Failed to load model: {e}")
+            _NNUE_POLICY_CACHE[cache_key] = None
+            return None
+
 
 def _pos_key(pos: Optional[Any]) -> Optional[str]:
     if pos is None:
@@ -972,75 +1050,16 @@ class MCTSAI(HeuristicAI):
 
         This provides policy priors when no neural network is available,
         or can be used as a faster alternative for early MCTS expansions.
+
+        Uses module-level cache to avoid reloading the model for each MCTSAI instance.
         """
         if not self._pending_nnue_policy_init:
             return
 
         self._pending_nnue_policy_init = False
 
-        try:
-            import torch  # Lazy import
-            from .nnue_policy import RingRiftNNUEWithPolicy
-            import re
-
-            # Try to load NNUE policy model checkpoint
-            model_path = os.path.join(
-                os.path.dirname(__file__), "..", "..",
-                "models", "nnue", f"nnue_policy_{board_type.value}_{num_players}p.pt"
-            )
-            model_path = os.path.normpath(model_path)
-
-            if os.path.exists(model_path):
-                checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
-                state_dict = checkpoint
-                hidden_dim = 256
-                num_hidden_layers = 2
-
-                if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-                    state_dict = checkpoint["model_state_dict"]
-                    hidden_dim = int(checkpoint.get("hidden_dim") or hidden_dim)
-                    num_hidden_layers = int(checkpoint.get("num_hidden_layers") or num_hidden_layers)
-
-                # Infer hidden_dim from accumulator weight if available
-                if isinstance(state_dict, dict):
-                    try:
-                        accumulator_weight = state_dict.get("accumulator.weight")
-                        if accumulator_weight is not None and hasattr(accumulator_weight, "shape"):
-                            hidden_dim = int(accumulator_weight.shape[0])
-                    except Exception:
-                        pass
-
-                    # Infer num_hidden_layers from state dict keys
-                    try:
-                        layer_indices = set()
-                        for key in state_dict:
-                            match = re.match(r"hidden\.(\d+)\.weight$", key)
-                            if match:
-                                layer_indices.add(int(match.group(1)))
-                        if layer_indices:
-                            num_hidden_layers = len(layer_indices)
-                    except Exception:
-                        pass
-
-                self.nnue_policy_model = RingRiftNNUEWithPolicy(
-                    board_type=board_type,
-                    hidden_dim=hidden_dim,
-                    num_hidden_layers=num_hidden_layers,
-                )
-                if not isinstance(state_dict, dict):
-                    raise TypeError(f"Unexpected NNUE checkpoint: {type(state_dict).__name__}")
-                self.nnue_policy_model.load_state_dict(state_dict)
-                self.nnue_policy_model.eval()
-                logger.info(
-                    f"MCTSAI: Loaded NNUE policy model from {model_path} "
-                    f"(hidden={hidden_dim}, layers={num_hidden_layers})"
-                )
-            else:
-                logger.debug(
-                    f"MCTSAI: No NNUE policy model found at {model_path}"
-                )
-        except Exception as e:
-            logger.warning(f"MCTSAI: Failed to load NNUE policy model: {e}")
+        # Use cached model loading to avoid repeated disk I/O
+        self.nnue_policy_model = _get_cached_nnue_policy(board_type, num_players)
 
     def _compute_nnue_policy(
         self,
