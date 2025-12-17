@@ -4,7 +4,7 @@
 
 [project]
 name = "ringrift-ai-service"
-version = "0.1.0"
+version = "0.1.0-beta"
 description = "RingRift AI Service - Game analysis and self-play engine"
 requires-python = ">=3.10"
 

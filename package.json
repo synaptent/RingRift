@@ -1,6 +1,6 @@
 {
   "name": "ringrift",
-  "version": "1.0.0",
+  "version": "0.1.0-beta",
   "description": "Web-based multiplayer RingRift game",
   "main": "dist/server/index.js",
   "scripts": {
