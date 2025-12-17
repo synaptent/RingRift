@@ -1,19 +1,34 @@
 # Consolidation Roadmap
 
+> **Last Updated**: 2025-12-17
+> **Status**: In Progress
+
 This document outlines identified consolidation opportunities in the RingRift AI Service codebase and provides a roadmap for addressing them.
 
 ## Overview
 
 The codebase has evolved with multiple contributors and use cases, resulting in some duplication and parallel implementations. This roadmap prioritizes consolidation work based on impact and risk.
 
+## Recent Progress (December 2025)
+
+### Completed Quick Wins
+
+1. ✅ **Unified thresholds.py** - `app/config/thresholds.py` created with all canonical threshold values
+2. ✅ **IntegratedEnhancementsConfig** - Added to canonical `app/config/unified_config.py`
+3. ✅ **Factory functions** - `create_training_manager()` added to unified_config
+4. ✅ **Both import paths** - Verified working: `app.config.unified_config` and `scripts.unified_loop.config`
+5. ✅ **Cross-references** - Header comments added pointing to canonical locations
+
 ## Priority 1: Configuration Consolidation
+
+> **Status**: Partially Complete (Quick wins done, full merge pending)
 
 ### Issue: Duplicate Config Classes
 
 **Files:**
 
-- `app/config/unified_config.py` (833 lines) - Canonical location, 10 importers
-- `scripts/unified_loop/config.py` (1043 lines) - Extended version, 2 importers
+- `app/config/unified_config.py` (~970 lines) - Canonical location, 10+ importers
+- `scripts/unified_loop/config.py` (~1080 lines) - Extended version, 2 importers
 
 **Duplicated Classes:**
 | Class | app/config | scripts/unified_loop |

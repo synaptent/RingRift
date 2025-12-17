@@ -1,6 +1,6 @@
 # RingRift Training Features Reference
 
-> **Last Updated**: 2025-12-17 (Integrated Training Enhancements - auxiliary tasks, gradient surgery, batch scheduling, background eval, ELO weighting, curriculum learning, reanalysis)
+> **Last Updated**: 2025-12-17 (Consolidated Training Modules - unified checkpoint, distributed, orchestrator)
 > **Status**: Active
 
 This document provides a comprehensive reference for all training features, parameters, and techniques available in the RingRift AI training pipeline.
@@ -16,14 +16,15 @@ This document provides a comprehensive reference for all training features, para
 7. [Architecture Search & Pretraining](#architecture-search--pretraining)
 8. [Phase 2 Advanced Training Features](#phase-2-advanced-training-features)
 9. [Integrated Training Enhancements](#integrated-training-enhancements-december-2025)
-10. [Learning Rate Scheduling](#learning-rate-scheduling)
-11. [Batch Size Management](#batch-size-management)
-12. [Model Architecture Selection](#model-architecture-selection)
-13. [CLI Arguments Reference](#cli-arguments-reference)
-14. [Parallel Selfplay Generation](#parallel-selfplay-generation)
-15. [Temperature Scheduling](#temperature-scheduling)
-16. [Value Calibration Tracking](#value-calibration-tracking)
-17. [Prometheus Metrics Reference](#prometheus-metrics-reference)
+10. [Consolidated Training Modules](#consolidated-training-modules-december-2025)
+11. [Learning Rate Scheduling](#learning-rate-scheduling)
+12. [Batch Size Management](#batch-size-management)
+13. [Model Architecture Selection](#model-architecture-selection)
+14. [CLI Arguments Reference](#cli-arguments-reference)
+15. [Parallel Selfplay Generation](#parallel-selfplay-generation)
+16. [Temperature Scheduling](#temperature-scheduling)
+17. [Value Calibration Tracking](#value-calibration-tracking)
+18. [Prometheus Metrics Reference](#prometheus-metrics-reference)
 
 ---
 
@@ -936,6 +937,40 @@ with manager:
         manager.update_step(game_won=True)
 ```
 
+### Unified Loop Integration
+
+Create the manager directly from `TrainingConfig` in the unified loop:
+
+```python
+from scripts.unified_loop.config import (
+    TrainingConfig,
+    create_integrated_manager_from_config,
+)
+
+# Load or create training config
+config = TrainingConfig(
+    use_integrated_enhancements=True,
+    elo_weighting_enabled=True,
+    curriculum_enabled=True,
+    augmentation_enabled=True,
+    batch_scheduling_enabled=True,
+)
+
+# Create manager from config
+manager = create_integrated_manager_from_config(
+    training_config=config,
+    model=my_model,
+    board_type="square8",
+)
+
+# Initialize and use
+if manager:
+    manager.initialize_all()
+    print(f"Enabled modules: {manager._count_enabled()}")
+    print(f"Current batch size: {manager.get_batch_size()}")
+    print(f"Curriculum stage: {manager.get_curriculum_parameters()['name']}")
+```
+
 ### Auxiliary Tasks
 
 Adds prediction heads for game length, piece count, and outcome:
@@ -992,6 +1027,141 @@ Continuous evaluation during training with auto-checkpointing:
 if manager.should_early_stop():
     print("Elo dropped significantly, stopping training")
     break
+```
+
+---
+
+## Consolidated Training Modules (December 2025)
+
+Several training modules have been consolidated to reduce duplication and provide unified interfaces.
+
+### Unified Checkpoint Manager (`app/training/checkpoint_unified.py`)
+
+Combines features from `fault_tolerance.py` and `SmartCheckpointManager`:
+
+| Feature                | Description                                                        |
+| ---------------------- | ------------------------------------------------------------------ |
+| **Checkpoint Types**   | REGULAR, EPOCH, BEST, EMERGENCY, RECOVERY                          |
+| **Adaptive Frequency** | Saves less often when training plateaus, more often when improving |
+| **Hash Verification**  | SHA256 integrity checking                                          |
+| **Lineage Tracking**   | Parent checkpoint references                                       |
+| **Retention Policy**   | Keep best, keep every N epochs, max checkpoints                    |
+
+```python
+from app.training.checkpoint_unified import (
+    UnifiedCheckpointManager,
+    UnifiedCheckpointConfig,
+    TrainingProgress,
+)
+
+config = UnifiedCheckpointConfig(
+    checkpoint_dir=Path("checkpoints"),
+    keep_best=3,
+    adaptive_enabled=True,
+    improvement_threshold=0.01,
+)
+
+manager = UnifiedCheckpointManager(config)
+
+# Adaptive checkpointing - saves only when meaningful
+if manager.should_save(epoch=5, loss=0.25):
+    manager.save_checkpoint(model_state, progress, metrics={"loss": 0.25})
+
+# Save best only if improved
+manager.save_best_if_improved(model_state, progress, "loss", 0.22)
+```
+
+### Unified Distributed Trainer (`app/training/distributed_unified.py`)
+
+Combines `distributed.py` and `distributed_training.py`:
+
+| Feature                  | Description                                 |
+| ------------------------ | ------------------------------------------- |
+| **DDP Wrapper**          | Automatic model wrapping with gradient sync |
+| **Gradient Compression** | Top-K compression (1-10% bandwidth)         |
+| **Async SGD**            | Asynchronous updates with staleness bounds  |
+| **Mixed Precision**      | AMP with float16/bfloat16 support           |
+| **Auto-Resume**          | Checkpoint-based recovery                   |
+
+```python
+from app.training.distributed_unified import (
+    UnifiedDistributedTrainer,
+    UnifiedDistributedConfig,
+)
+
+config = UnifiedDistributedConfig(
+    world_size=4,
+    compress_gradients=True,
+    compression_ratio=0.01,  # Keep top 1%
+    use_amp=True,
+)
+
+trainer = UnifiedDistributedTrainer(model, config, optimizer)
+trainer.setup()
+
+# Training with automatic gradient sync
+loss = trainer.train_step(batch, loss_fn)
+```
+
+### Unified Training Orchestrator (`app/training/unified_orchestrator.py`)
+
+Central orchestrator combining all training components:
+
+| Component                 | Description                             |
+| ------------------------- | --------------------------------------- |
+| **HotBufferWrapper**      | Priority experience replay              |
+| **EnhancementsWrapper**   | Curriculum, augmentation, ELO weighting |
+| **DistributedWrapper**    | Multi-GPU/multi-node training           |
+| **BackgroundEvalWrapper** | Continuous Elo tracking                 |
+| **CheckpointWrapper**     | Adaptive checkpointing                  |
+
+```python
+from app.training.unified_orchestrator import (
+    UnifiedTrainingOrchestrator,
+    OrchestratorConfig,
+)
+
+config = OrchestratorConfig(
+    board_type="square8",
+    num_players=2,
+    enable_hot_buffer=True,
+    enable_enhancements=True,
+    enable_curriculum=True,
+)
+
+# Context manager handles initialization and cleanup
+with UnifiedTrainingOrchestrator(model, config) as orchestrator:
+    for epoch in range(epochs):
+        for batch in dataloader:
+            metrics = orchestrator.train_step(batch)
+            if orchestrator.should_stop():
+                break
+```
+
+### Feature Matrix
+
+| Module                       | Location        | Key Classes                                         | Status   |
+| ---------------------------- | --------------- | --------------------------------------------------- | -------- |
+| `checkpoint_unified.py`      | `app/training/` | `UnifiedCheckpointManager`, `CheckpointMetadata`    | New      |
+| `distributed_unified.py`     | `app/training/` | `UnifiedDistributedTrainer`, `GradientCompressor`   | New      |
+| `unified_orchestrator.py`    | `app/training/` | `UnifiedTrainingOrchestrator`, `OrchestratorConfig` | New      |
+| `integrated_enhancements.py` | `app/training/` | `IntegratedTrainingManager`                         | Existing |
+| `hot_data_buffer.py`         | `app/training/` | `HotDataBuffer`                                     | Existing |
+
+### CLI Integration in train.py
+
+New arguments for enabling advanced features:
+
+```bash
+python -m app.training.train \
+  --data-path data/training/games.npz \
+  --board-type square8 \
+  --use-hot-data-buffer \
+  --hot-buffer-size 10000 \
+  --use-integrated-enhancements \
+  --enable-curriculum \
+  --enable-augmentation \
+  --enable-elo-weighting
 ```
 
 ---
