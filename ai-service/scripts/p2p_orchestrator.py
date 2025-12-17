@@ -51,6 +51,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 import yaml
 
+# Centralized ramdrive utilities for auto-detection
+from app.utils.ramdrive import (
+    get_system_resources,
+    should_use_ramdrive,
+    get_auto_storage_path,
+    log_storage_recommendation,
+    RamdriveSyncer,
+)
+
 # Import refactored P2P types and models
 # These were extracted from this file for modularity (Phase 1 refactoring)
 from scripts.p2p.types import NodeRole, JobType
@@ -638,7 +647,8 @@ class P2POrchestrator:
         advertise_port: Optional[int] = None,
         auth_token: Optional[str] = None,
         require_auth: bool = False,
-        storage_type: str = "disk",  # "disk" or "ramdrive"
+        storage_type: str = "auto",  # "disk", "ramdrive", or "auto"
+        sync_to_disk_interval: int = 300,  # Sync ramdrive to disk every N seconds
     ):
         self.node_id = node_id
         self.host = host
@@ -648,9 +658,27 @@ class P2POrchestrator:
         self.relay_peers: Set[str] = set(relay_peers or [])
         self.ringrift_path = ringrift_path or self._detect_ringrift_path()
 
-        # Storage configuration: "disk" uses ai-service/data, "ramdrive" uses /dev/shm
-        self.storage_type = storage_type
+        # Storage configuration: "disk", "ramdrive", or "auto" (detected)
+        self.sync_to_disk_interval = sync_to_disk_interval
         self.ramdrive_path = "/dev/shm/ringrift/data"  # Standard ramdrive location
+        self.ramdrive_syncer: Optional[RamdriveSyncer] = None
+
+        # Resolve "auto" storage type based on system resources
+        if storage_type == "auto":
+            resources = get_system_resources()
+            if should_use_ramdrive():
+                self.storage_type = "ramdrive"
+                logger.info(f"Auto-detected storage: RAMDRIVE "
+                           f"(RAM: {resources.total_ram_gb:.0f}GB, "
+                           f"Disk: {resources.free_disk_gb:.0f}GB free / {resources.disk_usage_percent:.0f}% used)")
+            else:
+                self.storage_type = "disk"
+                logger.info(f"Auto-detected storage: DISK "
+                           f"(RAM: {resources.total_ram_gb:.0f}GB, "
+                           f"Disk: {resources.free_disk_gb:.0f}GB free / {resources.disk_usage_percent:.0f}% used)")
+            log_storage_recommendation()
+        else:
+            self.storage_type = storage_type
         # Git 2.35+ enforces safe.directory for repos with different ownership.
         # Many nodes run the orchestrator as root against a checkout owned by
         # another user (e.g. ubuntu), so always provide a safe.directory override
@@ -1214,8 +1242,31 @@ class P2POrchestrator:
         if self.storage_type == "ramdrive":
             ramdrive = Path(self.ramdrive_path)
             ramdrive.mkdir(parents=True, exist_ok=True)
+
+            # Set up automatic sync to persistent storage
+            if self.ramdrive_syncer is None and self.sync_to_disk_interval > 0:
+                persistent_path = Path(self.ringrift_path) / "ai-service" / "data"
+                persistent_path.mkdir(parents=True, exist_ok=True)
+                self.ramdrive_syncer = RamdriveSyncer(
+                    source_dir=ramdrive,
+                    target_dir=persistent_path,
+                    interval=self.sync_to_disk_interval,
+                    patterns=["*.db", "*.jsonl", "*.json", "*.npz"],
+                )
+                self.ramdrive_syncer.start()
+                logger.info(f"Started ramdrive -> disk sync: {ramdrive} -> {persistent_path} "
+                           f"every {self.sync_to_disk_interval}s")
+
             return ramdrive
         return Path(self.ringrift_path) / "ai-service" / "data"
+
+    def stop_ramdrive_syncer(self, final_sync: bool = True) -> None:
+        """Stop the ramdrive syncer and optionally perform final sync."""
+        if self.ramdrive_syncer:
+            logger.info("Stopping ramdrive syncer...")
+            self.ramdrive_syncer.stop(final_sync=final_sync)
+            logger.info(f"Ramdrive sync stats: {self.ramdrive_syncer.stats}")
+            self.ramdrive_syncer = None
 
     def _infer_advertise_port(self) -> int:
         """Infer the externally reachable port for this node.
@@ -24687,8 +24738,10 @@ def main():
     parser.add_argument("--ringrift-path", help="Path to RingRift installation")
     parser.add_argument("--auth-token", help=f"Shared auth token (or set {AUTH_TOKEN_ENV})")
     parser.add_argument("--require-auth", action="store_true", help="Require auth token to be set")
-    parser.add_argument("--storage-type", choices=["disk", "ramdrive"], default="disk",
-                        help="Storage type: 'disk' (default) or 'ramdrive' (/dev/shm for disk-constrained instances)")
+    parser.add_argument("--storage-type", choices=["disk", "ramdrive", "auto"], default="auto",
+                        help="Storage type: 'disk', 'ramdrive' (/dev/shm), or 'auto' (detect based on RAM/disk)")
+    parser.add_argument("--sync-to-disk-interval", type=int, default=300,
+                        help="When using ramdrive, sync to disk every N seconds (0 = no sync, default: 300)")
 
     args = parser.parse_args()
 
@@ -24712,12 +24765,15 @@ def main():
         auth_token=args.auth_token,
         require_auth=args.require_auth,
         storage_type=args.storage_type,
+        sync_to_disk_interval=args.sync_to_disk_interval,
     )
 
     # Handle shutdown
     def signal_handler(sig, frame):
         print("\n[P2P] Shutting down...")
         orchestrator.running = False
+        # Stop ramdrive syncer with final sync
+        orchestrator.stop_ramdrive_syncer(final_sync=True)
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)

@@ -238,13 +238,14 @@ def recover_node(host: str) -> bool:
 
     # Step 3: Start selfplay workers
     # Use screen or nohup to keep processes running
+    # --auto-ramdrive will use /dev/shm on RAM-rich machines with limited disk
     start_cmd = f"""
 cd {work_dir} && source venv/bin/activate &&
 for i in $(seq 1 {num_workers}); do
     nohup python scripts/run_hybrid_selfplay.py \\
         --board-type square8 --num-players 2 \\
         --num-games 50000 --record-db data/games/selfplay.db \\
-        --output-dir data/selfplay/auto_$(date +%s)/$i \\
+        --auto-ramdrive --sync-interval 300 --sync-target data/selfplay \\
         --engine-mode mixed --seed $RANDOM \\
         > /dev/null 2>&1 &
 done

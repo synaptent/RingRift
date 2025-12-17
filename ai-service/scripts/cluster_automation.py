@@ -188,7 +188,9 @@ nohup python3 scripts/run_hybrid_selfplay.py \\
     --num-games {games} \\
     --board-type {board} \\
     --num-players {players} \\
-    --output-dir data/selfplay/auto_{config}_{name} \\
+    --auto-ramdrive \\
+    --sync-interval 300 \\
+    --sync-target data/selfplay/auto_{config}_{name} \\
     > logs/auto_selfplay_{config}.log 2>&1 &
 
 sleep 2

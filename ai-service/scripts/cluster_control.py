@@ -253,9 +253,9 @@ def start_selfplay_on_vast(host_config: HostConfig, board: str, num_games: int) 
             print(f"  {host_config.name}: Selfplay already running")
             return True
 
-        # Start selfplay
+        # Start selfplay with auto-ramdrive detection
         executor.run("mkdir -p logs data/games", timeout=10)
-        cmd = f"python scripts/run_gpu_selfplay.py --board {board} --num-games {num_games} --output-dir data/games"
+        cmd = f"python scripts/run_gpu_selfplay.py --board {board} --num-games {num_games} --auto-ramdrive --sync-interval 300 --sync-target data/games"
         result = executor.run_async(cmd, "logs/gpu_selfplay.log")
 
         time.sleep(3)

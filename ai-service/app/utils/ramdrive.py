@@ -37,7 +37,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Callable, List
+from typing import Optional, Callable, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -359,11 +359,12 @@ class RamdriveSyncer:
         }
 
 
-def add_ramdrive_args(parser) -> None:
+def add_ramdrive_args(parser, include_auto: bool = True) -> None:
     """Add standard ramdrive arguments to an argparse parser.
 
     Args:
         parser: argparse.ArgumentParser instance.
+        include_auto: Whether to include --auto-ramdrive flag.
     """
     group = parser.add_argument_group("Storage Options")
     group.add_argument(
@@ -371,6 +372,12 @@ def add_ramdrive_args(parser) -> None:
         action="store_true",
         help="Use RAM-backed storage (/dev/shm) for faster I/O"
     )
+    if include_auto:
+        group.add_argument(
+            "--auto-ramdrive",
+            action="store_true",
+            help="Auto-detect if ramdrive should be used (RAM-rich + disk-limited machines)"
+        )
     group.add_argument(
         "--data-dir",
         type=str,
@@ -391,17 +398,30 @@ def add_ramdrive_args(parser) -> None:
     )
 
 
-def get_config_from_args(args) -> RamdriveConfig:
+def get_config_from_args(args, data_path: Optional[Path] = None) -> RamdriveConfig:
     """Create RamdriveConfig from parsed arguments.
 
     Args:
         args: Parsed argparse namespace with ramdrive arguments.
+        data_path: Optional path to check disk space for auto-detection.
 
     Returns:
         RamdriveConfig instance.
     """
+    # Determine if ramdrive should be used
+    force_ramdrive = getattr(args, "ram_storage", False)
+    auto_ramdrive = getattr(args, "auto_ramdrive", False)
+
+    if auto_ramdrive and not force_ramdrive:
+        # Auto-detect based on system resources
+        prefer_ramdrive = should_use_ramdrive(data_path=data_path)
+        if prefer_ramdrive:
+            logger.info("Auto-detection recommends using ramdrive")
+    else:
+        prefer_ramdrive = force_ramdrive
+
     return RamdriveConfig(
-        prefer_ramdrive=getattr(args, "ram_storage", False),
+        prefer_ramdrive=prefer_ramdrive,
         fallback_path=getattr(args, "data_dir", ""),
         sync_interval=getattr(args, "sync_interval", 0),
         sync_target=getattr(args, "sync_target", ""),
@@ -426,3 +446,197 @@ def get_ramdrive_path() -> Optional[Path]:
     if _cached_status is None:
         _cached_status = detect_ramdrive()
     return _cached_status.path if _cached_status.available else None
+
+
+@dataclass
+class SystemResources:
+    """System resource information for auto-detection."""
+    total_ram_gb: float = 0.0
+    available_ram_gb: float = 0.0
+    total_disk_gb: float = 0.0
+    free_disk_gb: float = 0.0
+    disk_usage_percent: float = 0.0
+    ramdrive_free_gb: float = 0.0
+    is_ram_rich: bool = False
+    is_disk_limited: bool = False
+    recommend_ramdrive: bool = False
+
+
+def get_system_resources(data_path: Optional[Path] = None) -> SystemResources:
+    """Detect system resources to determine if ramdrive should be preferred.
+
+    Args:
+        data_path: Path to check disk space for. Defaults to current directory.
+
+    Returns:
+        SystemResources with RAM/disk info and recommendations.
+    """
+    resources = SystemResources()
+
+    # Get RAM info
+    try:
+        with open("/proc/meminfo", "r") as f:
+            meminfo = f.read()
+        for line in meminfo.split("\n"):
+            if line.startswith("MemTotal:"):
+                resources.total_ram_gb = int(line.split()[1]) / (1024 * 1024)
+            elif line.startswith("MemAvailable:"):
+                resources.available_ram_gb = int(line.split()[1]) / (1024 * 1024)
+    except (FileNotFoundError, PermissionError):
+        # macOS or other system - try sysctl
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["sysctl", "-n", "hw.memsize"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                resources.total_ram_gb = int(result.stdout.strip()) / (1024 ** 3)
+                # Estimate available as 70% of total on macOS
+                resources.available_ram_gb = resources.total_ram_gb * 0.7
+        except Exception:
+            pass
+
+    # Get disk info
+    check_path = data_path or Path.cwd()
+    try:
+        usage = shutil.disk_usage(check_path)
+        resources.total_disk_gb = usage.total / (1024 ** 3)
+        resources.free_disk_gb = usage.free / (1024 ** 3)
+        resources.disk_usage_percent = (usage.used / usage.total) * 100
+    except (OSError, PermissionError):
+        pass
+
+    # Get ramdrive info
+    ramdrive_status = detect_ramdrive()
+    if ramdrive_status.available:
+        resources.ramdrive_free_gb = ramdrive_status.free_gb
+
+    # Determine if machine is RAM-rich
+    # RAM-rich: > 32GB total RAM or > 16GB available
+    resources.is_ram_rich = (
+        resources.total_ram_gb > 32 or
+        resources.available_ram_gb > 16
+    )
+
+    # Determine if disk is limited
+    # Disk-limited: < 50GB free OR > 70% used OR total < 100GB
+    resources.is_disk_limited = (
+        resources.free_disk_gb < 50 or
+        resources.disk_usage_percent > 70 or
+        resources.total_disk_gb < 100
+    )
+
+    # Recommend ramdrive if:
+    # 1. RAM-rich AND disk-limited, OR
+    # 2. Ramdrive has > 8GB free and disk usage > 60%, OR
+    # 3. Ramdrive has more free space than disk
+    resources.recommend_ramdrive = (
+        (resources.is_ram_rich and resources.is_disk_limited) or
+        (resources.ramdrive_free_gb > 8 and resources.disk_usage_percent > 60) or
+        (resources.ramdrive_free_gb > resources.free_disk_gb and resources.ramdrive_free_gb > 4)
+    )
+
+    return resources
+
+
+def should_use_ramdrive(
+    data_path: Optional[Path] = None,
+    min_ramdrive_gb: float = 4.0,
+    force: Optional[bool] = None,
+) -> bool:
+    """Determine if ramdrive should be used based on system resources.
+
+    Args:
+        data_path: Path to check disk space for.
+        min_ramdrive_gb: Minimum ramdrive space required.
+        force: If provided, override auto-detection.
+
+    Returns:
+        True if ramdrive should be used.
+    """
+    if force is not None:
+        return force
+
+    resources = get_system_resources(data_path)
+
+    if not is_ramdrive_available(min_ramdrive_gb):
+        return False
+
+    return resources.recommend_ramdrive
+
+
+def get_auto_storage_path(
+    base_name: str = "data",
+    subdirectory: str = "",
+    fallback_path: Optional[Path] = None,
+    min_ramdrive_gb: float = 4.0,
+    force_ramdrive: Optional[bool] = None,
+) -> Tuple[Path, bool]:
+    """Automatically select storage path based on system resources.
+
+    This is the main entry point for scripts that want automatic
+    ramdrive selection based on machine characteristics.
+
+    Args:
+        base_name: Base directory name (e.g., "games", "training").
+        subdirectory: Subdirectory within the storage location.
+        fallback_path: Path to use if ramdrive not available/recommended.
+        min_ramdrive_gb: Minimum ramdrive space required.
+        force_ramdrive: Override auto-detection (True=force ramdrive, False=force disk).
+
+    Returns:
+        Tuple of (path, using_ramdrive).
+    """
+    use_ramdrive = should_use_ramdrive(
+        data_path=fallback_path,
+        min_ramdrive_gb=min_ramdrive_gb,
+        force=force_ramdrive,
+    )
+
+    if use_ramdrive:
+        ramdrive_status = detect_ramdrive()
+        if ramdrive_status.available:
+            path = ramdrive_status.path / RINGRIFT_SUBDIR
+            if subdirectory:
+                path = path / subdirectory
+            path = path / base_name
+            path.mkdir(parents=True, exist_ok=True)
+            logger.info(
+                f"Auto-selected ramdrive storage: {path} "
+                f"(ramdrive: {ramdrive_status.free_gb:.1f}GB free)"
+            )
+            return path, True
+
+    # Fall back to disk
+    if fallback_path:
+        path = fallback_path / base_name
+    else:
+        path = Path(__file__).resolve().parents[2] / "data" / base_name
+
+    if subdirectory:
+        path = path.parent / subdirectory / path.name
+
+    path.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Using disk storage: {path}")
+    return path, False
+
+
+def log_storage_recommendation(data_path: Optional[Path] = None) -> None:
+    """Log storage recommendation based on system resources.
+
+    Useful for debugging and understanding why ramdrive was/wasn't selected.
+    """
+    resources = get_system_resources(data_path)
+    ramdrive_status = detect_ramdrive()
+
+    logger.info("=" * 60)
+    logger.info("STORAGE AUTO-DETECTION REPORT")
+    logger.info("=" * 60)
+    logger.info(f"System RAM:     {resources.total_ram_gb:.1f}GB total, {resources.available_ram_gb:.1f}GB available")
+    logger.info(f"Disk:           {resources.total_disk_gb:.1f}GB total, {resources.free_disk_gb:.1f}GB free ({resources.disk_usage_percent:.1f}% used)")
+    logger.info(f"Ramdrive:       {ramdrive_status.path} - {resources.ramdrive_free_gb:.1f}GB free" if ramdrive_status.available else "Ramdrive:       Not available")
+    logger.info(f"RAM-rich:       {'Yes' if resources.is_ram_rich else 'No'}")
+    logger.info(f"Disk-limited:   {'Yes' if resources.is_disk_limited else 'No'}")
+    logger.info(f"Recommendation: {'USE RAMDRIVE' if resources.recommend_ramdrive else 'USE DISK'}")
+    logger.info("=" * 60)
