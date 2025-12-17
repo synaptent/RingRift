@@ -268,6 +268,192 @@ class TestMetricsOverhead:
         assert avg_with < 0.01, f"Metrics overhead too high: {avg_with*1000:.3f}ms"
 
 
+class TestConcurrency:
+    """Test concurrent access to EloReconciler."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = Path(self.temp_dir) / "concurrent_elo.db"
+
+    def teardown_method(self):
+        """Clean up."""
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _create_db_with_data(self, n_participants: int = 100, n_matches: int = 500):
+        """Create database with test data."""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS elo_ratings (
+                participant_id TEXT PRIMARY KEY,
+                board_type TEXT DEFAULT 'square8',
+                num_players INTEGER DEFAULT 2,
+                rating REAL DEFAULT 1500.0,
+                games_played INTEGER DEFAULT 0
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS match_history (
+                match_id TEXT PRIMARY KEY,
+                player1_id TEXT NOT NULL,
+                player2_id TEXT NOT NULL,
+                winner_id TEXT,
+                player1_rating_before REAL,
+                player2_rating_before REAL,
+                player1_rating_after REAL,
+                player2_rating_after REAL,
+                board_type TEXT,
+                num_players INTEGER,
+                game_length INTEGER,
+                timestamp TEXT,
+                source TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS participants (
+                participant_id TEXT PRIMARY KEY,
+                rating REAL DEFAULT 1500.0,
+                games_played INTEGER DEFAULT 0
+            )
+        """)
+
+        # Insert participants
+        for i in range(n_participants):
+            cursor.execute(
+                "INSERT INTO elo_ratings (participant_id, rating, games_played) VALUES (?, ?, ?)",
+                (f"model_{i}", 1500 + (i % 100), 50 + (i % 50)),
+            )
+            cursor.execute(
+                "INSERT INTO participants (participant_id, rating, games_played) VALUES (?, ?, ?)",
+                (f"model_{i}", 1500 + (i % 100), 50 + (i % 50)),
+            )
+
+        # Insert matches
+        for i in range(n_matches):
+            cursor.execute(
+                """INSERT INTO match_history (match_id, player1_id, player2_id, winner_id, timestamp)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    f"existing_match_{i}",
+                    f"model_{i % n_participants}",
+                    f"model_{(i + 1) % n_participants}",
+                    f"model_{i % n_participants}",
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+
+        conn.commit()
+        conn.close()
+
+    def test_concurrent_drift_checks(self):
+        """Test concurrent drift check calls don't cause issues."""
+        import concurrent.futures
+
+        self._create_db_with_data(100, 200)
+
+        reconciler = EloReconciler(local_db_path=self.db_path)
+        errors = []
+        results = []
+
+        def check_drift():
+            try:
+                drift = reconciler.check_drift()
+                return drift.participants_in_source
+            except Exception as e:
+                errors.append(str(e))
+                return None
+
+        # Run 10 concurrent drift checks
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(check_drift) for _ in range(10)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+        print(f"\nConcurrent drift checks: {len([r for r in results if r])} successful, {len(errors)} errors")
+
+        # All should succeed
+        assert len(errors) == 0, f"Concurrent drift checks had errors: {errors}"
+        assert all(r == 100 for r in results if r is not None), "Inconsistent drift check results"
+
+    def test_concurrent_match_imports(self):
+        """Test concurrent match imports with conflict resolution."""
+        import concurrent.futures
+        from app.training.elo_reconciliation import ConflictResolution
+
+        self._create_db_with_data(10, 50)
+
+        reconciler = EloReconciler(
+            local_db_path=self.db_path,
+            conflict_resolution=ConflictResolution.LAST_WRITE_WINS,
+        )
+        errors = []
+        results = []
+
+        def import_batch(batch_id: int):
+            try:
+                matches = [
+                    {
+                        "match_id": f"concurrent_match_{batch_id}_{i}",
+                        "player1_id": f"model_{i % 10}",
+                        "player2_id": f"model_{(i + 1) % 10}",
+                        "winner_id": f"model_{i % 10}",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    for i in range(10)
+                ]
+                result = reconciler._import_matches(f"batch_{batch_id}", "now", matches)
+                return result.matches_added
+            except Exception as e:
+                errors.append(str(e))
+                return 0
+
+        # Run 5 concurrent batch imports
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(import_batch, i) for i in range(5)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+        total_added = sum(results)
+        print(f"\nConcurrent imports: {total_added} matches added across {len(results)} batches")
+        print(f"Errors: {len(errors)}")
+
+        # Should have added 50 matches total (5 batches * 10 matches each)
+        assert len(errors) == 0, f"Concurrent imports had errors: {errors}"
+        assert total_added == 50, f"Expected 50 matches added, got {total_added}"
+
+    def test_load_large_batch_import(self):
+        """Test importing large batch of matches."""
+        self._create_db_with_data(10, 0)  # Start with no matches
+
+        reconciler = EloReconciler(local_db_path=self.db_path)
+
+        # Generate 10,000 matches
+        matches = [
+            {
+                "match_id": f"load_match_{i}",
+                "player1_id": f"model_{i % 10}",
+                "player2_id": f"model_{(i + 1) % 10}",
+                "winner_id": f"model_{i % 10}",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            for i in range(10000)
+        ]
+
+        start = time.perf_counter()
+        result = reconciler._import_matches("load_test", "now", matches)
+        elapsed = time.perf_counter() - start
+
+        throughput = result.matches_added / elapsed
+        print(f"\nLarge batch import: {result.matches_added} matches in {elapsed:.2f}s ({throughput:.0f} matches/sec)")
+
+        # Should achieve reasonable throughput
+        assert result.matches_added == 10000, f"Expected 10000 matches, got {result.matches_added}"
+        assert throughput > 1000, f"Throughput too low: {throughput:.0f} matches/sec"
+
+
 def run_all_benchmarks():
     """Run all benchmarks without pytest."""
     print("=" * 60)
@@ -300,6 +486,22 @@ def run_all_benchmarks():
     print("\n--- Metrics Overhead Benchmarks ---")
     metrics_bench = TestMetricsOverhead()
     metrics_bench.test_promotion_decision_metrics_overhead()
+
+    # Concurrency tests
+    print("\n--- Concurrency Benchmarks ---")
+    concurrency_bench = TestConcurrency()
+
+    concurrency_bench.setup_method()
+    concurrency_bench.test_concurrent_drift_checks()
+    concurrency_bench.teardown_method()
+
+    concurrency_bench.setup_method()
+    concurrency_bench.test_concurrent_match_imports()
+    concurrency_bench.teardown_method()
+
+    concurrency_bench.setup_method()
+    concurrency_bench.test_load_large_batch_import()
+    concurrency_bench.teardown_method()
 
     print("\n" + "=" * 60)
     print("All benchmarks completed!")
