@@ -21,11 +21,16 @@ from app.distributed.hosts import HostConfig, load_remote_hosts
 from app.distributed.sync_utils import rsync_file
 from app.execution.executor import run_ssh_command_sync
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-)
-logger = logging.getLogger(__name__)
+# Unified logging setup
+try:
+    from app.core.logging_config import setup_logging
+    logger = setup_logging("simple_game_sync", log_dir="logs")
+except ImportError:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+    )
+    logger = logging.getLogger(__name__)
 
 SCRIPT_DIR = Path(__file__).parent
 AI_SERVICE_ROOT = SCRIPT_DIR.parent
