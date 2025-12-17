@@ -219,3 +219,5 @@ results/load/
 
 # Coordination lock files
 ai-service/data/coordination/locks/*.lock
+archived_models_backup/
+*.pth
