@@ -1080,6 +1080,45 @@ class TrainingScheduler:
                     "--bootstrap-temperature", str(getattr(self.config, 'bootstrap_temperature', 1.5)),
                     "--bootstrap-start-epoch", str(getattr(self.config, 'bootstrap_start_epoch', 10)),
                 ])
+            # Phase 2 Advanced Training Improvements (2024-12)
+            if getattr(self.config, 'use_prefetch_gpu', True):
+                cmd.append("--prefetch-gpu")
+            if getattr(self.config, 'use_difficulty_curriculum', True):
+                cmd.extend([
+                    "--difficulty-curriculum",
+                    "--curriculum-initial-threshold", str(getattr(self.config, 'curriculum_initial_threshold', 0.9)),
+                    "--curriculum-final-threshold", str(getattr(self.config, 'curriculum_final_threshold', 0.3)),
+                ])
+            if getattr(self.config, 'use_quantized_eval', True):
+                cmd.append("--quantized-eval")
+            if getattr(self.config, 'use_attention', False):
+                cmd.extend([
+                    "--use-attention",
+                    "--attention-heads", str(getattr(self.config, 'attention_heads', 4)),
+                ])
+            if getattr(self.config, 'use_moe', False):
+                cmd.extend([
+                    "--use-moe",
+                    "--moe-experts", str(getattr(self.config, 'moe_experts', 4)),
+                    "--moe-top-k", str(getattr(self.config, 'moe_top_k', 2)),
+                ])
+            if getattr(self.config, 'use_multitask', False):
+                cmd.extend([
+                    "--use-multitask",
+                    "--multitask-weight", str(getattr(self.config, 'multitask_weight', 0.1)),
+                ])
+            if getattr(self.config, 'use_lamb', False):
+                cmd.append("--use-lamb")
+            if getattr(self.config, 'use_gradient_compression', False):
+                cmd.extend([
+                    "--gradient-compression",
+                    "--compression-ratio", str(getattr(self.config, 'compression_ratio', 0.1)),
+                ])
+            if getattr(self.config, 'use_contrastive', False):
+                cmd.extend([
+                    "--contrastive-pretrain",
+                    "--contrastive-weight", str(getattr(self.config, 'contrastive_weight', 0.1)),
+                ])
 
             print(f"[Training] Starting training for {model_id}...")
 

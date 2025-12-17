@@ -992,6 +992,10 @@ def run_training(board_type: str, num_players: int, db_paths: List[str],
         "--adaptive-clip",  # Adaptive gradient clipping
         "--board-nas",  # Board-specific neural architecture search
         "--online-bootstrap", "--bootstrap-temperature", "1.5", "--bootstrap-start-epoch", "10",  # Online bootstrapping
+        # 2024-12 Phase 2 Advanced Training
+        "--prefetch-gpu",  # GPU prefetching for improved throughput
+        "--difficulty-curriculum",  # Difficulty-aware curriculum learning
+        "--quantized-eval",  # Fast quantized inference for validation
         # 2025-12 Training Improvements
         "--policy-label-smoothing", "0.05",  # Prevent overconfident predictions
     ]

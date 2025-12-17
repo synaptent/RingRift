@@ -1097,6 +1097,10 @@ def train_model(
         "--adaptive-clip",  # Adaptive gradient clipping
         "--board-nas",  # Board-specific neural architecture search
         "--online-bootstrap",  # Online bootstrapping with soft labels
+        # 2024-12 Phase 2 Advanced Training
+        "--prefetch-gpu",  # GPU prefetching for improved throughput
+        "--difficulty-curriculum",  # Difficulty-aware curriculum learning
+        "--quantized-eval",  # Fast quantized inference for validation
     ]
 
     # Resume from best model if it exists (warm-start fine-tuning)

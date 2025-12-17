@@ -134,6 +134,24 @@ class TrainingConfig:
     use_online_bootstrap: bool = True  # Online bootstrapping with soft labels
     bootstrap_temperature: float = 1.5  # Soft label temperature
     bootstrap_start_epoch: int = 10  # Epoch to start bootstrapping
+    # Phase 2 Advanced Training (2024-12)
+    use_prefetch_gpu: bool = True  # GPU prefetching for improved throughput
+    use_attention: bool = False  # Positional attention (experimental)
+    attention_heads: int = 4  # Number of attention heads
+    use_moe: bool = False  # Mixture of Experts (experimental)
+    moe_experts: int = 4  # Number of experts
+    moe_top_k: int = 2  # Top-k expert selection
+    use_multitask: bool = False  # Multi-task learning heads
+    multitask_weight: float = 0.1  # Auxiliary task weight
+    use_difficulty_curriculum: bool = True  # Difficulty-aware curriculum
+    curriculum_initial_threshold: float = 0.9  # Start with easy samples
+    curriculum_final_threshold: float = 0.3  # End with all samples
+    use_lamb: bool = False  # LAMB optimizer for large batch
+    use_gradient_compression: bool = False  # Gradient compression for distributed
+    compression_ratio: float = 0.1  # Keep top 10% of gradients
+    use_quantized_eval: bool = True  # Quantized inference for validation
+    use_contrastive: bool = False  # Contrastive representation learning
+    contrastive_weight: float = 0.1  # Contrastive loss weight
     # NNUE policy training script
     nnue_policy_script: str = "scripts/train_nnue_policy.py"
     nnue_curriculum_script: str = "scripts/train_nnue_policy_curriculum.py"
