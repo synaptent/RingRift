@@ -628,6 +628,8 @@ def run_model_matchup(
         board_type_enum = BoardType.SQUARE19
     elif board_type == "hex" or board_type == "hexagonal":
         board_type_enum = BoardType.HEXAGONAL
+    elif board_type == "hex8":
+        board_type_enum = BoardType.HEX8
 
     results = {"model_a_wins": 0, "model_b_wins": 0, "draws": 0, "errors": 0}
 

@@ -182,6 +182,7 @@ def _get_board_type(board_str: str) -> BoardType:
         "square25": BoardType.HEXAGONAL,
         "hexagonal": BoardType.HEXAGONAL,
         "hex": BoardType.HEXAGONAL,
+        "hex8": BoardType.HEX8,
     }
     return board_map.get(board_str, BoardType.SQUARE8)
 
@@ -934,7 +935,7 @@ def main():
         "--board",
         type=str,
         default="square8",
-        choices=["square8", "square19", "hex", "hexagonal"],
+        choices=["square8", "square19", "hex", "hexagonal", "hex8"],
         help="Board type",
     )
     parser.add_argument(
