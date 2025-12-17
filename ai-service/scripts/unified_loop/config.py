@@ -295,6 +295,34 @@ class TrainingConfig:
     # A/B Testing for Hyperparameters (Phase 7)
     ab_testing_enabled: bool = False  # Enable A/B testing for new configs
     ab_test_fraction: float = 0.3  # Fraction of configs to use test hyperparameters
+    # =========================================================================
+    # Phase 7: Training Enhancements Integration (2025-12)
+    # =========================================================================
+    # Training Anomaly Detection - Auto-halt on NaN/Inf/gradient explosion
+    halt_on_nan: bool = True  # Halt training on NaN/Inf loss
+    halt_on_gradient_explosion: bool = False  # Halt on gradient norm > threshold
+    gradient_norm_threshold: float = 100.0  # Gradient explosion threshold
+    max_consecutive_anomalies: int = 5  # Max anomalies before forced halt
+    # Configurable Validation Intervals - More frequent validation during training
+    validation_interval_steps: Optional[int] = 1000  # Validate every N steps (None=epoch only)
+    validation_interval_epochs: Optional[float] = None  # Validate every N epochs (overrides steps)
+    validation_subset_size: float = 1.0  # Fraction of val data for fast validation
+    adaptive_validation_interval: bool = False  # Adjust interval by loss variance
+    # Warm Restarts Learning Rate - SGDR (cosine annealing with warm restarts)
+    use_warm_restarts: bool = False  # Enable SGDR schedule
+    warm_restart_t0: int = 10  # Initial period (epochs)
+    warm_restart_t_mult: int = 2  # Period multiplier after each restart
+    warm_restart_eta_min: float = 1e-6  # Minimum learning rate
+    # Seed Management - Reproducibility
+    training_seed: Optional[int] = None  # Random seed (None=random)
+    deterministic_training: bool = False  # Enable CuDNN deterministic mode (slower)
+    # Data Quality Freshness - Time-based sample weighting
+    freshness_decay_hours: float = 24.0  # Freshness half-life in hours
+    freshness_weight: float = 0.2  # Freshness weight in quality score (0-1)
+    # Hard Example Mining (enhanced) - Buffer and percentile settings
+    hard_example_buffer_size: int = 10000  # Max examples to track
+    hard_example_percentile: float = 80.0  # Percentile threshold for hardness
+    min_samples_before_mining: int = 1000  # Warmup before mining starts
 
 
 @dataclass
