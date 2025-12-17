@@ -280,6 +280,127 @@ training:
 
 ---
 
+## KL Divergence Loss (MCTS Training)
+
+When training with MCTS policy data, KL divergence loss provides richer signal than cross-entropy.
+
+### How It Works
+
+Instead of training on the single move played (one-hot encoding), KL loss trains on the full MCTS visit distribution:
+
+```
+KL_loss = sum(target_dist * log(target_dist / model_dist))
+```
+
+### Configuration
+
+```bash
+# Auto-enable when sufficient MCTS data detected
+python scripts/train_nnue_policy.py \
+  --jsonl data/selfplay/mcts_games.jsonl \
+  --auto-kl-loss \
+  --kl-min-coverage 0.3 \
+  --kl-min-samples 50
+
+# Force KL loss regardless of coverage
+python scripts/train_nnue_policy.py \
+  --jsonl data/selfplay/mcts_games.jsonl \
+  --use-kl-loss
+```
+
+### CLI Arguments
+
+| Argument            | Type  | Default | Description                        |
+| ------------------- | ----- | ------- | ---------------------------------- |
+| `--use-kl-loss`     | flag  | False   | Force KL divergence loss           |
+| `--auto-kl-loss`    | flag  | False   | Auto-enable if MCTS data available |
+| `--kl-min-coverage` | float | 0.5     | Min MCTS coverage for auto-KL      |
+| `--kl-min-samples`  | int   | 100     | Min samples for auto-KL            |
+
+### Benefits
+
+- Learns from full search distribution, not just final move
+- Better policy calibration for uncertain positions
+- Improved move ranking across all candidates
+- Richer training signal from MCTS visits
+
+---
+
+## Curriculum Learning
+
+Train on subsets of moves based on game phase or difficulty.
+
+### Move Range Filtering
+
+```bash
+# Train only on early game (moves 1-20)
+python scripts/train_nnue_policy.py \
+  --db data/games/selfplay.db \
+  --min-move-number 1 \
+  --max-move-number 20
+
+# Train only on late game (moves 40+)
+python scripts/train_nnue_policy.py \
+  --db data/games/selfplay.db \
+  --min-move-number 40
+```
+
+### Policy Distillation from Winners
+
+Focus training on moves from winning players:
+
+```bash
+python scripts/train_nnue_policy.py \
+  --db data/games/selfplay.db \
+  --distill-from-winners \
+  --winner-weight-boost 2.0 \
+  --min-winner-margin 0.1
+```
+
+| Argument                 | Type  | Default | Description                   |
+| ------------------------ | ----- | ------- | ----------------------------- |
+| `--distill-from-winners` | flag  | False   | Only train on winning moves   |
+| `--winner-weight-boost`  | float | 1.0     | Weight multiplier for winners |
+| `--min-winner-margin`    | int   | 0       | Min margin for decisive wins  |
+
+### Benefits
+
+- Early game curriculum builds foundational patterns
+- Late game focus for endgame strength
+- Winner distillation emphasizes successful play
+
+---
+
+## Temperature Annealing
+
+Controls label smoothness during training. Higher temperature creates softer targets.
+
+### Configuration
+
+```bash
+python scripts/train_nnue_policy.py \
+  --jsonl data/selfplay/mcts_games.jsonl \
+  --temperature-start 2.0 \
+  --temperature-end 0.5 \
+  --temperature-schedule cosine
+```
+
+### Schedules
+
+| Schedule      | Description                            |
+| ------------- | -------------------------------------- |
+| `linear`      | Linear interpolation from start to end |
+| `cosine`      | Smooth cosine decay (recommended)      |
+| `exponential` | Rapid early decay                      |
+
+### Benefits
+
+- Start soft to prevent overconfident early convergence
+- End sharp for precise final predictions
+- Smooth transition maintains stable training
+
+---
+
 ## Online Training Techniques
 
 ### Online Bootstrapping
