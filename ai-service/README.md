@@ -113,12 +113,21 @@ ai-service/
 │   │   ├── minimax_ai.py    # D3-4: Alpha-beta search
 │   │   ├── mcts_ai.py       # D5-8: Monte Carlo search
 │   │   ├── descent_ai.py    # D9-10: UBFM/Descent
+│   │   ├── nnue.py          # NNUE value network
+│   │   ├── nnue_policy.py   # NNUE with policy head
 │   │   └── neural_net.py    # CNN architectures
 │   ├── training/            # Training pipeline
-│   └── distributed/         # P2P cluster coordination
+│   │   ├── training_triggers.py   # 3-signal training decisions
+│   │   ├── rollback_manager.py    # Model regression handling
+│   │   ├── model_registry.py      # Version lifecycle management
+│   │   └── promotion_controller.py # A/B testing & promotion
+│   ├── coordination/        # Distributed orchestration
+│   ├── integration/         # Unified loop extensions
+│   └── rules/               # Game rules (TS parity)
 ├── scripts/                 # CLI tools (380+)
 │   ├── unified_ai_loop.py   # Main training daemon
 │   ├── p2p_orchestrator.py  # Cluster coordination
+│   ├── train_nnue_policy.py # NNUE policy training
 │   └── run_gauntlet.py      # Tournament evaluation
 ├── config/                  # Configuration templates
 ├── models/                  # Neural network checkpoints
@@ -274,12 +283,16 @@ The service enforces 80% max utilization to prevent system overload:
 
 ## Documentation
 
-| Document                                                 | Description               |
-| -------------------------------------------------------- | ------------------------- |
-| [Unified AI Loop](docs/UNIFIED_AI_LOOP.md)               | Main training pipeline    |
-| [Orchestrator Selection](docs/ORCHESTRATOR_SELECTION.md) | Which script to use       |
-| [AI Training Plan](docs/AI_TRAINING_PLAN.md)             | Training methodology      |
-| [Game Record Spec](docs/GAME_RECORD_SPEC.md)             | Data format specification |
+| Document                                               | Description                  |
+| ------------------------------------------------------ | ---------------------------- |
+| [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) | System architecture guide    |
+| [Unified AI Loop](docs/UNIFIED_AI_LOOP.md)             | Main training pipeline       |
+| [NNUE Policy Training](docs/NNUE_POLICY_TRAINING.md)   | Policy training with KL loss |
+| [Example Training Run](docs/EXAMPLE_TRAINING_RUN.md)   | Step-by-step tutorial        |
+| [Cluster Setup Guide](docs/CLUSTER_SETUP_GUIDE.md)     | Multi-GPU deployment         |
+| [AI Training Plan](docs/AI_TRAINING_PLAN.md)           | Training methodology         |
+| [Game Record Spec](docs/GAME_RECORD_SPEC.md)           | Data format specification    |
+| [P2P Orchestration](docs/VAST_P2P_ORCHESTRATION.md)    | Cluster coordination         |
 
 ## Troubleshooting
 
