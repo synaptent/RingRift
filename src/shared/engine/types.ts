@@ -112,7 +112,7 @@ export interface EliminateStackAction extends BaseAction {
   /**
    * Context for elimination determines how many rings to eliminate:
    * - 'line': Eliminate exactly ONE ring from the top (RR-CANON-R122)
-   * - 'territory': Eliminate entire cap from eligible stack (multicolor or height > 1) (RR-CANON-R145)
+   * - 'territory': Eliminate entire cap from any controlled stack (RR-CANON-R022/R145)
    * - 'forced': Eliminate entire cap from any controlled stack (RR-CANON-R100)
    * - 'recovery': Extract exactly ONE buried ring (RR-CANON-R113/R114)
    * Defaults to 'territory' if not specified for backward compatibility.

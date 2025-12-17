@@ -66,8 +66,8 @@ const hexTerritoryFeHxASerializedBoard: SerializedBoardState = {
       controllingPlayer: 2,
     },
     // Outside P1 stack used for mandatory self-elimination and to satisfy
-    // the self-elimination prerequisite. Must be height > 1 per RR-CANON-R145
-    // (height-1 standalone rings are NOT eligible for territory processing).
+    // the self-elimination prerequisite. Any controlled stack is eligible
+    // per RR-CANON-R022/R145 (including height-1 standalone rings).
     '2,-2,0': {
       position: { x: 2, y: -2, z: 0 },
       rings: [1, 1],

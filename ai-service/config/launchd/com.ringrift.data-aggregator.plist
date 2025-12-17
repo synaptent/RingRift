@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.ringrift.data-aggregator</string>
+
+    <key>WorkingDirectory</key>
+    <string>__RINGRIFT_AI_SERVICE_DIR__</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>__RINGRIFT_PYTHON__</string>
+      <string>-u</string>
+      <string>scripts/data_aggregator.py</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PYTHONUNBUFFERED</key>
+      <string>1</string>
+      <key>AWS_PROFILE</key>
+      <string>ringrift</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__RINGRIFT_AI_SERVICE_DIR__/logs/data_aggregator.launchd.out</string>
+    <key>StandardErrorPath</key>
+    <string>__RINGRIFT_AI_SERVICE_DIR__/logs/data_aggregator.launchd.err</string>
+
+    <!-- Throttle restarts if it crashes -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+  </dict>
+</plist>

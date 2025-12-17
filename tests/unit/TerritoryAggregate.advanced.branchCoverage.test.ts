@@ -181,8 +181,8 @@ describe('TerritoryAggregate - Branch Coverage (Advanced)', () => {
         { spaces: [{ x: 2, y: 2 }], controllingPlayer: 1, isDisconnected: true },
       ];
 
-      // canProcessTerritoryRegion requires an ELIGIBLE stack OUTSIDE the regions
-      // Height must be > 1 per RR-CANON-R145 (height-1 not eligible for territory)
+      // canProcessTerritoryRegion requires a controlled stack OUTSIDE the regions
+      // Any controlled stack is eligible per RR-CANON-R022/R145 (including height-1)
       addStack(state.board, { x: 5, y: 5 }, 1, 2);
 
       // Use testOverrideRegions to inject regions directly for enumeration

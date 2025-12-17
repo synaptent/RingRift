@@ -100,7 +100,7 @@ export function mutateEliminateStack(state: GameState, action: EliminateStackAct
   // DELEGATE TO EliminationAggregate for canonical elimination semantics
   // Per RR-CANON-R022, R122, R145, R100:
   // - 'line': Eliminate exactly ONE ring from the top (any controlled stack is eligible)
-  // - 'territory': Eliminate entire cap (only eligible stacks: multicolor or height > 1)
+  // - 'territory': Eliminate entire cap (any controlled stack eligible, including height-1)
   // - 'forced': Eliminate entire cap (any controlled stack is eligible)
   const eliminationResult = eliminateFromStack({
     context: eliminationContext,

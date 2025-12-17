@@ -225,8 +225,8 @@ describe('territoryDecisionHelpers.property – decision enumeration and self-el
           fc.integer({ min: 1, max: 3 }),
           fc.integer({ min: 1, max: 3 })
         ),
-        // RR-CANON-R082: Must be >= 2 to be an eligible cap target (height-1
-        // standalone rings are NOT eligible for self-elimination prerequisite).
+        // Any controlled stack is eligible per RR-CANON-R022/R145 (including height-1).
+        // Using min: 2 here to ensure a multi-ring cap for property testing variety.
         fc.integer({ min: 2, max: 4 }),
         (x0, y0, heights, outsideHeight) => {
           const { state, regionSpaces, expectedInternalRings, expectedBorder } =
@@ -320,8 +320,8 @@ describe('territoryDecisionHelpers.property – decision enumeration and self-el
           fc.integer({ min: 1, max: 3 })
         ),
         // Randomise the outside-stack height to vary self-elimination cost.
-        // RR-CANON-R082: Must be >= 2 to be an eligible cap target (height-1
-        // standalone rings are NOT eligible).
+        // Any controlled stack is eligible per RR-CANON-R022/R145 (including height-1).
+        // Using min: 2 for property testing variety.
         fc.integer({ min: 2, max: 4 }),
         (x0, y0, heights, outsideHeight) => {
           const { state } = buildRandomQ23LikeState(

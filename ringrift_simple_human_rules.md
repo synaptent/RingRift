@@ -1,6 +1,6 @@
 # RingRift – Simple Human Rules (Canonical Summary)
 
-> **Version:** 1.1 | **Last Updated:** 2025-12-17 | **Spec Alignment:** RR-CANON v1.0
+> **Version:** 1.2 | **Last Updated:** 2025-12-17 | **Spec Alignment:** RR-CANON v1.0 (Territory eligibility per RR-CANON-R022/R145)
 >
 > This document is a human-oriented summary of the current RingRift rules.
 > When there is any doubt, the **single sources of truth** are:

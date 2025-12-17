@@ -23,18 +23,15 @@
  * - RR-CANON-R124: Border markers used to identify region boundaries
  * - Process all disconnected regions before checking victory
  *
- * **Self-Elimination Cost Rules (§12.2, RR-CANON-R022):**
+ * **Self-Elimination Cost Rules (§12.2, RR-CANON-R022, RR-CANON-R145):**
  *
  * TERRITORY PROCESSING COST:
  * - Player must eliminate an **entire stack cap** (all consecutive top rings of
- *   their colour) from an **eligible** stack outside the processed region.
- * - Eligible stack targets for territory processing must be either:
- *   (a) A **multicolor stack** the player controls (with other players' rings
- *       buried beneath the player's cap), OR
- *   (b) A **single-color stack of height > 1** (all player's rings).
- * - **Height-1 standalone rings are NOT eligible for territory processing.**
+ *   their colour) from a controlled stack outside the processed region.
+ * - **All controlled stacks are eligible, including height-1 standalone rings.**
+ *   Per RR-CANON-R022 and RR-CANON-R145.
  *
- * FORCED ELIMINATION COST (RR-CANON-R070):
+ * FORCED ELIMINATION COST (RR-CANON-R070, RR-CANON-R100):
  * - Player must eliminate an **entire stack cap** from **any** controlled stack.
  * - **All controlled stacks are eligible, including height-1 standalone rings.**
  *
@@ -844,8 +841,8 @@ export function enumerateTerritoryEliminationMoves(
  * A disconnected region is processable for ctx.player iff that player
  * controls at least one ELIGIBLE stack/cap outside the region.
  *
- * Eligibility per RR-CANON-R145: multicolor OR single-color height > 1.
- * Height-1 standalone rings are NOT eligible for territory self-elimination.
+ * Eligibility per RR-CANON-R022/R145: ALL controlled stacks are eligible,
+ * including height-1 standalone rings.
  *
  * DELEGATES TO EliminationAggregate for canonical eligibility check.
  */
@@ -879,7 +876,7 @@ export function canProcessTerritoryRegion(
       if (eligibility.eligible) {
         return true;
       }
-      // Otherwise it's a height-1 standalone ring - not eligible for territory
+      // Stack not eligible (eligibility check failed)
     }
   }
 
@@ -1300,7 +1297,7 @@ export function mutateProcessTerritory(
  * Apply stack elimination mutation via action.
  * Per RR-CANON-R022, R122, R145, R100:
  * - 'line': Eliminate exactly ONE ring from the top (any controlled stack is eligible)
- * - 'territory': Eliminate entire cap (only eligible stacks: multicolor or height > 1)
+ * - 'territory': Eliminate entire cap (any controlled stack eligible, including height-1)
  * - 'forced': Eliminate entire cap (any controlled stack is eligible)
  */
 export function mutateEliminateStack(state: GameState, action: EliminateStackAction): GameState {
