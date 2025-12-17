@@ -2469,6 +2469,7 @@ def create_model_for_board(
     memory_tier: Optional[str] = None,
     model_class: Optional[str] = None,
     num_players: int = 4,
+    policy_size: Optional[int] = None,
     **_: Any,
 ) -> nn.Module:
     """
@@ -2544,7 +2545,9 @@ def create_model_for_board(
     """
     # Get board-specific parameters
     board_size = get_spatial_size_for_board(board_type)
-    policy_size = get_policy_size_for_board(board_type)
+    # Use provided policy_size if available, otherwise get default for board type
+    if policy_size is None:
+        policy_size = get_policy_size_for_board(board_type)
 
     # Determine memory tier
     tier = memory_tier if memory_tier is not None else get_memory_tier()
@@ -2947,6 +2950,8 @@ class NeuralNetAI(BaseAI):
         # Best-effort metadata for observability.
         self.loaded_checkpoint_path: Optional[str] = None
         self.loaded_checkpoint_signature: Optional[tuple[int, int]] = None
+        # Hex encoder for hex boards (initialized lazily in _ensure_model_initialized)
+        self._hex_encoder: Optional[Any] = None
 
         # Device detection
         import os
@@ -3587,6 +3592,7 @@ class NeuralNetAI(BaseAI):
                 history_length=history_length_override,
                 memory_tier=memory_tier_override,
                 num_players=num_players_override,
+                policy_size=policy_size_override,
             )
         # Ensure the encoder uses the same history length as the loaded model.
         self.history_length = history_length_override
@@ -3659,6 +3665,27 @@ class NeuralNetAI(BaseAI):
             setattr(self.model, "_ringrift_history_length", int(self.history_length))
         except Exception:
             pass
+
+        # Initialize hex encoder for hex boards (produces 16-channel features)
+        if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
+            # Lazy import to avoid circular dependency with encoding.py
+            from ..training.encoding import HexStateEncoderV3
+
+            if board_type == BoardType.HEX8:
+                self._hex_encoder = HexStateEncoderV3(
+                    board_size=HEX8_BOARD_SIZE,
+                    policy_size=POLICY_SIZE_HEX8,
+                )
+            else:
+                self._hex_encoder = HexStateEncoderV3(
+                    board_size=HEX_BOARD_SIZE,
+                    policy_size=P_HEX,
+                )
+            logger.info(
+                "Initialized HexStateEncoderV3 for %s (board_size=%d)",
+                board_type,
+                self._hex_encoder.board_size,
+            )
 
         # Cache the model for reuse
         _MODEL_CACHE[cache_key] = self.model
@@ -4848,11 +4875,20 @@ class NeuralNetAI(BaseAI):
         Returns:
             (board_features, global_features)
 
-        The board_features tensor has shape
-        (10, board_size, board_size), where board_size is derived from the
-        logical board via _infer_board_size so that this encoder works for
-        8×8, 19×19, and hexagonal boards.
+        The board_features tensor has shape:
+        - Hex boards (with _hex_encoder): (16, board_size, board_size)
+        - Square boards: (14, board_size, board_size)
+
+        Board size is derived from the logical board via _infer_board_size so
+        that this encoder works for 8×8, 19×19, and hexagonal boards.
         """
+        # Use hex encoder for hex boards (produces 16 channels matching V3 models)
+        if self._hex_encoder is not None:
+            board_features, global_features = self._hex_encoder.encode_state(game_state)
+            # Update board_size hint for external callers
+            self.board_size = self._hex_encoder.board_size
+            return board_features, global_features
+
         board = game_state.board
         # Derive spatial dimension from logical board geometry and keep a hint
         # for components (e.g. training augmentation) that still need to know

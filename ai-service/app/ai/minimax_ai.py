@@ -16,20 +16,25 @@ evaluation while maintaining fast CPU inference suitable for alpha-beta
 search.
 """
 
-from typing import Optional, List, Tuple
+from __future__ import annotations
+
+from typing import Optional, List, Tuple, TYPE_CHECKING
 import logging
 import os
 import time
 
-import torch
-
 from .bounded_transposition_table import BoundedTranspositionTable
 from .heuristic_ai import HeuristicAI
 from .game_state_utils import infer_num_players
-from .nnue import NNUEEvaluator, extract_features_from_gamestate, get_board_size
 from .zobrist import ZobristHash
 from ..models import GameState, Move, MoveType, AIConfig, GamePhase, BoardType
 from ..rules.mutable_state import MutableGameState
+
+# Lazy imports for neural network components to avoid loading torch when not needed
+# These are only imported when use_neural_net=True (D4+ difficulty)
+if TYPE_CHECKING:
+    import torch
+    from .nnue import NNUEEvaluator
 
 # Environment variable to enable zero-sum evaluation for minimax.
 # When enabled, evaluation computes (my_eval - opponent_eval) / 2 which
@@ -163,6 +168,7 @@ class MinimaxAI(HeuristicAI):
         self._pending_policy_init = False
 
         try:
+            import torch
             from .nnue_policy import RingRiftNNUEWithPolicy
 
             # Try to load policy model checkpoint

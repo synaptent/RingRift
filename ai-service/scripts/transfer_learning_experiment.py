@@ -155,16 +155,35 @@ class TransferDataset(Dataset):
         self.npz_path = npz_path
         logger.info(f"Loading dataset from {npz_path}")
 
-        with np.load(npz_path, mmap_mode="r") as data:
+        with np.load(npz_path, mmap_mode="r", allow_pickle=True) as data:
             n_samples = min(len(data["features"]), max_samples)
             self.features = data["features"][:n_samples].copy()
             self.globals = data["globals"][:n_samples].copy()
-            self.policy_indices = data["policy_indices"][:n_samples].copy()
-            self.values = data["values"][:n_samples].copy()
+
+            # Handle policy_indices - may be object array with nested lists
+            raw_indices = data["policy_indices"][:n_samples]
+            self.policy_indices = []
+            for idx in raw_indices:
+                if isinstance(idx, np.ndarray):
+                    idx = idx.item() if idx.size == 1 else idx[0]
+                if isinstance(idx, (list, np.ndarray)) and len(idx) > 0:
+                    self.policy_indices.append(int(idx[0]))
+                elif isinstance(idx, (int, np.integer)):
+                    self.policy_indices.append(int(idx))
+                else:
+                    self.policy_indices.append(0)  # Fallback
+            self.policy_indices = np.array(self.policy_indices, dtype=np.int64)
+
+            # Use values_mp if available (multi-player values)
+            if "values_mp" in data:
+                self.values = data["values_mp"][:n_samples].copy()
+            else:
+                self.values = data["values"][:n_samples].copy()
 
         logger.info(f"Loaded {len(self.features)} samples")
         logger.info(f"  Feature shape: {self.features.shape}")
         logger.info(f"  Globals shape: {self.globals.shape}")
+        logger.info(f"  Values shape: {self.values.shape}")
 
     def __len__(self) -> int:
         return len(self.features)
@@ -274,14 +293,24 @@ def run_transfer_experiment(
 
     # Create target model
     if target_board.lower() == "hexagonal":
+        # Infer input channels and num_players from training data
+        with np.load(training_data, allow_pickle=True) as data:
+            in_channels = data["features"].shape[1]  # e.g., 56 or 64
+            # Infer num_players from values_mp shape if available
+            if "values_mp" in data:
+                actual_num_players = data["values_mp"].shape[1]
+            else:
+                actual_num_players = num_players
+
+        logger.info(f"Creating HexNeuralNet_v3 with in_channels={in_channels}, num_players={actual_num_players}")
         target_model = HexNeuralNet_v3(
-            in_channels=64,  # V3 encoder: 16 base × 4 frames
+            in_channels=in_channels,  # Match training data
             global_features=20,
             num_res_blocks=12,
             num_filters=192,
             board_size=HEX_BOARD_SIZE,
             policy_size=P_HEX,
-            num_players=num_players,
+            num_players=actual_num_players,
         )
     else:
         raise ValueError(f"Unsupported target board: {target_board}")
