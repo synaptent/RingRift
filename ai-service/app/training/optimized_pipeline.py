@@ -147,6 +147,29 @@ except ImportError:
     DistributedConfig = None
     GradientCompressor = None
 
+try:
+    from .advanced_training import (
+        LRFinder,
+        LRFinderResult,
+        GradientCheckpointing,
+        PFSPOpponentPool,
+        OpponentStats,
+        CMAESAutoTuner,
+        PlateauConfig,
+        create_advanced_training_suite,
+    )
+    HAS_ADVANCED_TRAINING = True
+except ImportError:
+    HAS_ADVANCED_TRAINING = False
+    LRFinder = None
+    LRFinderResult = None
+    GradientCheckpointing = None
+    PFSPOpponentPool = None
+    OpponentStats = None
+    CMAESAutoTuner = None
+    PlateauConfig = None
+    create_advanced_training_suite = None
+
 
 @dataclass
 class PipelineResult:
@@ -195,12 +218,18 @@ class OptimizedTrainingPipeline:
         self._quality_scorer = DataQualityScorer() if HAS_TRAINING_ENHANCEMENTS else None
         self._calibration = CalibrationAutomation() if HAS_TRAINING_ENHANCEMENTS else None
 
+        # Advanced training utilities
+        self._pfsp_pool = PFSPOpponentPool() if HAS_ADVANCED_TRAINING else None
+        self._auto_tuner = None  # Initialized on demand with model-specific settings
+        self._gradient_checkpointing = None  # Initialized with model
+
         logger.info(f"OptimizedTrainingPipeline initialized with: "
                     f"cache={HAS_EXPORT_CACHE}, dynamic={HAS_DYNAMIC_EXPORT}, "
                     f"curriculum={HAS_CURRICULUM_FEEDBACK}, locks={HAS_DISTRIBUTED_LOCK}, "
                     f"health={HAS_HEALTH_MONITOR}, registry={HAS_MODEL_REGISTRY}, "
                     f"enhancements={HAS_TRAINING_ENHANCEMENTS}, "
-                    f"multi_task={HAS_MULTI_TASK}, distributed={HAS_DISTRIBUTED_TRAINING}")
+                    f"multi_task={HAS_MULTI_TASK}, distributed={HAS_DISTRIBUTED_TRAINING}, "
+                    f"advanced={HAS_ADVANCED_TRAINING}")
 
     def should_train(self, config_key: str, games_since_training: int = 0) -> Tuple[bool, str]:
         """Check if training should run for a config.
@@ -542,6 +571,7 @@ class OptimizedTrainingPipeline:
                 "training_enhancements": HAS_TRAINING_ENHANCEMENTS,
                 "multi_task_learning": HAS_MULTI_TASK,
                 "distributed_training": HAS_DISTRIBUTED_TRAINING,
+                "advanced_training": HAS_ADVANCED_TRAINING,
             },
             active_training=list(self._active_locks.keys()),
             health_status=health_status,
@@ -648,6 +678,114 @@ class OptimizedTrainingPipeline:
         """
         if self._calibration:
             self._calibration.add_samples(predictions, outcomes)
+
+    # =========================================================================
+    # Advanced Training Utilities
+    # =========================================================================
+
+    def get_lr_finder(
+        self,
+        model: Any,
+        optimizer: Any,
+        criterion: Any,
+    ) -> Optional[Any]:
+        """Get a learning rate finder for optimal LR detection.
+
+        Args:
+            model: Model to find LR for
+            optimizer: Optimizer to use
+            criterion: Loss function
+
+        Returns:
+            LRFinder instance or None if not available
+        """
+        if not HAS_ADVANCED_TRAINING or LRFinder is None:
+            return None
+
+        return LRFinder(model, optimizer, criterion)
+
+    def get_gradient_checkpointing(self, model: Any) -> Optional[Any]:
+        """Get gradient checkpointing for memory-efficient training.
+
+        Args:
+            model: Model to apply checkpointing to
+
+        Returns:
+            GradientCheckpointing instance or None if not available
+        """
+        if not HAS_ADVANCED_TRAINING or GradientCheckpointing is None:
+            return None
+
+        self._gradient_checkpointing = GradientCheckpointing(model)
+        return self._gradient_checkpointing
+
+    def get_pfsp_pool(self) -> Optional[Any]:
+        """Get the PFSP opponent pool for self-play.
+
+        Returns:
+            PFSPOpponentPool instance or None if not available
+        """
+        return self._pfsp_pool
+
+    def get_auto_tuner(
+        self,
+        board_type: str = "square8",
+        num_players: int = 2,
+        plateau_patience: int = 10,
+    ) -> Optional[Any]:
+        """Get CMA-ES auto-tuner for hyperparameter optimization on plateau.
+
+        Args:
+            board_type: Board type for optimization
+            num_players: Number of players
+            plateau_patience: Epochs without improvement before triggering
+
+        Returns:
+            CMAESAutoTuner instance or None if not available
+        """
+        if not HAS_ADVANCED_TRAINING or CMAESAutoTuner is None:
+            return None
+
+        if self._auto_tuner is None:
+            plateau_cfg = PlateauConfig(patience=plateau_patience)
+            self._auto_tuner = CMAESAutoTuner(
+                board_type=board_type,
+                num_players=num_players,
+                plateau_config=plateau_cfg,
+            )
+
+        return self._auto_tuner
+
+    def get_advanced_training_suite(
+        self,
+        model: Any,
+        optimizer: Any,
+        criterion: Any,
+        board_type: str = "square8",
+        num_players: int = 2,
+    ) -> Optional[Dict[str, Any]]:
+        """Get a complete suite of advanced training utilities.
+
+        Args:
+            model: Model to train
+            optimizer: Optimizer
+            criterion: Loss function
+            board_type: Board type
+            num_players: Number of players
+
+        Returns:
+            Dictionary of utility objects or None if not available
+        """
+        if not HAS_ADVANCED_TRAINING or create_advanced_training_suite is None:
+            return None
+
+        return create_advanced_training_suite(
+            model=model,
+            optimizer=optimizer,
+            criterion=criterion,
+            board_type=board_type,
+            num_players=num_players,
+        )
 
 
 # Singleton instance
