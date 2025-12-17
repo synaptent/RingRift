@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import type { Move, Position } from '../../shared/types/game';
+import type { Move, Position, BoardState } from '../../shared/types/game';
 import { positionToString, positionsEqual } from '../../shared/types/game';
 import type { GameFacade, PartialMove } from './GameFacade';
 import { canInteract } from './GameFacade';
@@ -373,7 +373,7 @@ export function useCellInteractions(
 
       if (requestRingPlacementCount) {
         void requestRingPlacementCount({ maxCount, hasStack, defaultCount }).then((count) => {
-          if (!Number.isFinite(count)) {
+          if (count === null || !Number.isFinite(count)) {
             return;
           }
           submitPlacement(Math.max(1, Math.min(maxCount, Math.floor(count))));

@@ -14,7 +14,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import type { GameState } from '../../shared/types/game';
-import type { ClientSandboxEngine } from '../services/ClientSandboxEngine';
+import type { ClientSandboxEngine } from '../sandbox/ClientSandboxEngine';
 import { getReplayService } from '../services/ReplayService';
 import { storeGameLocally, getPendingCount } from '../services/LocalGameStorage';
 import { GameSyncService, type SyncState } from '../services/GameSyncService';

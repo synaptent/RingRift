@@ -29,21 +29,24 @@ export function Tooltip({ content, children }: TooltipProps) {
   const show = () => setOpen(true);
   const hide = () => setOpen(false);
 
+  // Type helper for optional event handlers
+  type EventHandler<E> = ((event: E) => void) | undefined;
+
   const trigger = cloneElement(children as ReactElement<Record<string, unknown>>, {
     onMouseEnter: (event: React.MouseEvent) => {
-      children.props.onMouseEnter?.(event);
+      (children.props.onMouseEnter as EventHandler<React.MouseEvent>)?.(event);
       show();
     },
     onMouseLeave: (event: React.MouseEvent) => {
-      children.props.onMouseLeave?.(event);
+      (children.props.onMouseLeave as EventHandler<React.MouseEvent>)?.(event);
       hide();
     },
     onFocus: (event: React.FocusEvent) => {
-      children.props.onFocus?.(event);
+      (children.props.onFocus as EventHandler<React.FocusEvent>)?.(event);
       show();
     },
     onBlur: (event: React.FocusEvent) => {
-      children.props.onBlur?.(event);
+      (children.props.onBlur as EventHandler<React.FocusEvent>)?.(event);
       hide();
     },
     'aria-describedby': open ? id : undefined,

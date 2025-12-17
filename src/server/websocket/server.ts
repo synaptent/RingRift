@@ -13,9 +13,6 @@ import {
   WebSocketPayloadSchemas,
   PlayerMovePayload,
   ChatMessagePayload,
-  RematchRequestPayload,
-  RematchResponsePayload,
-  MatchmakingJoinPayload,
 } from '../../shared/validation/websocketSchemas';
 import {
   WebSocketErrorCode,

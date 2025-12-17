@@ -18,7 +18,7 @@ import type { BoardState, GameState, Position, BoardType } from '../../shared/ty
 import type { BoardViewModel } from '../adapters/gameViewModels';
 import { toBoardViewModel, deriveBoardDecisionHighlights } from '../adapters/gameViewModels';
 import { useAccessibility } from '../contexts/AccessibilityContext';
-import type { MoveAnimation } from './useMoveAnimation';
+import type { MoveAnimationData as MoveAnimation } from '../components/BoardView';
 import type { PlayerChoice } from '../../shared/types/game';
 
 // ═══════════════════════════════════════════════════════════════════════════

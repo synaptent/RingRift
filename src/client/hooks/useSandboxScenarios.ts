@@ -13,9 +13,9 @@
 
 import React, { useState, useCallback, useRef } from 'react';
 import { toast } from 'react-hot-toast';
-import type { GameState, Position } from '../../shared/types/game';
-import type { ClientSandboxEngine } from '../services/ClientSandboxEngine';
-import type { MoveAnimation } from './useMoveAnimation';
+import type { GameState, Position, Move } from '../../shared/types/game';
+import type { ClientSandboxEngine } from '../sandbox/ClientSandboxEngine';
+import type { MoveAnimationData as MoveAnimation } from '../components/BoardView';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -215,7 +215,7 @@ export function useSandboxScenarios<
       // For forking, we create a minimal scenario-like object
       // The parent's initSandboxWithScenario must handle this case
       const forkScenario = {
-        id: `fork-${state.gameId ?? state.id}-${moveIndex}`,
+        id: `fork-${state.id}-${moveIndex}`,
         name: `Fork from move ${moveIndex}`,
         description: `Forked from replay at move ${moveIndex}`,
         source: 'fork',

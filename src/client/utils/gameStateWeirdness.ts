@@ -37,14 +37,14 @@ export function getWeirdStateBanner(
     if (victoryState && victoryState.reason === 'game_completed') {
       return {
         type: 'structural-stalemate',
-        winner: victoryState.winner,
+        ...(victoryState.winner !== undefined ? { winner: victoryState.winner } : {}),
         reason: victoryState.reason,
       };
     }
     if (victoryState && victoryState.reason === 'last_player_standing') {
       return {
         type: 'last-player-standing',
-        winner: victoryState.winner,
+        ...(victoryState.winner !== undefined ? { winner: victoryState.winner } : {}),
         reason: victoryState.reason,
       };
     }

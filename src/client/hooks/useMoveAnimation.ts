@@ -70,10 +70,22 @@ export function useMoveAnimation() {
 }
 
 /**
+ * Options for useAutoMoveAnimation hook.
+ */
+export interface UseAutoMoveAnimationOptions {
+  /** Whether animations are enabled (default: true) */
+  enabled?: boolean;
+}
+
+/**
  * Hook that automatically detects moves from game state changes
  * and triggers animations.
  */
-export function useAutoMoveAnimation(gameState: GameState | null) {
+export function useAutoMoveAnimation(
+  gameState: GameState | null,
+  options: UseAutoMoveAnimationOptions = {}
+) {
+  const { enabled = true } = options;
   const { pendingAnimation, triggerAnimation, clearAnimation } = useMoveAnimation();
   const prevMoveCountRef = useRef<number>(0);
   const prevGameIdRef = useRef<string | null>(null);
@@ -169,18 +181,21 @@ export function useAutoMoveAnimation(gameState: GameState | null) {
             }
           );
 
-          triggerAnimation(moveForAnimation, playerNumber, {
-            stackHeight: destStack?.stackHeight ?? 1,
-            capHeight: destStack?.capHeight ?? 1,
-            chainCapturePath,
-          });
+          // Only trigger animation if enabled
+          if (enabled) {
+            triggerAnimation(moveForAnimation, playerNumber, {
+              stackHeight: destStack?.stackHeight ?? 1,
+              capHeight: destStack?.capHeight ?? 1,
+              chainCapturePath,
+            });
+          }
         }
       }
     }
 
     prevMoveCountRef.current = currentMoveCount;
     prevBoardRef.current = gameState.board;
-  }, [gameState, triggerAnimation, clearAnimation]);
+  }, [gameState, enabled, triggerAnimation, clearAnimation]);
 
   return {
     pendingAnimation,

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import type { BoardType, GamePhase, Move, Player } from '../../shared/types/game';
 import type { PositionEvaluationPayload } from '../../shared/types/websocket';
 import { getPlayerColors, PHASE_INFO } from '../adapters/gameViewModels';
@@ -168,7 +168,7 @@ export function SpectatorHUD({
   connectionStatus = 'connected',
   activeChoice,
   disconnectedPlayers = [],
-  boardType = 'square8',
+  boardType: _boardType = 'square8',
   showVictoryConditions = true,
   className = '',
 }: SpectatorHUDProps) {

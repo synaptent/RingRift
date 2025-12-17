@@ -88,9 +88,11 @@ export interface AnalyzeInvalidMoveOptions {
   isPlayer?: boolean;
   isMyTurn?: boolean;
   isConnected?: boolean;
-  selectedPosition?: Position | null;
-  validMoves?: Array<{ from?: Position; to: Position }>;
-  mustMoveFrom?: Position;
+  // Allow undefined explicitly for exactOptionalPropertyTypes compatibility
+  selectedPosition?: Position | null | undefined;
+  // Accept Move[] by allowing `from` to be undefined (matches Move.from type)
+  validMoves?: Array<{ from?: Position | undefined; to: Position }> | undefined;
+  mustMoveFrom?: Position | undefined;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

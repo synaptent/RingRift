@@ -381,6 +381,8 @@ export function buildRingEliminationChoice(
         stackPosition: pos,
         capHeight,
         totalHeight,
+        // For territory eliminations, ringsToEliminate equals capHeight (RR-CANON-R145)
+        ringsToEliminate: capHeight,
         moveId: opt.id || key,
       };
     }),

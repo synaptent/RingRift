@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { PositionEvaluationPayload } from '../../shared/types/websocket';
-import type { ClientSandboxEngine } from '../services/ClientSandboxEngine';
+import type { ClientSandboxEngine } from '../sandbox/ClientSandboxEngine';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -62,9 +62,7 @@ export interface SandboxEvaluationState {
 /**
  * Hook for managing AI evaluation in sandbox mode.
  */
-export function useSandboxEvaluation(
-  options: SandboxEvaluationOptions
-): SandboxEvaluationState {
+export function useSandboxEvaluation(options: SandboxEvaluationOptions): SandboxEvaluationState {
   const {
     engine,
     developerToolsEnabled,
@@ -221,17 +219,18 @@ export function getEvaluationTrend(
     return 'unknown';
   }
 
-  // Get last few evaluations for the player
+  // Get last few evaluations for the player from perPlayer map
   const playerEvals = history
-    .filter((e) => e.playerNumber === playerNumber)
+    .filter((e) => e.perPlayer[playerNumber] !== undefined)
+    .map((e) => e.perPlayer[playerNumber].totalEval)
     .slice(-3);
 
   if (playerEvals.length < 2) {
     return 'unknown';
   }
 
-  const first = playerEvals[0].evaluation;
-  const last = playerEvals[playerEvals.length - 1].evaluation;
+  const first = playerEvals[0];
+  const last = playerEvals[playerEvals.length - 1];
   const diff = last - first;
 
   if (Math.abs(diff) < 0.1) {

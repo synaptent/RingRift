@@ -311,7 +311,7 @@ def restart_workers(instance: Dict) -> bool:
     # - hex8/hexagonal: use descent (CPU) until models are trained
     if board_type == "square8":
         engine = "mcts"
-        model_arg = "--model-id ringrift_v5_sq8_2p"  # Use latest square8 model
+        model_arg = "--nn-model-id ringrift_v5_sq8_2p"  # Use latest square8 model
     else:
         engine = "descent"
         model_arg = ""

@@ -586,8 +586,8 @@ export function useSandboxInteractions({
             // For overlength lines, there are two options: Option 1 (collapse all, cost 1)
             // and Option 2 (collapse minimum, free). Present a choice dialog.
             if (matchingRecoveryMoves.length > 1) {
-              const option1Move = matchingRecoveryMoves.find((m) => m.option === 1);
-              const option2Move = matchingRecoveryMoves.find((m) => m.option === 2);
+              const option1Move = matchingRecoveryMoves.find((m) => m.recoveryOption === 1);
+              const option2Move = matchingRecoveryMoves.find((m) => m.recoveryOption === 2);
 
               if (option1Move && option2Move) {
                 const choice = await requestRecoveryChoice();

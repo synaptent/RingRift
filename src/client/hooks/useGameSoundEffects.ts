@@ -55,7 +55,6 @@ function getMoveTypeForSound(
     case 'move_ring':
       return 'move_stack';
     case 'overtaking_capture':
-    case 'capture':
       return 'capture';
     case 'continue_capture_segment':
       return 'chain_capture';
@@ -167,7 +166,6 @@ export function useGameSoundEffects({
           // Check if it's a capture move
           const isCapture =
             latestMove.type === 'overtaking_capture' ||
-            latestMove.type === 'capture' ||
             latestMove.type === 'continue_capture_segment';
           playMoveSound(soundType, isCapture);
         }
@@ -190,7 +188,7 @@ export function useGameSoundEffects({
       return;
     }
 
-    const soundType = getGameEndSoundType(victoryState, currentUserId);
+    const soundType = getGameEndSoundType(victoryState, myPlayerNumber);
     if (soundType) {
       playGameEndSound(soundType);
       gameEndSoundPlayedRef.current = true;

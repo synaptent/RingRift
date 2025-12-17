@@ -215,7 +215,7 @@ const getPlayerColors = (playerNumber?: number) => {
 };
 
 // Contrasting highlight colors for just-moved rings (complements player colors)
-const getJustMovedHighlight = (playerNumber?: number): string => {
+const _getJustMovedHighlight = (playerNumber?: number): string => {
   switch (playerNumber) {
     case 1: // Emerald → Rose highlight
       return 'ring-[2px] ring-rose-400';
@@ -231,7 +231,7 @@ const getJustMovedHighlight = (playerNumber?: number): string => {
 };
 
 // Derive highlight from colorClass for ViewModel-based rendering
-const getJustMovedHighlightFromColorClass = (colorClass: string): string => {
+const _getJustMovedHighlightFromColorClass = (colorClass: string): string => {
   if (colorClass.includes('emerald')) return 'ring-[2px] ring-rose-400';
   if (colorClass.includes('sky')) return 'ring-[2px] ring-orange-400';
   if (colorClass.includes('amber')) return 'ring-[2px] ring-violet-400';

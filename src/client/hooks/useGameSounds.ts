@@ -150,7 +150,7 @@ export function useGameSounds(): UseGameSoundsResult {
  */
 export function getGameEndSoundType(
   gameResult: GameResult,
-  currentUserId?: string
+  myPlayerNumber?: number
 ): 'victory' | 'defeat' | 'draw' | null {
   if (gameResult.reason === 'draw') {
     return 'draw';
@@ -160,9 +160,9 @@ export function getGameEndSoundType(
     return null;
   }
 
-  // If we know the current user, determine if they won or lost
-  if (currentUserId) {
-    return gameResult.winner.id === currentUserId ? 'victory' : 'defeat';
+  // If we know the player number, determine if they won or lost
+  if (myPlayerNumber !== undefined) {
+    return gameResult.winner === myPlayerNumber ? 'victory' : 'defeat';
   }
 
   // Default to victory sound for spectators/unknown

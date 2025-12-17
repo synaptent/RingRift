@@ -503,8 +503,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const reason =
         decisionAutoResolved.reason === 'timeout'
           ? 'timed out'
-          : decisionAutoResolved.reason === 'no_options'
-            ? 'had no options'
+          : decisionAutoResolved.reason === 'disconnected'
+            ? 'disconnected'
             : 'auto-resolved';
       toast(`Decision ${reason} - move applied automatically`, {
         icon: '⏱️',

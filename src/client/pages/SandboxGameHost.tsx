@@ -404,8 +404,8 @@ export const SandboxGameHost: React.FC = () => {
     sandboxStateVersion: _sandboxStateVersion,
     setSandboxStateVersion,
     developerToolsEnabled,
-    setDeveloperToolsEnabled,
-    sandboxMode,
+    setDeveloperToolsEnabled: _setDeveloperToolsEnabled,
+    sandboxMode: _sandboxMode,
     setSandboxMode,
     isBeginnerMode,
     initLocalSandboxEngine,
@@ -420,7 +420,7 @@ export const SandboxGameHost: React.FC = () => {
 
   // Sandbox clock: time control settings (default 15min + 10s increment)
   const [sandboxClockEnabled, setSandboxClockEnabled] = useState(false);
-  const [sandboxTimeControl, setSandboxTimeControl] = useState<{
+  const [sandboxTimeControl, _setSandboxTimeControl] = useState<{
     initialTimeMs: number;
     incrementMs: number;
   }>({
@@ -1714,7 +1714,7 @@ export const SandboxGameHost: React.FC = () => {
 
       const elapsed = Date.now() - turnStart;
       const baseTime = sandboxPlayerTimes[currentPlayer] ?? sandboxTimeControl.initialTimeMs;
-      const newTime = Math.max(0, baseTime - elapsed);
+      const _newTime = Math.max(0, baseTime - elapsed);
 
       // Update the display (this doesn't persist the deduction - that happens on turn change)
       // For now, we re-render to show the countdown
