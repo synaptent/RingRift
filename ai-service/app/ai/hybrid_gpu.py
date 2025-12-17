@@ -798,7 +798,7 @@ def create_hybrid_evaluator(
     Returns:
         Configured HybridGPUEvaluator
     """
-    board_size = {"square8": 8, "square19": 19, "hex": 25}.get(
+    board_size = {"square8": 8, "square19": 19, "hex8": 9, "hex": 25, "hexagonal": 25}.get(
         board_type.lower(), 8
     )
 
