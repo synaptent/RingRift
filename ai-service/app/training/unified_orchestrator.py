@@ -75,6 +75,7 @@ class OrchestratorConfig:
     epochs: int = 50
     batch_size: int = 256
     learning_rate: float = 0.001
+    auto_tune_batch_size: bool = True  # Auto-tune batch size via profiling
 
     # Data settings
     data_path: Optional[str] = None
@@ -534,6 +535,10 @@ class UnifiedTrainingOrchestrator:
                 lr=self.config.learning_rate,
             )
 
+        # Auto-tune batch size if enabled and on GPU
+        if self.config.auto_tune_batch_size and torch.cuda.is_available():
+            self._auto_tune_batch_size(torch)
+
         # Initialize components in order
         self._checkpoint.initialize()
         self._hot_buffer.initialize()
@@ -581,6 +586,57 @@ class UnifiedTrainingOrchestrator:
             self._step = progress.get("global_step", 0)
             self._epoch = progress.get("epoch", 0)
             logger.info(f"[Orchestrator] Resumed from step {self._step}, epoch {self._epoch}")
+
+    def _auto_tune_batch_size(self, torch_module) -> None:
+        """Auto-tune batch size via GPU profiling.
+
+        Uses binary search with actual forward/backward passes to find the
+        largest batch size that fits in GPU memory. Updates config.batch_size
+        with the tuned value.
+        """
+        try:
+            from app.training.config import auto_tune_batch_size as tune_batch_fn
+
+            original_batch = self.config.batch_size
+            device = next(self._model.parameters()).device
+
+            # Determine feature shape based on board type
+            board_size_map = {
+                "square8": 8,
+                "square19": 19,
+                "hex8": 15,  # Hex8 uses 15x15 grid
+                "hexagonal": 25,
+            }
+            board_size = board_size_map.get(self.config.board_type, 8)
+            history_length = 3  # Default history length
+
+            # Feature channels: 14 base * history_length (typical)
+            feature_shape = (14 * history_length, board_size, board_size)
+            globals_shape = (20,)  # 20 global features
+            policy_size = board_size * board_size * 15  # Approximate policy size
+
+            logger.info(f"[Orchestrator] Auto-tuning batch size (current: {original_batch})...")
+
+            tuned_batch = tune_batch_fn(
+                model=self._model,
+                device=device,
+                feature_shape=feature_shape,
+                globals_shape=globals_shape,
+                policy_size=policy_size,
+                min_batch=max(32, original_batch // 4),
+                max_batch=min(8192, original_batch * 8),
+            )
+
+            # Update config with tuned value (create a new dataclass if frozen)
+            if tuned_batch != original_batch:
+                # OrchestratorConfig is a dataclass, update via object.__setattr__
+                object.__setattr__(self.config, 'batch_size', tuned_batch)
+                logger.info(f"[Orchestrator] Auto-tuned batch size: {tuned_batch} (was {original_batch})")
+            else:
+                logger.info(f"[Orchestrator] Batch size unchanged after auto-tune: {tuned_batch}")
+
+        except Exception as e:
+            logger.warning(f"[Orchestrator] Batch size auto-tuning failed: {e}. Using original.")
 
     def train_step(self, batch: Tuple[Any, ...]) -> Dict[str, float]:
         """Execute a single training step.

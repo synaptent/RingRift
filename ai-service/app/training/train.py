@@ -1472,7 +1472,7 @@ def train_model(
     adaptive_warmup: bool = False,
     hard_example_mining: bool = False,
     hard_example_top_k: float = 0.3,
-    auto_tune_batch_size: bool = False,
+    auto_tune_batch_size: bool = True,  # Enabled by default for 15-30% better throughput
     track_calibration: bool = False,
     # 2024-12 Hot Data Buffer and Integrated Enhancements
     use_hot_data_buffer: bool = False,

@@ -58,6 +58,12 @@ logger = logging.getLogger(__name__)
 # Games reaching these limits may indicate bugs OR stable equilibria (3+ players).
 # -----------------------------------------------------------------------------
 
+# Repetition detection threshold for draw declaration.
+# Games with the same position occurring this many times are declared draws.
+# Set to 0 to disable repetition detection.
+REPETITION_THRESHOLD = int(os.getenv("RINGRIFT_REPETITION_THRESHOLD", "3"))
+
+
 THEORETICAL_MAX_MOVES: Dict[BoardType, Dict[int, int]] = {
     BoardType.SQUARE8: {
         2: 500,   # ~100 max observed * 5x headroom (all 2p games complete)
@@ -389,6 +395,10 @@ class RingRiftEnv:
         self._state: Optional[GameState] = None
         self._move_count: int = 0
 
+        # Position repetition tracking for draw detection
+        self._position_counts: Dict[int, int] = {}
+        self._repetition_threshold = REPETITION_THRESHOLD
+
         # Experimental overrides for ablation studies
         self._rings_per_player = rings_per_player
         self._lps_rounds_required = lps_rounds_required
@@ -454,6 +464,12 @@ class RingRiftEnv:
             lps_rounds_required=self._lps_rounds_required,
         )
         self._move_count = 0
+
+        # Reset position repetition tracking
+        self._position_counts = {}
+        # Record initial position
+        if hasattr(self._state, 'zobrist_hash') and self._state.zobrist_hash:
+            self._position_counts[self._state.zobrist_hash] = 1
 
         # Reset FSM state for the new episode.
         if self._fsm is not None:
@@ -568,12 +584,17 @@ class RingRiftEnv:
     def _infer_canonical_victory_reason(
         self,
         terminated_by_budget_only: bool,
+        terminated_by_repetition: bool = False,
     ) -> str:
         """Map engine-level termination state to a canonical result string.
 
         This helper keeps the mapping between Python/TS result enums
         and the canonical categories used by training and evaluation.
         """
+        # Repetition-based draw takes priority over budget cutoff
+        if terminated_by_repetition:
+            return "draw_by_repetition"
+
         if (
             terminated_by_budget_only
             and self._state is not None
@@ -753,15 +774,33 @@ class RingRiftEnv:
             self._move_count += 1
             auto_generated_moves.append(auto_move)
 
+        # Track position for repetition detection
+        terminated_by_repetition = False
+        if self._repetition_threshold > 0:
+            pos_hash = getattr(self._state, 'zobrist_hash', 0)
+            if pos_hash:
+                self._position_counts[pos_hash] = self._position_counts.get(pos_hash, 0) + 1
+                if self._position_counts[pos_hash] >= self._repetition_threshold:
+                    terminated_by_repetition = True
+                    logger.info(
+                        "GAME_DRAW_BY_REPETITION: position repeated %d times. "
+                        "board_type=%s, num_players=%d, move_count=%d",
+                        self._position_counts[pos_hash],
+                        self.board_type.value,
+                        self.num_players,
+                        self._move_count,
+                    )
+
         terminated_by_rules = self._state.game_status != GameStatus.ACTIVE
         terminated_by_budget = self._move_count >= self.max_moves
-        done = terminated_by_rules or terminated_by_budget
+        done = terminated_by_rules or terminated_by_budget or terminated_by_repetition
 
         reward = 0.0
         info: Dict[str, Any] = {
             "winner": self._state.winner,
             "move_count": self._move_count,
             "auto_generated_moves": auto_generated_moves,
+            "terminated_by_repetition": terminated_by_repetition,
         }
 
         # Log warning/error for games that hit max_moves without a winner.
@@ -828,6 +867,7 @@ class RingRiftEnv:
             victory_reason = self._infer_canonical_victory_reason(
                 terminated_by_budget_only=terminated_by_budget
                 and not terminated_by_rules,
+                terminated_by_repetition=terminated_by_repetition,
             )
             info["victory_reason"] = victory_reason
             # Raw engine-level category for debugging / compatibility.

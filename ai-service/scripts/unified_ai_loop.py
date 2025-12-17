@@ -740,6 +740,18 @@ except ImportError:
     ModelCullingController = None
     get_culling_controller = None
 
+# Two-stage gauntlet for efficient evaluation (10 games screen + 50 games deep)
+try:
+    from scripts.two_stage_gauntlet import (
+        run_two_stage_gauntlet,
+        ModelResult as TwoStageModelResult,
+    )
+    HAS_TWO_STAGE_GAUNTLET = True
+except ImportError:
+    HAS_TWO_STAGE_GAUNTLET = False
+    run_two_stage_gauntlet = None
+    TwoStageModelResult = None
+
 # Elo database synchronization for cluster-wide consistency
 try:
     from app.tournament.elo_sync_manager import (
@@ -6481,12 +6493,93 @@ class UnifiedAILoop:
             except asyncio.TimeoutError:
                 pass
 
+    async def _run_two_stage_gauntlet_async(
+        self, config_key: str, unrated_models: List[str]
+    ) -> Optional[int]:
+        """Run two-stage gauntlet asynchronously in thread pool.
+
+        Stage 1: Quick screen (10 games) - eliminate <40% win rate models
+        Stage 2: Deep eval (50 games) - full analysis for top candidates
+
+        Args:
+            config_key: Config like "square8_2p"
+            unrated_models: List of model IDs to evaluate
+
+        Returns:
+            Number of models evaluated, or None on error
+        """
+        from concurrent.futures import ThreadPoolExecutor
+        from app.models import BoardType
+        from app.models.discovery import discover_models as unified_discover_models
+
+        # Parse config key
+        parts = config_key.split("_")
+        board_type_str = parts[0]
+        num_players = int(parts[1].replace("p", ""))
+
+        # Map to BoardType enum
+        board_type_map = {
+            "square8": BoardType.SQUARE8,
+            "square19": BoardType.SQUARE19,
+            "hexagonal": BoardType.HEXAGONAL,
+        }
+        board_type = board_type_map.get(board_type_str)
+        if not board_type:
+            print(f"[TwoStageGauntlet] Unknown board type: {board_type_str}")
+            return None
+
+        # Discover models and filter to unrated ones
+        all_models = unified_discover_models(
+            board_type=board_type,
+            num_players=num_players,
+        )
+        models_to_eval = [
+            {"path": m["path"], "name": m["name"], "type": m.get("type", "nn")}
+            for m in all_models
+            if m["name"] in unrated_models
+        ]
+
+        if not models_to_eval:
+            print(f"[TwoStageGauntlet] {config_key}: No models to evaluate")
+            return 0
+
+        print(f"[TwoStageGauntlet] {config_key}: Running two-stage evaluation on {len(models_to_eval)} models")
+
+        # Run in thread pool (CPU-bound work)
+        loop = asyncio.get_event_loop()
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                results = await loop.run_in_executor(
+                    executor,
+                    lambda: run_two_stage_gauntlet(
+                        models=models_to_eval,
+                        board_type=board_type,
+                        num_players=num_players,
+                        stage1_games=10,
+                        stage2_games=50,
+                        parallel=4,  # Conservative parallelism
+                        record_games=True,
+                    )
+                )
+
+            # Count how many passed stage 1
+            passed = sum(1 for r in results if r.stage1_passed)
+            print(f"[TwoStageGauntlet] {config_key}: {passed}/{len(results)} passed stage 1")
+            return len(results)
+
+        except Exception as e:
+            print(f"[TwoStageGauntlet] {config_key}: Error: {e}")
+            return None
+
     async def _gauntlet_culling_loop(self):
         """Gauntlet evaluation and model culling loop.
 
         Periodically checks if any config has:
-        1. Many unrated models → run gauntlet evaluation
+        1. Many unrated models → run two-stage gauntlet (10+50 games)
         2. Model count > 100 → cull bottom 75% (keeping top quartile)
+
+        Uses two-stage gauntlet for efficiency: quick screen eliminates weak
+        models early, saving compute for deep evaluation of promising ones.
 
         Respects uncertainty: models with < 20 games are protected from culling.
         """
@@ -6497,7 +6590,9 @@ class UnifiedAILoop:
         # Initial delay to let other loops stabilize
         await asyncio.sleep(60)
 
-        print("[Gauntlet] Gauntlet evaluation and model culling loop started")
+        use_two_stage = HAS_TWO_STAGE_GAUNTLET and run_two_stage_gauntlet is not None
+        print(f"[Gauntlet] Gauntlet evaluation and model culling loop started")
+        print(f"[Gauntlet] Two-stage gauntlet: {'ENABLED' if use_two_stage else 'DISABLED (fallback to full)'}")
 
         while self._running:
             try:
@@ -6510,15 +6605,25 @@ class UnifiedAILoop:
                     # Check each of the 9 configs
                     for config_key in GAUNTLET_CONFIG_KEYS:
                         # Check for unrated models
-                        unrated_count = len(self.gauntlet.get_unrated_models(config_key))
+                        unrated_models = self.gauntlet.get_unrated_models(config_key)
+                        unrated_count = len(unrated_models)
                         model_count = self.culler.count_models(config_key)
 
                         # Run gauntlet if many unrated models
                         if unrated_count > 20:
                             print(f"[Gauntlet] {config_key}: {unrated_count} unrated models - running gauntlet")
                             try:
-                                result = await self.gauntlet.run_gauntlet(config_key)
-                                print(f"[Gauntlet] {config_key}: Evaluated {result.models_evaluated} models")
+                                if use_two_stage:
+                                    # Two-stage: 10 games screen + 50 games deep
+                                    evaluated = await self._run_two_stage_gauntlet_async(
+                                        config_key, unrated_models
+                                    )
+                                    if evaluated is not None:
+                                        print(f"[Gauntlet] {config_key}: Two-stage evaluated {evaluated} models")
+                                else:
+                                    # Fallback to full gauntlet
+                                    result = await self.gauntlet.run_gauntlet(config_key)
+                                    print(f"[Gauntlet] {config_key}: Evaluated {result.models_evaluated} models")
                             except Exception as e:
                                 print(f"[Gauntlet] {config_key}: Gauntlet error: {e}")
 
