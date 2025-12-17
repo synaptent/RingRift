@@ -69,6 +69,19 @@ MIN_WIN_RATE_PROMOTE = 0.45
 PROMOTION_COOLDOWN_SECONDS = 900  # 15 minutes
 
 # =============================================================================
+# Elo Rating System
+# =============================================================================
+
+# Initial Elo rating for new models/players
+INITIAL_ELO_RATING = 1500.0
+
+# Minimum Elo rating (floor)
+MIN_ELO_RATING = 100.0
+
+# Maximum Elo rating (ceiling)
+MAX_ELO_RATING = 3000.0
+
+# =============================================================================
 # Evaluation Thresholds
 # =============================================================================
 

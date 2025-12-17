@@ -48,6 +48,19 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 
+# Import canonical thresholds
+try:
+    from app.config.thresholds import (
+        INITIAL_ELO_RATING,
+        ELO_K_FACTOR,
+        MIN_GAMES_FOR_ELO,
+    )
+except ImportError:
+    # Fallback defaults if thresholds not available
+    INITIAL_ELO_RATING = 1500.0
+    ELO_K_FACTOR = 32
+    MIN_GAMES_FOR_ELO = 30
+
 # Import coordination for single-writer enforcement
 # Using the new coordination module (cluster_coordinator is deprecated)
 try:
@@ -72,9 +85,12 @@ _elo_service_lock = threading.RLock()
 
 @dataclass
 class EloRating:
-    """Elo rating with metadata."""
+    """Elo rating with metadata.
+
+    Note: Default rating uses INITIAL_ELO_RATING from app.config.thresholds (1500.0)
+    """
     participant_id: str
-    rating: float = 1500.0
+    rating: float = 1500.0  # See app.config.thresholds.INITIAL_ELO_RATING
     games_played: int = 0
     wins: int = 0
     losses: int = 0
@@ -147,9 +163,10 @@ class LeaderboardEntry:
 class EloService:
     """Centralized Elo rating service with feedback integration and single-writer enforcement."""
 
-    K_FACTOR = 32.0
-    INITIAL_ELO = 1500.0
-    CONFIDENCE_GAMES = 30  # Games needed for high confidence
+    # Use canonical thresholds from app.config.thresholds
+    K_FACTOR = float(ELO_K_FACTOR)
+    INITIAL_ELO = float(INITIAL_ELO_RATING)
+    CONFIDENCE_GAMES = MIN_GAMES_FOR_ELO  # Games needed for high confidence
 
     def __init__(self, db_path: Optional[Path] = None, enforce_single_writer: bool = True):
         """Initialize the Elo service.

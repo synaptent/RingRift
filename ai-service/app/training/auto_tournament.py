@@ -26,6 +26,13 @@ from app.training.model_versioning import (
 )
 from app.training.tournament import Tournament, VICTORY_REASONS
 
+# Import canonical thresholds
+try:
+    from app.config.thresholds import INITIAL_ELO_RATING, ELO_K_FACTOR
+except ImportError:
+    INITIAL_ELO_RATING = 1500.0
+    ELO_K_FACTOR = 32
+
 logger = logging.getLogger(__name__)
 
 
@@ -277,8 +284,9 @@ class AutoTournamentPipeline:
     # Promotion thresholds
     PROMOTION_WIN_RATE_THRESHOLD = 0.55  # 55% win rate required
     PROMOTION_SIGNIFICANCE_LEVEL = 0.05  # p-value threshold
-    DEFAULT_ELO = 1500.0
-    ELO_K_FACTOR = 32.0
+    # Use canonical values from app.config.thresholds
+    DEFAULT_ELO = float(INITIAL_ELO_RATING)
+    ELO_K = float(ELO_K_FACTOR)  # Renamed to avoid shadowing import
 
     def __init__(
         self,
@@ -505,7 +513,7 @@ class AutoTournamentPipeline:
                     model_path_a=model_a.model_path,
                     model_path_b=model_b.model_path,
                     num_games=games_per_match,
-                    k_elo=int(self.ELO_K_FACTOR),
+                    k_elo=int(self.ELO_K),
                 )
 
                 # Override initial ratings with current Elo
@@ -662,7 +670,7 @@ class AutoTournamentPipeline:
             model_path_a=challenger.model_path,
             model_path_b=champion.model_path,
             num_games=games,
-            k_elo=int(self.ELO_K_FACTOR),
+            k_elo=int(self.ELO_K),
         )
 
         # Initialize with current ratings
