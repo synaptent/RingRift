@@ -174,7 +174,7 @@ For multi-GPU training across a cluster:
    python scripts/unified_ai_loop.py --status
    ```
 
-See [docs/UNIFIED_AI_LOOP.md](docs/UNIFIED_AI_LOOP.md) for the full pipeline documentation.
+See [docs/training/UNIFIED_AI_LOOP.md](docs/training/UNIFIED_AI_LOOP.md) for the full pipeline documentation.
 
 ## Cluster Setup
 
@@ -283,16 +283,16 @@ The service enforces 80% max utilization to prevent system overload:
 
 ## Documentation
 
-| Document                                               | Description                  |
-| ------------------------------------------------------ | ---------------------------- |
-| [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) | System architecture guide    |
-| [Unified AI Loop](docs/UNIFIED_AI_LOOP.md)             | Main training pipeline       |
-| [NNUE Policy Training](docs/NNUE_POLICY_TRAINING.md)   | Policy training with KL loss |
-| [Example Training Run](docs/EXAMPLE_TRAINING_RUN.md)   | Step-by-step tutorial        |
-| [Cluster Setup Guide](docs/CLUSTER_SETUP_GUIDE.md)     | Multi-GPU deployment         |
-| [AI Training Plan](docs/AI_TRAINING_PLAN.md)           | Training methodology         |
-| [Game Record Spec](docs/GAME_RECORD_SPEC.md)           | Data format specification    |
-| [P2P Orchestration](docs/VAST_P2P_ORCHESTRATION.md)    | Cluster coordination         |
+| Document                                                            | Description                  |
+| ------------------------------------------------------------------- | ---------------------------- |
+| [Architecture Overview](docs/architecture/ARCHITECTURE_OVERVIEW.md) | System architecture guide    |
+| [Unified AI Loop](docs/training/UNIFIED_AI_LOOP.md)                 | Main training pipeline       |
+| [NNUE Policy Training](docs/algorithms/NNUE_POLICY_TRAINING.md)     | Policy training with KL loss |
+| [Example Training Run](docs/training/EXAMPLE_TRAINING_RUN.md)       | Step-by-step tutorial        |
+| [Cluster Setup Guide](docs/infrastructure/CLUSTER_SETUP_GUIDE.md)   | Multi-GPU deployment         |
+| [AI Training Plan](docs/roadmaps/AI_TRAINING_PLAN.md)               | Training methodology         |
+| [Game Record Spec](docs/specs/GAME_RECORD_SPEC.md)                  | Data format specification    |
+| [P2P Orchestration](docs/infrastructure/VAST_P2P_ORCHESTRATION.md)  | Cluster coordination         |
 
 ## Troubleshooting
 

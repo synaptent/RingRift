@@ -41,7 +41,7 @@ This document provides a comprehensive reference for all training features, para
 | `value_weight`              | float | 1.0            | Weight of value loss in total loss            |
 | `policy_label_smoothing`    | float | 0.05           | Label smoothing factor (0.05-0.1 recommended) |
 | `warmup_epochs`             | int   | 5              | Epochs for learning rate warmup               |
-| `early_stopping_patience`   | int   | 15             | Epochs without improvement before stopping    |
+| `early_stopping_patience`   | int   | 10             | Epochs without improvement before stopping    |
 | `lr_scheduler`              | str   | "cosine"       | Learning rate scheduler type                  |
 | `lr_min`                    | float | 1e-6           | Minimum learning rate for cosine annealing    |
 | `sampling_weights`          | str   | "victory_type" | Sample balancing strategy                     |

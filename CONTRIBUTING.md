@@ -4,13 +4,12 @@ Thank you for your interest in contributing to RingRift! This document provides 
 
 **Related Documents (single source of truth):**
 
-- [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) - Factual, code-verified status snapshot
 - [TODO.md](./TODO.md) - Task tracking and detailed implementation checklist
 - [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) - Specific bugs and issues
-- [RULES_ENGINE_ARCHITECTURE.md](./RULES_ENGINE_ARCHITECTURE.md) - Canonical engine architecture and SSOT boundaries
-- [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) - Phased strategic plan, milestones, and SLOs
-- [docs/archive/plans/ARCHITECTURE_ASSESSMENT.md](./docs/archive/plans/ARCHITECTURE_ASSESSMENT.md) - Historical architecture analysis (archived)
-- [docs/architecture/CANONICAL_ENGINE_API.md](./docs/architecture/CANONICAL_ENGINE_API.md) - Lifecycle and API reference
+- [RULES_ENGINE_ARCHITECTURE.md](docs/architecture/RULES_ENGINE_ARCHITECTURE.md) - Canonical engine architecture and SSOT boundaries
+- [STRATEGIC_ROADMAP.md](docs/planning/STRATEGIC_ROADMAP.md) - Phased strategic plan, milestones, and SLOs
+- [docs/archive/plans/ARCHITECTURE_ASSESSMENT.md](docs/archive/plans/ARCHITECTURE_ASSESSMENT.md) - Historical architecture analysis (archived)
+- [docs/architecture/CANONICAL_ENGINE_API.md](docs/architecture/CANONICAL_ENGINE_API.md) - Lifecycle and API reference
 
 ---
 
@@ -41,9 +40,8 @@ Thank you for your interest in contributing to RingRift! This document provides 
 Before contributing, please review:
 
 1. **[TODO.md](./TODO.md)** – Active task tracker (canonical priorities)
-2. **[CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md)** – Verified implementation status
-3. **[ringrift_complete_rules.md](./ringrift_complete_rules.md)** – Comprehensive game rules
-4. **[RULES_ENGINE_ARCHITECTURE.md](./RULES_ENGINE_ARCHITECTURE.md)** – Engine architecture
+2. **[docs/rules/COMPLETE_RULES.md](docs/rules/COMPLETE_RULES.md)** – Comprehensive game rules
+3. **[RULES_ENGINE_ARCHITECTURE.md](docs/architecture/RULES_ENGINE_ARCHITECTURE.md)** – Engine architecture
 
 ---
 
@@ -357,7 +355,7 @@ Relates to #issue-number
 > **Status (2025-12-07): Active (documentation/policy only, non-semantics)** \
 > Implements S-05.F.1 from `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`. This section does **not** define game rules or lifecycle semantics. Those remain in:
 >
-> - `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md`, `ringrift_compact_rules.md` (rules semantics SSoT)
+> - `RULES_CANONICAL_SPEC.md`, `docs/rules/COMPLETE_RULES.md`, `docs/rules/COMPACT_RULES.md` (rules semantics SSoT)
 > - `docs/CANONICAL_ENGINE_API.md` + shared TS/WebSocket types and schemas (lifecycle/API SSoT)
 > - Shared TS engine + contracts + contract vectors under `src/shared/engine/**` and `tests/fixtures/contract-vectors/v2/**`
 >
@@ -456,17 +454,16 @@ Description of how to fix
 
 **Must Read (in order):**
 
-1. `ringrift_complete_rules.md` - Complete game rules
-2. `CURRENT_STATE_ASSESSMENT.md` - Current, code-verified state analysis
-3. `TODO.md` - Active task tracking and priorities
-4. `KNOWN_ISSUES.md` - Specific bugs and gaps to fix
+1. `docs/rules/COMPLETE_RULES.md` - Complete game rules
+2. `TODO.md` - Active task tracking and priorities
+3. `KNOWN_ISSUES.md` - Specific bugs and gaps to fix
 
 **Architecture & Technical Reference:**
 
-1. `RULES_ENGINE_ARCHITECTURE.md` - Canonical engine architecture, SSOT boundaries, and host integration
+1. `docs/architecture/RULES_ENGINE_ARCHITECTURE.md` - Canonical engine architecture, SSOT boundaries, and host integration
 2. `docs/architecture/CANONICAL_ENGINE_API.md` - Lifecycle and API reference
-3. `STRATEGIC_ROADMAP.md` - Phased roadmap, milestones, and SLOs
-4. `AI_ARCHITECTURE.md` - AI system architecture, difficulty ladder, and training
+3. `docs/planning/STRATEGIC_ROADMAP.md` - Phased roadmap, milestones, and SLOs
+4. `docs/architecture/AI_ARCHITECTURE.md` - AI system architecture, difficulty ladder, and training
 5. `src/shared/types/game.ts` - Shared game type definitions
 
 **Historical Reference (archived):**
@@ -725,9 +722,9 @@ useGlobalGameShortcuts({
 ### Questions?
 
 - **Game rules:** Check `ringrift_complete_rules.md` (especially the FAQ section)
-- **Engine architecture:** See `RULES_ENGINE_ARCHITECTURE.md` and `docs/architecture/CANONICAL_ENGINE_API.md`
-- **AI system:** See `AI_ARCHITECTURE.md` and `ai-service/README.md`
-- **Roadmap & priorities:** See `TODO.md` and `STRATEGIC_ROADMAP.md`
+- **Engine architecture:** See `docs/architecture/RULES_ENGINE_ARCHITECTURE.md` and `docs/architecture/CANONICAL_ENGINE_API.md`
+- **AI system:** See `docs/architecture/AI_ARCHITECTURE.md` and `ai-service/README.md`
+- **Roadmap & priorities:** See `TODO.md` and `docs/planning/STRATEGIC_ROADMAP.md`
 - **Current bugs:** Check `KNOWN_ISSUES.md`
 - **Current implementation state:** Review `CURRENT_STATE_ASSESSMENT.md`
 

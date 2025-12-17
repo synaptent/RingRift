@@ -365,13 +365,19 @@ def export_to_npz(db_path: Path, output_path: Path) -> bool:
         return False
 
 
-def train_hex8_model(npz_path: Path, use_label_smoothing: bool = True, use_hex_augmentation: bool = True) -> bool:
+def train_hex8_model(
+    npz_path: Path,
+    use_label_smoothing: bool = True,
+    use_hex_augmentation: bool = True,
+    enable_curriculum: bool = True,
+) -> bool:
     """Train a HexNeuralNet_v2 model on hex8 data.
 
     Args:
         npz_path: Path to training data NPZ file
         use_label_smoothing: Enable policy label smoothing (0.05) for regularization
         use_hex_augmentation: Enable D6 symmetry augmentation (12x data expansion)
+        enable_curriculum: Enable curriculum learning (weights late-game positions higher)
     """
     logger.info(f"Training hex8 model from {npz_path}...")
 
@@ -399,6 +405,11 @@ def train_hex8_model(npz_path: Path, use_label_smoothing: bool = True, use_hex_a
     if use_hex_augmentation:
         cmd.append("--augment-hex-symmetry")
         logger.info("Using D6 hex symmetry augmentation (12x)")
+
+    # Enable curriculum learning for better late-game position weighting
+    if enable_curriculum:
+        cmd.extend(["--use-integrated-enhancements", "--enable-curriculum"])
+        logger.info("Using curriculum learning (late-game position weighting)")
 
     try:
         logger.info(f"Starting training with command: {' '.join(cmd)}")

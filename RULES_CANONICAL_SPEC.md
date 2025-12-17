@@ -17,7 +17,7 @@
 > **How to use this doc.** Start with the quick map below, then jump to the relevant section; keep the Compact Spec open for concise semantics and use the Complete Rules for narrative/examples.
 > **Change log anchor.** When rules change, record the delta in §14 (“Change log & traceability”) with pointers into commits/tests that enforced the change.
 >
-> **Purpose.** This document is a normalization of the RingRift rules for engine/AI implementation and verification. It reconciles [`ringrift_complete_rules.md`](ringrift_complete_rules.md) ("Complete Rules") and [`ringrift_compact_rules.md`](ringrift_compact_rules.md) ("Compact Spec") into a single canonical, implementation-ready ruleset.
+> **Purpose.** This document is a normalization of the RingRift rules for engine/AI implementation and verification. It reconciles [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) ("Complete Rules") and [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) ("Compact Spec") into a single canonical, implementation-ready ruleset.
 
 The canonical rules here are binding whenever the two source documents diverge. For each rule we provide:
 
@@ -67,27 +67,27 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 - **[RR-CANON-R001] Board type configuration.**
   - For each `BoardType ∈ { square8, square19, hex8, hexagonal }`, define:
     - `size`, `totalSpaces`, `ringsPerPlayer`, `lineLength`, `movementAdjacency`, `lineAdjacency`, `territoryAdjacency`, `boardGeometry` exactly as in the table in the Compact Spec (§1.1).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.2.1, 16.10.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §1.1; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§1.2.1, 16.10.
 
 - **[RR-CANON-R002] Coordinate systems.**
   - Square boards use integer coordinates `(x,y)` with `0 ≤ x,y < size`.
   - Hex boards (`hex8`, `hexagonal`) use cube coordinates `(x,y,z)` with `x + y + z = 0` and `max(|x|,|y|,|z|) ≤ radius`.
     - `hex8`: radius = 4, bounding box = 9×9
     - `hexagonal`: radius = 12, bounding box = 25×25
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.1.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §1.1.
 
 - **[RR-CANON-R003] Adjacency relations.**
   - Movement and line directions use `movementAdjacency` / `lineAdjacency` from RR-CANON-R001.
   - Territory connectivity uses `territoryAdjacency` from RR-CANON-R001.
   - Straight-line rays along these directions are used for movement, capture, and line detection.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.2, 3, 4, 5; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§2.1, 3.1, 8, 11, 12, 16.9.4.1.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §§1.2, 3, 4, 5; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§2.1, 3.1, 8, 11, 12, 16.9.4.1.
 
 ### 1.2 Players and identifiers
 
 - **[RR-CANON-R010] Player identifiers.**
   - Each player has a unique `PlayerId`.
   - Exactly 2–4 players participate; 3 is the default.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §7; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.1, 1.2, 13, 15.1, 19×19/8×8 setup sections.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §1.3, §7; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§1.1, 1.2, 13, 15.1, 19×19/8×8 setup sections.
 
 ### 1.3 Rings, stacks, and control
 
@@ -106,7 +106,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - A stack is an ordered sequence of one or more rings on a single board cell.
   - Rings are ordered bottom→top.
   - A cell may contain **either** a stack, **or** a marker, **or** be empty, **or** be collapsed; never more than one of these simultaneously.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5–7.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §1.3; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§5–7.
 
 - **[RR-CANON-R022] Control and cap height.**
   - `controllingPlayer` of a stack is the color of its top ring.
@@ -116,7 +116,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - **Entire cap elimination (for territory processing):** When territory processing requires eliminating the "entire cap" or "stack cap", this means eliminating all consecutive top rings of the controlling color. **All controlled stacks are eligible cap targets for territory processing**, including: (1) **multicolor stacks** (P's rings on top with other players' rings buried beneath), (2) **single-color stacks of height > 1** consisting entirely of P's colour, and (3) **height-1 standalone rings**. For multicolor stacks, eliminating the cap exposes the buried rings of other colours. For single-color stacks (any height), this eliminates all rings and removes the stack entirely.
   - **Entire cap elimination (for forced elimination):** When forced elimination occurs (player had no valid actions but still controls stacks), P must eliminate the entire cap from **any** controlled stack—**including height-1 standalone rings**. All controlled stacks are eligible targets for forced elimination, regardless of height or composition.
   - Control changes whenever the top ring changes color (due to overtaking or elimination).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5.1–5.3, 7.2, 15.4 Q16.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §1.3; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§5.1–5.3, 7.2, 15.4 Q16.
 
 - **[RR-CANON-R023] Stack mutation operations.**
   - Legal stack mutations are limited to:
@@ -128,7 +128,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Removing an **entire cap** via forced elimination (any controlled stack eligible, including standalone rings).
     - Removing all rings in a region during territory collapse.
   - Stacks may **never** be split or reordered in any other way.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§2–4, 5, 6; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5–7, 9–12, 15.4 Q1.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §§2–4, 5, 6; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§5–7, 9–12, 15.4 Q1.
 
 ### 1.4 Markers and collapsed spaces
 
@@ -137,7 +137,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - Each marker belongs to exactly one player.
   - Markers are created only as departure markers from movement/capture (RR-CANON-R082).
   - Markers may be flipped to another player or collapsed into Territory as movement/capture passes over them.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.3, 3.2, 4.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§3.2.2, 8, 11, 12, 16.5–16.6.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §§1.3, 3.2, 4.1; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§3.2.2, 8, 11, 12, 16.5–16.6.
 
 - **[RR-CANON-R031] Collapsed spaces.**
   - A collapsed space is a cell permanently claimed as Territory by exactly one player.
@@ -145,20 +145,20 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - Collapsed spaces are created only by:
     - Line processing (RR-CANON-R120–R122).
     - Territory region processing (RR-CANON-R140–R146).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.3, 3–6; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§2.4, 3.1, 11–12, 16.8.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §§1.3, 3–6; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§2.4, 3.1, 11–12, 16.8.
 
 ### 1.5 Regions and Territories
 
 - **[RR-CANON-R040] Region for Territory processing.**
   - For a given board state, a **region** is a maximal set of non-collapsed cells connected via `territoryAdjacency`.
   - Regions may contain empty cells, markers, and stacks.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §6.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§12.1–12.2, 15.4 Q15.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §6.1; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§12.1–12.2, 15.4 Q15.
 
 - **[RR-CANON-R041] Territory counts.**
   - Each player `P` has an integer `territorySpaces[P]` = number of collapsed spaces whose owner is `P`.
   - This is used for Territory-victory and stalemate tiebreaks.
   - **Crediting rule:** Whenever any turn action causes a space to collapse (via marker path processing, line processing, or territory region processing), the acting player's `territorySpaces` must be incremented by the number of newly collapsed spaces.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.3, 7.2, 7.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§11–13.2, 13.4.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §§1.3, 7.2, 7.4; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§11–13.2, 13.4.
 
 ---
 
@@ -171,7 +171,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - `collapsedSpaces: Map<PosKey, PlayerId>`.
     - Optionally cached: territories, formedLines, etc.
     - Board metadata: `size`, `type`.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§3–12.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §1.3; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§3–12.
 
 - **[RR-CANON-R051] GameState fields.**
   - Canonical `GameState` must at minimum contain:
@@ -183,7 +183,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Turn/phase: `currentPlayer`, `currentPhase` ∈ { `ring_placement`, `movement`, `capture`, `chain_capture`, `line_processing`, `territory_processing`, `forced_elimination` } during active play, and `game_over` once victory/stalemate is reached. `game_over` is terminal-only and MUST NOT be used for move recording or phase traversal.
     - Victory metadata: `totalRingsInPlay`, `totalRingsEliminated`, `victoryThreshold`, `territoryVictoryMinimum` (and legacy `territoryVictoryThreshold` for backward compatibility).
     - History: `moveHistory` (implementation-defined structure).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §2, §7; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4, 13, 15.2.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §1.3, §2, §7; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§4, 13, 15.2.
 
 - **[RR-CANON-R052] State validity invariants.**
   - For any valid state:
@@ -193,7 +193,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - `totalRingsInPlay` = initial sum of rings for all players.
     - For each player `P`,
       - `ringsInHand[P]` + (rings in stacks owned by `P` + rings belonging to `P` buried in others' stacks) + rings credited in `eliminatedRings` for all causing players = initial rings for `P`.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1, 2, 4, 6–7, 9; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§3–13, 15.4 Q6, Q10, Q16.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §§1, 2, 4, 6–7, 9; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§3–13, 15.4 Q6, Q10, Q16.
 
 ---
 
@@ -204,7 +204,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Removed from the board or from `ringsInHand`.
     - Credited to a **causing player** `P` as part of `P.eliminatedRingsTotal`.
   - Eliminated rings from any color (including self-elimination) contribute to the causing player's elimination total.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.3, 5–7, 9; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§9.2, 11–13, 15.4 Q6, Q11–Q12.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §§1.3, 5–7, 9; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§9.2, 11–13, 15.4 Q6, Q11–Q12.
 
 - **[RR-CANON-R061] Ring-elimination victory threshold.**
   - `victoryThreshold = round((2/3) × ringsPerPlayer + (1/3) × opponentsCombinedStartingRings)`
@@ -228,7 +228,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - 4 players: `round(96 × 5/3) = 160`
   - A player wins by elimination when their credited eliminated ring total reaches or exceeds `victoryThreshold`.
   - Rationale: In multi-player games, a player must eliminate more rings to win, proportional to the total rings controlled by opponents.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §7.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.3, 13.1, 16.3, 16.9.4.5.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §1.3, §7.1; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§1.3, 13.1, 16.3, 16.9.4.5.
 
 - **[RR-CANON-R062] Territory-control victory threshold (v2).**
   - `territoryVictoryMinimum = floor(totalSpaces / numPlayers) + 1`.
@@ -237,7 +237,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     2. `territorySpaces[P] > sum(territorySpaces[Q])` for all opponents Q ≠ P
   - This dual-condition rule makes territory victory achievable in multiplayer games (where >50% is impossible) while requiring clear dominance.
   - Legacy: The old `territoryVictoryThreshold = floor(totalSpaces / 2) + 1` is maintained for backward compatibility with 2-player serialized states but is not used for victory checks.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §7.2; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§13.2, 16.2.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §1.3, §7.2; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§13.2, 16.2.
 
 ---
 
@@ -252,7 +252,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     5. **Territory disconnection processing** (zero or more regions).
     6. **Forced elimination** (conditional): entered only if P had no actions available in all prior phases (placement, movement, capture, line processing, territory processing) but still controls at least one stack. P must eliminate the entire cap of one controlled stack per RR-CANON-R100.
     7. **Victory / termination check**.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4, 11–13, 15.2.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §2; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§4, 11–13, 15.2.
 
 - **[RR-CANON-R071] Phase progression is deterministic.**
   - Phases always execute in the order of RR-CANON-R070.
@@ -263,7 +263,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - At the start of P's action, after accounting for any mandatory placement:
     - If P has at least one controlled stack and **no legal placement, no legal non-capture movement, and no legal overtaking capture**, P must attempt a **forced elimination** per RR-CANON-R100.
     - This ensures that as long as any stacks exist on the board, some player always has a legal action (movement or forced elimination) on their turn.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.2–2.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.2–4.4, 13.4, 13.5, 15.4 Q24.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §2.2–2.3; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§4.2–4.4, 13.4, 13.5, 15.4 Q24.
 
 - **[RR-CANON-R073] Mandatory phase transitions for currentPhase.**
   - The `currentPhase` field in `GameState` must change at specific points during turn processing:
@@ -554,7 +554,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - Not collapsed.
       - Contains no stack.
       - May contain any marker (own or opponent); landing on markers is always legal but incurs a cap-elimination cost per RR-CANON-R092.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §3.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§8.1–8.2, 16.9.4.1, 15.4 Q2.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §3.1; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§8.1–8.2, 16.9.4.1, 15.4 Q2.
 
 - **[RR-CANON-R092] Marker interaction during non-capture movement.**
   - At departure `from`, place a regular marker of P (replacing any existing marker or empty cell; movement from collapsed spaces is illegal).
@@ -566,7 +566,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Then place the moving stack.
     - If a marker was present (regardless of owner), immediately eliminate the top ring of the moving stack's cap and credit it to P.
   - P is **not required** to stop at the first legal landing after markers; any landing that satisfies RR-CANON-R091 is legal.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §3.2; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.2.1, 8.2, 8.3, 15.4 Q2.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §3.2; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§4.2.1, 8.2, 8.3, 15.4 Q2.
 
 - **[RR-CANON-R093] Post-movement capture eligibility (landing position constraint).**
   - After a non-capture movement (`move_stack` or `move_ring`) by P, the **optional capture opportunity** described in RR-CANON-R070 phase 3 is evaluated **only** from the stack that just moved, at its landing position.
@@ -593,7 +593,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - Control-flip edge case: If P's only control over a stack was a cap of height 1 (a single ring of P on top of opponent rings), forced elimination removes that cap and flips stack control to the opponent. If this causes P to have **zero controlled stacks** and **zero rings in hand**, P becomes "temporarily inactive" (per RR-CANON-R170) immediately.
     - Temporarily inactive players are **not** skipped during turn rotation; only permanently eliminated players are removed from rotation (RR-CANON-R201).
   - Note (canonical choice): text in the Complete Rules suggesting that caps might already be eliminated while stacks remain is treated as unreachable; the forced-elimination rule is always applicable whenever P controls any stack.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.4, 13.4, 13.5, 15.4 Q24.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §2.3; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§4.4, 13.4, 13.5, 15.4 Q24.
 
 - **[RR-CANON-R101] Single capture segment legality.**
   - A single overtaking capture segment is a triple (`from`, `target`, `landing`) where:
@@ -607,7 +607,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - On target→landing (excluding endpoints): no stacks, no collapsed spaces.
     - Distance `distance(from, landing) ≥ H`.
     - Landing cell not collapsed; may contain any marker (landing on markers incurs cap-elimination cost per RR-CANON-R102).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §4.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§9–10, 15.3, 15.4 Q2–Q5.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §4.1; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§9–10, 15.3, 15.4 Q2–Q5.
 
 - **[RR-CANON-R102] Applying a capture segment.**
   - When executing a legal capture segment:
@@ -617,7 +617,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Recompute stackHeight and capHeight for both stacks.
     - If the target stack becomes empty, remove it.
     - If landing on any marker (own or opponent), remove the marker (do **not** collapse it), then land and immediately eliminate the top ring of the attacking stack's cap, crediting it to P (before line/territory processing).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §4.2; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§9–10, 15.3, 15.4 Q4–Q6.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §4.2; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§9–10, 15.3, 15.4 Q4–Q6.
 
 - **[RR-CANON-R103] Chain overtaking rule.**
   - Once P performs any legal overtaking capture segment in a turn, overtaking capture becomes a **chain**:
@@ -630,7 +630,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Reverse 180° over previously targeted stacks.
     - Capture multiple rings from the same stack over multiple segments, as long as legality is preserved each time.
   - Line formation and Territory disconnection created mid-chain are **not processed** until the entire chain (and movement phase) ends.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §4.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.3, 10.3, 15.3, 15.4 Q5, Q9, Q12.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §4.3; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§4.3, 10.3, 15.3, 15.4 Q5, Q9, Q12.
 
 ### 5.4 Recovery action
 
@@ -644,7 +644,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - If `ringsInHand[P] == 0` (or no legal placements exist), the player records `no_placement_action` and proceeds to `movement` as usual.
   - A player meeting these conditions may use recovery to regain board control even if they still have rings in hand (by skipping placement).
   - Recovery action is **NOT** a real action for Last-Player-Standing purposes (RR-CANON-R172). Like forced elimination, recovery does not reset the LPS countdown. Only ring placements and stack movements/captures count as real actions.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §2.4; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §4.5.
 
 - **[RR-CANON-R111] Recovery action marker slide.**
   - When P performs a recovery action:
@@ -658,7 +658,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - If `recoveryMode ∈ {'line','fallback'}`: empty (no stack).
       - If `recoveryMode == 'stack_strike'`: contains a stack (see RR-CANON-R112(b2)).
     - The recovery move does **not** create a departure marker at the original position; the original cell becomes empty.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.2.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §2.4; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §4.5.2.
 
 - **[RR-CANON-R112] Recovery action success criteria.**
   - A recovery marker slide is legal if **either** of these conditions is satisfied:
@@ -681,7 +681,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - In both cases, P pays the recovery fallback cost (one buried ring extraction) and no line processing occurs.
   - **Skip option:** P may elect to skip recovery entirely, preserving buried rings for a future turn.
   - If no slide satisfies (a) or (b), and P does not skip, P has no legal recovery action and remains temporarily eliminated.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.3.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §2.4; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §4.5.3.
 
 - **[RR-CANON-R113] Recovery action buried ring extraction.**
   - To pay the mandatory self-elimination cost for the line formed by the recovery slide, P must **extract a buried ring**:
@@ -692,7 +692,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Stack control is determined by the new top ring (which is unchanged unless the stack becomes empty).
     - If the stack becomes empty after extraction, remove it from the board.
   - This extraction increases the global `E` (eliminated rings) component of the S-invariant, ensuring termination progress.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.4.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §2.4; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §4.5.4.
 
 - **[RR-CANON-R114] Recovery action cascade processing.**
   - After the recovery slide (line or fallback), if it creates one or more **disconnected territory regions** that P could claim:
@@ -701,7 +701,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - For recovery actions, **each territory self-elimination is paid by extracting one buried ring** from a stack **outside** the region being claimed.
     - If P has no buried rings in stacks outside a given region, that region cannot be claimed and remains unprocessed.
   - After all line and territory processing completes, victory conditions are evaluated per RR-CANON-R170–R173.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.5.5–4.5.7.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §2.4; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§4.5.5–4.5.7.
 
 - **[RR-CANON-R115] Recovery action recording semantics.**
   - Recovery action recording follows the state machine patterns established in RR-CANON-R074–R076, with specific adaptations for the recovery context:
@@ -795,7 +795,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - 4 for `square8` in 2-player games.
     - 3 for `square8` in 3-4 player games.
     - 4 for `square19` and `hexagonal` (all player counts).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §5.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§11.1, 15.3, 16.3, 16.9.4.3.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §5.1; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§11.1, 15.3, 16.3, 16.9.4.3.
 
 - **[RR-CANON-R121] Line processing order.**
   - After movement and any captures:
@@ -815,7 +815,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     movement or capture moves, even when there is only a single eligible line
     for P. Every processed line (exact-length or overlength) corresponds to
     at least one explicit decision move recorded in the game history.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §5.2; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.5, 11.2–11.3, 15.4 Q7.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §5.2; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§4.5, 11.2–11.3, 15.4 Q7.
 
 - **[RR-CANON-R122] Line collapse and elimination.**
   - Let requiredLen be the effective threshold defined in RR-CANON-R120 (3 or 4).
@@ -832,7 +832,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
         player-visible decision (typically via `choose_line_option`); engines
         must not silently default to either option for overlength lines.
   - After each processed line, update all counters and recompute lines.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §5.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.5, 11.2–11.3, 15.4 Q7, Q22.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §5.3; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§4.5, 11.2–11.3, 15.4 Q7, Q22.
 
 > **Example E1 – Exact-length line with no follow-up decisions (8×8).**
 >
@@ -857,7 +857,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 
 - **[RR-CANON-R140] Region discovery.**
   - Using `territoryAdjacency`, compute all maximal regions of non-collapsed cells as in RR-CANON-R040.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §6.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§12.1–12.2, 16.8, 16.9.6.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §6.1; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§12.1–12.2, 16.8, 16.9.6.
 
 - **[RR-CANON-R141] Physical disconnection criterion.**
   - A region R is **physically disconnected** if every adjacency path from any cell in R to any non-collapsed cell outside R must cross only:
@@ -865,7 +865,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Board edge (off-board), and/or
     - Markers belonging to exactly **one** player B (the border color).
   - All non-collapsed marker cells that participate in blocking paths must belong to B; if markers of multiple players are required to block all paths, R is not physically disconnected.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §6.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§12.1–12.2, 15.4 Q15, Q20.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §6.1; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§12.1–12.2, 15.4 Q15, Q20.
 
 - **[RR-CANON-R142] Color-representation criterion.**
   - Let ActiveColors be the set of players that currently have at least one ring anywhere on the board (in any stack).
@@ -873,7 +873,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - R is **color-disconnected** if RegionColors is a **strict subset** of ActiveColors.
   - If RegionColors == ActiveColors, R is **never** treated as disconnected, regardless of physical barriers.
   - **Empty regions:** If a region contains no stacks at all (only empty cells and/or markers), then RegionColors = ∅ (empty set). Since the empty set is always a strict subset of any non-empty ActiveColors set, an empty region automatically satisfies the color-disconnection criterion. Such regions are fully eligible for processing, subject to physical disconnection (RR-CANON-R141) and the self-elimination prerequisite (RR-CANON-R143).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §6.2; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§12.1–12.2, 15.4 Q10, Q15.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §6.2; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§12.1–12.2, 15.4 Q10, Q15.
 
 - **[RR-CANON-R143] Self-elimination prerequisite.**
   - For each candidate region R and moving player P:
@@ -882,7 +882,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Otherwise, P is **not allowed** to process R at this time; R remains unchanged.
   - Each stack cap outside R can be used to pay for **one** region only. After processing a region, recompute the prerequisite for remaining regions.
   - **Exception for recovery actions:** When territory processing is triggered by a recovery action (RR-CANON-R114), the self-elimination cost is one buried ring extraction per region, not an entire stack cap.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §6.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§12.2, 12.3, 15.4 Q15, Q23.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §6.3; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§12.2, 12.3, 15.4 Q15, Q23.
 
 - **[RR-CANON-R144] Region processing order.**
   - After all line processing completes:
@@ -892,7 +892,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - If it fails, skip R.
       - If it passes, process R per RR-CANON-R145.
       - After processing each region, recompute candidate regions (new disconnections may appear).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §6.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§12.2–12.3, 16.8–16.9.8.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §6.4; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§12.2–12.3, 16.8–16.9.8.
 
 - **[RR-CANON-R145] Region collapse and elimination.**
   - For a region R being processed for moving player P:
@@ -913,7 +913,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
        - **Exception for recovery actions:** When territory processing is triggered by a recovery action (RR-CANON-R114), the self-elimination cost is one buried ring extraction instead of an entire stack cap.
     5. Update all counts and recompute regions.
   - All eliminated rings from steps 3 and 4 are credited to P.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §6.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§12.2–12.3, 16.8–16.9.8.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §6.4; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§12.2–12.3, 16.8–16.9.8.
 
 ---
 
@@ -953,7 +953,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - they do control stacks but have no legal placements, no legal moves or overtaking captures, and no other legal turn actions at all, so their only possible turn action is forced elimination (RR-CANON-R100).
   - **Empty/temporarily inactive seats still take turns:** All non-permanently-eliminated seats, including those with no stacks and no rings in hand, must still traverse every phase of their turn and record the canonical no-action/FE moves required by RR-CANON-R075. Permanently eliminated players are removed from turn rotation (RR‑CANON‑R201) and do not participate in the full-round count.
   - Temporarily inactive players prevent an LPS victory until they have been continuously in this "no real actions" state on each of their turns throughout all three qualifying rounds above. A temporarily inactive player can return to full activity if they regain a real action, most commonly by gaining control of a multicolour stack whose top ring becomes their colour or by reduction of the height of a stack they control so that it can move again. If any such player regains a real action before all three rounds have been completed, the last-player-standing condition is not met and must be re-established from that point.
-  - References: [`ringrift_simple_human_rules.md`](ringrift_simple_human_rules.md:321) §5.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1376) §13.3.
+  - References: [`docs/rules/HUMAN_RULES.md`](docs/rules/HUMAN_RULES.md:321) §5.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1376) §13.3.
 
 - **[RR-CANON-R173] Global stalemate and tiebreaks.**
   - If **no** player has any legal placement, movement, capture, or forced elimination available (global stalemate):
@@ -965,7 +965,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       3. If still tied, most markers on the board.
       4. If still tied, last player to have completed a valid turn action.
     - Highest rank wins.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §7.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§13.4, 15.4 Q11.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §7.4; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §§13.4, 15.4 Q11.
 
 ### 8.5 Player Ranking
 
@@ -983,7 +983,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - **Elimination turn for ranking:** `eliminationTurn[P]` = the first turn number T at which player P was **permanently eliminated** (i.e., had zero rings anywhere). This is distinct from temporary elimination.
     - If P is never permanently eliminated (still has rings in any form at game end), `eliminationTurn[P] = NEVER_ELIMINATED` (∞).
     - A player who was temporarily eliminated but later regained turn-material (via buried rings resurfacing) has `eliminationTurn[P] = NEVER_ELIMINATED` if they still have rings at game end.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §8.1.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §8.1.
 
 - **[RR-CANON-R176] Victory-type independence of ranking.**
   - The same tiebreaker cascade (RR-CANON-R177) applies to rank **all** players regardless of how the game ended:
@@ -992,7 +992,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Last-player-standing victory (RR-CANON-R172).
     - Global stalemate (RR-CANON-R173).
   - The winner is always the player who triggered the victory condition. The ranking cascade determines only the **relative ordering** of all other players (and is used to break ties when multiple players are otherwise equal).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §8.2.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §8.2.
 
 - **[RR-CANON-R177] Ranking tiebreaker cascade.**
   - To rank players from best to worst, evaluate the following criteria in strict priority order:
@@ -1002,7 +1002,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     4. **Permanent elimination turn**: Later is better. A player who was never permanently eliminated (`eliminationTurn = NEVER_ELIMINATED`) ranks higher than any player who was permanently eliminated. Temporary elimination (loss of turn-material with buried rings remaining) does not affect this criterion.
   - If two players are tied on all four criteria, they share the same rank.
   - Player ID (seat number) is **not** a tiebreaker; ties are genuine and result in shared ranks.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §8.3.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §8.3.
 
 - **[RR-CANON-R178] Rank assignment algorithm.**
   - Define the comparison function:
@@ -1023,7 +1023,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Players with equal scores share the same rank.
     - The next distinct rank skips by the count of tied players.
     - Example: If players A, B share rank 1, the next player gets rank 3 (not rank 2).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §8.4.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §8.4.
 
 - **[RR-CANON-R179] Rank assignment examples.**
   - **Example 1 (Ring-elimination, 3 players):**
@@ -1052,7 +1052,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - P1: territory=12, elimRings=15, markers=6.
     - P2: territory=12, elimRings=15, markers=6.
     - Tied on all criteria → P1 and P2 share rank 1 (co-winners).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §8.5.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §8.5.
 
 ---
 
@@ -1062,7 +1062,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - RingRift is a perfect-information game with no chance elements. All state transitions are deterministic given:
     - The current `GameState`.
     - The player's choice of legal action and any required tie-breaking choices (e.g., which line/region to process next, which self-elimination to perform).
-  - References: [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §1.1; [`ringrift_compact_rules.md`](ringrift_compact_rules.md) preamble, §8–9.
+  - References: [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §1.1; [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) preamble, §8–9.
 
 - **[RR-CANON-R191] Progress and termination invariant.**
   - Define global measure `S = M + C + E` where:
@@ -1076,7 +1076,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Forced elimination strictly increases E.
     - No rule ever decreases C or E.
   - Because S is bounded above by `2 * totalSpaces + totalRingsInPlay`, only finitely many real actions are possible and every legal game terminates in finite time.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §9; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §13.5.
+  - References: [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) §9; [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) §13.5.
 
 ---
 
@@ -1160,7 +1160,7 @@ Below are the most important differences, categorized by type, with canonical in
    - Category: **Alternative presentation / clarification**.
    - Canonical: Follow the Compact Spec interpretation (RR-CANON-R145): collapse only those border markers of the single border color that are part of at least one minimal blocking path around the region.
 
-Overall, **[`ringrift_compact_rules.md`](ringrift_compact_rules.md)** is treated as the authoritative source when conflicts arise, except where noted otherwise in this section.
+Overall, **[`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md)** is treated as the authoritative source when conflicts arise, except where noted otherwise in this section.
 
 ---
 
@@ -1215,7 +1215,7 @@ This section lists remaining areas where the prose rules allow multiple reasonab
 - The **core, authoritative transition rules** are those encoded as RR-CANON rules in Sections 1–9.
 - Board-type differences are fully captured by RR-CANON-R001 and the parameterized use of `lineLength`, adjacency, and ring counts.
 - Victory, last-player-standing, and stalemate behavior follow RR-CANON-R170–R173; no other implicit termination conditions exist.
-- When discrepancies between prose sources arise, treat [`ringrift_compact_rules.md`](ringrift_compact_rules.md) as primary, except for the explicitly documented judgment calls in Section 11–12.
+- When discrepancies between prose sources arise, treat [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md) as primary, except for the explicitly documented judgment calls in Section 11–12.
 - The progress invariant RR-CANON-R191 guarantees finite termination and is useful for static and dynamic verification.
 
 This canonical spec is intended to be stable; future rule changes should be expressed as additions or replacements of specific RR-CANON rule IDs, preserving traceability back to the original narrative and compact documents.

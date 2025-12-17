@@ -125,7 +125,7 @@ AI service and training documentation.
 | [AI_TRAINING_AND_DATASETS.md](docs/ai/AI_TRAINING_AND_DATASETS.md)                               | Training pipelines and datasets    |
 | [AI_TRAINING_ASSESSMENT_FINAL.md](docs/ai/AI_TRAINING_ASSESSMENT_FINAL.md)                       | Training assessment                |
 | [AI_TRAINING_PREPARATION_GUIDE.md](docs/ai/AI_TRAINING_PREPARATION_GUIDE.md)                     | Training preparation               |
-| [AI_TRAINING_PIPELINE_PLAN.md](ai-service/docs/AI_TRAINING_PIPELINE_PLAN.md)                     | Comprehensive AI training pipeline |
+| [AI_TRAINING_PLAN.md](ai-service/docs/roadmaps/AI_TRAINING_PLAN.md)                              | Comprehensive AI training pipeline |
 | [AI_PIPELINE_PARITY_FIXES.md](docs/ai/AI_PIPELINE_PARITY_FIXES.md)                               | TS↔Python parity fixes (Dec 2025)  |
 | [AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md](docs/ai/AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md) | Tier training and promotion design |
 | [AI_CALIBRATION_RUNBOOK.md](docs/ai/AI_CALIBRATION_RUNBOOK.md)                                   | Difficulty calibration procedures  |
@@ -282,13 +282,19 @@ Extended analysis and edge case documentation.
 
 Current codebase assessments and improvement plans.
 
-| Document                                                                    | Purpose                                        |
-| --------------------------------------------------------------------------- | ---------------------------------------------- |
-| [CODEBASE_REVIEW_2025_12_11.md](docs/CODEBASE_REVIEW_2025_12_11.md)         | Comprehensive first-principles codebase review |
-| [CODE_QUALITY_AUDIT_2025_12_11.md](docs/CODE_QUALITY_AUDIT_2025_12_11.md)   | Code quality audit with implemented fixes      |
-| [ARCHITECTURAL_IMPROVEMENT_PLAN.md](docs/ARCHITECTURAL_IMPROVEMENT_PLAN.md) | Refactoring opportunities and progress         |
-| [PRODUCTION_READINESS_CHECKLIST.md](docs/PRODUCTION_READINESS_CHECKLIST.md) | Launch readiness criteria                      |
-| [NEXT_STEPS_2025_12_11.md](docs/NEXT_STEPS_2025_12_11.md)                   | Current session progress and next steps        |
+| Document                                                                    | Purpose                                |
+| --------------------------------------------------------------------------- | -------------------------------------- |
+| [ARCHITECTURAL_IMPROVEMENT_PLAN.md](docs/ARCHITECTURAL_IMPROVEMENT_PLAN.md) | Refactoring opportunities and progress |
+
+### Archived Assessments (Historical)
+
+These dated documents have been moved to `/docs/archive/historical/`:
+
+- CODEBASE_REVIEW_2025_12_11.md - First-principles codebase review
+- CODE_QUALITY_AUDIT_2025_12_11.md - Code quality audit
+- NEXT_STEPS_2025_12_11.md - Session progress notes
+
+See [docs/production/](docs/production/) for current production readiness documentation.
 
 ---
 
@@ -321,7 +327,7 @@ Key docs and tools for TS↔Python parity, replay analysis, and replay DB health
 | Artifact                                                                                                     | Purpose                                                                                                                                                                                                          |
 | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [docs/planning/ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md](docs/planning/ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md) | Week 1–3 engine/tooling/parity research: parity surfaces, GameReplayDB schema v5, DB health, and replay tooling.                                                                                                 |
-| [ai-service/docs/GAME_REPLAY_DATABASE_SPEC.md](ai-service/docs/GAME_REPLAY_DATABASE_SPEC.md)                 | GameReplayDB schema and API, including `metadata_json` and recording helpers.                                                                                                                                    |
+| [ai-service/docs/specs/GAME_REPLAY_DATABASE_SPEC.md](ai-service/docs/specs/GAME_REPLAY_DATABASE_SPEC.md)     | GameReplayDB schema and API, including `metadata_json` and recording helpers.                                                                                                                                    |
 | [docs/testing/TEST_CATEGORIES.md](docs/testing/TEST_CATEGORIES.md)                                           | Test suite categories, including parity and replay-related suites.                                                                                                                                               |
 | `ai-service/scripts/check_ts_python_replay_parity.py`                                                        | TS↔Python replay parity checker for recorded games; supports emitting divergence fixtures (`--emit-fixtures-dir`) and rich TS/Python state bundles (`--emit-state-bundles-dir`) for the first semantic mismatch. |
 | `ai-service/scripts/diff_state_bundle.py`                                                                    | Offline inspector for a single `.state_bundle.json`: reconstructs Python/TS states at a chosen `ts_k` and prints a concise structural diff (players, stacks, collapsed).                                         |
@@ -334,40 +340,39 @@ Key docs and tools for TS↔Python parity, replay analysis, and replay DB health
 
 ### Core AI Service
 
-| Document                                                                               | Purpose                                               |
-| -------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| [ai-service/README.md](ai-service/README.md)                                           | AI service overview, API endpoints, difficulty ladder |
-| [ai-service/docs/NEURAL_AI_ARCHITECTURE.md](ai-service/docs/NEURAL_AI_ARCHITECTURE.md) | Neural network architecture (RingRiftCNN)             |
-| [ai-service/docs/MPS_ARCHITECTURE.md](ai-service/docs/MPS_ARCHITECTURE.md)             | Apple Silicon MPS-compatible architecture             |
+| Document                                                                                                         | Purpose                                               |
+| ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| [ai-service/README.md](ai-service/README.md)                                                                     | AI service overview, API endpoints, difficulty ladder |
+| [ai-service/docs/architecture/NEURAL_AI_ARCHITECTURE.md](ai-service/docs/architecture/NEURAL_AI_ARCHITECTURE.md) | Neural network architecture (RingRiftCNN)             |
+| [ai-service/docs/architecture/MPS_ARCHITECTURE.md](ai-service/docs/architecture/MPS_ARCHITECTURE.md)             | Apple Silicon MPS-compatible architecture             |
 
 ### Training Pipeline (Active - Dec 2025)
 
-| Document                                                                                     | Purpose                                              |
-| -------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| [ai-service/docs/AI_TRAINING_PLAN.md](ai-service/docs/AI_TRAINING_PLAN.md)                   | **Primary training guide**: CMA-ES, NN, NPZ pipeline |
-| [ai-service/docs/AI_TRAINING_PIPELINE_PLAN.md](ai-service/docs/AI_TRAINING_PIPELINE_PLAN.md) | Detailed training pipeline architecture              |
-| [ai-service/docs/ORCHESTRATOR_SELECTION.md](ai-service/docs/ORCHESTRATOR_SELECTION.md)       | **Which script to use** - orchestrator decision tree |
-| [ai-service/docs/UNIFIED_AI_LOOP.md](ai-service/docs/UNIFIED_AI_LOOP.md)                     | **Unified AI self-improvement daemon** (canonical)   |
-| [ai-service/docs/PIPELINE_ORCHESTRATOR.md](ai-service/docs/PIPELINE_ORCHESTRATOR.md)         | CI/CD pipeline orchestration                         |
-| [ai-service/docs/DISTRIBUTED_SELFPLAY.md](ai-service/docs/DISTRIBUTED_SELFPLAY.md)           | Distributed selfplay across GPU clusters             |
-| [docs/ai/AI_TRAINING_AND_DATASETS.md](docs/ai/AI_TRAINING_AND_DATASETS.md)                   | Training datasets and GameRecord JSONL exports       |
+| Document                                                                                                             | Purpose                                              |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| [ai-service/docs/roadmaps/AI_TRAINING_PLAN.md](ai-service/docs/roadmaps/AI_TRAINING_PLAN.md)                         | **Primary training guide**: CMA-ES, NN, NPZ pipeline |
+| [ai-service/docs/infrastructure/ORCHESTRATOR_SELECTION.md](ai-service/docs/infrastructure/ORCHESTRATOR_SELECTION.md) | **Which script to use** - orchestrator decision tree |
+| [ai-service/docs/training/UNIFIED_AI_LOOP.md](ai-service/docs/training/UNIFIED_AI_LOOP.md)                           | **Unified AI self-improvement daemon** (canonical)   |
+| [ai-service/docs/infrastructure/PIPELINE_ORCHESTRATOR.md](ai-service/docs/infrastructure/PIPELINE_ORCHESTRATOR.md)   | CI/CD pipeline orchestration (deprecated)            |
+| [ai-service/docs/training/DISTRIBUTED_SELFPLAY.md](ai-service/docs/training/DISTRIBUTED_SELFPLAY.md)                 | Distributed selfplay across GPU clusters             |
+| [docs/ai/AI_TRAINING_AND_DATASETS.md](docs/ai/AI_TRAINING_AND_DATASETS.md)                                           | Training datasets and GameRecord JSONL exports       |
 
 ### GPU Infrastructure
 
-| Document                                                                                                       | Purpose                                         |
-| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| [ai-service/docs/GPU_PIPELINE_ROADMAP.md](ai-service/docs/GPU_PIPELINE_ROADMAP.md)                             | GPU selfplay pipeline development roadmap       |
-| [ai-service/docs/GPU_ARCHITECTURE_SIMPLIFICATION.md](ai-service/docs/GPU_ARCHITECTURE_SIMPLIFICATION.md)       | GPU architecture design notes                   |
-| [ai-service/docs/GPU_RULES_PARITY_AUDIT.md](ai-service/docs/GPU_RULES_PARITY_AUDIT.md)                         | GPU vs CPU rules parity verification            |
-| [ai-service/docs/CLOUD_TRAINING_INFRASTRUCTURE_PLAN.md](ai-service/docs/CLOUD_TRAINING_INFRASTRUCTURE_PLAN.md) | Cloud training infrastructure (Lambda, Vast.ai) |
+| Document                                                                                                                                     | Purpose                                         |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| [ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md](ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md)                                         | GPU selfplay pipeline development roadmap       |
+| [ai-service/docs/architecture/GPU_ARCHITECTURE_SIMPLIFICATION.md](ai-service/docs/architecture/GPU_ARCHITECTURE_SIMPLIFICATION.md)           | GPU architecture design notes                   |
+| [ai-service/docs/infrastructure/GPU_RULES_PARITY_AUDIT.md](ai-service/docs/infrastructure/GPU_RULES_PARITY_AUDIT.md)                         | GPU vs CPU rules parity verification            |
+| [ai-service/docs/infrastructure/CLOUD_TRAINING_INFRASTRUCTURE_PLAN.md](ai-service/docs/infrastructure/CLOUD_TRAINING_INFRASTRUCTURE_PLAN.md) | Cloud training infrastructure (Lambda, Vast.ai) |
 
 ### Data Formats & Schemas
 
-| Document                                                                                     | Purpose                             |
-| -------------------------------------------------------------------------------------------- | ----------------------------------- |
-| [ai-service/docs/GAME_RECORD_SPEC.md](ai-service/docs/GAME_RECORD_SPEC.md)                   | GameRecord schema for JSONL exports |
-| [ai-service/docs/GAME_REPLAY_DATABASE_SPEC.md](ai-service/docs/GAME_REPLAY_DATABASE_SPEC.md) | GameReplayDB SQLite schema and API  |
-| [ai-service/docs/GAME_NOTATION_SPEC.md](ai-service/docs/GAME_NOTATION_SPEC.md)               | Game notation format specification  |
+| Document                                                                                                 | Purpose                             |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| [ai-service/docs/specs/GAME_RECORD_SPEC.md](ai-service/docs/specs/GAME_RECORD_SPEC.md)                   | GameRecord schema for JSONL exports |
+| [ai-service/docs/specs/GAME_REPLAY_DATABASE_SPEC.md](ai-service/docs/specs/GAME_REPLAY_DATABASE_SPEC.md) | GameReplayDB SQLite schema and API  |
+| [ai-service/docs/specs/GAME_NOTATION_SPEC.md](ai-service/docs/specs/GAME_NOTATION_SPEC.md)               | Game notation format specification  |
 
 ### Analysis & Status Reports
 
@@ -411,7 +416,7 @@ Key reference documents:
 ### By Topic
 
 - **Getting started?** → [QUICKSTART.md](QUICKSTART.md)
-- **Understanding rules?** → [ringrift_simple_human_rules.md](ringrift_simple_human_rules.md)
+- **Understanding rules?** → [docs/rules/HUMAN_RULES.md](docs/rules/HUMAN_RULES.md)
 - **Architecture deep dive?** → [docs/architecture/](docs/architecture/)
 - **Deploying to production?** → [docs/runbooks/](docs/runbooks/)
 - **Debugging issues?** → [KNOWN_ISSUES.md](KNOWN_ISSUES.md), [docs/incidents/](docs/incidents/)
@@ -419,6 +424,6 @@ Key reference documents:
 ### By Audience
 
 - **New developers:** README → QUICKSTART → CONTRIBUTING
-- **Rules/Game designers:** ringrift\_\*.md → RULES_CANONICAL_SPEC
+- **Rules/Game designers:** docs/rules/ → RULES_CANONICAL_SPEC
 - **AI/ML engineers:** docs/architecture/AI_ARCHITECTURE → docs/ai/
 - **Operators:** docs/runbooks/ → docs/operations/ALERTING_THRESHOLDS

@@ -207,13 +207,13 @@ GET  /api/users/leaderboard # Rankings
 
 ## Documentation
 
-| Document                                                 | Purpose                     |
-| -------------------------------------------------------- | --------------------------- |
-| [QUICKSTART.md](QUICKSTART.md)                           | Detailed setup guide        |
-| [ringrift_complete_rules.md](ringrift_complete_rules.md) | Full rulebook with examples |
-| [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md)       | Formal rules specification  |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                       | Contribution guidelines     |
-| [ai-service/README.md](ai-service/README.md)             | AI service documentation    |
+| Document                                                     | Purpose                     |
+| ------------------------------------------------------------ | --------------------------- |
+| [QUICKSTART.md](QUICKSTART.md)                               | Detailed setup guide        |
+| [docs/rules/COMPLETE_RULES.md](docs/rules/COMPLETE_RULES.md) | Full rulebook with examples |
+| [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md)           | Formal rules specification  |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                           | Contribution guidelines     |
+| [ai-service/README.md](ai-service/README.md)                 | AI service documentation    |
 
 ---
 

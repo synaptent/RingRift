@@ -7,7 +7,7 @@
 
 **Last Updated:** December 16, 2025
 **Status:** Code-verified assessment based on actual implementation
-**Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) · [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) · [docs/PARITY_SEED_TRIAGE.md](./docs/PARITY_SEED_TRIAGE.md)
+**Related Documents:** [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](docs/planning/STRATEGIC_ROADMAP.md) · [docs/rules/PARITY_SEED_TRIAGE.md](docs/rules/PARITY_SEED_TRIAGE.md)
 
 This document tracks **current, code-verified issues** in the RingRift codebase.
 
@@ -144,7 +144,7 @@ especially in less-tested corners of the rules.
 **Component(s):** GameEngine, ClientSandboxEngine, trace utilities, AI turn logic
 **Severity:** LOW (downgraded from Medium per P18.5-\* results)
 **Status:** SUBSTANTIALLY RESOLVED via extended contract vectors (43 cases, 0 mismatches)
-**Tracking:** See [PARITY_SEED_TRIAGE.md](./docs/PARITY_SEED_TRIAGE.md) for detailed per-seed divergence matrix
+**Tracking:** See [PARITY_SEED_TRIAGE.md](docs/rules/PARITY_SEED_TRIAGE.md) for detailed per-seed divergence matrix
 
 **P18.5-\* Resolution (December 2025):**
 
@@ -189,7 +189,7 @@ especially in less-tested corners of the rules.
 
 **Remaining Open Divergences:**
 
-The following divergences are tracked in [PARITY_SEED_TRIAGE.md](./docs/PARITY_SEED_TRIAGE.md) but are now lower priority given contract vector coverage:
+The following divergences are tracked in [PARITY_SEED_TRIAGE.md](docs/rules/PARITY_SEED_TRIAGE.md) but are now lower priority given contract vector coverage:
 
 - **DIV-003 (Seed 14 Placement):** Multi-ring placement validation differences
 - **DIV-004 (Seed 14 Line Processing):** Line detection edge cases
@@ -504,8 +504,8 @@ Following PASS24.1, all four k6 load scenarios run against the nginx-fronted sta
     - Interpreting k6 output still requires correlating error rates with backend metrics and SLOs, but the harness itself no longer dominates error budgets with `GAME_INVALID_ID`.
   - Tracking / references:
     - [`GAME_PERFORMANCE.md`](docs/runbooks/GAME_PERFORMANCE.md) – PASS22 and PASS24.1 baseline notes for game creation, concurrent games, and player moves.
-    - [`PASS22_COMPLETION_SUMMARY.md`](docs/PASS22_COMPLETION_SUMMARY.md) – Load-test baselines plus PASS24.1 follow-up.
-    - [`PASS22_ASSESSMENT_REPORT.md`](docs/PASS22_ASSESSMENT_REPORT.md) – PASS24.1 addendum marking infra availability acceptable and calling out remaining functional k6 gaps.
+    - [`PASS22_COMPLETION_SUMMARY.md`](docs/archive/assessments/PASS22_COMPLETION_SUMMARY.md) – Load-test baselines plus PASS24.1 follow-up.
+    - [`PASS22_ASSESSMENT_REPORT.md`](docs/archive/assessments/PASS22_ASSESSMENT_REPORT.md) – PASS24.1 addendum marking infra availability acceptable and calling out remaining functional k6 gaps.
 
 - **WebSocket stress – Socket.IO v4 protocol implemented (RESOLVED at harness level, still needs routine use)**
   - Scenario: `websocket-stress.js` under `tests/load/scenarios/`.
@@ -668,7 +668,7 @@ These issues have been addressed but are kept here for context:
   - P18.3-\*: Decision lifecycle and timeout semantics
   - P18.4-\*: Orchestrator Phase 4 (100% rollout)
   - P18.5-\*: Extended contract vectors (54 cases, 0 mismatches) and swap_sides parity
-    See [WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md](./WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md) Section 3 for details.
+    See [WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md](docs/archive/assessments/WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md) Section 3 for details.
 - **AI Fix (Dec 12, 2025): HeuristicAI move-cache key correctness** –
   Fixed `ai-service/app/ai/move_cache.py` to include `mustMoveFromStackKey`,
   `rulesOptions`, board geometry, per-player counters (rings/score meta), and

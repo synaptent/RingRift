@@ -19,12 +19,12 @@
 ## 1. Source of truth and related documents
 
 - **Goals SSoT (this file):** Canonical statement of product experience goals and high-level technical objectives (engine SSOT, parity, SLOs). Use this document as the primary reference for _what success looks like_.
-- **Implementation status & metrics SSoT:** For current implementation status, test counts, and coverage metrics, defer to [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1). That file is the single source of truth for live numbers and status labels.
+- **Implementation status & metrics SSoT:** For current implementation status, test counts, and coverage metrics, defer to [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1). That file is the single source of truth for live numbers and status labels.
 - **Rules-specific status:** For rules-focused status and navigation across rules docs and verification/audit reports, see [`docs/rules/CURRENT_RULES_STATE.md`](docs/rules/CURRENT_RULES_STATE.md:1).
 - **Specialised goal surfaces (subordinate docs):**
-  - [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:1) – AI-specific goals, architecture, and training/improvement plans, all subordinate to the product/technical goals defined here.
+  - [`AI_ARCHITECTURE.md`](docs/architecture/AI_ARCHITECTURE.md:1) – AI-specific goals, architecture, and training/improvement plans, all subordinate to the product/technical goals defined here.
   - [`docs/ai/AI_TRAINING_AND_DATASETS.md`](docs/ai/AI_TRAINING_AND_DATASETS.md:1) – Canonical AI training data and pipeline objectives; describes how training/eval must respect the goals and SLOs in this file.
-  - [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1) – Phased execution plan and SLO roadmap that operationalises the goals in this file; it should be read as an implementation roadmap, not as a separate goals SSoT.
+  - [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:1) – Phased execution plan and SLO roadmap that operationalises the goals in this file; it should be read as an implementation roadmap, not as a separate goals SSoT.
 
 ---
 
@@ -53,13 +53,13 @@ The RingRift ruleset is intentionally designed around a **modest number of simpl
   - The extremely high branching factor (up to millions of choices per turn), long tactical chains (especially in captures and territory disconnections), and subtle tradeoffs between rings, markers, and territory make exhaustive search prohibitively expensive even for well-optimized engines.
   - The rules support a spectrum of AI strengths while intentionally preserving room for human creativity, intuition, long-term strategic play, coalition forming, and non-myopic tactical planning to matter at all skill levels.
 
-Together, these goals define **how the game should feel**: simple to describe at the rules level, but with deep, emergent strategy; high tension and comeback potential; and a long-term target where humans and AIs can meaningfully co-exist as competitive opponents. Detailed rules semantics, examples, and strategy notes are defined in the authoritative rulebook [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1) and the canonical specification [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:1); this section records the _purpose_ those rules are serving.
+Together, these goals define **how the game should feel**: simple to describe at the rules level, but with deep, emergent strategy; high tension and comeback potential; and a long-term target where humans and AIs can meaningfully co-exist as competitive opponents. Detailed rules semantics, examples, and strategy notes are defined in the authoritative rulebook [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md:1) and the canonical specification [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:1); this section records the _purpose_ those rules are serving.
 
 ---
 
 ## 3. Core objectives for current phase (v1.0)
 
-> For the current v1.0 phase, these objectives describe what the project must deliver in terms of gameplay features, architecture, and quality. Read them together with [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1) for the phased execution plan and [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1) for factual implementation status.
+> For the current v1.0 phase, these objectives describe what the project must deliver in terms of gameplay features, architecture, and quality. Read them together with [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:1) for the phased execution plan and [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) for factual implementation status.
 
 ### 3.0 Core objectives summary
 
@@ -80,7 +80,7 @@ These objectives naturally cluster into four areas that later documents use for 
 
 | Objective                          | Description                                                                                                                                                                                                            | Rationale                                                      |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| **Complete rules implementation**  | Faithfully implement all game mechanics from [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1) including movement, captures, chains, lines, territory disconnection, and all victory conditions             | Core game value depends on correct rules                       |
+| **Complete rules implementation**  | Faithfully implement all game mechanics from [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md:1) including movement, captures, chains, lines, territory disconnection, and all victory conditions         | Core game value depends on correct rules                       |
 | **Multiple board types**           | Support 8×8 square (64 spaces), 19×19 square (361 spaces), and hexagonal (469 spaces) boards                                                                                                                           | Provides accessibility gradient and geometric variety          |
 | **Flexible player configurations** | Support 2–4 players with any combination of human and AI participants                                                                                                                                                  | Enables solo practice, competitive play, and social gaming     |
 | **AI opponents**                   | Provide AI opponents at multiple difficulty levels (1–10) with responsive move selection                                                                                                                               | Allows single-player experience and fills seats in multiplayer |
@@ -103,8 +103,8 @@ These objectives naturally cluster into four areas that later documents use for 
 
 | Objective                         | Description                                                                                                                                                                                                                                                                                                          | Rationale                                                     |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| **Comprehensive test coverage**   | Extensive automated test suites across TypeScript and Python (unit, integration, scenario, parity, and E2E); see [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1) for live counts and coverage details.                                                                                                | Confidence in correctness                                     |
-| **Rules/FAQ scenario matrix**     | Test cases derived directly from [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1) FAQ examples                                                                                                                                                                                                           | Ensures rules fidelity                                        |
+| **Comprehensive test coverage**   | Extensive automated test suites across TypeScript and Python (unit, integration, scenario, parity, and E2E); see [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) for live counts and coverage details.                                                                        | Confidence in correctness                                     |
+| **Rules/FAQ scenario matrix**     | Test cases derived directly from [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md:1) FAQ examples                                                                                                                                                                                                       | Ensures rules fidelity                                        |
 | **Contract testing**              | Cross-language parity validated by shared contract test vectors                                                                                                                                                                                                                                                      | Guarantees engine consistency                                 |
 | **Parity harnesses**              | Backend ↔ sandbox ↔ Python engine behavior validation                                                                                                                                                                                                                                                                | Catches divergence early                                      |
 | **CI/CD pipeline**                | Automated testing, linting, security scanning on every change                                                                                                                                                                                                                                                        | Maintains quality bar                                         |
@@ -144,7 +144,7 @@ High-level risk framing and historical assessment for this area are summarised i
 
 ### 4.0 Release gate criteria (summary)
 
-v1.0 is considered ready to ship when all of the following are true (this is the goals-level definition; current measured status lives in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) and `docs/PRODUCTION_READINESS_CHECKLIST.md`):
+v1.0 is considered ready to ship when all of the following are true (this is the goals-level definition; current measured status lives in [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) and `docs/PRODUCTION_READINESS_CHECKLIST.md`):
 
 - **Rules and victory correctness** is rules-complete and parity/contract validated for the supported boards and player counts (see §3 and §6; rules authority remains [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:1)).
 - **Performance SLOs** in §4.1 are met under production-scale load (details in `docs/testing/BASELINE_CAPACITY.md` and `docs/operations/SLO_VERIFICATION.md`).
@@ -154,7 +154,7 @@ v1.0 is considered ready to ship when all of the following are true (this is the
 
 ### 4.1 Performance SLOs
 
-From [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:144-149):
+From [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:144-149):
 
 | Metric              | Target          | Measurement                               |
 | ------------------- | --------------- | ----------------------------------------- |
@@ -168,20 +168,20 @@ These SLOs are the canonical targets for v1.0. Load-testing docs, alert threshol
 
 ### 4.2 Test and quality gates (v1.0)
 
-| Gate / metric             | Requirement              | Where to check current status                                |
-| ------------------------- | ------------------------ | ------------------------------------------------------------ |
-| **TypeScript tests**      | All passing in CI lanes  | [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) |
-| **Python tests**          | All passing in CI lanes  | [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) |
-| **Contract vectors**      | 100% TS↔Python parity    | [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) |
-| **Coverage target**       | ≥80% lines overall       | [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) |
-| **Rules scenario matrix** | All FAQ examples covered | `docs/rules/RULES_SCENARIO_MATRIX.md`                        |
-| **Integration tests**     | Core workflows passing   | [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) |
+| Gate / metric             | Requirement              | Where to check current status                                                        |
+| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------ |
+| **TypeScript tests**      | All passing in CI lanes  | [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
+| **Python tests**          | All passing in CI lanes  | [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
+| **Contract vectors**      | 100% TS↔Python parity    | [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
+| **Coverage target**       | ≥80% lines overall       | [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
+| **Rules scenario matrix** | All FAQ examples covered | `docs/rules/RULES_SCENARIO_MATRIX.md`                                                |
+| **Integration tests**     | Core workflows passing   | [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) |
 
-> **Note:** Live test counts and coverage breakdowns are maintained in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:236). This document is **not** the single source of truth for those numbers; it records only the high-level requirements and a recent snapshot.
+> **Note:** Live test counts and coverage breakdowns are maintained in [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:236). This document is **not** the single source of truth for those numbers; it records only the high-level requirements and a recent snapshot.
 
 #### 4.2.1 Metrics & test suites (qualitative overview)
 
-To avoid duplicating live metrics, this section describes the **shape** of the test and CI surface; concrete counts and coverage percentages remain in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1).
+To avoid duplicating live metrics, this section describes the **shape** of the test and CI surface; concrete counts and coverage percentages remain in [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1).
 
 - **TypeScript suites:** Jest unit and integration tests for the shared engine, backend hosts, frontend client, and sandbox; Playwright E2E tests for core auth and gameplay flows.
 - **Python suites:** pytest suites for the AI service covering rules engine behaviour, parity tests, training/heuristic harnesses, and invariants.
@@ -189,7 +189,7 @@ To avoid duplicating live metrics, this section describes the **shape** of the t
 
 ### 4.3 Feature completion criteria
 
-These are **release gate criteria**, not a live progress checklist. For current status, see [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1).
+These are **release gate criteria**, not a live progress checklist. For current status, see [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1).
 
 - [ ] All 24 FAQ scenarios from the rules document have corresponding tests
 - [ ] All three board types (8×8, 19×19, hex) fully playable end-to-end
@@ -210,22 +210,22 @@ Environment posture and rollout discipline are first-class parts of v1.0 readine
 
 Detailed rollout tables, environment presets, and alert thresholds live in `STRATEGIC_ROADMAP.md`, `CURRENT_STATE_ASSESSMENT.md`, `docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md`, and `docs/operations/ALERTING_THRESHOLDS.md`.
 
-For the current completion status of these gates, see [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) and `docs/PRODUCTION_READINESS_CHECKLIST.md`.
+For the current completion status of these gates, see [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) and `docs/PRODUCTION_READINESS_CHECKLIST.md`.
 
 ---
 
 ## 5. Key risks, dependencies & assumptions
 
-This section captures goal-level risks and assumptions that shape scope and success criteria. Live issue tracking remains in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) and current measured status remains in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md).
+This section captures goal-level risks and assumptions that shape scope and success criteria. Live issue tracking remains in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) and current measured status remains in [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md).
 
 These goals assume the following technical and operational dependencies, which are defined in more detail in the referenced architecture and operations documents:
 
 - **Canonical rules specification as rules SSoT.** All gameplay semantics are defined, first and foremost, by the written canonical rules (`RULES_CANONICAL_SPEC.md` together with `ringrift_complete_rules.md` / `ringrift_compact_rules.md`). The shared TypeScript engine under `src/shared/engine/**` (helpers → aggregates → orchestrator) is the primary executable derivation of that spec, validated by its contract tests and parity suites. Backend hosts, the client sandbox, and the Python rules engine are adapters over this shared surface; changes to rules must converge on the canonical rules spec and then be reflected in the shared engine. See [`docs/architecture/MODULE_RESPONSIBILITIES.md`](docs/architecture/MODULE_RESPONSIBILITIES.md:1), [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](docs/architecture/DOMAIN_AGGREGATE_DESIGN.md:1), and [`docs/architecture/CANONICAL_ENGINE_API.md`](docs/architecture/CANONICAL_ENGINE_API.md:1) for the canonical module catalog, aggregate design, and Move/orchestrator/WebSocket lifecycle that implement these goals.
-- **Python AI service as the primary tactical engine.** Higher AI difficulties (3–10) depend on the Python `ai-service` for Minimax, MCTS, and Descent-style search as described in [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:1) and AI docs under `docs/ai/` and `ai-service/docs/`. The TypeScript fallback AI exists for resilience and low-difficulty play, not as the sole long-term AI.
+- **Python AI service as the primary tactical engine.** Higher AI difficulties (3–10) depend on the Python `ai-service` for Minimax, MCTS, and Descent-style search as described in [`AI_ARCHITECTURE.md`](docs/architecture/AI_ARCHITECTURE.md:1) and AI docs under `docs/ai/` and `ai-service/docs/`. The TypeScript fallback AI exists for resilience and low-difficulty play, not as the sole long-term AI.
 - **Canonical AI training data and pipelines.** Neural and heuristic training must use canonical replay databases and parity-gated datasets as described in [`docs/ai/AI_TRAINING_AND_DATASETS.md`](docs/ai/AI_TRAINING_AND_DATASETS.md:1) and `ai-service/TRAINING_DATA_REGISTRY.md`. Legacy or non-canonical data may be used for ablation but must never be treated as production-default.
 - **Single-region, single-app-instance topology for v1.0.** The production topology assumes a single Node.js app instance per environment (`RINGRIFT_APP_TOPOLOGY=single`) backed by PostgreSQL and Redis, as described in [`docs/planning/DEPLOYMENT_REQUIREMENTS.md`](docs/planning/DEPLOYMENT_REQUIREMENTS.md:1) and [`docs/architecture/TOPOLOGY_MODES.md`](docs/architecture/TOPOLOGY_MODES.md:1). Horizontal scaling beyond this and multi-region deployments are explicitly post‑v1.0 concerns.
 - **PostgreSQL, Redis, and WebSocket infrastructure.** Game lifecycle, session management, and real-time multiplayer depend on PostgreSQL, Redis, and a WebSocket server as described in [`README.md`](README.md:1) and [`docs/operations/OPERATIONS_DB.md`](docs/operations/OPERATIONS_DB.md:1).
-- **Observability stack and load-testing tooling.** Meeting the SLOs in §4 and validating production readiness requires the Prometheus/Grafana/Alertmanager stack and the k6 load scenarios defined in [`docs/operations/ALERTING_THRESHOLDS.md`](docs/operations/ALERTING_THRESHOLDS.md:1), [`docs/planning/DEPLOYMENT_REQUIREMENTS.md`](docs/planning/DEPLOYMENT_REQUIREMENTS.md:1), and [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1).
+- **Observability stack and load-testing tooling.** Meeting the SLOs in §4 and validating production readiness requires the Prometheus/Grafana/Alertmanager stack and the k6 load scenarios defined in [`docs/operations/ALERTING_THRESHOLDS.md`](docs/operations/ALERTING_THRESHOLDS.md:1), [`docs/planning/DEPLOYMENT_REQUIREMENTS.md`](docs/planning/DEPLOYMENT_REQUIREMENTS.md:1), and [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:1).
 - **Canonical board topologies.** Only the three documented board types (square8, square19, hexagonal) are in scope for v1.0; rules semantics, tests, and AI training pipelines assume the geometry contracts in [`docs/architecture/TOPOLOGY_MODES.md`](docs/architecture/TOPOLOGY_MODES.md:1).
 
 If any of these assumptions change materially (for example, a different deployment topology or AI service design), this goals document should be updated **first** and downstream roadmaps and assessments should be adjusted to match.
@@ -342,27 +342,27 @@ Sections 6–8 collectively define what is in scope for the current v1.0 phase (
 This goals document sits at the top of the planning stack for **project direction**:
 
 - [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1) (this file) defines the high-level product and technical goals, success criteria, and scope boundaries for the current phase.
-- [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1) translates those goals into a phased implementation and SLO roadmap; when direction or success criteria change, update this file first and then adjust the roadmap.
-- [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1) reports factual, code-verified implementation status relative to these goals and the roadmap; it does not define new goals.
+- [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:1) translates those goals into a phased implementation and SLO roadmap; when direction or success criteria change, update this file first and then adjust the roadmap.
+- [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) reports factual, code-verified implementation status relative to these goals and the roadmap; it does not define new goals.
 - [`docs/archive/FINAL_ARCHITECT_REPORT.md`](docs/archive/FINAL_ARCHITECT_REPORT.md:1) and other archived reports provide historical context; where they disagree with this document or the current roadmap/state assessment on direction, treat them as superseded.
 
 The tables below group key related documents by role so readers can quickly jump between **goals**, **plan**, and **current reality**.
 
 ### 9.1 Implementation & execution
 
-| Document                                                       | Purpose                                   |
-| -------------------------------------------------------------- | ----------------------------------------- |
-| [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1)               | Phased execution plan, SLOs, milestones   |
-| [`TODO.md`](TODO.md:1)                                         | Task-level tracking, priority assignments |
-| [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1) | Code-verified implementation status       |
-| [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md:1)                         | Active bugs and gaps with priorities      |
+| Document                                                                               | Purpose                                   |
+| -------------------------------------------------------------------------------------- | ----------------------------------------- |
+| [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:1)                         | Phased execution plan, SLOs, milestones   |
+| [`TODO.md`](TODO.md:1)                                                                 | Task-level tracking, priority assignments |
+| [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) | Code-verified implementation status       |
+| [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md:1)                                                 | Active bugs and gaps with priorities      |
 
 ### 9.2 Rules & design authority
 
 | Document                                                                       | Purpose                                           |
 | ------------------------------------------------------------------------------ | ------------------------------------------------- |
-| [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1)                   | **Authoritative rulebook** – canonical game rules |
-| [`ringrift_compact_rules.md`](ringrift_compact_rules.md:1)                     | Implementation-oriented rules summary             |
+| [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md:1)               | **Authoritative rulebook** – canonical game rules |
+| [`docs/rules/COMPACT_RULES.md`](docs/rules/COMPACT_RULES.md:1)                 | Implementation-oriented rules summary             |
 | [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:1)                         | Technical specification of rule semantics         |
 | [`docs/rules/RULES_SCENARIO_MATRIX.md`](docs/rules/RULES_SCENARIO_MATRIX.md:1) | Test scenario mapping to rules/FAQ                |
 
@@ -372,11 +372,11 @@ The tables below group key related documents by role so readers can quickly jump
 | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
 | [`ARCHITECTURE_ASSESSMENT.md`](ARCHITECTURE_ASSESSMENT.md:1)                                     | High-level system architecture review and historical remediation context subordinate to the goals in this doc |
 | [`docs/architecture/CANONICAL_ENGINE_API.md`](docs/architecture/CANONICAL_ENGINE_API.md:1)       | Canonical Move/orchestrator/WebSocket lifecycle and engine public API that implements the rules engine goals  |
-| [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1)                                 | Detailed rules engine design and TS↔Python parity mapping                                                     |
+| [`RULES_ENGINE_ARCHITECTURE.md`](docs/architecture/RULES_ENGINE_ARCHITECTURE.md:1)               | Detailed rules engine design and TS↔Python parity mapping                                                     |
 | [`docs/architecture/MODULE_RESPONSIBILITIES.md`](docs/architecture/MODULE_RESPONSIBILITIES.md:1) | Module catalog for the shared TypeScript engine helpers, aggregates, and orchestrator                         |
 | [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](docs/architecture/DOMAIN_AGGREGATE_DESIGN.md:1) | Aggregate-level design reference for the shared engine                                                        |
 | [`docs/architecture/TOPOLOGY_MODES.md`](docs/architecture/TOPOLOGY_MODES.md:1)                   | Supported board topologies and geometry constraints                                                           |
-| [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:1)                                                     | AI service architecture, difficulty ladder, and training/parity plans subordinate to the goals defined here   |
+| [`AI_ARCHITECTURE.md`](docs/architecture/AI_ARCHITECTURE.md:1)                                   | AI service architecture, difficulty ladder, and training/parity plans subordinate to the goals defined here   |
 | [`src/shared/engine/orchestration/README.md`](src/shared/engine/orchestration/README.md:1)       | Turn orchestrator implementation guide                                                                        |
 
 ### 9.4 Operations & development
@@ -395,13 +395,13 @@ The tables below group key related documents by role so readers can quickly jump
 This section records goal-level questions that are not fully specified by the current documentation and require explicit owner decisions. Until resolved, implementers should treat these as constraints on making irreversible changes, not as implicit commitments.
 
 1. **AI difficulty ladder positioning in v1.0 experience.**  
-   The current docs agree that the 1–10 difficulty ladder exists and that difficulties 7–10 are more experimental or advanced (see [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1) and [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:1)), but they do not clearly state whether v1.0's primary experience should emphasise the beginner–intermediate band (1–6) in rated queues while keeping 7–10 as opt-in expert modes.
+   The current docs agree that the 1–10 difficulty ladder exists and that difficulties 7–10 are more experimental or advanced (see [`CURRENT_STATE_ASSESSMENT.md`](docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) and [`AI_ARCHITECTURE.md`](docs/architecture/AI_ARCHITECTURE.md:1)), but they do not clearly state whether v1.0's primary experience should emphasise the beginner–intermediate band (1–6) in rated queues while keeping 7–10 as opt-in expert modes.
    - **Option A:** Treat 1–6 as the canonical supported ladder for public/rated queues at v1.0, with 7–10 flagged as experimental or unrated.
    - **Option B:** Treat the full 1–10 ladder as in scope for rated play at v1.0, accepting higher variance in AI strength and latency at the top difficulties.
    - **Implication:** Affects UX copy, lobby defaults, and how strictly we gate SLOs and regression budgets for higher difficulties.
 
 2. **Initial public launch concurrency target.**  
-   [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1) defines load-test scenarios around ~100 concurrent active games and 200–300 players, but the goals docs do not explicitly state whether this is the minimum acceptable production scale for v1.0 or a stretch target.
+   [`STRATEGIC_ROADMAP.md`](docs/planning/STRATEGIC_ROADMAP.md:1) defines load-test scenarios around ~100 concurrent active games and 200–300 players, but the goals docs do not explicitly state whether this is the minimum acceptable production scale for v1.0 or a stretch target.
    - **Option A:** Declare the documented P‑01 target (≈100 concurrent games, 200–300 players) as the baseline concurrency that must be demonstrated before launch.
    - **Option B:** Allow a smaller initial public rollout (for example, friends-and-family scale) with the same SLO shape but lower absolute concurrency, treating the P‑01 numbers as follow-up stretch goals.
    - **Implication:** Affects acceptance criteria for "production-ready" and how we interpret completion of Wave 7 / P‑01 validation.
@@ -416,7 +416,7 @@ This section records goal-level questions that are not fully specified by the cu
 
 ## Appendix A: Game design principles
 
-_Derived from [`ringrift_complete_rules.md`](ringrift_complete_rules.md:153-177)_
+_Derived from [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md:153-177)_
 
 RingRift's design is guided by these core principles:
 

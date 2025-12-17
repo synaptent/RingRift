@@ -218,9 +218,9 @@ class ModelRegistry:
         ARCHIVED     # Historical backup
 
     promotion_criteria:
-        - elo_improvement >= 20
-        - games_played >= 100
-        - win_rate >= 45%
+        - elo_improvement >= 25
+        - games_played >= 50
+        - win_rate >= 52%
 ```
 
 ### Rollback Detection
@@ -303,7 +303,7 @@ class RollbackManager:
 
 ## See Also
 
-- [Training Pipeline](TRAINING_PIPELINE.md) - Detailed training docs
-- [NNUE Policy Training](NNUE_POLICY_TRAINING.md) - Policy training guide
-- [Cluster Setup Guide](CLUSTER_SETUP_GUIDE.md) - Cluster deployment
-- [P2P Orchestration](VAST_P2P_ORCHESTRATION.md) - P2P system docs
+- [Training Pipeline](../training/TRAINING_PIPELINE.md) - Detailed training docs
+- [NNUE Policy Training](../algorithms/NNUE_POLICY_TRAINING.md) - Policy training guide
+- [Cluster Setup Guide](../infrastructure/CLUSTER_SETUP_GUIDE.md) - Cluster deployment
+- [P2P Orchestration](../infrastructure/VAST_P2P_ORCHESTRATION.md) - P2P system docs
