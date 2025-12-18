@@ -2800,7 +2800,7 @@ class UnifiedAILoop:
         self.gauntlet: Optional[DistributedNNGauntlet] = None
         self.culler: Optional[ModelCullingController] = None
         self._last_gauntlet_check: float = 0.0
-        self._gauntlet_interval: float = 1800.0  # 30 minutes between gauntlet checks
+        self._gauntlet_interval: float = 900.0  # 15 minutes between gauntlet checks (increased frequency)
         if HAS_GAUNTLET:
             try:
                 elo_db_path = AI_SERVICE_ROOT / "data" / "unified_elo.db"
@@ -6610,7 +6610,7 @@ class UnifiedAILoop:
                         model_count = self.culler.count_models(config_key)
 
                         # Run gauntlet if many unrated models
-                        if unrated_count > 20:
+                        if unrated_count > 10:  # Reduced threshold for more frequent evaluation
                             print(f"[Gauntlet] {config_key}: {unrated_count} unrated models - running gauntlet")
                             try:
                                 if use_two_stage:

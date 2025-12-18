@@ -185,8 +185,14 @@ class ModelWatcher:
         """Get models not in known set."""
         new_models = []
         for model in self.get_all_models():
+            # Skip broken symlinks
+            if model.is_symlink() and not model.exists():
+                continue
             path_str = str(model)
-            current_hash = self.get_model_hash(model)
+            try:
+                current_hash = self.get_model_hash(model)
+            except (FileNotFoundError, OSError):
+                continue
             if path_str not in known or known[path_str] != current_hash:
                 new_models.append(model)
         return new_models
