@@ -43,6 +43,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Import circuit breaker for fault tolerance
+try:
+    from app.distributed.circuit_breaker import (
+        get_operation_breaker,
+        get_adaptive_timeout,
+        CircuitOpenError,
+        CircuitState,
+    )
+    HAS_CIRCUIT_BREAKER = True
+except ImportError:
+    HAS_CIRCUIT_BREAKER = False
+    CircuitOpenError = Exception
+
 # SSH connection settings
 SSH_CONNECT_TIMEOUT = 10  # seconds
 SSH_COMMAND_TIMEOUT = 30  # seconds
@@ -268,6 +281,17 @@ class SSHTransport:
                 error=f"No SSH address found for {node_id}",
             )
 
+        # Circuit breaker protection
+        if HAS_CIRCUIT_BREAKER:
+            breaker = get_operation_breaker("ssh")
+            if not breaker.can_execute(node_id):
+                return SSHCommandResult(
+                    success=False,
+                    error=f"Circuit breaker open for {node_id}",
+                )
+            # Use adaptive timeout based on circuit state
+            timeout = get_adaptive_timeout("ssh", node_id, timeout)
+
         ssh_cmd = self._build_ssh_command(addr, command)
         start_time = time.time()
 
@@ -289,6 +313,11 @@ class SSHTransport:
                 elapsed = (time.time() - start_time) * 1000
                 addr.consecutive_failures += 1
                 addr.last_failure = time.time()
+                # Record timeout as failure in circuit breaker
+                if HAS_CIRCUIT_BREAKER:
+                    get_operation_breaker("ssh").record_failure(
+                        node_id, TimeoutError(f"SSH command timeout after {timeout}s")
+                    )
                 return SSHCommandResult(
                     success=False,
                     error=f"Command timed out after {timeout}s",
@@ -301,9 +330,15 @@ class SSHTransport:
             if success:
                 addr.consecutive_failures = 0
                 addr.last_success = time.time()
+                # Record success in circuit breaker
+                if HAS_CIRCUIT_BREAKER:
+                    get_operation_breaker("ssh").record_success(node_id)
             else:
                 addr.consecutive_failures += 1
                 addr.last_failure = time.time()
+                # Record failure in circuit breaker
+                if HAS_CIRCUIT_BREAKER:
+                    get_operation_breaker("ssh").record_failure(node_id)
 
             return SSHCommandResult(
                 success=success,
@@ -317,6 +352,9 @@ class SSHTransport:
             elapsed = (time.time() - start_time) * 1000
             addr.consecutive_failures += 1
             addr.last_failure = time.time()
+            # Record failure in circuit breaker
+            if HAS_CIRCUIT_BREAKER:
+                get_operation_breaker("ssh").record_failure(node_id, e)
             return SSHCommandResult(
                 success=False,
                 error=str(e),

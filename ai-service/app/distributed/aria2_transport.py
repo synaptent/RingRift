@@ -39,6 +39,21 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Import circuit breaker for fault tolerance
+try:
+    from app.distributed.circuit_breaker import (
+        get_operation_breaker,
+        get_adaptive_timeout,
+        CircuitOpenError,
+    )
+    HAS_CIRCUIT_BREAKER = True
+except ImportError:
+    HAS_CIRCUIT_BREAKER = False
+
+# Maximum total timeout for batch operations (prevent hour-long stalls)
+MAX_BATCH_TIMEOUT = 1800  # 30 minutes max for any batch operation
+MAX_PER_FILE_TIMEOUT = 120  # 2 minutes per file max
+
 
 @dataclass
 class Aria2Config:
@@ -146,6 +161,17 @@ class Aria2Transport:
         Returns:
             NodeInventory if successful, None otherwise
         """
+        # Extract host for circuit breaker tracking
+        host = source_url.split("://")[-1].split(":")[0].split("/")[0]
+
+        # Circuit breaker check
+        if HAS_CIRCUIT_BREAKER:
+            breaker = get_operation_breaker("aria2")
+            if not breaker.can_execute(host):
+                logger.debug(f"Circuit breaker open for {host}, skipping inventory fetch")
+                return None
+            timeout = int(get_adaptive_timeout("aria2", host, float(timeout)))
+
         inventory_url = f"{source_url.rstrip('/')}/inventory.json"
 
         try:
@@ -154,16 +180,29 @@ class Aria2Transport:
                 async with session.get(inventory_url, timeout=timeout) as resp:
                     if resp.status == 200:
                         data = await resp.json()
+                        # Record success
+                        if HAS_CIRCUIT_BREAKER:
+                            get_operation_breaker("aria2").record_success(host)
                         return self._parse_inventory(source_url, data)
             else:
                 # Fallback to requests
                 import requests
                 resp = requests.get(inventory_url, timeout=timeout)
                 if resp.status_code == 200:
+                    # Record success
+                    if HAS_CIRCUIT_BREAKER:
+                        get_operation_breaker("aria2").record_success(host)
                     return self._parse_inventory(source_url, resp.json())
+
+            # Non-200 response is a failure
+            if HAS_CIRCUIT_BREAKER:
+                get_operation_breaker("aria2").record_failure(host)
 
         except Exception as e:
             logger.debug(f"Failed to fetch inventory from {source_url}: {e}")
+            # Record failure
+            if HAS_CIRCUIT_BREAKER:
+                get_operation_breaker("aria2").record_failure(host, e)
 
         return None
 
@@ -364,6 +403,14 @@ class Aria2Transport:
 
             cmd = self._build_aria2_command(category_dir, url_file=url_file)
 
+            # Calculate reasonable timeout: base timeout + per-file overhead
+            # Cap at MAX_BATCH_TIMEOUT to prevent hour-long stalls
+            per_file_timeout = min(self.config.timeout, MAX_PER_FILE_TIMEOUT)
+            total_timeout = min(
+                self.config.timeout + (per_file_timeout * min(len(file_sources), 50)),
+                MAX_BATCH_TIMEOUT
+            )
+
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -371,7 +418,7 @@ class Aria2Transport:
             )
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
-                timeout=self.config.timeout * len(file_sources),
+                timeout=total_timeout,
             )
 
             # Count successful downloads
