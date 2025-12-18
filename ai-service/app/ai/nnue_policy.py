@@ -345,6 +345,7 @@ class NNUEPolicyTrainer:
         temperature: float = 1.0,
         label_smoothing: float = 0.0,
         use_kl_loss: bool = False,
+        kl_loss_weight: float = 1.0,  # Mix ratio: 1.0 = pure KL, 0.5 = 50% KL + 50% CE
         grad_clip: float = 1.0,
         lr_scheduler: str = "plateau",
         total_epochs: int = 100,
@@ -373,6 +374,7 @@ class NNUEPolicyTrainer:
         self.target_label_smoothing = label_smoothing
         self.label_smoothing_warmup = label_smoothing_warmup
         self.use_kl_loss = use_kl_loss
+        self.kl_loss_weight = kl_loss_weight  # Mix ratio for KL vs cross-entropy
         self.grad_clip = grad_clip
         self.lr_scheduler_type = lr_scheduler
         self.focal_gamma = focal_gamma
@@ -634,9 +636,22 @@ class NNUEPolicyTrainer:
                 # Add small epsilon to avoid log(0)
                 mcts_probs_safe = mcts_probs.clamp(min=1e-8)
                 # Per-sample KL divergence
-                policy_loss_unreduced = torch.sum(
+                kl_loss_unreduced = torch.sum(
                     mcts_probs_safe * (torch.log(mcts_probs_safe) - log_policy), dim=-1
                 )  # (batch,)
+
+                # Mix KL and cross-entropy based on kl_loss_weight
+                if self.kl_loss_weight < 1.0:
+                    ce_loss_unreduced = torch.nn.functional.cross_entropy(
+                        move_scores, target_move_idx, reduction='none',
+                        label_smoothing=self.policy_criterion.label_smoothing
+                    )
+                    policy_loss_unreduced = (
+                        self.kl_loss_weight * kl_loss_unreduced +
+                        (1.0 - self.kl_loss_weight) * ce_loss_unreduced
+                    )
+                else:
+                    policy_loss_unreduced = kl_loss_unreduced
             elif self.focal_gamma > 0:
                 # Focal loss for hard sample mining (per-sample)
                 policy_loss_unreduced = self._focal_loss(move_scores, target_move_idx, reduction='none')
