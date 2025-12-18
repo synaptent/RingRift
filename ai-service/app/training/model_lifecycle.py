@@ -43,6 +43,20 @@ from app.utils.canonical_naming import (
     CANONICAL_CONFIG_KEYS,
 )
 
+# Unified signals integration - defer maintenance when training is urgent
+try:
+    from app.training.unified_signals import (
+        get_signal_computer,
+        TrainingUrgency,
+        TrainingSignals,
+    )
+    HAS_UNIFIED_SIGNALS = True
+except ImportError:
+    HAS_UNIFIED_SIGNALS = False
+    get_signal_computer = None
+    TrainingUrgency = None
+    TrainingSignals = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,6 +136,9 @@ class ModelLifecycleManager:
         # Track last maintenance time per config
         self._last_maintenance: Dict[str, float] = {}
 
+        # Unified signals integration - check training urgency before maintenance
+        self._signal_computer = get_signal_computer() if HAS_UNIFIED_SIGNALS else None
+
         # Ensure directories exist
         self.model_dir.mkdir(parents=True, exist_ok=True)
         (self.model_dir / "archived").mkdir(exist_ok=True)
@@ -166,6 +183,59 @@ class ModelLifecycleManager:
         last = self._last_maintenance.get(config_key, 0)
         cooldown_seconds = self.policy.cooldown_hours * 3600
         return time.time() - last >= cooldown_seconds
+
+    def _should_defer_for_training(self, config_key: str) -> Tuple[bool, str]:
+        """Check if maintenance should be deferred due to training urgency.
+
+        When training is CRITICAL or HIGH urgency, defer non-essential maintenance
+        to avoid I/O contention and let training proceed uninterrupted.
+
+        Args:
+            config_key: Config to check
+
+        Returns:
+            Tuple of (should_defer, reason)
+        """
+        if self._signal_computer is None:
+            return False, "unified_signals_not_available"
+
+        try:
+            signals = self._signal_computer.compute_signals(
+                current_games=0,  # We don't have game count here
+                current_elo=None,
+                config_key=config_key,
+            )
+
+            # Defer maintenance during high-priority training
+            if signals.urgency in (TrainingUrgency.CRITICAL, TrainingUrgency.HIGH):
+                return True, f"training_urgency_{signals.urgency.value}"
+
+            return False, "training_not_urgent"
+        except Exception as e:
+            logger.warning(f"Failed to check training urgency for {config_key}: {e}")
+            return False, f"error: {e}"
+
+    def get_training_signals(self, config_key: str) -> Optional["TrainingSignals"]:
+        """Get current training signals for a config.
+
+        Args:
+            config_key: Config to check
+
+        Returns:
+            TrainingSignals or None if unavailable
+        """
+        if self._signal_computer is None:
+            return None
+
+        try:
+            return self._signal_computer.compute_signals(
+                current_games=0,
+                current_elo=None,
+                config_key=config_key,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to get training signals for {config_key}: {e}")
+            return None
 
     def get_models_for_config(self, config_key: str) -> List[Path]:
         """Get all model files for a config.
@@ -299,6 +369,20 @@ class ModelLifecycleManager:
                 archived=0,
                 deleted=0,
             )
+
+        # Check if training is urgent - defer maintenance to avoid I/O contention
+        if not force:
+            should_defer, reason = self._should_defer_for_training(config_key)
+            if should_defer:
+                logger.info(f"[{config_key}] Deferring maintenance: {reason}")
+                return MaintenanceResult(
+                    config_key=config_key,
+                    models_before=models_before,
+                    models_after=models_before,
+                    archived=0,
+                    deleted=0,
+                    errors=[f"deferred: {reason}"],
+                )
 
         archived = 0
         deleted = 0
