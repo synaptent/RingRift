@@ -5,11 +5,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-A Python-based AI microservice that powers the intelligent opponents in RingRift. From casual players learning the ropes to experts seeking a challenge, this service provides a 10-level difficulty ladder with AI ranging from random moves to neural network-guided search.
+A Python-based AI microservice that powers the intelligent opponents in RingRift. From casual players learning the ropes to experts seeking a challenge, this service provides an 11-level difficulty ladder with AI ranging from random moves to neural network-guided search.
 
 ## What's Inside
 
-- **10 Difficulty Levels** — Random (D1) → Heuristic (D2) → Minimax (D3-4) → MCTS (D5-8) → AlphaZero-style Descent (D9-10)
+- **11 Difficulty Levels** — Random (D1) → Heuristic (D2) → Minimax (D3-4) → MCTS (D5-8) → Descent (D9-10) → Ultimate (D11)
 - **Neural Network Integration** — ResNet-style CNNs with policy/value heads for position evaluation
 - **Distributed Training** — Self-play generation, Elo tracking, and model promotion across GPU clusters
 - **P2P Orchestration** — Automatic cluster coordination with leader election and health monitoring
@@ -90,6 +90,7 @@ curl http://localhost:8001/health
 | 5     | MCTS      | Monte Carlo tree search                 | 4.0s       |
 | 6-8   | MCTS      | MCTS + neural value/policy guidance     | 5.5-9.6s   |
 | 9-10  | Descent   | AlphaZero-style UBFM search             | 12.6-16s   |
+| 11    | Ultimate  | Extended Descent + ensemble evaluation  | 24s        |
 
 ## Board Support
 
@@ -310,7 +311,7 @@ The service enforces 80% max utilization to prevent system overload:
 
 ### Slow AI responses
 
-- Higher difficulties take longer (D10 = 16 seconds)
+- Higher difficulties take longer (D10 = 16s, D11 = 24s)
 - Check CPU/GPU resources
 - Consider running on GPU for neural network evaluation
 
