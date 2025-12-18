@@ -156,6 +156,12 @@ from app.utils.ramdrive import (
     RamdriveSyncer,
 )
 
+# Circuit breaker for fault-tolerant network operations
+from app.distributed.circuit_breaker import (
+    get_circuit_registry,
+    CircuitState,
+)
+
 # Import refactored P2P types and models
 # These were extracted from this file for modularity (Phase 1 refactoring)
 from scripts.p2p.types import NodeRole, JobType
@@ -909,6 +915,9 @@ class P2POrchestrator:
         self.training_nodes_cache: List[str] = []  # Cached list of top GPU nodes
         self.training_nodes_cache_time = 0.0
         self.games_synced_to_training: Dict[str, int] = {}  # node_id -> last synced game count
+
+        # Circuit breaker for fault-tolerant peer communication
+        self._circuit_registry = get_circuit_registry()
 
         # Phase 3: Training pipeline state (leader-only)
         self.training_jobs: Dict[str, TrainingJob] = {}
@@ -18271,6 +18280,16 @@ print(json.dumps({{
             scheme: HTTP or HTTPS scheme
             timeout: Request timeout in seconds (default 10, use smaller for voter heartbeats)
         """
+        target = f"{peer_host}:{peer_port}"
+        breaker = self._circuit_registry.get_breaker("p2p")
+
+        # Check circuit breaker before attempting request
+        if not breaker.can_execute(target):
+            state = breaker.get_state(target)
+            if state == CircuitState.OPEN:
+                # Circuit is open - skip this peer temporarily
+                return None
+
         try:
             self._update_self_info()
             payload = self.self_info.to_dict()
@@ -18280,7 +18299,10 @@ print(json.dumps({{
                 payload["voter_quorum_size"] = int(getattr(self, "voter_quorum_size", 0) or 0)
                 payload["voter_config_source"] = str(getattr(self, "voter_config_source", "") or "")
 
-            client_timeout = ClientTimeout(total=timeout)
+            # Adjust timeout based on circuit state (shorter for half-open probing)
+            effective_timeout = self._circuit_registry.get_timeout("p2p", target, float(timeout))
+            client_timeout = ClientTimeout(total=effective_timeout)
+
             async with get_client_session(client_timeout) as session:
                 scheme = (scheme or "http").lower()
                 url = f"{scheme}://{peer_host}:{peer_port}/heartbeat"
@@ -18306,9 +18328,15 @@ print(json.dumps({{
                         info.scheme = scheme
                         info.host = peer_host
                         info.port = peer_port
+                        # Record success with circuit breaker
+                        breaker.record_success(target)
                         return info
+                    else:
+                        # Non-200 response is a failure
+                        breaker.record_failure(target)
         except Exception as e:
-            pass
+            # Record failure with circuit breaker
+            breaker.record_failure(target)
         return None
 
     async def _bootstrap_from_known_peers(self) -> bool:
