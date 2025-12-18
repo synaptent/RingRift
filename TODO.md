@@ -1,9 +1,35 @@
 # RingRift Task Tracker
 
-**Last Updated:** 2025-12-16 (Documentation Hygiene Pass)
+**Last Updated:** 2025-12-17 (Training System Unification + Ladder Fixes)
 **Project Health:** GREEN
 **Purpose:** Canonical task tracker for near- and mid-term work
 **Current Focus:** Production validation at scale, parity maintenance, client test coverage
+
+---
+
+## Recent Updates (2025-12-17)
+
+### Training Decision System Unification ✅ COMPLETE
+
+All 6 training decision systems now integrated with `UnifiedSignalComputer`:
+
+- TrainingTriggers, FeedbackAccelerator, PromotionController
+- OptimizedPipeline, ModelLifecycleManager (integration + training)
+- Commit: `53d49277`
+
+### AI Ladder: Minimax Disabled for Large Boards ✅
+
+- **Problem:** Minimax takes tens of minutes per move on sq19/hex boards
+- **Fix:** D3/D4 tiers now use MCTS instead of MINIMAX for square19 and hexagonal
+- Square8 retains minimax (64 spaces is manageable)
+- Commit: `44bf4400`
+
+### Pie Rule Now Opt-In ✅
+
+- Changed default from enabled to disabled for 2-player games
+- Added UI toggle in game creation lobby
+- Training uses `RINGRIFT_TRAINING_ENABLE_SWAP_RULE` env var to opt-in
+- Addresses P2 win rate imbalance (>55%) when pie rule was enabled by default
 
 ---
 

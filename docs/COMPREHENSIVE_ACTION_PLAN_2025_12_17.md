@@ -34,7 +34,7 @@ Investigation revealed that all planned bottleneck fixes are already in place:
 | **Batch JSON Writes**            | `scripts/run_gpu_selfplay.py:711-808` | ✅ `WRITE_BUFFER_SIZE=100`, buffered flush |
 | **Vectorized Policy Conversion** | `app/training/data_loader.py:600-639` | ✅ `_batch_sparse_to_dense_policies()`     |
 | **Memory Pinning**               | `app/training/data_loader.py:754-758` | ✅ `pin_memory()` for GPU transfer         |
-| **Unified Training Signals**     | `app/training/unified_signals.py`     | ✅ All 5 systems integrated                |
+| **Unified Training Signals**     | `app/training/unified_signals.py`     | ✅ All 6 systems integrated                |
 | **Canonical Config Imports**     | `app/config/thresholds.py`            | ✅ 18 modules using canonical source       |
 
 ### UX Strategic Tips ✅ ALREADY IMPLEMENTED
@@ -538,18 +538,27 @@ git checkout HEAD~1 -- ai-service/scripts/unified_loop/config.py
 **Risk:** High
 **Effort:** 8-12 hours
 **Owner:** TBD
-**Status:** ✅ PARTIALLY COMPLETE (2025-12-17)
+**Status:** ✅ COMPLETE (2025-12-17)
 
 > **Implementation Status:**
 >
 > - ✅ `app/training/unified_signals.py` - Created UnifiedSignalComputer as single source of truth
 > - ✅ `app/training/regression_detector.py` - Centralized regression detection
 > - ✅ `app/config/thresholds.py` - Canonical threshold constants
-> - 🟡 Legacy systems not yet fully migrated to use unified signals
+> - ✅ All 6 systems now integrated with unified signals (commit `53d49277`)
+>
+> **Systems integrated:**
+>
+> 1. TrainingTriggers - delegates to unified signals
+> 2. FeedbackAccelerator - syncs state with unified signals
+> 3. PromotionController - uses unified signals for regression detection
+> 4. OptimizedPipeline - prefers unified signals as primary source
+> 5. ModelLifecycleManager (integration/) - uses unified thresholds
+> 6. ModelLifecycleManager (training/) - defers maintenance during high-urgency training
 
-### Problem Statement
+### Problem Statement (RESOLVED)
 
-Five independent systems evaluate training triggers:
+Five independent systems previously evaluated training triggers:
 
 | System                | File                      | Tracks                                             |
 | --------------------- | ------------------------- | -------------------------------------------------- |

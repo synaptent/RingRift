@@ -34,6 +34,8 @@ This pipeline covers only:
 
 Future work can extend the same patterns to other boards and player counts using the multi-board tier configs already in [`python.tier_eval_config`](ai-service/app/training/tier_eval_config.py:196) and [`python.ladder_config`](ai-service/app/config/ladder_config.py:121).
 
+> **Note (2025-12-17):** Minimax is disabled for square19 and hexagonal boards. The search space on these larger boards causes minimax to take tens of minutes per move. D3/D4 tiers on square19 and hex use MCTS instead. See commit `44bf4400`.
+
 ### 1.2 Non-goals
 
 - No rules or move-semantics changes; all engines must stay aligned with the TS shared rules engine and parity contracts.
