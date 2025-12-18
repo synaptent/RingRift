@@ -113,6 +113,12 @@ class PipelineConfig:
     # Multi-player value support
     use_multi_player_values: bool = False
 
+    # Data validation settings
+    validate_on_load: bool = True  # Validate NPZ files before loading
+    validation_sample_rate: float = 1.0  # Fraction of samples to validate (1.0 = all)
+    fail_on_validation_error: bool = False  # Raise exception if validation fails
+    max_validation_issues: int = 100  # Max issues to report per file
+
 
 @dataclass
 class PipelineStats:
@@ -128,6 +134,13 @@ class PipelineStats:
     avg_batch_load_time_ms: float = 0.0
     source_stats: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
+    # Validation stats
+    sources_validated: int = 0
+    sources_valid: int = 0
+    sources_invalid: int = 0
+    validation_issues_total: int = 0
+    samples_with_issues: int = 0
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert stats to dictionary."""
         return {
@@ -140,6 +153,13 @@ class PipelineStats:
             "last_batch_time": self.last_batch_time,
             "avg_batch_load_time_ms": self.avg_batch_load_time_ms,
             "source_stats": self.source_stats,
+            "validation": {
+                "sources_validated": self.sources_validated,
+                "sources_valid": self.sources_valid,
+                "sources_invalid": self.sources_invalid,
+                "validation_issues_total": self.validation_issues_total,
+                "samples_with_issues": self.samples_with_issues,
+            },
         }
 
 
@@ -180,11 +200,15 @@ class DataPipelineController:
         # Lazy-loaded pipeline components
         self._streaming_pipeline = None
         self._batch_loader = None
+        self._validator = None
         self._is_running = False
         self._lock = threading.RLock()
 
         # Batch timing
         self._batch_times: List[float] = []
+
+        # Validation results cache
+        self._validation_results: Dict[str, Any] = {}
 
         logger.info(
             f"DataPipelineController initialized with {len(self._sources)} sources "
@@ -237,6 +261,171 @@ class DataPipelineController:
     def get_sources(self) -> List[DataSourceConfig]:
         """Get all configured data sources."""
         return self._sources.copy()
+
+    def _get_validator(self):
+        """Lazy-load the data validator."""
+        if self._validator is None:
+            try:
+                from app.training.data_validation import (
+                    DataValidator,
+                    DataValidatorConfig,
+                )
+
+                validator_config = DataValidatorConfig(
+                    max_issues_to_report=self.config.max_validation_issues,
+                    sample_rate=self.config.validation_sample_rate,
+                )
+                self._validator = DataValidator(validator_config)
+            except ImportError as e:
+                logger.warning(f"Data validation module not available: {e}")
+                return None
+
+        return self._validator
+
+    def validate_source(self, source_path: str) -> Optional[Dict[str, Any]]:
+        """Validate a single data source file.
+
+        Args:
+            source_path: Path to NPZ/HDF5 file to validate
+
+        Returns:
+            Dict with validation results, or None if validation not available
+        """
+        validator = self._get_validator()
+        if validator is None:
+            return None
+
+        if not os.path.exists(source_path):
+            logger.warning(f"Source file not found: {source_path}")
+            return {"valid": False, "error": "File not found"}
+
+        try:
+            from app.training.data_validation import record_validation_metrics
+
+            result = validator.validate_npz(Path(source_path))
+
+            # Cache the result
+            self._validation_results[source_path] = {
+                "valid": result.valid,
+                "total_samples": result.total_samples,
+                "samples_with_issues": result.samples_with_issues,
+                "issue_count": len(result.issues),
+                "issues_by_type": self._count_issues_by_type(result.issues),
+                "value_stats": result.value_stats,
+            }
+
+            # Update stats
+            self.stats.sources_validated += 1
+            if result.valid:
+                self.stats.sources_valid += 1
+            else:
+                self.stats.sources_invalid += 1
+            self.stats.validation_issues_total += len(result.issues)
+            self.stats.samples_with_issues += result.samples_with_issues
+
+            # Record to Prometheus if available
+            try:
+                record_validation_metrics(result)
+            except Exception:
+                pass
+
+            # Log summary
+            if result.valid:
+                logger.info(f"✓ Validated {source_path}: {result.total_samples} samples OK")
+            else:
+                logger.warning(
+                    f"✗ Validation issues in {source_path}: "
+                    f"{len(result.issues)} issues in {result.samples_with_issues}/{result.total_samples} samples"
+                )
+
+            return self._validation_results[source_path]
+
+        except Exception as e:
+            logger.error(f"Validation failed for {source_path}: {e}")
+            return {"valid": False, "error": str(e)}
+
+    def _count_issues_by_type(self, issues) -> Dict[str, int]:
+        """Count validation issues by type."""
+        counts = {}
+        for issue in issues:
+            key = issue.issue_type.value
+            counts[key] = counts.get(key, 0) + 1
+        return counts
+
+    def validate_all_sources(self, fail_fast: bool = False) -> Dict[str, Any]:
+        """Validate all NPZ/HDF5 data sources.
+
+        Runs validation on all file-based sources before training.
+        Recommended to call this before starting a training run.
+
+        Args:
+            fail_fast: If True, stop on first invalid source
+
+        Returns:
+            Dict with overall validation summary and per-source results
+        """
+        results = {
+            "all_valid": True,
+            "sources_checked": 0,
+            "sources_valid": 0,
+            "sources_invalid": 0,
+            "total_issues": 0,
+            "source_results": {},
+        }
+
+        file_sources = [
+            s for s in self._sources
+            if s.source_type in (DataSourceType.NPZ, DataSourceType.HDF5)
+            and s.enabled
+        ]
+
+        if not file_sources:
+            logger.info("No file-based sources to validate")
+            return results
+
+        logger.info(f"Validating {len(file_sources)} data sources...")
+
+        for source in file_sources:
+            result = self.validate_source(source.path)
+            results["sources_checked"] += 1
+
+            if result is None:
+                # Validation not available
+                continue
+
+            results["source_results"][source.path] = result
+
+            if result.get("valid", False):
+                results["sources_valid"] += 1
+            else:
+                results["sources_invalid"] += 1
+                results["all_valid"] = False
+                results["total_issues"] += result.get("issue_count", 0)
+
+                if fail_fast:
+                    logger.error(f"Validation failed for {source.path}, stopping early")
+                    break
+
+        # Summary log
+        if results["all_valid"]:
+            logger.info(
+                f"✓ All {results['sources_valid']} data sources validated successfully"
+            )
+        else:
+            logger.warning(
+                f"✗ Validation complete: {results['sources_valid']}/{results['sources_checked']} valid, "
+                f"{results['total_issues']} total issues"
+            )
+
+        return results
+
+    def get_validation_results(self) -> Dict[str, Any]:
+        """Get cached validation results.
+
+        Returns:
+            Dict mapping source paths to their validation results
+        """
+        return self._validation_results.copy()
 
     async def sync_remote_sources(
         self,
@@ -404,6 +593,24 @@ class DataPipelineController:
                     return None
 
                 data_paths = [s.path for s in npz_sources]
+
+                # Validate sources before loading if configured
+                if self.config.validate_on_load:
+                    validation_results = self.validate_all_sources(
+                        fail_fast=self.config.fail_on_validation_error
+                    )
+
+                    if not validation_results["all_valid"]:
+                        if self.config.fail_on_validation_error:
+                            raise ValueError(
+                                f"Data validation failed: {validation_results['sources_invalid']} "
+                                f"sources have issues ({validation_results['total_issues']} total issues)"
+                            )
+                        else:
+                            logger.warning(
+                                "Proceeding with training despite validation issues. "
+                                "Set fail_on_validation_error=True to enforce validation."
+                            )
 
                 # Use weighted loader if late-game bias is configured
                 if self.config.late_game_exponent != 1.0:

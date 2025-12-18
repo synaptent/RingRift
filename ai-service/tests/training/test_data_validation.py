@@ -330,3 +330,191 @@ class TestNPZValidation:
 
             assert not result.valid
             assert any(i.issue_type == ValidationIssueType.CORRUPT_FILE for i in result.issues)
+
+
+class TestPipelineControllerIntegration:
+    """Tests for DataValidator integration with DataPipelineController."""
+
+    def test_pipeline_config_has_validation_settings(self):
+        """PipelineConfig should have validation settings."""
+        from app.training.data_pipeline_controller import PipelineConfig
+
+        config = PipelineConfig()
+        assert hasattr(config, 'validate_on_load')
+        assert hasattr(config, 'validation_sample_rate')
+        assert hasattr(config, 'fail_on_validation_error')
+        assert hasattr(config, 'max_validation_issues')
+
+        # Check defaults
+        assert config.validate_on_load is True
+        assert config.validation_sample_rate == 1.0
+        assert config.fail_on_validation_error is False
+        assert config.max_validation_issues == 100
+
+    def test_pipeline_stats_has_validation_fields(self):
+        """PipelineStats should track validation metrics."""
+        from app.training.data_pipeline_controller import PipelineStats
+
+        stats = PipelineStats()
+        assert hasattr(stats, 'sources_validated')
+        assert hasattr(stats, 'sources_valid')
+        assert hasattr(stats, 'sources_invalid')
+        assert hasattr(stats, 'validation_issues_total')
+        assert hasattr(stats, 'samples_with_issues')
+
+        # Check they appear in to_dict()
+        stats_dict = stats.to_dict()
+        assert 'validation' in stats_dict
+        assert 'sources_validated' in stats_dict['validation']
+
+    def test_validate_source_with_valid_file(self):
+        """validate_source should return valid result for good data."""
+        from app.training.data_pipeline_controller import DataPipelineController
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "valid_data.npz"
+
+            # Create valid test data
+            np.savez_compressed(
+                path,
+                features=np.random.randn(100, 8, 8, 5).astype(np.float32),
+                values=np.random.uniform(-1, 1, 100).astype(np.float32),
+            )
+
+            controller = DataPipelineController(npz_paths=[str(path)])
+            result = controller.validate_source(str(path))
+
+            assert result is not None
+            assert result['valid'] is True
+            assert result['total_samples'] == 100
+            assert result['issue_count'] == 0
+
+    def test_validate_source_with_invalid_file(self):
+        """validate_source should detect issues in bad data."""
+        from app.training.data_pipeline_controller import DataPipelineController
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "invalid_data.npz"
+
+            # Create invalid test data (values out of range)
+            np.savez_compressed(
+                path,
+                values=np.array([0.5, -0.3, 5.0, -2.0]),  # 5.0 and -2.0 out of range
+            )
+
+            controller = DataPipelineController(npz_paths=[str(path)])
+            result = controller.validate_source(str(path))
+
+            assert result is not None
+            assert result['valid'] is False
+            assert result['issue_count'] > 0
+            assert 'value_out_of_range' in result['issues_by_type']
+
+    def test_validate_all_sources(self):
+        """validate_all_sources should validate multiple files."""
+        from app.training.data_pipeline_controller import DataPipelineController
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create two valid files
+            path1 = Path(tmpdir) / "data1.npz"
+            path2 = Path(tmpdir) / "data2.npz"
+
+            np.savez_compressed(
+                path1,
+                values=np.random.uniform(-1, 1, 50).astype(np.float32),
+            )
+            np.savez_compressed(
+                path2,
+                values=np.random.uniform(-1, 1, 75).astype(np.float32),
+            )
+
+            controller = DataPipelineController(npz_paths=[str(path1), str(path2)])
+            results = controller.validate_all_sources()
+
+            assert results['all_valid'] is True
+            assert results['sources_checked'] == 2
+            assert results['sources_valid'] == 2
+            assert results['sources_invalid'] == 0
+
+    def test_validate_all_sources_with_mixed_validity(self):
+        """validate_all_sources should handle mix of valid and invalid files."""
+        from app.training.data_pipeline_controller import DataPipelineController
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # One valid, one invalid
+            path_valid = Path(tmpdir) / "valid.npz"
+            path_invalid = Path(tmpdir) / "invalid.npz"
+
+            np.savez_compressed(
+                path_valid,
+                values=np.random.uniform(-1, 1, 50).astype(np.float32),
+            )
+            np.savez_compressed(
+                path_invalid,
+                values=np.array([10.0, -10.0]),  # Out of range
+            )
+
+            controller = DataPipelineController(npz_paths=[str(path_valid), str(path_invalid)])
+            results = controller.validate_all_sources()
+
+            assert results['all_valid'] is False
+            assert results['sources_checked'] == 2
+            assert results['sources_valid'] == 1
+            assert results['sources_invalid'] == 1
+
+    def test_validation_stats_updated(self):
+        """Controller stats should be updated after validation."""
+        from app.training.data_pipeline_controller import DataPipelineController
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "data.npz"
+            np.savez_compressed(
+                path,
+                values=np.random.uniform(-1, 1, 50).astype(np.float32),
+            )
+
+            controller = DataPipelineController(npz_paths=[str(path)])
+            controller.validate_source(str(path))
+
+            stats = controller.get_stats()
+            assert stats.sources_validated == 1
+            assert stats.sources_valid == 1
+
+    def test_get_validation_results_cached(self):
+        """Validation results should be cached and retrievable."""
+        from app.training.data_pipeline_controller import DataPipelineController
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "data.npz"
+            np.savez_compressed(
+                path,
+                values=np.random.uniform(-1, 1, 30).astype(np.float32),
+            )
+
+            controller = DataPipelineController(npz_paths=[str(path)])
+            controller.validate_source(str(path))
+
+            cached = controller.get_validation_results()
+            assert str(path) in cached
+            assert cached[str(path)]['total_samples'] == 30
+
+    def test_validate_on_load_disabled(self):
+        """When validate_on_load=False, no validation should occur on load."""
+        from app.training.data_pipeline_controller import (
+            DataPipelineController,
+            PipelineConfig,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "data.npz"
+            np.savez_compressed(
+                path,
+                values=np.random.uniform(-1, 1, 20).astype(np.float32),
+            )
+
+            config = PipelineConfig(validate_on_load=False)
+            controller = DataPipelineController(npz_paths=[str(path)], config=config)
+
+            # Validation results should be empty since we haven't validated
+            cached = controller.get_validation_results()
+            assert len(cached) == 0
