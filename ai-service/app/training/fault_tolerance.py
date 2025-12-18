@@ -23,6 +23,18 @@ import shutil
 
 logger = logging.getLogger(__name__)
 
+# Re-export checkpoint classes from checkpoint_unified.py (canonical source)
+# These were duplicated here; now consolidated in checkpoint_unified.py
+try:
+    from app.training.checkpoint_unified import (
+        CheckpointType,
+        CheckpointMetadata,
+        TrainingProgress,
+    )
+    _HAS_UNIFIED_CHECKPOINT = True
+except ImportError:
+    _HAS_UNIFIED_CHECKPOINT = False
+    # Fallback definitions below will be used
 
 T = TypeVar('T')
 
@@ -577,13 +589,15 @@ class TrainingErrorHandler:
         }
 
 
-class CheckpointType(Enum):
-    """Types of checkpoints."""
-    REGULAR = "regular"          # Periodic checkpoint
-    EPOCH = "epoch"              # End of epoch
-    BEST = "best"                # Best performance
-    EMERGENCY = "emergency"      # Before potential failure
-    RECOVERY = "recovery"        # After recovery
+# Only define CheckpointType if not imported from checkpoint_unified
+if not _HAS_UNIFIED_CHECKPOINT:
+    class CheckpointType(Enum):
+        """Types of checkpoints."""
+        REGULAR = "regular"          # Periodic checkpoint
+        EPOCH = "epoch"              # End of epoch
+        BEST = "best"                # Best performance
+        EMERGENCY = "emergency"      # Before potential failure
+        RECOVERY = "recovery"        # After recovery
 
 
 class TrainingState(Enum):
@@ -597,57 +611,59 @@ class TrainingState(Enum):
     FAILED = "failed"
 
 
-@dataclass
-class CheckpointMetadata:
-    """Metadata for a checkpoint."""
-    checkpoint_id: str
-    checkpoint_type: CheckpointType
-    epoch: int
-    global_step: int
-    timestamp: datetime
-    metrics: Dict[str, float]
-    training_config: Dict[str, Any]
-    file_path: str
-    file_hash: str
-    parent_checkpoint: Optional[str] = None
+# Only define CheckpointMetadata and TrainingProgress if not imported from checkpoint_unified
+if not _HAS_UNIFIED_CHECKPOINT:
+    @dataclass
+    class CheckpointMetadata:
+        """Metadata for a checkpoint."""
+        checkpoint_id: str
+        checkpoint_type: CheckpointType
+        epoch: int
+        global_step: int
+        timestamp: datetime
+        metrics: Dict[str, float]
+        training_config: Dict[str, Any]
+        file_path: str
+        file_hash: str
+        parent_checkpoint: Optional[str] = None
 
-    def to_dict(self) -> Dict[str, Any]:
-        d = asdict(self)
-        d['checkpoint_type'] = self.checkpoint_type.value
-        d['timestamp'] = self.timestamp.isoformat()
-        return d
+        def to_dict(self) -> Dict[str, Any]:
+            d = asdict(self)
+            d['checkpoint_type'] = self.checkpoint_type.value
+            d['timestamp'] = self.timestamp.isoformat()
+            return d
 
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> 'CheckpointMetadata':
-        d = d.copy()
-        d['checkpoint_type'] = CheckpointType(d['checkpoint_type'])
-        d['timestamp'] = datetime.fromisoformat(d['timestamp'])
-        return cls(**d)
+        @classmethod
+        def from_dict(cls, d: Dict[str, Any]) -> 'CheckpointMetadata':
+            d = d.copy()
+            d['checkpoint_type'] = CheckpointType(d['checkpoint_type'])
+            d['timestamp'] = datetime.fromisoformat(d['timestamp'])
+            return cls(**d)
 
 
-@dataclass
-class TrainingProgress:
-    """Tracks training progress for recovery."""
-    epoch: int = 0
-    global_step: int = 0
-    batch_idx: int = 0
-    samples_seen: int = 0
-    best_metric: Optional[float] = None
-    best_metric_name: str = "loss"
-    best_epoch: int = 0
-    total_epochs: int = 100
-    learning_rate: float = 0.001
-    optimizer_state: Optional[Dict[str, Any]] = None
-    scheduler_state: Optional[Dict[str, Any]] = None
-    random_state: Optional[Dict[str, Any]] = None
-    extra_state: Dict[str, Any] = field(default_factory=dict)
+    @dataclass
+    class TrainingProgress:
+        """Tracks training progress for recovery."""
+        epoch: int = 0
+        global_step: int = 0
+        batch_idx: int = 0
+        samples_seen: int = 0
+        best_metric: Optional[float] = None
+        best_metric_name: str = "loss"
+        best_epoch: int = 0
+        total_epochs: int = 100
+        learning_rate: float = 0.001
+        optimizer_state: Optional[Dict[str, Any]] = None
+        scheduler_state: Optional[Dict[str, Any]] = None
+        random_state: Optional[Dict[str, Any]] = None
+        extra_state: Dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        def to_dict(self) -> Dict[str, Any]:
+            return asdict(self)
 
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> 'TrainingProgress':
-        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        @classmethod
+        def from_dict(cls, d: Dict[str, Any]) -> 'TrainingProgress':
+            return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
 class CheckpointManager:

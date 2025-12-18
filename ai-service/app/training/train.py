@@ -142,6 +142,27 @@ except ImportError:
     IntegratedEnhancementsConfig = None
     HAS_INTEGRATED_ENHANCEMENTS = False
 
+# Circuit breaker for training fault tolerance (2025-12)
+try:
+    from app.distributed.circuit_breaker import get_training_breaker, CircuitState
+    HAS_CIRCUIT_BREAKER = True
+except ImportError:
+    get_training_breaker = None
+    CircuitState = None
+    HAS_CIRCUIT_BREAKER = False
+
+# Training anomaly detection and enhancements (2025-12)
+try:
+    from app.training.training_enhancements import (
+        TrainingAnomalyDetector,
+        CheckpointAverager,
+    )
+    HAS_TRAINING_ENHANCEMENTS = True
+except ImportError:
+    TrainingAnomalyDetector = None
+    CheckpointAverager = None
+    HAS_TRAINING_ENHANCEMENTS = False
+
 # Auto-streaming threshold: datasets larger than this will automatically use
 # StreamingDataLoader to avoid OOM. Default 5GB.
 AUTO_STREAMING_THRESHOLD_BYTES = int(os.environ.get(
@@ -2575,8 +2596,35 @@ def train_model(
         config_label = f"{config.board_type.value}_{num_players}p"
         BATCH_SIZE.labels(config=config_label).set(config.batch_size)
 
+    # Start integrated enhancements background services (evaluation, etc.)
+    if enhancements_manager is not None:
+        enhancements_manager.start_background_services()
+        logger.info("Integrated enhancements background services started")
+
+    # Initialize training circuit breaker for fault tolerance (2025-12)
+    training_breaker = None
+    if HAS_CIRCUIT_BREAKER and get_training_breaker:
+        training_breaker = get_training_breaker()
+        logger.info("Training circuit breaker enabled for fault tolerance")
+
+    # Initialize anomaly detector for NaN/Inf detection (2025-12)
+    anomaly_detector = None
+    if HAS_TRAINING_ENHANCEMENTS and TrainingAnomalyDetector:
+        anomaly_detector = TrainingAnomalyDetector(
+            nan_threshold=0.01,  # 1% NaN tolerance
+            loss_spike_threshold=10.0,  # 10x loss spike detection
+            gradient_threshold=1e6,  # Gradient explosion detection
+        )
+        logger.info("Training anomaly detector enabled")
+
     try:
         for epoch in range(start_epoch, config.epochs_per_iter):
+            # Circuit breaker check - skip training if circuit is open (2025-12)
+            if training_breaker and not training_breaker.can_execute("training_epoch"):
+                logger.warning(f"Training circuit OPEN - skipping epoch {epoch} (recovering from failures)")
+                time.sleep(10.0)  # Brief pause before retry
+                continue
+
             # Circuit breaker: Check resources at the start of each epoch
             # This prevents training from overwhelming the system when resources are constrained
             if epoch % 5 == 0:  # Check every 5 epochs to minimize overhead
@@ -2784,6 +2832,10 @@ def train_model(
 
                     scaler.step(optimizer)
                     scaler.update()
+
+                    # Update integrated enhancements step counter
+                    if enhancements_manager is not None:
+                        enhancements_manager.update_step()
 
                 # Accumulate loss without .item() to avoid GPU sync per batch
                 # Detach to prevent gradient accumulation, but keep on GPU
@@ -3030,6 +3082,15 @@ def train_model(
                 model.module if distributed else model,
             )
 
+            # Check integrated enhancements early stopping (based on Elo tracking)
+            if enhancements_manager is not None and enhancements_manager.should_early_stop():
+                if not distributed or is_main_process():
+                    logger.info(
+                        f"Enhancements manager triggered early stop at epoch {epoch+1} "
+                        "(Elo regression detected)"
+                    )
+                break
+
             if early_stopper is not None:
                 should_stop = early_stopper(avg_val_loss, model_to_save)
                 if should_stop:
@@ -3199,6 +3260,11 @@ def train_model(
         if heartbeat_monitor is not None:
             heartbeat_monitor.stop()
             logger.info("Heartbeat monitor stopped")
+
+        # Stop integrated enhancements background services
+        if enhancements_manager is not None:
+            enhancements_manager.stop_background_services()
+            logger.info("Integrated enhancements background services stopped")
 
         # Clean up distributed process group
         if distributed:
