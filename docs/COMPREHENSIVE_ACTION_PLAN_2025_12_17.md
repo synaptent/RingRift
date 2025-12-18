@@ -3150,7 +3150,11 @@ def on_sync_failure(game, error):
   - @traced and @traced_async decorators
   - Context propagation helpers
   - Graceful degradation when OTel not installed
-- [ ] Standardized `AIDecisionLog` dataclass - Partial (logging exists but not structured)
+- [x] Standardized `AIDecisionLog` dataclass ✅ `app/ai/decision_log.py` (25 tests)
+  - Full dataclass with serialization (to_dict, to_json, to_structured_log)
+  - AIDecisionContext context manager for easy instrumentation
+  - Prometheus metrics integration (decisions, latency, cache hits)
+  - OpenTelemetry tracing integration
 
 **4.4 Self-Play Data Quality:**
 
