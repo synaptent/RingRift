@@ -695,24 +695,32 @@ class GameReplayDB:
                 raise
             logger.debug("time_increment_ms column already exists")
 
-        # Add new columns to game_moves table
-        new_move_columns = [
-            ("time_remaining_ms", "INTEGER"),
-            ("engine_eval", "REAL"),
-            ("engine_eval_type", "TEXT"),
-            ("engine_depth", "INTEGER"),
-            ("engine_nodes", "INTEGER"),
-            ("engine_pv", "TEXT"),
-            ("engine_time_ms", "INTEGER"),
-        ]
+        # Add new columns to game_moves table (if it exists)
+        # Some databases (e.g., JSONL-converted) may not have game_moves table
+        has_game_moves = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'"
+        ).fetchone() is not None
 
-        for col_name, col_type in new_move_columns:
-            try:
-                conn.execute(f"ALTER TABLE game_moves ADD COLUMN {col_name} {col_type}")
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-                logger.debug(f"{col_name} column already exists")
+        if has_game_moves:
+            new_move_columns = [
+                ("time_remaining_ms", "INTEGER"),
+                ("engine_eval", "REAL"),
+                ("engine_eval_type", "TEXT"),
+                ("engine_depth", "INTEGER"),
+                ("engine_nodes", "INTEGER"),
+                ("engine_pv", "TEXT"),
+                ("engine_time_ms", "INTEGER"),
+            ]
+
+            for col_name, col_type in new_move_columns:
+                try:
+                    conn.execute(f"ALTER TABLE game_moves ADD COLUMN {col_name} {col_type}")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" not in str(e).lower():
+                        raise
+                    logger.debug(f"{col_name} column already exists")
+        else:
+            logger.debug("game_moves table does not exist, skipping move column migration")
 
         # Set schema version
         self._set_schema_version(conn, 2)
