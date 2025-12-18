@@ -30,9 +30,14 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 LOG_DIR = AI_SERVICE_ROOT / "logs"
 LOG_FILE = LOG_DIR / "vast_lifecycle.log"
 
-# Lambda target for data sync
-LAMBDA_HOST = "lambda-a10"
+# Lambda target for data sync - prefer Tailscale IP for reliability
+# Public IP (150.136.65.197) gets connection resets under load
+LAMBDA_HOST = "100.91.25.13"  # Tailscale IP (was: lambda-a10 / 150.136.65.197)
+LAMBDA_SSH_USER = "ubuntu"
 LAMBDA_DB = "/home/ubuntu/ringrift/ai-service/data/games/selfplay.db"
+
+# Rate limiting - prevent connection saturation on Lambda host
+SYNC_DELAY_SECONDS = 5  # Delay between instance syncs
 
 # Thresholds
 MIN_GAMES_PER_HOUR = 5  # Minimum game production rate
@@ -464,17 +469,18 @@ def sync_data_from_instance(instance: Dict) -> int:
     if local_dbs:
         try:
             db_args = " ".join([f"--db {db}" for db in local_dbs])
-            # First copy DBs to Lambda
+            # First copy DBs to Lambda (using Tailscale IP for reliability)
+            lambda_dest = f"{LAMBDA_SSH_USER}@{LAMBDA_HOST}"
             for local_db in local_dbs:
                 subprocess.run(
-                    ["scp", "-o", "ConnectTimeout=10", local_db, f"{LAMBDA_HOST}:/tmp/"],
+                    ["scp", "-o", "ConnectTimeout=10", local_db, f"{lambda_dest}:/tmp/"],
                     timeout=60,
                 )
             # Then merge
             remote_dbs = " ".join([f"--db /tmp/{os.path.basename(db)}" for db in local_dbs])
             subprocess.run(
                 [
-                    "ssh", "-o", "ConnectTimeout=10", LAMBDA_HOST,
+                    "ssh", "-o", "ConnectTimeout=10", lambda_dest,
                     f"cd /home/ubuntu/ringrift/ai-service && "
                     f"python3 scripts/merge_game_dbs.py --output {LAMBDA_DB} "
                     f"--dedupe-by-game-id {remote_dbs}",
@@ -550,10 +556,22 @@ def run_restart_cycle(health_results: List[Dict]) -> int:
 
 
 def run_sync_cycle(health_results: List[Dict]) -> int:
-    """Sync data from all reachable instances."""
+    """Sync data from all reachable instances.
+
+    Includes rate limiting (SYNC_DELAY_SECONDS between syncs) to prevent
+    connection saturation on the Lambda aggregation host.
+    """
+    import time
+
     total_synced = 0
+    sync_count = 0
     for health in health_results:
         if health["reachable"] and health["games_count"] > 0:
+            # Rate limit: delay between syncs to prevent connection saturation
+            if sync_count > 0 and SYNC_DELAY_SECONDS > 0:
+                logger.debug(f"Rate limit: waiting {SYNC_DELAY_SECONDS}s before next sync")
+                time.sleep(SYNC_DELAY_SECONDS)
+
             instance = {
                 "host": health["host"],
                 "port": health["port"],
@@ -561,8 +579,9 @@ def run_sync_cycle(health_results: List[Dict]) -> int:
             }
             synced = sync_data_from_instance(instance)
             total_synced += synced
+            sync_count += 1
 
-    logger.info(f"Total games synced: {total_synced}")
+    logger.info(f"Total games synced: {total_synced} from {sync_count} instances")
     return total_synced
 
 
