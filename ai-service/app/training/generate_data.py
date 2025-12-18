@@ -1067,7 +1067,12 @@ def generate_dataset(
 
                 entry = ai.transposition_table.get(state_key)
                 if entry is not None:
-                    if len(entry) == 3:
+                    # Handle various TT entry formats
+                    # descent_ai: (current_val, children_values, status, remaining_moves, visits)
+                    # legacy: (val, children_values) or (val, children_values, status)
+                    if len(entry) >= 5:
+                        _, children_values, _, _, _ = entry
+                    elif len(entry) == 3:
                         _, children_values, _ = entry
                     else:
                         _, children_values = entry
