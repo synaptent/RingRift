@@ -949,6 +949,70 @@ class AsyncShadowValidator:
             self._jobs_dropped = 0
         logger.info("AsyncShadowValidator stats reset")
 
+    # ==========================================================================
+    # Interface-compatible wrappers for drop-in replacement of ShadowValidator
+    # ==========================================================================
+
+    def should_validate(self) -> bool:
+        """Check if validation should occur (interface compatibility).
+
+        For AsyncShadowValidator, sampling is handled internally by submit_* methods,
+        so this always returns True. The caller doesn't need to pre-filter.
+        """
+        return True
+
+    def validate_placement_moves(
+        self,
+        gpu_positions: List[Tuple[int, int]],
+        game_state: "GameState",
+        player: int,
+        game_index: int = 0,
+    ) -> None:
+        """Validate placement moves (interface-compatible wrapper).
+
+        Submits validation job to background thread (non-blocking).
+        """
+        self.submit_placement_validation(gpu_positions, game_state, player, game_index)
+
+    def validate_movement_moves(
+        self,
+        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
+        game_state: "GameState",
+        player: int,
+        game_index: int = 0,
+    ) -> None:
+        """Validate movement moves (interface-compatible wrapper).
+
+        Submits validation job to background thread (non-blocking).
+        """
+        self.submit_movement_validation(gpu_moves, game_state, player, game_index)
+
+    def validate_capture_moves(
+        self,
+        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
+        game_state: "GameState",
+        player: int,
+        game_index: int = 0,
+    ) -> None:
+        """Validate capture moves (interface-compatible wrapper).
+
+        Submits validation job to background thread (non-blocking).
+        """
+        self.submit_capture_validation(gpu_moves, game_state, player, game_index)
+
+    def validate_recovery_moves(
+        self,
+        gpu_moves: List[Tuple[Tuple[int, int], Tuple[int, int]]],
+        game_state: "GameState",
+        player: int,
+        game_index: int = 0,
+    ) -> None:
+        """Validate recovery moves (interface-compatible wrapper).
+
+        Submits validation job to background thread (non-blocking).
+        """
+        self.submit_recovery_validation(gpu_moves, game_state, player, game_index)
+
 
 def create_async_shadow_validator(
     sample_rate: Optional[float] = None,

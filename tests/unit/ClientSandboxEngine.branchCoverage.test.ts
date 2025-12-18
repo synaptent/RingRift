@@ -187,13 +187,14 @@ describe('ClientSandboxEngine branch coverage', () => {
       expect(state.currentPhase).toBe('ring_placement');
     });
 
-    it('2-player games have swapRuleEnabled', () => {
+    it('2-player games have swapRuleEnabled disabled by default (opt-in)', () => {
       const engine = new ClientSandboxEngine({
         config: createConfig(2),
         interactionHandler: new MockInteractionHandler(),
       });
       const state = engine.getGameState();
-      expect(state.rulesOptions?.swapRuleEnabled).toBe(true);
+      // Pie rule is opt-in - data shows P2 wins >55% when enabled by default
+      expect(state.rulesOptions?.swapRuleEnabled).toBe(false);
     });
 
     it('3+ player games do not have swapRuleEnabled', () => {

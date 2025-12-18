@@ -618,8 +618,10 @@ export default function LobbyPage() {
             },
           }
         : {}),
-      // Pie rule (swap sides) is now opt-in. Server defaults to false for 2p games.
-      // Users can enable via game settings when UI toggle is added.
+      // Pie rule (swap sides) is opt-in for 2-player games
+      ...(effectiveMaxPlayers === 2 && formState.pieRuleEnabled
+        ? { rulesOptions: { swapRuleEnabled: true } }
+        : {}),
       ...(isCalibration
         ? {
             isCalibrationGame: true,
@@ -950,6 +952,20 @@ export default function LobbyPage() {
                   />
                   Private (not listed in public lobby)
                 </label>
+                {form.maxPlayers === 2 && (
+                  <label
+                    className="inline-flex items-center text-sm text-slate-100"
+                    title="Pie rule: After Player 1's first turn, Player 2 may swap sides"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mr-2 rounded border-slate-600 bg-slate-900 text-emerald-600 focus:ring-emerald-500"
+                      checked={form.pieRuleEnabled}
+                      onChange={(e) => handleChange('pieRuleEnabled', e.target.checked)}
+                    />
+                    Pie rule (swap sides)
+                  </label>
+                )}
               </div>
             </div>
 

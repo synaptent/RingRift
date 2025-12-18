@@ -36,6 +36,7 @@ import torch.nn.functional as F
 from .gpu_batch import get_device, clear_gpu_memory
 from .shadow_validation import (
     ShadowValidator, create_shadow_validator,
+    AsyncShadowValidator, create_async_shadow_validator,
     StateValidator, create_state_validator,
 )
 
@@ -5440,6 +5441,7 @@ class ParallelGameRunner:
         shadow_validation: bool = False,
         shadow_sample_rate: float = 0.05,
         shadow_threshold: float = 0.001,
+        async_shadow_validation: bool = True,
         state_validation: bool = False,
         state_sample_rate: float = 0.01,
         state_threshold: float = 0.001,
@@ -5463,6 +5465,8 @@ class ParallelGameRunner:
             shadow_validation: Enable shadow validation against CPU rules (move generation)
             shadow_sample_rate: Fraction of moves to validate (0.0-1.0)
             shadow_threshold: Maximum divergence rate before halt
+            async_shadow_validation: Use background thread for shadow validation (default True)
+                                    Prevents GPU blocking during CPU validation overhead.
             state_validation: Enable CPU oracle mode (state validation)
             state_sample_rate: Fraction of states to validate (0.0-1.0)
             state_threshold: Maximum state divergence rate before halt
@@ -5521,17 +5525,31 @@ class ParallelGameRunner:
         )
 
         # Shadow validation for GPU/CPU parity checking (Phase 2 - move generation)
-        self.shadow_validator: Optional[ShadowValidator] = None
+        # Use async validator by default to prevent GPU blocking during validation
+        self.shadow_validator: Optional[Union[ShadowValidator, AsyncShadowValidator]] = None
+        self._async_shadow_validation = async_shadow_validation
         if shadow_validation:
-            self.shadow_validator = create_shadow_validator(
-                sample_rate=shadow_sample_rate,
-                threshold=shadow_threshold,
-                enabled=True,
-            )
-            logger.info(
-                f"Shadow validation enabled: sample_rate={shadow_sample_rate}, "
-                f"threshold={shadow_threshold}"
-            )
+            if async_shadow_validation:
+                self.shadow_validator = create_async_shadow_validator(
+                    sample_rate=shadow_sample_rate,
+                    threshold=shadow_threshold,
+                    enabled=True,
+                    max_queue_size=1000,
+                )
+                logger.info(
+                    f"Async shadow validation enabled: sample_rate={shadow_sample_rate}, "
+                    f"threshold={shadow_threshold} (non-blocking)"
+                )
+            else:
+                self.shadow_validator = create_shadow_validator(
+                    sample_rate=shadow_sample_rate,
+                    threshold=shadow_threshold,
+                    enabled=True,
+                )
+                logger.info(
+                    f"Shadow validation enabled: sample_rate={shadow_sample_rate}, "
+                    f"threshold={shadow_threshold}"
+                )
 
         # State validation for CPU oracle mode (A1 - state parity)
         self.state_validator: Optional[StateValidator] = None
