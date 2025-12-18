@@ -77,30 +77,41 @@ run_hybrid_selfplay.py
 
 ## 2. Architecture Problems
 
-### 2.1 False Parallelism
+### 2.1 False Parallelism ✅ FIXED (2025-12-17)
 
-The GPU code claims "vectorized" operations but uses Python patterns that serialize execution:
+The GPU code originally claimed "vectorized" operations but used Python patterns that serialized execution:
 
 ```python
-# gpu_kernels.py:180-230 - generate_normal_moves_vectorized()
-# Despite the name, this runs SEQUENTIALLY on CPU:
-
+# gpu_kernels.py - BEFORE (slow):
 for i in range(stack_positions.shape[0]):
     g = stack_positions[i, 0].item()      # .item() forces GPU→CPU sync
     from_y = stack_positions[i, 1].item()  # Each call blocks on GPU
-    from_x = stack_positions[i, 2].item()
-    height = stack_height[g, from_y, from_x].item()
-
-    for d in range(8):                     # 8 directions - sequential
-        for dist in range(height, board_size):  # Variable path length
-            # Path validation - sequential per-cell checks
-            for step in range(1, dist):
-                check_y = from_y + dy * step
-                check_x = from_x + dx * step
-                cell_owner = stack_owner[g, check_y, check_x].item()  # Another sync!
+    # ... ~80,000 sync points per call
 ```
 
-**Impact:** Each `.item()` call forces a GPU→CPU synchronization, completely negating any parallelism benefit. A batch of 1000 games with 10 stacks each and 8 directions results in ~80,000 synchronization points per move generation call.
+**Fix Applied:** Batched CPU transfers pattern:
+
+```python
+# gpu_kernels.py - AFTER (optimized):
+# === SINGLE GPU->CPU TRANSFER ===
+stack_owner_np = stack_owner.cpu().numpy()
+stack_height_np = stack_height.cpu().numpy()
+current_player_np = current_player.cpu().numpy()
+active_mask_np = active_mask.cpu().numpy()
+
+# All computation on CPU with numpy (no sync overhead)
+# ...numpy-based path validation...
+
+# === SINGLE CPU->GPU TRANSFER ===
+game_idx = torch.tensor(all_game_idx, dtype=torch.int32, device=device)
+```
+
+**Result:** Reduces ~80,000 synchronization points to 2 (one GPU→CPU, one CPU→GPU).
+
+**Functions Updated:**
+
+- `generate_normal_moves_vectorized()` - Batched transfers for movement
+- `generate_capture_moves_vectorized()` - Batched transfers for captures
 
 ### 2.2 Irregular Data Access Patterns
 
@@ -1352,6 +1363,7 @@ Completed full integration of shadow validation into the game runner:
 | 2025-12-11 | 2.0     | **PHASE 3 COMPLETE**: Full GPU rules parity achieved - all gates passed                                                                                                                                                          |
 | 2025-12-11 | 2.1     | P4 & A1 completed: FSM phase batching, CPU oracle mode (StateValidator), MPS compatibility                                                                                                                                       |
 | 2025-12-11 | 2.2     | I3 documented: Full 45-weight eval exists but deferred; Architecture review completed                                                                                                                                            |
+| 2025-12-17 | 2.3     | **GPU Kernel Optimization**: Fixed "false parallelism" in gpu_kernels.py via batched CPU transfers (~80K sync points → 2)                                                                                                        |
 
 ---
 

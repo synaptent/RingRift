@@ -38,6 +38,17 @@ Central signal computation engine consolidating logic from 5 systems:
 - `TrainingUrgency` enum (CRITICAL, HIGH, NORMAL, LOW, NONE)
 - Urgency-to-intensity mapping for FeedbackAccelerator
 
+**Test Coverage (2025-12-17):** 31 tests in `tests/unit/training/test_unified_signals.py`
+
+- TrainingUrgency enum values and ordering
+- TrainingSignals dataclass defaults, summary, and serialization
+- UnifiedSignalComputer initialization, computation, caching, thread safety
+- Urgency computation logic (NONE → CRITICAL based on thresholds)
+- Elo trend computation (positive/negative/stable)
+- Singleton pattern verification
+- Convenience function tests (should_train, get_urgency, get_training_intensity)
+- Integration verification with TrainingTriggers and FeedbackAccelerator
+
 ### Regression Detection Consolidation (Priority 3) ✅ COMPLETE
 
 **Created:** `app/training/regression_detector.py`
