@@ -157,8 +157,13 @@ def get_diverse_matchups(config: DiverseSelfplayConfig) -> List[MatchupConfig]:
         ))
 
     # 2. NN-based AI battles (Minimax, MCTS, Descent)
+    # NOTE: Minimax is too slow for large boards (sq19, hex) - takes minutes per move.
+    # Use only MCTS and Descent for those boards.
     nn_games = int(total_games * config.matchup_weights.get("nn_vs_nn", 0.25))
-    nn_modes = ["nn-minimax", "nn-mcts", "nn-descent"]
+    if config.board_type.lower() in ("square19", "hexagonal"):
+        nn_modes = ["nn-mcts", "nn-descent"]  # Skip minimax for large boards
+    else:
+        nn_modes = ["nn-minimax", "nn-mcts", "nn-descent"]
     games_per_nn_pair = nn_games // (len(nn_modes) * len(nn_modes))
     for mode1 in nn_modes:
         for mode2 in nn_modes:
@@ -189,9 +194,12 @@ def get_diverse_matchups(config: DiverseSelfplayConfig) -> List[MatchupConfig]:
             ))
 
     # 4. Strong vs Weak (asymmetric training)
+    # Filter strong opponents to exclude minimax for large boards
+    strong_opponents = [s for s in STRONG_OPPONENTS
+                       if not (s == "nn-minimax" and config.board_type.lower() in ("square19", "hexagonal"))]
     asym_games = int(total_games * config.matchup_weights.get("strong_vs_weak", 0.25))
-    games_per_asym = asym_games // (len(STRONG_OPPONENTS) * len(WEAK_OPPONENTS) * 2)
-    for strong in STRONG_OPPONENTS:
+    games_per_asym = asym_games // (len(strong_opponents) * len(WEAK_OPPONENTS) * 2)
+    for strong in strong_opponents:
         for weak in WEAK_OPPONENTS:
             if games_per_asym > 0:
                 # Strong as P1
