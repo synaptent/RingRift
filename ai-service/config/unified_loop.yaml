@@ -17,6 +17,11 @@ data_ingestion:
   deduplication: true # Deduplicate games by ID across hosts
   min_games_per_sync: 5 # Reduced from 10 - sync smaller batches more frequently
   remote_db_pattern: 'data/games/*.db'
+  # GPU selfplay JSONL sync patterns (in addition to DB files)
+  remote_selfplay_patterns:
+    - 'data/selfplay/gpu_*/games*.jsonl'
+    - 'data/selfplay/p2p_gpu/*/games*.jsonl'
+    - 'data/games/gpu_selfplay/*/games*.jsonl'
   # IMPORTANT: Data sync configuration
   # - sync_disabled: Set to true on orchestrator machines with limited disk space
   #   When disabled, this machine won't run unified_data_sync.py (data stays remote)

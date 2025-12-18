@@ -1013,9 +1013,31 @@ class TrainingScheduler:
             games_dir = AI_SERVICE_ROOT / "data" / "games"
             synced_dir = games_dir / "synced"
             gpu_selfplay_dir = games_dir / "gpu_selfplay"
+            selfplay_dir = AI_SERVICE_ROOT / "data" / "selfplay"
 
-            jsonl_path = gpu_selfplay_dir / config_key / "games.jsonl"
-            has_jsonl_data = jsonl_path.exists() and jsonl_path.stat().st_size > 0
+            # Check for JSONL data in multiple locations (local and synced)
+            jsonl_paths = [
+                gpu_selfplay_dir / config_key / "games.jsonl",  # Local GPU selfplay
+                selfplay_dir / f"gpu_{config_key}" / "games.jsonl",  # Local selfplay
+            ]
+            # Also check synced selfplay directories from remote hosts
+            synced_selfplay_dirs = [
+                selfplay_dir / "gpu" / "synced",
+                selfplay_dir / "p2p_gpu" / "synced",
+                games_dir / "gpu_selfplay" / "synced",
+            ]
+            for sync_dir in synced_selfplay_dirs:
+                if sync_dir.exists():
+                    jsonl_paths.extend(sync_dir.rglob(f"*{config_key}*/*.jsonl"))
+                    jsonl_paths.extend(sync_dir.rglob(f"*/{config_key}/*.jsonl"))
+
+            # Filter to existing files with data
+            jsonl_files = [p for p in jsonl_paths if p.exists() and p.stat().st_size > 0]
+            has_jsonl_data = len(jsonl_files) > 0
+            # Use first JSONL file as primary (for backward compatibility)
+            jsonl_path = jsonl_files[0] if jsonl_files else None
+            if has_jsonl_data:
+                print(f"[Training] Found {len(jsonl_files)} JSONL files for {config_key}")
 
             game_dbs = list(games_dir.glob("*.db"))
             if synced_dir.exists():
