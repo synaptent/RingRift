@@ -158,7 +158,8 @@ def create_ai_for_algorithm(
     elif algorithm == "gumbel_mcts":
         # For Gumbel MCTS, translate think_time to simulation budget
         # Rough estimate: 1 simulation ~= 5ms on average
-        simulation_budget = max(50, think_time_ms // 5)
+        # Cap at 1000 due to AIConfig validation limit
+        simulation_budget = min(1000, max(50, think_time_ms // 5))
         config = AIConfig(
             ai_type=AIType.GUMBEL_MCTS,
             board_type=board_type,
@@ -206,10 +207,13 @@ def play_game(
     engine = DefaultRulesEngine()
 
     # Create AIs with proper model for this board/player combo
-    ai1 = create_ai_for_algorithm(algo1, 1, think_time_ms, board_type, num_players)
-    ai2 = create_ai_for_algorithm(algo2, 2, think_time_ms, board_type, num_players)
-
-    ais = {1: ai1, 2: ai2}
+    # For multi-player games, odd players use algo1, even players use algo2
+    ais = {}
+    for player_num in range(1, num_players + 1):
+        if player_num % 2 == 1:  # Odd players (1, 3) use algo1
+            ais[player_num] = create_ai_for_algorithm(algo1, player_num, think_time_ms, board_type, num_players)
+        else:  # Even players (2, 4) use algo2
+            ais[player_num] = create_ai_for_algorithm(algo2, player_num, think_time_ms, board_type, num_players)
     move_count = 0
     algo1_think_time = 0.0
     algo2_think_time = 0.0
@@ -222,7 +226,8 @@ def play_game(
         move = ai.select_move(state)
         move_end = time.time()
 
-        if current_player == 1:
+        # Track think time by algorithm (odd players = algo1, even players = algo2)
+        if current_player % 2 == 1:
             algo1_think_time += (move_end - move_start)
         else:
             algo2_think_time += (move_end - move_start)
@@ -244,13 +249,14 @@ def play_game(
 
     end_time = time.time()
 
-    # Determine winner
+    # Determine winner (odd players = algo1, even players = algo2)
     winner = None
     if state.game_status == "completed":
-        if state.winner == 1:
-            winner = "algo1"
-        elif state.winner == 2:
-            winner = "algo2"
+        if state.winner is not None:
+            if state.winner % 2 == 1:  # Odd player won
+                winner = "algo1"
+            else:  # Even player won
+                winner = "algo2"
         else:
             winner = "draw"
     else:

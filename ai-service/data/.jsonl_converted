@@ -26,5 +26,12 @@ selfplay/mcts_cluster_collected_v3/lambda-gh200-e_games.jsonl
 selfplay/mcts_cluster_collected_v3/merged_games.jsonl
 selfplay/mcts_square8_2p/games.jsonl
 selfplay/mcts_verify/games.jsonl
+selfplay/p2p_hybrid/hex8_4p/322ba446/games.jsonl
+selfplay/p2p_hybrid/hex8_4p/8dfc244e/games.jsonl
+selfplay/p2p_hybrid/hex8_4p/bd74eee4/games.jsonl
+selfplay/p2p_hybrid/square8_2p/1ae1f081/games.jsonl
+selfplay/p2p_hybrid/square8_2p/6f7dfd12/games.jsonl
+selfplay/p2p_hybrid/square8_2p/c57f8482/games.jsonl
+selfplay/p2p_hybrid/square8_3p/38b2402a/games.jsonl
 selfplay/reanalyzed_square8_2p/games.jsonl
 selfplay/test_cycle/games_square8_2p_51467.jsonl

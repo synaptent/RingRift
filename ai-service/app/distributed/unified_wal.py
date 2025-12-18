@@ -1034,8 +1034,11 @@ class WriteAheadLog(UnifiedWAL):
 
         return self.mark_processed(entry_ids)
 
-    def get_pending_entries(self, limit: int = 1000) -> List[WALEntry]:
+    def get_pending_entries(  # type: ignore[override]
+        self, entry_type: Optional["WALEntryType"] = None, limit: int = 1000
+    ) -> List[WALEntry]:
         """Get pending entries (compatibility method)."""
+        # Ignores entry_type for backward compatibility
         return super().get_pending_sync_entries(limit)
 
     def get_unconfirmed_entries(self, limit: int = 1000) -> List[WALEntry]:
@@ -1094,9 +1097,13 @@ class IngestionWAL(UnifiedWAL):
         """Append batch (compatibility method)."""
         return self.append_ingestion_batch(games, source_host)
 
-    def mark_processed(self, entry_id: int) -> bool:
-        """Mark processed (compatibility method - single entry)."""
+    def mark_processed_single(self, entry_id: int) -> bool:
+        """Mark single entry processed (compatibility method)."""
         return super().mark_processed([entry_id]) > 0
+
+    def mark_processed(self, entry_ids: List[int]) -> int:  # type: ignore[override]
+        """Mark processed (compatibility method - batch)."""
+        return super().mark_processed(entry_ids)
 
     def mark_batch_processed(self, entry_ids: List[int]) -> int:
         """Mark batch processed (compatibility method)."""

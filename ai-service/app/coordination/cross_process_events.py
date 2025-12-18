@@ -166,6 +166,7 @@ class CrossProcessEventQueue:
         event_type: str,
         payload: Dict[str, Any] = None,
         source: str = "",
+        max_retries: int = 5,
     ) -> int:
         """Publish an event to the queue.
 
@@ -173,25 +174,37 @@ class CrossProcessEventQueue:
             event_type: Type of event (e.g., "MODEL_PROMOTED")
             payload: Event data
             source: Component that generated the event
+            max_retries: Maximum number of retry attempts on database lock
 
         Returns:
             The event_id of the published event
         """
-        conn = self._get_connection()
-        cursor = conn.execute(
-            '''INSERT INTO events (event_type, payload, source, hostname, created_at)
-               VALUES (?, ?, ?, ?, ?)''',
-            (
-                event_type,
-                json.dumps(payload or {}),
-                source,
-                socket.gethostname(),
-                time.time(),
-            )
-        )
-        event_id = cursor.lastrowid
-        conn.commit()
-        return event_id
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                conn = self._get_connection()
+                cursor = conn.execute(
+                    '''INSERT INTO events (event_type, payload, source, hostname, created_at)
+                       VALUES (?, ?, ?, ?, ?)''',
+                    (
+                        event_type,
+                        json.dumps(payload or {}),
+                        source,
+                        socket.gethostname(),
+                        time.time(),
+                    )
+                )
+                event_id = cursor.lastrowid
+                conn.commit()
+                return event_id
+            except sqlite3.OperationalError as e:
+                last_error = e
+                if "locked" in str(e).lower() and attempt < max_retries - 1:
+                    # Exponential backoff: 0.1s, 0.2s, 0.4s, 0.8s, 1.6s
+                    time.sleep(0.1 * (2 ** attempt))
+                    continue
+                raise
+        raise last_error
 
     def subscribe(
         self,

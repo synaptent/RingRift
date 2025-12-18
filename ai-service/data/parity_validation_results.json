@@ -1,0 +1,18 @@
+{
+  "total_games_checked": 7300,
+  "games_passed": 0,
+  "games_with_semantic_divergence": 0,
+  "games_with_replay_errors": 7300,
+  "databases_processed": 1,
+  "per_database": [
+    {
+      "database": "/Users/armand/Development/RingRift/ai-service/data/games/jsonl_converted_hexagonal_2p.db",
+      "games_checked": 7300,
+      "passed": 0,
+      "divergences": 0,
+      "errors": 7300
+    }
+  ],
+  "failure_rate": 1.0,
+  "passed": false
+}

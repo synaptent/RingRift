@@ -50,9 +50,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
-# Default timeouts
-DEFAULT_CONNECT_TIMEOUT = 10
-DEFAULT_OPERATION_TIMEOUT = 60
+# Default timeouts (increased for VAST.ai SSH proxy latency)
+DEFAULT_CONNECT_TIMEOUT = 30  # Was 10, too short for VAST.ai
+DEFAULT_OPERATION_TIMEOUT = 180  # Was 60, increased for large transfers
 DEFAULT_HTTP_TIMEOUT = 30
 
 # Circuit breaker defaults

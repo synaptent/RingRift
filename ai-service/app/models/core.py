@@ -3,83 +3,10 @@ Pydantic Models for RingRift Game State
 Mirrors TypeScript types from src/shared/types/game.ts
 """
 
-import pydantic
-from pydantic import Field
-from typing import Optional, List, Dict, Tuple, Any, TypeVar
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional, List, Dict, Tuple, Any
 from enum import Enum
 from datetime import datetime
-
-# Pydantic v1/v2 compatibility layer
-# The codebase uses Pydantic v2 method names but v1 is installed.
-# Add v2 method aliases to v1 BaseModel.
-_PYDANTIC_VERSION = int(pydantic.VERSION.split('.')[0])
-
-if _PYDANTIC_VERSION >= 2:
-    from pydantic import BaseModel, ConfigDict
-else:
-    # Pydantic v1: add v2 method aliases
-    from pydantic import BaseModel as _BaseModel
-
-    T = TypeVar('T', bound='BaseModel')
-
-    class BaseModel(_BaseModel):
-        """Pydantic v1 BaseModel with v2 method aliases for compatibility."""
-
-        class Config:
-            # Allow using field names (e.g., from_pos) when aliases (e.g., from) are defined
-            # This is equivalent to Pydantic v2's populate_by_name=True
-            allow_population_by_field_name = True
-
-        def model_copy(self: T, *, update: Optional[Dict[str, Any]] = None, deep: bool = False) -> T:
-            """v2 alias for v1's copy()"""
-            return self.copy(update=update, deep=deep)
-
-        def model_dump(self, *, by_alias: bool = False, **kwargs) -> Dict[str, Any]:
-            """v2 alias for v1's dict()"""
-            # Filter out v2-only kwargs that v1's dict() doesn't support
-            v1_kwargs = {k: v for k, v in kwargs.items() if k not in ('mode', 'round_trip', 'warnings')}
-            return self.dict(by_alias=by_alias, **v1_kwargs)
-
-        @classmethod
-        def model_validate(cls: type[T], obj: Any) -> T:
-            """v2 alias for v1's parse_obj()"""
-            return cls.parse_obj(obj)
-
-        @classmethod
-        def model_construct(cls: type[T], **values) -> T:
-            """v2 alias for v1's construct()"""
-            return cls.construct(**values)
-
-        def model_dump_json(self, *, by_alias: bool = False, **kwargs) -> str:
-            """v2 alias for v1's json()"""
-            return self.json(by_alias=by_alias, **kwargs)
-
-        @classmethod
-        def model_validate_json(cls: type[T], json_str: str) -> T:
-            """v2 alias for v1's parse_raw()"""
-            return cls.parse_raw(json_str)
-
-        @property
-        def model_fields(self) -> Dict[str, Any]:
-            """v2 alias for v1's __fields__.
-
-            In Pydantic v2, model_fields is a class attribute returning field info.
-            In v1, __fields__ contains the same data. This property allows instance
-            access via `obj.model_fields` which is commonly used for iteration.
-            """
-            return self.__fields__
-
-    # ConfigDict in v2 is a dict with config options; in v1 we ignore it
-    # (config is handled via Config class in each model)
-    def ConfigDict(**kwargs):
-        """No-op ConfigDict for Pydantic v1 compatibility.
-
-        In v1, config is handled via nested Config class.
-        The key options we need to support:
-        - populate_by_name -> allow_population_by_field_name (in Config class)
-        - frozen -> allow_mutation = False (in Config class)
-        """
-        return kwargs  # Return the dict for potential introspection
 
 
 class BoardType(str, Enum):

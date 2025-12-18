@@ -146,10 +146,19 @@ from .content_deduplication import (
     DeduplicationResult,
     create_deduplicator,
 )
-from .ingestion_wal import (
-    IngestionWAL,
+# Unified WAL - recommended for new code
+from .unified_wal import (
+    UnifiedWAL,
     WALEntry,
+    WALEntryType,
+    WALEntryStatus,
     WALCheckpoint,
+    WALStats,
+    get_unified_wal,
+)
+# Deprecated WAL wrappers - use UnifiedWAL instead
+from .ingestion_wal import (
+    IngestionWAL,  # DEPRECATED: Use UnifiedWAL directly
     create_ingestion_wal,
 )
 from .sync_utils import (
@@ -270,10 +279,16 @@ __all__ = [
     "GameFingerprint",
     "DeduplicationResult",
     "create_deduplicator",
-    # Ingestion WAL
-    "IngestionWAL",
+    # Unified WAL (recommended)
+    "UnifiedWAL",
     "WALEntry",
+    "WALEntryType",
+    "WALEntryStatus",
     "WALCheckpoint",
+    "WALStats",
+    "get_unified_wal",
+    # Deprecated WAL wrappers - use UnifiedWAL instead
+    "IngestionWAL",  # DEPRECATED
     "create_ingestion_wal",
     # Sync utilities
     "rsync_file",

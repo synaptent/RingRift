@@ -1,5 +1,5 @@
 {
-  "saved_at": "2025-12-17T21:39:27.412610+00:00",
+  "saved_at": "2025-12-18T15:03:08.246134+00:00",
   "histories": {
     "square8_2": {
       "config_key": "square8_2",
@@ -14,6 +14,334 @@
         },
         {
           "checked_at": "2025-12-17T21:39:27.412584+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T02:49:41.069011+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T03:20:30.323001+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T03:50:49.062003+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T04:21:36.523026+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T04:52:09.441524+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T05:22:22.701886+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T05:52:55.595963+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T06:31:20.004602+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T07:11:29.097560+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T07:41:31.519847+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T08:59:28.254661+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T09:00:32.623863+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T09:31:12.566236+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T10:13:44.089349+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T10:51:20.297632+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T11:21:56.719681+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T11:52:34.885429+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T12:50:23.468868+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T13:03:35.977444+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T13:34:27.867700+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T14:18:09.813779+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T14:54:48.410202+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T15:00:47.725196+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T15:03:08.230679+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        }
+      ]
+    },
+    "square8_3": {
+      "config_key": "square8_3",
+      "max_snapshots": 100,
+      "snapshots": [
+        {
+          "checked_at": "2025-12-18T15:00:47.728057+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T15:03:08.235049+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        }
+      ]
+    },
+    "square8_4": {
+      "config_key": "square8_4",
+      "max_snapshots": 100,
+      "snapshots": [
+        {
+          "checked_at": "2025-12-18T15:00:47.728770+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T15:03:08.236735+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        }
+      ]
+    },
+    "square19_2": {
+      "config_key": "square19_2",
+      "max_snapshots": 100,
+      "snapshots": [
+        {
+          "checked_at": "2025-12-18T15:00:47.729347+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T15:03:08.237602+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        }
+      ]
+    },
+    "square19_3": {
+      "config_key": "square19_3",
+      "max_snapshots": 100,
+      "snapshots": [
+        {
+          "checked_at": "2025-12-18T15:00:47.729920+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T15:03:08.238780+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        }
+      ]
+    },
+    "square19_4": {
+      "config_key": "square19_4",
+      "max_snapshots": 100,
+      "snapshots": [
+        {
+          "checked_at": "2025-12-18T15:00:47.730414+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T15:03:08.240384+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        }
+      ]
+    },
+    "hexagonal_2": {
+      "config_key": "hexagonal_2",
+      "max_snapshots": 100,
+      "snapshots": [
+        {
+          "checked_at": "2025-12-18T15:00:47.730893+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T15:03:08.242317+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        }
+      ]
+    },
+    "hexagonal_3": {
+      "config_key": "hexagonal_3",
+      "max_snapshots": 100,
+      "snapshots": [
+        {
+          "checked_at": "2025-12-18T15:00:47.731490+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T15:03:08.244612+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        }
+      ]
+    },
+    "hexagonal_4": {
+      "config_key": "hexagonal_4",
+      "max_snapshots": 100,
+      "snapshots": [
+        {
+          "checked_at": "2025-12-18T15:00:47.732059+00:00",
+          "max_rating_diff": 0.0,
+          "avg_rating_diff": 0.0,
+          "is_significant": false,
+          "participants": 0
+        },
+        {
+          "checked_at": "2025-12-18T15:03:08.246114+00:00",
           "max_rating_diff": 0.0,
           "avg_rating_diff": 0.0,
           "is_significant": false,

@@ -289,7 +289,7 @@ class RegistrySyncManager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=180)
 
             if proc.returncode != 0:
                 return {'success': False, 'error': stderr.decode()[:200]}

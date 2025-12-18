@@ -81,16 +81,19 @@ curl http://localhost:8001/health
 
 ## The Difficulty Ladder
 
-| Level | AI Type   | Description                             | Think Time |
-| ----- | --------- | --------------------------------------- | ---------- |
-| 1     | Random    | Random valid moves                      | 150ms      |
-| 2     | Heuristic | 45+ weighted factors (CMA-ES optimized) | 200ms      |
-| 3     | Minimax   | Alpha-beta search, heuristic eval       | 1.8s       |
-| 4     | Minimax   | Alpha-beta + NNUE neural eval           | 2.8s       |
-| 5     | MCTS      | Monte Carlo tree search                 | 4.0s       |
-| 6-8   | MCTS      | MCTS + neural value/policy guidance     | 5.5-9.6s   |
-| 9-10  | Descent   | AlphaZero-style UBFM search             | 12.6-16s   |
-| 11    | Ultimate  | Extended Descent + ensemble evaluation  | 24s        |
+| Level | AI Type     | Description                             | Think Time |
+| ----- | ----------- | --------------------------------------- | ---------- |
+| 1     | Random      | Random valid moves                      | 150ms      |
+| 2     | Heuristic   | 45+ weighted factors (CMA-ES optimized) | 200ms      |
+| 3     | Minimax     | Alpha-beta search, heuristic eval       | 1.8s       |
+| 4     | Minimax     | Alpha-beta + NNUE neural eval           | 2.8s       |
+| 5     | Descent     | Descent search + neural guidance        | 4.0s       |
+| 6     | Descent     | Descent + neural (larger budget)        | 5.5s       |
+| 7-8   | MCTS        | MCTS with neural value/policy guidance  | 7.5-9.6s   |
+| 9-10  | Gumbel MCTS | Maximum strength Gumbel MCTS            | 12.6-16s   |
+| 11    | Ultimate    | Extended Gumbel MCTS (60s think time)   | 60s        |
+
+> **Note:** For large boards (square19, hexagonal), D3-4 use Descent + NN instead of Minimax (too slow).
 
 ## Board Support
 

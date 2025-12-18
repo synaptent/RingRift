@@ -473,8 +473,11 @@ class ModelRegistry:
     Handles model storage, versioning, and lifecycle management.
     """
 
-    def __init__(self, registry_dir: Path, model_storage_dir: Optional[Path] = None):
-        self.registry_dir = Path(registry_dir)
+    # Default registry directory
+    DEFAULT_REGISTRY_DIR = Path("data/model_registry")
+
+    def __init__(self, registry_dir: Optional[Path] = None, model_storage_dir: Optional[Path] = None):
+        self.registry_dir = Path(registry_dir) if registry_dir else self.DEFAULT_REGISTRY_DIR
         self.registry_dir.mkdir(parents=True, exist_ok=True)
 
         self.model_storage_dir = model_storage_dir or (self.registry_dir / "models")

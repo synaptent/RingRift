@@ -209,6 +209,8 @@ def check_instance_health(instance: Dict) -> Dict:
         "port": port,
         "reachable": False,
         "workers_running": 0,
+        "tournament_running": 0,
+        "training_running": 0,
         "games_count": 0,
         "last_game_age_hours": None,
         "status": "unknown",
@@ -222,7 +224,7 @@ def check_instance_health(instance: Dict) -> Dict:
 
     health["reachable"] = True
 
-    # Check running workers
+    # Check running selfplay workers
     success, output = run_ssh_command(
         host, port,
         "pgrep -fa 'diverse_selfplay|selfplay' | grep -v pgrep | wc -l",
@@ -233,6 +235,30 @@ def check_instance_health(instance: Dict) -> Dict:
             health["workers_running"] = int(output.strip())
         except ValueError:
             health["workers_running"] = 0
+
+    # Check running tournament/evaluation processes (valuable work)
+    success, output = run_ssh_command(
+        host, port,
+        "pgrep -fa 'elo_tournament|gauntlet|run_model_elo' | grep -v pgrep | wc -l",
+        timeout=15,
+    )
+    if success:
+        try:
+            health["tournament_running"] = int(output.strip())
+        except ValueError:
+            health["tournament_running"] = 0
+
+    # Check running training processes (valuable work)
+    success, output = run_ssh_command(
+        host, port,
+        "pgrep -fa 'training_loop|train_model|run_tier_training' | grep -v pgrep | wc -l",
+        timeout=15,
+    )
+    if success:
+        try:
+            health["training_running"] = int(output.strip())
+        except ValueError:
+            health["training_running"] = 0
 
     # Check game count and age (look in all possible DB locations)
     success, output = run_ssh_command(
@@ -270,11 +296,21 @@ print(f'{total}|{min_age:.2f}')
         except (ValueError, IndexError):
             pass
 
-    # Determine status
-    if health["workers_running"] == 0:
+    # Determine status - tournament/training work counts as valuable
+    has_valuable_work = (
+        health["workers_running"] > 0 or
+        health["tournament_running"] > 0 or
+        health["training_running"] > 0
+    )
+
+    if not has_valuable_work:
         health["status"] = "no_workers"
-    elif health["games_count"] == 0:
-        health["status"] = "no_games"
+    elif health["tournament_running"] > 0:
+        health["status"] = "tournament"  # Running Elo evaluation
+    elif health["training_running"] > 0:
+        health["status"] = "training"  # Running model training
+    elif health["games_count"] == 0 and health["workers_running"] > 0:
+        health["status"] = "no_games"  # Workers running but no games yet
     elif health["last_game_age_hours"] and health["last_game_age_hours"] > IDLE_THRESHOLD_HOURS:
         health["status"] = "idle"
     else:
@@ -520,6 +556,8 @@ def run_health_check() -> List[Dict]:
 
         status_emoji = {
             "healthy": "✓",
+            "tournament": "EVAL",  # Running Elo tournament evaluation
+            "training": "TRAIN",  # Running model training
             "idle": "IDLE",
             "no_workers": "NO_WRK",
             "no_games": "NO_GAM",
@@ -539,9 +577,15 @@ def run_health_check() -> List[Dict]:
 
 
 def run_restart_cycle(health_results: List[Dict]) -> int:
-    """Restart workers on unhealthy instances."""
+    """Restart workers on unhealthy instances.
+
+    Skips instances that are running tournaments or training - these are doing
+    valuable work and should not be interrupted.
+    """
     restarted = 0
     for health in health_results:
+        # Only restart truly idle/broken instances
+        # Skip tournament/training - they're doing valuable work
         if health["status"] in ("no_workers", "idle", "no_games"):
             instance = {
                 "host": health["host"],
@@ -603,9 +647,12 @@ def run_auto_cycle():
     # Summary
     total = len(health_results)
     healthy = sum(1 for h in health_results if h["status"] == "healthy")
+    tournament = sum(1 for h in health_results if h["status"] == "tournament")
+    training = sum(1 for h in health_results if h["status"] == "training")
     unreachable = sum(1 for h in health_results if h["status"] == "unreachable")
     no_workers = sum(1 for h in health_results if h["status"] == "no_workers")
     idle = sum(1 for h in health_results if h["status"] == "idle")
+    productive = healthy + tournament + training  # All doing valuable work
 
     # Count by board type
     board_counts = {}
@@ -616,7 +663,8 @@ def run_auto_cycle():
     logger.info("=" * 60)
     logger.info("SUMMARY")
     logger.info(f"  Total instances: {total}")
-    logger.info(f"  Healthy: {healthy}, Unreachable: {unreachable}, No workers: {no_workers}, Idle: {idle}")
+    logger.info(f"  Productive: {productive} (selfplay={healthy}, eval={tournament}, training={training})")
+    logger.info(f"  Issues: unreachable={unreachable}, no_workers={no_workers}, idle={idle}")
     logger.info(f"  Restarted: {restarted}, Games synced: {synced}")
     logger.info(f"  Board distribution: {board_counts}")
     logger.info("=" * 60)

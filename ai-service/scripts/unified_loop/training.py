@@ -399,6 +399,8 @@ class TrainingScheduler:
         self._async_validator: Optional[Any] = None
         self._connection_pool: Optional[Any] = None
         self._parity_failure_rate: float = 0.0  # Track parity failures for training decisions
+        # Execution backend for remote training dispatch (coordinator mode)
+        self._backend: Optional["OrchestratorBackend"] = None
         # Auto-recovery state (Phase 7)
         self._retry_attempts: Dict[str, int] = {}  # config_key -> retry count
         self._last_failure_time: Dict[str, float] = {}  # config_key -> timestamp
@@ -714,6 +716,111 @@ class TrainingScheduler:
         """Set the feedback controller (called after initialization)."""
         self.feedback = feedback
 
+    def set_execution_backend(self, backend: "OrchestratorBackend"):
+        """Set the execution backend for remote training dispatch."""
+        self._backend = backend
+
+    async def _dispatch_remote_training(self, config_key: str) -> bool:
+        """Dispatch training to a remote GPU worker via execution backend.
+
+        Args:
+            config_key: Configuration key (e.g., "square8_2p")
+
+        Returns:
+            True if training was successfully dispatched
+        """
+        if self._backend is None:
+            print(f"[Training] No execution backend for remote training")
+            return False
+
+        parts = config_key.rsplit("_", 1)
+        board_type = parts[0]
+        num_players = int(parts[1].replace("p", "")) if len(parts) > 1 else 2
+
+        # Find training data path - check JSONL files first, then DB files
+        games_dir = AI_SERVICE_ROOT / "data" / "games"
+        data_path = None
+
+        # JSONL sources (in order of preference)
+        jsonl_sources = [
+            games_dir / "gpu_selfplay" / config_key / "games.jsonl",
+            games_dir / f"{config_key}.jsonl",
+            AI_SERVICE_ROOT / "data" / "selfplay" / f"gpu_{config_key}" / "games.jsonl",
+        ]
+
+        # Also search cluster sync directories for matching JSONL
+        for subdir in ["cluster", "cluster_sync"]:
+            cluster_dir = games_dir / subdir
+            if cluster_dir.exists():
+                # Find JSONL files that match the config key
+                for jsonl_file in cluster_dir.rglob("*.jsonl"):
+                    if config_key in jsonl_file.name or board_type in jsonl_file.name:
+                        jsonl_sources.append(jsonl_file)
+
+        # Check JSONL sources
+        for src in jsonl_sources:
+            if isinstance(src, Path) and src.exists() and src.stat().st_size > 0:
+                data_path = str(src)
+                print(f"[Training] Found JSONL data: {src.name}")
+                break
+
+        # If no JSONL, look for consolidated DB files
+        if not data_path:
+            db_sources = [
+                games_dir / "cluster_synced.db",  # Main synced database
+                games_dir / f"canonical_{board_type}.db",  # Canonical games
+                games_dir / "consolidated_training_v2.db",  # Consolidated training data
+                games_dir / f"{board_type}.db",  # Board-specific DB
+            ]
+            for src in db_sources:
+                if src.exists() and src.stat().st_size > 0:
+                    data_path = str(src)
+                    print(f"[Training] Found DB data: {src.name}")
+                    break
+
+        if not data_path:
+            print(f"[Training] No training data found for {config_key}")
+            # Schedule retry in case data is still syncing
+            self._schedule_retry(config_key, "no_data")
+            return False
+
+        # Output model path
+        model_output = str(AI_SERVICE_ROOT / "models" / f"ringrift_{config_key}.pth")
+
+        # Training epochs from config
+        epochs = getattr(self.config, 'epochs', 100)
+
+        print(f"[Training] Dispatching remote training for {config_key} via backend")
+
+        try:
+            result = await self._backend.run_training(
+                data_path=data_path,
+                model_output_path=model_output,
+                epochs=epochs,
+                board_type=board_type,
+                num_players=num_players,
+            )
+
+            if result.success:
+                print(f"[Training] Remote training completed on {result.worker}: {config_key}")
+                # Emit training completed event
+                await self.event_bus.publish(DataEvent(
+                    event_type=DataEventType.TRAINING_COMPLETED,
+                    payload={
+                        "config": config_key,
+                        "model_path": model_output,
+                        "worker": result.worker,
+                        "remote": True,
+                    }
+                ))
+                return True
+            else:
+                print(f"[Training] Remote training failed on {result.worker}: {result.error}")
+                return False
+        except Exception as e:
+            print(f"[Training] Remote training dispatch error: {e}")
+            return False
+
     def _acquire_training_lock(self, config_key: str = None) -> bool:
         """Acquire per-config training lock using file locking.
 
@@ -945,7 +1052,10 @@ class TrainingScheduler:
     async def start_training(self, config_key: str) -> bool:
         """Start a training run for the given configuration."""
         if DISABLE_LOCAL_TASKS:
-            print(f"[Training] Skipping local training (RINGRIFT_DISABLE_LOCAL_TASKS=true)")
+            # Try remote dispatch via execution backend
+            if self._backend is not None:
+                return await self._dispatch_remote_training(config_key)
+            print(f"[Training] Skipping local training (RINGRIFT_DISABLE_LOCAL_TASKS=true, no backend)")
             return False
 
         if self.state.training_in_progress:

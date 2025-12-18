@@ -70,6 +70,7 @@ from scripts.unified_loop.config import (
     DataEvent,
     HostState,
     ConfigState,
+    FeedbackState,
 )
 
 # Import refactored service classes (Phase 2 refactoring)
@@ -2722,6 +2723,10 @@ class UnifiedAILoop:
                 # get_backend auto-detects SSH if hosts config exists, else Local
                 self.backend = get_backend(backend_type, force_new=True)
                 print(f"[UnifiedLoop] Execution backend initialized ({type(self.backend).__name__})")
+                # Wire backend to training scheduler for remote training dispatch
+                if hasattr(self, 'training_scheduler') and self.training_scheduler:
+                    self.training_scheduler.set_execution_backend(self.backend)
+                    print("[UnifiedLoop] Execution backend wired to training scheduler")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize execution backend: {e}")
 
@@ -5129,11 +5134,13 @@ class UnifiedAILoop:
                             except Exception:
                                 pass
 
-                    # Also check main games directory for consolidated databases
+                    # Also check main games directory recursively for all databases
                     games_dir = AI_SERVICE_ROOT / "data" / "games"
                     if games_dir.exists():
-                        for db_path in games_dir.glob("*.db"):
-                            if "schema" in db_path.name or db_path.name.startswith("."):
+                        # Skip synced dir (already counted above) to avoid double counting
+                        for db_path in games_dir.rglob("*.db"):
+                            if ("synced" in str(db_path) or "schema" in db_path.name
+                                or db_path.name.startswith(".")):
                                 continue
                             try:
                                 conn = sqlite3.connect(db_path)

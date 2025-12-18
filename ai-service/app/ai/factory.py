@@ -98,23 +98,23 @@ CANONICAL_DIFFICULTY_PROFILES: Dict[int, DifficultyProfile] = {
         "use_neural_net": True,
     },
     5: {
-        # Upper-mid: MCTS with heuristic rollouts only (no neural net)
-        "ai_type": AIType.MCTS,
+        # Upper-mid: Descent with neural guidance (replaces plain MCTS)
+        "ai_type": AIType.DESCENT,
         "randomness": 0.05,
         "think_time_ms": 4000,
-        "profile_id": "v1-mcts-5",
-        "use_neural_net": False,
+        "profile_id": "v1-descent-5-neural",
+        "use_neural_net": True,
     },
     6: {
-        # High: MCTS with neural value/policy guidance
-        "ai_type": AIType.MCTS,
+        # High: Descent with neural guidance and larger budget
+        "ai_type": AIType.DESCENT,
         "randomness": 0.02,
         "think_time_ms": 5500,
-        "profile_id": "v1-mcts-6-neural",
+        "profile_id": "v1-descent-6-neural",
         "use_neural_net": True,
     },
     7: {
-        # Expert: MCTS with neural guidance and higher budget
+        # Expert: MCTS with neural guidance
         "ai_type": AIType.MCTS,
         "randomness": 0.0,
         "think_time_ms": 7500,
@@ -122,7 +122,7 @@ CANONICAL_DIFFICULTY_PROFILES: Dict[int, DifficultyProfile] = {
         "use_neural_net": True,
     },
     8: {
-        # Strong expert: MCTS with neural guidance and large search budget
+        # Strong expert: MCTS with neural guidance and larger budget
         "ai_type": AIType.MCTS,
         "randomness": 0.0,
         "think_time_ms": 9600,
@@ -130,45 +130,47 @@ CANONICAL_DIFFICULTY_PROFILES: Dict[int, DifficultyProfile] = {
         "use_neural_net": True,
     },
     9: {
-        # Master: Descent/UBFM-style search with NN guidance
-        "ai_type": AIType.DESCENT,
+        # Master: Gumbel MCTS with extended search (strongest per benchmarks)
+        "ai_type": AIType.GUMBEL_MCTS,
         "randomness": 0.0,
         "think_time_ms": 12600,
-        "profile_id": "v1-descent-9",
+        "profile_id": "v1-gumbel-9-master",
         "use_neural_net": True,
     },
     10: {
-        # Grandmaster: strongest Descent configuration
-        "ai_type": AIType.DESCENT,
+        # Grandmaster: Gumbel MCTS with maximum search budget
+        "ai_type": AIType.GUMBEL_MCTS,
         "randomness": 0.0,
         "think_time_ms": 16000,
-        "profile_id": "v1-descent-10",
+        "profile_id": "v1-gumbel-10-grandmaster",
         "use_neural_net": True,
     },
     11: {
-        # Ultimate: super-hard mode with extended think time
+        # Ultimate: Gumbel MCTS super-hard mode with extended think time
         # This level is intended to be nearly unbeatable by humans
-        "ai_type": AIType.DESCENT,
+        "ai_type": AIType.GUMBEL_MCTS,
         "randomness": 0.0,
         "think_time_ms": 60000,  # 60 seconds per move
-        "profile_id": "v1-descent-11-ultimate",
+        "profile_id": "v1-gumbel-11-ultimate",
         "use_neural_net": True,
     },
 }
 
 # Difficulty level descriptions for UI/documentation
+# NOTE: For larger boards (hex8, square19, hexagonal), D3-4 use Descent + NN
+# instead of Minimax, as Minimax is too slow for larger state spaces.
 DIFFICULTY_DESCRIPTIONS: Dict[int, str] = {
     1: "Beginner - Pure random moves",
     2: "Easy - Simple heuristic with randomness",
-    3: "Lower-mid - Minimax search (heuristic only)",
-    4: "Mid - Minimax search with neural evaluation",
-    5: "Upper-mid - MCTS search (heuristic only)",
-    6: "High - MCTS with neural guidance",
-    7: "Expert - MCTS with increased search budget",
-    8: "Strong Expert - MCTS with large search budget",
-    9: "Master - Descent/UBFM search with neural guidance",
-    10: "Grandmaster - Maximum strength Descent search",
-    11: "Ultimate - Super-hard mode with 60s think time (nearly unbeatable)",
+    3: "Lower-mid - Minimax search (small boards) / Descent + NN (large boards)",
+    4: "Mid - Minimax + NNUE (small boards) / Descent + NN (large boards)",
+    5: "Upper-mid - Descent with neural guidance",
+    6: "High - Descent with neural guidance",
+    7: "Expert - MCTS with neural guidance",
+    8: "Strong Expert - MCTS with larger search budget",
+    9: "Master - Gumbel MCTS with extended search",
+    10: "Grandmaster - Maximum strength Gumbel MCTS",
+    11: "Ultimate - Gumbel MCTS with 60s think time (nearly unbeatable)",
 }
 
 

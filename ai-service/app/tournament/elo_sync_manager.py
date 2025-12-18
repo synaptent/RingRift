@@ -478,13 +478,13 @@ class EloSyncManager:
         temp_path = self.db_path.with_suffix('.db.tmp')
 
         result = await asyncio.create_subprocess_exec(
-            'rsync', '-az', '--timeout=30',
+            'rsync', '-az', '--timeout=60',
             f'{host}:~/ringrift/ai-service/data/unified_elo.db',
             str(temp_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        _, stderr = await asyncio.wait_for(result.communicate(), timeout=60)
+        _, stderr = await asyncio.wait_for(result.communicate(), timeout=180)
 
         if result.returncode == 0 and temp_path.exists():
             # Verify the downloaded database
@@ -515,13 +515,13 @@ class EloSyncManager:
     async def _rsync_push(self, host: str) -> bool:
         """Push database to remote host."""
         result = await asyncio.create_subprocess_exec(
-            'rsync', '-az', '--timeout=30',
+            'rsync', '-az', '--timeout=60',
             str(self.db_path),
             f'{host}:~/ringrift/ai-service/data/unified_elo.db',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        await asyncio.wait_for(result.communicate(), timeout=60)
+        await asyncio.wait_for(result.communicate(), timeout=180)
 
         if result.returncode == 0:
             logger.info(f"Pushed {self.state.local_match_count} matches to {host}")
