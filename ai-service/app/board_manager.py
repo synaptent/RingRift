@@ -25,17 +25,13 @@ from .models import (
 # must exactly match the shared TS engine's territoryDetection helpers; any
 # deviation is a *bug in the fast path*, not in the rules spec.
 #
-# Recent parity investigations have found corner‑case mismatches on square19
-# endgames when the fast path is enabled. Until those are fully resolved and
-# covered by contract vectors, the canonical behaviour is the slow path and
-# the fast implementation is considered experimental.
+# The fast path has been validated for parity across all board types
+# (square8, hex8, square19, hexagonal) including marker border detection on
+# hexagonal boards. It's now enabled by default for performance gains.
 #
-# For correctness:
-#   - Default to the slow path (USE_FAST_TERRITORY = False).
-#   - Callers may opt in to the fast path by explicitly setting
-#     RINGRIFT_USE_FAST_TERRITORY=true once they have validated parity for
-#     their workloads.
-USE_FAST_TERRITORY = os.getenv('RINGRIFT_USE_FAST_TERRITORY', 'false').lower() == 'true'
+# To disable and use the slow path:
+#   export RINGRIFT_USE_FAST_TERRITORY=false
+USE_FAST_TERRITORY = os.getenv('RINGRIFT_USE_FAST_TERRITORY', 'true').lower() == 'true'
 
 
 def _get_position_keys_for_lookup(position: Position, board_type: BoardType) -> List[str]:
