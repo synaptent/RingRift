@@ -5301,7 +5301,13 @@ class UnifiedAILoop:
 
                 # Check if we should start training
                 if not self.state.training_in_progress:
-                    trigger_config = self.training_scheduler.should_trigger_training()
+                    # First check for pending retries (auto-recovery)
+                    retry_config = self.training_scheduler.get_pending_retry()
+                    if retry_config:
+                        print(f"[TrainingLoop] Processing scheduled retry for {retry_config}")
+                        trigger_config = retry_config
+                    else:
+                        trigger_config = self.training_scheduler.should_trigger_training()
                     print(f"[TrainingLoop] Check: trigger_config={trigger_config}", flush=True)
                     if trigger_config:
                         # Use cached parity validation results (non-blocking)
@@ -5346,7 +5352,7 @@ class UnifiedAILoop:
                                 pass  # Don't block training for optimizer errors
 
                         print(f"[Training] Starting training for {trigger_config}")
-                        await self.training_scheduler.start_training(trigger_config)
+                        await self.training_scheduler.start_training_with_retry(trigger_config)
 
             except Exception as e:
                 print(f"[Training] Error: {e}")
