@@ -34,6 +34,20 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Import circuit breaker for fault tolerance
+try:
+    from app.distributed.circuit_breaker import (
+        get_operation_breaker,
+        get_adaptive_timeout,
+        CircuitOpenError,
+    )
+    HAS_CIRCUIT_BREAKER = True
+except ImportError:
+    HAS_CIRCUIT_BREAKER = False
+
+# Health check should be fast - don't wait 300s for a health check!
+HEALTH_CHECK_TIMEOUT = 5  # seconds
+
 
 @dataclass
 class P2PSyncConfig:
@@ -86,18 +100,36 @@ class P2PSyncClient:
 
         Returns True if peer is healthy.
         """
-        try:
-            session = await self._get_session()
-            url = f"http://{peer_host}:{peer_port}/health"
-
-            async with session.get(url) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return data.get("status") == "ok" or data.get("healthy", False)
+        # Circuit breaker check
+        if HAS_CIRCUIT_BREAKER:
+            breaker = get_operation_breaker("p2p")
+            if not breaker.can_execute(peer_host):
+                logger.debug(f"Circuit breaker open for {peer_host}, skipping health check")
                 return False
+
+        try:
+            # Use dedicated health check timeout, not the full 300s read timeout
+            import aiohttp
+            health_timeout = aiohttp.ClientTimeout(
+                total=HEALTH_CHECK_TIMEOUT,
+                connect=HEALTH_CHECK_TIMEOUT,
+            )
+            async with aiohttp.ClientSession(timeout=health_timeout) as session:
+                url = f"http://{peer_host}:{peer_port}/health"
+
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        is_healthy = data.get("status") == "ok" or data.get("healthy", False)
+                        if is_healthy and HAS_CIRCUIT_BREAKER:
+                            get_operation_breaker("p2p").record_success(peer_host)
+                        return is_healthy
+                    return False
 
         except Exception as e:
             logger.debug(f"Peer health check failed for {peer_host}:{peer_port}: {e}")
+            if HAS_CIRCUIT_BREAKER:
+                get_operation_breaker("p2p").record_failure(peer_host, e)
             return False
 
     async def list_peer_files(
@@ -136,6 +168,13 @@ class P2PSyncClient:
 
         Returns (success, bytes_transferred, checksum).
         """
+        # Circuit breaker check
+        if HAS_CIRCUIT_BREAKER:
+            breaker = get_operation_breaker("p2p")
+            if not breaker.can_execute(peer_host):
+                logger.debug(f"Circuit breaker open for {peer_host}, skipping download")
+                return False, 0, ""
+
         try:
             session = await self._get_session()
             url = f"http://{peer_host}:{peer_port}/sync/file"
@@ -149,6 +188,8 @@ class P2PSyncClient:
                 if resp.status != 200:
                     error_text = await resp.text()
                     logger.warning(f"Failed to download {remote_path}: {resp.status} - {error_text}")
+                    if HAS_CIRCUIT_BREAKER:
+                        get_operation_breaker("p2p").record_failure(peer_host)
                     return False, 0, ""
 
                 # Write to temp file first
@@ -170,14 +211,21 @@ class P2PSyncClient:
                     if checksum != expected_checksum:
                         logger.error(f"Checksum mismatch for {remote_path}: expected {expected_checksum}, got {checksum}")
                         temp_path.unlink(missing_ok=True)
+                        if HAS_CIRCUIT_BREAKER:
+                            get_operation_breaker("p2p").record_failure(peer_host)
                         return False, 0, ""
 
                 # Move to final location
                 temp_path.rename(local_path)
+                # Record success
+                if HAS_CIRCUIT_BREAKER:
+                    get_operation_breaker("p2p").record_success(peer_host)
                 return True, bytes_written, checksum
 
         except Exception as e:
             logger.error(f"Error downloading {remote_path}: {e}")
+            if HAS_CIRCUIT_BREAKER:
+                get_operation_breaker("p2p").record_failure(peer_host, e)
             return False, 0, ""
 
     async def sync_file(

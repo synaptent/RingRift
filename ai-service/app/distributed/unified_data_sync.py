@@ -163,12 +163,15 @@ def publish_cross_process_event(event_type: str, payload: dict = None):
 try:
     from app.distributed.circuit_breaker import (
         get_host_breaker,
+        get_circuit_registry,
+        FallbackChain,
         CircuitOpenError,
         CircuitState,
     )
     HAS_CIRCUIT_BREAKER = True
 except ImportError:
     HAS_CIRCUIT_BREAKER = False
+    FallbackChain = None
 
 # Try to import unified manifest (consolidated implementation)
 try:
@@ -1029,21 +1032,35 @@ class UnifiedDataSyncService:
                 logger.debug(f"{host.name}: bandwidth request error: {e}")
 
         try:
+            # Total timeout budget for all fallbacks (prevent hour-long stalls)
+            # SSH (300s max) + P2P (300s max) + aria2 (300s max) = 15 min max total
+            total_budget = 900.0  # 15 minutes max for all fallback attempts
+            budget_start = time.time()
+
+            def remaining_budget() -> float:
+                return max(0, total_budget - (time.time() - budget_start))
+
             # Try SSH/rsync first
             games_synced, error = await self._sync_host_ssh(host, local_dir)
             sync_method = "ssh"
 
-            # Fallback to P2P if SSH failed
+            # Fallback to P2P if SSH failed (check budget first)
             if games_synced == 0 and error and self.config.enable_p2p_fallback:
-                logger.info(f"{host.name}: SSH failed ({error}), trying P2P fallback")
-                games_synced, error = await self._sync_host_p2p(host, local_dir)
-                sync_method = "p2p_http" if games_synced > 0 else "failed"
+                if remaining_budget() < 10:
+                    logger.warning(f"{host.name}: Timeout budget exhausted, skipping P2P fallback")
+                else:
+                    logger.info(f"{host.name}: SSH failed ({error}), trying P2P fallback")
+                    games_synced, error = await self._sync_host_p2p(host, local_dir)
+                    sync_method = "p2p_http" if games_synced > 0 else "failed"
 
-            # Fallback to aria2 if P2P also failed
+            # Fallback to aria2 if P2P also failed (check budget first)
             if games_synced == 0 and error and self._aria2_transport:
-                logger.info(f"{host.name}: P2P failed ({error}), trying aria2 transport")
-                games_synced, error = await self._sync_host_aria2(host, local_dir)
-                sync_method = "aria2" if games_synced > 0 else "failed"
+                if remaining_budget() < 10:
+                    logger.warning(f"{host.name}: Timeout budget exhausted, skipping aria2 fallback")
+                else:
+                    logger.info(f"{host.name}: P2P failed ({error}), trying aria2 transport")
+                    games_synced, error = await self._sync_host_aria2(host, local_dir)
+                    sync_method = "aria2" if games_synced > 0 else "failed"
 
             if games_synced == 0 and error:
                 raise RuntimeError(error)

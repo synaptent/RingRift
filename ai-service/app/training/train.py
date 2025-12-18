@@ -3390,14 +3390,15 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     )
 
     # Learning rate scheduling
+    # Defaults match TrainConfig for better convergence
     parser.add_argument(
-        '--warmup-epochs', type=int, default=0,
-        help='Number of warmup epochs (0 to disable)'
+        '--warmup-epochs', type=int, default=1,
+        help='Number of warmup epochs (default: 1 for training stability)'
     )
     parser.add_argument(
-        '--lr-scheduler', type=str, default='none',
+        '--lr-scheduler', type=str, default='cosine',
         choices=['none', 'step', 'cosine', 'cosine-warm-restarts'],
-        help='Learning rate scheduler type'
+        help='Learning rate scheduler type (default: cosine for better convergence)'
     )
     parser.add_argument(
         '--lr-min', type=float, default=1e-6,
