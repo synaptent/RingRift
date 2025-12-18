@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 class DifficultyProfile(TypedDict):
     """Canonical difficulty profile for a single ladder level.
 
-    This mapping is the Python source of truth for how difficulty 1-10 map
+    This mapping is the Python source of truth for how difficulty 1-11 map
     onto concrete AI configurations. TypeScript mirrors the same ladder in
     its own shared module so that lobby UIs, matchmaking, and the server
     agree on exactly which AI strengths are offered.
@@ -59,7 +59,7 @@ class DifficultyProfile(TypedDict):
 
 
 # -----------------------------------------------------------------------------
-# Canonical difficulty profiles (1-10)
+# Canonical difficulty profiles (1-11)
 # -----------------------------------------------------------------------------
 
 # NOTE: think_time_ms is passed to the AI as a soft search-budget hint but
@@ -197,7 +197,7 @@ def select_ai_type(difficulty: int) -> AIType:
     """Auto-select AI type based on canonical difficulty mapping.
 
     Args:
-        difficulty: Difficulty level (1-10)
+        difficulty: Difficulty level (1-11)
 
     Returns:
         AIType for the given difficulty level
@@ -209,7 +209,7 @@ def get_randomness_for_difficulty(difficulty: int) -> float:
     """Get randomness factor for difficulty level from canonical profile.
 
     Args:
-        difficulty: Difficulty level (1-10)
+        difficulty: Difficulty level (1-11)
 
     Returns:
         Randomness factor (0.0-1.0)
@@ -221,7 +221,7 @@ def get_think_time_for_difficulty(difficulty: int) -> int:
     """Get think time in milliseconds for difficulty level.
 
     Args:
-        difficulty: Difficulty level (1-10)
+        difficulty: Difficulty level (1-11)
 
     Returns:
         Think time in milliseconds
@@ -233,7 +233,7 @@ def uses_neural_net(difficulty: int) -> bool:
     """Check if the given difficulty level uses neural network evaluation.
 
     Args:
-        difficulty: Difficulty level (1-10)
+        difficulty: Difficulty level (1-11)
 
     Returns:
         True if neural network is enabled for this difficulty
@@ -434,7 +434,7 @@ class AIFactory:
         as it uses the canonical difficulty profiles.
 
         Args:
-            difficulty: Difficulty level (1-10)
+            difficulty: Difficulty level (1-11)
             player_number: The player number (1-indexed)
             think_time_override: Override default think time (ms)
             randomness_override: Override default randomness (0.0-1.0)
@@ -661,7 +661,7 @@ def get_all_difficulties() -> Dict[int, DifficultyProfile]:
     """Get all canonical difficulty profiles.
 
     Returns:
-        Dict mapping difficulty levels (1-10) to profiles
+        Dict mapping difficulty levels (1-11) to profiles
     """
     return CANONICAL_DIFFICULTY_PROFILES.copy()
 

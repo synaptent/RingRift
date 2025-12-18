@@ -881,7 +881,7 @@ router.post(
     // Compute effective rulesOptions for this game.
     //
     // Canonical defaults:
-    // - swapRuleEnabled defaults to true for 2-player games only.
+    // - swapRuleEnabled defaults to false for 2-player games (opt-in).
     //
     // Experimental overrides (non-canonical; used for research / ablations):
     // - rulesOptions.ringsPerPlayer

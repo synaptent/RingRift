@@ -11,7 +11,7 @@ This document provides a high-level overview of the RingRift AI Service architec
 │                                                                              │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                   │
 │  │   FastAPI    │    │   AI Engine  │    │   Training   │                   │
-│  │   Endpoints  │───▶│   (D1-D10)   │◀───│   Pipeline   │                   │
+│  │   Endpoints  │───▶│   (D1-D11)   │◀───│   Pipeline   │                   │
 │  └──────────────┘    └──────────────┘    └──────────────┘                   │
 │         │                   │                   │                            │
 │         ▼                   ▼                   ▼                            │
@@ -45,15 +45,18 @@ FastAPI endpoints serving AI move requests and game evaluation:
 
 ### 2. AI Engine (`app/ai/`)
 
-10-level difficulty ladder with pluggable AI implementations:
+11-level difficulty ladder with pluggable AI implementations:
 
-| Level | AI Type   | Implementation                                   |
-| ----- | --------- | ------------------------------------------------ |
-| D1    | Random    | `random_ai.py`                                   |
-| D2    | Heuristic | `heuristic_ai.py` (45+ CMA-ES optimized weights) |
-| D3-4  | Minimax   | `minimax_ai.py` (alpha-beta + NNUE eval)         |
-| D5-8  | MCTS      | `mcts_ai.py` (neural policy/value guidance)      |
-| D9-10 | Descent   | `descent_ai.py` (AlphaZero-style UBFM search)    |
+| Level | AI Type   | Implementation                                      |
+| ----- | --------- | --------------------------------------------------- |
+| D1    | Random    | `random_ai.py`                                      |
+| D2    | Heuristic | `heuristic_ai.py` (45+ CMA-ES optimized weights)    |
+| D3    | Minimax   | `minimax_ai.py` (alpha-beta, heuristic eval)        |
+| D4    | Minimax   | `minimax_ai.py` (alpha-beta + NNUE neural eval)     |
+| D5    | MCTS      | `mcts_ai.py` (heuristic rollouts)                   |
+| D6-8  | MCTS      | `mcts_ai.py` (neural policy/value guidance)         |
+| D9-10 | Descent   | `descent_ai.py` (AlphaZero-style UBFM search)       |
+| D11   | Ultimate  | `descent_ai.py` (60s think time, nearly unbeatable) |
 
 **Key AI Modules:**
 
@@ -176,7 +179,7 @@ Client Request
       │
       ▼
 ┌─────────────┐
-│ Difficulty  │──▶ Select AI (D1-D10)
+│ Difficulty  │──▶ Select AI (D1-D11)
 │   Ladder    │
 └─────────────┘
       │

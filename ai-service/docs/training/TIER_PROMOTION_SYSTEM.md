@@ -1,6 +1,6 @@
 # Tier Promotion System
 
-The tier promotion system manages model progression through difficulty tiers (D1-D9) based on evaluation performance. It ensures models meet quality gates before being promoted to serve harder difficulty levels.
+The tier promotion system manages model progression through difficulty tiers (D1-D11) based on evaluation performance. It ensures models meet quality gates before being promoted to serve harder difficulty levels.
 
 ## Architecture
 
@@ -113,6 +113,8 @@ print(f"Elo threshold: {config.elo_threshold}")
 | D7   | 58%          | 150       | +35           |
 | D8   | 58%          | 200       | +40           |
 | D9   | 60%          | 200       | +50           |
+| D10  | 60%          | 250       | +55           |
+| D11  | 62%          | 300       | +60           |
 
 ### tier_perf_benchmark.py
 
