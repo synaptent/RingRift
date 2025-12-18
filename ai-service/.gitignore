@@ -69,6 +69,15 @@ data/deprecated_*/
 # Holdout data (tournament/evaluation games separated from training)
 data/holdouts/
 
+# HDF5 converted training data (generated from NPZ, ~6GB)
+data/training_hdf5/
+
+# CMA-ES optimization runs (experiment artifacts)
+data/cmaes/
+
+# KL training data (generated during training experiments)
+data/training/kl_*/
+
 # Model sync state (machine-specific)
 data/model_sync_state.json
 
