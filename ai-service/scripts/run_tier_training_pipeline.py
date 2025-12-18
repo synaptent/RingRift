@@ -453,8 +453,8 @@ def main(argv: list[str] | None = None) -> int:
     _run_training_preflight(args)
 
     tier_name = args.tier.upper()
-    if tier_name not in {"D2", "D4", "D6", "D8"}:
-        raise SystemExit(f"Unsupported tier {args.tier!r}; expected one of D2, D4, D6, D8.")
+    if tier_name not in {"D2", "D4", "D6", "D8", "D9", "D10"}:
+        raise SystemExit(f"Unsupported tier {args.tier!r}; expected one of D2, D4, D6, D8, D9, D10.")
 
     board_norm = args.board.lower()
     if board_norm not in {"square8", "sq8"}:
@@ -490,7 +490,7 @@ def main(argv: list[str] | None = None) -> int:
         training_params, metrics = _run_d2_training(args, candidate_id)
     elif tier_name == "D4":
         training_params, metrics = _run_d4_training(args, candidate_id)
-    elif tier_name in {"D6", "D8"}:
+    elif tier_name in {"D6", "D8", "D9", "D10"}:
         training_params, metrics = _run_neural_tier_training(args, candidate_id, tier_name)
     else:  # pragma: no cover - guarded above
         raise SystemExit(f"Unsupported tier {tier_name!r}.")

@@ -13107,6 +13107,9 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         Returns:
             Dict with evaluation results or error
         """
+        # Calculate timeout upfront to avoid scope issues in exception handler
+        timeout_seconds = max(300, games * 30)  # 30s per game estimate, minimum 5 minutes
+
         try:
             # Get available hosts for evaluation
             if load_remote_hosts is None:

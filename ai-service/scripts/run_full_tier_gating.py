@@ -296,8 +296,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
     tier = args.tier.upper()
 
-    if tier not in {"D2", "D4", "D6", "D8"}:
-        raise SystemExit(f"Unsupported tier {args.tier!r}; expected one of " "D2, D4, D6, D8.")
+    if tier not in {"D2", "D4", "D6", "D8", "D9", "D10"}:
+        raise SystemExit(f"Unsupported tier {args.tier!r}; expected one of " "D2, D4, D6, D8, D9, D10.")
 
     run_dir = os.path.abspath(args.run_dir)
     os.makedirs(run_dir, exist_ok=True)

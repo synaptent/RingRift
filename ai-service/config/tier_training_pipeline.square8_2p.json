@@ -99,6 +99,32 @@
         "num_games": 50,
         "win_rate_threshold": 0.6
       }
+    },
+    "D9": {
+      "training": {
+        "mode": "neural",
+        "cmaes_mode": "auto",
+        "seed": 123
+      },
+      "gating": {
+        "enabled": true,
+        "seed": 1,
+        "num_games": 50,
+        "win_rate_threshold": 0.65
+      }
+    },
+    "D10": {
+      "training": {
+        "mode": "neural",
+        "cmaes_mode": "auto",
+        "seed": 123
+      },
+      "gating": {
+        "enabled": true,
+        "seed": 1,
+        "num_games": 50,
+        "win_rate_threshold": 0.7
+      }
     }
   }
 }

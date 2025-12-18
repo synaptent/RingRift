@@ -37,7 +37,7 @@ from app.training.tier_promotion_registry import (  # noqa: E402
     load_square8_two_player_registry,
 )
 
-ALLOWED_SQUARE8_2P_TIERS = {"D2", "D4", "D6", "D8"}
+ALLOWED_SQUARE8_2P_TIERS = {"D2", "D4", "D6", "D8", "D9", "D10"}
 
 
 class CalibrationInputError(Exception):
