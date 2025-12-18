@@ -215,6 +215,22 @@ def _build_default_square8_two_player_configs() -> Dict[
                 "configuration with maximum search budget."
             ),
         ),
+        # D11 – ultimate Descent on square8, 2-player.
+        (11, BoardType.SQUARE8, 2): LadderTierConfig(
+            difficulty=11,
+            board_type=BoardType.SQUARE8,
+            num_players=2,
+            ai_type=AIType.DESCENT,
+            model_id="ringrift_best_sq8_2p",
+            heuristic_profile_id="heuristic_v1_sq8_2p",
+            randomness=0.0,
+            think_time_ms=60000,  # 60 seconds per move
+            use_neural_net=True,
+            notes=(
+                "Ultimate square8 2p tier using Descent with 60s think time. "
+                "Intended to be nearly unbeatable by humans."
+            ),
+        ),
     }
 
 
@@ -241,31 +257,33 @@ def _build_default_square19_two_player_configs() -> Dict[
             use_neural_net=False,
             notes="Easy square19 2p tier using heuristic evaluation.",
         ),
-        # D3 – lower-mid minimax on square19, 2-player (non-neural).
+        # D3 – lower-mid MCTS on square19, 2-player (non-neural).
+        # NOTE: Minimax is too slow on 19x19 (minutes per move), use MCTS instead.
         (3, BoardType.SQUARE19, 2): LadderTierConfig(
             difficulty=3,
             board_type=BoardType.SQUARE19,
             num_players=2,
-            ai_type=AIType.MINIMAX,
-            model_id="v1-minimax-square19-3",
+            ai_type=AIType.MCTS,
+            model_id="v1-mcts-square19-3",
             heuristic_profile_id="heuristic_v1_sq19_2p",
             randomness=0.15,
             think_time_ms=2500,
             use_neural_net=False,
-            notes="Lower-mid square19 2p tier using minimax (non-neural).",
+            notes="Lower-mid square19 2p tier using MCTS (minimax too slow on 19x19).",
         ),
-        # D4 – mid minimax on square19, 2-player (neural/NNUE).
+        # D4 – mid MCTS on square19, 2-player (non-neural, higher budget).
+        # NOTE: Minimax is too slow on 19x19 (minutes per move), use MCTS instead.
         (4, BoardType.SQUARE19, 2): LadderTierConfig(
             difficulty=4,
             board_type=BoardType.SQUARE19,
             num_players=2,
-            ai_type=AIType.MINIMAX,
-            model_id="nnue_square19_2p",
+            ai_type=AIType.MCTS,
+            model_id="v1-mcts-square19-4",
             heuristic_profile_id="heuristic_v1_sq19_2p",
             randomness=0.08,
             think_time_ms=4000,
-            use_neural_net=True,
-            notes="Mid square19 2p tier using minimax with NNUE.",
+            use_neural_net=False,
+            notes="Mid square19 2p tier using MCTS (minimax too slow on 19x19).",
         ),
         # D5 – upper-mid MCTS on square19, 2-player (non-neural).
         (5, BoardType.SQUARE19, 2): LadderTierConfig(
@@ -345,6 +363,19 @@ def _build_default_square19_two_player_configs() -> Dict[
             use_neural_net=True,
             notes="Grandmaster square19 2p tier using strongest Descent.",
         ),
+        # D11 – ultimate Descent on square19, 2-player.
+        (11, BoardType.SQUARE19, 2): LadderTierConfig(
+            difficulty=11,
+            board_type=BoardType.SQUARE19,
+            num_players=2,
+            ai_type=AIType.DESCENT,
+            model_id="ringrift_best_sq19_2p",
+            heuristic_profile_id="heuristic_v1_sq19_2p",
+            randomness=0.0,
+            think_time_ms=90000,  # 90 seconds for larger board
+            use_neural_net=True,
+            notes="Ultimate square19 2p tier using Descent with 90s think time.",
+        ),
     }
 
 
@@ -371,31 +402,33 @@ def _build_default_hex_two_player_configs() -> Dict[
             use_neural_net=False,
             notes="Easy hex 2p tier using heuristic evaluation.",
         ),
-        # D3 – lower-mid minimax on hexagonal, 2-player (non-neural).
+        # D3 – lower-mid MCTS on hexagonal, 2-player (non-neural).
+        # NOTE: Minimax is too slow on 469-space hex (minutes per move), use MCTS instead.
         (3, BoardType.HEXAGONAL, 2): LadderTierConfig(
             difficulty=3,
             board_type=BoardType.HEXAGONAL,
             num_players=2,
-            ai_type=AIType.MINIMAX,
-            model_id="v1-minimax-hex-3",
+            ai_type=AIType.MCTS,
+            model_id="v1-mcts-hex-3",
             heuristic_profile_id="heuristic_v1_hex_2p",
             randomness=0.15,
             think_time_ms=2500,
             use_neural_net=False,
-            notes="Lower-mid hex 2p tier using minimax (non-neural).",
+            notes="Lower-mid hex 2p tier using MCTS (minimax too slow on hex).",
         ),
-        # D4 – mid minimax on hexagonal, 2-player (neural/NNUE).
+        # D4 – mid MCTS on hexagonal, 2-player (non-neural, higher budget).
+        # NOTE: Minimax is too slow on 469-space hex (minutes per move), use MCTS instead.
         (4, BoardType.HEXAGONAL, 2): LadderTierConfig(
             difficulty=4,
             board_type=BoardType.HEXAGONAL,
             num_players=2,
-            ai_type=AIType.MINIMAX,
-            model_id="nnue_hexagonal_2p",
+            ai_type=AIType.MCTS,
+            model_id="v1-mcts-hex-4",
             heuristic_profile_id="heuristic_v1_hex_2p",
             randomness=0.08,
             think_time_ms=4000,
-            use_neural_net=True,
-            notes="Mid hex 2p tier using minimax with NNUE.",
+            use_neural_net=False,
+            notes="Mid hex 2p tier using MCTS (minimax too slow on hex).",
         ),
         # D5 – upper-mid MCTS on hexagonal, 2-player (non-neural).
         (5, BoardType.HEXAGONAL, 2): LadderTierConfig(
@@ -475,6 +508,19 @@ def _build_default_hex_two_player_configs() -> Dict[
             use_neural_net=True,
             notes="Grandmaster hex 2p tier using strongest Descent.",
         ),
+        # D11 – ultimate Descent on hexagonal, 2-player.
+        (11, BoardType.HEXAGONAL, 2): LadderTierConfig(
+            difficulty=11,
+            board_type=BoardType.HEXAGONAL,
+            num_players=2,
+            ai_type=AIType.DESCENT,
+            model_id="ringrift_best_hex_2p",
+            heuristic_profile_id="heuristic_v1_hex_2p",
+            randomness=0.0,
+            think_time_ms=90000,  # 90 seconds for larger board
+            use_neural_net=True,
+            notes="Ultimate hex 2p tier using Descent with 90s think time.",
+        ),
     }
 
 
@@ -490,6 +536,9 @@ def _build_default_generic_board_configs(
     do not yet have fully calibrated heuristic profiles or promoted neural
     checkpoints. They exist primarily so the training loop can promote
     per-tier model_id / heuristic_profile_id values via runtime overrides.
+
+    NOTE: For square19 and hexagonal boards, D3/D4 use MCTS instead of minimax
+    because minimax is prohibitively slow on larger boards (minutes per move).
     """
 
     if num_players < 2 or num_players > 4:  # pragma: no cover - defensive
@@ -506,6 +555,11 @@ def _build_default_generic_board_configs(
 
     def _think(difficulty: int, fallback: int) -> int:
         return int(think_time_by_difficulty.get(difficulty, fallback))
+
+    # Use MCTS instead of minimax for large boards (sq19, hex) - minimax too slow
+    use_mcts_for_d3_d4 = board_type in (BoardType.SQUARE19, BoardType.HEXAGONAL)
+    d3_d4_ai_type = AIType.MCTS if use_mcts_for_d3_d4 else AIType.MINIMAX
+    d3_d4_note_suffix = " (MCTS - minimax too slow)" if use_mcts_for_d3_d4 else ""
 
     return {
         (2, board_type, num_players): LadderTierConfig(
@@ -524,25 +578,25 @@ def _build_default_generic_board_configs(
             difficulty=3,
             board_type=board_type,
             num_players=num_players,
-            ai_type=AIType.MINIMAX,
+            ai_type=d3_d4_ai_type,
             model_id=None,
             heuristic_profile_id=heuristic_profile_id,
             randomness=0.15,
             think_time_ms=_think(3, 2500),
             use_neural_net=False,
-            notes=f"Lower-mid {board_type.value} {num_players}p tier using minimax (non-neural).",
+            notes=f"Lower-mid {board_type.value} {num_players}p tier{d3_d4_note_suffix}.",
         ),
         (4, board_type, num_players): LadderTierConfig(
             difficulty=4,
             board_type=board_type,
             num_players=num_players,
-            ai_type=AIType.MINIMAX,
-            model_id=nnue_model_id,
+            ai_type=d3_d4_ai_type,
+            model_id=nnue_model_id if not use_mcts_for_d3_d4 else None,
             heuristic_profile_id=heuristic_profile_id,
             randomness=0.08,
             think_time_ms=_think(4, 4000),
-            use_neural_net=True,
-            notes=f"Mid {board_type.value} {num_players}p tier using minimax with NNUE.",
+            use_neural_net=not use_mcts_for_d3_d4,
+            notes=f"Mid {board_type.value} {num_players}p tier{d3_d4_note_suffix}.",
         ),
         (5, board_type, num_players): LadderTierConfig(
             difficulty=5,
@@ -616,6 +670,18 @@ def _build_default_generic_board_configs(
             use_neural_net=True,
             notes=f"Grandmaster {board_type.value} {num_players}p tier using strongest Descent.",
         ),
+        (11, board_type, num_players): LadderTierConfig(
+            difficulty=11,
+            board_type=board_type,
+            num_players=num_players,
+            ai_type=AIType.DESCENT,
+            model_id=best_model_id,
+            heuristic_profile_id=heuristic_profile_id,
+            randomness=0.0,
+            think_time_ms=_think(11, 90000),  # 90s for ultimate
+            use_neural_net=True,
+            notes=f"Ultimate {board_type.value} {num_players}p tier using Descent with extended think time.",
+        ),
     }
 
 
@@ -637,6 +703,7 @@ def _build_default_square19_three_player_configs() -> Dict[
             8: 15500,
             9: 20000,
             10: 26000,
+            11: 90000,
         },
     )
 
@@ -659,6 +726,7 @@ def _build_default_square19_four_player_configs() -> Dict[
             8: 17000,
             9: 22000,
             10: 28000,
+            11: 90000,
         },
     )
 
@@ -681,6 +749,7 @@ def _build_default_hex_three_player_configs() -> Dict[
             8: 15500,
             9: 20000,
             10: 26000,
+            11: 90000,
         },
     )
 
@@ -703,6 +772,7 @@ def _build_default_hex_four_player_configs() -> Dict[
             8: 17000,
             9: 22000,
             10: 28000,
+            11: 90000,
         },
     )
 
@@ -833,6 +903,19 @@ def _build_default_square8_three_player_configs() -> Dict[
             use_neural_net=True,
             notes="Grandmaster square8 3p tier using strongest Descent.",
         ),
+        # D11 – ultimate Descent on square8, 3-player.
+        (11, BoardType.SQUARE8, 3): LadderTierConfig(
+            difficulty=11,
+            board_type=BoardType.SQUARE8,
+            num_players=3,
+            ai_type=AIType.DESCENT,
+            model_id="ringrift_best_sq8_3p",
+            heuristic_profile_id="heuristic_v1_sq8_3p",
+            randomness=0.0,
+            think_time_ms=75000,  # 75s for 3-player
+            use_neural_net=True,
+            notes="Ultimate square8 3p tier using Descent with 75s think time.",
+        ),
     }
 
 
@@ -961,6 +1044,19 @@ def _build_default_square8_four_player_configs() -> Dict[
             think_time_ms=20000,
             use_neural_net=True,
             notes="Grandmaster square8 4p tier using strongest Descent.",
+        ),
+        # D11 – ultimate Descent on square8, 4-player.
+        (11, BoardType.SQUARE8, 4): LadderTierConfig(
+            difficulty=11,
+            board_type=BoardType.SQUARE8,
+            num_players=4,
+            ai_type=AIType.DESCENT,
+            model_id="ringrift_best_sq8_4p",
+            heuristic_profile_id="heuristic_v1_sq8_4p",
+            randomness=0.0,
+            think_time_ms=90000,  # 90s for 4-player
+            use_neural_net=True,
+            notes="Ultimate square8 4p tier using Descent with 90s think time.",
         ),
     }
 
