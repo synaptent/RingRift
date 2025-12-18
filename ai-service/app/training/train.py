@@ -23,6 +23,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import (
     Any,
+    Callable,
     Dict,
     List,
     Mapping,
@@ -157,11 +158,13 @@ try:
     from app.training.training_enhancements import (
         TrainingAnomalyDetector,
         CheckpointAverager,
+        AdaptiveGradientClipper,
     )
     HAS_TRAINING_ENHANCEMENTS = True
 except ImportError:
     TrainingAnomalyDetector = None
     CheckpointAverager = None
+    AdaptiveGradientClipper = None
     HAS_TRAINING_ENHANCEMENTS = False
 
 # Auto-streaming threshold: datasets larger than this will automatically use
@@ -2683,6 +2686,48 @@ def train_model(
         )
         logger.info("Training anomaly detector enabled")
 
+    # Initialize adaptive gradient clipper (2025-12)
+    adaptive_clipper = None
+    if HAS_TRAINING_ENHANCEMENTS and AdaptiveGradientClipper:
+        adaptive_clipper = AdaptiveGradientClipper(
+            initial_max_norm=1.0,
+            percentile=90.0,
+            history_size=100,
+            min_clip=0.1,
+            max_clip=10.0,
+        )
+        logger.info("Adaptive gradient clipping enabled")
+
+    # Mutable training state for graceful shutdown checkpoint (2025-12)
+    _training_state = {
+        'epoch': start_epoch,
+        'best_val_loss': float('inf'),
+        'avg_val_loss': float('inf'),
+    }
+
+    # Setup graceful shutdown handler for emergency checkpoints (2025-12)
+    shutdown_handler: Optional[GracefulShutdownHandler] = None
+    if not distributed or is_main_process():
+        def _emergency_checkpoint_callback():
+            """Save emergency checkpoint on signal."""
+            model_to_save = model.module if distributed else model
+            emergency_path = os.path.join(
+                checkpoint_dir,
+                f"checkpoint_emergency_epoch_{_training_state['epoch']}.pth",
+            )
+            save_checkpoint(
+                model_to_save,
+                optimizer,
+                _training_state['epoch'],
+                _training_state['avg_val_loss'],
+                emergency_path,
+                scheduler=epoch_scheduler,
+                early_stopping=early_stopper,
+            )
+
+        shutdown_handler = GracefulShutdownHandler()
+        shutdown_handler.setup(_emergency_checkpoint_callback)
+
     try:
         for epoch in range(start_epoch, config.epochs_per_iter):
             # Circuit breaker check - skip training if circuit is open (2025-12)
@@ -2892,12 +2937,15 @@ def train_model(
 
                 # Only step optimizer after accumulating gradients
                 if (i + 1) % accumulation_steps == 0 or (i + 1) == len(train_data_iter):
-                    # Gradient clipping
+                    # Gradient clipping (adaptive or fixed) (2025-12)
                     scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(
-                        model.parameters(),
-                        max_norm=1.0,
-                    )
+                    if adaptive_clipper is not None:
+                        grad_norm = adaptive_clipper.update_and_clip(model.parameters())
+                    else:
+                        grad_norm = torch.nn.utils.clip_grad_norm_(
+                            model.parameters(),
+                            max_norm=1.0,
+                        )
 
                     scaler.step(optimizer)
                     scaler.update()
@@ -3098,6 +3146,12 @@ def train_model(
                 avg_val_loss = (val_loss / val_batches).item()
             else:
                 avg_val_loss = 0.0
+
+            # Update training state for emergency checkpoints (2025-12)
+            _training_state['epoch'] = epoch
+            _training_state['avg_val_loss'] = avg_val_loss
+            if avg_val_loss < _training_state['best_val_loss']:
+                _training_state['best_val_loss'] = avg_val_loss
 
             # Update scheduler at end of epoch
             if epoch_scheduler is not None:
@@ -3348,6 +3402,11 @@ def train_model(
         if heartbeat_monitor is not None:
             heartbeat_monitor.stop()
             logger.info("Heartbeat monitor stopped")
+
+        # Teardown graceful shutdown handler (2025-12)
+        if shutdown_handler is not None:
+            shutdown_handler.teardown()
+            logger.debug("Graceful shutdown handler teardown complete")
 
         # Stop integrated enhancements background services
         if enhancements_manager is not None:
