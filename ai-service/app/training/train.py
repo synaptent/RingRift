@@ -2653,6 +2653,9 @@ def train_model(
                 train_streaming_loader.set_epoch(epoch)
                 val_streaming_loader.set_epoch(epoch)
 
+            # Track epoch failure state for circuit breaker (2025-12)
+            epoch_failed = False
+
             # Training
             model.train()
             train_loss = torch.tensor(0.0, device=device)  # Accumulate on GPU to avoid per-batch .item() sync
@@ -2836,6 +2839,21 @@ def train_model(
                     # Update integrated enhancements step counter
                     if enhancements_manager is not None:
                         enhancements_manager.update_step()
+
+                # Anomaly detection: check for NaN/Inf in loss (2025-12)
+                if anomaly_detector is not None:
+                    loss_val = loss.detach().item()
+                    if anomaly_detector.check_loss(loss_val):
+                        anomaly_result = anomaly_detector.get_anomaly_report()
+                        logger.warning(
+                            f"Training anomaly detected at batch {i}: {anomaly_result}"
+                        )
+                        # Record failure with circuit breaker
+                        if training_breaker:
+                            training_breaker.record_failure("training_epoch")
+                        # Skip this batch to avoid corrupting gradients
+                        optimizer.zero_grad()
+                        continue
 
                 # Accumulate loss without .item() to avoid GPU sync per batch
                 # Detach to prevent gradient accumulation, but keep on GPU
@@ -3216,6 +3234,10 @@ def train_model(
             # Beat heartbeat at end of each epoch to signal health
             if heartbeat_monitor is not None:
                 heartbeat_monitor.beat()
+
+            # Record successful epoch completion with circuit breaker (2025-12)
+            if training_breaker:
+                training_breaker.record_success("training_epoch")
         else:
             # Final checkpoint at end of training (if not early stopped).
             # This else clause is for the for-loop and executes if no break
