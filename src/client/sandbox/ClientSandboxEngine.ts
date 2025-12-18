@@ -479,11 +479,10 @@ export class ClientSandboxEngine {
       currentPlayer: 1,
       moveHistory: [],
       history: [],
-      // Mirror backend defaults: enable the pie rule (swap_sides meta-move)
-      // for 2-player sandbox games so local play can exercise the same
-      // balancing option as backend games. For 3p/4p games the flag is
-      // omitted and swap_sides is never surfaced.
-      ...(config.numPlayers === 2 ? { rulesOptions: { swapRuleEnabled: true } } : {}),
+      // Pie rule (swap sides) is opt-in for 2-player games.
+      // Data shows P2 wins >55% with pie rule enabled by default.
+      // For 3p/4p games the flag is omitted and swap_sides is never surfaced.
+      ...(config.numPlayers === 2 ? { rulesOptions: { swapRuleEnabled: false } } : {}),
       timeControl: {
         type: 'rapid',
         initialTime: 600,

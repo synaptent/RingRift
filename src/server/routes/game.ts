@@ -902,11 +902,13 @@ router.post(
       );
     }
 
+    // Pie rule (swap sides) is opt-in for 2-player games.
+    // Data shows P2 wins >55% with pie rule enabled by default.
     const swapRuleEnabled =
       gameData.maxPlayers === 2
         ? typeof requestedRulesOptions?.swapRuleEnabled === 'boolean'
           ? requestedRulesOptions.swapRuleEnabled
-          : true
+          : false
         : undefined;
     const ringsPerPlayer =
       typeof requestedRingsPerPlayer === 'number' ? requestedRingsPerPlayer : undefined;

@@ -33,6 +33,8 @@ interface FormState {
   aiType: 'random' | 'heuristic' | 'minimax' | 'mcts';
   /** When true, create a canonical Square-8 2-player calibration game vs AI. */
   isCalibrationGame: boolean;
+  /** Enable pie rule (swap sides) for 2-player games. Off by default. */
+  pieRuleEnabled: boolean;
 }
 
 interface LobbyFilters {
@@ -58,6 +60,7 @@ const defaultForm: FormState = {
   aiMode: 'service',
   aiType: 'heuristic',
   isCalibrationGame: false,
+  pieRuleEnabled: false,
 };
 
 function getSocketBaseUrl(): string {
@@ -615,7 +618,8 @@ export default function LobbyPage() {
             },
           }
         : {}),
-      ...(effectiveMaxPlayers === 2 ? { rulesOptions: { swapRuleEnabled: true } } : {}),
+      // Pie rule (swap sides) is now opt-in. Server defaults to false for 2p games.
+      // Users can enable via game settings when UI toggle is added.
       ...(isCalibration
         ? {
             isCalibrationGame: true,

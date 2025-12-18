@@ -1055,10 +1055,9 @@ export const SandboxGameHost: React.FC = () => {
             aiType: 'heuristic',
           };
         })(),
-        // Mirror lobby behaviour: default-enable the pie rule for 2-player
-        // backend sandbox games. Local-only sandbox games (fallback path)
-        // continue to use the shared engine's defaults.
-        rulesOptions: snapshot.numPlayers === 2 ? { swapRuleEnabled: true } : undefined,
+        // Pie rule (swap sides) is opt-in for 2-player games.
+        // Data shows P2 wins >55% with pie rule enabled by default.
+        rulesOptions: snapshot.numPlayers === 2 ? { swapRuleEnabled: false } : undefined,
       };
 
       const game = await gameApi.createGame(payload);
