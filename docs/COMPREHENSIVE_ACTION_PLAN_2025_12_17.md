@@ -1712,14 +1712,17 @@ class TestHexAI:
 
 ### Verification Checklist
 
-- [ ] HexNeuralNet forward pass works
-- [ ] ActionEncoderHex encoding/decoding verified
-- [ ] 50,000+ hex8 self-play games generated
-- [ ] Model trained to convergence
-- [ ] Evaluation shows Elo > 1200 vs heuristic
-- [ ] Model deployed to registry
-- [ ] Integration tests passing
-- [ ] AI service serves hex moves without fallback
+- [x] HexNeuralNet forward pass works ✅ HexNeuralNet_v2, v3, Lite variants implemented (2025-12-17 audit)
+- [x] ActionEncoderHex encoding/decoding verified ✅ 300+ lines, full move type support (2025-12-17 audit)
+- [x] HexStateEncoder feature extraction ✅ 10-channel encoding, global features (2025-12-17 audit)
+- [x] D6 symmetry augmentation implemented ✅ HexSymmetryTransform 12x expansion (2025-12-17 audit)
+- [x] hex8_training_pipeline.py ready ✅ End-to-end orchestration script (2025-12-17 audit)
+- [ ] 50,000+ hex8 self-play games generated - Corpus not yet created
+- [ ] Model trained to convergence - Awaiting training data
+- [ ] Evaluation shows Elo > 1200 vs heuristic - Awaiting trained model
+- [ ] Model deployed to registry - Awaiting trained checkpoint
+- [ ] Integration tests passing - NeuralNetAI hex routing needs validation
+- [ ] AI service serves hex moves without fallback - Awaiting model deployment
 
 ---
 
