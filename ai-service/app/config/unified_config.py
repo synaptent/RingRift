@@ -72,6 +72,11 @@ class DataIngestionConfig:
     deduplication: bool = True
     min_games_per_sync: int = 5
     remote_db_pattern: str = "data/games/*.db"
+    remote_selfplay_patterns: List[str] = field(default_factory=lambda: [
+        "data/selfplay/gpu_*/games*.jsonl",
+        "data/selfplay/p2p_gpu/*/games*.jsonl",
+        "data/games/gpu_selfplay/*/games*.jsonl",
+    ])
     # sync_disabled: When true, data sync is disabled on this machine (orchestrator-only mode)
     # Set to true on machines with limited disk space that shouldn't collect data locally
     sync_disabled: bool = False
