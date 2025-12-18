@@ -570,11 +570,16 @@ if TORCH_AVAILABLE:
                 losses: Current task losses
                 shared_layer: The shared layer to compute gradients for
             """
+            # Batch initial loss extraction (single GPU->CPU transfer)
             if not self.initial_losses:
-                self.initial_losses = {k: v.item() for k, v in losses.items()}
+                loss_names = list(losses.keys())
+                loss_tensors = torch.stack([losses[k] for k in loss_names])
+                loss_values = loss_tensors.detach().cpu().numpy()
+                self.initial_losses = {name: float(loss_values[i]) for i, name in enumerate(loss_names)}
 
-            # Compute gradient norms
-            grad_norms = {}
+            # Compute gradient norms (collect tensors, batch transfer)
+            grad_norm_tensors = []
+            grad_norm_names = []
             for name in self.task_names:
                 if name not in losses:
                     continue
@@ -596,24 +601,39 @@ if TORCH_AVAILABLE:
                             grad = torch.cat([grad, param.grad.flatten()])
 
                 if grad is not None:
-                    grad_norms[name] = grad.norm().item()
+                    grad_norm_tensors.append(grad.norm())
+                    grad_norm_names.append(name)
 
-            if not grad_norms:
+            if not grad_norm_tensors:
                 return
+
+            # Single GPU->CPU transfer for all gradient norms
+            stacked_norms = torch.stack(grad_norm_tensors).detach()
+            grad_norm_values = stacked_norms.cpu().numpy()
+            grad_norms = {name: float(grad_norm_values[i]) for i, name in enumerate(grad_norm_names)}
 
             # Compute target gradient norms
             avg_grad_norm = sum(grad_norms.values()) / len(grad_norms)
 
-            # Compute relative inverse training rates
-            rel_inv_rates = {}
-            for name in self.task_names:
-                if name not in losses or name not in self.initial_losses:
-                    continue
-
-                loss_ratio = losses[name].item() / (self.initial_losses[name] + 1e-8)
-                rel_inv_rates[name] = loss_ratio
+            # Batch current loss extraction for loss ratios (single GPU->CPU transfer)
+            ratio_names = [n for n in self.task_names if n in losses and n in self.initial_losses]
+            if ratio_names:
+                ratio_tensors = torch.stack([losses[n] for n in ratio_names])
+                ratio_values = ratio_tensors.detach().cpu().numpy()
+                rel_inv_rates = {
+                    name: float(ratio_values[i]) / (self.initial_losses[name] + 1e-8)
+                    for i, name in enumerate(ratio_names)
+                }
+            else:
+                rel_inv_rates = {}
 
             avg_rate = sum(rel_inv_rates.values()) / len(rel_inv_rates) if rel_inv_rates else 1.0
+
+            # Batch weight extraction (single GPU->CPU transfer)
+            weight_names = list(self.weights.keys())
+            weight_tensors = torch.stack([self.weights[n] for n in weight_names])
+            weight_values = weight_tensors.detach().cpu().numpy()
+            weights_dict = {name: float(weight_values[i]) for i, name in enumerate(weight_names)}
 
             # Update weights
             self.optimizer.zero_grad()
@@ -626,18 +646,21 @@ if TORCH_AVAILABLE:
                 target_norm = avg_grad_norm * (rel_inv_rates[name] / avg_rate) ** self.alpha
 
                 # Loss for weight update
-                weight_loss = abs(grad_norms[name] * self.weights[name].item() - target_norm)
+                weight_loss = abs(grad_norms[name] * weights_dict[name] - target_norm)
                 weight_loss_tensor = torch.tensor(weight_loss, requires_grad=True)
 
-            # Normalize weights
-            weight_sum = sum(w.item() for w in self.weights.values())
+            # Normalize weights (use already-extracted values)
+            weight_sum = sum(weights_dict.values())
             if weight_sum > 0:
                 for w in self.weights.values():
                     w.data = w.data / weight_sum * len(self.task_names)
 
         def get_weights(self) -> Dict[str, float]:
-            """Get current task weights."""
-            return {name: w.item() for name, w in self.weights.items()}
+            """Get current task weights (batched GPU->CPU transfer)."""
+            weight_names = list(self.weights.keys())
+            weight_tensors = torch.stack([self.weights[n] for n in weight_names])
+            weight_values = weight_tensors.detach().cpu().numpy()
+            return {name: float(weight_values[i]) for i, name in enumerate(weight_names)}
 
 
     class AuxiliaryDataGenerator:
