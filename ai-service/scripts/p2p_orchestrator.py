@@ -2625,7 +2625,7 @@ class P2POrchestrator:
             )
             if result.returncode == 0 and result.stdout.strip():
                 return True, result.stdout.strip().split('\n')[0]
-        except:
+        except Exception:
             pass
 
         try:
@@ -2636,7 +2636,7 @@ class P2POrchestrator:
             )
             if "True" in result.stdout:
                 return True, "Apple MPS"
-        except:
+        except Exception:
             pass
 
         return False, ""
@@ -2655,7 +2655,7 @@ class P2POrchestrator:
                     for line in f:
                         if line.startswith("MemTotal:"):
                             return int(line.split()[1]) // (1024**2)
-        except:
+        except (OSError, ValueError):
             pass
         return 16  # Default assumption
 
@@ -2668,7 +2668,7 @@ class P2POrchestrator:
             ip = s.getsockname()[0]
             s.close()
             return ip
-        except:
+        except OSError:
             return "127.0.0.1"
 
     def _get_tailscale_ip(self) -> str:
@@ -5533,8 +5533,8 @@ class P2POrchestrator:
                         try:
                             os.kill(job.pid, signal.SIGKILL)
                             print(f"[P2P] Force killed job {job_id}")
-                        except:
-                            pass
+                        except OSError:
+                            pass  # Process already dead
                         job.status = "stopped"
 
         return stopped
@@ -6121,8 +6121,8 @@ class P2POrchestrator:
                     try:
                         os.kill(job.pid, signal.SIGTERM)
                         job.status = "stopped"
-                    except:
-                        pass
+                    except OSError:
+                        pass  # Process already dead
                     return web.json_response({"success": True})
 
             return web.json_response({"success": False, "error": "Job not found"}, status=404)
@@ -9950,7 +9950,7 @@ for f in jsonl_files:
             if line.strip():
                 try:
                     games.append(json.loads(line))
-                except:
+                except (json.JSONDecodeError, ValueError):
                     pass
 
 print(f"Loaded {{len(games)}} games")
@@ -16940,7 +16940,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     if daemon_running and daemon_state.get("started_at"):
                         started = datetime.fromisoformat(daemon_state["started_at"])
                         daemon_uptime = (datetime.now() - started).total_seconds()
-                except:
+                except (json.JSONDecodeError, ValueError, OSError):
                     pass
 
             # Load runtime overrides (promoted models)
@@ -16949,7 +16949,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             if overrides_path.exists():
                 try:
                     runtime_overrides = json.loads(overrides_path.read_text())
-                except:
+                except (json.JSONDecodeError, ValueError, OSError):
                     pass
 
             # Load auto-promotion log
@@ -16964,7 +16964,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     promotion_log = json.loads(promotion_log_path.read_text())
                     if isinstance(promotion_log, list):
                         promotion_log = promotion_log[-10:]  # Last 10 entries
-                except:
+                except (json.JSONDecodeError, ValueError, OSError):
                     pass
 
             # Check NNUE model timestamps
@@ -16990,7 +16990,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         "count": len(profiles_data),
                         "profiles": list(profiles_data.keys())[:20],
                     }
-                except:
+                except (json.JSONDecodeError, ValueError, OSError):
                     pass
 
             return web.json_response({
@@ -19515,8 +19515,8 @@ print(json.dumps({{
                                 if data.get("response") == "ALIVE":
                                     got_response = True
                                     print(f"[P2P] Higher node {peer.node_id} responded")
-                    except:
-                        pass
+                    except Exception:
+                        pass  # Network errors expected during elections
 
             # If no higher node responded, we become leader
             if not got_response:
@@ -19584,8 +19584,8 @@ print(json.dumps({{
                             "lease_expires": self.leader_lease_expires,
                             "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
                         }, headers=self._auth_headers())
-                    except:
-                        pass
+                    except Exception:
+                        pass  # Network errors expected during leader announcements
 
         self._save_state()
 
@@ -19699,8 +19699,8 @@ print(json.dumps({{
                             "lease_expires": self.leader_lease_expires,
                             "emergency": True,
                         }, headers=self._auth_headers())
-                    except:
-                        pass
+                    except Exception:
+                        pass  # Network errors expected during emergency coordination
 
         self._save_state()
         print(f"[P2P] EMERGENCY COORDINATOR: {self.node_id} is now emergency leader")
@@ -22109,8 +22109,8 @@ print(json.dumps({{
                                 "lease_renewal": True,
                                 "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
                             }, headers=self._auth_headers())
-                        except:
-                            pass
+                        except Exception:
+                            pass  # Network errors expected during lease renewal
         except Exception as e:
             print(f"[P2P] Lease renewal error: {e}")
 
@@ -22244,8 +22244,8 @@ print(json.dumps({{
                         },
                         headers=self._auth_headers(),
                     )
-                except:
-                    pass
+                except Exception:
+                    pass  # Network errors expected during step-down notifications
 
         return False  # We remain leader
 
@@ -24914,8 +24914,8 @@ print(json.dumps({{
 
                 try:
                     sock.sendto(message, ('<broadcast>', DISCOVERY_PORT))
-                except:
-                    pass
+                except OSError:
+                    pass  # Broadcast may fail on some networks
 
                 # Listen for responses
                 try:
