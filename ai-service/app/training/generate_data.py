@@ -1946,8 +1946,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-moves",
         type=int,
-        default=200,
-        help="Maximum moves per game before forcing termination (default: 200).",
+        default=2000,
+        help="Maximum moves per game before forcing termination (default: 2000).",
     )
     parser.add_argument(
         "--batch-size",
