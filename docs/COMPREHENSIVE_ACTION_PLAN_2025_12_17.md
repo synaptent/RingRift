@@ -2667,8 +2667,8 @@ def test_training_produces_consistent_loss():
 
 - [x] Hex test files exist ✅ 5 files: test_hex_training.py, test_hex_augmentation.py, etc.
 - [x] Substantial coverage ✅ 84 test functions across 2519 lines
-- [ ] Hex-specific fixtures (tests/fixtures/hex_fixtures.py) - Not yet created
-- [ ] D6 symmetry verification tests - Partial (augmentation tests)
+- [x] Hex-specific fixtures (tests/fixtures/hex_fixtures.py) ✅ Created 2025-12-17: HexCoord, D6 symmetries, game state factories, 57 tests
+- [x] D6 symmetry verification tests ✅ Created 2025-12-17: D6_ROTATIONS, D6_REFLECTIONS, verify_d6_symmetry(), apply_symmetry_to_state()
 
 **3.3.2 Multi-Player Tests:**
 
