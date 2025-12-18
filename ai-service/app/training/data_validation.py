@@ -304,6 +304,9 @@ class DataValidator:
                 }
 
         # Check for negative probabilities
+        # Skip check for object arrays (variable-length sparse format)
+        if policy_values.dtype == object:
+            return issues
         negative_indices = np.where(policy_values < 0)[0]
         reported = set()
         for idx in negative_indices:
