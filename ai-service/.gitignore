@@ -118,6 +118,9 @@ deploy/systemd/ringrift-p2p-universal.service
 # Systemd service files with private IPs
 systemd/ringrift-elo-sync.service
 
+# Cluster SSH helper (contains SSH key paths)
+scripts/cluster_ssh.sh
+
 # Monitoring configs with cluster IPs
 monitoring/prometheus.yml
 monitoring/prometheus/prometheus.yml
