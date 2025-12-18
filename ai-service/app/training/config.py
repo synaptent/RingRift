@@ -392,7 +392,7 @@ class TrainConfig:
 
     # Data loading prefetch settings for improved GPU utilization
     # Prefetching loads batches in a background thread while GPU is computing
-    use_prefetch: bool = True  # Enable/disable prefetching
+    # NOTE: use_prefetch was removed (unused) - prefetching controlled in PrefetchIterator
     prefetch_count: int = 2  # Number of batches to prefetch
     pin_memory: bool = True  # Pin memory for faster CPU->GPU transfers (CUDA only)
 
@@ -544,49 +544,8 @@ def get_training_config_for_board(
     return config
 
 
-# Pre-defined training configurations for quick access
-BOARD_TRAINING_CONFIGS: Dict[BoardType, Dict[str, any]] = {
-    BoardType.SQUARE8: {
-        "policy_size": 7000,
-        "num_res_blocks": 12,
-        "num_filters": 192,
-        "batch_size": 64,
-        "learning_rate": 2e-3,
-        "max_moves_per_game": 10000,
-        "model_id": "ringrift_v5_sq8_2p_2xh100",
-        "description": "Canonical square8 v3-family (12 blocks, 192 filters)",
-    },
-    BoardType.SQUARE19: {
-        "policy_size": 67000,
-        "num_res_blocks": 12,
-        "num_filters": 192,
-        "batch_size": 24,  # Smaller for large action space stability
-        "learning_rate": 5e-4,  # Lower for stability
-        "max_moves_per_game": 10000,
-        "model_id": "ringrift_v4_sq19_2p",
-        "description": "Full-capacity square19 baseline (v2-family)",
-    },
-    BoardType.HEX8: {
-        "policy_size": 4500,  # Radius-4 hex (9×9 frame, 61 cells)
-        "num_res_blocks": 12,
-        "num_filters": 192,
-        "batch_size": 64,  # Similar to square8 (comparable complexity)
-        "learning_rate": 2e-3,  # Similar to square8
-        "max_moves_per_game": 10000,
-        "model_id": "ringrift_v5_hex8_2p",
-        "description": "Hex8 v3-family (radius-4 hexagonal, parallel to square8)",
-    },
-    BoardType.HEXAGONAL: {
-        "policy_size": 91876,  # Updated for radius-12 hex (25×25 frame)
-        "num_res_blocks": 12,
-        "num_filters": 192,
-        "batch_size": 20,  # Smallest batch for largest action space
-        "learning_rate": 5e-4,  # Lower for stability
-        "max_moves_per_game": 10000,  # Allow games to complete naturally
-        "model_id": "ringrift_v4_hex_2p",
-        "description": "Full-capacity hex baseline (v2-family)",
-    },
-}
+# NOTE: BOARD_TRAINING_CONFIGS was removed in 2025-12 cleanup.
+# Use get_default_config_for_board() for board-specific settings instead.
 
 
 # =============================================================================
@@ -618,9 +577,6 @@ class SelfPlayConfig:
     noise_scale: float = 0.25  # Dirichlet noise scale
     random_opening_moves: int = 0  # Random moves at start for diversity
 
-    # Quality tracking
-    min_unique_positions: int = 50  # Reject games with fewer unique positions
-
 
 @dataclass
 class DataConfig:
@@ -634,16 +590,13 @@ class DataConfig:
 
     # Data augmentation
     enable_augmentation: bool = True
-    augmentation_factor: int = 8  # D4 symmetry gives 8x for square boards
 
-    # Prefetch settings
-    enable_prefetch: bool = True
+    # Prefetch settings (actual prefetching is controlled in PrefetchIterator)
     prefetch_count: int = 2
     pin_memory: bool = True
 
     # Streaming settings
     use_streaming: bool = False  # Stream from disk vs load all to memory
-    shuffle_buffer_size: int = 10000
 
 
 @dataclass
@@ -651,14 +604,6 @@ class CheckpointConfig:
     """Configuration for model checkpointing."""
     # Checkpoint directory
     checkpoint_dir: str = "data/checkpoints"
-
-    # Save frequency
-    save_interval_steps: int = 1000
-    save_interval_epochs: int = 1
-
-    # Retention
-    keep_top_k: int = 3  # Keep top K checkpoints by validation loss
-    keep_last_k: int = 2  # Also keep last K regardless of performance
 
     # Auto-resume
     auto_resume: bool = True
@@ -672,17 +617,14 @@ class EvaluationConfig:
     """Configuration for model evaluation during training."""
     # Evaluation frequency
     eval_interval_steps: int = 1000
-    eval_interval_epochs: int = 1
 
     # Evaluation games
     games_per_eval: int = 20
-    eval_opponents: str = "previous"  # 'previous', 'baseline', 'both'
 
     # Background evaluation (run in separate process for continuous Elo tracking)
     enable_background_eval: bool = True
 
     # Elo tracking
-    track_elo: bool = True
     initial_elo: float = 1500.0
 
 
