@@ -135,9 +135,10 @@ def get_appropriate_lock(
 
 # Import centralized defaults (December 2025)
 try:
-    from app.config.coordination_defaults import LockDefaults
-    DEFAULT_LOCK_TIMEOUT = LockDefaults.LOCK_TIMEOUT
-    DEFAULT_ACQUIRE_TIMEOUT = LockDefaults.ACQUIRE_TIMEOUT
+    from app.config.thresholds import (
+        DEFAULT_LOCK_TIMEOUT,
+        DEFAULT_ACQUIRE_TIMEOUT,
+    )
 except ImportError:
     # Fallback for standalone use
     DEFAULT_LOCK_TIMEOUT = 3600  # 1 hour max lock time

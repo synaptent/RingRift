@@ -150,7 +150,7 @@ class ConnectionPool:
 
         try:
             yield conn
-        except sqlite3.Error as e:
+        except sqlite3.Error:
             # On error, invalidate the connection
             self._local.conn = None
             try:

@@ -958,6 +958,56 @@ async def shutdown_all_coordinators(timeout: float = 30.0) -> Dict[str, bool]:
     return await get_coordinator_registry().shutdown_all(timeout=timeout)
 
 
+def get_all_coordinators() -> Dict[str, "CoordinatorBase"]:
+    """Get all registered coordinators.
+
+    Returns:
+        Dict mapping coordinator names to their instances
+
+    Usage:
+        from app.coordination.coordinator_base import get_all_coordinators
+
+        coordinators = get_all_coordinators()
+        for name, coord in coordinators.items():
+            print(f"{name}: {coord.status.value}")
+    """
+    return get_coordinator_registry()._coordinators.copy()
+
+
+def get_coordinator_statuses() -> Dict[str, Dict[str, Any]]:
+    """Get status of all registered coordinators.
+
+    Returns:
+        Dict mapping coordinator names to their status dicts
+
+    Usage:
+        from app.coordination.coordinator_base import get_coordinator_statuses
+
+        statuses = get_coordinator_statuses()
+        for name, status in statuses.items():
+            print(f"{name}: {status['status']}, uptime: {status['uptime_seconds']}s")
+    """
+    result = {}
+    for name, coord in get_coordinator_registry()._coordinators.items():
+        # Try to get get_status if available, otherwise use basic info
+        if hasattr(coord, 'get_status') and callable(coord.get_status):
+            try:
+                result[name] = coord.get_status()
+            except Exception:
+                result[name] = {
+                    "status": coord.status.value,
+                    "is_running": coord.is_running,
+                    "uptime_seconds": coord.uptime_seconds,
+                }
+        else:
+            result[name] = {
+                "status": coord.status.value,
+                "is_running": coord.is_running,
+                "uptime_seconds": coord.uptime_seconds,
+            }
+    return result
+
+
 __all__ = [
     # Enums and data classes
     "CoordinatorStatus",
@@ -977,4 +1027,6 @@ __all__ = [
     "is_coordinator",
     "get_coordinator_registry",
     "shutdown_all_coordinators",
+    "get_all_coordinators",
+    "get_coordinator_statuses",
 ]

@@ -50,22 +50,24 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
-# Default timeouts (increased for VAST.ai SSH proxy latency)
-DEFAULT_CONNECT_TIMEOUT = 30  # Was 10, too short for VAST.ai
-DEFAULT_OPERATION_TIMEOUT = 180  # Was 60, increased for large transfers
-
-# Circuit breaker defaults - import from centralized thresholds (December 2025)
+# Import centralized timeout constants (December 2025)
 try:
     from app.config.thresholds import (
+        CLUSTER_CONNECT_TIMEOUT,
+        CLUSTER_OPERATION_TIMEOUT,
         HTTP_TIMEOUT,
         CIRCUIT_BREAKER_FAILURE_THRESHOLD,
         CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
     )
+    DEFAULT_CONNECT_TIMEOUT = CLUSTER_CONNECT_TIMEOUT
+    DEFAULT_OPERATION_TIMEOUT = CLUSTER_OPERATION_TIMEOUT
     DEFAULT_HTTP_TIMEOUT = HTTP_TIMEOUT
     DEFAULT_FAILURE_THRESHOLD = CIRCUIT_BREAKER_FAILURE_THRESHOLD
     DEFAULT_RECOVERY_TIMEOUT = CIRCUIT_BREAKER_RECOVERY_TIMEOUT
 except ImportError:
     # Fallback for testing/standalone use
+    DEFAULT_CONNECT_TIMEOUT = 30  # Was 10, too short for VAST.ai
+    DEFAULT_OPERATION_TIMEOUT = 180  # Was 60, increased for large transfers
     DEFAULT_HTTP_TIMEOUT = 30
     DEFAULT_FAILURE_THRESHOLD = 3
     DEFAULT_RECOVERY_TIMEOUT = 300  # 5 minutes

@@ -586,3 +586,10 @@ def get_inventory() -> UnifiedInventory:
     if _inventory is None:
         _inventory = UnifiedInventory()
     return _inventory
+
+
+__all__ = [
+    "DiscoveredNode",
+    "UnifiedInventory",
+    "get_inventory",
+]

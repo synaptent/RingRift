@@ -922,7 +922,7 @@ def with_circuit_breaker(
                 result = await func(*args, **kwargs)
                 breaker.record_success(host)
                 return result
-            except Exception as e:
+            except Exception:
                 breaker.record_failure(host)
                 raise
 
@@ -950,7 +950,7 @@ def with_circuit_breaker(
                 result = func(*args, **kwargs)
                 breaker.record_success(host)
                 return result
-            except Exception as e:
+            except Exception:
                 breaker.record_failure(host)
                 raise
 

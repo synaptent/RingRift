@@ -632,7 +632,7 @@ def emit_sync(
         True if emitted successfully, False otherwise.
     """
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
         # Already in async context - schedule as task
         asyncio.create_task(emit_event_safe(event_type, payload, source))
         return True
