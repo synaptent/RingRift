@@ -20,36 +20,33 @@ Performance targets:
 
 from __future__ import annotations
 
-import gc
 import os
 import logging
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
-from .gpu_batch import get_device, clear_gpu_memory
+from .gpu_batch import get_device
 from .gpu_game_types import (
     get_int_dtype,
     GameStatus,
     MoveType,
     GamePhase,
-    DetectedLine,
-    get_required_line_length,
-    MAX_STACK_HEIGHT,
-    SQUARE_DIRECTIONS,
-    LINE_DIRECTIONS,
 )
 from .gpu_line_detection import (
     detect_lines_vectorized,
-    has_lines_batch_vectorized,
-    detect_lines_with_metadata,
-    detect_lines_batch,
     process_lines_batch,
+)
+from .gpu_territory import (
+    _find_eligible_territory_cap,
+    _find_all_regions,
+    _is_physically_disconnected,
+    _is_color_disconnected,
+    compute_territory_batch,
 )
 from .shadow_validation import (
     ShadowValidator, create_shadow_validator,

@@ -14,7 +14,7 @@ Integration: This is an ADDITION to the training system, not a replacement.
 Select via AIType.GPU_MINIMAX in the factory.
 """
 
-from typing import Optional, List, Dict, Tuple, Any, TYPE_CHECKING
+from typing import Optional, List, Dict, Tuple, TYPE_CHECKING
 import logging
 import os
 import time

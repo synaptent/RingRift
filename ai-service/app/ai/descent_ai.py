@@ -20,8 +20,6 @@ from typing import Optional, List, Dict, Any, Tuple, TYPE_CHECKING
 import time
 from enum import Enum
 
-import numpy as np
-
 from .base import BaseAI
 from .bounded_transposition_table import BoundedTranspositionTable
 from .game_state_utils import infer_num_players, victory_progress_for_player

@@ -18,10 +18,9 @@ For production code, prefer gpu_batch.py or gpu_parallel_games.py.
 from __future__ import annotations
 
 import logging
-from typing import Optional, Tuple, Dict, Any
+from typing import Tuple, Dict
 
 import torch
-import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 

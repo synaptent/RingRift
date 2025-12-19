@@ -153,6 +153,7 @@ class AIType(str, Enum):
     GUMBEL_MCTS = "gumbel_mcts"  # Gumbel AlphaZero with Sequential Halving
     EBMO = "ebmo"  # Energy-Based Move Optimization (gradient descent on action embeddings)
     GMO = "gmo"  # Gradient Move Optimization (entropy-guided gradient ascent in move embedding space)
+    IG_GMO = "ig_gmo"  # Experimental: Information-Gain GMO (MI-based exploration + GNN)
 
 
 class Position(BaseModel):

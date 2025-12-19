@@ -39,7 +39,6 @@ from .ebmo_network import (
     EBMOConfig,
     EBMONetwork,
     ActionFeatureExtractor,
-    extract_state_features,
     load_ebmo_model,
 )
 from ..models import AIConfig, GameState, Move
