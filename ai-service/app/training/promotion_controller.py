@@ -64,6 +64,14 @@ except ImportError:
     DataEventType = None
     get_event_bus = None
 
+# Distributed locking for cross-node coordination (December 2025)
+try:
+    from app.training.locking_integration import TrainingLocks
+    _HAS_DISTRIBUTED_LOCKS = True
+except ImportError:
+    _HAS_DISTRIBUTED_LOCKS = False
+    TrainingLocks = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -598,6 +606,50 @@ class PromotionController:
             self._emit_execution_metrics(decision, success=True, dry_run=True)
             return True
 
+        # Use distributed lock for cross-node coordination (December 2025)
+        # Extract config_key from model_id (format: "{board}_{players}p_v{N}")
+        config_key = self._extract_config_key(decision.model_id)
+
+        if _HAS_DISTRIBUTED_LOCKS and TrainingLocks is not None:
+            with TrainingLocks.promotion(config_key, timeout=60) as lock:
+                if not lock:
+                    logger.warning(
+                        f"Could not acquire promotion lock for {config_key}, "
+                        f"another node may be promoting"
+                    )
+                    return False
+                return self._execute_promotion_locked(decision)
+        else:
+            # Fallback to unlocked execution if distributed locks unavailable
+            return self._execute_promotion_locked(decision)
+
+    def _extract_config_key(self, model_id: str) -> str:
+        """Extract config key from model ID.
+
+        Args:
+            model_id: Model identifier (e.g., "square8_2p_v42")
+
+        Returns:
+            Config key (e.g., "square8_2p")
+        """
+        # Model ID format: {board}_{players}p_v{N} or {board}_{players}p_{suffix}
+        parts = model_id.rsplit("_", 1)
+        if len(parts) == 2 and (parts[1].startswith("v") or parts[1].isdigit()):
+            return parts[0]
+        # Try to find the config portion before version
+        if "_v" in model_id:
+            return model_id.split("_v")[0]
+        return model_id
+
+    def _execute_promotion_locked(self, decision: PromotionDecision) -> bool:
+        """Execute promotion while holding the distributed lock.
+
+        Args:
+            decision: The promotion decision to execute
+
+        Returns:
+            True if promotion was successful
+        """
         success = False
         try:
             if decision.promotion_type == PromotionType.TIER:

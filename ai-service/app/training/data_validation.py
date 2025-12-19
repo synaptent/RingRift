@@ -49,6 +49,14 @@ See docs/COMPREHENSIVE_ACTION_PLAN_2025_12_17.md Section 4.4 for context.
 
 from __future__ import annotations
 
+import warnings
+warnings.warn(
+    "app.training.data_validation is deprecated. "
+    "Use app.training.unified_data_validator for new code.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import logging
 from dataclasses import dataclass, field
 from enum import Enum

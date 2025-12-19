@@ -56,6 +56,14 @@ Typical usage:
     registry.promote_model(model_id, ModelStage.PRODUCTION)
 """
 
+import warnings
+warnings.warn(
+    "app.training.model_registry is deprecated for new code. "
+    "Use app.training.unified_model_store for the simpler unified API.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import json
 import sqlite3
 import hashlib
