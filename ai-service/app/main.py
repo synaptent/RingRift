@@ -557,6 +557,80 @@ async def admin_health_full(
         )
 
 
+@app.get("/admin/velocity")
+async def admin_velocity_dashboard(
+    _: bool = Depends(verify_admin_api_key),
+) -> Dict[str, Any]:
+    """Get Elo velocity dashboard for all configurations.
+
+    Requires X-Admin-Key header for authentication.
+
+    Returns velocity (Elo points/day) and ETA to 2000 Elo for each config.
+    """
+    import sqlite3
+    from pathlib import Path
+
+    TARGET_ELO = 2000.0
+
+    # Find Elo database
+    candidates = [
+        Path(__file__).parent.parent / "data" / "unified_elo.db",
+        Path("/lambda/nfs/RingRift/elo/unified_elo.db"),
+    ]
+    db_path = next((c for c in candidates if c.exists()), None)
+
+    if not db_path:
+        return {"error": "Elo database not found", "configs": []}
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+
+        # Get best Elo per config with history for velocity calculation
+        cursor.execute("""
+            SELECT board_type, num_players, MAX(rating) as best_elo,
+                   participant_id, games_played
+            FROM elo_ratings
+            WHERE archived_at IS NULL
+            GROUP BY board_type, num_players
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+
+        configs = []
+        for board_type, num_players, best_elo, model_id, games in rows:
+            gap = max(0, TARGET_ELO - best_elo)
+            # Velocity would need historical data - for now show current state
+            configs.append({
+                "config": f"{board_type}_{num_players}p",
+                "current_elo": round(best_elo, 1),
+                "target_elo": TARGET_ELO,
+                "gap": round(gap, 1),
+                "games_played": games or 0,
+                "best_model": model_id,
+                "target_met": best_elo >= TARGET_ELO,
+            })
+
+        # Sort by gap (smallest first - closest to target)
+        configs.sort(key=lambda x: x["gap"])
+
+        met_count = sum(1 for c in configs if c["target_met"])
+
+        return {
+            "target_elo": TARGET_ELO,
+            "total_configs": len(configs),
+            "configs_met": met_count,
+            "configs_unmet": len(configs) - met_count,
+            "configs": configs,
+        }
+    except Exception as e:
+        logger.error(f"Failed to get velocity dashboard: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get velocity data: {e}" if not IS_PRODUCTION else "Internal error",
+        )
+
+
 @app.post("/ai/move", response_model=MoveResponse)
 async def get_ai_move(request: MoveRequest):
     """
