@@ -2678,11 +2678,14 @@ def train_model(
 
     # Initialize anomaly detector for NaN/Inf detection (2025-12)
     anomaly_detector = None
+    anomaly_step = 0  # Track step for anomaly detection
     if HAS_TRAINING_ENHANCEMENTS and TrainingAnomalyDetector:
         anomaly_detector = TrainingAnomalyDetector(
-            nan_threshold=0.01,  # 1% NaN tolerance
-            loss_spike_threshold=10.0,  # 10x loss spike detection
-            gradient_threshold=1e6,  # Gradient explosion detection
+            loss_spike_threshold=3.0,  # 3 std devs for spike detection
+            gradient_norm_threshold=100.0,  # Gradient explosion threshold
+            loss_window_size=100,  # Rolling window for statistics
+            halt_on_nan=False,  # Don't halt, let circuit breaker handle
+            max_consecutive_anomalies=10,  # Allow some recovery attempts
         )
         logger.info("Training anomaly detector enabled")
 
@@ -2957,10 +2960,13 @@ def train_model(
                 # Anomaly detection: check for NaN/Inf in loss (2025-12)
                 if anomaly_detector is not None:
                     loss_val = loss.detach().item()
-                    if anomaly_detector.check_loss(loss_val):
-                        anomaly_result = anomaly_detector.get_anomaly_report()
+                    anomaly_step += 1
+                    if anomaly_detector.check_loss(loss_val, anomaly_step):
+                        anomaly_summary = anomaly_detector.get_summary()
                         logger.warning(
-                            f"Training anomaly detected at batch {i}: {anomaly_result}"
+                            f"Training anomaly detected at batch {i}: "
+                            f"total={anomaly_summary.get('total_anomalies', 0)}, "
+                            f"consecutive={anomaly_summary.get('consecutive_anomalies', 0)}"
                         )
                         # Record failure with circuit breaker
                         if training_breaker:
