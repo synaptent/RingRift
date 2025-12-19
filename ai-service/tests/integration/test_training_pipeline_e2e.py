@@ -1595,18 +1595,19 @@ class TestRealModelIntegration:
         Test HexNeuralNet_v2 works end-to-end with streaming hex data.
         """
         # Create small HexNeuralNet_v2 for testing
-        # Test data uses feature_shape=(40, 21, 21), global_features=10
+        # Test data uses feature_shape=(40, 25, 25), global_features=10
+        # (created by create_hex_test_npz with HEX_BOARD_SIZE=25)
         # HexNeuralNet_v2 takes in_channels as TOTAL channels (no history_length param)
         num_players = 4  # Multi-player value head
         model = HexNeuralNet_v2(
-            in_channels=40,  # Total channels to match test data (40, 21, 21)
+            in_channels=40,  # Total channels to match test data (40, 25, 25)
             global_features=10,  # Match test data
             num_res_blocks=2,  # Small for testing
             num_filters=32,
-            board_size=21,  # Match test data (not HEX_BOARD_SIZE=25)
+            board_size=HEX_BOARD_SIZE,  # 25 - match test data from create_hex_test_npz
             policy_size=P_HEX,
             num_players=num_players,
-            hex_radius=10,  # Smaller radius to match smaller board
+            hex_radius=12,  # Radius 12 for 25x25 grid (standard hex board)
         )
 
         loader = StreamingDataLoader(
@@ -1644,7 +1645,7 @@ class TestRealModelIntegration:
         assert loaded_meta.model_class == "HexNeuralNet_v2"
         expected_ver = HexNeuralNet_v2.ARCHITECTURE_VERSION
         assert loaded_meta.architecture_version == expected_ver
-        assert loaded_meta.config.get("board_size") == 21  # Test uses 21, not HEX_BOARD_SIZE
+        assert loaded_meta.config.get("board_size") == HEX_BOARD_SIZE  # 25
         assert loaded_meta.config.get("policy_size") == P_HEX
 
         loader.close()

@@ -197,6 +197,17 @@ def create_ai_for_algorithm(
         )
         return GumbelMCTSAI(player_number, config, board_type)
 
+    elif algorithm == "random":
+        # Random player for neutral fill-in positions in multiplayer games
+        from app.ai.random_ai import RandomAI
+        config = AIConfig(
+            ai_type=AIType.RANDOM,
+            board_type=board_type,
+            difficulty=1,
+            randomness=1.0,
+        )
+        return RandomAI(player_number, config)
+
     else:
         raise ValueError(f"Unknown algorithm: {algorithm}")
 
@@ -231,13 +242,16 @@ def play_game(
     engine = DefaultRulesEngine()
 
     # Create AIs with proper model for this board/player combo
-    # For multi-player games, odd players use algo1, even players use algo2
+    # P1 = algo1, P2 = algo2, P3+ = random (neutral fill-in for fair comparison)
     ais = {}
     for player_num in range(1, num_players + 1):
-        if player_num % 2 == 1:  # Odd players (1, 3) use algo1
+        if player_num == 1:
             ais[player_num] = create_ai_for_algorithm(algo1, player_num, think_time_ms, board_type, num_players)
-        else:  # Even players (2, 4) use algo2
+        elif player_num == 2:
             ais[player_num] = create_ai_for_algorithm(algo2, player_num, think_time_ms, board_type, num_players)
+        else:
+            # Neutral random players for positions 3+
+            ais[player_num] = create_ai_for_algorithm("random", player_num, think_time_ms, board_type, num_players)
     move_count = 0
     algo1_think_time = 0.0
     algo2_think_time = 0.0
@@ -250,11 +264,12 @@ def play_game(
         move = ai.select_move(state)
         move_end = time.time()
 
-        # Track think time by algorithm (odd players = algo1, even players = algo2)
-        if current_player % 2 == 1:
+        # Track think time by algorithm (P1 = algo1, P2 = algo2, P3+ = random)
+        if current_player == 1:
             algo1_think_time += (move_end - move_start)
-        else:
+        elif current_player == 2:
             algo2_think_time += (move_end - move_start)
+        # P3+ are random players, don't track their think time
 
         if move is None:
             # No valid moves - skip turn or end game
@@ -273,15 +288,16 @@ def play_game(
 
     end_time = time.time()
 
-    # Determine winner (odd players = algo1, even players = algo2)
+    # Determine winner (P1 = algo1, P2 = algo2, P3+ = random)
     winner = None
     if state.game_status == "completed":
-        if state.winner is not None:
-            if state.winner % 2 == 1:  # Odd player won
-                winner = "algo1"
-            else:  # Even player won
-                winner = "algo2"
+        if state.winner == 1:
+            winner = "algo1"
+        elif state.winner == 2:
+            winner = "algo2"
         else:
+            # Either no winner (draw) or random player (P3+) won
+            # In both cases, neither algo1 nor algo2 won
             winner = "draw"
     else:
         winner = "draw"  # Max moves reached

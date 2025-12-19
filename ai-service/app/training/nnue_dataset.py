@@ -527,8 +527,93 @@ class NNUESQLiteDataset(Dataset):
             if not validation.is_valid:
                 logger.warning("Dataset validation failed - training may have issues")
 
+    def _extract_from_cached_features(self, db_path: str) -> Optional[List[NNUESample]]:
+        """Try to extract samples from cached NNUE features table.
+
+        Returns None if no cached features exist, otherwise returns the samples.
+        This is much faster than replay-based extraction.
+        """
+        samples: List[NNUESample] = []
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Check if the game_nnue_features table exists
+        cursor.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='game_nnue_features'
+        """)
+        if not cursor.fetchone():
+            conn.close()
+            return None
+
+        board_type_str = self.config.board_type.value.lower()
+
+        # Query cached features matching our criteria
+        query = """
+            SELECT f.game_id, f.move_number, f.player_perspective, f.features, f.value, f.feature_dim
+            FROM game_nnue_features f
+            JOIN games g ON f.game_id = g.game_id
+            WHERE f.board_type = ?
+              AND g.num_players = ?
+              AND g.game_status = 'completed'
+              AND g.winner IS NOT NULL
+              AND g.total_moves >= ?
+              AND COALESCE(g.excluded_from_training, 0) = 0
+        """
+        try:
+            cursor.execute(query, (
+                board_type_str,
+                self.config.num_players,
+                self.config.min_game_length,
+            ))
+        except sqlite3.OperationalError:
+            # Table might not have proper joins, fallback
+            conn.close()
+            return None
+
+        count = 0
+        for row in cursor:
+            try:
+                # Decompress features
+                features = np.frombuffer(
+                    gzip.decompress(row['features']), dtype=np.float32
+                ).copy()
+
+                # Validate feature dimension
+                if len(features) != row['feature_dim']:
+                    continue
+
+                # Apply sampling rate
+                if row['move_number'] % self.config.sample_every_n_moves != 0:
+                    continue
+
+                samples.append(NNUESample(
+                    features=features,
+                    value=row['value'],
+                    player_number=row['player_perspective'],
+                    game_id=row['game_id'],
+                    move_number=row['move_number'],
+                ))
+                count += 1
+            except Exception:
+                continue
+
+        conn.close()
+
+        if count > 0:
+            logger.info(f"Loaded {count} cached NNUE features from {db_path}")
+            return samples
+        return None
+
     def _extract_from_db(self, db_path: str) -> List[NNUESample]:
         """Extract samples from a single SQLite database."""
+        # Try cached features first (instant extraction)
+        cached_samples = self._extract_from_cached_features(db_path)
+        if cached_samples is not None:
+            return cached_samples
+
+        # Fall back to snapshot/replay extraction
         samples: List[NNUESample] = []
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row

@@ -420,3 +420,228 @@ def record_completed_game_with_parity_check(
         raise
 
     return gid
+
+
+# -----------------------------------------------------------------------------
+# NNUE Feature Caching
+# -----------------------------------------------------------------------------
+
+def cache_nnue_features_for_game(
+    db: GameReplayDB,
+    game_id: str,
+    sample_every_n_moves: int = 1,
+    skip_if_cached: bool = True,
+) -> int:
+    """Extract and cache NNUE features for a completed game.
+
+    This replays the game and extracts features at each position, then
+    stores them in the game_nnue_features table for instant training access.
+
+    Args:
+        db: The GameReplayDB instance
+        game_id: ID of the game to process
+        sample_every_n_moves: Sample positions every N moves (default 1 = every move)
+        skip_if_cached: If True, skip if features already cached for this game
+
+    Returns:
+        Number of feature records cached
+    """
+    if skip_if_cached and db.has_nnue_features(game_id):
+        return 0
+
+    # Import here to avoid circular imports
+    from app.ai.nnue import extract_features_from_gamestate
+    from app.game_engine import GameEngine
+    import numpy as np
+
+    # Get game metadata
+    games = db.list_games(filters={"game_id": game_id})
+    if not games:
+        raise ValueError(f"Game {game_id} not found")
+
+    game = games[0]
+    board_type = game.get("board_type", "hexagonal")
+    num_players = game.get("num_players", 2)
+    winner = game.get("winner")
+
+    if winner is None:
+        # Skip games without a winner
+        return 0
+
+    # Get initial state and moves
+    initial_state = db.get_initial_state(game_id)
+    moves = db.get_moves(game_id)
+
+    if not moves:
+        return 0
+
+    # Replay the game and extract features at each position
+    engine = GameEngine(initial_state)
+    records = []
+
+    for move_num, move in enumerate(moves):
+        if move_num % sample_every_n_moves == 0:
+            state = engine.get_state()
+
+            # Extract features from each player's perspective
+            for player in range(1, num_players + 1):
+                try:
+                    features = extract_features_from_gamestate(state, player)
+
+                    # Skip if features are all zeros
+                    if np.count_nonzero(features) == 0:
+                        continue
+
+                    # Compute value label: +1 if this player won, -1 if lost, 0 for draw
+                    if winner == player:
+                        value = 1.0
+                    elif winner == 0:
+                        value = 0.0  # Draw
+                    else:
+                        value = -1.0
+
+                    records.append((
+                        game_id,
+                        move_num,
+                        player,
+                        features,
+                        value,
+                        board_type,
+                    ))
+                except Exception:
+                    # Skip positions that fail feature extraction
+                    continue
+
+        # Apply the move
+        try:
+            engine.apply_move(move)
+        except Exception:
+            # Stop if replay fails
+            break
+
+    # Store all records in a batch
+    if records:
+        db.store_nnue_features_batch(records)
+
+    return len(records)
+
+
+def cache_nnue_features_batch(
+    db: GameReplayDB,
+    game_ids: Optional[List[str]] = None,
+    board_type: Optional[str] = None,
+    num_players: Optional[int] = None,
+    sample_every_n_moves: int = 1,
+    limit: Optional[int] = None,
+    skip_if_cached: bool = True,
+) -> Tuple[int, int]:
+    """Batch cache NNUE features for multiple games.
+
+    Args:
+        db: The GameReplayDB instance
+        game_ids: Optional list of specific game IDs to process
+        board_type: Optional filter by board type
+        num_players: Optional filter by number of players
+        sample_every_n_moves: Sample positions every N moves
+        limit: Max number of games to process
+        skip_if_cached: If True, skip games with existing cached features
+
+    Returns:
+        Tuple of (games_processed, features_cached)
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if game_ids is None:
+        # Query games from database
+        filters = {}
+        if board_type:
+            filters["board_type"] = board_type
+        if num_players:
+            filters["num_players"] = num_players
+
+        games = db.list_games(filters=filters, limit=limit or 10000)
+        game_ids = [g["game_id"] for g in games if g.get("winner") is not None]
+
+    total_features = 0
+    games_processed = 0
+
+    for gid in game_ids:
+        try:
+            count = cache_nnue_features_for_game(
+                db,
+                gid,
+                sample_every_n_moves=sample_every_n_moves,
+                skip_if_cached=skip_if_cached,
+            )
+            if count > 0:
+                total_features += count
+                games_processed += 1
+                if games_processed % 100 == 0:
+                    logger.info(f"Cached features for {games_processed} games ({total_features} records)")
+        except Exception as e:
+            logger.warning(f"Failed to cache features for game {gid}: {e}")
+            continue
+
+    logger.info(f"Finished: cached {total_features} features from {games_processed} games")
+    return games_processed, total_features
+
+
+def record_completed_game_with_nnue_cache(
+    db: GameReplayDB,
+    initial_state: GameState,
+    final_state: GameState,
+    moves: List[Move],
+    metadata: Optional[Dict[str, Any]] = None,
+    game_id: Optional[str] = None,
+    store_history_entries: bool = True,
+    snapshot_interval: Optional[int] = None,
+    cache_nnue_features: bool = True,
+    sample_every_n_moves: int = 1,
+) -> str:
+    """Record a completed game and cache NNUE features in one call.
+
+    This combines record_completed_game with automatic NNUE feature extraction,
+    eliminating the need for replay during training.
+
+    Args:
+        db: The GameReplayDB instance
+        initial_state: GameState at the start of the game
+        final_state: GameState at the end of the game
+        moves: List of all moves in the game
+        metadata: Optional metadata dict
+        game_id: Optional custom game ID
+        store_history_entries: If True, store full before/after state snapshots
+        snapshot_interval: Store snapshots every N moves
+        cache_nnue_features: If True (default), extract and cache NNUE features
+        sample_every_n_moves: Sample positions every N moves for NNUE features
+
+    Returns:
+        The game ID that was stored
+    """
+    # Record the game
+    gid = record_completed_game(
+        db=db,
+        initial_state=initial_state,
+        final_state=final_state,
+        moves=moves,
+        metadata=metadata,
+        game_id=game_id,
+        store_history_entries=store_history_entries,
+        snapshot_interval=snapshot_interval,
+    )
+
+    # Cache NNUE features if requested and game has a winner
+    if cache_nnue_features and final_state.winner is not None:
+        try:
+            cache_nnue_features_for_game(
+                db,
+                gid,
+                sample_every_n_moves=sample_every_n_moves,
+                skip_if_cached=False,  # Just recorded, so no cache yet
+            )
+        except Exception:
+            # Don't fail the recording if feature caching fails
+            pass
+
+    return gid

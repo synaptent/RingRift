@@ -28,22 +28,24 @@ class GpuScalingConfig:
     reserved_memory_gb: float = 8.0
 
     # GPU memory tiers and their batch multipliers
-    gh200_memory_threshold_gb: float = 90.0   # GH200 class (96GB)
-    gh200_batch_multiplier: int = 32
+    # v2.0: Increased multipliers for better GPU utilization based on benchmarks
+    # These scale the base batch size (64) for ParallelGameRunner
+    gh200_memory_threshold_gb: float = 90.0   # GH200 class (96GB unified memory)
+    gh200_batch_multiplier: int = 64          # 64 * 64 = 4096 games (was 32)
 
-    h100_memory_threshold_gb: float = 70.0    # H100 class (80GB)
-    h100_batch_multiplier: int = 16
+    h100_memory_threshold_gb: float = 70.0    # H100 class (80GB VRAM)
+    h100_batch_multiplier: int = 32           # 64 * 32 = 2048 games (was 16)
 
     a100_memory_threshold_gb: float = 30.0    # A100 class (40-80GB)
-    a100_batch_multiplier: int = 8
+    a100_batch_multiplier: int = 16           # 64 * 16 = 1024 games (was 8)
 
-    rtx_memory_threshold_gb: float = 16.0     # RTX 3090/4090 class
-    rtx_batch_multiplier: int = 4
+    rtx_memory_threshold_gb: float = 16.0     # RTX 3090/4090 class (24GB)
+    rtx_batch_multiplier: int = 8             # 64 * 8 = 512 games (was 4)
 
-    consumer_batch_multiplier: int = 2        # Consumer GPUs (<16GB)
+    consumer_batch_multiplier: int = 4        # Consumer GPUs (<16GB)
 
-    # Maximum batch size cap
-    max_batch_size: int = 8192
+    # Maximum batch size cap (increased for large GPUs)
+    max_batch_size: int = 16384
 
     @classmethod
     def from_env(cls) -> "GpuScalingConfig":

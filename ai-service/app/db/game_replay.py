@@ -36,7 +36,8 @@ logger = logging.getLogger(__name__)
 # - v5: Added metadata_json column to games to persist full recording metadata
 # - v6: Added available_moves_json and available_moves_count to game_history_entries for parity debugging
 # - v7: Added fsm_valid and fsm_error_code to game_history_entries for FSM validation tracking (Phase 7)
-SCHEMA_VERSION = 7
+# - v8: Added game_nnue_features table for pre-computed NNUE training features
+SCHEMA_VERSION = 8
 
 # Default snapshot interval (every N moves)
 DEFAULT_SNAPSHOT_INTERVAL = 20
@@ -199,6 +200,23 @@ CREATE INDEX IF NOT EXISTS idx_moves_player ON game_moves(game_id, player);
 
 -- v3: Add state_hash to snapshots for validation
 -- (Added via migration for existing DBs)
+
+-- v8: NNUE features cache for instant training data extraction
+-- Pre-computed features eliminate the need for game replay during training
+CREATE TABLE IF NOT EXISTS game_nnue_features (
+    game_id TEXT NOT NULL,
+    move_number INTEGER NOT NULL,
+    player_perspective INTEGER NOT NULL,  -- Player number for perspective rotation
+    features BLOB NOT NULL,               -- Compressed float32 feature vector
+    value REAL NOT NULL,                  -- Win/loss label (-1, 0, +1)
+    board_type TEXT NOT NULL,             -- Board type for feature dimension validation
+    feature_dim INTEGER NOT NULL,         -- Feature dimension for validation
+    PRIMARY KEY (game_id, move_number, player_perspective),
+    FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_nnue_game ON game_nnue_features(game_id);
+CREATE INDEX IF NOT EXISTS idx_nnue_board_type ON game_nnue_features(board_type);
 """
 
 
@@ -917,6 +935,41 @@ class GameReplayDB:
 
         self._set_schema_version(conn, 7)
         logger.info("Migration to v7 complete")
+
+    def _migrate_v7_to_v8(self, conn: sqlite3.Connection) -> None:
+        """Migrate from schema v7 to v8.
+
+        Adds:
+        - game_nnue_features table for pre-computed NNUE training features
+          This enables instant training data extraction without game replay.
+        """
+        logger.info("Migrating schema from v7 to v8")
+
+        # Create the NNUE features table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS game_nnue_features (
+                game_id TEXT NOT NULL,
+                move_number INTEGER NOT NULL,
+                player_perspective INTEGER NOT NULL,
+                features BLOB NOT NULL,
+                value REAL NOT NULL,
+                board_type TEXT NOT NULL,
+                feature_dim INTEGER NOT NULL,
+                PRIMARY KEY (game_id, move_number, player_perspective),
+                FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
+            )
+        """)
+
+        # Create indexes for efficient queries
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_nnue_game ON game_nnue_features(game_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_nnue_board_type ON game_nnue_features(board_type)"
+        )
+
+        self._set_schema_version(conn, 8)
+        logger.info("Migration to v8 complete")
 
     # =========================================================================
     # Write Operations
@@ -2647,3 +2700,267 @@ class GameReplayDB:
         with self._get_conn() as conn:
             # Foreign key cascade handles related tables
             conn.execute("DELETE FROM games WHERE game_id = ?", (game_id,))
+
+    # =========================================================================
+    # NNUE Features Cache Operations
+    # =========================================================================
+
+    def store_nnue_features(
+        self,
+        game_id: str,
+        move_number: int,
+        player_perspective: int,
+        features: "np.ndarray",
+        value: float,
+        board_type: str,
+    ) -> None:
+        """Store pre-computed NNUE features for a game position.
+
+        Args:
+            game_id: Game identifier
+            move_number: Move number (0-indexed)
+            player_perspective: Player number for perspective rotation
+            features: Float32 feature vector (will be compressed)
+            value: Win/loss label (-1, 0, +1)
+            board_type: Board type for validation
+        """
+        import numpy as np
+
+        # Compress features using gzip
+        features_bytes = gzip.compress(features.astype(np.float32).tobytes())
+
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO game_nnue_features
+                (game_id, move_number, player_perspective, features, value, board_type, feature_dim)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    game_id,
+                    move_number,
+                    player_perspective,
+                    features_bytes,
+                    value,
+                    board_type,
+                    len(features),
+                ),
+            )
+
+    def store_nnue_features_batch(
+        self,
+        records: List[Tuple[str, int, int, "np.ndarray", float, str]],
+    ) -> int:
+        """Store multiple NNUE feature records efficiently.
+
+        Args:
+            records: List of (game_id, move_number, player_perspective, features, value, board_type)
+
+        Returns:
+            Number of records stored
+        """
+        import numpy as np
+
+        if not records:
+            return 0
+
+        with self._get_conn() as conn:
+            params = []
+            for game_id, move_number, player_perspective, features, value, board_type in records:
+                features_bytes = gzip.compress(features.astype(np.float32).tobytes())
+                params.append((
+                    game_id,
+                    move_number,
+                    player_perspective,
+                    features_bytes,
+                    value,
+                    board_type,
+                    len(features),
+                ))
+
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO game_nnue_features
+                (game_id, move_number, player_perspective, features, value, board_type, feature_dim)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                params,
+            )
+
+        return len(records)
+
+    def get_nnue_features(
+        self,
+        game_id: str,
+        move_number: Optional[int] = None,
+        player_perspective: Optional[int] = None,
+    ) -> List[Tuple[int, int, "np.ndarray", float]]:
+        """Retrieve pre-computed NNUE features for a game.
+
+        Args:
+            game_id: Game identifier
+            move_number: Optional specific move number
+            player_perspective: Optional specific player perspective
+
+        Returns:
+            List of (move_number, player_perspective, features, value) tuples
+        """
+        import numpy as np
+
+        with self._get_conn() as conn:
+            if move_number is not None and player_perspective is not None:
+                cursor = conn.execute(
+                    """
+                    SELECT move_number, player_perspective, features, value, feature_dim
+                    FROM game_nnue_features
+                    WHERE game_id = ? AND move_number = ? AND player_perspective = ?
+                    """,
+                    (game_id, move_number, player_perspective),
+                )
+            elif move_number is not None:
+                cursor = conn.execute(
+                    """
+                    SELECT move_number, player_perspective, features, value, feature_dim
+                    FROM game_nnue_features
+                    WHERE game_id = ? AND move_number = ?
+                    ORDER BY player_perspective
+                    """,
+                    (game_id, move_number),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    SELECT move_number, player_perspective, features, value, feature_dim
+                    FROM game_nnue_features
+                    WHERE game_id = ?
+                    ORDER BY move_number, player_perspective
+                    """,
+                    (game_id,),
+                )
+
+            results = []
+            for row in cursor:
+                move_num, player_persp, features_bytes, value, feature_dim = row
+                # Decompress and reconstruct numpy array
+                features = np.frombuffer(
+                    gzip.decompress(features_bytes), dtype=np.float32
+                ).copy()
+                assert len(features) == feature_dim, (
+                    f"Feature dimension mismatch: expected {feature_dim}, got {len(features)}"
+                )
+                results.append((move_num, player_persp, features, value))
+
+            return results
+
+    def get_nnue_features_for_training(
+        self,
+        board_type: str,
+        num_players: int,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> Iterator[Tuple[str, int, int, "np.ndarray", float]]:
+        """Iterate over cached NNUE features for training.
+
+        Yields features for all games matching board_type/num_players criteria.
+
+        Args:
+            board_type: Board type filter (e.g., "hex", "square8")
+            num_players: Number of players filter
+            limit: Optional max records to return
+            offset: Number of records to skip
+
+        Yields:
+            (game_id, move_number, player_perspective, features, value) tuples
+        """
+        import numpy as np
+
+        with self._get_conn() as conn:
+            # Join with games table to filter by num_players
+            query = """
+                SELECT f.game_id, f.move_number, f.player_perspective, f.features, f.value, f.feature_dim
+                FROM game_nnue_features f
+                JOIN games g ON f.game_id = g.game_id
+                WHERE f.board_type = ? AND g.num_players = ?
+                ORDER BY f.game_id, f.move_number, f.player_perspective
+            """
+            params: List[Any] = [board_type, num_players]
+
+            if limit is not None:
+                query += " LIMIT ? OFFSET ?"
+                params.extend([limit, offset])
+
+            cursor = conn.execute(query, params)
+
+            for row in cursor:
+                game_id, move_num, player_persp, features_bytes, value, feature_dim = row
+                features = np.frombuffer(
+                    gzip.decompress(features_bytes), dtype=np.float32
+                ).copy()
+                yield game_id, move_num, player_persp, features, value
+
+    def count_nnue_features(
+        self,
+        board_type: Optional[str] = None,
+        num_players: Optional[int] = None,
+    ) -> int:
+        """Count cached NNUE feature records.
+
+        Args:
+            board_type: Optional board type filter
+            num_players: Optional player count filter
+
+        Returns:
+            Number of cached feature records
+        """
+        with self._get_conn() as conn:
+            if board_type is not None and num_players is not None:
+                cursor = conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM game_nnue_features f
+                    JOIN games g ON f.game_id = g.game_id
+                    WHERE f.board_type = ? AND g.num_players = ?
+                    """,
+                    (board_type, num_players),
+                )
+            elif board_type is not None:
+                cursor = conn.execute(
+                    "SELECT COUNT(*) FROM game_nnue_features WHERE board_type = ?",
+                    (board_type,),
+                )
+            else:
+                cursor = conn.execute("SELECT COUNT(*) FROM game_nnue_features")
+
+            return cursor.fetchone()[0]
+
+    def has_nnue_features(self, game_id: str) -> bool:
+        """Check if a game has cached NNUE features.
+
+        Args:
+            game_id: Game identifier
+
+        Returns:
+            True if the game has cached features
+        """
+        with self._get_conn() as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM game_nnue_features WHERE game_id = ? LIMIT 1",
+                (game_id,),
+            )
+            return cursor.fetchone() is not None
+
+    def delete_nnue_features(self, game_id: str) -> int:
+        """Delete cached NNUE features for a game.
+
+        Args:
+            game_id: Game identifier
+
+        Returns:
+            Number of records deleted
+        """
+        with self._get_conn() as conn:
+            cursor = conn.execute(
+                "DELETE FROM game_nnue_features WHERE game_id = ?",
+                (game_id,),
+            )
+            return cursor.rowcount

@@ -5,7 +5,10 @@ from app.db.recording import (
     GameRecorder,
     record_completed_game,
     record_completed_game_with_parity_check,
+    record_completed_game_with_nnue_cache,
     get_or_create_db,
+    cache_nnue_features_for_game,
+    cache_nnue_features_batch,
 )
 from app.db.unified_recording import (
     UnifiedGameRecorder,
@@ -35,7 +38,10 @@ __all__ = [
     "GameRecorder",
     "record_completed_game",
     "record_completed_game_with_parity_check",
+    "record_completed_game_with_nnue_cache",
     "get_or_create_db",
+    "cache_nnue_features_for_game",
+    "cache_nnue_features_batch",
     # Unified recording (RECOMMENDED)
     "UnifiedGameRecorder",
     "RecordingConfig",
