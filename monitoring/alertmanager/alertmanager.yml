@@ -77,6 +77,16 @@ route:
       repeat_interval: 4h
 
     # -------------------------------------------------------------------------
+    # Training fault tolerance alerts (2025-12)
+    # -------------------------------------------------------------------------
+    - receiver: 'training-alerts'
+      match_re:
+        alertname: 'NaNInTraining|TrainingCircuitBreakerOpen|GradientExplosion|HighAnomalyDetectionRate|LossSpikesDetected|SustainedAnomalies|AdaptiveClipperAtMax|AdaptiveClipperAtMin|HighGradientVariance'
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 2h
+
+    # -------------------------------------------------------------------------
     # AI team alerts
     # -------------------------------------------------------------------------
     - receiver: 'ai-team'
@@ -140,6 +150,21 @@ inhibit_rules:
       alertname: 'AIServiceDown'
     target_match_re:
       alertname: 'AIFallbackRate.*|AIRequestHighLatency|AIErrorsIncreasing'
+
+  # Training fault tolerance inhibitions (2025-12)
+  # If circuit breaker is open, inhibit anomaly detection alerts
+  - source_match:
+      alertname: 'TrainingCircuitBreakerOpen'
+    target_match_re:
+      alertname: 'HighAnomalyDetectionRate|LossSpikesDetected|GradientExplosion'
+    equal: ['config']
+
+  # If NaN is detected, inhibit less severe anomaly alerts
+  - source_match:
+      alertname: 'NaNInTraining'
+    target_match_re:
+      alertname: 'LossSpikesDetected|HighAnomalyDetectionRate'
+    equal: ['config']
 
 # =============================================================================
 # Receivers - Configure your notification channels here
@@ -226,6 +251,38 @@ receivers:
     email_configs:
       - to: 'backend-team@ringrift.io'
         send_resolved: true
+
+  # ---------------------------------------------------------------------------
+  # Training fault tolerance alerts (2025-12)
+  # ---------------------------------------------------------------------------
+  - name: 'training-alerts'
+    slack_configs:
+      - channel: '#ringrift-training-alerts'
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}🔥{{ else }}✅{{ end }} Training: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Config:* {{ .Labels.config }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          {{ if .Annotations.impact }}*Impact:* {{ .Annotations.impact }}{{ end }}
+          {{ if .Annotations.action }}*Action:* {{ .Annotations.action }}{{ end }}
+          {{ end }}
+        color: '{{ if eq .Status "firing" }}{{ if eq .CommonLabels.severity "critical" }}danger{{ else }}warning{{ end }}{{ else }}good{{ end }}'
+        actions:
+          - type: button
+            text: 'Training Dashboard'
+            url: 'http://grafana.ringrift.io/d/ai-cluster'
+          - type: button
+            text: 'Stop Training'
+            url: 'http://grafana.ringrift.io/d/training-controls'
+
+    email_configs:
+      - to: 'ai-team@ringrift.io'
+        send_resolved: true
+        headers:
+          subject: '[Training Alert] {{ .GroupLabels.alertname }} - {{ .CommonLabels.config }}'
 
   # ---------------------------------------------------------------------------
   # AI team alerts
