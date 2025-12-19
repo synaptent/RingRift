@@ -58,11 +58,15 @@ from app.coordination.task_coordinator import (
 from app.coordination.safeguards import (
     Safeguards,
     SafeguardConfig,
-    CircuitBreaker,
-    CircuitState,
     SpawnRateTracker,
     ResourceMonitor,
     check_before_spawn,
+)
+
+# Circuit breaker - canonical location is app.distributed.circuit_breaker
+from app.distributed.circuit_breaker import (
+    CircuitBreaker,
+    CircuitState,
 )
 
 # Orchestrator registry exports
