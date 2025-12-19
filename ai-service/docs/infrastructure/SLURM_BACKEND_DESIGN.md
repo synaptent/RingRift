@@ -86,6 +86,7 @@ Add a `slurm` config block to `config/unified_loop.yaml` and a `SlurmConfig`
 dataclass in `app/config/unified_config.py`:
 
 ```yaml
+execution_backend: 'slurm' # or 'auto' with slurm.enabled: true
 slurm:
   enabled: false
   partition_training: 'gpu-train'

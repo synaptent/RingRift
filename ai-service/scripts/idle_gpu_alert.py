@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
+import sys
 import time
 import urllib.request
 from dataclasses import dataclass
@@ -25,12 +25,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from scripts.lib.logging_config import setup_script_logging, get_logger
+from scripts.lib.alerts import (
+    Alert,
+    AlertSeverity,
+    AlertType,
+    AlertThresholds,
+    create_alert,
 )
-logger = logging.getLogger(__name__)
+
+logger = get_logger(__name__)
 
 P2P_PORT = int(os.environ.get("RINGRIFT_P2P_PORT", "8770"))
 

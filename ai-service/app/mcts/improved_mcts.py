@@ -20,22 +20,15 @@ from abc import ABC, abstractmethod
 import random
 
 from app.utils.checksum_utils import compute_string_checksum
+from app.utils.optional_imports import (
+    numpy as np,
+    NUMPY_AVAILABLE,
+    torch,
+    TORCH_AVAILABLE,
+)
 
 
 logger = logging.getLogger(__name__)
-
-
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
 
 
 @dataclass

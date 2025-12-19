@@ -35,10 +35,15 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class EvalConfig:
-    """Configuration for background evaluation.
+class BackgroundEvalConfig:
+    """Configuration for background evaluation with baseline gating.
 
-    Note: Uses thresholds from app.config.thresholds.
+    .. note::
+        This is specialized for background eval (continuous Elo tracking).
+        For shadow/tournament config: ``app.config.unified_config.EvaluationConfig``
+        For training-loop eval: ``app.training.config.TrainingEvaluationConfig``
+
+    Uses thresholds from app.config.thresholds.
 
     IMPORTANT: min_baseline_win_rates defines minimum win rates against each
     baseline that must be met for a checkpoint to be considered "qualified".
@@ -59,6 +64,10 @@ class EvalConfig:
         "random": MIN_WIN_RATE_VS_RANDOM,
         "heuristic": MIN_WIN_RATE_VS_HEURISTIC,
     })
+
+
+# Backwards-compatible alias
+EvalConfig = BackgroundEvalConfig
 
 
 @dataclass

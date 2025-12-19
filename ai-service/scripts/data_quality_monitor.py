@@ -37,7 +37,6 @@ import sys
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from enum import Enum
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -49,11 +48,16 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.lib.logging_config import (
     setup_script_logging,
-    get_logger,
     get_metrics_logger,
 )
+from scripts.lib.alerts import (
+    AlertSeverity,
+    AlertType,
+)
 
-logger = get_logger(__name__)
+LOG_DIR = PROJECT_ROOT / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+logger = setup_script_logging("data_quality_monitor", log_dir=str(LOG_DIR))
 
 # Prometheus client
 try:
@@ -64,25 +68,9 @@ except ImportError:
     logger.warning("prometheus_client not installed - metrics export disabled")
 
 
-class AlertSeverity(Enum):
-    """Alert severity levels."""
-    INFO = "info"
-    WARNING = "warning"
-    CRITICAL = "critical"
-
-
-class AlertType(Enum):
-    """Types of data quality alerts."""
-    HIGH_DRAW_RATE = "high_draw_rate"
-    GAMES_AT_MOVE_LIMIT = "games_at_move_limit"
-    NO_GAMES = "no_games"
-    DATABASE_ERROR = "database_error"
-    HIGH_MOVES_COUNT = "high_moves_count"
-
-
 @dataclass
 class QualityAlert:
-    """A data quality alert."""
+    """A data quality alert (wrapper for shared Alert)."""
     alert_type: AlertType
     severity: AlertSeverity
     message: str

@@ -84,7 +84,18 @@ class TrainingOrchestratorState:
 
 
 class TrainingOrchestrator:
-    """Unified orchestrator for all training managers.
+    """Manager LIFECYCLE orchestrator for training infrastructure.
+
+    .. note:: Orchestrator Hierarchy (2025-12)
+        - **UnifiedTrainingOrchestrator** (unified_orchestrator.py): Step-level
+          training operations (forward/backward pass, hot buffer, enhancements)
+        - **TrainingOrchestrator** (this): Manager lifecycle coordination
+          (checkpoint manager, rollback manager, data coordinator, Elo service)
+        - **ModelSyncCoordinator** (model_lifecycle.py): Model registry sync
+        - **P2P Coordinators** (p2p_integration.py): P2P cluster REST API wrappers
+
+    Use this class when you need to coordinate multiple training managers.
+    For step-level training operations, use UnifiedTrainingOrchestrator.
 
     This class coordinates multiple training-related managers, providing:
     - Unified initialization and shutdown

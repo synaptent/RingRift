@@ -103,6 +103,11 @@ class AlertType(Enum):
     DATA_IMBALANCE = "data_imbalance"
     DATA_STALE = "data_stale"
     VALIDATION_FAILED = "validation_failed"
+    HIGH_DRAW_RATE = "high_draw_rate"
+    GAMES_AT_MOVE_LIMIT = "games_at_move_limit"
+    NO_GAMES = "no_games"
+    DATABASE_ERROR = "database_error"
+    HIGH_MOVES_COUNT = "high_moves_count"
 
     # Elo/evaluation alerts
     ELO_REGRESSION = "elo_regression"

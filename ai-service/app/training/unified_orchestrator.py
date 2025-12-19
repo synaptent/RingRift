@@ -453,7 +453,18 @@ class CheckpointWrapper:
 # =============================================================================
 
 class UnifiedTrainingOrchestrator:
-    """Unified training orchestrator combining all advanced features.
+    """Unified training orchestrator for STEP-LEVEL training operations.
+
+    .. note:: Orchestrator Hierarchy (2025-12)
+        - **UnifiedTrainingOrchestrator** (this): Step-level training operations
+          (forward/backward pass, hot buffer, checkpoints, enhancements)
+        - **TrainingOrchestrator** (orchestrated_training.py): Manager lifecycle
+          coordination (checkpoint manager, rollback manager, data coordinator)
+        - **ModelSyncCoordinator** (model_lifecycle.py): Model registry sync
+        - **P2P Coordinators** (p2p_integration.py): P2P cluster REST API wrappers
+
+    Use this class when you need to run training steps with advanced features.
+    For higher-level pipeline orchestration, use TrainingOrchestrator.
 
     Provides a single entry point for training with:
     - Distributed training support

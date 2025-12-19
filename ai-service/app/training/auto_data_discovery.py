@@ -36,10 +36,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-logger = logging.getLogger(__name__)
+from app.utils.paths import AI_SERVICE_ROOT
 
-# Path setup
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+logger = logging.getLogger(__name__)
 
 # Try to import dependencies
 try:

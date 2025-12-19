@@ -480,8 +480,12 @@ class TrainingConfig:
 class EvaluationConfig:
     """Configuration for continuous evaluation.
 
-    NOTE: Defaults match app/config/unified_config.py (single source of truth)
-    OPTIMIZED: Reduced default from 900s to 300s since parallel execution is 3x faster
+    .. note::
+        This is a script-local extension of the canonical EvaluationConfig.
+        Base defaults match ``app/config/unified_config.py`` (single source of truth).
+        Script-specific additions: adaptive_interval_* settings.
+
+    OPTIMIZED: Reduced default from 900s to 300s since parallel execution is 3x faster.
     """
     shadow_interval_seconds: int = 300  # 5 minutes (reduced from 15)
     shadow_games_per_config: int = 15  # Canonical: 15 (was 10)

@@ -28,9 +28,10 @@ import json
 import logging
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+from app.utils.datetime_utils import iso_now
 
 import numpy as np
 from scipy import stats
@@ -297,7 +298,7 @@ class GameBalanceAnalyzer:
 
         if not games:
             return BalanceReport(
-                analysis_date=datetime.utcnow().isoformat() + "Z",
+                analysis_date=iso_now(),
                 total_games=0,
                 board_type=bt,
                 num_players=np_,
@@ -372,7 +373,7 @@ class GameBalanceAnalyzer:
         is_balanced = len([i for i in balance_issues if i.severity != "minor"]) == 0
 
         return BalanceReport(
-            analysis_date=datetime.utcnow().isoformat() + "Z",
+            analysis_date=iso_now(),
             total_games=total_games,
             board_type=bt,
             num_players=np_,

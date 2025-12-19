@@ -37,10 +37,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+from app.utils.paths import AI_SERVICE_ROOT
 
-# Default registry path
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+logger = logging.getLogger(__name__)
 DEFAULT_REGISTRY_DIR = AI_SERVICE_ROOT / "data" / "model_registry"
 
 

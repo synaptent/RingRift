@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -39,26 +38,15 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
 LOG_DIR = AI_SERVICE_ROOT / "logs"
-LOG_FILE = LOG_DIR / "health_alerting.log"
 STATE_FILE = AI_SERVICE_ROOT / "data" / "alert_state.json"
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("health_alerting", log_file=LOG_FILE)
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [HealthAlert] %(levelname)s: %(message)s",
-        handlers=[
-            logging.FileHandler(LOG_FILE),
-            logging.StreamHandler(),
-        ],
-    )
-    logger = logging.getLogger(__name__)
+# Use shared logging from scripts/lib
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("health_alerting", log_dir=str(LOG_DIR))
 
 
 # =============================================================================

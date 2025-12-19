@@ -188,6 +188,163 @@ class ModelPromotionCacheInvalidator:
             logger.warning(f"[CacheInvalidator] Failed to subscribe: {e}")
             return False
 
+    def subscribe_to_all_invalidation_triggers(self) -> int:
+        """Subscribe to all events that should trigger cache invalidation.
+
+        This expands beyond MODEL_PROMOTED to include:
+        - TRAINING_COMPLETED: New model trained, caches may reference old model
+        - HYPERPARAMETER_UPDATED: Hyperparams changed, evaluation results stale
+        - REGRESSION_DETECTED: Model regression, fresh evaluation needed
+        - NAS_COMPLETED: New architecture found, model cache stale
+        - CMAES_COMPLETED: Hyperparams optimized, evaluation cache stale
+
+        Returns:
+            Number of event types subscribed to
+        """
+        try:
+            from app.distributed.data_events import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+            subscribed = 0
+
+            # Core promotion event (always subscribe)
+            if not self._subscribed:
+                bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+                subscribed += 1
+
+            # Training events - clear eval cache when new models are trained
+            bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_completed)
+            subscribed += 1
+
+            # Hyperparameter changes - invalidate evaluation results
+            bus.subscribe(DataEventType.HYPERPARAMETER_UPDATED, self._on_hyperparameter_updated)
+            subscribed += 1
+
+            # Regression detection - may need fresh evaluation
+            bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+            subscribed += 1
+
+            # NAS completion - architecture changed
+            bus.subscribe(DataEventType.NAS_COMPLETED, self._on_optimization_completed)
+            subscribed += 1
+
+            # CMA-ES completion - hyperparams changed
+            bus.subscribe(DataEventType.CMAES_COMPLETED, self._on_optimization_completed)
+            subscribed += 1
+
+            self._subscribed = True
+            logger.info(
+                f"[CacheInvalidator] Subscribed to {subscribed} cache invalidation triggers"
+            )
+            return subscribed
+
+        except Exception as e:
+            logger.warning(f"[CacheInvalidator] Failed to subscribe to all triggers: {e}")
+            return 0
+
+    def _on_training_completed(self, event) -> None:
+        """Handle TRAINING_COMPLETED - invalidate eval cache for fresh evaluation."""
+        payload = event.payload if hasattr(event, 'payload') else {}
+        config = payload.get("config", "")
+        model_path = payload.get("model_path", "")
+
+        logger.debug(f"[CacheInvalidator] Training completed: {config}")
+
+        # Only invalidate eval cache - model cache refreshes on load
+        self._invalidate_selective(
+            caches=["eval_cache", "export_cache"],
+            trigger_reason="training_completed",
+            model_id=model_path,
+        )
+
+    def _on_hyperparameter_updated(self, event) -> None:
+        """Handle HYPERPARAMETER_UPDATED - invalidate evaluation caches."""
+        payload = event.payload if hasattr(event, 'payload') else {}
+        param_name = payload.get("param_name", "")
+        optimizer = payload.get("optimizer", "")
+
+        logger.debug(f"[CacheInvalidator] Hyperparameter updated: {param_name} by {optimizer}")
+
+        # Invalidate eval cache since evaluations may use old hyperparams
+        self._invalidate_selective(
+            caches=["eval_cache"],
+            trigger_reason=f"hyperparameter_{param_name}",
+        )
+
+    def _on_regression_detected(self, event) -> None:
+        """Handle REGRESSION_DETECTED - clear caches for fresh evaluation."""
+        payload = event.payload if hasattr(event, 'payload') else {}
+        config = payload.get("config", "")
+        severity = payload.get("severity", "unknown")
+
+        logger.info(f"[CacheInvalidator] Regression detected: {config} (severity={severity})")
+
+        # Clear all caches on regression to ensure fresh evaluation
+        self.invalidate_all(
+            trigger_reason=f"regression_{severity}",
+            model_id=config,
+        )
+
+    def _on_optimization_completed(self, event) -> None:
+        """Handle NAS_COMPLETED or CMAES_COMPLETED - clear relevant caches."""
+        payload = event.payload if hasattr(event, 'payload') else {}
+        config = payload.get("config", "")
+
+        logger.debug(f"[CacheInvalidator] Optimization completed: {config}")
+
+        # Clear model and eval caches - architecture or hyperparams changed
+        self._invalidate_selective(
+            caches=["model_cache", "eval_cache", "export_cache"],
+            trigger_reason="optimization_completed",
+            model_id=config,
+        )
+
+    def _invalidate_selective(
+        self,
+        caches: List[str],
+        trigger_reason: str = "selective",
+        model_id: str = "",
+    ) -> FullInvalidationResult:
+        """Invalidate only specific caches.
+
+        Args:
+            caches: List of cache names to invalidate
+            trigger_reason: Why invalidation was triggered
+            model_id: Model ID if applicable
+
+        Returns:
+            FullInvalidationResult with details
+        """
+        result = FullInvalidationResult(
+            trigger_reason=trigger_reason,
+            model_id=model_id,
+        )
+
+        for cache_name in caches:
+            if cache_name not in self._cache_invalidators:
+                continue
+
+            invalidator = self._cache_invalidators[cache_name]
+            cache_result = self._invalidate_cache(cache_name, invalidator)
+            result.results.append(cache_result)
+
+            if cache_result.success:
+                result.caches_cleared += 1
+                result.total_items_cleared += cache_result.items_cleared
+            else:
+                result.total_success = False
+
+        if result.caches_cleared > 0:
+            logger.debug(
+                f"[CacheInvalidator] Selective invalidation: {result.caches_cleared} caches, "
+                f"{result.total_items_cleared} items (reason={trigger_reason})"
+            )
+
+        return result
+
     def unsubscribe(self) -> None:
         """Unsubscribe from model promotion events."""
         if not self._subscribed:
@@ -413,6 +570,43 @@ def wire_promotion_to_cache_invalidation(
 
     logger.info(
         f"[wire_promotion_to_cache_invalidation] MODEL_PROMOTED events wired to cache invalidation "
+        f"(cooldown={invalidation_cooldown_seconds}s, clear_gpu={clear_gpu_memory})"
+    )
+
+    return _cache_invalidator
+
+
+def wire_all_cache_invalidation_triggers(
+    invalidation_cooldown_seconds: float = 5.0,
+    clear_gpu_memory: bool = True,
+) -> ModelPromotionCacheInvalidator:
+    """Wire all events that should trigger cache invalidation.
+
+    Expands beyond MODEL_PROMOTED to include:
+    - TRAINING_COMPLETED: New model trained
+    - HYPERPARAMETER_UPDATED: Hyperparams changed
+    - REGRESSION_DETECTED: Model regression
+    - NAS_COMPLETED: New architecture found
+    - CMAES_COMPLETED: Hyperparams optimized
+
+    Args:
+        invalidation_cooldown_seconds: Minimum time between full invalidations
+        clear_gpu_memory: Also clear GPU/MPS caches
+
+    Returns:
+        ModelPromotionCacheInvalidator instance with all triggers wired
+    """
+    global _cache_invalidator
+
+    _cache_invalidator = ModelPromotionCacheInvalidator(
+        invalidation_cooldown_seconds=invalidation_cooldown_seconds,
+        clear_gpu_memory=clear_gpu_memory,
+    )
+
+    num_triggers = _cache_invalidator.subscribe_to_all_invalidation_triggers()
+
+    logger.info(
+        f"[wire_all_cache_invalidation_triggers] {num_triggers} event types wired to cache invalidation "
         f"(cooldown={invalidation_cooldown_seconds}s, clear_gpu={clear_gpu_memory})"
     )
 

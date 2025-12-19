@@ -25,10 +25,12 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from app.utils.paths import AI_SERVICE_ROOT
+
 logger = logging.getLogger(__name__)
 
 # Path to hyperparameters config
-CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "hyperparameters.json"
+CONFIG_PATH = AI_SERVICE_ROOT / "config" / "hyperparameters.json"
 
 # Default hyperparameters (fallback if config not found)
 DEFAULT_HYPERPARAMETERS = {

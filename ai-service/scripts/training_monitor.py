@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import shutil
 import sqlite3
 import subprocess
@@ -44,7 +43,14 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.utils.paths import AI_SERVICE_ROOT
-from app.monitoring.thresholds import get_threshold, AlertLevel
+from app.monitoring.thresholds import get_threshold
+
+# Use shared logging from scripts/lib
+from scripts.lib.logging_config import setup_script_logging
+
+LOG_DIR = AI_SERVICE_ROOT / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+logger = setup_script_logging("training_monitor", log_dir=str(LOG_DIR))
 
 # Unified resource checking utilities (80% max utilization)
 try:
@@ -59,18 +65,6 @@ except ImportError:
     unified_get_disk_usage = None
     unified_get_gpu_usage = None
     RESOURCE_LIMITS = None
-
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("training_monitor", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [Monitor] %(levelname)s: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-    )
-    logger = logging.getLogger(__name__)
 
 # Alert thresholds - using centralized monitoring thresholds
 THRESHOLDS = {

@@ -32,8 +32,8 @@ Goals:
 
 Usage:
     from app.coordination.sync_coordinator import (
-        SyncCoordinator,
-        get_sync_coordinator,
+        SyncScheduler,  # Preferred name (2025-12)
+        get_sync_scheduler,
         get_cluster_data_status,
         schedule_priority_sync,
         get_sync_recommendations,
@@ -306,8 +306,13 @@ class ClusterDataStatus:
         }
 
 
-class SyncCoordinator(CoordinatorBase, SQLitePersistenceMixin):
-    """Centralized coordinator for cluster-wide data synchronization.
+class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
+    """Centralized SCHEDULER for cluster-wide data synchronization.
+
+    .. note::
+        This class handles SCHEDULING decisions (when/what to sync).
+        For EXECUTION (actually performing syncs), use:
+        ``from app.distributed.sync_coordinator import SyncCoordinator``
 
     Extends CoordinatorBase for standardized lifecycle and SQLitePersistenceMixin
     for thread-safe database access.
@@ -319,11 +324,11 @@ class SyncCoordinator(CoordinatorBase, SQLitePersistenceMixin):
     4. Automatic recovery from sync failures
     """
 
-    _instance: Optional["SyncCoordinator"] = None
+    _instance: Optional["SyncScheduler"] = None
     _singleton_lock = threading.RLock()
 
     def __init__(self, db_path: Optional[Path] = None):
-        CoordinatorBase.__init__(self, name="SyncCoordinator")
+        CoordinatorBase.__init__(self, name="SyncScheduler")
         self._host_states: Dict[str, HostDataState] = {}
         self._sync_queue: List[SyncRecommendation] = []
         self._callbacks: List[Callable[[SyncRecommendation], None]] = []
@@ -340,7 +345,7 @@ class SyncCoordinator(CoordinatorBase, SQLitePersistenceMixin):
         self._status = CoordinatorStatus.READY
 
     @classmethod
-    def get_instance(cls, db_path: Optional[Path] = None) -> "SyncCoordinator":
+    def get_instance(cls, db_path: Optional[Path] = None) -> "SyncScheduler":
         """Get or create singleton instance."""
         with cls._singleton_lock:
             if cls._instance is None:
@@ -1085,12 +1090,16 @@ class SyncCoordinator(CoordinatorBase, SQLitePersistenceMixin):
 # Module-level convenience functions
 # =============================================================================
 
-_coordinator: Optional[SyncCoordinator] = None
+_coordinator: Optional[SyncScheduler] = None
 
 
-def get_sync_coordinator() -> SyncCoordinator:
-    """Get the singleton sync coordinator."""
-    return SyncCoordinator.get_instance()
+def get_sync_coordinator() -> SyncScheduler:
+    """Get the singleton sync scheduler.
+
+    .. deprecated:: 2025-12
+        Use :func:`get_sync_scheduler` instead for clarity.
+    """
+    return SyncScheduler.get_instance()
 
 
 def get_cluster_data_status() -> ClusterDataStatus:
@@ -1175,29 +1184,32 @@ def reset_sync_coordinator() -> None:
 # For EXECUTION (how to sync), use app.distributed.sync_coordinator.
 #
 # To reduce confusion from the name collision, we provide these aliases:
-# - SyncScheduler: Preferred name for this scheduling layer
-# - SyncCoordinator: Kept for backward compatibility
+# =============================================================================
+# Naming Convention (2025-12)
+# =============================================================================
+# - SyncScheduler: Canonical name for this SCHEDULING layer
+# - SyncCoordinator: Deprecated alias for backwards compatibility
 #
 # Import recommendation:
-#   # For scheduling (this module)
+#   # For scheduling (this module) - PREFERRED
 #   from app.coordination.sync_coordinator import SyncScheduler, get_sync_scheduler
 #
 #   # For execution (distributed module)
 #   from app.distributed.sync_coordinator import SyncCoordinator
 #
 
-# Alias for clarity - this is a SCHEDULER not an EXECUTOR
-SyncScheduler = SyncCoordinator
+# Backwards-compatible alias (deprecated - use SyncScheduler)
+SyncCoordinator = SyncScheduler
 
 
 def get_sync_scheduler(db_path: Optional[Path] = None) -> SyncScheduler:
-    """Get the sync scheduler (alias for get_sync_coordinator).
+    """Get the sync scheduler singleton.
 
-    Preferred name to distinguish from distributed.sync_coordinator.SyncCoordinator.
+    This is the preferred function for getting the scheduling coordinator.
     """
-    return SyncCoordinator.get_instance(db_path)
+    return SyncScheduler.get_instance(db_path)
 
 
 def reset_sync_scheduler() -> None:
-    """Reset the sync scheduler (alias for reset_sync_coordinator)."""
-    SyncCoordinator.reset_instance()
+    """Reset the sync scheduler singleton."""
+    SyncScheduler.reset_instance()

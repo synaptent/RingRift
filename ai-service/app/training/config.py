@@ -1,3 +1,38 @@
+"""Training-specific configuration classes.
+
+.. deprecated:: 2025-12
+    Many configs in this module have canonical versions in app.config.unified_config.
+    For new code, prefer importing from the canonical location:
+
+    - EvaluationConfig → app.config.unified_config.EvaluationConfig (shadow/tournament)
+    - SelfPlayConfig → app.training.selfplay_config.SelfplayConfig
+    - TrainingConfig → app.config.unified_config.TrainingConfig
+
+    This module's configs (GpuScalingConfig, TrainConfig, DataConfig, etc.)
+    remain here for training-loop-specific settings not covered by unified_config.
+
+Configuration Import Guide:
+    # Canonical unified configs
+    from app.config.unified_config import (
+        EvaluationConfig,  # Shadow/tournament evaluation
+        TrainingConfig,    # Training hyperparameters
+        PromotionConfig,   # Model promotion rules
+    )
+
+    # Training-loop-specific configs (this module)
+    from app.training.config import (
+        GpuScalingConfig,           # GPU memory scaling
+        TrainConfig,                # NNUE training args (training-loop-specific)
+        TrainingEvaluationConfig,   # Training-loop eval settings
+        DataConfig,                 # Data loading settings
+        CheckpointConfig,           # Checkpoint settings
+        TrainingPipelineConfig,     # Full pipeline config
+    )
+
+    # Selfplay config (separate module)
+    from app.training.selfplay_config import SelfplayConfig
+"""
+
 from dataclasses import dataclass, field
 import os
 from typing import Dict, Optional
@@ -666,8 +701,15 @@ class CheckpointConfig:
 
 
 @dataclass
-class EvaluationConfig:
-    """Configuration for model evaluation during training."""
+class TrainingEvaluationConfig:
+    """Configuration for model evaluation during training.
+
+    .. note::
+        This is the training-loop evaluation config (eval frequency, games).
+        For shadow/tournament evaluation config, use:
+        ``from app.config.unified_config import EvaluationConfig``
+    """
+
     # Evaluation frequency
     eval_interval_steps: int = 1000
 
@@ -679,6 +721,10 @@ class EvaluationConfig:
 
     # Elo tracking
     initial_elo: float = 1500.0
+
+
+# Backwards-compatible alias
+EvaluationConfig = TrainingEvaluationConfig
 
 
 @dataclass

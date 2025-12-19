@@ -1,17 +1,42 @@
-"""
-Integration Package for RingRift AI Self-Improvement Loop.
+"""Integration Package for RingRift AI Self-Improvement Loop.
 
-This package provides integration components that connect all the
-training, evaluation, and optimization components into a cohesive
-self-improvement system.
+This package provides integration components that connect training,
+evaluation, and optimization into a cohesive self-improvement system.
+
+Usage Patterns (2025-12):
+    These modules are primarily used by:
+    - scripts/unified_ai_loop.py - Main training loop
+    - scripts/unified_loop/*.py - Loop components
+    - app/training/promotion_controller.py - Model promotion
+
+    Import examples::
+
+        # Pipeline feedback (for curriculum adjustment)
+        from app.integration.pipeline_feedback import (
+            PipelineFeedbackController,
+            FeedbackAction,
+            FeedbackSignal,
+        )
+
+        # Model lifecycle (for promotion/registry)
+        from app.integration.model_lifecycle import (
+            ModelLifecycleManager,
+            LifecycleConfig,
+        )
+
+        # P2P cluster integration
+        from app.integration.p2p_integration import (
+            P2PIntegrationManager,
+            SelfplayCoordinator,
+            TrainingCoordinator,
+        )
 
 Modules:
-- unified_loop_extensions: Extensions for the unified AI loop
-- pipeline_feedback: Feedback loops for the pipeline orchestrator
-- model_lifecycle: Model lifecycle management
-- p2p_integration: P2P cluster integration
-- evaluation_curriculum_bridge: Evaluation → curriculum feedback loop
-- auto_elo_integration: Automatic Elo evaluation for new models
+    - unified_loop_extensions: Extensions for the unified AI loop
+    - pipeline_feedback: Feedback loops for the pipeline orchestrator
+    - model_lifecycle: Model lifecycle management and ModelSyncCoordinator
+    - p2p_integration: P2P cluster REST API wrappers (Selfplay/Training/EvaluationCoordinator)
+    - evaluation_curriculum_bridge: Evaluation → curriculum feedback loop
 """
 
 from typing import TYPE_CHECKING
@@ -54,6 +79,8 @@ __all__ = [
     "connect_to_cluster",
     "integrate_lifecycle_with_p2p",
     "integrate_feedback_with_selfplay",
+    "integrate_selfplay_with_training",
+    "create_full_selfplay_training_loop",
 
     # Evaluation → Curriculum bridge
     "EvaluationCurriculumBridge",
@@ -130,6 +157,42 @@ def integrate_feedback_with_selfplay(feedback_router, selfplay_coordinator):
     """Integrate feedback signals with selfplay coordinator."""
     from .p2p_integration import integrate_feedback_with_selfplay as _integrate
     return _integrate(feedback_router, selfplay_coordinator)
+
+
+def integrate_selfplay_with_training(
+    selfplay_coordinator,
+    training_triggers=None,
+    training_scheduler=None,
+    auto_trigger=True
+):
+    """Integrate selfplay game completion with training triggers.
+
+    Creates event-driven pipeline:
+    1. Selfplay coordinator reports game completions
+    2. TrainingTriggers updates game counts
+    3. When threshold reached, emits TRAINING_THRESHOLD_REACHED
+    4. If auto_trigger=True, training is automatically scheduled
+    """
+    from .p2p_integration import integrate_selfplay_with_training as _integrate
+    return _integrate(selfplay_coordinator, training_triggers, training_scheduler, auto_trigger)
+
+
+def create_full_selfplay_training_loop(
+    p2p_manager,
+    training_scheduler=None,
+    feedback_controller=None,
+    auto_trigger=True
+):
+    """Create fully integrated selfplay → training loop.
+
+    Sets up:
+    1. Selfplay coordinator with feedback integration
+    2. Event-driven training triggers
+    3. Curriculum weight adjustment
+    4. Auto-training when thresholds met
+    """
+    from .p2p_integration import create_full_selfplay_training_loop as _create
+    return _create(p2p_manager, training_scheduler, feedback_controller, auto_trigger)
 
 
 def get_evaluation_curriculum_bridge():

@@ -8,7 +8,6 @@ Uses unified SelfplayConfig for configuration (December 2025).
 
 import fcntl
 import json
-import logging
 import os
 import random
 import sys
@@ -17,14 +16,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
-
 # Add app/ to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from scripts.lib.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 from app.training.selfplay_config import SelfplayConfig, create_argument_parser
 

@@ -7,13 +7,11 @@ from typing import Any, Dict, Optional
 
 from app.config import ladder_config
 from app.models import BoardType, AIType
+from app.utils.paths import AI_SERVICE_ROOT
 
 # Default registry location for Square-8 2-player tier candidates.
-# This path is anchored at the ai-service repository root so that it
-# remains stable regardless of the current working directory.
-_AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SQUARE8_2P_REGISTRY_PATH = os.fspath(
-    _AI_SERVICE_ROOT / "config" / "tier_candidate_registry.square8_2p.json"
+    AI_SERVICE_ROOT / "config" / "tier_candidate_registry.square8_2p.json"
 )
 
 

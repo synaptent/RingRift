@@ -626,8 +626,18 @@ class TrainingTrigger:
 # ============================================
 
 class ModelSyncCoordinator:
-    """
-    Coordinates model synchronization across P2P cluster.
+    """Coordinates MODEL REGISTRY synchronization across P2P cluster.
+
+    .. note:: Orchestrator Hierarchy (2025-12)
+        - **UnifiedTrainingOrchestrator** (unified_orchestrator.py): Step-level
+          training operations (forward/backward pass, hot buffer, enhancements)
+        - **TrainingOrchestrator** (orchestrated_training.py): Manager lifecycle
+          coordination (checkpoint manager, rollback manager, data coordinator)
+        - **ModelSyncCoordinator** (this): Model registry sync operations
+        - **P2P Coordinators** (p2p_integration.py): P2P cluster REST API wrappers
+
+    Use this class for syncing models across cluster nodes.
+    For training operations, use UnifiedTrainingOrchestrator or TrainingOrchestrator.
 
     Handles:
     - Push new models to cluster nodes (via aria2 or HTTP)

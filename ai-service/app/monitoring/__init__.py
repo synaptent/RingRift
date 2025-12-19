@@ -70,7 +70,7 @@ from app.monitoring.unified_health import (
     UnifiedHealthOrchestrator,
     get_health_orchestrator,
     check_system_health,
-    system_is_healthy,
+    is_system_healthy,
 )
 
 # Unified cluster monitor (consolidates scripts)
@@ -114,7 +114,7 @@ __all__ = [
     "UnifiedHealthOrchestrator",
     "get_health_orchestrator",
     "check_system_health",
-    "system_is_healthy",
+    "is_system_healthy",
     # Unified cluster monitor
     "UnifiedClusterMonitor",
     "ClusterStatus",

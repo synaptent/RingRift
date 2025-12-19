@@ -782,6 +782,231 @@ def get_gpu_rich_hosts(
     return gpu_hosts
 
 
+# ============================================================================
+# Host Dead → Job Migration Wiring (December 2025)
+# ============================================================================
+
+
+class HostDeadJobMigrator:
+    """Watches for HOST_OFFLINE events and migrates jobs from dead hosts.
+
+    When a host goes offline, any jobs running on that host are:
+    1. Cancelled from the running jobs set
+    2. Re-queued with elevated priority for execution on another host
+
+    Usage:
+        from app.coordination.job_scheduler import wire_host_dead_to_job_migration
+
+        migrator = wire_host_dead_to_job_migration()
+        # Now HOST_OFFLINE events will automatically trigger job migration
+
+    Integration:
+        - Subscribes to DataEventType.HOST_OFFLINE from data_events
+        - Uses PriorityJobScheduler to cancel and re-queue jobs
+    """
+
+    def __init__(
+        self,
+        scheduler: Optional[PriorityJobScheduler] = None,
+        requeue_priority_boost: int = 1,  # Boost priority by 1 level on requeue
+    ):
+        """Initialize job migrator.
+
+        Args:
+            scheduler: PriorityJobScheduler to use (default: global scheduler)
+            requeue_priority_boost: How many priority levels to boost requeued jobs
+                                   (e.g., 1 means NORMAL -> HIGH)
+        """
+        self._scheduler = scheduler
+        self._requeue_priority_boost = requeue_priority_boost
+        self._migrations_count = 0
+        self._failed_migrations = 0
+        self._subscribed = False
+
+    @property
+    def scheduler(self) -> PriorityJobScheduler:
+        """Get scheduler, using global singleton if not provided."""
+        if self._scheduler is None:
+            self._scheduler = get_scheduler()
+        return self._scheduler
+
+    def subscribe_to_host_events(self) -> bool:
+        """Subscribe to HOST_OFFLINE events from the event bus.
+
+        Returns:
+            True if subscription was successful
+        """
+        if self._subscribed:
+            return True
+
+        try:
+            from app.distributed.data_events import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+            bus.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
+            self._subscribed = True
+            logger.info("[HostDeadJobMigrator] Subscribed to HOST_OFFLINE events")
+            return True
+
+        except ImportError as e:
+            logger.warning(f"[HostDeadJobMigrator] Could not subscribe to events: {e}")
+            return False
+
+    def _on_host_offline(self, event: Any) -> None:
+        """Handle HOST_OFFLINE event by migrating jobs.
+
+        Args:
+            event: DataEvent with HOST_OFFLINE type
+        """
+        host = event.payload.get("host", "")
+        reason = event.payload.get("reason", "unknown")
+
+        if not host:
+            logger.warning("[HostDeadJobMigrator] HOST_OFFLINE event without host name")
+            return
+
+        logger.info(f"[HostDeadJobMigrator] Host offline: {host} (reason: {reason})")
+
+        # Migrate jobs from this host
+        migrated = self.migrate_jobs_from_host(host, reason)
+
+        if migrated > 0:
+            logger.info(
+                f"[HostDeadJobMigrator] Migrated {migrated} jobs from dead host {host}"
+            )
+
+    def migrate_jobs_from_host(self, host_name: str, reason: str = "") -> int:
+        """Migrate all running jobs from a host.
+
+        Args:
+            host_name: Name of the dead/offline host
+            reason: Reason for migration (for logging)
+
+        Returns:
+            Number of jobs migrated
+        """
+        running_jobs = self.scheduler.get_running_jobs()
+
+        if host_name not in running_jobs:
+            logger.debug(f"[HostDeadJobMigrator] No running jobs on host {host_name}")
+            return 0
+
+        job = running_jobs[host_name]
+        migrated = 0
+
+        try:
+            # Cancel the job from running set
+            cancelled_job = self.scheduler.cancel_job(host_name)
+
+            if cancelled_job:
+                # Boost priority for faster requeue
+                new_priority = self._boost_priority(cancelled_job.priority)
+
+                # Create re-queued job
+                requeued_job = ScheduledJob(
+                    job_type=cancelled_job.job_type,
+                    priority=new_priority,
+                    config=cancelled_job.config,
+                    host_preference=None,  # Clear host preference - needs new host
+                    requires_gpu=cancelled_job.requires_gpu,
+                    estimated_duration_seconds=cancelled_job.estimated_duration_seconds,
+                    job_id=f"{cancelled_job.job_id or 'migrated'}_requeue",
+                )
+
+                # Schedule the requeued job
+                if self.scheduler.schedule(requeued_job):
+                    migrated = 1
+                    self._migrations_count += 1
+                    logger.info(
+                        f"[HostDeadJobMigrator] Requeued job {cancelled_job.job_type} "
+                        f"from {host_name} with priority {new_priority.name}"
+                    )
+                else:
+                    self._failed_migrations += 1
+                    logger.error(
+                        f"[HostDeadJobMigrator] Failed to requeue job from {host_name}"
+                    )
+
+        except Exception as e:
+            self._failed_migrations += 1
+            logger.error(f"[HostDeadJobMigrator] Error migrating job from {host_name}: {e}")
+
+        return migrated
+
+    def _boost_priority(self, current: JobPriority) -> JobPriority:
+        """Boost job priority by configured amount.
+
+        Args:
+            current: Current job priority
+
+        Returns:
+            Boosted priority (capped at CRITICAL)
+        """
+        # Lower value = higher priority
+        new_value = max(0, current.value - self._requeue_priority_boost)
+        return JobPriority(new_value)
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get migration statistics.
+
+        Returns:
+            Dict with migration stats
+        """
+        return {
+            "subscribed": self._subscribed,
+            "migrations_count": self._migrations_count,
+            "failed_migrations": self._failed_migrations,
+            "requeue_priority_boost": self._requeue_priority_boost,
+        }
+
+
+# Singleton migrator instance
+_job_migrator: Optional[HostDeadJobMigrator] = None
+
+
+def wire_host_dead_to_job_migration(
+    scheduler: Optional[PriorityJobScheduler] = None,
+    requeue_priority_boost: int = 1,
+) -> HostDeadJobMigrator:
+    """Wire HOST_OFFLINE events to automatic job migration.
+
+    This enables automatic job migration when hosts go offline:
+    - Jobs running on offline hosts are cancelled
+    - Jobs are requeued with boosted priority
+
+    Args:
+        scheduler: Scheduler to use (default: global singleton)
+        requeue_priority_boost: Priority boost for requeued jobs
+
+    Returns:
+        HostDeadJobMigrator instance
+    """
+    global _job_migrator
+
+    if _job_migrator is None:
+        _job_migrator = HostDeadJobMigrator(
+            scheduler=scheduler,
+            requeue_priority_boost=requeue_priority_boost,
+        )
+        _job_migrator.subscribe_to_host_events()
+
+    return _job_migrator
+
+
+def get_job_migrator() -> Optional[HostDeadJobMigrator]:
+    """Get the job migrator instance if wired."""
+    return _job_migrator
+
+
+def reset_job_migrator() -> None:
+    """Reset the job migrator singleton (for testing)."""
+    global _job_migrator
+    _job_migrator = None
+
+
 __all__ = [
     # Priority scheduler
     "PriorityJobScheduler",
@@ -796,6 +1021,11 @@ __all__ = [
     # Host selection
     "get_cpu_rich_hosts",
     "get_gpu_rich_hosts",
+    # Job migration (December 2025)
+    "HostDeadJobMigrator",
+    "wire_host_dead_to_job_migration",
+    "get_job_migrator",
+    "reset_job_migrator",
     # Configuration
     "TARGET_GPU_UTILIZATION_MIN",
     "TARGET_GPU_UTILIZATION_MAX",

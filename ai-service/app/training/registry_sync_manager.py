@@ -37,10 +37,9 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 # Import CircuitBreaker from unified cluster transport layer
 from app.coordination.cluster_transport import CircuitBreaker
+from app.utils.paths import AI_SERVICE_ROOT
 
 logger = logging.getLogger(__name__)
-
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REGISTRY_PATH = AI_SERVICE_ROOT / "data" / "model_registry.db"
 SYNC_STATE_PATH = AI_SERVICE_ROOT / "data" / "registry_sync_state.json"
 

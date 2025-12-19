@@ -278,35 +278,50 @@ def chunked_transfer(
         # Reassemble on remote
         logger.info("Reassembling chunks on remote...")
         remote_base = os.path.dirname(remote_path)
-        reassemble_cmd = [
-            "ssh", "-i", config.ssh_key,
-            "-o", "StrictHostKeyChecking=no",
-            "-p", str(port),
-            f"root@{host}",
-            f"cat {remote_base}/{transfer_path.stem}_chunk_* > {remote_path} && "
-            f"rm -f {remote_base}/{transfer_path.stem}_chunk_*"
-        ]
+        remote_filename = os.path.basename(remote_path)
 
-        # If we compressed, also decompress on remote
+        # If we compressed, reassemble to .gz file first, then decompress
         if cleanup_compressed:
-            reassemble_cmd[-1] += f" && gunzip -f {remote_path}"
-            final_remote = remote_path[:-3] if remote_path.endswith(".gz") else remote_path
+            gz_remote_path = f"{remote_path}.gz"
+            reassemble_cmd = [
+                "ssh", "-i", config.ssh_key,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "ConnectTimeout=30",
+                "-p", str(port),
+                f"root@{host}",
+                f"cd {remote_base} && "
+                f"cat {transfer_path.stem}_chunk_* > {remote_filename}.gz && "
+                f"gunzip -f {remote_filename}.gz && "
+                f"rm -f {transfer_path.stem}_chunk_*"
+            ]
+            final_remote = remote_path
         else:
+            reassemble_cmd = [
+                "ssh", "-i", config.ssh_key,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "ConnectTimeout=30",
+                "-p", str(port),
+                f"root@{host}",
+                f"cd {remote_base} && "
+                f"cat {transfer_path.stem}_chunk_* > {remote_filename} && "
+                f"rm -f {transfer_path.stem}_chunk_*"
+            ]
             final_remote = remote_path
 
-        result = subprocess.run(reassemble_cmd, capture_output=True, timeout=120)
+        result = subprocess.run(reassemble_cmd, capture_output=True, text=True, timeout=120)
 
         # Cleanup local compressed file
         if cleanup_compressed and compressed_path.exists():
             compressed_path.unlink()
 
         if result.returncode != 0:
+            error_msg = result.stderr if isinstance(result.stderr, str) else result.stderr.decode() if result.stderr else "Unknown error"
             return TransferResult(
                 success=False,
                 bytes_transferred=file_size,
                 duration_seconds=time.time() - start,
                 method="chunked",
-                error=f"Reassembly failed: {result.stderr.decode()[:200]}",
+                error=f"Reassembly failed: {error_msg[:200]}",
             )
 
     return TransferResult(

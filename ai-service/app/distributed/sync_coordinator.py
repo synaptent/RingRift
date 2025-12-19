@@ -1543,6 +1543,120 @@ class HighQualityDataSyncWatcher:
             logger.warning(f"[HighQualityDataSyncWatcher] Failed to subscribe: {e}")
             return False
 
+    def subscribe_to_all_quality_events(self) -> int:
+        """Subscribe to all quality-related events that affect sync priority.
+
+        This expands beyond HIGH_QUALITY_DATA_AVAILABLE to include:
+        - QUALITY_DISTRIBUTION_CHANGED: Adjusts sync priority based on new distribution
+        - LOW_QUALITY_DATA_WARNING: Deprioritizes sync from low-quality sources
+        - QUALITY_SCORE_UPDATED: Tracks quality changes for adaptive sync
+
+        Returns:
+            Number of event types subscribed to
+        """
+        try:
+            from app.distributed.data_events import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+            subscribed = 0
+
+            # Core high-quality event (always subscribe)
+            if not self._subscribed:
+                bus.subscribe(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._on_high_quality_data)
+                subscribed += 1
+
+            # Quality distribution changes - rebalance sync priorities
+            bus.subscribe(DataEventType.QUALITY_DISTRIBUTION_CHANGED, self._on_quality_distribution_changed)
+            subscribed += 1
+
+            # Low quality warning - deprioritize source
+            bus.subscribe(DataEventType.LOW_QUALITY_DATA_WARNING, self._on_low_quality_warning)
+            subscribed += 1
+
+            # Quality score updates - track for adaptive sync
+            bus.subscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_score_updated)
+            subscribed += 1
+
+            self._subscribed = True
+            logger.info(
+                f"[HighQualityDataSyncWatcher] Subscribed to {subscribed} quality event types"
+            )
+            return subscribed
+
+        except Exception as e:
+            logger.warning(f"[HighQualityDataSyncWatcher] Failed to subscribe to all events: {e}")
+            return 0
+
+    def _on_quality_distribution_changed(self, event) -> None:
+        """Handle QUALITY_DISTRIBUTION_CHANGED event.
+
+        When quality distribution changes significantly, may trigger a rebalanced
+        sync to prioritize the new high-quality data segments.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        config = payload.get("config", "")
+        high_quality_count = payload.get("high_quality_count", 0)
+        avg_quality = payload.get("avg_quality", 0.5)
+
+        logger.debug(
+            f"[HighQualityDataSyncWatcher] Quality distribution changed for {config}: "
+            f"{high_quality_count} high-quality games (avg: {avg_quality:.2f})"
+        )
+
+        # If high quality count increased significantly, trigger priority sync
+        if high_quality_count >= 50 and avg_quality >= self.min_quality_score:
+            logger.info(
+                f"[HighQualityDataSyncWatcher] Significant high-quality data detected, triggering sync"
+            )
+            self._maybe_trigger_sync()
+
+    def _on_low_quality_warning(self, event) -> None:
+        """Handle LOW_QUALITY_DATA_WARNING event.
+
+        When a source has too much low-quality data, we deprioritize it for sync.
+        This is tracked for future sync decisions.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        config = payload.get("config", "")
+        low_ratio = payload.get("low_ratio", 0.0)
+        source_host = payload.get("host", "")
+
+        logger.info(
+            f"[HighQualityDataSyncWatcher] Low quality warning for {config} "
+            f"(low_ratio: {low_ratio:.1%}, source: {source_host})"
+        )
+
+        # Track deprioritized hosts (could be used for future sync decisions)
+        if not hasattr(self, '_deprioritized_hosts'):
+            self._deprioritized_hosts: Dict[str, float] = {}
+
+        if source_host and low_ratio > 0.3:
+            self._deprioritized_hosts[source_host] = time.time()
+            logger.debug(f"[HighQualityDataSyncWatcher] Deprioritized host: {source_host}")
+
+    def _on_quality_score_updated(self, event) -> None:
+        """Handle QUALITY_SCORE_UPDATED event.
+
+        Tracks quality score updates for adaptive sync decisions.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        # If this is a cache invalidation event, ignore
+        if payload.get("event_subtype") == "cache_invalidation":
+            return
+
+        config = payload.get("config", "")
+        new_quality = payload.get("new_quality", payload.get("quality_score", 0.5))
+
+        logger.debug(
+            f"[HighQualityDataSyncWatcher] Quality score updated for {config}: {new_quality:.2f}"
+        )
+
     def unsubscribe(self) -> None:
         """Unsubscribe from high-quality data events."""
         if not self._subscribed:
@@ -1728,6 +1842,44 @@ def wire_high_quality_to_sync(
 
     logger.info(
         f"[wire_high_quality_to_sync] HIGH_QUALITY_DATA_AVAILABLE events wired to priority sync "
+        f"(cooldown={sync_cooldown_seconds}s, min_quality={min_quality_score})"
+    )
+
+    return _hq_sync_watcher
+
+
+def wire_all_quality_events_to_sync(
+    sync_cooldown_seconds: float = 60.0,
+    min_quality_score: float = 0.7,
+    max_games_per_sync: int = 500,
+) -> HighQualityDataSyncWatcher:
+    """Wire all quality events to sync priority decisions.
+
+    Expands beyond HIGH_QUALITY_DATA_AVAILABLE to include:
+    - QUALITY_DISTRIBUTION_CHANGED: Adjusts sync based on new distribution
+    - LOW_QUALITY_DATA_WARNING: Deprioritizes low-quality sources
+    - QUALITY_SCORE_UPDATED: Tracks quality for adaptive sync
+
+    Args:
+        sync_cooldown_seconds: Minimum time between syncs
+        min_quality_score: Minimum quality score to consider "high quality"
+        max_games_per_sync: Maximum games to sync per trigger
+
+    Returns:
+        HighQualityDataSyncWatcher instance with all quality events wired
+    """
+    global _hq_sync_watcher
+
+    _hq_sync_watcher = HighQualityDataSyncWatcher(
+        sync_cooldown_seconds=sync_cooldown_seconds,
+        min_quality_score=min_quality_score,
+        max_games_per_sync=max_games_per_sync,
+    )
+
+    num_subscribed = _hq_sync_watcher.subscribe_to_all_quality_events()
+
+    logger.info(
+        f"[wire_all_quality_events_to_sync] {num_subscribed} quality events wired to sync priority "
         f"(cooldown={sync_cooldown_seconds}s, min_quality={min_quality_score})"
     )
 

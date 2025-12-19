@@ -63,6 +63,7 @@ from app.execution.backends import (
     OrchestratorBackend,
     LocalBackend,
     SSHBackend,
+    SlurmBackend,
     get_backend,
 )
 from app.execution.game_executor import (
@@ -91,6 +92,7 @@ __all__ = [
     "OrchestratorBackend",
     "LocalBackend",
     "SSHBackend",
+    "SlurmBackend",
     "get_backend",
     # Game execution
     "GameOutcome",

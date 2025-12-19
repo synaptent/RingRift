@@ -1,10 +1,19 @@
-"""Unified model lifecycle management with canonical naming.
+"""Model Retention Manager - file-level model lifecycle management (December 2025).
 
-This module provides automated model lifecycle management including:
+This module provides automated model FILE management including:
 - Model organization with canonical naming (board_type_Np format)
 - Periodic cleanup based on retention policies
-- Integration with ModelRegistry and ModelCullingController
-- Archival and deletion of old models
+- Archival and deletion of old model files
+- Integration with ModelRegistry for stage tracking
+
+Architecture Note:
+    This module handles FILE-LEVEL operations (archival, deletion, disk space).
+    For FULL LIFECYCLE orchestration (training, promotion, P2P sync), use:
+    - app.integration.model_lifecycle.ModelLifecycleManager
+
+    The two modules are complementary:
+    - ModelRetentionManager (this): Manages model files on disk
+    - ModelLifecycleManager (integration): Orchestrates full model lifecycle
 
 RETENTION POLICY (configurable):
     - Keep latest N production models per config
@@ -13,9 +22,9 @@ RETENTION POLICY (configurable):
     - Delete archived models after Y days
 
 Usage:
-    from app.training.model_lifecycle import ModelLifecycleManager
+    from app.training.model_lifecycle import ModelRetentionManager
 
-    manager = ModelLifecycleManager()
+    manager = ModelRetentionManager()
 
     # Run full lifecycle maintenance
     result = manager.run_maintenance()
@@ -107,8 +116,11 @@ class FullMaintenanceResult:
     timestamp: float = field(default_factory=time.time)
 
 
-class ModelLifecycleManager:
-    """Manages model lifecycle with canonical naming and retention policies.
+class ModelRetentionManager:
+    """Manages model file retention with canonical naming and policies.
+
+    Handles FILE-LEVEL operations (archival, deletion, disk space).
+    For full lifecycle orchestration, use integration.model_lifecycle.
 
     Integrates with:
     - app/utils/canonical_naming for consistent naming
@@ -496,8 +508,13 @@ def run_model_maintenance(
     Returns:
         FullMaintenanceResult
     """
-    manager = ModelLifecycleManager(
+    manager = ModelRetentionManager(
         model_dir=Path(model_dir) if model_dir else None,
         elo_db_path=Path(elo_db) if elo_db else None,
     )
     return manager.run_maintenance(force=force)
+
+
+# Backward-compatible alias (December 2025)
+# Use ModelRetentionManager for new code - this alias prevents import breakage
+ModelLifecycleManager = ModelRetentionManager

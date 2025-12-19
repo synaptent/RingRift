@@ -57,13 +57,13 @@ from .unified_signals import (
     get_signal_computer,
 )
 
+from app.utils.paths import AI_SERVICE_ROOT
+
 logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Configuration Constants
 # =============================================================================
-
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 FEEDBACK_DB_PATH = AI_SERVICE_ROOT / "data" / "feedback" / "accelerator_state.db"
 
 # Elo momentum thresholds

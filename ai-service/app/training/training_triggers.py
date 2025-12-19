@@ -74,8 +74,7 @@ except ImportError:
     DEFAULT_MIN_INTERVAL_MINUTES = 20
     DEFAULT_BOOTSTRAP_THRESHOLD = 50
 
-# Constants
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+from app.utils.paths import AI_SERVICE_ROOT
 
 
 @dataclass

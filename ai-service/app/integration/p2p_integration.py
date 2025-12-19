@@ -372,12 +372,25 @@ class P2PAPIClient:
 
 
 # ============================================
-# Component Coordinators
+# P2P Component Coordinators
 # ============================================
+#
+# Orchestrator Hierarchy (2025-12):
+#   - UnifiedTrainingOrchestrator (unified_orchestrator.py): Step-level training
+#   - TrainingOrchestrator (orchestrated_training.py): Manager lifecycle
+#   - ModelSyncCoordinator (model_lifecycle.py): Model registry sync
+#   - P2P Coordinators (this file): P2P cluster REST API wrappers
+#
+# These P2P coordinators wrap the P2P orchestrator REST API for cluster operations.
+# Use these for P2P cluster communication, not for local training coordination.
+
 
 class SelfplayCoordinator:
-    """
-    Coordinates selfplay across the cluster.
+    """Coordinates selfplay across the P2P cluster via REST API.
+
+    .. note::
+        This is a P2P REST API wrapper. For local training coordination, use
+        UnifiedTrainingOrchestrator or TrainingOrchestrator instead.
 
     Handles:
     - Auto-scaling selfplay workers based on target rate
@@ -1423,6 +1436,244 @@ def get_integrated_selfplay_coordinator(
         integrate_feedback_with_selfplay(feedback_router, coordinator)
 
     return coordinator
+
+
+# ============================================
+# Event-Driven Training Trigger (Phase 8.1)
+# ============================================
+
+def integrate_selfplay_with_training(
+    selfplay_coordinator: SelfplayCoordinator,
+    training_triggers=None,
+    training_scheduler=None,
+    auto_trigger: bool = True,
+) -> Dict[str, Any]:
+    """
+    Integrate selfplay game completion with training triggers.
+
+    This creates an event-driven pipeline where:
+    1. Selfplay coordinator reports game completions
+    2. TrainingTriggers updates game counts per config
+    3. When threshold is reached, TRAINING_THRESHOLD_REACHED event is emitted
+    4. If auto_trigger=True, training is automatically scheduled
+
+    Args:
+        selfplay_coordinator: SelfplayCoordinator instance
+        training_triggers: Optional TrainingTriggers instance (auto-creates if None)
+        training_scheduler: Optional training scheduler for auto-trigger
+        auto_trigger: Whether to automatically trigger training when threshold met
+
+    Returns:
+        Dict with integration info and callbacks
+    """
+    from app.training.training_triggers import TrainingTriggers, get_training_triggers
+
+    # Get or create training triggers
+    triggers = training_triggers or get_training_triggers()
+
+    # Track per-config game counts
+    game_counts: Dict[str, int] = {}
+    pending_training: List[str] = []
+
+    # Import event bus for publishing events
+    try:
+        from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
+        event_bus = get_event_bus()
+        has_event_bus = True
+    except ImportError:
+        event_bus = None
+        has_event_bus = False
+        logger.warning("[Training↔Selfplay] Event bus not available")
+
+    # Import thresholds
+    try:
+        from app.config.thresholds import TRAINING_TRIGGER_GAMES
+    except ImportError:
+        TRAINING_TRIGGER_GAMES = 500
+
+    async def on_games_completed(config_key: str, new_games: int, total_games: int, **kwargs):
+        """Handler for when selfplay games are completed."""
+        nonlocal game_counts, pending_training
+
+        # Update game count
+        old_count = game_counts.get(config_key, 0)
+        game_counts[config_key] = total_games
+
+        # Update training triggers
+        triggers.update_config_state(
+            config_key=config_key,
+            games_count=total_games,
+        )
+
+        # Check if training should be triggered
+        decision = triggers.should_train(config_key)
+
+        logger.debug(
+            f"[Training↔Selfplay] {config_key}: {new_games} new games "
+            f"(total: {total_games}), should_train={decision.should_train}"
+        )
+
+        # Publish NEW_GAMES_AVAILABLE event
+        if has_event_bus and new_games > 0:
+            await event_bus.publish(DataEvent(
+                event_type=DataEventType.NEW_GAMES_AVAILABLE,
+                payload={
+                    "config": config_key,
+                    "new_games": new_games,
+                    "total_games": total_games,
+                    "threshold": TRAINING_TRIGGER_GAMES,
+                },
+                source="selfplay_training_integration",
+            ))
+
+        if decision.should_train:
+            # Check if already pending
+            if config_key not in pending_training:
+                pending_training.append(config_key)
+
+                # Emit TRAINING_THRESHOLD_REACHED event
+                if has_event_bus:
+                    await event_bus.publish(DataEvent(
+                        event_type=DataEventType.TRAINING_THRESHOLD_REACHED,
+                        payload={
+                            "config": config_key,
+                            "total_games": total_games,
+                            "priority": decision.priority,
+                            "reason": decision.reason,
+                            "signal_scores": decision.signal_scores,
+                        },
+                        source="selfplay_training_integration",
+                    ))
+
+                logger.info(
+                    f"[Training↔Selfplay] TRAINING_THRESHOLD_REACHED for {config_key} "
+                    f"(priority={decision.priority:.2f}, reason={decision.reason})"
+                )
+
+                # Auto-trigger training if enabled
+                if auto_trigger and training_scheduler:
+                    try:
+                        await training_scheduler.schedule_training(
+                            config_key=config_key,
+                            priority=decision.priority,
+                            reason=decision.reason,
+                        )
+                        logger.info(f"[Training↔Selfplay] Auto-triggered training for {config_key}")
+                    except Exception as e:
+                        logger.error(f"[Training↔Selfplay] Failed to auto-trigger training: {e}")
+
+    async def on_training_started(config_key: str, **kwargs):
+        """Handler for when training actually starts (clears pending)."""
+        nonlocal pending_training
+        if config_key in pending_training:
+            pending_training.remove(config_key)
+
+    async def on_training_completed(config_key: str, games_at_training: int, **kwargs):
+        """Handler for when training completes."""
+        # Record training completion in triggers
+        triggers.record_training_complete(
+            config_key=config_key,
+            games_at_training=games_at_training,
+            new_elo=kwargs.get("new_elo"),
+        )
+        logger.info(f"[Training↔Selfplay] Training completed for {config_key}, reset game counter")
+
+    # Register callbacks with selfplay coordinator
+    if hasattr(selfplay_coordinator, 'register_callback'):
+        selfplay_coordinator.register_callback('games_completed', on_games_completed)
+        selfplay_coordinator.register_callback('training_started', on_training_started)
+        selfplay_coordinator.register_callback('training_completed', on_training_completed)
+    elif hasattr(selfplay_coordinator, 'on_games_completed'):
+        # Direct callback registration
+        selfplay_coordinator.on_games_completed = on_games_completed
+
+    # Also subscribe to event bus for external game completion events
+    if has_event_bus:
+        async def handle_sync_completed(event: DataEvent):
+            """Handle data sync completion (games may have been added)."""
+            payload = event.payload
+            config = payload.get("config")
+            if config and payload.get("games_added", 0) > 0:
+                await on_games_completed(
+                    config_key=config,
+                    new_games=payload.get("games_added", 0),
+                    total_games=payload.get("total_games", game_counts.get(config, 0)),
+                )
+
+        event_bus.subscribe(DataEventType.DATA_SYNC_COMPLETED, handle_sync_completed)
+
+    logger.info("[Training↔Selfplay] Event-driven training trigger integration established")
+
+    return {
+        "triggers": triggers,
+        "game_counts": game_counts,
+        "pending_training": pending_training,
+        "on_games_completed": on_games_completed,
+        "on_training_completed": on_training_completed,
+    }
+
+
+def create_full_selfplay_training_loop(
+    p2p_manager: P2PIntegrationManager,
+    training_scheduler=None,
+    feedback_controller=None,
+    auto_trigger: bool = True,
+) -> Dict[str, Any]:
+    """
+    Create a fully integrated selfplay → training loop.
+
+    This sets up:
+    1. Selfplay coordinator with feedback integration
+    2. Event-driven training triggers
+    3. Curriculum weight adjustment based on evaluation
+    4. Auto-training when game thresholds are met
+
+    Args:
+        p2p_manager: P2PIntegrationManager instance
+        training_scheduler: Training scheduler for auto-triggering
+        feedback_controller: Optional PipelineFeedbackController
+        auto_trigger: Whether to auto-trigger training
+
+    Returns:
+        Dict with all integration components
+    """
+    # Get selfplay coordinator
+    coordinator = p2p_manager.selfplay
+
+    # Set up feedback integration if controller provided
+    feedback_router = None
+    if feedback_controller and hasattr(feedback_controller, 'signal_router'):
+        feedback_router = feedback_controller.signal_router
+        integrate_feedback_with_selfplay(feedback_router, coordinator)
+
+    # Set up event-driven training triggers
+    training_integration = integrate_selfplay_with_training(
+        selfplay_coordinator=coordinator,
+        training_scheduler=training_scheduler,
+        auto_trigger=auto_trigger,
+    )
+
+    # Set up curriculum bridge if available
+    curriculum_bridge = None
+    try:
+        from app.integration.evaluation_curriculum_bridge import create_evaluation_bridge
+        curriculum_bridge = create_evaluation_bridge(
+            feedback_controller=feedback_controller,
+            feedback_router=feedback_router,
+            selfplay_coordinator=coordinator,
+        )
+    except ImportError:
+        logger.debug("[FullLoop] Curriculum bridge not available")
+
+    logger.info("[FullLoop] Full selfplay → training loop established")
+
+    return {
+        "coordinator": coordinator,
+        "training_triggers": training_integration["triggers"],
+        "curriculum_bridge": curriculum_bridge,
+        "game_counts": training_integration["game_counts"],
+        "pending_training": training_integration["pending_training"],
+    }
 
 
 # ============================================

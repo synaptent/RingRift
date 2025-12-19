@@ -41,24 +41,20 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from app.utils.datetime_utils import iso_now, time_ago, utc_now
+from app.utils.datetime_utils import iso_now, time_ago, to_iso, utc_now
+from app.utils.paths import AI_SERVICE_ROOT
+from app.utils.optional_imports import (
+    PROMETHEUS_AVAILABLE as HAS_PROMETHEUS,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+    CONTENT_TYPE_LATEST,
+)
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
-
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-
-# =============================================================================
-# Prometheus Integration (optional)
-# =============================================================================
-
-try:
-    from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
-    HAS_PROMETHEUS = True
-except ImportError:
-    HAS_PROMETHEUS = False
-    logger.info("prometheus_client not installed - Prometheus export disabled")
 
 # Prometheus metrics (initialized if prometheus_client is available)
 if HAS_PROMETHEUS:
@@ -932,7 +928,7 @@ class MetricsCollector:
         alerts = self.db.get_alerts(unacknowledged_only=True, limit=10)
 
         return {
-            "timestamp": now.isoformat() + "Z",
+            "timestamp": to_iso(now),
             "training": {
                 "recent_steps": len(training_metrics),
                 "avg_loss": avg_loss,

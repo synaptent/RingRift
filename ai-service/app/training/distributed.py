@@ -1,30 +1,29 @@
 """Distributed Training Orchestration for RingRift AI.
 
-Coordinates training across multiple GPUs and nodes using PyTorch
-Distributed Data Parallel (DDP) with gradient synchronization.
+.. deprecated:: 2025-12
+    Use ``distributed_unified.py`` for new code. This module is deprecated
+    except for helper functions which remain canonical.
 
-.. note:: MIGRATION NOTICE (December 2025)
+    Migration::
 
-    For new code, consider using ``distributed_unified.py`` which provides:
-    - UnifiedDistributedTrainer: Enhanced trainer with gradient compression, async SGD
-    - Better integration with checkpoint_unified.py
-    - Mixed precision (AMP) support built-in
-
-    This module (distributed.py) remains for:
-    - Helper functions: setup_distributed(), cleanup_distributed(), etc.
-    - Basic DistributedTrainer without advanced features
-    - Backwards compatibility with existing training scripts
-
-    Example migration::
-
-        # Old (this module)
+        # DistributedTrainer → UnifiedDistributedTrainer
+        # Old:
         from app.training.distributed import DistributedTrainer, DistributedConfig
-
-        # New (recommended for advanced features)
+        # New:
         from app.training.distributed_unified import (
             UnifiedDistributedTrainer,
             UnifiedDistributedConfig,
         )
+
+    Keep using this module for helper functions:
+    - setup_distributed(), cleanup_distributed()
+    - is_main_process(), get_rank(), get_world_size()
+    - get_distributed_sampler(), wrap_model_ddp()
+    - seed_everything(), scale_learning_rate()
+    - DistributedMetrics
+
+Coordinates training across multiple GPUs and nodes using PyTorch
+Distributed Data Parallel (DDP) with gradient synchronization.
 
 Features:
 1. Multi-GPU training on a single node

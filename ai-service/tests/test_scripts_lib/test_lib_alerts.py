@@ -59,6 +59,17 @@ class TestAlertType:
         assert AlertType.TRAINING_FAILED.value == "training_failed"
         assert AlertType.LOSS_SPIKE.value == "loss_spike"
 
+    def test_data_quality_alerts(self):
+        assert AlertType.HIGH_DRAW_RATE.value == "high_draw_rate"
+        assert AlertType.GAMES_AT_MOVE_LIMIT.value == "games_at_move_limit"
+        assert AlertType.NO_GAMES.value == "no_games"
+        assert AlertType.DATABASE_ERROR.value == "database_error"
+
+    def test_elo_alerts(self):
+        assert AlertType.ELO_REGRESSION.value == "elo_regression"
+        assert AlertType.ELO_STAGNATION.value == "elo_stagnation"
+        assert AlertType.MODEL_DEGRADATION.value == "model_degradation"
+
 
 class TestAlert:
     """Tests for Alert dataclass."""

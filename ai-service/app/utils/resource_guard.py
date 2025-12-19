@@ -55,17 +55,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
+from app.utils.optional_imports import (
+    PROMETHEUS_AVAILABLE as HAS_PROMETHEUS,
+    Gauge,
+    Counter,
+)
+from app.utils.time_constants import SECONDS_PER_DAY
+
 logger = logging.getLogger(__name__)
-
-# ============================================
-# Prometheus Metrics (optional)
-# ============================================
-
-try:
-    from prometheus_client import Gauge, Counter
-    HAS_PROMETHEUS = True
-except ImportError:
-    HAS_PROMETHEUS = False
 
 # Initialize Prometheus metrics if available
 if HAS_PROMETHEUS:
@@ -872,7 +869,7 @@ def cleanup_old_logs(max_age_days: int = 7) -> int:
     if not logs_dir.exists():
         return 0
 
-    cutoff_time = time.time() - (max_age_days * 86400)
+    cutoff_time = time.time() - (max_age_days * SECONDS_PER_DAY)
     deleted = 0
 
     for log_file in logs_dir.glob("**/*.log*"):
@@ -1004,7 +1001,7 @@ def cleanup_old_games(keep_days: int = 30) -> Tuple[int, int]:
     if not games_dir.exists():
         return 0, 0
 
-    cutoff_time = time.time() - (keep_days * 86400)
+    cutoff_time = time.time() - (keep_days * SECONDS_PER_DAY)
     files_deleted = 0
     bytes_freed = 0
 

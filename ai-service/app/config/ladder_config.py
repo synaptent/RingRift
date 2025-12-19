@@ -1129,11 +1129,11 @@ def list_ladder_tiers(
 # These functions allow the training loop to dynamically update which models
 # are used for each difficulty tier without requiring code changes.
 
+from app.utils.paths import AI_SERVICE_ROOT
+
 # Runtime overrides loaded from JSON file
 _RUNTIME_OVERRIDES: Dict[LadderKey, Dict[str, str]] = {}
-_RUNTIME_OVERRIDES_PATH = (
-    Path(__file__).resolve().parents[2] / "data" / "ladder_runtime_overrides.json"
-)
+_RUNTIME_OVERRIDES_PATH = AI_SERVICE_ROOT / "data" / "ladder_runtime_overrides.json"
 
 
 def load_runtime_overrides() -> None:

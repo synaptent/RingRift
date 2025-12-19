@@ -38,10 +38,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from app.utils.paths import AI_SERVICE_ROOT
+
 logger = logging.getLogger(__name__)
 
 # Constants
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WEIGHT_MIN = 0.5
 DEFAULT_WEIGHT_MAX = 2.0
 DEFAULT_LOOKBACK_MINUTES = 30

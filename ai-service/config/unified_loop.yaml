@@ -8,6 +8,7 @@
 # - Curriculum weights capped at 1.5x to avoid over-rotation
 
 version: '1.1'
+execution_backend: 'auto' # auto|local|ssh|p2p|slurm
 
 # Data ingestion from remote hosts
 data_ingestion:
@@ -425,6 +426,35 @@ ssh:
   max_delay_seconds: 30.0
   connect_timeout_seconds: 10
   command_timeout_seconds: 3600 # 1 hour max for any command
+
+# Slurm execution settings (optional HPC backend)
+slurm:
+  enabled: false
+  partition_training: 'gpu-train'
+  partition_selfplay: 'gpu-selfplay'
+  partition_tournament: 'cpu-eval'
+  account: null
+  qos: null
+  default_time_training: '08:00:00'
+  default_time_selfplay: '02:00:00'
+  default_time_tournament: '02:00:00'
+  gpus_training: 1
+  cpus_training: 16
+  mem_training: '64G'
+  gpus_selfplay: 0
+  cpus_selfplay: 8
+  mem_selfplay: '16G'
+  gpus_tournament: 0
+  cpus_tournament: 8
+  mem_tournament: '16G'
+  job_dir: 'data/slurm/jobs'
+  log_dir: 'data/slurm/logs'
+  shared_root: null # e.g. "/shared/ringrift"
+  repo_subdir: 'ai-service'
+  venv_activate: null # e.g. "/shared/ringrift/ai-service/venv/bin/activate"
+  setup_commands: []
+  extra_sbatch_args: []
+  poll_interval_seconds: 20
 
 # Selfplay settings (shared across all selfplay scripts)
 selfplay:

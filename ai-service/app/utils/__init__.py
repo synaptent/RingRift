@@ -117,6 +117,17 @@ from .time_constants import (
     DEFAULT_SYNC_INTERVAL,
     DEFAULT_TIMEOUT,
 )
+from .optional_imports import (
+    NUMPY_AVAILABLE,
+    TORCH_AVAILABLE,
+    CUDA_AVAILABLE,
+    MPS_AVAILABLE,
+    AIOHTTP_AVAILABLE,
+    PROMETHEUS_AVAILABLE,
+    get_module,
+    require_module,
+    get_availability_summary,
+)
 
 __all__ = [
     # Paths
@@ -226,4 +237,14 @@ __all__ = [
     "DEFAULT_CACHE_TTL",
     "DEFAULT_SYNC_INTERVAL",
     "DEFAULT_TIMEOUT",
+    # Optional imports
+    "NUMPY_AVAILABLE",
+    "TORCH_AVAILABLE",
+    "CUDA_AVAILABLE",
+    "MPS_AVAILABLE",
+    "AIOHTTP_AVAILABLE",
+    "PROMETHEUS_AVAILABLE",
+    "get_module",
+    "require_module",
+    "get_availability_summary",
 ]

@@ -43,10 +43,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+from app.utils.paths import AI_SERVICE_ROOT
 
-# Default paths
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+logger = logging.getLogger(__name__)
 OPTIMIZER_STATE_PATH = AI_SERVICE_ROOT / "logs" / "improvement_optimizer_state.json"
 
 

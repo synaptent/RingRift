@@ -303,6 +303,37 @@ class SSHConfig:
 
 
 @dataclass
+class SlurmConfig:
+    """Slurm execution settings for stable HPC clusters."""
+    enabled: bool = False
+    partition_training: str = "gpu-train"
+    partition_selfplay: str = "gpu-selfplay"
+    partition_tournament: str = "cpu-eval"
+    account: Optional[str] = None
+    qos: Optional[str] = None
+    default_time_training: str = "08:00:00"
+    default_time_selfplay: str = "02:00:00"
+    default_time_tournament: str = "02:00:00"
+    gpus_training: int = 1
+    cpus_training: int = 16
+    mem_training: str = "64G"
+    gpus_selfplay: int = 0
+    cpus_selfplay: int = 8
+    mem_selfplay: str = "16G"
+    gpus_tournament: int = 0
+    cpus_tournament: int = 8
+    mem_tournament: str = "16G"
+    job_dir: str = "data/slurm/jobs"
+    log_dir: str = "data/slurm/logs"
+    shared_root: Optional[str] = None
+    repo_subdir: str = "ai-service"
+    venv_activate: Optional[str] = None
+    setup_commands: List[str] = field(default_factory=list)
+    extra_sbatch_args: List[str] = field(default_factory=list)
+    poll_interval_seconds: int = 20
+
+
+@dataclass
 class DistributedConfig:
     """Configuration for distributed system components.
 
@@ -736,6 +767,7 @@ class UnifiedConfig:
     This is the SINGLE SOURCE OF TRUTH for all configuration values.
     """
     version: str = "1.2"  # Bumped for config consolidation
+    execution_backend: str = "auto"
 
     # Sub-configurations
     data_ingestion: DataIngestionConfig = field(default_factory=DataIngestionConfig)
@@ -756,6 +788,7 @@ class UnifiedConfig:
     # New unified sections (previously scattered as hardcoded constants)
     cluster: ClusterConfig = field(default_factory=ClusterConfig)
     ssh: SSHConfig = field(default_factory=SSHConfig)
+    slurm: SlurmConfig = field(default_factory=SlurmConfig)
     selfplay: SelfplayDefaults = field(default_factory=SelfplayDefaults)
     tournament: TournamentConfig = field(default_factory=TournamentConfig)
     distributed: DistributedConfig = field(default_factory=DistributedConfig)
@@ -818,6 +851,7 @@ class UnifiedConfig:
 
         # Load version
         config.version = data.get("version", config.version)
+        config.execution_backend = data.get("execution_backend", config.execution_backend)
 
         # Load sub-configurations
         if "data_ingestion" in data:
@@ -969,6 +1003,9 @@ class UnifiedConfig:
                 connect_timeout_seconds=ssh_data.get("connect_timeout_seconds", 10),
                 command_timeout_seconds=ssh_data.get("command_timeout_seconds", 3600),
             )
+
+        if "slurm" in data:
+            config.slurm = SlurmConfig(**data["slurm"])
 
         if "selfplay" in data:
             sp_data = data["selfplay"]
@@ -1152,6 +1189,13 @@ class UnifiedConfig:
             List of error messages. Empty list means valid.
         """
         errors: List[str] = []
+        valid_backends = {"auto", "local", "ssh", "p2p", "slurm"}
+        backend_value = str(self.execution_backend or "auto").lower()
+        if backend_value not in valid_backends:
+            errors.append(
+                f"execution_backend={self.execution_backend!r} invalid "
+                f"(expected one of: {', '.join(sorted(valid_backends))})"
+            )
 
         # Training thresholds
         if self.training.trigger_threshold_games < 10:

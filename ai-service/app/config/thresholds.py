@@ -310,3 +310,180 @@ MAX_PER_FILE_TIMEOUT = 120  # 2 minutes
 
 # Maximum divergence allowed between implementations
 DIVERGENCE_THRESHOLD = 0.001  # 0.1%
+
+
+# =============================================================================
+# Alert Levels and Monitoring Thresholds
+# =============================================================================
+# Consolidated from app/monitoring/thresholds.py
+
+from enum import Enum
+from typing import Any, Dict, Optional
+
+
+class AlertLevel(str, Enum):
+    """Alert severity levels for monitoring."""
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+    FATAL = "fatal"
+
+
+# Master threshold configuration for monitoring systems
+# All monitoring scripts should reference these values instead of hardcoding
+MONITORING_THRESHOLDS: Dict[str, Dict[str, Any]] = {
+    # Disk space monitoring
+    "disk": {
+        "warning": DISK_WARNING_PERCENT,
+        "critical": DISK_CRITICAL_PERCENT,
+        "fatal": 95,
+        "unit": "percent",
+        "description": "Disk space utilization thresholds",
+    },
+
+    # GPU monitoring
+    "gpu_utilization": {
+        "idle": 5,
+        "low": 20,
+        "normal": 50,
+        "warning": GPU_WARNING_PERCENT,
+        "critical": GPU_CRITICAL_PERCENT,
+        "unit": "percent",
+        "description": "GPU utilization levels",
+    },
+    "gpu_memory": {
+        "warning": 85,
+        "critical": 95,
+        "unit": "percent",
+        "description": "GPU memory utilization",
+    },
+
+    # Training monitoring
+    "training": {
+        "stale_hours": TRAINING_STALENESS_HOURS,
+        "model_stale_hours": 48,
+        "min_batch_rate": 10,
+        "max_loss_increase": 0.5,
+        "description": "Training progress thresholds",
+    },
+
+    # Data quality monitoring
+    "data_quality": {
+        "draw_rate_threshold": 0.20,
+        "min_game_length": 10,
+        "max_game_length": 500,
+        "nan_threshold": 0.001,
+        "zero_feature_threshold": 0.05,
+        "description": "Data quality metrics",
+    },
+
+    # Cluster health
+    "cluster": {
+        "min_nodes_online": 5,
+        "node_timeout_seconds": PEER_TIMEOUT,
+        "heartbeat_interval": HEARTBEAT_INTERVAL,
+        "max_coordinator_lag_seconds": 300,
+        "description": "Cluster health requirements",
+    },
+
+    # Selfplay monitoring
+    "selfplay": {
+        "min_games_per_hour": 100,
+        "max_game_duration_seconds": 600,
+        "min_move_count": 5,
+        "description": "Selfplay generation metrics",
+    },
+
+    # Network/P2P monitoring
+    "network": {
+        "ping_timeout_ms": 5000,
+        "max_relay_latency_ms": 200,
+        "reconnect_interval_seconds": 30,
+        "description": "Network health thresholds",
+    },
+
+    # Memory monitoring
+    "memory": {
+        "warning": MEMORY_WARNING_PERCENT,
+        "critical": MEMORY_CRITICAL_PERCENT,
+        "unit": "percent",
+        "description": "System memory thresholds",
+    },
+}
+
+# Backwards compatibility alias
+THRESHOLDS = MONITORING_THRESHOLDS
+
+
+def get_threshold(
+    category: str,
+    key: str,
+    default: Optional[Any] = None,
+) -> Any:
+    """Get a specific monitoring threshold value.
+
+    Args:
+        category: Threshold category (e.g., "disk", "gpu_utilization")
+        key: Specific threshold key (e.g., "warning", "critical")
+        default: Default value if not found
+
+    Returns:
+        Threshold value or default
+
+    Example:
+        disk_warning = get_threshold("disk", "warning")  # Returns 65
+    """
+    if category not in MONITORING_THRESHOLDS:
+        return default
+    return MONITORING_THRESHOLDS[category].get(key, default)
+
+
+def should_alert(
+    category: str,
+    value: float,
+    level: str = "warning",
+    comparison: str = "gte",
+) -> bool:
+    """Check if a value exceeds the threshold for alert.
+
+    Args:
+        category: Threshold category
+        value: Current value to check
+        level: Alert level to check against
+        comparison: Comparison type (gte=>=, lte=<=, gt=>, lt=<, eq===)
+
+    Returns:
+        True if value triggers alert at specified level
+
+    Example:
+        if should_alert("disk", 75, "warning"):
+            send_warning()
+    """
+    threshold = get_threshold(category, level)
+    if threshold is None:
+        return False
+
+    comparisons = {
+        "gte": lambda v, t: v >= t,
+        "lte": lambda v, t: v <= t,
+        "gt": lambda v, t: v > t,
+        "lt": lambda v, t: v < t,
+        "eq": lambda v, t: v == t,
+    }
+
+    compare_fn = comparisons.get(comparison, comparisons["gte"])
+    return compare_fn(value, threshold)
+
+
+def get_all_thresholds() -> Dict[str, Dict[str, Any]]:
+    """Get all monitoring thresholds for display/documentation."""
+    return MONITORING_THRESHOLDS.copy()
+
+
+def update_threshold(category: str, key: str, value: Any) -> None:
+    """Update a threshold value at runtime.
+
+    Use sparingly - primarily for testing or dynamic configuration.
+    """
+    if category in MONITORING_THRESHOLDS:
+        MONITORING_THRESHOLDS[category][key] = value

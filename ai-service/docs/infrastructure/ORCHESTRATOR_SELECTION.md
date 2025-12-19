@@ -97,7 +97,7 @@ curl http://localhost:8770/status
 
 **Notes**:
 
-- Use `unified_ai_loop.py` with a Slurm backend configuration.
+- Use `unified_ai_loop.py` with `execution_backend: "slurm"` (or `auto` + `slurm.enabled: true`).
 - See `docs/infrastructure/SLURM_BACKEND_DESIGN.md` for details.
 
 ---
