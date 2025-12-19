@@ -2854,7 +2854,8 @@ def train_model(
                     try:
                         # Load the last good checkpoint
                         loaded_epoch, loaded_loss = load_checkpoint(
-                            _last_good_checkpoint_path, model, optimizer, device, scheduler=epoch_scheduler
+                            _last_good_checkpoint_path, model, optimizer,
+                            scheduler=epoch_scheduler, device=device
                         )
                         logger.info(f"Rollback successful: restored to epoch {loaded_epoch}, loss {loaded_loss:.4f}")
 
