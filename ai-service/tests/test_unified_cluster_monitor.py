@@ -232,7 +232,7 @@ class TestHttpHealthChecks:
 
     def test_http_get_json_success(self, monitor):
         """Should parse JSON from successful response."""
-        with patch("unified_cluster_monitor.urlopen") as mock_urlopen:
+        with patch("app.monitoring.unified_cluster_monitor.urllib.request.urlopen") as mock_urlopen:
             mock_response = MagicMock()
             mock_response.read.return_value = b'{"healthy": true, "cpu_percent": 45.0}'
             mock_response.__enter__ = MagicMock(return_value=mock_response)
@@ -246,7 +246,7 @@ class TestHttpHealthChecks:
 
     def test_http_get_json_error(self, monitor):
         """Should return error dict on failure."""
-        with patch("unified_cluster_monitor.urlopen") as mock_urlopen:
+        with patch("app.monitoring.unified_cluster_monitor.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.side_effect = Exception("Connection refused")
 
             result = monitor._http_get_json("http://test/health")
