@@ -885,8 +885,10 @@ class UnifiedDataSyncService:
                     cursor.execute("SELECT COUNT(*) FROM games")
                     total += cursor.fetchone()[0]
                     conn.close()
-                except Exception:
-                    pass
+                except sqlite3.Error as e:
+                    logger.debug(f"Could not count games in {db_file.name}: {e}")
+                except Exception as e:
+                    logger.warning(f"Unexpected error counting games in {db_file.name}: {e}")
 
             return total, ""
 
@@ -1385,8 +1387,8 @@ class UnifiedDataSyncService:
                 try:
                     registry.release(OrchestratorRole.DATA_SYNC)
                     logger.info("Released DATA_SYNC role")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Error releasing DATA_SYNC role during shutdown: {e}")
 
             if self._p2p_fallback and hasattr(self._p2p_fallback, 'close'):
                 await self._p2p_fallback.close()

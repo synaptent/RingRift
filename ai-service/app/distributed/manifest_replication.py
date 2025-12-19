@@ -335,8 +335,8 @@ class ManifestReplicator:
             for old_backup in old_backups[:-10]:  # Keep last 10
                 try:
                     old_backup.unlink()
-                except Exception:
-                    pass
+                except OSError as e:
+                    logger.debug(f"Could not remove old backup {old_backup.name}: {e}")
 
             logger.info(f"Backed up manifest to external drive: {self.external_backup_path}")
             return True
