@@ -70,15 +70,16 @@ class TestModelInfo:
 
         info = ModelInfo(
             model_id="test-model-001",
+            version=1,
+            name="test_model",
+            model_type=ModelStoreType.POLICY_VALUE,
             stage=ModelStoreStage.DEVELOPMENT,
-            model_type=ModelStoreType.NEURAL_NET,
-            board_type="square8",
-            num_players=2,
+            model_path="/path/to/model.pth",
         )
 
         assert info.model_id == "test-model-001"
         assert info.stage == ModelStoreStage.DEVELOPMENT
-        assert info.board_type == "square8"
+        assert info.version == 1
 
     def test_model_info_to_dict(self):
         """Test converting ModelInfo to dict."""
@@ -86,10 +87,11 @@ class TestModelInfo:
 
         info = ModelInfo(
             model_id="test-model-002",
+            version=2,
+            name="production_model",
+            model_type=ModelStoreType.POLICY_VALUE,
             stage=ModelStoreStage.PRODUCTION,
-            model_type=ModelStoreType.NEURAL_NET,
-            board_type="hex7",
-            num_players=3,
+            model_path="/path/to/prod.pth",
         )
 
         data = info.to_dict()
@@ -118,8 +120,9 @@ class TestUnifiedModelStore:
         assert hasattr(store, 'register')
         assert hasattr(store, 'get')
         assert hasattr(store, 'promote')
-        assert hasattr(store, 'get_production_model')
+        assert hasattr(store, 'get_production')
         assert hasattr(store, 'list_models')
+        assert hasattr(store, 'get_stats')
 
 
 class TestConvenienceFunctions:
