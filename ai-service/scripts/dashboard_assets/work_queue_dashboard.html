@@ -303,7 +303,12 @@
                     <label>Priority</label>
                     <input type="number" id="priority" value="50" min="0" max="100" style="width: 80px;">
                 </div>
+                <div class="field">
+                    <label>Count</label>
+                    <input type="number" id="batchCount" value="1" min="1" max="50" style="width: 60px;">
+                </div>
                 <button onclick="addWork()">Add to Queue</button>
+                <button onclick="addBatchWork()" style="background: #4ecdc4;">Add Batch</button>
             </div>
         </div>
 
@@ -401,6 +406,49 @@
                 }
             } catch (e) {
                 alert(`Failed to add work: ${e.message}`);
+            }
+        }
+
+        async function addBatchWork() {
+            const workType = document.getElementById('workType').value;
+            const boardType = document.getElementById('boardType').value;
+            const numPlayers = parseInt(document.getElementById('numPlayers').value);
+            const priority = parseInt(document.getElementById('priority').value);
+            const count = parseInt(document.getElementById('batchCount').value) || 1;
+
+            if (count < 1 || count > 50) {
+                alert('Batch count must be between 1 and 50');
+                return;
+            }
+
+            // Create batch of items
+            const items = [];
+            for (let i = 0; i < count; i++) {
+                items.push({
+                    work_type: workType,
+                    priority: priority,
+                    config: {
+                        board_type: boardType,
+                        num_players: numPlayers
+                    }
+                });
+            }
+
+            try {
+                const resp = await fetch(`${API_BASE}/work/add_batch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: items })
+                });
+                const data = await resp.json();
+                if (data.status === 'added') {
+                    alert(`Added ${data.count} work items`);
+                    updateDashboard();
+                } else {
+                    alert(`Error: ${data.error || 'Unknown error'}`);
+                }
+            } catch (e) {
+                alert(`Failed to add batch work: ${e.message}`);
             }
         }
 

@@ -6165,6 +6165,75 @@ class P2POrchestrator:
             logger.error(f"Error adding work: {e}")
             return web.json_response({'error': str(e)}, status=500)
 
+    async def handle_work_add_batch(self, request: web.Request) -> web.Response:
+        """Add multiple work items to the queue in a single request (leader only).
+
+        Request body:
+        {
+            "items": [
+                {"work_type": "selfplay", "priority": 50, "config": {...}},
+                {"work_type": "training", "priority": 80, "config": {...}},
+                ...
+            ]
+        }
+
+        Response:
+        {
+            "status": "added",
+            "count": 2,
+            "work_ids": ["abc123", "def456"]
+        }
+        """
+        try:
+            if not self.is_leader:
+                return web.json_response({'error': 'not_leader', 'leader_id': self.leader_id}, status=403)
+
+            wq = get_work_queue()
+            if wq is None:
+                return web.json_response({'error': 'work_queue_not_available'}, status=503)
+
+            data = await request.json()
+            items = data.get('items', [])
+
+            if not items:
+                return web.json_response({'error': 'no_items_provided'}, status=400)
+
+            if len(items) > 100:
+                return web.json_response({'error': 'too_many_items', 'max': 100}, status=400)
+
+            from app.coordination.work_queue import WorkItem, WorkType
+
+            work_ids = []
+            errors = []
+
+            for i, item_data in enumerate(items):
+                try:
+                    work_type = item_data.get('work_type', 'selfplay')
+                    priority = item_data.get('priority', 50)
+                    config = item_data.get('config', {})
+                    timeout = item_data.get('timeout_seconds', 3600.0)
+
+                    item = WorkItem(
+                        work_type=WorkType(work_type),
+                        priority=priority,
+                        config=config,
+                        timeout_seconds=timeout,
+                    )
+                    work_id = wq.add_work(item)
+                    work_ids.append(work_id)
+                except Exception as e:
+                    errors.append({'index': i, 'error': str(e)})
+
+            return web.json_response({
+                'status': 'added',
+                'count': len(work_ids),
+                'work_ids': work_ids,
+                'errors': errors if errors else None,
+            })
+        except Exception as e:
+            logger.error(f"Error adding batch work: {e}")
+            return web.json_response({'error': str(e)}, status=500)
+
     async def handle_work_claim(self, request: web.Request) -> web.Response:
         """Claim available work from the queue."""
         try:
@@ -26288,6 +26357,7 @@ print(json.dumps({{
 
         # Work queue routes (centralized work distribution)
         app.router.add_post('/work/add', self.handle_work_add)
+        app.router.add_post('/work/add_batch', self.handle_work_add_batch)
         app.router.add_get('/work/claim', self.handle_work_claim)
         app.router.add_post('/work/start', self.handle_work_start)
         app.router.add_post('/work/complete', self.handle_work_complete)
