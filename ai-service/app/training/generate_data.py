@@ -2113,6 +2113,24 @@ def _parse_args() -> argparse.Namespace:
             "Only affects --multi-player-values datasets."
         ),
     )
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help=(
+            "Use parallel selfplay generation for 4-8x speedup. Uses multiple "
+            "worker processes, each with its own AI instances. Recommended for "
+            "generating large datasets."
+        ),
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help=(
+            "Number of worker processes for parallel generation. "
+            "Default: CPU count - 1. Only used with --parallel."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -2264,24 +2282,48 @@ def main() -> None:
 
     replay_db = get_or_create_db(record_db_path) if record_db_path else None
 
-    generate_dataset(
-        num_games=args.num_games,
-        output_file=args.output,
-        board_type=board_type,
-        seed=args.seed,
-        max_moves=args.max_moves,
-        batch_size=args.batch_size,
-        replay_db=replay_db,
-        num_players=args.num_players,
-        game_records_jsonl=args.game_records_jsonl,
-        engine=args.engine,
-        engine_mix=args.engine_mix,
-        engine_ratio=args.engine_ratio,
-        nn_model_id=args.nn_model_id,
-        multi_player_values=args.multi_player_values,
-        max_players=args.max_players,
-        graded_outcomes=args.graded_outcomes,
-    )
+    # Use parallel generation if requested (4-8x speedup)
+    if args.parallel:
+        try:
+            from app.training.parallel_selfplay import generate_dataset_parallel
+            print(f"Using parallel selfplay generation with {args.num_workers or 'auto'} workers")
+            generate_dataset_parallel(
+                num_games=args.num_games,
+                output_file=args.output,
+                num_workers=args.num_workers,
+                board_type=board_type,
+                seed=args.seed,
+                max_moves=args.max_moves,
+                num_players=args.num_players,
+                engine=args.engine,
+                nn_model_id=args.nn_model_id,
+                multi_player_values=args.multi_player_values,
+                max_players=args.max_players,
+                graded_outcomes=args.graded_outcomes,
+            )
+        except ImportError as e:
+            print(f"Warning: parallel_selfplay module not available ({e}), falling back to sequential")
+            args.parallel = False
+
+    if not args.parallel:
+        generate_dataset(
+            num_games=args.num_games,
+            output_file=args.output,
+            board_type=board_type,
+            seed=args.seed,
+            max_moves=args.max_moves,
+            batch_size=args.batch_size,
+            replay_db=replay_db,
+            num_players=args.num_players,
+            game_records_jsonl=args.game_records_jsonl,
+            engine=args.engine,
+            engine_mix=args.engine_mix,
+            engine_ratio=args.engine_ratio,
+            nn_model_id=args.nn_model_id,
+            multi_player_values=args.multi_player_values,
+            max_players=args.max_players,
+            graded_outcomes=args.graded_outcomes,
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entrypoint

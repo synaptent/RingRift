@@ -72,6 +72,10 @@ class GameResult:
     game_idx: int
     duration_sec: float
     effective_temps: Optional[np.ndarray] = None  # (N,) Per-sample effective temperature
+    # Auxiliary task targets (2025-12)
+    game_lengths: Optional[np.ndarray] = None  # (N,) Total game length (same for all samples in game)
+    piece_counts: Optional[np.ndarray] = None  # (N,) Piece count at each sample
+    outcomes: Optional[np.ndarray] = None  # (N,) Outcome class: 0=loss, 1=draw, 2=win
 
 
 def _worker_init(config_dict: dict) -> None:
@@ -249,6 +253,9 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
             # Get globals
             globals_vec = _get_globals(state, current_player)
 
+            # Count total pieces on board for auxiliary task
+            piece_count = _count_pieces(state)
+
             # Store sample (including effective temperature used for this move)
             game_history.append({
                 'features': stacked_features,
@@ -258,6 +265,8 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
                 'policy_indices': np.array(policy_indices, dtype=np.int64),
                 'policy_values': np.array(policy_values, dtype=np.float32),
                 'effective_temp': temp,  # Track temperature used for this sample
+                'piece_count': piece_count,  # Auxiliary task target
+                'move_number': move_count,  # For game_length target
             })
 
             # Make move
@@ -299,6 +308,25 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
             for i, sample in enumerate(game_history):
                 values_mp[i, sample['player'] - 1] = sample['final_value']
 
+        # Auxiliary task targets (2025-12)
+        # Game length: total moves in the game (same for all samples)
+        game_length = move_count
+        game_lengths = np.full(num_samples, game_length, dtype=np.int32)
+
+        # Piece counts: number of pieces at each sample
+        piece_counts = np.array([s['piece_count'] for s in game_history], dtype=np.int32)
+
+        # Outcomes: convert values to class labels (0=loss, 1=draw, 2=win)
+        outcomes = np.zeros(num_samples, dtype=np.int64)
+        for i, sample in enumerate(game_history):
+            val = sample['final_value']
+            if val > 0.3:
+                outcomes[i] = 2  # Win
+            elif val < -0.3:
+                outcomes[i] = 0  # Loss
+            else:
+                outcomes[i] = 1  # Draw
+
         duration = time.time() - start_time
 
         return GameResult(
@@ -313,6 +341,9 @@ def _generate_single_game(args: Tuple[int, int]) -> Optional[GameResult]:
             game_idx=game_idx,
             duration_sec=duration,
             effective_temps=effective_temps,
+            game_lengths=game_lengths,
+            piece_counts=piece_counts,
+            outcomes=outcomes,
         )
 
     except Exception as e:
@@ -327,6 +358,18 @@ def _get_globals(state, current_player: int) -> np.ndarray:
     globals_vec[0] = current_player / 4.0
     globals_vec[1] = getattr(state, 'turn_number', 0) / 200.0
     return globals_vec
+
+
+def _count_pieces(state) -> int:
+    """Count total pieces (rings) on the board."""
+    total = 0
+    if hasattr(state, 'board') and hasattr(state.board, 'stacks'):
+        for stack in state.board.stacks.values():
+            if hasattr(stack, 'rings'):
+                total += len(stack.rings)
+            elif isinstance(stack, (list, tuple)):
+                total += len(stack)
+    return total
 
 
 def generate_dataset_parallel(
@@ -461,12 +504,24 @@ def generate_dataset_parallel(
                 if progress_callback:
                     progress_callback(completed, num_games)
 
-                if completed % 50 == 0:
+                # Enhanced progress logging with ETA
+                progress_interval = max(1, min(50, num_games // 20))
+                if completed % progress_interval == 0 or completed == num_games:
                     elapsed = time.time() - start_time
-                    rate = completed / elapsed
+                    rate = completed / elapsed if elapsed > 0 else 0
+                    remaining = num_games - completed
+                    eta_seconds = remaining / rate if rate > 0 else 0
+                    pct = completed / num_games * 100
+                    samples_so_far = sum(r.num_samples for r in results)
                     logger.info(
-                        f"Progress: {completed}/{num_games} games "
-                        f"({rate:.1f} games/sec)"
+                        "[parallel-selfplay] Game %d/%d (%.1f%%) | %.2f games/s | "
+                        "ETA: %.0fs | %d samples so far",
+                        completed,
+                        num_games,
+                        pct,
+                        rate,
+                        eta_seconds,
+                        samples_so_far,
                     )
 
             except Exception as e:
@@ -479,9 +534,14 @@ def generate_dataset_parallel(
         return 0
 
     total_samples = sum(r.num_samples for r in results)
+    elapsed_total = time.time() - start_time
     logger.info(
-        f"Completed {len(results)} games with {total_samples} samples "
-        f"in {time.time() - start_time:.1f}s"
+        "[parallel-selfplay] Completed %d/%d games with %d samples in %.1fs (%.2f games/s)",
+        len(results),
+        num_games,
+        total_samples,
+        elapsed_total,
+        len(results) / elapsed_total if elapsed_total > 0 else 0,
     )
 
     # Concatenate all data
@@ -506,6 +566,11 @@ def generate_dataset_parallel(
     # Concatenate per-sample effective temperatures
     all_effective_temps = np.concatenate([r.effective_temps for r in results], axis=0)
 
+    # Concatenate auxiliary task targets (2025-12)
+    all_game_lengths = np.concatenate([r.game_lengths for r in results], axis=0)
+    all_piece_counts = np.concatenate([r.piece_counts for r in results], axis=0)
+    all_outcomes = np.concatenate([r.outcomes for r in results], axis=0)
+
     # Save to file
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
@@ -524,6 +589,10 @@ def generate_dataset_parallel(
             float(config.move_temp_threshold),
             float(config.use_temperature_decay),
         ], dtype=np.float32),
+        # Auxiliary task targets (2025-12)
+        'game_lengths': all_game_lengths,
+        'piece_counts': all_piece_counts,
+        'outcomes': all_outcomes,
     }
     if all_values_mp is not None:
         save_dict['values_mp'] = all_values_mp
