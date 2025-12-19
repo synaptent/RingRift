@@ -144,9 +144,14 @@ This helper:
   - `LOADTEST_EMAIL`
   - `LOADTEST_PASSWORD`
 
-- Returns `{ token, userId }`, and the access token is passed into each scenario via its `setup()` function and reused by all VUs.
+- Returns `{ token, userId }`. Scenarios should use `getValidToken(...)` to cache per-VU auth and refresh shortly before expiry for long-running runs.
 
 Using a single helper keeps the load tests aligned with the production auth contract and avoids re-registering users under load.
+
+Auth refresh controls (optional):
+
+- `LOADTEST_AUTH_TOKEN_TTL_S` – default JWT TTL (seconds) when the API does not return `expiresIn`.
+- `LOADTEST_AUTH_REFRESH_WINDOW_S` – safety window before expiry to refresh a token.
 
 ### Scenario 1: Game Creation (`game-creation.js`)
 
@@ -309,7 +314,7 @@ k6 run \
 
 - `ringrift_websocket_connections` gauge
 - Alert threshold: >1000 connections (warning)
-- **Lifecycle metrics to watch** (see `docs/ALERTING_THRESHOLDS.md` and Grafana "Game Performance" / "System Health" dashboards):
+- **Lifecycle metrics to watch** (see `docs/operations/ALERTING_THRESHOLDS.md` and Grafana "Game Performance" / "System Health" dashboards):
   - `ringrift_websocket_reconnection_total{result}` – reconnection outcomes (success/failed/timeout); sustained `result="timeout"` spikes may trigger `WebSocketReconnectionTimeouts`.
   - `ringrift_game_session_status_current{status}` – in‑memory sessions by derived status; watch for all sessions stuck outside `active_turn` / `active_decision_phase` (see `GameSessionStatusSkew`).
   - `ringrift_game_session_abnormal_termination_total{reason}` – abnormal endings (for example `disconnect_timeout`, `internal_error`, `session_cleanup`); spikes may indicate lifecycle/infra issues (`AbnormalGameSessionTerminationSpike`).

@@ -112,8 +112,15 @@ describe('envFlags helpers', () => {
   // TODO-ENV-ISOLATION: These tests cannot properly test NODE_ENV behavior in Jest
   // because Jest always runs with NODE_ENV=test and the config module caches
   // environment values at load time. jest.resetModules() cannot change NODE_ENV
-  // after the test process starts. These tests would pass in a real environment
-  // or with a dedicated test harness that spawns separate processes per NODE_ENV.
+  // after the test process starts.
+  //
+  // WORKAROUND OPTIONS:
+  // 1. Move to integration tests that spawn child processes with explicit NODE_ENV
+  // 2. Use a test script like: NODE_ENV=production npx ts-node scripts/test-jwt-config.ts
+  // 3. Test via Docker container with different NODE_ENV settings
+  //
+  // STATUS: These tests are validated manually during deployment and remain
+  // skipped in CI until a proper integration test harness is implemented.
   it.skip('allows placeholder JWT secrets in development', async () => {
     process.env = {
       ...process.env,

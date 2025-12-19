@@ -174,7 +174,7 @@ k6 run \
 
 ### Record Results
 
-- [ ] **Update Baseline Doc** - Record measurements in `docs/BASELINE_CAPACITY.md`
+- [ ] **Update Baseline Doc** - Record measurements in `docs/testing/BASELINE_CAPACITY.md`
 - [ ] **Archive Results** - Keep JSON files for comparison
 - [ ] **Note Any Issues** - Document unexpected behavior
 
@@ -182,11 +182,11 @@ k6 run \
 
 ### Test Won't Start
 
-| Symptom                 | Cause              | Fix                    |
-| ----------------------- | ------------------ | ---------------------- |
-| "k6: command not found" | k6 not installed   | `brew install k6`      |
-| "Connection refused"    | Server not running | `npm run dev`          |
-| "401 Unauthorized"      | Missing auth setup | Check test user exists |
+| Symptom                 | Cause                               | Fix                                                    |
+| ----------------------- | ----------------------------------- | ------------------------------------------------------ |
+| "k6: command not found" | k6 not installed                    | `brew install k6`                                      |
+| "Connection refused"    | Server not running                  | `npm run dev`                                          |
+| "401 Unauthorized"      | Missing auth setup or expired token | Check test user exists; verify auth refresh window/TTL |
 
 ### Test Fails Early
 
@@ -229,7 +229,7 @@ cat tests/load/results/*_summary.json | jq .
 
 ## Related Documentation
 
-- [docs/BASELINE_CAPACITY.md](../../docs/BASELINE_CAPACITY.md) - Baseline tracking
+- [docs/testing/BASELINE_CAPACITY.md](../../docs/testing/BASELINE_CAPACITY.md) - Baseline tracking
 - [tests/load/README.md](./README.md) - Load test overview
 - [tests/load/configs/baseline.json](./configs/baseline.json) - Test configuration
 - [tests/load/config/thresholds.json](./config/thresholds.json) - SLO definitions

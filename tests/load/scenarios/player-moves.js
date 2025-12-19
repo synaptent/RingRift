@@ -36,7 +36,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
-import { loginAndGetToken } from '../auth/helpers.js';
+import { loginAndGetToken, getValidToken } from '../auth/helpers.js';
 import { makeHandleSummary } from '../summary.js';
 
 const thresholdsConfig = JSON.parse(open('../config/thresholds.json'));
@@ -45,6 +45,7 @@ const thresholdsConfig = JSON.parse(open('../config/thresholds.json'));
 export const contractFailures = new Counter('contract_failures_total');
 export const idLifecycleMismatches = new Counter('id_lifecycle_mismatches_total');
 export const capacityFailures = new Counter('capacity_failures_total');
+const authTokenExpired = new Counter('auth_token_expired_total');
 
  // Custom metrics aligned with STRATEGIC_ROADMAP metrics
  const moveSubmissionLatency = new Trend('move_submission_latency_ms');
@@ -210,7 +211,24 @@ export function setup() {
 
 export default function (data) {
   const baseUrl = data.baseUrl;
-  const token = data.token;
+  let token;
+
+  try {
+    const authResult = getValidToken(baseUrl, {
+      apiPrefix: API_PREFIX,
+      tags: { name: 'auth-refresh' },
+      metrics: {
+        contractFailures,
+        capacityFailures,
+      },
+    });
+    token = authResult.token;
+  } catch (err) {
+    capacityFailures.add(1);
+    console.warn(`VU ${__VU}: Auth refresh failed: ${err.message}`);
+    sleep(1);
+    return;
+  }
 
   if (!token) {
     capacityFailures.add(1);
@@ -241,7 +259,7 @@ export default function (data) {
       },
     };
 
-    const createRes = http.post(
+    let createRes = http.post(
       `${baseUrl}${API_PREFIX}/games`,
       JSON.stringify(createPayload),
       {
@@ -251,6 +269,24 @@ export default function (data) {
         },
       }
     );
+
+    if (createRes.status === 401 || createRes.status === 403) {
+      authTokenExpired.add(1);
+      const refreshedToken = refreshAuthToken(baseUrl, 'auth-refresh-create-game');
+      if (refreshedToken) {
+        token = refreshedToken;
+        createRes = http.post(
+          `${baseUrl}${API_PREFIX}/games`,
+          JSON.stringify(createPayload),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+      }
+    }
 
     let createdGameId = null;
     try {
@@ -292,9 +328,20 @@ export default function (data) {
   if (myGameId && token) {
     // Get current game state
     const pollCountBefore = myGamePollCount;
-    const stateRes = http.get(`${baseUrl}${API_PREFIX}/games/${myGameId}`, {
+    let stateRes = http.get(`${baseUrl}${API_PREFIX}/games/${myGameId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+
+    if (stateRes.status === 401 || stateRes.status === 403) {
+      authTokenExpired.add(1);
+      const refreshedToken = refreshAuthToken(baseUrl, 'auth-refresh-get-game');
+      if (refreshedToken) {
+        token = refreshedToken;
+        stateRes = http.get(`${baseUrl}${API_PREFIX}/games/${myGameId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+    }
 
     let game = null;
     let retireGameId = false;
@@ -399,7 +446,7 @@ export default function (data) {
       const moveStart = Date.now();
       movesAttemptedTotal.add(1);
 
-      const moveRes = http.post(
+      let moveRes = http.post(
         `${baseUrl}${API_PREFIX}/games/${myGameId}/moves`,
         JSON.stringify(movePayload),
         {
@@ -410,6 +457,25 @@ export default function (data) {
           tags: { name: 'submit-move' },
         }
       );
+
+      if (moveRes.status === 401 || moveRes.status === 403) {
+        authTokenExpired.add(1);
+        const refreshedToken = refreshAuthToken(baseUrl, 'auth-refresh-submit-move');
+        if (refreshedToken) {
+          token = refreshedToken;
+          moveRes = http.post(
+            `${baseUrl}${API_PREFIX}/games/${myGameId}/moves`,
+            JSON.stringify(movePayload),
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              tags: { name: 'submit-move' },
+            }
+          );
+        }
+      }
       const moveLatency = Date.now() - moveStart;
 
       // Track metrics
@@ -573,6 +639,27 @@ export function teardown(data) {
   console.log('  - stalled_moves_total (should be <0.5% of total moves)');
   console.log('  - move_submission_success_rate (should stay >=0.95 in harness mode)');
   console.log('  - moves_attempted_total (should be >0 when MOVE_HTTP_ENDPOINT_ENABLED=true)');
+}
+
+function refreshAuthToken(baseUrl, tagName) {
+  try {
+    const refreshed = getValidToken(baseUrl, {
+      apiPrefix: API_PREFIX,
+      tags: { name: tagName || 'auth-refresh-expired' },
+      metrics: {
+        contractFailures,
+        capacityFailures,
+      },
+      forceRefresh: true,
+    });
+    return refreshed.token;
+  } catch (err) {
+    capacityFailures.add(1);
+    console.warn(
+      `VU ${__VU}: Auth refresh failed (${tagName || 'auth-refresh-expired'}): ${err.message}`
+    );
+    return null;
+  }
 }
 
 export const handleSummary = makeHandleSummary('player-moves');

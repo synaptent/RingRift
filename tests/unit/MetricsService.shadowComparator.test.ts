@@ -4,22 +4,27 @@ import { MetricsService, getMetricsService } from '../../src/server/services/Met
 /**
  * Tests for orchestrator shadow metrics bridge.
  *
- * NOTE: These tests are currently skipped because the shadow comparator
- * metrics feature (refreshOrchestratorShadowMetrics) was never implemented
- * in MetricsService. When the feature is implemented, remove the skip.
+ * STATUS: DEPRECATED (December 2025)
  *
- * Related: The FSM is now the canonical orchestrator (RR-CANON-R070).
- * Shadow comparison between legacy and FSM orchestration may be reconsidered
- * as part of future FSM migration work.
+ * These tests were designed for a shadow comparator feature that was never
+ * implemented. The feature would have compared legacy orchestration with the
+ * new FSM orchestration to detect mismatches during migration.
+ *
+ * Since RR-CANON-R070 established FSM as the canonical orchestrator and
+ * Phase 4 migration is complete, shadow comparison is no longer needed.
+ * This test file is preserved for reference but tests remain skipped.
+ *
+ * Decision: Remove this file during next test cleanup sprint if FSM
+ * migration remains stable.
  */
-describe('MetricsService orchestrator shadow metrics bridge', () => {
+describe('MetricsService orchestrator shadow metrics bridge [DEPRECATED]', () => {
   beforeEach(() => {
     MetricsService.resetInstance();
     client.register.clear();
   });
 
-  // TODO: Implement refreshOrchestratorShadowMetrics in MetricsService
-  // or remove this test if shadow comparison metrics are no longer needed
+  // DEPRECATED: Shadow comparator feature was never implemented and is now
+  // obsolete following FSM migration completion. Test preserved for reference.
   it.skip('exposes shadow comparator gauges in /metrics output', async () => {
     const metrics = getMetricsService();
 

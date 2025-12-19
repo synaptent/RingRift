@@ -21,6 +21,7 @@ const scenariosConfig = JSON.parse(open('../config/scenarios.json'));
 export const contractFailures = new Counter('contract_failures_total');
 export const idLifecycleMismatches = new Counter('id_lifecycle_mismatches_total');
 export const capacityFailures = new Counter('capacity_failures_total');
+const authTokenExpired = new Counter('auth_token_expired_total');
 
 // Custom metrics
 const concurrentActiveGames = new Gauge('concurrent_active_games');
@@ -327,14 +328,31 @@ function createGame(baseUrl, token) {
     }),
   };
 
+  let activeToken = token;
   const createStart = Date.now();
-  const createRes = http.post(`${baseUrl}${API_PREFIX}/games`, JSON.stringify(gameConfig), {
+  let createRes = http.post(`${baseUrl}${API_PREFIX}/games`, JSON.stringify(gameConfig), {
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${activeToken}`,
     },
     tags: { name: 'create-game' },
   });
+
+  if (createRes.status === 401 || createRes.status === 403) {
+    authTokenExpired.add(1);
+    const refreshedToken = refreshAuthToken(baseUrl, 'auth-refresh-create-game');
+    if (refreshedToken) {
+      activeToken = refreshedToken;
+      createRes = http.post(`${baseUrl}${API_PREFIX}/games`, JSON.stringify(gameConfig), {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${activeToken}`,
+        },
+        tags: { name: 'create-game' },
+      });
+    }
+  }
+
   const createDuration = Date.now() - createStart;
 
   let createdGameId = null;
@@ -376,11 +394,25 @@ function createGame(baseUrl, token) {
 function pollGameState(baseUrl, token) {
   // Step 2: Continuously monitor game state (validates state management at scale)
   const pollCountBefore = myGamePollCount;
+  let activeToken = token;
   const stateStart = Date.now();
-  const stateRes = http.get(`${baseUrl}${API_PREFIX}/games/${myGameId}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  let stateRes = http.get(`${baseUrl}${API_PREFIX}/games/${myGameId}`, {
+    headers: { Authorization: `Bearer ${activeToken}` },
     tags: { name: 'get-game' },
   });
+
+  if (stateRes.status === 401 || stateRes.status === 403) {
+    authTokenExpired.add(1);
+    const refreshedToken = refreshAuthToken(baseUrl, 'auth-refresh-get-game');
+    if (refreshedToken) {
+      activeToken = refreshedToken;
+      stateRes = http.get(`${baseUrl}${API_PREFIX}/games/${myGameId}`, {
+        headers: { Authorization: `Bearer ${activeToken}` },
+        tags: { name: 'get-game' },
+      });
+    }
+  }
+
   const stateDuration = Date.now() - stateStart;
 
   let stateValid = false;
@@ -502,6 +534,27 @@ function pollGameState(baseUrl, token) {
     markGameInactive();
     myGameId = null;
     myGamePollCount = 0;
+  }
+}
+
+function refreshAuthToken(baseUrl, tagName) {
+  try {
+    const refreshed = getValidToken(baseUrl, {
+      apiPrefix: API_PREFIX,
+      tags: { name: tagName || 'auth-refresh-expired' },
+      metrics: {
+        contractFailures,
+        capacityFailures,
+      },
+      forceRefresh: true,
+    });
+    return refreshed.token;
+  } catch (err) {
+    capacityFailures.add(1);
+    console.warn(
+      `VU ${__VU}: Auth refresh failed (${tagName || 'auth-refresh-expired'}): ${err.message}`
+    );
+    return null;
   }
 }
 

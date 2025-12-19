@@ -374,8 +374,8 @@ echo "╚═══════════════════════�
 echo ""
 
 # Remind about documentation
-if [[ -f "$PROJECT_ROOT/docs/BASELINE_CAPACITY.md" ]]; then
-    log_info "If this establishes a new baseline, update: docs/BASELINE_CAPACITY.md"
+if [[ -f "$PROJECT_ROOT/docs/testing/BASELINE_CAPACITY.md" ]]; then
+    log_info "If this establishes a new baseline, update: docs/testing/BASELINE_CAPACITY.md"
 fi
 
 # Exit with combined status

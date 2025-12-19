@@ -254,7 +254,7 @@ This suite:
 
 It is a fast, non-exhaustive guardrail to catch regressions where metrics are
 disabled or orchestrator gauges are removed/renamed, and complements the
-alert definitions and dashboard guidance in `docs/ALERTING_THRESHOLDS.md`.
+alert definitions and dashboard guidance in `docs/operations/ALERTING_THRESHOLDS.md`.
 
 CI runs these lanes with the orchestrator adapter forced ON:
 
@@ -334,7 +334,7 @@ and inspect `/metrics` for:
 - `ringrift_rules_parity_mismatches_total{suite="runtime_python_mode",mismatch_type=...}`
 - `ringrift_orchestrator_shadow_mismatch_rate`
 
-This profile is **not** used by default in CI (which runs with `RINGRIFT_RULES_MODE=ts`); it is intended for ad‑hoc parity investigations and to exercise the shadow‑mode counters and alerts described in `docs/ALERTING_THRESHOLDS.md` and `docs/ORCHESTRATOR_ROLLOUT_PLAN.md`.
+This profile is **not** used by default in CI (which runs with `RINGRIFT_RULES_MODE=ts`); it is intended for ad‑hoc parity investigations and to exercise the shadow‑mode counters and alerts described in `docs/operations/ALERTING_THRESHOLDS.md` and `docs/ORCHESTRATOR_ROLLOUT_PLAN.md`.
 
 ### High-Level Testing Overview (by purpose)
 

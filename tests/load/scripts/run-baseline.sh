@@ -285,8 +285,8 @@ echo "╚═══════════════════════�
 echo ""
 
 # Remind about baseline documentation
-if [[ -f "$PROJECT_ROOT/docs/BASELINE_CAPACITY.md" ]]; then
-    log_info "Update baseline documentation: docs/BASELINE_CAPACITY.md"
+if [[ -f "$PROJECT_ROOT/docs/testing/BASELINE_CAPACITY.md" ]]; then
+    log_info "Update baseline documentation: docs/testing/BASELINE_CAPACITY.md"
 fi
 
 exit $K6_EXIT_CODE

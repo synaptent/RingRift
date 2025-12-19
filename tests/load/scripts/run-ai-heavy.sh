@@ -310,8 +310,8 @@ echo "║  Summary:    $SUMMARY_FILE"
 echo "╚════════════════════════════════════════════════════════╝"
 echo ""
 
-if [[ -f "$PROJECT_ROOT/docs/BASELINE_CAPACITY.md" ]]; then
-    log_info "If this probe informs capacity limits, update: docs/BASELINE_CAPACITY.md"
+if [[ -f "$PROJECT_ROOT/docs/testing/BASELINE_CAPACITY.md" ]]; then
+    log_info "If this probe informs capacity limits, update: docs/testing/BASELINE_CAPACITY.md"
 fi
 
 exit $K6_EXIT_CODE

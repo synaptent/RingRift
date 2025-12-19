@@ -809,6 +809,68 @@ export const territoryRuleScenarios: TerritoryRuleScenario[] = [
     description:
       'Two synthetic disconnected regions on square8 surfaced to the moving player in a RegionOrderChoice. Tests use this scenario to assert that when the player selects the SECOND option, the sandbox and backend engines both process that region first.',
   },
+  // Hexagonal board territory scenario - fills coverage gap for hex T2 scenarios
+  {
+    kind: 'territory',
+    boardType: 'hexagonal',
+    movingPlayer: 1,
+    regions: [
+      {
+        // Hex coords: cluster of 3 cells in a triangle pattern (q+r+s=0)
+        spaces: [
+          { x: -5, y: 3, z: 2 },
+          { x: -4, y: 3, z: 1 },
+          { x: -5, y: 4, z: 1 },
+        ],
+        controllingPlayer: 1,
+        victimPlayer: 2,
+        movingPlayerHasOutsideStack: true,
+        outsideStackPosition: { x: 0, y: 0, z: 0 },
+        selfEliminationStackHeight: 2,
+      },
+    ],
+    ref: {
+      id: 'Rules_12_2_Q23_hex_triangle_region_with_self_elimination',
+      rulesSections: ['§12.2', '§12.3'],
+      faqRefs: ['Q23'],
+    },
+    description:
+      'Hexagonal board territory processing with self-elimination prerequisite: Player 1 controls a triangular disconnected region containing Player 2 stacks, has an outside stack at origin, and must perform mandatory self-elimination before processing the region.',
+  },
+  {
+    kind: 'territory',
+    boardType: 'hexagonal',
+    movingPlayer: 1,
+    regions: [
+      {
+        // First region: small cluster near edge
+        spaces: [
+          { x: -6, y: 4, z: 2 },
+          { x: -5, y: 4, z: 1 },
+        ],
+        controllingPlayer: 0, // Neutral/shared for region-order test
+        victimPlayer: 0,
+        movingPlayerHasOutsideStack: true,
+      },
+      {
+        // Second region: another cluster at opposite corner
+        spaces: [
+          { x: 4, y: -6, z: 2 },
+          { x: 5, y: -6, z: 1 },
+        ],
+        controllingPlayer: 0,
+        victimPlayer: 0,
+        movingPlayerHasOutsideStack: true,
+      },
+    ],
+    ref: {
+      id: 'Rules_12_3_region_order_choice_two_regions_hexagonal',
+      rulesSections: ['§12.3'],
+      faqRefs: ['Q20'],
+    },
+    description:
+      'Two disconnected regions on hexagonal board surfaced to the moving player in a RegionOrderChoice. Tests use this scenario to assert that when the player selects either region, the engines correctly process that region first, following the same semantics as square board region ordering.',
+  },
 ];
 
 /**
