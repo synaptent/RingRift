@@ -448,12 +448,15 @@ class Safeguards:
         with self._counts_lock:
             task_counts = dict(self._task_counts)
 
+        # Get circuit breaker states from canonical breaker
         circuit_states = {}
         with self._cb_lock:
-            for name, cb in self._circuit_breakers.items():
-                circuit_states[name] = {
-                    "state": cb.state.value,
-                    "failure_count": cb.failure_count,
+            all_states = self._circuit_breaker.get_all_states()
+            for target, status in all_states.items():
+                circuit_states[target] = {
+                    "state": status.state.value,
+                    "failure_count": status.failure_count,
+                    "consecutive_opens": status.consecutive_opens,
                 }
 
         return {
@@ -483,13 +486,6 @@ class Safeguards:
     # ==========================================
     # Internal Methods
     # ==========================================
-
-    def _get_circuit_breaker(self, name: str) -> CircuitBreaker:
-        """Get or create a circuit breaker."""
-        with self._cb_lock:
-            if name not in self._circuit_breakers:
-                self._circuit_breakers[name] = CircuitBreaker(name, config=self.config)
-            return self._circuit_breakers[name]
 
     def _get_node_tracker(self, node_id: str) -> SpawnRateTracker:
         """Get or create a spawn rate tracker for a node."""

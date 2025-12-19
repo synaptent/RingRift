@@ -102,70 +102,8 @@ class TransportResult:
         }
 
 
-class CircuitBreaker:
-    """Circuit breaker for fault tolerance.
-
-    States:
-    - closed: Normal operation, requests allowed
-    - open: Too many failures, requests blocked
-    - half-open: Testing if service recovered
-
-    Usage:
-        breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=300)
-
-        if breaker.can_attempt():
-            try:
-                result = await some_operation()
-                breaker.record_success()
-            except Exception:
-                breaker.record_failure()
-    """
-
-    def __init__(
-        self,
-        failure_threshold: int = DEFAULT_FAILURE_THRESHOLD,
-        recovery_timeout: int = DEFAULT_RECOVERY_TIMEOUT,
-    ):
-        self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
-        self.failures = 0
-        self.last_failure = 0.0
-        self.state = "closed"
-
-    def record_success(self) -> None:
-        """Record a successful operation, reset failure count."""
-        self.failures = 0
-        self.state = "closed"
-
-    def record_failure(self) -> None:
-        """Record a failed operation, potentially open circuit."""
-        self.failures += 1
-        self.last_failure = time.time()
-        if self.failures >= self.failure_threshold:
-            self.state = "open"
-            logger.warning(
-                f"Circuit breaker opened after {self.failures} failures"
-            )
-
-    def can_attempt(self) -> bool:
-        """Check if an operation can be attempted."""
-        if self.state == "closed":
-            return True
-        if time.time() - self.last_failure > self.recovery_timeout:
-            self.state = "half-open"
-            return True
-        return False
-
-    def reset(self) -> None:
-        """Reset the circuit breaker to initial state."""
-        self.failures = 0
-        self.last_failure = 0.0
-        self.state = "closed"
-
-    @property
-    def is_open(self) -> bool:
-        """Check if circuit is currently open."""
-        return self.state == "open"
+# Use canonical circuit breaker from distributed module
+from app.distributed.circuit_breaker import CircuitBreaker, CircuitState
 
 
 class ClusterTransport:
@@ -188,13 +126,24 @@ class ClusterTransport:
         )
         self.connect_timeout = connect_timeout
         self.operation_timeout = operation_timeout
-        self._circuit_breakers: Dict[str, CircuitBreaker] = {}
+        # Canonical circuit breaker (tracks all targets internally)
+        self._circuit_breaker = CircuitBreaker(
+            failure_threshold=DEFAULT_FAILURE_THRESHOLD,
+            recovery_timeout=float(DEFAULT_RECOVERY_TIMEOUT),
+            operation_type="cluster_transport",
+        )
 
-    def get_circuit_breaker(self, node_id: str) -> CircuitBreaker:
-        """Get or create a circuit breaker for a node."""
-        if node_id not in self._circuit_breakers:
-            self._circuit_breakers[node_id] = CircuitBreaker()
-        return self._circuit_breakers[node_id]
+    def can_attempt(self, node_id: str) -> bool:
+        """Check if circuit allows operation for a node."""
+        return self._circuit_breaker.can_execute(node_id)
+
+    def record_success(self, node_id: str) -> None:
+        """Record successful operation for a node."""
+        self._circuit_breaker.record_success(node_id)
+
+    def record_failure(self, node_id: str) -> None:
+        """Record failed operation for a node."""
+        self._circuit_breaker.record_failure(node_id)
 
     async def transfer_file(
         self,
@@ -214,8 +163,7 @@ class ClusterTransport:
         Returns:
             TransportResult with success status and details
         """
-        breaker = self.get_circuit_breaker(node.hostname)
-        if not breaker.can_attempt():
+        if not self.can_attempt(node.hostname):
             return TransportResult(
                 success=False,
                 error="Circuit breaker open",
@@ -236,7 +184,7 @@ class ClusterTransport:
                     local_path, full_remote_path, node, direction
                 )
                 if result.success:
-                    breaker.record_success()
+                    self.record_success(node.hostname)
                     result.transport_used = transport_name
                     result.latency_ms = (time.time() - start_time) * 1000
                     return result
@@ -246,7 +194,7 @@ class ClusterTransport:
                 )
                 continue
 
-        breaker.record_failure()
+        self.record_failure(node.hostname)
         return TransportResult(
             success=False,
             error="All transports failed",
@@ -356,8 +304,8 @@ class ClusterTransport:
         Returns:
             TransportResult with response data
         """
-        breaker = self.get_circuit_breaker(f"{node.hostname}_http")
-        if not breaker.can_attempt():
+        http_target = f"{node.hostname}_http"
+        if not self.can_attempt(http_target):
             return TransportResult(
                 success=False,
                 error="HTTP circuit breaker open",
@@ -393,7 +341,7 @@ class ClusterTransport:
                         response_data = await resp.text()
 
                     if resp.status >= 200 and resp.status < 300:
-                        breaker.record_success()
+                        self.record_success(http_target)
                         return TransportResult(
                             success=True,
                             transport_used="http",
@@ -401,7 +349,7 @@ class ClusterTransport:
                             latency_ms=(time.time() - start_time) * 1000,
                         )
                     else:
-                        breaker.record_failure()
+                        self.record_failure(http_target)
                         return TransportResult(
                             success=False,
                             error=f"HTTP {resp.status}",
@@ -410,14 +358,14 @@ class ClusterTransport:
                         )
 
         except asyncio.TimeoutError:
-            breaker.record_failure()
+            self.record_failure(http_target)
             return TransportResult(
                 success=False,
                 error="HTTP request timeout",
                 latency_ms=(time.time() - start_time) * 1000,
             )
         except Exception as e:
-            breaker.record_failure()
+            self.record_failure(http_target)
             return TransportResult(
                 success=False,
                 error=str(e),
@@ -481,18 +429,19 @@ class ClusterTransport:
 
     def reset_circuit_breakers(self) -> None:
         """Reset all circuit breakers."""
-        for breaker in self._circuit_breakers.values():
-            breaker.reset()
+        self._circuit_breaker.reset_all()
 
     def get_health_summary(self) -> Dict[str, Any]:
         """Get health summary of all circuit breakers."""
+        all_states = self._circuit_breaker.get_all_states()
         return {
-            node_id: {
-                "state": breaker.state,
-                "failures": breaker.failures,
-                "can_attempt": breaker.can_attempt(),
+            target: {
+                "state": status.state.value,
+                "failures": status.failure_count,
+                "can_attempt": self.can_attempt(target),
+                "consecutive_opens": status.consecutive_opens,
             }
-            for node_id, breaker in self._circuit_breakers.items()
+            for target, status in all_states.items()
         }
 
 
