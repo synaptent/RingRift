@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from app.models import BoardType
+from app.utils.paths import AI_SERVICE_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class SelfplayConfig:
     max_players: int = 4
     graded_outcomes: bool = False
     history_length: int = 3
+    feature_version: int = 1
     # Gumbel-MCTS specific settings
     gumbel_simulations: int = 64
     gumbel_top_k: int = 16
@@ -381,6 +383,7 @@ def generate_dataset_parallel(
     max_moves: int = 10000,
     num_players: int = 2,
     history_length: int = 3,
+    feature_version: int = 1,
     engine: str = "descent",
     nn_model_id: Optional[str] = None,
     multi_player_values: bool = False,
@@ -445,6 +448,7 @@ def generate_dataset_parallel(
         max_players=max_players,
         graded_outcomes=graded_outcomes,
         history_length=history_length,
+        feature_version=feature_version,
         gumbel_simulations=gumbel_simulations,
         gumbel_top_k=gumbel_top_k,
         gumbel_c_visit=gumbel_c_visit,
@@ -455,8 +459,7 @@ def generate_dataset_parallel(
         opening_temperature=opening_temperature,
     )
     # Get ai-service root path to pass to workers
-    from pathlib import Path
-    ai_service_root = str(Path(__file__).resolve().parents[2])
+    ai_service_root = str(AI_SERVICE_ROOT)
 
     config_dict = {
         'board_type': config.board_type,
@@ -585,6 +588,7 @@ def generate_dataset_parallel(
         'pol_values': np.array(all_pol_values, dtype=object),
         'policy_encoding': np.asarray("board_aware"),
         'history_length': np.asarray(int(config.history_length)),
+        'feature_version': np.asarray(int(config.feature_version)),
         # Per-sample effective temperature (for temperature-aware training)
         'effective_temps': all_effective_temps,
         # Temperature config metadata (for reproducibility/analysis)

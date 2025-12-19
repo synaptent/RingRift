@@ -72,10 +72,40 @@ except ImportError:
 # ============================================
 
 DATA_DIR = ROOT / "data"
-GAMES_DIR = DATA_DIR / "games"
-MODELS_DIR = ROOT / "models"
-TRAINING_DIR = DATA_DIR / "training"
 LOGS_DIR = ROOT / "logs"
+
+try:
+    from app.distributed.storage_provider import get_storage_provider
+except Exception:
+    get_storage_provider = None
+
+
+def _resolve_storage_paths() -> Tuple[List[Path], Path, Path, List[Path]]:
+    if get_storage_provider:
+        provider = get_storage_provider()
+        selfplay_dir = provider.selfplay_dir
+        training_dir = provider.training_dir
+        models_dir = provider.models_dir
+        elo_db_paths = [provider.paths.elo_database]
+    else:
+        selfplay_dir = DATA_DIR / "selfplay"
+        training_dir = DATA_DIR / "training"
+        models_dir = ROOT / "models"
+        elo_db_paths = [DATA_DIR / "unified_elo.db"]
+
+    games_dirs: List[Path] = []
+    for candidate in [DATA_DIR / "games", selfplay_dir]:
+        if candidate not in games_dirs:
+            games_dirs.append(candidate)
+
+    fallback_elo = DATA_DIR / "unified_elo.db"
+    if fallback_elo not in elo_db_paths:
+        elo_db_paths.append(fallback_elo)
+
+    return games_dirs, models_dir, training_dir, elo_db_paths
+
+
+GAMES_DIRS, MODELS_DIR, TRAINING_DIR, ELO_DB_PATHS = _resolve_storage_paths()
 
 DEFAULT_DATA_PORT = 8766
 DEFAULT_MODEL_PORT = 8765
@@ -92,22 +122,28 @@ def _load_hosts_from_config():
         print("[Script] Warning: No config found")
         return []
     try:
-        import yaml
-        with open(config_path) as f:
-            config = yaml.safe_load(f) or {}
+        from app.sync.cluster_hosts import load_hosts_config
+        config = load_hosts_config()
+    except Exception:
+        config = {}
 
+    try:
         # Extract hosts with data servers (prefer Tailscale IPs)
         sources = []
-        for name, host_config in config.get('hosts', {}).items():
-            if host_config.get('status') == 'terminated':
+        for name, host_config in config.get("hosts", {}).items():
+            if host_config.get("status") == "terminated":
                 continue
 
-            # Prefer Tailscale IP, fallback to ssh_host
-            ip = host_config.get('tailscale_ip') or host_config.get('ssh_host')
-            port = host_config.get('worker_port', DEFAULT_DATA_PORT)
+            data_url = host_config.get("data_server_url")
+            if data_url:
+                sources.append(data_url)
+                continue
 
+            ip = host_config.get("tailscale_ip") or host_config.get("ssh_host")
+            port = host_config.get("data_server_port", DEFAULT_DATA_PORT)
             if ip:
-                sources.append(f"http://{ip}:{port}")
+                host = ip.split("@", 1)[1] if "@" in ip else ip
+                sources.append(f"http://{host}:{port}")
 
         return sources
     except Exception as e:
@@ -197,9 +233,15 @@ def build_local_inventory() -> NodeDataInventory:
         last_check=datetime.now().isoformat(),
     )
 
-    # Scan game databases
-    if GAMES_DIR.exists():
-        for db_file in GAMES_DIR.glob("*.db"):
+    # Scan game databases (prefer data/games, then selfplay DBs)
+    seen_game_names: Set[str] = set()
+    for games_dir in GAMES_DIRS:
+        if not games_dir.exists():
+            continue
+        for db_file in games_dir.glob("*.db"):
+            if db_file.name in seen_game_names:
+                continue
+            seen_game_names.add(db_file.name)
             stat = db_file.stat()
             inventory.add_file(DataFile(
                 name=db_file.name,
@@ -222,16 +264,17 @@ def build_local_inventory() -> NodeDataInventory:
             ))
 
     # Scan ELO databases
-    elo_db = DATA_DIR / "unified_elo.db"
-    if elo_db.exists():
-        stat = elo_db.stat()
-        inventory.add_file(DataFile(
-            name="unified_elo.db",
-            path="unified_elo.db",
-            size_bytes=stat.st_size,
-            mtime=stat.st_mtime,
-            category="elo",
-        ))
+    for elo_db in ELO_DB_PATHS:
+        if elo_db.exists():
+            stat = elo_db.stat()
+            inventory.add_file(DataFile(
+                name=elo_db.name,
+                path=f"elo/{elo_db.name}",
+                size_bytes=stat.st_size,
+                mtime=stat.st_mtime,
+                category="elo",
+            ))
+            break
 
     # Scan training data
     if TRAINING_DIR.exists():
@@ -278,52 +321,78 @@ class DataHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.send_health()
         elif self.path.startswith("/games/"):
             # Serve from games directory
-            self.serve_file(GAMES_DIR, self.path[7:])
+            self.serve_file(GAMES_DIRS, self.path[7:])
         elif self.path.startswith("/models/"):
             # Serve from models directory
-            self.serve_file(MODELS_DIR, self.path[8:])
+            self.serve_file([MODELS_DIR], self.path[8:])
         elif self.path.startswith("/training/"):
             # Serve from training directory
-            self.serve_file(TRAINING_DIR, self.path[10:])
+            self.serve_file([TRAINING_DIR], self.path[10:])
+        elif self.path.startswith("/elo/"):
+            self.serve_elo_file(self.path[5:])
         elif self.path == "/unified_elo.db":
-            self.serve_file(DATA_DIR, "unified_elo.db")
+            self.serve_elo_file("unified_elo.db")
         else:
             super().do_GET()
 
-    def serve_file(self, base_dir: Path, filename: str):
+    def serve_file(self, base_dirs: List[Path], filename: str):
         """Serve a specific file from a directory."""
-        filepath = base_dir / filename
-        if filepath.exists() and filepath.is_file():
-            self.send_response(200)
-            self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("Content-Length", str(filepath.stat().st_size))
-            self.end_headers()
-            with open(filepath, "rb") as f:
-                shutil.copyfileobj(f, self.wfile)
-        else:
-            self.send_error(404, f"File not found: {filename}")
+        for base_dir in base_dirs:
+            filepath = base_dir / filename
+            if filepath.exists() and filepath.is_file():
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(filepath.stat().st_size))
+                self.end_headers()
+                with open(filepath, "rb") as f:
+                    shutil.copyfileobj(f, self.wfile)
+                return
+        self.send_error(404, f"File not found: {filename}")
+
+    def serve_elo_file(self, filename: str):
+        """Serve the unified ELO database (supports /elo/ and legacy path)."""
+        for elo_path in ELO_DB_PATHS:
+            if elo_path.exists() and elo_path.name == filename:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(elo_path.stat().st_size))
+                self.end_headers()
+                with open(elo_path, "rb") as f:
+                    shutil.copyfileobj(f, self.wfile)
+                return
+        self.send_error(404, f"File not found: {filename}")
 
     def send_inventory(self):
         """Send JSON inventory of available data."""
         inventory = build_local_inventory()
 
+        categories = {cat: [] for cat in ["games", "models", "training", "elo"]}
+        files_map: Dict[str, Dict[str, Any]] = {}
+
+        for path, f in inventory.files.items():
+            entry = {
+                "name": f.name,
+                "path": f.path,
+                "size_bytes": f.size_bytes,
+                "mtime": f.mtime,
+                "category": f.category,
+                "age_hours": round(f.age_hours, 1),
+            }
+            files_map[path] = entry
+            if f.category in categories:
+                categories[f.category].append(entry)
+
         response = {
             "hostname": inventory.hostname,
             "timestamp": inventory.last_check,
             "total_size_mb": round(inventory.total_size_mb, 2),
-            "files": {
-                path: {
-                    "name": f.name,
-                    "size_bytes": f.size_bytes,
-                    "mtime": f.mtime,
-                    "category": f.category,
-                    "age_hours": round(f.age_hours, 1),
-                }
-                for path, f in inventory.files.items()
-            },
+            "files": files_map,
+            "games": categories["games"],
+            "models": categories["models"],
+            "training": categories["training"],
+            "elo": categories["elo"],
             "summary": {
-                cat: sum(1 for f in inventory.files.values() if f.category == cat)
-                for cat in ["games", "models", "training", "elo"]
+                cat: len(categories[cat]) for cat in ["games", "models", "training", "elo"]
             },
         }
 

@@ -574,10 +574,10 @@ def get_model_version_for_board(board_type: BoardType) -> str:
     Returns
     -------
     str
-        Model version string: 'hex' for hex boards, 'v3' for square8, 'v2' otherwise.
+        Model version string: 'v3' for hex boards and square8, 'v2' otherwise.
     """
     if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
-        return "hex"
+        return "v3"
     elif board_type == BoardType.SQUARE8:
         return "v3"
     else:

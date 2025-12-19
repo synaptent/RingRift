@@ -789,6 +789,7 @@ class DataQualityScorer:
         elo_p2: Optional[float] = None,
         move_entropy: Optional[float] = None,
         game_timestamp: Optional[float] = None,
+        pre_computed_quality: Optional[float] = None,
     ) -> GameQualityScore:
         """
         Score a game's quality for training.
@@ -801,10 +802,29 @@ class DataQualityScorer:
             elo_p2: Elo rating of player 2
             move_entropy: Average move entropy (policy diversity)
             game_timestamp: Unix timestamp when game was played (Phase 7: freshness)
+            pre_computed_quality: Pre-computed quality score from game_quality_scorer.py
+                                  If provided, used as base quality with freshness applied.
 
         Returns:
             GameQualityScore with component scores
         """
+        # If pre-computed quality available (from game_quality_scorer.py at recording time),
+        # use it directly with freshness weighting applied
+        if pre_computed_quality is not None:
+            freshness_score = self.compute_freshness_score(game_timestamp)
+            # Blend pre-computed quality with freshness
+            remaining_weight = 1.0 - self.freshness_weight
+            total_score = (remaining_weight * pre_computed_quality +
+                           self.freshness_weight * freshness_score)
+            return GameQualityScore(
+                game_id=game_id,
+                total_score=total_score,
+                length_score=pre_computed_quality,  # Use as proxy
+                elo_score=0.5,
+                diversity_score=pre_computed_quality,  # Use as proxy
+                decisive_score=1.0 if winner else 0.8,
+                freshness_score=freshness_score,
+            )
         # Length score: Gaussian around optimal length
         if game_length < self.min_game_length:
             length_score = 0.5 * (game_length / self.min_game_length)

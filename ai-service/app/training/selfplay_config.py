@@ -30,11 +30,13 @@ class EngineMode(str, Enum):
     NNUE_GUIDED = "nnue-guided"
     POLICY_ONLY = "policy-only"
     NN_MINIMAX = "nn-minimax"
+    NN_DESCENT = "nn-descent"
     GUMBEL_MCTS = "gumbel-mcts"
     MCTS = "mcts"
     MIXED = "mixed"
     DIVERSE = "diverse"
     RANDOM = "random"
+    DESCENT_ONLY = "descent-only"
     MAXN = "maxn"
     BRS = "brs"
 
@@ -106,6 +108,37 @@ class SelfplayConfig:
     source: str = "selfplay"
     profile_id: Optional[str] = None
 
+    # Heuristic weights (for heuristic-based engines)
+    weights_file: Optional[str] = None
+    weights_profile: Optional[str] = None
+
+    # Worker coordination (for distributed selfplay)
+    worker_id: Optional[str] = None
+
+    # Telemetry settings
+    telemetry_path: Optional[str] = None
+    telemetry_interval: int = 50  # seconds
+
+    # NN batching (for distributed/GPU selfplay)
+    nn_batch_enabled: bool = False
+    nn_batch_timeout_ms: int = 50
+    nn_max_batch_size: int = 256
+
+    # Shadow validation (for quality checking)
+    shadow_validation: bool = False
+    shadow_sample_rate: float = 0.05
+    shadow_threshold: float = 0.001
+
+    # Game rules customization
+    lps_victory_rounds: int = 3
+    min_game_length: int = 0
+    random_opening_moves: int = 0
+
+    # Distributed selfplay settings
+    hosts: Optional[str] = None
+    max_parallel_per_host: int = 2
+    difficulty_band: str = "light"  # "light", "canonical", etc.
+
     # Additional engine-specific options
     extra_options: Dict[str, Any] = field(default_factory=dict)
 
@@ -116,7 +149,10 @@ class SelfplayConfig:
 
         # Convert string engine mode to enum
         if isinstance(self.engine_mode, str):
-            self.engine_mode = EngineMode(self.engine_mode)
+            engine_mode = self.engine_mode
+            if engine_mode == "random-only":
+                engine_mode = "random"
+            self.engine_mode = EngineMode(engine_mode)
 
         # Convert string output format to enum
         if isinstance(self.output_format, str):
@@ -223,11 +259,15 @@ def create_argument_parser(
 
     # Engine settings
     engine_group = parser.add_argument_group("Engine Settings")
+    engine_choices = [e.value for e in EngineMode]
+    if "random-only" not in engine_choices:
+        engine_choices.append("random-only")
+
     engine_group.add_argument(
         "--engine-mode", "-e",
         type=str,
         default="nnue-guided",
-        choices=[e.value for e in EngineMode],
+        choices=engine_choices,
         help="AI engine mode (default: nnue-guided)",
     )
     engine_group.add_argument(
@@ -337,6 +377,119 @@ def create_argument_parser(
             help="Sync interval in seconds (default: 300)",
         )
 
+    # Heuristic weights
+    weights_group = parser.add_argument_group("Heuristic Weights")
+    weights_group.add_argument(
+        "--weights-file",
+        type=str,
+        default=None,
+        help="Path to heuristic weights file (JSON)",
+    )
+    weights_group.add_argument(
+        "--weights-profile",
+        type=str,
+        default=None,
+        help="Profile name within weights file",
+    )
+
+    # Worker/Telemetry settings
+    worker_group = parser.add_argument_group("Worker Settings")
+    worker_group.add_argument(
+        "--worker-id",
+        type=str,
+        default=None,
+        help="Worker ID for distributed coordination",
+    )
+    worker_group.add_argument(
+        "--telemetry-path",
+        type=str,
+        default=None,
+        help="Path for telemetry output",
+    )
+    worker_group.add_argument(
+        "--telemetry-interval",
+        type=int,
+        default=50,
+        help="Telemetry reporting interval in seconds (default: 50)",
+    )
+
+    # NN batching
+    nn_group = parser.add_argument_group("NN Batching")
+    nn_group.add_argument(
+        "--nn-batch-enabled",
+        action="store_true",
+        help="Enable NN batching for distributed evaluation",
+    )
+    nn_group.add_argument(
+        "--nn-batch-timeout-ms",
+        type=int,
+        default=50,
+        help="NN batch timeout in milliseconds (default: 50)",
+    )
+    nn_group.add_argument(
+        "--nn-max-batch-size",
+        type=int,
+        default=256,
+        help="Maximum NN batch size (default: 256)",
+    )
+
+    # Shadow validation
+    validation_group = parser.add_argument_group("Validation")
+    validation_group.add_argument(
+        "--shadow-validation",
+        action="store_true",
+        help="Enable shadow validation for quality checking",
+    )
+    validation_group.add_argument(
+        "--shadow-sample-rate",
+        type=float,
+        default=0.05,
+        help="Shadow validation sample rate (default: 0.05)",
+    )
+
+    # Game rules customization
+    rules_group = parser.add_argument_group("Game Rules")
+    rules_group.add_argument(
+        "--lps-victory-rounds",
+        type=int,
+        default=3,
+        help="LPS victory rounds required (default: 3)",
+    )
+    rules_group.add_argument(
+        "--min-game-length",
+        type=int,
+        default=0,
+        help="Minimum game length to record (default: 0)",
+    )
+    rules_group.add_argument(
+        "--random-opening-moves",
+        type=int,
+        default=0,
+        help="Random opening moves for diversity (default: 0)",
+    )
+
+    # Distributed settings
+    distributed_group = parser.add_argument_group("Distributed")
+    distributed_group.add_argument(
+        "--hosts",
+        type=str,
+        default=None,
+        help="Comma-separated list of hosts for distributed selfplay",
+    )
+    distributed_group.add_argument(
+        "--max-parallel-per-host",
+        type=int,
+        default=2,
+        help="Max parallel jobs per host (default: 2)",
+    )
+    distributed_group.add_argument(
+        "--difficulty-band",
+        type=str,
+        default="light",
+        choices=["light", "canonical", "full"],
+        help="Difficulty band for game generation (default: light)",
+    )
+
     # Reproducibility
     misc_group = parser.add_argument_group("Miscellaneous")
     misc_group.add_argument(
@@ -381,30 +534,59 @@ def parse_selfplay_args(
 
     # Map parsed args to config
     config = SelfplayConfig(
+        # Core game settings
         board_type=parsed.board,
         num_players=parsed.num_players,
         num_games=parsed.num_games,
+        # Engine settings
         engine_mode=parsed.engine_mode,
         search_depth=parsed.search_depth,
         mcts_simulations=parsed.mcts_simulations,
         temperature=parsed.temperature,
+        # Output settings
         output_format=parsed.output_format,
         output_dir=parsed.output_dir,
         record_db=parsed.record_db,
         lean_db=getattr(parsed, "lean_db", False),
         store_history_entries=not getattr(parsed, "lean_db", False),
         cache_nnue_features=getattr(parsed, "cache_nnue_features", True),
+        # Resource settings
         num_workers=parsed.num_workers,
         batch_size=parsed.batch_size,
         checkpoint_interval=parsed.checkpoint_interval,
         use_gpu=not getattr(parsed, "no_gpu", False),
         gpu_device=getattr(parsed, "gpu_device", 0),
+        # Ramdrive settings
         use_ramdrive=getattr(parsed, "use_ramdrive", False),
         ramdrive_path=getattr(parsed, "ramdrive_path", None),
         sync_interval=getattr(parsed, "sync_interval", 300),
+        # Reproducibility/metadata
         seed=parsed.seed,
         source=parsed.source,
         profile_id=getattr(parsed, "profile_id", None),
+        # Heuristic weights
+        weights_file=getattr(parsed, "weights_file", None),
+        weights_profile=getattr(parsed, "weights_profile", None),
+        # Worker coordination
+        worker_id=getattr(parsed, "worker_id", None),
+        # Telemetry settings
+        telemetry_path=getattr(parsed, "telemetry_path", None),
+        telemetry_interval=getattr(parsed, "telemetry_interval", 50),
+        # NN batching
+        nn_batch_enabled=getattr(parsed, "nn_batch_enabled", False),
+        nn_batch_timeout_ms=getattr(parsed, "nn_batch_timeout_ms", 50),
+        nn_max_batch_size=getattr(parsed, "nn_max_batch_size", 256),
+        # Shadow validation
+        shadow_validation=getattr(parsed, "shadow_validation", False),
+        shadow_sample_rate=getattr(parsed, "shadow_sample_rate", 0.05),
+        # Game rules customization
+        lps_victory_rounds=getattr(parsed, "lps_victory_rounds", 3),
+        min_game_length=getattr(parsed, "min_game_length", 0),
+        random_opening_moves=getattr(parsed, "random_opening_moves", 0),
+        # Distributed settings
+        hosts=getattr(parsed, "hosts", None),
+        max_parallel_per_host=getattr(parsed, "max_parallel_per_host", 2),
+        difficulty_band=getattr(parsed, "difficulty_band", "light"),
     )
 
     return config

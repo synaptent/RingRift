@@ -43,23 +43,31 @@ logger = logging.getLogger(__name__)
 _ENCODER_CACHE: Dict[str, Any] = {}
 
 
-def _get_encoder(board_type_str: str, encoder_version: str = "v3"):
+def _get_encoder(
+    board_type_str: str,
+    encoder_version: str = "v3",
+    feature_version: int = 2,
+):
     """Get or create a cached encoder for the given board type."""
-    cache_key = f"{board_type_str}_{encoder_version}"
+    cache_key = f"{board_type_str}_{encoder_version}_fv{feature_version}"
     if cache_key not in _ENCODER_CACHE:
         # Import here to avoid circular imports and speed up module load
         from app.models import BoardType
         from app.training.encoding import get_encoder_for_board_type
 
         board_type = BoardType(board_type_str)
-        _ENCODER_CACHE[cache_key] = get_encoder_for_board_type(board_type, encoder_version)
+        _ENCODER_CACHE[cache_key] = get_encoder_for_board_type(
+            board_type,
+            encoder_version,
+            feature_version=feature_version,
+        )
 
     return _ENCODER_CACHE[cache_key]
 
 
-def _get_neural_net_encoder(board_type_str: str):
+def _get_neural_net_encoder(board_type_str: str, feature_version: int = 2):
     """Get or create a cached NeuralNetAI encoder for square boards."""
-    cache_key = f"nn_{board_type_str}"
+    cache_key = f"nn_{board_type_str}_fv{feature_version}"
     if cache_key not in _ENCODER_CACHE:
         from app.models import AIConfig, BoardType
         from app.ai.neural_net import NeuralNetAI
@@ -77,6 +85,7 @@ def _get_neural_net_encoder(board_type_str: str):
             use_neural_net=True,
         )
         encoder = NeuralNetAI(player_number=1, config=config)
+        encoder.feature_version = int(feature_version)
 
         board_type = BoardType(board_type_str)
         encoder.board_size = {
@@ -119,6 +128,7 @@ def _encode_single_game(
     board_type_str: str,
     num_players: int,
     encoder_version: str,
+    feature_version: int,
     history_length: int,
     sample_every: int,
     use_board_aware_encoding: bool,
@@ -163,9 +173,16 @@ def _encode_single_game(
 
         # Get appropriate encoder
         if is_hex:
-            encoder = _get_encoder(board_type_str, encoder_version)
+            encoder = _get_encoder(
+                board_type_str,
+                encoder_version=encoder_version,
+                feature_version=feature_version,
+            )
         else:
-            encoder = _get_neural_net_encoder(board_type_str)
+            encoder = _get_neural_net_encoder(
+                board_type_str,
+                feature_version=feature_version,
+            )
 
         # First pass: replay game and collect samples (without values yet)
         pending_samples: List[Tuple[np.ndarray, np.ndarray, int, int, int, str, int]] = []
@@ -360,6 +377,7 @@ class ParallelEncoder:
         board_type: "BoardType",
         num_workers: Optional[int] = None,
         encoder_version: str = "v3",
+        feature_version: int = 2,
         history_length: int = 3,
         sample_every: int = 1,
         use_board_aware_encoding: bool = False,
@@ -371,6 +389,7 @@ class ParallelEncoder:
             board_type: Board type enum
             num_workers: Number of worker processes (default: CPU count - 1)
             encoder_version: "v2" or "v3" for hex boards
+            feature_version: Feature encoding version for global feature layout
             history_length: Number of history frames to stack
             sample_every: Sample every Nth move
             use_board_aware_encoding: Use board-specific policy encoding
@@ -380,6 +399,7 @@ class ParallelEncoder:
         self.board_type = board_type
         self.board_type_str = board_type.value
         self.encoder_version = encoder_version
+        self.feature_version = int(feature_version)
         self.history_length = history_length
         self.sample_every = sample_every
         self.use_board_aware_encoding = use_board_aware_encoding
@@ -436,6 +456,7 @@ class ParallelEncoder:
             board_type_str=self.board_type_str,
             num_players=num_players,
             encoder_version=self.encoder_version,
+            feature_version=self.feature_version,
             history_length=self.history_length,
             sample_every=self.sample_every,
             use_board_aware_encoding=self.use_board_aware_encoding,
@@ -587,6 +608,7 @@ def parallel_encode_games(
     num_players: int,
     num_workers: Optional[int] = None,
     encoder_version: str = "v3",
+    feature_version: int = 2,
     history_length: int = 3,
     sample_every: int = 1,
     use_board_aware_encoding: bool = False,
@@ -600,6 +622,7 @@ def parallel_encode_games(
         num_players: Number of players
         num_workers: Number of workers (default: CPU count - 1)
         encoder_version: Encoder version for hex boards
+        feature_version: Feature encoding version for global feature layout
         history_length: History frame count
         sample_every: Sample every Nth move
         use_board_aware_encoding: Use board-specific encoding
@@ -611,6 +634,7 @@ def parallel_encode_games(
         board_type=board_type,
         num_workers=num_workers,
         encoder_version=encoder_version,
+        feature_version=feature_version,
         history_length=history_length,
         sample_every=sample_every,
         use_board_aware_encoding=use_board_aware_encoding,

@@ -55,6 +55,23 @@ except ImportError:
     MIN_WIN_RATE_PROMOTE = 0.45
     TRAINING_MIN_INTERVAL_SECONDS = 1200
 
+# Import quality config for quality-aware training decisions
+try:
+    from app.config.unified_config import QualityConfig, get_config
+    HAS_QUALITY_CONFIG = True
+except ImportError:
+    HAS_QUALITY_CONFIG = False
+    QualityConfig = None
+
+# Import data manifest for quality scores
+try:
+    from app.distributed.unified_manifest import DataManifest
+    from pathlib import Path
+    HAS_DATA_MANIFEST = True
+except ImportError:
+    HAS_DATA_MANIFEST = False
+    DataManifest = None
+
 
 class TrainingUrgency(Enum):
     """Training urgency levels.
@@ -134,6 +151,7 @@ class TrainingSignals:
         return (f"Urgency={self.urgency.value}, "
                 f"games={self.games_since_last_training}/{self.games_threshold}, "
                 f"elo_trend={self.elo_trend:+.1f}/hr, "
+                f"quality={self.data_quality_score:.2f}, "
                 f"priority={self.priority:.2f}, "
                 f"reason={self.reason}")
 
@@ -148,6 +166,7 @@ class TrainingSignals:
             "games_threshold_ratio": self.games_threshold_ratio,
             "time_threshold_met": self.time_threshold_met,
             "staleness_hours": self.staleness_hours,
+            "data_quality_score": self.data_quality_score,
             "win_rate": self.win_rate,
             "win_rate_regression": self.win_rate_regression,
             "elo_regression_detected": self.elo_regression_detected,
@@ -213,6 +232,78 @@ class UnifiedSignalComputer:
         self._min_interval_seconds: Optional[int] = None
         self._staleness_hours: Optional[float] = None
         self._min_win_rate: Optional[float] = None
+
+        # Quality-aware training (December 2025)
+        self._manifest: Optional[DataManifest] = None
+        self._quality_config: Optional[QualityConfig] = None
+
+    def _get_manifest(self):
+        """Lazily load data manifest for quality scores."""
+        if self._manifest is None and HAS_DATA_MANIFEST:
+            try:
+                # Get manifest path from config or use default
+                config = self._get_config()
+                if config and hasattr(config, 'data_manifest_db'):
+                    manifest_path = Path(__file__).parent.parent.parent / config.data_manifest_db
+                else:
+                    manifest_path = Path(__file__).parent.parent.parent / "data" / "data_manifest.db"
+
+                if manifest_path.exists():
+                    self._manifest = DataManifest(manifest_path)
+                    logger.debug(f"Loaded data manifest from {manifest_path}")
+            except Exception as e:
+                logger.debug(f"Could not load data manifest: {e}")
+        return self._manifest
+
+    def _get_quality_config(self):
+        """Get quality config from unified config."""
+        if self._quality_config is None and HAS_QUALITY_CONFIG:
+            try:
+                config = self._get_config()
+                if config and hasattr(config, 'quality'):
+                    self._quality_config = config.quality
+            except Exception as e:
+                logger.debug(f"Could not load quality config: {e}")
+        return self._quality_config
+
+    def get_data_quality_score(
+        self,
+        config_key: str = "",
+        board_type: Optional[str] = None,
+        num_players: Optional[int] = None,
+    ) -> float:
+        """Get average quality score from manifest.
+
+        Args:
+            config_key: Optional config key (e.g., "square8_2p")
+            board_type: Optional board type filter
+            num_players: Optional player count filter
+
+        Returns:
+            Average quality score (0-1), or 1.0 if unavailable
+        """
+        manifest = self._get_manifest()
+        if not manifest:
+            return 1.0  # Default to 1.0 (no quality filtering)
+
+        try:
+            # Parse config_key if provided
+            if config_key and not board_type:
+                parts = config_key.replace("_", " ").replace("p", "").split()
+                if len(parts) >= 1:
+                    board_type = parts[0]
+                if len(parts) >= 2 and parts[1].isdigit():
+                    num_players = int(parts[1])
+
+            distribution = manifest.get_quality_distribution(
+                board_type=board_type,
+                num_players=num_players,
+            )
+            avg_quality = distribution.get("avg_quality_score", 1.0)
+            return avg_quality if avg_quality > 0 else 1.0
+        except Exception as e:
+            logger.debug(f"Could not get quality distribution: {e}")
+            return 1.0
 
     def _get_config(self):
         """Lazily load config."""
@@ -394,6 +485,11 @@ class UnifiedSignalComputer:
 
                 signals.win_rate_regression = win_rate < self.min_win_rate
 
+            # Get data quality score from manifest
+            signals.data_quality_score = self.get_data_quality_score(
+                config_key=config_key
+            )
+
             # Compute urgency and final recommendation
             signals.urgency, signals.reason = self._compute_urgency(signals)
             signals.priority = self._compute_priority(signals)
@@ -450,7 +546,26 @@ class UnifiedSignalComputer:
         4. Normal (threshold met)
         5. Low (approaching threshold)
         6. None
+
+        Quality modifiers:
+        - Low quality data (< min_quality_for_training) defers urgency
+        - High quality data (> high_quality_threshold) accelerates urgency
         """
+        # Get quality thresholds
+        quality_config = self._get_quality_config()
+        min_quality = 0.3  # Default
+        high_quality = 0.7  # Default
+        if quality_config:
+            min_quality = getattr(quality_config, 'min_quality_for_training', 0.3)
+            high_quality = getattr(quality_config, 'high_quality_threshold', 0.7)
+
+        # Check if data quality is too low - defer training
+        if signals.data_quality_score < min_quality and not signals.elo_regression_detected:
+            return (
+                TrainingUrgency.LOW,
+                f"Data quality too low ({signals.data_quality_score:.2f} < {min_quality}), deferring"
+            )
+
         # Bootstrap takes highest priority
         if signals.is_bootstrap:
             return (
@@ -549,7 +664,26 @@ class UnifiedSignalComputer:
         if signals.win_rate_regression:
             priority += (self.min_win_rate - signals.win_rate) * 50.0
 
-        return priority
+        # Quality modifiers (December 2025)
+        quality_config = self._get_quality_config()
+        high_quality = 0.7
+        min_quality = 0.3
+        if quality_config:
+            high_quality = getattr(quality_config, 'high_quality_threshold', 0.7)
+            min_quality = getattr(quality_config, 'min_quality_for_training', 0.3)
+
+        # High quality data gets priority boost
+        if signals.data_quality_score >= high_quality:
+            quality_boost = (signals.data_quality_score - high_quality) * 30.0
+            priority += quality_boost
+
+        # Low quality data gets priority penalty (unless critical)
+        elif signals.data_quality_score < min_quality:
+            if signals.urgency not in (TrainingUrgency.CRITICAL,):
+                quality_penalty = (min_quality - signals.data_quality_score) * 20.0
+                priority -= quality_penalty
+
+        return max(0.0, priority)
 
     def record_training_started(self, games_count: int, config_key: str = "") -> None:
         """Record that training has started.
@@ -884,6 +1018,12 @@ class SignalMetricsExporter:
             ["config_key"]
         )
 
+        self.data_quality = Gauge(
+            f"{namespace}_data_quality",
+            "Average data quality score (0-1, higher = better)",
+            ["config_key"]
+        )
+
         # Counter metrics (cumulative)
         self.training_triggers = Counter(
             f"{namespace}_triggers_total",
@@ -928,6 +1068,7 @@ class SignalMetricsExporter:
         self.win_rate.labels(config_key=config_key).set(signals.win_rate)
         self.model_count.labels(config_key=config_key).set(signals.model_count)
         self.staleness_hours.labels(config_key=config_key).set(signals.staleness_hours)
+        self.data_quality.labels(config_key=config_key).set(signals.data_quality_score)
 
         # Map urgency to numeric value for graphing
         urgency_value = {

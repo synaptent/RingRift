@@ -56,6 +56,7 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 if str(AI_SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(AI_SERVICE_ROOT))
 
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser
 from app.db.game_replay import GameReplayDB
 from app.game_engine import GameEngine
 from app.rules.history_validation import validate_canonical_config_for_game
@@ -749,73 +750,36 @@ def run_anm_invariants(board_type: str) -> Dict[str, Any]:
 
 
 def main(argv: List[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
+    # Use unified argument parser from SelfplayConfig
+    parser = create_argument_parser(
         description=(
             "Generate a canonical self-play GameReplayDB for a board type and "
             "gate it on TS↔Python parity plus canonical history constraints."
-        )
-    )
-    parser.add_argument(
-        "--board-type",
-        required=True,
-        choices=["square8", "square19", "hexagonal"],
-        help="Board type to run self-play on.",
-    )
-    parser.add_argument(
-        "--num-games",
-        type=int,
-        default=32,
-        help=(
-            "Number of self-play games to run (default: 32). "
-            "Use 0 to skip the soak and only run parity/history gates on "
-            "an existing DB."
         ),
+        include_gpu=False,
+        include_ramdrive=False,
     )
-    parser.add_argument(
-        "--num-players",
-        type=int,
-        choices=[2, 3, 4],
-        default=2,
-        help="Number of players for self-play (default: 2).",
-    )
-    parser.add_argument(
-        "--difficulty-band",
-        type=str,
-        choices=["canonical", "light"],
-        default="light",
-        help=(
-            "AI difficulty band used by the canonical self-play soak. "
-            "'light' avoids heavy MCTS/Descent tiers for faster, more debuggable "
-            "canonical DB generation (default: light)."
-        ),
-    )
+
+    # Add canonical selfplay-specific arguments
+    # Note: --board is provided by base parser, but we need it to be required
+    # We'll handle this in validation below
     parser.add_argument(
         "--parity-limit-games-per-db",
         type=int,
         default=0,
-        help=(
-            "Optional cap on number of games to check when --num-games=0 "
-            "(parity-only mode). Uses check_ts_python_replay_parity.py's "
-            "--limit-games-per-db flag. Default: 0 (check all)."
-        ),
+        help="Optional cap on number of games to check in parity-only mode. Default: 0 (check all).",
     )
     parser.add_argument(
         "--parity-timeout-seconds",
         type=int,
         default=0,
-        help=(
-            "Optional timeout (seconds) applied to the parity/soak subprocess "
-            "invoked by this script. Default: 0 (no timeout)."
-        ),
+        help="Optional timeout (seconds) for parity/soak subprocess. Default: 0 (no timeout).",
     )
     parser.add_argument(
         "--db",
         type=str,
         default=None,
-        help=(
-            "Path to the GameReplayDB SQLite file to write. "
-            "Defaults to data/games/canonical_<board>.db."
-        ),
+        help="Path to the GameReplayDB SQLite file. Defaults to data/games/canonical_<board>.db.",
     )
     parser.add_argument(
         "--summary",
@@ -827,10 +791,7 @@ def main(argv: List[str] | None = None) -> int:
         "--analysis-dir",
         type=str,
         default=None,
-        help=(
-            "Optional directory to write analysis artifacts (game stats, recovery reports). "
-            "Defaults to <summary>.analysis when --summary is provided."
-        ),
+        help="Optional directory to write analysis artifacts.",
     )
     parser.add_argument(
         "--skip-analyses",
@@ -838,43 +799,67 @@ def main(argv: List[str] | None = None) -> int:
         help="Skip running post-soak analysis scripts on the JSONL logs.",
     )
     parser.add_argument(
-        "--hosts",
-        type=str,
-        default=None,
-        help=(
-            "Comma-separated hosts for distributed self-play soak; "
-            "when set, delegates to run_distributed_selfplay_soak."
-        ),
-    )
-    parser.add_argument(
         "--distributed-job-timeout-seconds",
         type=int,
         default=0,
-        help=(
-            "Per-job timeout passed through to run_distributed_selfplay_soak.py when "
-            "--hosts is set. Use 0 to keep that script's default."
-        ),
+        help="Per-job timeout for distributed selfplay. Use 0 for script default.",
     )
     parser.add_argument(
         "--distributed-fetch-timeout-seconds",
         type=int,
         default=0,
-        help=(
-            "scp fetch timeout passed through to run_distributed_selfplay_soak.py when "
-            "--hosts is set. Use 0 to keep that script's default."
-        ),
+        help="scp fetch timeout for distributed selfplay. Use 0 for script default.",
     )
     parser.add_argument(
         "--reset-db",
         action="store_true",
-        help=(
-            "Archive any existing destination DB before generating new games. "
-            "For --hosts, this also controls whether the merge step starts from "
-            "a clean DB (vs merging into the existing DB and deduping by game_id)."
-        ),
+        help="Archive existing destination DB before generating new games.",
     )
 
-    args = parser.parse_args(argv)
+    parsed = parser.parse_args(argv)
+
+    # Validate required --board argument
+    if not parsed.board:
+        parser.error("--board is required (e.g., --board square8)")
+
+    # Create SelfplayConfig for tracking
+    selfplay_config = SelfplayConfig(
+        board_type=parsed.board,
+        num_players=parsed.num_players,
+        num_games=parsed.num_games,
+        difficulty_band=parsed.difficulty_band,
+        hosts=parsed.hosts,
+        source="generate_canonical_selfplay.py",
+        extra_options={
+            "db": parsed.db,
+            "summary": parsed.summary,
+            "analysis_dir": parsed.analysis_dir,
+            "skip_analyses": parsed.skip_analyses,
+            "parity_limit_games_per_db": parsed.parity_limit_games_per_db,
+            "parity_timeout_seconds": parsed.parity_timeout_seconds,
+            "distributed_job_timeout_seconds": parsed.distributed_job_timeout_seconds,
+            "distributed_fetch_timeout_seconds": parsed.distributed_fetch_timeout_seconds,
+            "reset_db": parsed.reset_db,
+        },
+    )
+
+    # Create backward-compatible args object (uses board_type for legacy code)
+    args = type("Args", (), {
+        "board_type": selfplay_config.board_type,  # Map from --board to board_type
+        "num_games": selfplay_config.num_games,
+        "num_players": selfplay_config.num_players,
+        "difficulty_band": selfplay_config.difficulty_band,
+        "hosts": selfplay_config.hosts,
+        "db": selfplay_config.extra_options["db"],
+        "summary": selfplay_config.extra_options["summary"],
+        "analysis_dir": selfplay_config.extra_options["analysis_dir"],
+        "skip_analyses": selfplay_config.extra_options["skip_analyses"],
+        "parity_limit_games_per_db": selfplay_config.extra_options["parity_limit_games_per_db"],
+        "parity_timeout_seconds": selfplay_config.extra_options["parity_timeout_seconds"],
+        "distributed_job_timeout_seconds": selfplay_config.extra_options["distributed_job_timeout_seconds"],
+        "distributed_fetch_timeout_seconds": selfplay_config.extra_options["distributed_fetch_timeout_seconds"],
+        "reset_db": selfplay_config.extra_options["reset_db"],
+    })()
 
     board_type: str = args.board_type
     num_games: int = args.num_games

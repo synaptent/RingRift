@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """Smart Sync Coordinator for unified cluster-wide data management.
 
+.. deprecated:: 2025-12-19
+    For sync operations, prefer :class:`UnifiedDataSyncService` from
+    :mod:`app.distributed.unified_data_sync`. For higher-level coordination,
+    use :class:`SyncCoordinator` from :mod:`app.distributed.sync_coordinator`.
+
+    This coordination layer module provides cluster-wide sync coordination but
+    the distributed layer implementation is more actively maintained.
+
 This module provides centralized coordination for data synchronization across
 all distributed hosts, preventing data silos and ensuring efficient transfers.
 
@@ -64,6 +72,38 @@ from app.coordination.coordinator_base import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Backpressure integration (December 2025)
+try:
+    from app.coordination.queue_monitor import (
+        QueueType,
+        BackpressureLevel,
+        check_backpressure,
+        should_throttle_production,
+        should_stop_production,
+        get_throttle_factor,
+        report_queue_depth,
+    )
+    HAS_QUEUE_MONITOR = True
+except ImportError:
+    HAS_QUEUE_MONITOR = False
+    QueueType = None
+    BackpressureLevel = None
+
+    def check_backpressure(*args, **kwargs):
+        return False
+
+    def should_throttle_production(*args, **kwargs):
+        return False
+
+    def should_stop_production(*args, **kwargs):
+        return False
+
+    def get_throttle_factor(*args, **kwargs):
+        return 1.0
+
+    def report_queue_depth(*args, **kwargs):
+        pass
 
 # Default paths
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
@@ -687,9 +727,33 @@ class SyncCoordinator(CoordinatorBase, SQLitePersistenceMixin):
     # Sync Scheduling
     # =========================================================================
 
-    def get_sync_recommendations(self, max_recommendations: int = 5) -> List[SyncRecommendation]:
-        """Get prioritized sync recommendations for the cluster."""
+    def get_sync_recommendations(
+        self,
+        max_recommendations: int = 5,
+        respect_backpressure: bool = True,
+    ) -> List[SyncRecommendation]:
+        """Get prioritized sync recommendations for the cluster.
+
+        Args:
+            max_recommendations: Maximum number of recommendations to return
+            respect_backpressure: If True, reduce recommendations when under backpressure
+
+        Returns:
+            List of SyncRecommendation objects
+        """
         recommendations = []
+
+        # Check backpressure (December 2025)
+        backpressure_info = self.check_sync_backpressure()
+        if respect_backpressure and backpressure_info["should_stop"]:
+            logger.info(f"Sync backpressure: stopping new syncs ({backpressure_info['reason']})")
+            return []  # No new syncs when hard limit reached
+
+        # Adjust max recommendations based on throttle factor
+        if respect_backpressure and backpressure_info["should_throttle"]:
+            throttle_factor = backpressure_info["throttle_factor"]
+            max_recommendations = max(1, int(max_recommendations * throttle_factor))
+            logger.debug(f"Sync backpressure: throttling to {max_recommendations} recommendations")
 
         # Score and sort hosts by sync priority
         scored_hosts = [
@@ -720,6 +784,12 @@ class SyncCoordinator(CoordinatorBase, SQLitePersistenceMixin):
             else:
                 continue  # No recommendation needed
 
+            # Under backpressure, downgrade non-critical actions
+            if respect_backpressure and backpressure_info["should_throttle"]:
+                if priority not in (SyncPriority.CRITICAL, SyncPriority.HIGH):
+                    action = SyncAction.SKIP
+                    reason = f"Deferred due to backpressure: {reason}"
+
             # Estimate duration based on historical data
             estimated_duration = self._estimate_sync_duration(host, state.estimated_unsynced_games)
 
@@ -730,9 +800,125 @@ class SyncCoordinator(CoordinatorBase, SQLitePersistenceMixin):
                 reason=reason,
                 estimated_games=state.estimated_unsynced_games,
                 estimated_duration_seconds=estimated_duration,
+                metadata={"backpressure": backpressure_info},
             ))
 
         return recommendations
+
+    # =========================================================================
+    # Backpressure Integration (December 2025)
+    # =========================================================================
+
+    def check_sync_backpressure(self) -> Dict[str, Any]:
+        """Check if sync operations should be throttled due to backpressure.
+
+        Returns:
+            Dict with backpressure status:
+            - should_throttle: True if soft limit exceeded
+            - should_stop: True if hard limit exceeded
+            - throttle_factor: 0.0-1.0 multiplier for sync rate
+            - reason: Human-readable reason
+        """
+        if not HAS_QUEUE_MONITOR:
+            return {
+                "should_throttle": False,
+                "should_stop": False,
+                "throttle_factor": 1.0,
+                "reason": "Queue monitor not available",
+            }
+
+        # Check sync queue specifically
+        should_stop = should_stop_production(QueueType.SYNC_QUEUE)
+        should_throttle = should_throttle_production(QueueType.SYNC_QUEUE)
+        throttle_factor = get_throttle_factor(QueueType.SYNC_QUEUE)
+
+        # Also check training data queue - don't sync if training is backlogged
+        training_throttle = should_throttle_production(QueueType.TRAINING_DATA)
+        training_stop = should_stop_production(QueueType.TRAINING_DATA)
+
+        if training_stop:
+            return {
+                "should_throttle": True,
+                "should_stop": True,
+                "throttle_factor": 0.0,
+                "reason": "Training data queue at hard limit",
+            }
+
+        if should_stop:
+            return {
+                "should_throttle": True,
+                "should_stop": True,
+                "throttle_factor": 0.0,
+                "reason": "Sync queue at hard limit",
+            }
+
+        if training_throttle:
+            # Reduce throttle factor further if training is backlogged
+            training_factor = get_throttle_factor(QueueType.TRAINING_DATA)
+            throttle_factor = min(throttle_factor, training_factor)
+            should_throttle = True
+
+        if should_throttle:
+            return {
+                "should_throttle": True,
+                "should_stop": False,
+                "throttle_factor": throttle_factor,
+                "reason": f"Throttling at {throttle_factor:.0%} capacity",
+            }
+
+        return {
+            "should_throttle": False,
+            "should_stop": False,
+            "throttle_factor": 1.0,
+            "reason": "No backpressure",
+        }
+
+    def report_sync_queue_depth(self, depth: Optional[int] = None) -> None:
+        """Report the current sync queue depth for backpressure tracking.
+
+        Args:
+            depth: Queue depth to report. If None, computes from host states.
+        """
+        if not HAS_QUEUE_MONITOR:
+            return
+
+        if depth is None:
+            # Compute depth from host states
+            depth = sum(
+                state.estimated_unsynced_games
+                for state in self._host_states.values()
+                if state.is_reachable
+            )
+
+        report_queue_depth(QueueType.SYNC_QUEUE, depth)
+
+    def should_allow_sync(self, priority: SyncPriority = SyncPriority.NORMAL) -> bool:
+        """Check if a sync operation should be allowed given current backpressure.
+
+        Critical and high priority syncs are always allowed.
+        Normal and low priority are subject to backpressure.
+
+        Args:
+            priority: Priority of the sync operation
+
+        Returns:
+            True if sync should proceed
+        """
+        # Critical and high priority always allowed
+        if priority in (SyncPriority.CRITICAL, SyncPriority.HIGH):
+            return True
+
+        backpressure = self.check_sync_backpressure()
+
+        if backpressure["should_stop"]:
+            return False
+
+        if backpressure["should_throttle"]:
+            # Probabilistic throttling based on factor
+            import random
+            return random.random() < backpressure["throttle_factor"]
+
+        return True
 
     def get_next_sync_target(self) -> Optional[str]:
         """Get the highest priority host that should be synced next."""

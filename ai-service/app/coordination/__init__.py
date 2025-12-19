@@ -408,6 +408,16 @@ from app.coordination.coordinator_base import (
     is_coordinator,
 )
 
+# Unified Event Coordinator (December 2025 - bridges all event systems)
+from app.coordination.unified_event_coordinator import (
+    UnifiedEventCoordinator,
+    CoordinatorStats as EventCoordinatorStats,
+    get_event_coordinator,
+    start_coordinator as start_event_coordinator,
+    stop_coordinator as stop_event_coordinator,
+    get_coordinator_stats as get_event_coordinator_stats,
+)
+
 __all__ = [
     # Task Coordinator (canonical)
     "TaskCoordinator",
@@ -695,4 +705,11 @@ __all__ = [
     "SingletonMixin",
     "CallbackMixin",
     "is_coordinator",
+    # Unified Event Coordinator (bridges all event systems)
+    "UnifiedEventCoordinator",
+    "EventCoordinatorStats",
+    "get_event_coordinator",
+    "start_event_coordinator",
+    "stop_event_coordinator",
+    "get_event_coordinator_stats",
 ]

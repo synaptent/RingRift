@@ -35,6 +35,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.utils.yaml_utils import safe_load_yaml
+
 logger = logging.getLogger(__name__)
 
 
@@ -620,34 +622,29 @@ def create_replicator_from_config(
     Returns:
         Configured ManifestReplicator instance
     """
-    import yaml
-
     replica_hosts = []
+    hosts_data = safe_load_yaml(hosts_config_path, default={}, log_errors=True)
 
-    if hosts_config_path.exists():
-        with open(hosts_config_path) as f:
-            hosts_data = yaml.safe_load(f) or {}
+    # Use standard hosts as replicas (prefer GH200 nodes for redundancy)
+    for name, host_data in hosts_data.get("standard_hosts", {}).items():
+        # Skip training-only hosts, prefer selfplay hosts
+        role = host_data.get("role", "")
+        if "training" in role.lower() and "selfplay" not in role.lower():
+            continue
 
-        # Use standard hosts as replicas (prefer GH200 nodes for redundancy)
-        for name, host_data in hosts_data.get("standard_hosts", {}).items():
-            # Skip training-only hosts, prefer selfplay hosts
-            role = host_data.get("role", "")
-            if "training" in role.lower() and "selfplay" not in role.lower():
-                continue
+        replica_hosts.append(ReplicaHost(
+            name=name,
+            ssh_host=host_data.get("ssh_host", ""),
+            ssh_user=host_data.get("ssh_user", "ubuntu"),
+            ssh_port=host_data.get("ssh_port", 22),
+            remote_path=host_data.get(
+                "data_manifest_path",
+                "~/ringrift/ai-service/data/data_manifest.db"
+            ),
+        ))
 
-            replica_hosts.append(ReplicaHost(
-                name=name,
-                ssh_host=host_data.get("ssh_host", ""),
-                ssh_user=host_data.get("ssh_user", "ubuntu"),
-                ssh_port=host_data.get("ssh_port", 22),
-                remote_path=host_data.get(
-                    "data_manifest_path",
-                    "~/ringrift/ai-service/data/data_manifest.db"
-                ),
-            ))
-
-        # Limit to first N hosts to avoid excessive replication
-        replica_hosts = replica_hosts[:5]
+    # Limit to first N hosts to avoid excessive replication
+    replica_hosts = replica_hosts[:5]
 
     # Default external backup path if on macOS with external drive
     if external_backup_path is None:

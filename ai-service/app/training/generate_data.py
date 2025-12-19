@@ -695,6 +695,7 @@ def generate_dataset(
     seed: Optional[int] = None,
     max_moves: int = 10000,
     history_length: int = 3,
+    feature_version: int = 2,
     batch_size: Optional[int] = None,
     replay_db: Optional[GameReplayDB] = None,
     num_players: int = 2,
@@ -729,6 +730,8 @@ def generate_dataset(
         Maximum moves per game before forcing termination.
     history_length:
         Number of previous feature frames to stack (default: 3).
+    feature_version:
+        Feature encoding version for global feature layout.
     batch_size:
         Optional batch size for buffer flushing (currently unused,
         reserved for future streaming implementation).
@@ -808,6 +811,24 @@ def generate_dataset(
     if not 0.0 <= engine_ratio <= 1.0:
         raise ValueError(f"engine_ratio must be in [0.0, 1.0], got {engine_ratio}")
 
+    feature_version = int(feature_version)
+
+    def _apply_feature_version(ai_obj) -> None:
+        """Propagate feature_version to any attached NeuralNetAI encoder."""
+        nn = getattr(ai_obj, "neural_net", None)
+        if nn is None:
+            return
+        try:
+            nn.feature_version = feature_version
+        except Exception:
+            pass
+        hex_encoder = getattr(nn, "_hex_encoder", None)
+        if hex_encoder is not None:
+            try:
+                hex_encoder.feature_version = feature_version
+            except Exception:
+                pass
+
     def _make_ai(player_num: int, engine_type: str):
         """Create an AI instance for the specified player and engine type."""
         ai_config = AIConfig(
@@ -817,15 +838,17 @@ def generate_dataset(
             nn_model_id=nn_model_id,  # May be None for default behavior
         )
         if engine_type == "descent":
-            return DescentAI(
+            ai = DescentAI(
                 player_number=player_num,
                 config=ai_config,
             )
         else:
-            return MCTSAI(
+            ai = MCTSAI(
                 player_number=player_num,
                 config=ai_config,
             )
+        _apply_feature_version(ai)
+        return ai
 
     def _select_engine_for_player(player_num: int, game_engine: str) -> str:
         """Select engine type for a player based on mixing strategy."""
@@ -840,6 +863,11 @@ def generate_dataset(
     # For mixing modes, we'll rebuild per-game or use the engine selection.
     ai_players: dict = {}
     game_engine_type = engine  # Will be updated per-game in per_game mode
+
+    if ai1 is not None:
+        _apply_feature_version(ai1)
+    if ai2 is not None:
+        _apply_feature_version(ai2)
 
     if engine_mix == "single":
         # Initialize AI players once for all games
@@ -1592,6 +1620,7 @@ def generate_dataset(
         "policy_values": new_policy_values,
         "policy_encoding": np.asarray("board_aware"),
         "history_length": np.asarray(int(history_length)),
+        "feature_version": np.asarray(int(feature_version)),
     }
     if write_metadata:
         save_kwargs.update(
@@ -1631,6 +1660,7 @@ def generate_dataset_gpu_parallel(
     max_moves: int = 10000,
     num_players: int = 2,
     history_length: int = 3,
+    feature_version: int = 2,
     gpu_batch_size: int = 20,
     heuristic_weights: Optional[dict] = None,
 ) -> None:
@@ -1659,6 +1689,8 @@ def generate_dataset_gpu_parallel(
         Number of players in each game (2, 3, or 4).
     history_length:
         Number of previous feature frames to stack (default: 3).
+    feature_version:
+        Feature encoding version for global feature layout.
     gpu_batch_size:
         Number of games to run in parallel on GPU. Higher values use more
         GPU memory but provide better throughput. Recommended: 10-50.
@@ -1691,6 +1723,8 @@ def generate_dataset_gpu_parallel(
         np.random.seed(seed)
         torch.manual_seed(seed)
 
+    feature_version = int(feature_version)
+
     # Use default weights if not provided
     weights = heuristic_weights or dict(BASE_V1_BALANCED_WEIGHTS)
 
@@ -1712,6 +1746,7 @@ def generate_dataset_gpu_parallel(
         player_number=1,
         config=AIConfig(difficulty=1),
     )
+    nn_encoder.feature_version = feature_version
     # Force initialization
     nn_encoder._ensure_model_initialized(board_type)
 
@@ -1961,6 +1996,7 @@ def generate_dataset_gpu_parallel(
         policy_values=np.array(all_policy_values, dtype=object),
         policy_encoding=np.asarray("board_aware"),
         history_length=np.asarray(int(history_length)),
+        feature_version=np.asarray(int(feature_version)),
     )
     print(f"Saved to {output_path}")
 
@@ -2009,6 +2045,15 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=3,
         help="Number of previous feature frames to stack (default: 3).",
+    )
+    parser.add_argument(
+        "--feature-version",
+        type=int,
+        default=2,
+        help=(
+            "Feature encoding version for global feature layout (default: 2). "
+            "Use 1 to keep legacy hex globals without chain/FE flags."
+        ),
     )
     parser.add_argument(
         "--batch-size",
@@ -2275,6 +2320,14 @@ def main() -> None:
             f"--batch-size must be at least 1, got {args.batch_size}"
         )
 
+    if args.parallel and args.feature_version > 1:
+        logger.warning(
+            "parallel_selfplay uses legacy globals; forcing feature_version=1 "
+            "(requested %d).",
+            args.feature_version,
+        )
+        args.feature_version = 1
+
     # Initialize optional game recording database
     # --no-record-db flag overrides --record-db to disable recording
     record_db_path = None if args.no_record_db else args.record_db
@@ -2305,6 +2358,7 @@ def main() -> None:
                 max_moves=args.max_moves,
                 num_players=args.num_players,
                 history_length=args.history_length,
+                feature_version=args.feature_version,
                 engine=args.engine,
                 nn_model_id=args.nn_model_id,
                 multi_player_values=args.multi_player_values,
@@ -2323,6 +2377,7 @@ def main() -> None:
             seed=args.seed,
             max_moves=args.max_moves,
             history_length=args.history_length,
+            feature_version=args.feature_version,
             batch_size=args.batch_size,
             replay_db=replay_db,
             num_players=args.num_players,

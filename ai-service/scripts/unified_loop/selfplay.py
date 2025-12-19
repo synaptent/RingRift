@@ -28,6 +28,15 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 # Import centralized Elo constants
 from .config import INITIAL_ELO_RATING
 
+# Import event types for data pipeline integration
+try:
+    from .config import DataEvent, DataEventType
+    HAS_DATA_EVENTS = True
+except ImportError:
+    HAS_DATA_EVENTS = False
+    DataEvent = None
+    DataEventType = None
+
 # Coordinator-only mode - skip local CPU-intensive work
 DISABLE_LOCAL_TASKS = os.environ.get("RINGRIFT_DISABLE_LOCAL_TASKS", "").lower() in ("1", "true", "yes", "on")
 
@@ -478,6 +487,28 @@ class LocalSelfplayGenerator:
                 LOCAL_SELFPLAY_SAMPLES.labels(config=config_key, engine=engine).inc(total_samples)
                 LOCAL_SELFPLAY_DURATION.labels(config=config_key, engine=engine).observe(duration)
 
+            # Emit NEW_GAMES_AVAILABLE event for data pipeline integration
+            # This allows the training scheduler and data sync services to react
+            if HAS_DATA_EVENTS and self.event_bus:
+                try:
+                    import socket
+                    host_name = socket.gethostname()
+                    await self.event_bus.publish(DataEvent(
+                        event_type=DataEventType.NEW_GAMES_AVAILABLE,
+                        payload={
+                            "host": host_name,
+                            "new_games": num_games,
+                            "samples": total_samples,
+                            "config": config_key,
+                            "engine": engine,
+                            "output_file": str(output_file),
+                            "quality_estimate": 0.7 if engine == "gumbel" else 0.5,
+                        },
+                        source="local_selfplay",
+                    ))
+                except Exception as e:
+                    logger.debug(f"Failed to emit NEW_GAMES_AVAILABLE event: {e}")
+
             return {
                 "success": True,
                 "games": num_games,
@@ -744,6 +775,26 @@ class LocalSelfplayGenerator:
                 f"[GPUSelfplay] Generated {num_games} games on {device} "
                 f"in {duration:.1f}s ({games_per_sec:.1f} games/sec)"
             )
+
+            # Emit NEW_GAMES_AVAILABLE event for data pipeline integration
+            if HAS_DATA_EVENTS and self.event_bus:
+                try:
+                    import socket
+                    host_name = socket.gethostname()
+                    await self.event_bus.publish(DataEvent(
+                        event_type=DataEventType.NEW_GAMES_AVAILABLE,
+                        payload={
+                            "host": host_name,
+                            "new_games": num_games,
+                            "config": config_key,
+                            "engine": "gpu_parallel",
+                            "device": str(device),
+                            "quality_estimate": 0.6,  # GPU games have decent quality
+                        },
+                        source="gpu_selfplay",
+                    ))
+                except Exception as e:
+                    logger.debug(f"Failed to emit NEW_GAMES_AVAILABLE event: {e}")
 
             return {
                 "success": True,

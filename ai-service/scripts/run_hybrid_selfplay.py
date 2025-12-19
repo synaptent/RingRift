@@ -43,6 +43,9 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+# Add app/ to path (must be early for app.* imports)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Ramdrive utilities for high-speed I/O
 from app.utils.ramdrive import add_ramdrive_args, get_config_from_args, get_games_directory, RamdriveSyncer
 
@@ -178,10 +181,9 @@ def check_disk_space(logger, output_dir: str) -> str:
     return "ok"
 
 
-# Add app/ to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser
 
-# Import shared victory type module (must be after path setup)
+# Import shared victory type module
 from app.utils.victory_type import derive_victory_type
 from app.db import (
     get_or_create_db,
@@ -1263,56 +1265,24 @@ def run_benchmark(board_type: str = "square8", num_players: int = 2):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Hybrid GPU-accelerated self-play with full rule fidelity"
+    # Use unified argument parser from SelfplayConfig
+    parser = create_argument_parser(
+        description="Hybrid GPU-accelerated self-play with full rule fidelity",
+        include_gpu=True,
+        include_ramdrive=True,
     )
-    parser.add_argument(
-        "--board-type",
-        type=str,
-        default="square8",
-        choices=["square8", "square19", "hex8", "hex", "hexagonal"],
-        help="Board type (hex8 is radius-4, hexagonal/hex is radius-12)",
-    )
-    parser.add_argument(
-        "--num-players",
-        type=int,
-        default=2,
-        choices=[2, 3, 4],
-        help="Number of players",
-    )
-    parser.add_argument(
-        "--num-games",
-        type=int,
-        default=100,
-        help="Number of games to generate",
-    )
+
+    # Add hybrid-specific arguments
     parser.add_argument(
         "--max-moves",
         type=int,
         default=None,
-        help="Maximum moves per game (default: 500 for square8, 2500 for square19/hex)",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default=None,  # Auto-generate unique dir to avoid conflicts
-        help="Output directory (default: auto-generated unique path)",
-    )
-    parser.add_argument(
-        "--record-db",
-        type=str,
-        default="",
-        help="Optional path to a GameReplayDB SQLite file to record games for training/parity tooling.",
+        help="Maximum moves per game (default: auto-calculated from board type)",
     )
     parser.add_argument(
         "--no-record-db",
         action="store_true",
         help="Disable DB recording even if --record-db is set.",
-    )
-    parser.add_argument(
-        "--lean-db",
-        action="store_true",
-        help="Store a lean DB (no per-move history snapshots) to reduce disk usage.",
     )
     parser.add_argument(
         "--no-enforce-canonical-history",
@@ -1327,12 +1297,6 @@ def main():
         help="Override parity validation mode for recorded games (default: env-driven).",
     )
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed",
-    )
-    parser.add_argument(
         "--benchmark",
         action="store_true",
         help="Run benchmark only",
@@ -1342,73 +1306,119 @@ def main():
         action="store_true",
         help="Disable Numba JIT compilation",
     )
-    parser.add_argument(
-        "--engine-mode",
-        type=str,
-        default="heuristic-only",
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts", "maxn", "brs"],
-        help="Engine mode for P1: random-only, heuristic-only, mixed, nnue-guided, mcts, nn-minimax, nn-descent, policy-only, gumbel-mcts, maxn (multi-player minimax), or brs (best reply search)",
-    )
+    # Per-player engine modes for asymmetric matches
     parser.add_argument(
         "--p2-engine-mode",
         type=str,
         default=None,
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts", "maxn", "brs"],
         help="Engine mode for Player 2 (if different from P1 for asymmetric matches)",
     )
     parser.add_argument(
         "--p3-engine-mode",
         type=str,
         default=None,
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts", "maxn", "brs"],
         help="Engine mode for Player 3 (for 3-4 player games)",
     )
     parser.add_argument(
         "--p4-engine-mode",
         type=str,
         default=None,
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts", "maxn", "brs"],
         help="Engine mode for Player 4 (for 4 player games)",
-    )
-    parser.add_argument(
-        "--mcts-sims",
-        type=int,
-        default=100,
-        help="Number of MCTS simulations per move (for mcts mode). Default: 100",
     )
     parser.add_argument(
         "--nn-model-id",
         type=str,
         default=None,
-        help="Neural network model ID for gumbel-mcts/policy-only/mcts modes (e.g., 'ringrift_hex8_2p_v3_retrained')",
+        help="Neural network model ID for gumbel-mcts/policy-only/mcts modes",
     )
     parser.add_argument(
         "--nnue-blend",
         type=float,
         default=0.5,
-        help="For nnue-guided mode: blend ratio of NNUE vs heuristic (0.0=heuristic only, 1.0=NNUE only). Default: 0.5",
+        help="For nnue-guided mode: blend ratio of NNUE vs heuristic (default: 0.5)",
     )
     parser.add_argument(
         "--mix-ratio",
         type=float,
         default=0.8,
-        help="For mixed mode: probability of using heuristic (0.0=all random, 1.0=all heuristic). Default: 0.8",
-    )
-    parser.add_argument(
-        "--weights-file",
-        type=str,
-        help="Path to CMA-ES heuristic weights JSON file",
+        help="For mixed mode: probability of using heuristic (default: 0.8)",
     )
     parser.add_argument(
         "--profile",
+        dest="weights_profile",
         type=str,
-        help="Profile name in weights file (requires --weights-file)",
+        help="Profile name in weights file (alias for --weights-profile)",
+    )
+    # Additional ramdrive args
+    parser.add_argument("--ram-storage", action="store_true", help="Use ramdrive storage")
+    parser.add_argument("--sync-target", type=str, help="Target directory for ramdrive sync")
+
+    parsed = parser.parse_args()
+
+    # Create SelfplayConfig from parsed args
+    selfplay_config = SelfplayConfig(
+        board_type=parsed.board,
+        num_players=parsed.num_players,
+        num_games=parsed.num_games,
+        engine_mode=parsed.engine_mode,
+        mcts_simulations=parsed.mcts_simulations,
+        output_dir=parsed.output_dir,
+        record_db=parsed.record_db,
+        lean_db=parsed.lean_db,
+        seed=parsed.seed or 42,
+        weights_file=parsed.weights_file,
+        weights_profile=parsed.weights_profile,
+        use_ramdrive=parsed.use_ramdrive,
+        ramdrive_path=parsed.ramdrive_path,
+        sync_interval=parsed.sync_interval,
+        source="run_hybrid_selfplay.py",
+        extra_options={
+            "max_moves": parsed.max_moves,
+            "no_record_db": parsed.no_record_db,
+            "no_enforce_canonical_history": parsed.no_enforce_canonical_history,
+            "parity_mode": parsed.parity_mode,
+            "benchmark": parsed.benchmark,
+            "no_numba": parsed.no_numba,
+            "p2_engine_mode": parsed.p2_engine_mode,
+            "p3_engine_mode": parsed.p3_engine_mode,
+            "p4_engine_mode": parsed.p4_engine_mode,
+            "nn_model_id": parsed.nn_model_id,
+            "nnue_blend": parsed.nnue_blend,
+            "mix_ratio": parsed.mix_ratio,
+            "ram_storage": getattr(parsed, "ram_storage", False),
+            "sync_target": getattr(parsed, "sync_target", None),
+        },
     )
 
-    # Add ramdrive storage options
-    add_ramdrive_args(parser)
-
-    args = parser.parse_args()
+    # Create backward-compatible args object
+    args = type("Args", (), {
+        "board_type": selfplay_config.board_type,
+        "num_players": selfplay_config.num_players,
+        "num_games": selfplay_config.num_games,
+        "engine_mode": selfplay_config.engine_mode,
+        "output_dir": selfplay_config.output_dir,
+        "record_db": selfplay_config.record_db,
+        "lean_db": selfplay_config.lean_db,
+        "seed": selfplay_config.seed,
+        "weights_file": selfplay_config.weights_file,
+        "weights_profile": selfplay_config.weights_profile,
+        "mcts_sims": selfplay_config.mcts_simulations,
+        "max_moves": selfplay_config.extra_options["max_moves"],
+        "no_record_db": selfplay_config.extra_options["no_record_db"],
+        "no_enforce_canonical_history": selfplay_config.extra_options["no_enforce_canonical_history"],
+        "parity_mode": selfplay_config.extra_options["parity_mode"],
+        "benchmark": selfplay_config.extra_options["benchmark"],
+        "no_numba": selfplay_config.extra_options["no_numba"],
+        "p2_engine_mode": selfplay_config.extra_options["p2_engine_mode"],
+        "p3_engine_mode": selfplay_config.extra_options["p3_engine_mode"],
+        "p4_engine_mode": selfplay_config.extra_options["p4_engine_mode"],
+        "nn_model_id": selfplay_config.extra_options["nn_model_id"],
+        "nnue_blend": selfplay_config.extra_options["nnue_blend"],
+        "mix_ratio": selfplay_config.extra_options["mix_ratio"],
+        "ram_storage": selfplay_config.extra_options["ram_storage"],
+        "sync_target": selfplay_config.extra_options["sync_target"],
+        "sync_interval": selfplay_config.sync_interval,
+    })()
 
     # Validate GPU/CUDA environment
     try:
@@ -1438,10 +1448,10 @@ def main():
     else:
         # Load weights from profile if specified
         weights = None
-        if args.weights_file and args.profile:
-            weights = load_weights_from_profile(args.weights_file, args.profile)
-            logger.info(f"Loaded weights from {args.weights_file}:{args.profile}")
-        elif args.weights_file or args.profile:
+        if args.weights_file and args.weights_profile:
+            weights = load_weights_from_profile(args.weights_file, args.weights_profile)
+            logger.info(f"Loaded weights from {args.weights_file}:{args.weights_profile}")
+        elif args.weights_file or args.weights_profile:
             # Only one was specified - warn user
             logger.warning("Both --weights-file and --profile are required to load custom weights")
 

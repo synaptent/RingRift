@@ -210,20 +210,36 @@ class Aria2Transport:
         """Parse inventory JSON into NodeInventory object."""
         files = {}
         total_size = 0
+        base_url = source_url.rstrip("/")
+
+        def add_file(path: str, file_data: Dict[str, Any], category_hint: Optional[str] = None) -> None:
+            nonlocal total_size
+            if not path:
+                return
+            path = path.lstrip("/")
+            name = file_data.get("name") or Path(path).name
+            category = file_data.get("category") or category_hint or "unknown"
+            file_info = FileInfo(
+                name=name,
+                path=path,
+                size_bytes=file_data.get("size_bytes", 0),
+                mtime=file_data.get("mtime", 0),
+                category=category,
+                checksum=file_data.get("checksum"),
+                sources=[f"{base_url}/{path}"],
+            )
+            if path not in files:
+                files[path] = file_info
+                total_size += file_info.size_bytes
+
+        files_map = data.get("files", {}) or {}
+        for path, file_data in files_map.items():
+            add_file(path, file_data, file_data.get("category"))
 
         for category in ["games", "models", "training", "elo"]:
             for file_data in data.get(category, []):
-                file_info = FileInfo(
-                    name=file_data.get("name", ""),
-                    path=file_data.get("path", ""),
-                    size_bytes=file_data.get("size_bytes", 0),
-                    mtime=file_data.get("mtime", 0),
-                    category=category,
-                    checksum=file_data.get("checksum"),
-                    sources=[f"{source_url}/{category}/{file_data.get('name', '')}"],
-                )
-                files[file_info.name] = file_info
-                total_size += file_info.size_bytes
+                path = file_data.get("path") or f"{category}/{file_data.get('name', '')}"
+                add_file(path, file_data, category)
 
         return NodeInventory(
             url=source_url,
@@ -253,10 +269,10 @@ class Aria2Transport:
         for result in results:
             if isinstance(result, NodeInventory) and result.reachable:
                 inventories.append(result)
-                for filename, file_info in result.files.items():
-                    if filename not in file_sources:
-                        file_sources[filename] = []
-                    file_sources[filename].extend(file_info.sources)
+                for file_info in result.files.values():
+                    if file_info.name not in file_sources:
+                        file_sources[file_info.name] = []
+                    file_sources[file_info.name].extend(file_info.sources)
 
         logger.info(
             f"Discovered {len(inventories)} reachable nodes with {len(file_sources)} unique files"
@@ -299,6 +315,17 @@ class Aria2Transport:
             cmd.extend(urls)
 
         return cmd
+
+    def _resolve_category_dir(self, local_dir: Path, category: str) -> Path:
+        if category == "games" and local_dir.name in ("games", "selfplay"):
+            return local_dir
+        if category == "models" and local_dir.name == "models":
+            return local_dir
+        if category == "training" and local_dir.name in ("training", "training_data"):
+            return local_dir
+        if category == "elo" and local_dir.name == "elo":
+            return local_dir
+        return local_dir / category
 
     async def download_file(
         self,
@@ -362,7 +389,7 @@ class Aria2Transport:
         self,
         file_sources: Dict[str, List[str]],
         output_dir: Path,
-        category: str = "games",
+        category: Optional[str] = "games",
     ) -> SyncResult:
         """Download multiple files using aria2 with a URL list file.
 
@@ -384,7 +411,7 @@ class Aria2Transport:
             return SyncResult(success=True)
 
         start_time = time.time()
-        category_dir = output_dir / category
+        category_dir = output_dir if not category else output_dir / category
         category_dir.mkdir(parents=True, exist_ok=True)
 
         # Create URL list file for aria2
@@ -501,23 +528,25 @@ class Aria2Transport:
         cutoff_time = time.time() - (max_age_hours * 3600)
         games_to_sync: Dict[str, List[str]] = {}
 
+        category_dir = self._resolve_category_dir(local_dir, "games")
+
         for inventory in inventories:
-            for filename, file_info in inventory.files.items():
+            for file_info in inventory.files.values():
                 if file_info.category != "games":
                     continue
                 if file_info.mtime < cutoff_time:
                     continue
 
                 # Check if we already have this file
-                local_path = local_dir / "games" / filename
+                local_path = category_dir / file_info.name
                 if local_path.exists():
                     local_mtime = local_path.stat().st_mtime
                     if local_mtime >= file_info.mtime:
                         continue
 
-                if filename not in games_to_sync:
-                    games_to_sync[filename] = []
-                games_to_sync[filename].extend(file_info.sources)
+                if file_info.name not in games_to_sync:
+                    games_to_sync[file_info.name] = []
+                games_to_sync[file_info.name].extend(file_info.sources)
 
         if not games_to_sync:
             return SyncResult(
@@ -535,7 +564,7 @@ class Aria2Transport:
                 duration_seconds=time.time() - start_time,
             )
 
-        return await self.download_batch(games_to_sync, local_dir, "games")
+        return await self.download_batch(games_to_sync, category_dir, None)
 
     async def sync_models(
         self,
@@ -557,21 +586,23 @@ class Aria2Transport:
 
         models_to_sync: Dict[str, List[str]] = {}
 
+        category_dir = self._resolve_category_dir(local_dir, "models")
+
         for inventory in inventories:
-            for filename, file_info in inventory.files.items():
+            for file_info in inventory.files.values():
                 if file_info.category != "models":
                     continue
 
-                local_path = local_dir / "models" / filename
+                local_path = category_dir / file_info.name
                 if local_path.exists():
                     # Check if remote is newer or different size
                     local_stat = local_path.stat()
                     if local_stat.st_mtime >= file_info.mtime:
                         continue
 
-                if filename not in models_to_sync:
-                    models_to_sync[filename] = []
-                models_to_sync[filename].extend(file_info.sources)
+                if file_info.name not in models_to_sync:
+                    models_to_sync[file_info.name] = []
+                models_to_sync[file_info.name].extend(file_info.sources)
 
         if not models_to_sync:
             return SyncResult(
@@ -588,7 +619,7 @@ class Aria2Transport:
                 duration_seconds=time.time() - start_time,
             )
 
-        return await self.download_batch(models_to_sync, local_dir, "models")
+        return await self.download_batch(models_to_sync, category_dir, None)
 
     async def sync_training_data(
         self,
@@ -612,20 +643,22 @@ class Aria2Transport:
         cutoff_time = time.time() - (max_age_hours * 3600)
         training_to_sync: Dict[str, List[str]] = {}
 
+        category_dir = self._resolve_category_dir(local_dir, "training")
+
         for inventory in inventories:
-            for filename, file_info in inventory.files.items():
+            for file_info in inventory.files.values():
                 if file_info.category != "training":
                     continue
                 if file_info.mtime < cutoff_time:
                     continue
 
-                local_path = local_dir / "training" / filename
+                local_path = category_dir / file_info.name
                 if local_path.exists():
                     continue
 
-                if filename not in training_to_sync:
-                    training_to_sync[filename] = []
-                training_to_sync[filename].extend(file_info.sources)
+                if file_info.name not in training_to_sync:
+                    training_to_sync[file_info.name] = []
+                training_to_sync[file_info.name].extend(file_info.sources)
 
         if not training_to_sync:
             return SyncResult(
@@ -642,7 +675,7 @@ class Aria2Transport:
                 duration_seconds=time.time() - start_time,
             )
 
-        return await self.download_batch(training_to_sync, local_dir, "training")
+        return await self.download_batch(training_to_sync, category_dir, None)
 
     async def full_cluster_sync(
         self,

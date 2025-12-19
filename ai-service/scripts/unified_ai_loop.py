@@ -445,6 +445,22 @@ except ImportError:
     record_optimizer_training_complete = None
     get_improvement_metrics = None
 
+# Unified signal computation for training decisions and feedback loops
+try:
+    from app.training.unified_signals import (
+        UnifiedSignalComputer,
+        TrainingSignals,
+        TrainingUrgency,
+        get_signal_computer,
+    )
+    HAS_UNIFIED_SIGNALS = True
+except ImportError:
+    HAS_UNIFIED_SIGNALS = False
+    UnifiedSignalComputer = None
+    TrainingSignals = None
+    TrainingUrgency = None
+    get_signal_computer = None
+
 # Unified execution framework for local and remote commands
 try:
     from app.execution.executor import (
@@ -513,6 +529,34 @@ except ImportError:
     HotDataBuffer = None
     GameRecord = None
     create_hot_buffer = None
+
+# Import quality bridge for quality-aware training data selection
+try:
+    from app.training.quality_bridge import (
+        QualityBridge,
+        get_quality_bridge,
+        QualityBridgeConfig,
+    )
+    HAS_QUALITY_BRIDGE = True
+except ImportError:
+    HAS_QUALITY_BRIDGE = False
+    QualityBridge = None
+    get_quality_bridge = None
+    QualityBridgeConfig = None
+
+# Import quality metrics for monitoring training data quality
+try:
+    from app.metrics.orchestrator import (
+        record_training_data_quality,
+        update_quality_bridge_status,
+        collect_quality_metrics_from_bridge,
+    )
+    HAS_QUALITY_METRICS = True
+except ImportError:
+    HAS_QUALITY_METRICS = False
+    record_training_data_quality = None
+    update_quality_bridge_status = None
+    collect_quality_metrics_from_bridge = None
 
 # Import diverse tournament orchestrator for Elo calibration
 try:
@@ -821,6 +865,15 @@ try:
 except ImportError:
     HAS_REGISTRY_SYNC = False
     RegistrySyncManager = None
+
+# Cluster deployment for promoted models
+try:
+    from scripts.auto_deploy_models import deploy_to_cluster, get_cluster_hosts
+    HAS_CLUSTER_DEPLOY = True
+except ImportError:
+    HAS_CLUSTER_DEPLOY = False
+    deploy_to_cluster = None
+    get_cluster_hosts = None
 
 # Memory and local task configuration
 MIN_MEMORY_GB = 64  # Minimum RAM to run the unified loop
@@ -2646,6 +2699,21 @@ class UnifiedAILoop:
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize hot buffer: {e}")
 
+        # Quality bridge - connects manifest quality scores to training data selection
+        self.quality_bridge: Optional[QualityBridge] = None
+        if HAS_QUALITY_BRIDGE and getattr(config, 'use_quality_scoring', True):
+            try:
+                self.quality_bridge = get_quality_bridge()
+                # Refresh quality lookups from manifest/sync coordinator
+                num_games = self.quality_bridge.refresh(force=True)
+                print(f"[UnifiedLoop] Quality bridge initialized ({num_games} games in quality lookup)")
+                # Configure hot buffer with quality lookups if both are available
+                if self.hot_buffer is not None:
+                    configured = self.quality_bridge.configure_hot_data_buffer(self.hot_buffer)
+                    print(f"[UnifiedLoop] Hot buffer configured with {configured} quality scores")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize quality bridge: {e}")
+
         # Adaptive controller - plateau detection and dynamic game scaling
         self.adaptive_ctrl: Optional[AdaptiveController] = None
         if HAS_ADAPTIVE_CONTROLLER and getattr(config, 'use_adaptive_control', True):
@@ -2750,6 +2818,16 @@ class UnifiedAILoop:
                     event_bus=self.event_bus,
                     num_workers=num_workers,
                 )
+                # Wire up feedback loop connections for evaluation-aware prioritization
+                self.local_selfplay.set_training_scheduler(self.training_scheduler)
+                # Get or create signal computer for ELO-based priority adjustments
+                if HAS_UNIFIED_SIGNALS:
+                    try:
+                        signal_computer = get_signal_computer()
+                        self.local_selfplay.set_signal_computer(signal_computer)
+                        print("[UnifiedLoop] Selfplay ↔ Evaluation feedback loop connected via signal computer")
+                    except Exception as e:
+                        print(f"[UnifiedLoop] Warning: Could not connect signal computer: {e}")
                 print(f"[UnifiedLoop] Local selfplay generator initialized (workers={num_workers or 'auto'})")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize local selfplay: {e}")
@@ -2894,6 +2972,12 @@ class UnifiedAILoop:
                 print("[UnifiedLoop] RegistrySyncManager initialized for cluster-wide registry consistency")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize RegistrySyncManager: {e}")
+
+        # Cluster deployment for promoted models
+        # Deploy promoted models to all cluster nodes automatically
+        if HAS_CLUSTER_DEPLOY:
+            self.event_bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_for_cluster_deploy)
+            print("[UnifiedLoop] Cluster deployment subscription initialized for promoted models")
 
     def _setup_stage_event_bridge(self):
         """Bridge StageEventBus events to the main EventBus for unified coordination.
@@ -3395,8 +3479,94 @@ class UnifiedAILoop:
                 if success:
                     print(f"[EloSync] Triggered after evaluation: "
                           f"{self.elo_sync_manager.state.local_match_count} matches")
+                    # Check for significant ELO changes after sync
+                    await self._check_elo_changes_after_sync()
         except Exception as e:
             print(f"[EloSync] Trigger after evaluation error: {e}")
+
+    async def _check_elo_changes_after_sync(self):
+        """Check for significant ELO changes after sync and emit events.
+
+        Compares current best model ELO for each config with previously tracked
+        values. If change exceeds threshold, emits ELO_SIGNIFICANT_CHANGE event
+        to trigger curriculum rebalancing.
+        """
+        if get_elo_service is None:
+            return
+
+        try:
+            elo_svc = get_elo_service()
+
+            # Get threshold from config (default 50)
+            try:
+                from app.config.unified_config import get_config
+                config_obj = get_config()
+                threshold = config_obj.curriculum.elo_change_threshold
+            except (ImportError, AttributeError):
+                threshold = 50
+
+            # Track previous ELO per config
+            if not hasattr(self, '_previous_config_elo'):
+                self._previous_config_elo: Dict[str, float] = {}
+
+            # Check each active config
+            for config_key, config_state in self.state.configs.items():
+                try:
+                    # Parse config key (e.g., "square8_2p" -> board_type="square8", num_players=2)
+                    parts = config_key.rsplit("_", 1)
+                    if len(parts) != 2 or not parts[1].endswith("p"):
+                        continue
+                    board_type = parts[0]
+                    num_players = int(parts[1].replace("p", ""))
+
+                    # Get best model from leaderboard
+                    leaderboard = elo_svc.get_leaderboard(
+                        board_type=board_type,
+                        num_players=num_players,
+                        limit=1,
+                        min_games=3,
+                    )
+
+                    if not leaderboard:
+                        continue
+
+                    best_entry = leaderboard[0]
+                    new_elo = best_entry.rating
+                    model_id = best_entry.participant_id
+
+                    # Get previous ELO
+                    old_elo = self._previous_config_elo.get(config_key, new_elo)
+                    elo_change = new_elo - old_elo
+
+                    # Update tracking
+                    self._previous_config_elo[config_key] = new_elo
+
+                    # Check for significant change
+                    if abs(elo_change) >= threshold:
+                        print(f"[EloChange] {config_key}: {elo_change:+.1f} Elo "
+                              f"(model: {model_id}, new: {new_elo:.0f}, threshold: {threshold})")
+
+                        # Emit significant change event
+                        await self.event_bus.publish(DataEvent(
+                            event_type=DataEventType.ELO_SIGNIFICANT_CHANGE,
+                            payload={
+                                "config": config_key,
+                                "model_id": model_id,
+                                "elo_change": elo_change,
+                                "new_elo": new_elo,
+                                "old_elo": old_elo,
+                                "threshold": threshold,
+                                "games_played": best_entry.games_played,
+                            },
+                            source="elo_sync",
+                        ))
+
+                except Exception as e:
+                    if self.config.verbose:
+                        print(f"[EloChange] Error checking {config_key}: {e}")
+
+        except Exception as e:
+            print(f"[EloChange] Error checking ELO changes: {e}")
 
     async def _on_evaluation_for_feedback(self, event: DataEvent):
         """Handle evaluation completion for feedback loop."""
@@ -3501,6 +3671,41 @@ class UnifiedAILoop:
                 except Exception as e:
                     if self.config.verbose:
                         print(f"[FeedbackAccelerator] Error recording training complete: {e}")
+
+            # Collect and report quality metrics for training data used
+            if HAS_QUALITY_METRICS and HAS_QUALITY_BRIDGE and self.quality_bridge is not None:
+                try:
+                    # Get quality stats from bridge
+                    bridge_status = self.quality_bridge.get_status()
+
+                    # Parse board_type and num_players from config_key (e.g., "square8_2p")
+                    parts = config_key.split('_') if config_key else ['square8', '2p']
+                    board_type = parts[0] if len(parts) > 0 else 'square8'
+                    num_players = int(parts[1].replace('p', '')) if len(parts) > 1 else 2
+
+                    # Record quality metrics
+                    record_training_data_quality(
+                        board_type=board_type,
+                        num_players=num_players,
+                        avg_quality=bridge_status.get('avg_quality_score', 0.5),
+                        high_quality_count=bridge_status.get('high_quality_count', 0),
+                        total_games=games_used if games_used else bridge_status.get('quality_lookup_size', 0),
+                    )
+
+                    # Update bridge status metrics
+                    update_quality_bridge_status(
+                        quality_lookup_size=bridge_status.get('quality_lookup_size', 0),
+                        elo_lookup_size=bridge_status.get('elo_lookup_size', 0),
+                        refresh_age_seconds=bridge_status.get('last_refresh_age_seconds', 0),
+                        avg_quality=bridge_status.get('avg_quality_score', 0),
+                    )
+
+                    if self.config.verbose:
+                        print(f"[QualityMetrics] Recorded: avg_quality={bridge_status.get('avg_quality_score', 0):.3f}, "
+                              f"games={bridge_status.get('quality_lookup_size', 0)}")
+                except Exception as qe:
+                    if self.config.verbose:
+                        print(f"[QualityMetrics] Error recording quality metrics: {qe}")
 
             # Forward to feedback controller
             await self.feedback.on_stage_complete('training', {
@@ -5369,6 +5574,16 @@ class UnifiedAILoop:
                                           f"parity={parity_success:.1%}, quality={data_quality:.2f}")
                             except Exception:
                                 pass  # Don't block training for optimizer errors
+
+                        # Refresh quality bridge before training to get latest quality scores
+                        if self.quality_bridge is not None:
+                            try:
+                                num_refreshed = self.quality_bridge.refresh(force=True)
+                                if self.hot_buffer is not None:
+                                    self.quality_bridge.configure_hot_data_buffer(self.hot_buffer)
+                                print(f"[Training] Quality bridge refreshed ({num_refreshed} games)")
+                            except Exception as qe:
+                                print(f"[Training] Warning: Quality refresh failed: {qe}")
 
                         print(f"[Training] Starting training for {trigger_config}")
                         await self.training_scheduler.start_training_with_retry(trigger_config)

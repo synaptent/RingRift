@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 # - v6: Added available_moves_json and available_moves_count to game_history_entries for parity debugging
 # - v7: Added fsm_valid and fsm_error_code to game_history_entries for FSM validation tracking (Phase 7)
 # - v8: Added game_nnue_features table for pre-computed NNUE training features
-SCHEMA_VERSION = 8
+# - v9: Added quality_score and quality_category columns for training data prioritization
+SCHEMA_VERSION = 9
 
 # Default snapshot interval (every N moves)
 DEFAULT_SNAPSHOT_INTERVAL = 20
@@ -71,7 +72,10 @@ CREATE TABLE IF NOT EXISTS games (
     initial_time_ms INTEGER,
     time_increment_ms INTEGER,
     -- v5 additions: full recording metadata as JSON
-    metadata_json TEXT
+    metadata_json TEXT,
+    -- v9 additions: quality scoring for training data prioritization
+    quality_score REAL,
+    quality_category TEXT
 );
 
 -- Indexes on games
@@ -84,6 +88,9 @@ CREATE INDEX IF NOT EXISTS idx_games_source ON games(source);
 CREATE INDEX IF NOT EXISTS idx_games_board_players ON games(board_type, num_players);
 CREATE INDEX IF NOT EXISTS idx_games_created_board ON games(created_at, board_type);
 CREATE INDEX IF NOT EXISTS idx_games_board_created ON games(board_type, created_at);
+-- Quality scoring indexes for training data prioritization (v9)
+CREATE INDEX IF NOT EXISTS idx_games_quality ON games(quality_score DESC);
+CREATE INDEX IF NOT EXISTS idx_games_quality_board ON games(board_type, quality_score DESC);
 
 -- Per-player metadata
 CREATE TABLE IF NOT EXISTS game_players (
@@ -970,6 +977,41 @@ class GameReplayDB:
 
         self._set_schema_version(conn, 8)
         logger.info("Migration to v8 complete")
+
+    def _migrate_v8_to_v9(self, conn: sqlite3.Connection) -> None:
+        """Migrate from schema v8 to v9.
+
+        Adds:
+        - quality_score column to games table for training data prioritization
+        - quality_category column to games table for quality classification
+        - Indexes for quality-based sorting
+        """
+        logger.info("Migrating schema from v8 to v9")
+
+        # Add quality_score column
+        try:
+            conn.execute("ALTER TABLE games ADD COLUMN quality_score REAL")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        # Add quality_category column
+        try:
+            conn.execute("ALTER TABLE games ADD COLUMN quality_category TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        # Create indexes for quality-based queries
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_games_quality ON games(quality_score DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_games_quality_board ON games(board_type, quality_score DESC)"
+        )
+
+        self._set_schema_version(conn, 9)
+        logger.info("Migration to v9 complete")
 
     # =========================================================================
     # Write Operations
@@ -2601,6 +2643,27 @@ class GameReplayDB:
                 elif not final_state.board.stacks:
                     termination_reason = "structural"
 
+        # Compute quality score for training data prioritization
+        quality_score = None
+        quality_category = None
+        try:
+            from app.training.game_quality_scorer import compute_game_quality
+            quality = compute_game_quality(
+                game_id=game_id,
+                game_status=final_state.game_status.value,
+                winner=final_state.winner,
+                termination_reason=termination_reason,
+                total_moves=total_moves,
+                board_type=initial_state.board_type.value,
+                source=metadata.get("source"),
+            )
+            quality_score = quality.score
+            quality_category = quality.category.value
+        except ImportError:
+            pass  # Quality scorer not available
+        except Exception as e:
+            logger.warning(f"Failed to compute game quality: {e}")
+
         # Check if game already exists (incremental write case)
         existing = conn.execute(
             "SELECT game_id FROM games WHERE game_id = ?", (game_id,)
@@ -2619,7 +2682,9 @@ class GameReplayDB:
                     total_turns = ?,
                     duration_ms = ?,
                     source = ?,
-                    metadata_json = ?
+                    metadata_json = ?,
+                    quality_score = ?,
+                    quality_category = ?
                 WHERE game_id = ?
                 """,
                 (
@@ -2632,6 +2697,8 @@ class GameReplayDB:
                     duration_ms,
                     metadata.get("source", "unknown"),
                     metadata_json,
+                    quality_score,
+                    quality_category,
                     game_id,
                 ),
             )
@@ -2642,8 +2709,9 @@ class GameReplayDB:
                 INSERT INTO games
                 (game_id, board_type, num_players, rng_seed, created_at, completed_at,
                  game_status, winner, termination_reason, total_moves, total_turns,
-                 duration_ms, source, schema_version, metadata_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 duration_ms, source, schema_version, metadata_json,
+                 quality_score, quality_category)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     game_id,
@@ -2661,6 +2729,8 @@ class GameReplayDB:
                     metadata.get("source", "unknown"),
                     SCHEMA_VERSION,
                     metadata_json,
+                    quality_score,
+                    quality_category,
                 ),
             )
 

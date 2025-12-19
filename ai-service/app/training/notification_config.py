@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
+from app.utils.yaml_utils import load_config_yaml as _load_yaml_config
 
 from app.training.promotion_controller import (
     LoggingNotificationHook,
@@ -297,18 +297,11 @@ def load_config_yaml(config_path: Optional[Path] = None) -> Dict[str, Any]:
         Dict containing the parsed YAML configuration
     """
     path = config_path or DEFAULT_CONFIG_PATH
-
-    # Check for environment variable override
-    env_path = os.environ.get("RINGRIFT_NOTIFICATION_CONFIG")
-    if env_path:
-        path = Path(env_path)
-
-    if not path.exists():
-        logger.warning(f"Notification config not found at {path}, using defaults")
-        return {"enabled": True, "logging": {"enabled": True}}
-
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
+    return _load_yaml_config(
+        default_path=path,
+        env_var="RINGRIFT_NOTIFICATION_CONFIG",
+        defaults={"enabled": True, "logging": {"enabled": True}},
+    )
 
 
 def load_notification_hooks(config_path: Optional[Path] = None) -> List[NotificationHook]:

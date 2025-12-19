@@ -57,20 +57,17 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 # Import SyncCoordinator for transport fallback chain (aria2 → ssh → p2p)
-# Uses new unified sync coordinator, falls back to deprecated data_sync
+# Unified sync coordinator (consolidated from deprecated DataSyncManager)
 try:
     from app.distributed.sync_coordinator import SyncCoordinator
-    HAS_DATA_SYNC = True
-    def get_sync_manager():
+    HAS_SYNC_COORDINATOR = True
+
+    def get_sync_coordinator():
         return SyncCoordinator.get_instance()
-    DataSyncManager = SyncCoordinator
 except ImportError:
-    try:
-        from app.distributed.data_sync import DataSyncManager, get_sync_manager
-        HAS_DATA_SYNC = True
-    except ImportError:
-        HAS_DATA_SYNC = False
-        logger.warning("SyncCoordinator not available, using direct rsync")
+    HAS_SYNC_COORDINATOR = False
+    SyncCoordinator = None
+    logger.warning("SyncCoordinator not available, using direct rsync")
 
 
 @dataclass
@@ -404,17 +401,16 @@ class ClusterSyncCoordinator:
                 if best_models:
                     results["models_synced"] = await self.sync_models_cluster_wide(best_models)
 
-            # 5. Use DataSyncManager for transport fallback (tailscale → cloudflare → ssh)
-            if HAS_DATA_SYNC:
+            # 5. Use SyncCoordinator for transport fallback (aria2 → ssh → p2p)
+            if HAS_SYNC_COORDINATOR:
                 try:
-                    sync_manager = get_sync_manager()
-                    model_results = await sync_manager.sync_best_models()
-                    fallback_synced = sum(1 for v in model_results.values() if v is True)
-                    if fallback_synced > 0:
-                        results["models_synced"] += fallback_synced
-                        logger.info(f"DataSyncManager fallback: {fallback_synced} additional syncs")
+                    coordinator = get_sync_coordinator()
+                    model_stats = await coordinator.sync_models()
+                    if model_stats.files_synced > 0:
+                        results["models_synced"] += model_stats.files_synced
+                        logger.info(f"SyncCoordinator: {model_stats.files_synced} models synced via {model_stats.transport_used}")
                 except Exception as e:
-                    logger.warning(f"DataSyncManager fallback failed: {e}")
+                    logger.warning(f"SyncCoordinator model sync failed: {e}")
 
             self.state.last_sync = time.time()
 

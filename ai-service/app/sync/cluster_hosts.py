@@ -29,6 +29,14 @@ DATA_SYNC_PORT = 8766
 MODEL_SYNC_PORT = 8765
 
 
+def _get_default_data_server_port() -> int:
+    try:
+        from app.config.unified_config import get_config
+        return get_config().distributed.data_server_port
+    except Exception:
+        return DATA_SYNC_PORT
+
+
 @dataclass
 class ClusterNode:
     """Represents a cluster node with connectivity info."""
@@ -44,11 +52,32 @@ class ClusterNode:
     memory_gb: int = 0
     cpus: int = 0
     gpu: str = ""
+    data_server_port: int = DATA_SYNC_PORT
+    data_server_url: Optional[str] = None
 
     @property
     def best_ip(self) -> Optional[str]:
         """Get best IP for connection (prefer Tailscale)."""
-        return self.tailscale_ip or self.ssh_host
+        for candidate in (self.tailscale_ip, self.ssh_host):
+            if not candidate:
+                continue
+            host = str(candidate).strip()
+            if not host:
+                continue
+            if "@" in host:
+                host = host.split("@", 1)[1]
+            return host
+        return None
+
+    @property
+    def data_server_base_url(self) -> Optional[str]:
+        """Get base URL for the node's data server."""
+        if self.data_server_url:
+            return self.data_server_url
+        ip = self.best_ip
+        if not ip:
+            return None
+        return f"http://{ip}:{self.data_server_port}"
 
     @property
     def is_active(self) -> bool:
@@ -134,6 +163,7 @@ def get_cluster_nodes() -> Dict[str, ClusterNode]:
     """Get all cluster nodes from config."""
     hosts_config = load_hosts_config().get("hosts", {})
     nodes = {}
+    data_server_port = _get_default_data_server_port()
 
     for name, cfg in hosts_config.items():
         nodes[name] = ClusterNode(
@@ -149,6 +179,8 @@ def get_cluster_nodes() -> Dict[str, ClusterNode]:
             memory_gb=cfg.get("memory_gb", 0),
             cpus=cfg.get("cpus", 0),
             gpu=cfg.get("gpu", ""),
+            data_server_port=cfg.get("data_server_port", data_server_port),
+            data_server_url=cfg.get("data_server_url"),
         )
 
     return nodes
@@ -241,6 +273,26 @@ def get_elo_sync_urls() -> List[str]:
     return get_sync_urls(ELO_SYNC_PORT, "/db")
 
 
-def get_data_sync_urls() -> List[str]:
+def get_data_sync_urls(
+    exclude_self: bool = True,
+    reachable_only: bool = True,
+    timeout: int = 5,
+) -> List[str]:
     """Get URLs for data sync (games, training)."""
-    return get_sync_urls(DATA_SYNC_PORT, "/inventory.json")
+    if reachable_only:
+        reachable = discover_reachable_nodes(_get_default_data_server_port(), timeout)
+        nodes = [node for node, _ in reachable]
+    else:
+        nodes = get_active_nodes()
+
+    hostname = socket.gethostname().lower()
+    urls: List[str] = []
+
+    for node in nodes:
+        if exclude_self and node.name.lower() == hostname:
+            continue
+        base_url = node.data_server_base_url
+        if base_url and base_url not in urls:
+            urls.append(base_url)
+
+    return urls

@@ -456,7 +456,7 @@ def get_optimal_transport_config(provider: Optional[StorageProvider] = None) -> 
     else:
         # Standard nodes: balanced approach
         config.enable_gossip = True
-        config.fallback_chain = ["ssh", "aria2", "p2p"]
+        config.fallback_chain = ["aria2", "ssh", "p2p"]
         logger.debug("Using balanced transport config")
 
     return config
@@ -516,33 +516,37 @@ def get_aria2_sources(exclude_self: bool = True) -> List[str]:
     """
     # Import here to avoid circular dependency
     try:
-        from app.config.unified_config import get_config
-        config = get_config()
-        hosts = config.distributed.hosts if hasattr(config, 'distributed') else []
-    except ImportError:
-        hosts = []
+        from app.sync.cluster_hosts import get_data_sync_urls
+        return get_data_sync_urls(exclude_self=exclude_self, reachable_only=False)
+    except Exception:
+        pass
 
-    provider = get_storage_provider()
-    port = 8766  # Default aria2 data server port
+    try:
+        from app.config.unified_config import get_config
+        from app.distributed.hosts import load_remote_hosts
+        port = get_config().distributed.data_server_port
+    except Exception:
+        port = 8766
 
     sources = []
     hostname = socket.gethostname().lower()
 
-    for host in hosts:
-        host_name = getattr(host, 'name', str(host))
-        if exclude_self and host_name.lower() == hostname:
+    try:
+        hosts = load_remote_hosts()
+    except Exception:
+        hosts = {}
+
+    for name, host in hosts.items():
+        if exclude_self and name.lower() == hostname:
             continue
-
-        # Prefer Tailscale IP if available
-        tailscale_ip = getattr(host, 'tailscale_ip', None)
-        worker_url = getattr(host, 'worker_url', None)
-        ssh_host = getattr(host, 'ssh_host', None)
-
-        if worker_url:
-            sources.append(worker_url)
-        elif tailscale_ip:
-            sources.append(f"http://{tailscale_ip}:{port}")
-        elif ssh_host:
-            sources.append(f"http://{ssh_host}:{port}")
+        if host.worker_url:
+            sources.append(host.worker_url)
+            continue
+        for candidate in (host.tailscale_ip, host.ssh_host):
+            if not candidate:
+                continue
+            host_ip = candidate.split("@", 1)[1] if "@" in candidate else candidate
+            sources.append(f"http://{host_ip}:{port}")
+            break
 
     return sources

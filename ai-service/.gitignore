@@ -70,6 +70,10 @@ data/deprecated_*/
 # Holdout data (tournament/evaluation games separated from training)
 data/holdouts/
 
+# Harvested cluster data (ad-hoc exports)
+data/harvested/
+data/cluster_harvested/
+
 # HDF5 converted training data (generated from NPZ, ~6GB)
 data/training_hdf5/
 
@@ -84,6 +88,7 @@ data/model_sync_state.json
 
 # Runtime state files (machine-specific, regenerated)
 data/.jsonl_converted
+data/pipeline_state.json
 data/elo_drift_history.json
 data/elo_sync_state.json
 data/registry_sync_state.json

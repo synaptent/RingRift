@@ -23,6 +23,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
 
+# Import path utilities (graceful fallback for bootstrap)
+try:
+    from app.utils.paths import ensure_dir, ensure_parent_dir
+except ImportError:
+    def ensure_dir(path: Path) -> Path:
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    def ensure_parent_dir(path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
 # Default log format - matches most existing scripts
 DEFAULT_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
@@ -121,12 +132,11 @@ def setup_logging(
         if log_file:
             file_path = Path(log_file)
         else:
-            log_dir_path = Path(log_dir)
-            log_dir_path.mkdir(parents=True, exist_ok=True)
+            log_dir_path = ensure_dir(Path(log_dir))
             date_str = datetime.now().strftime("%Y%m%d")
             file_path = log_dir_path / f"{logger_name}_{date_str}.log"
 
-        file_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_parent_dir(file_path)
         file_handler = logging.FileHandler(file_path)
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)

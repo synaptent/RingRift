@@ -434,3 +434,89 @@ if HAS_DATASETS:
         "RingRiftDataset",
         "WeightedRingRiftDataset",
     ])
+
+# =============================================================================
+# Consolidated Data Loaders (December 2025)
+# =============================================================================
+# This provides a unified import point for all data loading functionality:
+# - StreamingDataLoader: Main disk-backed streaming loader
+# - WeightedStreamingDataLoader: Priority-weighted sampling
+# - AugmentedDataLoader: With data augmentation
+# - HotDataBuffer: In-memory priority buffer with quality auto-calibration
+
+try:
+    from app.training.data_loader import (
+        StreamingDataLoader,
+        WeightedStreamingDataLoader,
+        FileHandle,
+    )
+    HAS_DATA_LOADERS = True
+except ImportError:
+    HAS_DATA_LOADERS = False
+
+__all__.append("HAS_DATA_LOADERS")
+
+if HAS_DATA_LOADERS:
+    __all__.extend([
+        "StreamingDataLoader",
+        "WeightedStreamingDataLoader",
+        "FileHandle",
+    ])
+
+# Import HotDataBuffer with quality integration
+try:
+    from app.training.hot_data_buffer import (
+        HotDataBuffer,
+        GameRecord,
+        create_hot_buffer,
+    )
+    HAS_HOT_BUFFER = True
+except ImportError:
+    HAS_HOT_BUFFER = False
+
+__all__.append("HAS_HOT_BUFFER")
+
+if HAS_HOT_BUFFER:
+    __all__.extend([
+        "HotDataBuffer",
+        "GameRecord",
+        "create_hot_buffer",
+    ])
+
+# Import data augmentation loader
+try:
+    from app.training.data_augmentation import (
+        AugmentedDataLoader,
+        DataAugmentor,
+        AugmentorConfig,
+    )
+    HAS_AUGMENTATION = True
+except ImportError:
+    HAS_AUGMENTATION = False
+
+__all__.append("HAS_AUGMENTATION")
+
+if HAS_AUGMENTATION:
+    __all__.extend([
+        "AugmentedDataLoader",
+        "DataAugmentor",
+        "AugmentorConfig",
+    ])
+
+# Import Elo-weighted sampler
+try:
+    from app.training.elo_weighting import (
+        EloWeightedSampler,
+        compute_elo_weights,
+    )
+    HAS_ELO_WEIGHTING = True
+except ImportError:
+    HAS_ELO_WEIGHTING = False
+
+__all__.append("HAS_ELO_WEIGHTING")
+
+if HAS_ELO_WEIGHTING:
+    __all__.extend([
+        "EloWeightedSampler",
+        "compute_elo_weights",
+    ])

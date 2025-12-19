@@ -25,21 +25,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # Try to import SyncCoordinator for enhanced data collection
-# Uses new unified sync coordinator, falls back to deprecated data_sync
+# Unified sync coordinator (consolidated from deprecated DataSyncManager)
 try:
     from app.distributed.sync_coordinator import SyncCoordinator
-    HAS_DATA_SYNC = True
-    def get_sync_manager():
+    HAS_SYNC_COORDINATOR = True
+
+    def get_sync_coordinator():
         return SyncCoordinator.get_instance()
-    DataSyncManager = SyncCoordinator
 except ImportError:
-    try:
-        from app.distributed.data_sync import DataSyncManager, get_sync_manager
-        HAS_DATA_SYNC = True
-    except ImportError:
-        HAS_DATA_SYNC = False
-        DataSyncManager = None
-        get_sync_manager = None
+    HAS_SYNC_COORDINATOR = False
+    SyncCoordinator = None
 
 # Unified resource guard - 80% utilization limits (enforced 2025-12-16)
 try:
@@ -460,24 +455,27 @@ def monitor_and_train():
             time.sleep(POLL_INTERVAL_SECONDS)
 
 
-async def _collect_via_data_sync() -> List[Path]:
-    """Collect databases using DataSyncManager with fallback transport methods."""
+async def _collect_via_sync_coordinator() -> List[Path]:
+    """Collect databases using SyncCoordinator with fallback transport methods."""
     collected = []
     try:
-        sync_manager = get_sync_manager()
+        coordinator = get_sync_coordinator()
 
-        # Collect hex8 databases from all configured nodes
-        # DataSyncManager tries Tailscale, aria2, Cloudflare, and SSH in order
-        result = await sync_manager.collect_training_data(pattern="hex8*.db")
+        # Sync games from cluster using aria2 → ssh → p2p fallback chain
+        stats = await coordinator.sync_games()
 
-        if result:
-            for db_path in result:
-                if db_path and db_path.exists():
+        if stats.files_synced > 0:
+            logger.info(f"SyncCoordinator synced {stats.files_synced} files via {stats.transport_used}")
+            # Games are synced to the provider's selfplay_dir
+            # Look for hex8 databases there
+            selfplay_dir = coordinator._provider.selfplay_dir
+            for db_path in selfplay_dir.glob("*hex8*.db"):
+                if db_path.exists():
                     collected.append(db_path)
-                    logger.info(f"DataSync collected: {db_path}")
+                    logger.info(f"SyncCoordinator collected: {db_path}")
 
     except Exception as e:
-        logger.warning(f"DataSync collection failed: {e}")
+        logger.warning(f"SyncCoordinator collection failed: {e}")
 
     return collected
 
@@ -491,20 +489,20 @@ def run_collection_and_training():
     db_paths = []
     failed_nodes = set(REMOTE_DATABASES.keys())
 
-    # Try DataSyncManager first for better connectivity (Tailscale, aria2, etc.)
-    if HAS_DATA_SYNC:
-        logger.info("Trying DataSyncManager for enhanced data collection...")
-        collected = asyncio.run(_collect_via_data_sync())
+    # Try SyncCoordinator first for better connectivity (aria2, ssh, p2p fallback)
+    if HAS_SYNC_COORDINATOR:
+        logger.info("Trying SyncCoordinator for enhanced data collection...")
+        collected = asyncio.run(_collect_via_sync_coordinator())
         if collected:
             db_paths.extend(collected)
-            # Track which nodes succeeded via DataSync (based on filename pattern)
+            # Track which nodes succeeded via SyncCoordinator (based on filename pattern)
             for db_path in collected:
                 # Filename format: nodename_hex8_*.db
                 stem = db_path.stem
                 for node_name in list(failed_nodes):
                     if node_name in stem:
                         failed_nodes.discard(node_name)
-            logger.info(f"DataSync collected {len(collected)} databases")
+            logger.info(f"SyncCoordinator collected {len(collected)} databases")
 
     # Fallback to direct SSH/rsync for nodes that failed via DataSync
     if failed_nodes:

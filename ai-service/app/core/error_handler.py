@@ -34,9 +34,11 @@ logger = logging.getLogger(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
 AF = TypeVar("AF", bound=Callable[..., Any])
 
+# Use centralized path constants
+from app.utils.paths import DATA_DIR, ensure_parent_dir
+
 # Emergency halt file location (same as unified_ai_loop.py)
-AI_SERVICE_ROOT = Path(__file__).parent.parent.parent
-EMERGENCY_HALT_FILE = AI_SERVICE_ROOT / "data" / "coordination" / "EMERGENCY_HALT"
+EMERGENCY_HALT_FILE = DATA_DIR / "coordination" / "EMERGENCY_HALT"
 
 
 # ============================================================================
@@ -75,7 +77,7 @@ def set_emergency_halt(reason: str = "Manual halt") -> None:
     Args:
         reason: Reason for the halt (stored in the file)
     """
-    EMERGENCY_HALT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ensure_parent_dir(EMERGENCY_HALT_FILE)
     EMERGENCY_HALT_FILE.write_text(f"{reason}\nSet at: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
     logger.warning(f"Emergency halt set: {reason}")
 

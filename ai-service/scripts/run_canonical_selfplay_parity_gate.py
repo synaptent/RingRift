@@ -42,11 +42,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+# Ensure `app.*` imports resolve when invoked from repo root.
+if str(AI_SERVICE_ROOT) not in sys.path:
+    sys.path.insert(0, str(AI_SERVICE_ROOT))
+
 from app.models import BoardType
 from app.training.env import get_theoretical_max_moves
-
-
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser
 
 
 def _run_cmd(
@@ -347,39 +350,14 @@ def run_parity_checks(db_paths: list[Path]) -> Dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run canonical Python self-play for a board type and gate the resulting GameReplayDB on TS↔Python parity."
+    # Use unified argument parser from SelfplayConfig
+    parser = create_argument_parser(
+        description="Run canonical Python self-play for a board type and gate the resulting GameReplayDB on TS↔Python parity.",
+        include_gpu=False,
+        include_ramdrive=False,
     )
-    parser.add_argument(
-        "--board-type",
-        required=True,
-        choices=["square8", "square19", "hexagonal"],
-        help="Board type to run self-play on.",
-    )
-    parser.add_argument(
-        "--num-games",
-        type=int,
-        default=20,
-        help="Number of self-play games to run for the gate (default: 20).",
-    )
-    parser.add_argument(
-        "--difficulty-band",
-        type=str,
-        choices=["canonical", "light"],
-        default="light",
-        help=(
-            "AI difficulty band for engine_mode='mixed' during the soak. "
-            "'light' avoids heavy MCTS/Descent tiers for faster, more debuggable "
-            "canonical DB generation (default: light)."
-        ),
-    )
-    parser.add_argument(
-        "--num-players",
-        type=int,
-        choices=[2, 3, 4],
-        default=2,
-        help="Number of players for the self-play soak (default: 2).",
-    )
+
+    # Add parity gate-specific arguments
     parser.add_argument(
         "--db",
         type=str,
@@ -387,50 +365,27 @@ def main() -> None:
         help="Path to the GameReplayDB SQLite file to write.",
     )
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Base RNG seed for the soak run.",
-    )
-    parser.add_argument(
         "--max-moves",
         type=int,
         default=0,
-        help=(
-            "Maximum moves per game before forced termination. "
-            "Use 0 to auto-select the theoretical max for the board/player count "
-            "(default: 0)."
-        ),
-    )
-    parser.add_argument(
-        "--hosts",
-        type=str,
-        default=None,
-        help="Comma-separated hosts for distributed self-play soak; when set, delegates to run_distributed_selfplay_soak for the specified board/num-players. Default: None (local soak).",
+        help="Maximum moves per game (0 to auto-select from board/players).",
     )
     parser.add_argument(
         "--summary",
         type=str,
         default=None,
-        help="Optional path to write the parity gate JSON summary. When omitted, prints to stdout only.",
+        help="Optional path to write the parity gate JSON summary.",
     )
     parser.add_argument(
         "--include-training-data-jsonl",
         action="store_true",
-        help=(
-            "Include full move history + initial_state in the JSONL log emitted by "
-            "run_self_play_soak.py. Useful for analysis scripts but can be large on "
-            "long games."
-        ),
+        help="Include full move history + initial_state in the JSONL log.",
     )
     parser.add_argument(
         "--parity-progress-every",
         type=int,
         default=200,
-        help=(
-            "Emit TS↔Python parity progress to stderr every N replay steps (0 disables). "
-            "Default: 200."
-        ),
+        help="Emit parity progress to stderr every N replay steps (0 disables).",
     )
     parser.add_argument(
         "--soak-timeout-seconds",
@@ -442,27 +397,18 @@ def main() -> None:
         "--distributed-job-timeout-seconds",
         type=int,
         default=0,
-        help=(
-            "Per-job wall-clock timeout passed to run_distributed_selfplay_soak.py "
-            "when --hosts is set (0 uses that script's default)."
-        ),
+        help="Per-job timeout for distributed selfplay (0 uses default).",
     )
     parser.add_argument(
         "--distributed-fetch-timeout-seconds",
         type=int,
         default=0,
-        help=(
-            "scp fetch timeout passed to run_distributed_selfplay_soak.py when --hosts "
-            "is set (0 uses that script's default)."
-        ),
+        help="scp fetch timeout for distributed selfplay (0 uses default).",
     )
     parser.add_argument(
         "--keep-distributed-remote-artifacts",
         action="store_true",
-        help=(
-            "When using --hosts, keep per-job remote DB/JSONL artifacts after fetching. "
-            "Default is to clean them up to avoid filling remote disks."
-        ),
+        help="Keep remote DB/JSONL artifacts after fetching.",
     )
     parser.add_argument(
         "--parity-timeout-seconds",
@@ -474,13 +420,59 @@ def main() -> None:
         "--heartbeat-seconds",
         type=int,
         default=60,
-        help=(
-            "Emit a heartbeat to stderr and refresh the --summary JSON every N seconds "
-            "while long-running stages are executing (0 disables). Default: 60."
-        ),
+        help="Emit heartbeat to stderr every N seconds (0 disables).",
     )
 
-    args = parser.parse_args()
+    parsed = parser.parse_args()
+
+    # Validate required --board argument
+    if not parsed.board:
+        parser.error("--board is required (e.g., --board square8)")
+
+    # Create SelfplayConfig for tracking
+    selfplay_config = SelfplayConfig(
+        board_type=parsed.board,
+        num_players=parsed.num_players,
+        num_games=parsed.num_games,
+        seed=parsed.seed,
+        difficulty_band=parsed.difficulty_band,
+        hosts=parsed.hosts,
+        source="run_canonical_selfplay_parity_gate.py",
+        extra_options={
+            "db": parsed.db,
+            "max_moves": parsed.max_moves,
+            "summary": parsed.summary,
+            "include_training_data_jsonl": parsed.include_training_data_jsonl,
+            "parity_progress_every": parsed.parity_progress_every,
+            "soak_timeout_seconds": parsed.soak_timeout_seconds,
+            "distributed_job_timeout_seconds": parsed.distributed_job_timeout_seconds,
+            "distributed_fetch_timeout_seconds": parsed.distributed_fetch_timeout_seconds,
+            "keep_distributed_remote_artifacts": parsed.keep_distributed_remote_artifacts,
+            "parity_timeout_seconds": parsed.parity_timeout_seconds,
+            "heartbeat_seconds": parsed.heartbeat_seconds,
+        },
+    )
+
+    # Create backward-compatible args object (uses board_type for legacy code)
+    args = type("Args", (), {
+        "board_type": selfplay_config.board_type,
+        "num_games": selfplay_config.num_games,
+        "difficulty_band": selfplay_config.difficulty_band,
+        "num_players": selfplay_config.num_players,
+        "db": selfplay_config.extra_options["db"],
+        "seed": selfplay_config.seed,
+        "max_moves": selfplay_config.extra_options["max_moves"],
+        "hosts": selfplay_config.hosts,
+        "summary": selfplay_config.extra_options["summary"],
+        "include_training_data_jsonl": selfplay_config.extra_options["include_training_data_jsonl"],
+        "parity_progress_every": selfplay_config.extra_options["parity_progress_every"],
+        "soak_timeout_seconds": selfplay_config.extra_options["soak_timeout_seconds"],
+        "distributed_job_timeout_seconds": selfplay_config.extra_options["distributed_job_timeout_seconds"],
+        "distributed_fetch_timeout_seconds": selfplay_config.extra_options["distributed_fetch_timeout_seconds"],
+        "keep_distributed_remote_artifacts": selfplay_config.extra_options["keep_distributed_remote_artifacts"],
+        "parity_timeout_seconds": selfplay_config.extra_options["parity_timeout_seconds"],
+        "heartbeat_seconds": selfplay_config.extra_options["heartbeat_seconds"],
+    })()
 
     db_path = Path(args.db).resolve()
     db_path.parent.mkdir(parents=True, exist_ok=True)

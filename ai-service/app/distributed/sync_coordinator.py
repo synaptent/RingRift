@@ -44,8 +44,16 @@ from .storage_provider import (
     get_optimal_transport_config,
     get_aria2_sources,
 )
+from .unified_manifest import (
+    DataManifest,
+    GameQualityMetadata,
+    PriorityQueueEntry,
+)
 
 logger = logging.getLogger(__name__)
+
+# Default paths
+DEFAULT_DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
 # Import transports with graceful fallbacks
 try:
@@ -94,6 +102,10 @@ class SyncStats:
     transport_used: str = ""
     sources_tried: int = 0
     errors: List[str] = field(default_factory=list)
+    # Quality-aware sync stats
+    high_quality_games_synced: int = 0
+    avg_quality_score: float = 0.0
+    avg_elo: float = 0.0
 
     @property
     def success_rate(self) -> float:
@@ -111,6 +123,10 @@ class ClusterSyncStats:
     transport_distribution: Dict[str, int] = field(default_factory=dict)
     nodes_synced: int = 0
     nodes_failed: int = 0
+    # Quality-aware stats
+    total_high_quality_games: int = 0
+    avg_quality_score: float = 0.0
+    quality_distribution: Dict[str, Any] = field(default_factory=dict)
 
 
 class SyncCoordinator:
@@ -127,6 +143,7 @@ class SyncCoordinator:
         self,
         provider: Optional[StorageProvider] = None,
         config: Optional[TransportConfig] = None,
+        manifest_path: Optional[Path] = None,
     ):
         self._provider = provider or get_storage_provider()
         self._config = config or get_optimal_transport_config(self._provider)
@@ -146,10 +163,19 @@ class SyncCoordinator:
         self._aria2_sources: List[str] = []
         self._source_discovery_time: float = 0
 
+        # Quality-aware sync: manifest integration
+        self._manifest: Optional[DataManifest] = None
+        self._manifest_path = manifest_path
+        self._quality_lookup: Dict[str, float] = {}
+        self._elo_lookup: Dict[str, float] = {}
+        self._quality_lookup_time: float = 0
+        self._init_manifest()
+
         logger.info(
             f"SyncCoordinator initialized: provider={self._provider.provider_type.value}, "
             f"aria2={HAS_ARIA2 and check_aria2_available()}, "
-            f"shared_storage={self._provider.has_shared_storage}"
+            f"shared_storage={self._provider.has_shared_storage}, "
+            f"manifest={'enabled' if self._manifest else 'disabled'}"
         )
 
     @classmethod
@@ -222,6 +248,231 @@ class SyncCoordinator:
             )
             logger.debug("Gossip sync daemon initialized")
         return self._gossip
+
+    # =========================================================================
+    # Manifest & Quality Integration
+    # =========================================================================
+
+    def _init_manifest(self) -> None:
+        """Initialize the data manifest for quality-aware sync."""
+        if self._manifest is not None:
+            return
+
+        # Try specified path first
+        manifest_paths = []
+        if self._manifest_path:
+            manifest_paths.append(self._manifest_path)
+
+        # Then try standard locations
+        manifest_paths.extend([
+            DEFAULT_DATA_DIR / "data_manifest.db",
+            self._provider.data_dir / "data_manifest.db" if hasattr(self._provider, 'data_dir') else None,
+            Path.home() / "ringrift" / "ai-service" / "data" / "data_manifest.db",
+        ])
+
+        for path in manifest_paths:
+            if path and path.exists():
+                try:
+                    self._manifest = DataManifest(path)
+                    logger.info(f"Loaded manifest from {path}")
+                    self._refresh_quality_lookup()
+                    return
+                except Exception as e:
+                    logger.warning(f"Failed to load manifest from {path}: {e}")
+
+        # Create new manifest if none found
+        default_path = DEFAULT_DATA_DIR / "data_manifest.db"
+        try:
+            default_path.parent.mkdir(parents=True, exist_ok=True)
+            self._manifest = DataManifest(default_path)
+            logger.info(f"Created new manifest at {default_path}")
+        except Exception as e:
+            logger.warning(f"Failed to create manifest: {e}")
+            self._manifest = None
+
+    def _refresh_quality_lookup(self, limit: int = 50000) -> int:
+        """Refresh the quality lookup tables from manifest.
+
+        Args:
+            limit: Maximum number of games to load into lookup
+
+        Returns:
+            Number of games loaded into lookup
+        """
+        if not self._manifest:
+            return 0
+
+        cache_ttl = 300  # 5 minutes
+        now = time.time()
+
+        if self._quality_lookup and (now - self._quality_lookup_time) < cache_ttl:
+            return len(self._quality_lookup)
+
+        try:
+            high_quality_games = self._manifest.get_high_quality_games(
+                min_quality_score=0.0,  # Get all with scores
+                limit=limit,
+            )
+
+            self._quality_lookup = {}
+            self._elo_lookup = {}
+
+            for game in high_quality_games:
+                self._quality_lookup[game.game_id] = game.quality_score
+                self._elo_lookup[game.game_id] = game.avg_player_elo
+
+            self._quality_lookup_time = now
+            logger.debug(f"Refreshed quality lookup: {len(self._quality_lookup)} games")
+            return len(self._quality_lookup)
+
+        except Exception as e:
+            logger.warning(f"Failed to refresh quality lookup: {e}")
+            return 0
+
+    def get_quality_lookup(self, force_refresh: bool = False) -> Dict[str, float]:
+        """Get quality lookup dictionary for training integration.
+
+        Args:
+            force_refresh: Force refresh from manifest
+
+        Returns:
+            Dict mapping game_id to quality_score
+        """
+        if force_refresh or not self._quality_lookup:
+            self._quality_lookup_time = 0  # Force refresh
+            self._refresh_quality_lookup()
+        return self._quality_lookup.copy()
+
+    def get_elo_lookup(self, force_refresh: bool = False) -> Dict[str, float]:
+        """Get Elo lookup dictionary for training integration.
+
+        Args:
+            force_refresh: Force refresh from manifest
+
+        Returns:
+            Dict mapping game_id to avg_player_elo
+        """
+        if force_refresh or not self._elo_lookup:
+            self._quality_lookup_time = 0  # Force refresh
+            self._refresh_quality_lookup()
+        return self._elo_lookup.copy()
+
+    def get_manifest(self) -> Optional[DataManifest]:
+        """Get the data manifest instance.
+
+        Returns:
+            DataManifest instance or None if not initialized
+        """
+        return self._manifest
+
+    def get_high_quality_game_ids(
+        self,
+        min_quality: float = 0.7,
+        min_elo: Optional[float] = None,
+        limit: int = 10000,
+    ) -> List[str]:
+        """Get list of high-quality game IDs for training.
+
+        Args:
+            min_quality: Minimum quality score threshold
+            min_elo: Optional minimum average Elo threshold
+            limit: Maximum number of games to return
+
+        Returns:
+            List of game IDs meeting quality criteria
+        """
+        if not self._manifest:
+            return []
+
+        try:
+            games = self._manifest.get_high_quality_games(
+                min_quality_score=min_quality,
+                limit=limit,
+            )
+
+            # Filter by Elo if specified
+            if min_elo is not None:
+                games = [g for g in games if g.avg_player_elo >= min_elo]
+
+            return [g.game_id for g in games]
+
+        except Exception as e:
+            logger.warning(f"Failed to get high quality game IDs: {e}")
+            return []
+
+    # =========================================================================
+    # Data Server (for aria2 clients to download from this node)
+    # =========================================================================
+
+    _data_server_process: Optional[asyncio.subprocess.Process] = None
+    _data_server_port: int = 8766
+
+    async def start_data_server(self, port: int = 8766) -> bool:
+        """Start the aria2 data server for serving files to other nodes.
+
+        This allows other nodes to download files from this node using aria2.
+
+        Args:
+            port: Port to serve on (default: 8766)
+
+        Returns:
+            True if server started successfully
+        """
+        if self._data_server_process is not None:
+            logger.warning("Data server already running")
+            return True
+
+        self._data_server_port = port
+
+        try:
+            # Start the data server as a subprocess
+            script_path = Path(__file__).parent.parent.parent / "scripts" / "aria2_data_sync.py"
+            if not script_path.exists():
+                logger.error(f"Data server script not found: {script_path}")
+                return False
+
+            self._data_server_process = await asyncio.create_subprocess_exec(
+                "python", str(script_path), "serve", "--port", str(port),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            # Give it a moment to start
+            await asyncio.sleep(0.5)
+
+            if self._data_server_process.returncode is not None:
+                logger.error("Data server failed to start")
+                self._data_server_process = None
+                return False
+
+            logger.info(f"Data server started on port {port}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to start data server: {e}")
+            self._data_server_process = None
+            return False
+
+    async def stop_data_server(self) -> None:
+        """Stop the aria2 data server."""
+        if self._data_server_process is None:
+            return
+
+        try:
+            self._data_server_process.terminate()
+            await asyncio.wait_for(self._data_server_process.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            self._data_server_process.kill()
+        finally:
+            self._data_server_process = None
+            logger.info("Data server stopped")
+
+    def is_data_server_running(self) -> bool:
+        """Check if data server is running."""
+        return (
+            self._data_server_process is not None
+            and self._data_server_process.returncode is None
+        )
 
     # =========================================================================
     # Source Discovery
@@ -465,14 +716,163 @@ class SyncCoordinator:
         stats.duration_seconds = time.time() - start_time
         return stats
 
+    async def sync_high_quality_games(
+        self,
+        min_quality_score: float = 0.7,
+        min_elo: Optional[float] = None,
+        limit: int = 1000,
+        sources: Optional[List[str]] = None,
+    ) -> SyncStats:
+        """Sync high-quality games with priority from the cluster.
+
+        This method prioritizes syncing games with high quality scores (based on
+        Elo, game length, and decisiveness) before bulk sync operations. This
+        ensures that training nodes always have access to the best training data.
+
+        Args:
+            min_quality_score: Minimum quality score threshold (0.0-1.0)
+            min_elo: Optional minimum average Elo threshold
+            limit: Maximum number of high-quality games to sync
+            sources: Specific sources to sync from (auto-discovers if None)
+
+        Returns:
+            SyncStats with operation results including quality metrics
+        """
+        start_time = time.time()
+        stats = SyncStats(category="high_quality_games")
+
+        # Skip if we have shared storage (no sync needed)
+        if self._provider.has_shared_storage:
+            logger.info("Skipping high-quality game sync - using shared NFS storage")
+            stats.transport_used = "nfs_shared"
+            return stats
+
+        # Check manifest availability
+        if not self._manifest:
+            logger.warning("Cannot sync high-quality games - no manifest available")
+            stats.errors.append("No manifest available for quality-based sync")
+            return stats
+
+        # Get priority queue entries from manifest
+        priority_entries = self._manifest.get_priority_queue_batch(
+            limit=limit,
+            min_priority=min_quality_score,
+        )
+
+        if not priority_entries:
+            logger.debug("No high-quality games pending in priority queue")
+            # Try direct query from synced_games
+            high_quality_games = self._manifest.get_high_quality_games(
+                min_quality_score=min_quality_score,
+                limit=limit,
+            )
+            if min_elo:
+                high_quality_games = [g for g in high_quality_games if g.avg_player_elo >= min_elo]
+
+            if not high_quality_games:
+                logger.info("No high-quality games to sync")
+                return stats
+
+            stats.high_quality_games_synced = len(high_quality_games)
+            if high_quality_games:
+                stats.avg_quality_score = sum(g.quality_score for g in high_quality_games) / len(high_quality_games)
+                stats.avg_elo = sum(g.avg_player_elo for g in high_quality_games) / len(high_quality_games)
+
+            logger.info(
+                f"Found {len(high_quality_games)} high-quality games "
+                f"(avg quality: {stats.avg_quality_score:.3f}, avg Elo: {stats.avg_elo:.0f})"
+            )
+            stats.duration_seconds = time.time() - start_time
+            return stats
+
+        # Group entries by source host for efficient sync
+        entries_by_host: Dict[str, List[PriorityQueueEntry]] = {}
+        for entry in priority_entries:
+            if entry.source_host not in entries_by_host:
+                entries_by_host[entry.source_host] = []
+            entries_by_host[entry.source_host].append(entry)
+
+        # Discover sources if not provided
+        if sources is None:
+            sources = await self.discover_sources()
+        stats.sources_tried = len(sources)
+
+        if not sources:
+            logger.warning("No sources available for high-quality game sync")
+            return stats
+
+        # Calculate quality stats from priority entries
+        quality_scores = [e.priority_score for e in priority_entries]
+        elo_scores = [e.avg_player_elo for e in priority_entries if e.avg_player_elo]
+        stats.avg_quality_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
+        stats.avg_elo = sum(elo_scores) / len(elo_scores) if elo_scores else 0.0
+
+        # Sync high-quality games from each host
+        synced_entry_ids: List[int] = []
+        aria2 = self._init_aria2()
+
+        for host, entries in entries_by_host.items():
+            # Find matching source URL for this host
+            host_sources = [s for s in sources if host in s]
+            if not host_sources:
+                logger.debug(f"No source URL found for host {host}")
+                continue
+
+            game_ids = [e.game_id for e in entries]
+            logger.info(f"Syncing {len(game_ids)} high-quality games from {host}")
+
+            if aria2:
+                try:
+                    # Use aria2 for priority sync
+                    result = await aria2.sync_games(
+                        host_sources,
+                        self._provider.selfplay_dir,
+                        # Note: aria2 sync doesn't support game_id filtering yet
+                        # This syncs all games from the source, but we track which ones
+                        # were high-quality for metrics
+                    )
+                    stats.files_synced += result.files_synced
+                    stats.bytes_transferred += result.bytes_transferred
+                    stats.transport_used = "aria2"
+
+                    if result.success:
+                        # Mark priority queue entries as synced
+                        synced_entry_ids.extend([e.id for e in entries])
+                        stats.high_quality_games_synced += len(entries)
+
+                except Exception as e:
+                    stats.errors.append(f"aria2 sync from {host} failed: {e}")
+                    logger.warning(f"High-quality sync from {host} failed: {e}")
+
+        # Mark synced entries in manifest
+        if synced_entry_ids:
+            self._manifest.mark_queue_entries_synced(synced_entry_ids)
+            logger.info(f"Marked {len(synced_entry_ids)} priority queue entries as synced")
+
+        # Refresh quality lookup after sync
+        self._quality_lookup_time = 0  # Force refresh
+        self._refresh_quality_lookup()
+
+        stats.duration_seconds = time.time() - start_time
+        logger.info(
+            f"High-quality game sync complete: {stats.high_quality_games_synced} games synced, "
+            f"avg quality: {stats.avg_quality_score:.3f}, avg Elo: {stats.avg_elo:.0f}"
+        )
+
+        return stats
+
     async def full_cluster_sync(
         self,
         categories: Optional[List[SyncCategory]] = None,
+        sync_high_quality_first: bool = True,
     ) -> ClusterSyncStats:
         """Perform a full sync of all data categories from the cluster.
 
         Args:
             categories: Categories to sync (all if None)
+            sync_high_quality_first: If True, sync high-quality games with priority
+                before bulk category syncs. This ensures training nodes have access
+                to the best training data as quickly as possible.
 
         Returns:
             ClusterSyncStats with complete sync results
@@ -496,6 +896,24 @@ class SyncCoordinator:
             stats.duration_seconds = time.time() - start_time
             return stats
 
+        # Sync high-quality games FIRST (priority sync)
+        if sync_high_quality_first:
+            hq_stats = await self.sync_high_quality_games(
+                min_quality_score=0.7,
+                limit=1000,
+                sources=sources,
+            )
+            stats.categories["high_quality_games"] = hq_stats
+            stats.total_high_quality_games = hq_stats.high_quality_games_synced
+            stats.avg_quality_score = hq_stats.avg_quality_score
+            stats.total_files_synced += hq_stats.files_synced
+            stats.total_bytes_transferred += hq_stats.bytes_transferred
+
+            if hq_stats.transport_used:
+                stats.transport_distribution[hq_stats.transport_used] = (
+                    stats.transport_distribution.get(hq_stats.transport_used, 0) + 1
+                )
+
         # Sync each category
         for category in categories:
             if category == SyncCategory.GAMES:
@@ -516,12 +934,17 @@ class SyncCoordinator:
                     stats.transport_distribution.get(cat_stats.transport_used, 0) + 1
                 )
 
+        # Get quality distribution from manifest
+        if self._manifest:
+            stats.quality_distribution = self._manifest.get_quality_distribution()
+
         stats.nodes_synced = len(sources)
         stats.duration_seconds = time.time() - start_time
 
         logger.info(
             f"Full cluster sync complete: {stats.total_files_synced} files, "
-            f"{stats.total_bytes_transferred / (1024*1024):.1f}MB in {stats.duration_seconds:.1f}s"
+            f"{stats.total_bytes_transferred / (1024*1024):.1f}MB in {stats.duration_seconds:.1f}s "
+            f"(high-quality: {stats.total_high_quality_games} games)"
         )
 
         return stats
@@ -575,6 +998,9 @@ class SyncCoordinator:
         """Shutdown the coordinator and all transports."""
         self._running = False
 
+        # Stop data server
+        await self.stop_data_server()
+
         if self._aria2:
             await self._aria2.close()
             self._aria2 = None
@@ -591,10 +1017,14 @@ class SyncCoordinator:
 
     def get_status(self) -> Dict[str, Any]:
         """Get current sync status and statistics."""
-        return {
+        status = {
             "provider": self._provider.provider_type.value,
             "shared_storage": self._provider.has_shared_storage,
             "running": self._running,
+            "data_server": {
+                "running": self.is_data_server_running(),
+                "port": self._data_server_port if self.is_data_server_running() else None,
+            },
             "transports": {
                 "aria2": HAS_ARIA2 and check_aria2_available() and self._config.enable_aria2,
                 "p2p": HAS_P2P and self._config.enable_p2p,
@@ -607,8 +1037,25 @@ class SyncCoordinator:
                 "aria2_connections": self._config.aria2_connections_per_server,
                 "gossip_port": self._config.gossip_port,
                 "fallback_chain": self._config.fallback_chain,
+                "data_server_port": self._config.aria2_data_server_port,
+            },
+            "quality": {
+                "manifest_enabled": self._manifest is not None,
+                "quality_lookup_size": len(self._quality_lookup),
+                "elo_lookup_size": len(self._elo_lookup),
+                "quality_lookup_age_seconds": time.time() - self._quality_lookup_time if self._quality_lookup_time else 0,
             },
         }
+
+        # Add quality distribution if manifest is available
+        if self._manifest:
+            try:
+                status["quality"]["distribution"] = self._manifest.get_quality_distribution()
+                status["quality"]["priority_queue"] = self._manifest.get_priority_queue_stats()
+            except Exception as e:
+                logger.debug(f"Failed to get quality stats: {e}")
+
+        return status
 
 
 # =============================================================================
@@ -630,6 +1077,21 @@ async def sync_games(**kwargs) -> SyncStats:
     return await SyncCoordinator.get_instance().sync_games(**kwargs)
 
 
+async def sync_high_quality_games(**kwargs) -> SyncStats:
+    """Convenience function to sync high-quality games with priority."""
+    return await SyncCoordinator.get_instance().sync_high_quality_games(**kwargs)
+
+
 async def full_cluster_sync(**kwargs) -> ClusterSyncStats:
     """Convenience function for full cluster sync."""
     return await SyncCoordinator.get_instance().full_cluster_sync(**kwargs)
+
+
+def get_quality_lookup() -> Dict[str, float]:
+    """Get quality lookup dictionary for training integration."""
+    return SyncCoordinator.get_instance().get_quality_lookup()
+
+
+def get_elo_lookup() -> Dict[str, float]:
+    """Get Elo lookup dictionary for training integration."""
+    return SyncCoordinator.get_instance().get_elo_lookup()

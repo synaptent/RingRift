@@ -56,6 +56,33 @@ except ImportError:
     HAS_EVENT_SYSTEM = False
     logger.debug("Event system not available - HotDataBuffer running standalone")
 
+# Quality scoring integration (December 2025)
+try:
+    from app.quality.unified_quality import (
+        UnifiedQualityScorer,
+        GameQuality,
+        get_quality_scorer,
+    )
+    HAS_QUALITY_SCORER = True
+except ImportError:
+    HAS_QUALITY_SCORER = False
+    UnifiedQualityScorer = None
+    GameQuality = None
+
+    def get_quality_scorer():
+        return None
+
+# Quality config integration
+try:
+    from app.config.unified_config import QualityConfig, get_config
+    HAS_QUALITY_CONFIG = True
+except ImportError:
+    HAS_QUALITY_CONFIG = False
+    QualityConfig = None
+
+    def get_config():
+        return None
+
 # Data validation integration (optional - graceful fallback if not available)
 try:
     from app.training.data_validation import (
@@ -96,6 +123,8 @@ class GameRecord:
     avg_elo: float = 1500.0  # Average Elo of players in this game
     priority: float = 1.0  # Base priority (can be updated by TD error)
     from_promoted_model: bool = False  # Was this from a model that got promoted?
+    # Manifest quality score (populated from data sync manifest)
+    manifest_quality: float = 0.5  # Quality score from unified_manifest [0, 1]
 
     def to_training_samples(
         self,
@@ -225,6 +254,47 @@ class HotDataBuffer:
             "games_with_issues": 0,
             "games_skipped": 0,
         }
+
+        # Manifest quality lookup (populated via set_quality_lookup)
+        self._quality_lookup: Dict[str, float] = {}
+        self._elo_lookup: Dict[str, float] = {}
+
+    def set_quality_lookup(
+        self,
+        quality_lookup: Optional[Dict[str, float]] = None,
+        elo_lookup: Optional[Dict[str, float]] = None,
+    ) -> int:
+        """Set manifest quality lookup tables for priority computation.
+
+        Call this with data from DataPipelineController/manifest to enable
+        quality-weighted experience replay.
+
+        Args:
+            quality_lookup: Dict mapping game_id to manifest quality_score [0, 1]
+            elo_lookup: Dict mapping game_id to avg_player_elo
+
+        Returns:
+            Number of existing buffer games updated with quality data
+        """
+        self._quality_lookup = quality_lookup or {}
+        self._elo_lookup = elo_lookup or {}
+
+        # Update existing games in buffer
+        updated = 0
+        with self._lock:
+            for game in self._buffer.values():
+                if game.game_id in self._quality_lookup:
+                    game.manifest_quality = self._quality_lookup[game.game_id]
+                    updated += 1
+                if game.game_id in self._elo_lookup:
+                    game.avg_elo = self._elo_lookup[game.game_id]
+                # Recompute priority with new quality data
+                game.priority = self.compute_game_priority(game)
+
+        if updated > 0:
+            logger.info(f"Updated {updated} buffer games with manifest quality data")
+
+        return updated
 
     def set_encoder(self, encoder: StateEncoder) -> None:
         """Set or update the state encoder.
@@ -383,8 +453,20 @@ class HotDataBuffer:
 
     def add_game_from_dict(self, data: Dict[str, Any]) -> None:
         """Add a game from a dictionary representation."""
+        game_id = str(data.get("game_id", ""))
+
+        # Get quality and elo from lookup tables if available
+        manifest_quality = float(data.get("manifest_quality", 0.5))
+        avg_elo = float(data.get("avg_elo", 1500.0))
+
+        # Override with manifest lookup if available
+        if game_id in self._quality_lookup:
+            manifest_quality = self._quality_lookup[game_id]
+        if game_id in self._elo_lookup:
+            avg_elo = self._elo_lookup[game_id]
+
         game = GameRecord(
-            game_id=str(data.get("game_id", "")),
+            game_id=game_id,
             board_type=str(data.get("board_type", "square8")),
             num_players=int(data.get("num_players", 2)),
             moves=data.get("moves", []),
@@ -392,11 +474,12 @@ class HotDataBuffer:
             timestamp=float(data.get("timestamp", time.time())),
             source=str(data.get("source", "hot_buffer")),
             # Priority fields
-            avg_elo=float(data.get("avg_elo", 1500.0)),
+            avg_elo=avg_elo,
             priority=float(data.get("priority", 1.0)),
             from_promoted_model=bool(data.get("from_promoted_model", False)),
+            manifest_quality=manifest_quality,
         )
-        # Compute initial priority based on Elo and recency
+        # Compute initial priority based on Elo, recency, and quality
         game.priority = self.compute_game_priority(game)
         self.add_game(game)
 
@@ -742,10 +825,15 @@ class HotDataBuffer:
         elo_scale: float = 400.0,
         recency_half_life_hours: float = 2.0,
         promotion_bonus: float = 1.5,
+        quality_weight: float = 0.3,
     ) -> float:
         """Compute priority score for a game.
 
-        Priority = elo_factor × recency_factor × promotion_bonus
+        Priority = elo_factor × recency_factor × quality_factor × promotion_bonus
+
+        The quality_factor incorporates manifest quality scores from the data sync
+        pipeline, prioritizing games that have been identified as high-quality
+        based on Elo, game length, and decisiveness.
 
         Args:
             game: The game record
@@ -753,6 +841,7 @@ class HotDataBuffer:
             elo_scale: Elo difference for 2x priority
             recency_half_life_hours: Hours until recency factor halves
             promotion_bonus: Multiplier for games from promoted models
+            quality_weight: Weight for manifest quality in final score [0, 1]
 
         Returns:
             Priority score (higher = more important)
@@ -768,11 +857,18 @@ class HotDataBuffer:
         recency_factor = 0.5 ** (age_hours / recency_half_life_hours)
         recency_factor = max(0.1, recency_factor)  # Minimum 10% weight
 
+        # Manifest quality factor: games with high quality scores are prioritized
+        # Quality is in [0, 1], so we scale it to [0.5, 1.5] for multiplicative factor
+        # If quality is 0.5 (default), this contributes 1.0 (neutral)
+        # If quality is 1.0, this contributes up to 1.0 + quality_weight
+        # If quality is 0.0, this contributes 1.0 - quality_weight
+        quality_factor = 1.0 + quality_weight * (game.manifest_quality - 0.5) * 2
+
         # Promotion bonus: games that led to model promotion are gold
         promo_factor = promotion_bonus if game.from_promoted_model else 1.0
 
         # Combine factors
-        priority = elo_factor * recency_factor * promo_factor
+        priority = elo_factor * recency_factor * quality_factor * promo_factor
 
         return priority
 
@@ -992,6 +1088,404 @@ class HotDataBuffer:
             self._flushed_game_ids.clear()
             self._total_samples = 0
             self._cache_dirty = True
+
+    # -------------------------------------------------------------------------
+    # Database Loading with Quality Scores
+    # -------------------------------------------------------------------------
+
+    def load_from_db(
+        self,
+        db_path: Path,
+        board_type: str = "square8",
+        num_players: int = 2,
+        min_quality: float = 0.0,
+        limit: int = 1000,
+        min_moves: int = 10,
+    ) -> int:
+        """Load games from SQLite database with quality scores.
+
+        This method loads games directly from the database, including the
+        quality_score column computed by game_quality_scorer.py during
+        game finalization. Games are added to the buffer with their
+        quality scores used for priority computation.
+
+        Args:
+            db_path: Path to the SQLite database
+            board_type: Board type to filter (e.g., "square8")
+            num_players: Number of players to filter
+            min_quality: Minimum quality score to include (0.0-1.0)
+            limit: Maximum number of games to load
+            min_moves: Minimum game length
+
+        Returns:
+            Number of games loaded
+        """
+        import sqlite3
+
+        if not db_path.exists():
+            logger.warning(f"Database not found: {db_path}")
+            return 0
+
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Check if quality_score column exists (v9+ schema)
+            has_quality_column = True
+            try:
+                cursor.execute("SELECT quality_score FROM games LIMIT 1")
+            except sqlite3.OperationalError:
+                has_quality_column = False
+                logger.debug(f"Database {db_path} missing quality_score column")
+
+            # Build query with optional quality filtering
+            if has_quality_column:
+                query = """
+                    SELECT game_id, board_type, num_players, winner, total_moves,
+                           termination_reason, source, created_at,
+                           COALESCE(quality_score, 0.5) as quality_score
+                    FROM games
+                    WHERE game_status = 'completed'
+                      AND winner IS NOT NULL
+                      AND board_type = ?
+                      AND num_players = ?
+                      AND total_moves >= ?
+                      AND COALESCE(excluded_from_training, 0) = 0
+                      AND COALESCE(quality_score, 0.5) >= ?
+                    ORDER BY quality_score DESC, created_at DESC
+                    LIMIT ?
+                """
+                cursor.execute(query, (board_type, num_players, min_moves, min_quality, limit))
+            else:
+                query = """
+                    SELECT game_id, board_type, num_players, winner, total_moves,
+                           termination_reason, source, created_at
+                    FROM games
+                    WHERE game_status = 'completed'
+                      AND winner IS NOT NULL
+                      AND board_type = ?
+                      AND num_players = ?
+                      AND total_moves >= ?
+                      AND COALESCE(excluded_from_training, 0) = 0
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                """
+                cursor.execute(query, (board_type, num_players, min_moves, limit))
+
+            rows = cursor.fetchall()
+            loaded = 0
+
+            for row in rows:
+                game_id = row['game_id']
+
+                # Skip if already in buffer
+                if game_id in self._buffer:
+                    continue
+
+                # Get quality score from DB or lookup table
+                if has_quality_column:
+                    quality_score = float(row['quality_score'])
+                elif game_id in self._quality_lookup:
+                    quality_score = self._quality_lookup[game_id]
+                else:
+                    quality_score = 0.5  # Default
+
+                # Get Elo from lookup if available
+                avg_elo = self._elo_lookup.get(game_id, 1500.0)
+
+                # Load moves for this game
+                moves_query = """
+                    SELECT move_number, action_json, state_json
+                    FROM moves
+                    WHERE game_id = ?
+                    ORDER BY move_number
+                """
+                cursor.execute(moves_query, (game_id,))
+                move_rows = cursor.fetchall()
+
+                if not move_rows:
+                    continue
+
+                moves = []
+                for move_row in move_rows:
+                    move_data = {
+                        "move_number": move_row['move_number'],
+                    }
+                    if move_row['action_json']:
+                        try:
+                            import json
+                            move_data["action"] = json.loads(move_row['action_json'])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    if move_row['state_json']:
+                        try:
+                            import json
+                            move_data["state"] = json.loads(move_row['state_json'])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    moves.append(move_data)
+
+                # Build outcome dict
+                winner = row['winner']
+                outcome = {}
+                for p in range(1, num_players + 1):
+                    if winner == p:
+                        outcome[str(p)] = 1.0
+                    elif winner is None or winner == 0:
+                        outcome[str(p)] = 0.5  # Draw
+                    else:
+                        outcome[str(p)] = 0.0
+
+                # Create game record
+                game = GameRecord(
+                    game_id=game_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    moves=moves,
+                    outcome=outcome,
+                    timestamp=float(row['created_at']) if row['created_at'] else time.time(),
+                    source=row['source'] or "db_load",
+                    avg_elo=avg_elo,
+                    priority=1.0,  # Will be computed below
+                    from_promoted_model=False,
+                    manifest_quality=quality_score,
+                )
+
+                # Compute priority using quality
+                game.priority = self.compute_game_priority(game)
+                self.add_game(game)
+                loaded += 1
+
+            conn.close()
+            logger.info(
+                f"Loaded {loaded} games from {db_path.name} "
+                f"(min_quality={min_quality:.2f}, has_quality_col={has_quality_column})"
+            )
+            return loaded
+
+        except sqlite3.Error as e:
+            logger.error(f"Failed to load games from {db_path}: {e}")
+            return 0
+        except Exception as e:
+            logger.error(f"Unexpected error loading games from {db_path}: {e}")
+            return 0
+
+    # -------------------------------------------------------------------------
+    # Quality Auto-Calibration (December 2025)
+    # -------------------------------------------------------------------------
+
+    def get_quality_distribution(self) -> Dict[str, Any]:
+        """Get quality score distribution for games in buffer.
+
+        Returns:
+            Dict with quality distribution statistics
+        """
+        with self._lock:
+            if not self._buffer:
+                return {
+                    "count": 0,
+                    "avg_quality": 0.0,
+                    "min_quality": 0.0,
+                    "max_quality": 0.0,
+                    "high_quality_count": 0,
+                    "low_quality_count": 0,
+                    "high_quality_ratio": 0.0,
+                    "low_quality_ratio": 0.0,
+                }
+
+            qualities = [g.manifest_quality for g in self._buffer.values()]
+            avg_quality = sum(qualities) / len(qualities)
+
+            # Use thresholds from config if available
+            high_threshold = 0.7
+            low_threshold = 0.3
+            if HAS_QUALITY_CONFIG:
+                config = get_config()
+                if config and hasattr(config, 'quality'):
+                    high_threshold = getattr(config.quality, 'high_quality_threshold', 0.7)
+                    low_threshold = getattr(config.quality, 'min_quality_for_training', 0.3)
+
+            high_quality = [q for q in qualities if q >= high_threshold]
+            low_quality = [q for q in qualities if q < low_threshold]
+
+            return {
+                "count": len(qualities),
+                "avg_quality": avg_quality,
+                "min_quality": min(qualities),
+                "max_quality": max(qualities),
+                "high_quality_count": len(high_quality),
+                "low_quality_count": len(low_quality),
+                "high_quality_ratio": len(high_quality) / len(qualities),
+                "low_quality_ratio": len(low_quality) / len(qualities),
+                "high_threshold": high_threshold,
+                "low_threshold": low_threshold,
+            }
+
+    def calibrate_quality_thresholds(
+        self,
+        target_high_ratio: float = 0.3,
+        target_low_ratio: float = 0.1,
+    ) -> Dict[str, float]:
+        """Auto-calibrate quality thresholds based on buffer distribution.
+
+        Adjusts thresholds so that approximately:
+        - target_high_ratio of games are classified as high-quality
+        - target_low_ratio of games are classified as low-quality
+
+        Args:
+            target_high_ratio: Target ratio of high-quality games (0-1)
+            target_low_ratio: Target ratio of low-quality games (0-1)
+
+        Returns:
+            Dict with calibrated thresholds
+        """
+        with self._lock:
+            if len(self._buffer) < 100:
+                # Not enough data for calibration
+                return {
+                    "high_threshold": 0.7,
+                    "low_threshold": 0.3,
+                    "calibrated": False,
+                    "reason": "Insufficient data (< 100 games)",
+                }
+
+            qualities = sorted([g.manifest_quality for g in self._buffer.values()])
+            n = len(qualities)
+
+            # Compute percentiles for target ratios
+            high_idx = int(n * (1.0 - target_high_ratio))
+            low_idx = int(n * target_low_ratio)
+
+            high_threshold = qualities[high_idx] if high_idx < n else 0.7
+            low_threshold = qualities[low_idx] if low_idx >= 0 else 0.3
+
+            # Sanity check: high must be > low
+            if high_threshold <= low_threshold:
+                high_threshold = max(low_threshold + 0.1, 0.5)
+
+            calibration = {
+                "high_threshold": high_threshold,
+                "low_threshold": low_threshold,
+                "calibrated": True,
+                "sample_size": n,
+                "avg_quality": sum(qualities) / n,
+            }
+
+            logger.info(
+                f"Quality calibration: high={high_threshold:.2f}, "
+                f"low={low_threshold:.2f} (n={n})"
+            )
+
+            return calibration
+
+    def recompute_quality_with_scorer(
+        self,
+        elo_lookup: Optional[Dict[str, float]] = None,
+    ) -> int:
+        """Recompute quality scores using UnifiedQualityScorer.
+
+        This ensures all games in the buffer use the same quality algorithm
+        as the sync pipeline.
+
+        Args:
+            elo_lookup: Optional dict mapping player_id to Elo rating
+
+        Returns:
+            Number of games recomputed
+        """
+        if not HAS_QUALITY_SCORER:
+            logger.debug("UnifiedQualityScorer not available, skipping recomputation")
+            return 0
+
+        scorer = get_quality_scorer()
+        if scorer is None:
+            return 0
+
+        recomputed = 0
+        with self._lock:
+            for game in self._buffer.values():
+                try:
+                    # Build game_data dict for scorer
+                    game_data = {
+                        "game_id": game.game_id,
+                        "game_length": len(game.moves),
+                        "outcome": game.outcome,
+                        "board_type": game.board_type,
+                        "num_players": game.num_players,
+                    }
+
+                    # Determine if decisive
+                    scores = list(game.outcome.values())
+                    game_data["is_decisive"] = (1.0 in scores or 0.0 in scores)
+
+                    quality = scorer.compute_game_quality(game_data, elo_lookup)
+                    game.manifest_quality = quality.overall_score
+                    game.priority = self.compute_game_priority(game)
+                    recomputed += 1
+
+                except Exception as e:
+                    logger.debug(f"Failed to recompute quality for {game.game_id}: {e}")
+
+        if recomputed > 0:
+            logger.info(f"Recomputed quality for {recomputed} buffer games")
+            self._cache_dirty = True
+
+        return recomputed
+
+    def auto_calibrate_and_filter(
+        self,
+        min_quality_percentile: float = 0.1,
+        evict_below_percentile: bool = True,
+    ) -> Dict[str, Any]:
+        """Auto-calibrate quality and optionally evict low-quality games.
+
+        This method:
+        1. Computes quality distribution
+        2. Calibrates thresholds based on distribution
+        3. Optionally evicts games below the low-quality threshold
+
+        Args:
+            min_quality_percentile: Percentile below which games are low-quality
+            evict_below_percentile: Whether to remove low-quality games
+
+        Returns:
+            Dict with calibration results and eviction stats
+        """
+        # Get distribution and calibrate
+        dist = self.get_quality_distribution()
+        calibration = self.calibrate_quality_thresholds(
+            target_low_ratio=min_quality_percentile,
+        )
+
+        result = {
+            "distribution": dist,
+            "calibration": calibration,
+            "evicted": 0,
+        }
+
+        if evict_below_percentile and calibration.get("calibrated", False):
+            low_threshold = calibration["low_threshold"]
+            evicted = 0
+
+            with self._lock:
+                games_to_remove = [
+                    gid for gid, game in self._buffer.items()
+                    if game.manifest_quality < low_threshold
+                ]
+
+                for gid in games_to_remove:
+                    del self._buffer[gid]
+                    evicted += 1
+
+                if evicted > 0:
+                    self._cache_dirty = True
+
+            result["evicted"] = evicted
+            if evicted > 0:
+                logger.info(f"Evicted {evicted} low-quality games (threshold={low_threshold:.2f})")
+
+        return result
 
 
 def create_hot_buffer(

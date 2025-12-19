@@ -92,7 +92,7 @@ BOARD_TYPE_MAP: Dict[str, BoardType] = {
 def build_encoder(
     board_type: BoardType,
     encoder_version: str = "default",
-    feature_version: int = 1,
+    feature_version: int = 2,
 ) -> NeuralNetAI:
     """
     Construct a NeuralNetAI instance for feature and policy encoding.
@@ -340,7 +340,7 @@ def export_replay_dataset_multi(
     output_path: str,
     *,
     history_length: int = 3,
-    feature_version: int = 1,
+    feature_version: int = 2,
     sample_every: int = 1,
     max_games: Optional[int] = None,
     require_completed: bool = False,
@@ -758,7 +758,7 @@ def export_replay_dataset(
     output_path: str,
     *,
     history_length: int = 3,
-    feature_version: int = 1,
+    feature_version: int = 2,
     sample_every: int = 1,
     max_games: Optional[int] = None,
     require_completed: bool = False,
@@ -857,10 +857,10 @@ def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--feature-version",
         type=int,
-        default=1,
+        default=2,
         help=(
-            "Feature encoding version for global feature layout (default: 1). "
-            "Use 2 to include chain/forced-elimination flags in hex encoders."
+            "Feature encoding version for global feature layout (default: 2). "
+            "Use 1 to keep legacy hex globals without chain/FE flags."
         ),
     )
     parser.add_argument(
@@ -1035,10 +1035,18 @@ def main(argv: List[str] | None = None) -> int:
             output_path=args.output,
             board_type=args.board_type,
             num_players=args.num_players,
+            history_length=args.history_length,
+            feature_version=args.feature_version,
+            policy_encoding="board_aware" if args.board_aware_encoding else "legacy_max_n",
             force=args.force_export,
         ):
             cache_info = cache.get_cache_info(
-                args.output, args.board_type, args.num_players
+                args.output,
+                args.board_type,
+                args.num_players,
+                history_length=args.history_length,
+                feature_version=args.feature_version,
+                policy_encoding="board_aware" if args.board_aware_encoding else "legacy_max_n",
             )
             samples = cache_info.get("samples_exported", "?") if cache_info else "?"
             print(f"[CACHE HIT] Skipping export - source DBs unchanged since last export")
@@ -1087,6 +1095,9 @@ def main(argv: List[str] | None = None) -> int:
             output_path=args.output,
             board_type=args.board_type,
             num_players=args.num_players,
+            history_length=args.history_length,
+            feature_version=args.feature_version,
+            policy_encoding="board_aware" if args.board_aware_encoding else "legacy_max_n",
             samples_exported=samples_exported,
             games_exported=games_exported,
         )

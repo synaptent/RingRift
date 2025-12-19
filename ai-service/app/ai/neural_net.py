@@ -4312,6 +4312,10 @@ class NeuralNetAI(BaseAI):
             setattr(self.model, "_ringrift_feature_version", int(self.feature_version))
         except Exception:
             pass
+        try:
+            setattr(self.model, "feature_version", int(self.feature_version))
+        except Exception:
+            pass
 
         # Initialize hex encoder for hex boards
         # Select encoder version based on model architecture:

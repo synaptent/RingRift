@@ -144,7 +144,7 @@ def run_export(
     ]
     if append:
         argv.append("--append")
-    if board_type in {"square8", "square19"} and not legacy_maxn_encoding:
+    if board_type in {"square8", "square19", "hexagonal"} and not legacy_maxn_encoding:
         argv.append("--board-aware-encoding")
 
     # Delegate to the existing export_replay_dataset CLI main.

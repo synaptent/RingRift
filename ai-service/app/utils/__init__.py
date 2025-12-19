@@ -64,6 +64,16 @@ from .secrets import (
     get_env_masked,
     is_sensitive_key,
 )
+from .yaml_utils import (
+    load_yaml,
+    load_yaml_with_defaults,
+    safe_load_yaml,
+    dump_yaml,
+    dumps_yaml,
+    load_config_yaml,
+    validate_yaml_schema,
+    YAMLLoadError,
+)
 
 __all__ = [
     # Paths
@@ -124,4 +134,13 @@ __all__ = [
     "load_secret_from_env",
     "get_env_masked",
     "is_sensitive_key",
+    # YAML utilities
+    "load_yaml",
+    "load_yaml_with_defaults",
+    "safe_load_yaml",
+    "dump_yaml",
+    "dumps_yaml",
+    "load_config_yaml",
+    "validate_yaml_schema",
+    "YAMLLoadError",
 ]

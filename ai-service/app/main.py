@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException, Response, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import secrets
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, Dict, Any, TypedDict
+from typing import Optional, Dict, Any, TypedDict, List
 
 try:
     from typing import Self  # Python 3.11+
@@ -628,6 +628,181 @@ async def admin_health_full(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get health summary: {e}" if not IS_PRODUCTION else "Internal error",
+        )
+
+
+@app.get("/admin/sync/status")
+async def admin_sync_status(
+    _: bool = Depends(verify_admin_api_key),
+) -> Dict[str, Any]:
+    """Get comprehensive data synchronization status.
+
+    Requires X-Admin-Key header for authentication.
+
+    Returns:
+    - Storage provider info (NFS, ephemeral, local)
+    - Available transports (aria2, SSH, P2P, gossip)
+    - Recent sync statistics
+    - Gossip daemon status (if enabled)
+    - Circuit breaker states
+    """
+    try:
+        from app.distributed.sync_coordinator import SyncCoordinator
+
+        coordinator = SyncCoordinator.get_instance()
+        status = coordinator.get_status()
+
+        return {
+            "status": "ok",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "sync": status,
+        }
+    except ImportError as e:
+        return {
+            "status": "unavailable",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "error": f"SyncCoordinator not available: {e}",
+        }
+    except Exception as e:
+        logger.error(f"Failed to get sync status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get sync status: {e}" if not IS_PRODUCTION else "Internal error",
+        )
+
+
+@app.post("/admin/sync/trigger")
+async def admin_sync_trigger(
+    _: bool = Depends(verify_admin_api_key),
+    categories: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Manually trigger a data sync operation.
+
+    Requires X-Admin-Key header for authentication.
+
+    Args:
+        categories: List of categories to sync ("games", "training", "models")
+                   If None, syncs all categories.
+
+    Returns:
+        Sync operation results with files synced per category
+    """
+    try:
+        from app.distributed.sync_coordinator import SyncCoordinator, SyncCategory
+
+        coordinator = SyncCoordinator.get_instance()
+
+        # Map string categories to enum
+        if categories is None:
+            cats = [SyncCategory.GAMES, SyncCategory.TRAINING, SyncCategory.MODELS]
+        else:
+            cat_map = {
+                "games": SyncCategory.GAMES,
+                "training": SyncCategory.TRAINING,
+                "training_data": SyncCategory.TRAINING,
+                "models": SyncCategory.MODELS,
+            }
+            cats = [cat_map[c] for c in categories if c in cat_map]
+
+        # Run full sync
+        stats = await coordinator.full_cluster_sync(categories=cats)
+
+        return {
+            "status": "ok",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "results": {
+                cat: {
+                    "files_synced": s.files_synced,
+                    "bytes_transferred": s.bytes_transferred,
+                    "transport_used": s.transport_used,
+                    "duration_seconds": s.duration_seconds,
+                }
+                for cat, s in stats.categories.items()
+            },
+            "total_files": stats.total_files_synced,
+            "total_bytes": stats.total_bytes_transferred,
+        }
+    except ImportError as e:
+        return {
+            "status": "unavailable",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "error": f"SyncCoordinator not available: {e}",
+        }
+    except Exception as e:
+        logger.error(f"Failed to trigger sync: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to trigger sync: {e}" if not IS_PRODUCTION else "Internal error",
+        )
+
+
+@app.post("/admin/sync/data-server/start")
+async def admin_start_data_server(
+    _: bool = Depends(verify_admin_api_key),
+    port: int = 8766,
+) -> Dict[str, Any]:
+    """Start the aria2 data server for serving files to other nodes.
+
+    Requires X-Admin-Key header for authentication.
+
+    Args:
+        port: Port to serve on (default: 8766)
+
+    Returns:
+        Server status
+    """
+    try:
+        from app.distributed.sync_coordinator import SyncCoordinator
+
+        coordinator = SyncCoordinator.get_instance()
+        success = await coordinator.start_data_server(port=port)
+
+        return {
+            "status": "started" if success else "failed",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "port": port if success else None,
+        }
+    except ImportError as e:
+        return {
+            "status": "unavailable",
+            "error": f"SyncCoordinator not available: {e}",
+        }
+    except Exception as e:
+        logger.error(f"Failed to start data server: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start data server: {e}" if not IS_PRODUCTION else "Internal error",
+        )
+
+
+@app.post("/admin/sync/data-server/stop")
+async def admin_stop_data_server(
+    _: bool = Depends(verify_admin_api_key),
+) -> Dict[str, Any]:
+    """Stop the aria2 data server.
+
+    Requires X-Admin-Key header for authentication.
+    """
+    try:
+        from app.distributed.sync_coordinator import SyncCoordinator
+
+        coordinator = SyncCoordinator.get_instance()
+        await coordinator.stop_data_server()
+
+        return {
+            "status": "stopped",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except ImportError as e:
+        return {
+            "status": "unavailable",
+            "error": f"SyncCoordinator not available: {e}",
+        }
+    except Exception as e:
+        logger.error(f"Failed to stop data server: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to stop data server: {e}" if not IS_PRODUCTION else "Internal error",
         )
 
 

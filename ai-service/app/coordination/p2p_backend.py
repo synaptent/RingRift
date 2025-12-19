@@ -620,6 +620,186 @@ async def get_p2p_backend(
     return P2PBackend(discovered, auth_token)
 
 
+# =============================================================================
+# OrchestratorRegistry Integration (December 2025)
+# =============================================================================
+
+# Import OrchestratorRegistry for P2P leader sync
+try:
+    from app.coordination.orchestrator_registry import (
+        OrchestratorRegistry,
+        OrchestratorRole,
+        OrchestratorInfo,
+    )
+    HAS_ORCHESTRATOR_REGISTRY = True
+except ImportError:
+    HAS_ORCHESTRATOR_REGISTRY = False
+    OrchestratorRegistry = None
+    OrchestratorRole = None
+    OrchestratorInfo = None
+
+
+def register_p2p_leader_in_registry(
+    leader_url: str,
+    leader_id: str = "",
+) -> bool:
+    """Register the discovered P2P leader in OrchestratorRegistry.
+
+    This syncs the P2P leader election with the centralized orchestrator registry,
+    enabling coordination between P2P-based and registry-based systems.
+
+    Args:
+        leader_url: URL of the P2P leader
+        leader_id: Optional P2P node ID of the leader
+
+    Returns:
+        True if registered successfully
+    """
+    if not HAS_ORCHESTRATOR_REGISTRY:
+        logger.debug("OrchestratorRegistry not available, skipping P2P leader registration")
+        return False
+
+    try:
+        registry = OrchestratorRegistry.get_instance()
+
+        # Try to acquire the P2P_LEADER role with leader info as metadata
+        acquired = registry.acquire_role(
+            OrchestratorRole.P2P_LEADER,
+            force=False,  # Don't forcefully take over
+            metadata={
+                "p2p_leader_url": leader_url,
+                "p2p_leader_id": leader_id,
+                "discovered_at": time.time(),
+            }
+        )
+
+        if acquired:
+            logger.info(f"Registered P2P leader in registry: {leader_url}")
+            return True
+        else:
+            # Just update the metadata if we can't acquire the role
+            holder = registry.get_role_holder(OrchestratorRole.P2P_LEADER)
+            if holder:
+                logger.debug(f"P2P_LEADER role held by {holder.hostname}:{holder.pid}")
+            return False
+
+    except Exception as e:
+        logger.warning(f"Failed to register P2P leader in registry: {e}")
+        return False
+
+
+def get_p2p_leader_from_registry() -> Optional[str]:
+    """Get P2P leader URL from OrchestratorRegistry if available.
+
+    Returns:
+        P2P leader URL if found in registry, None otherwise
+    """
+    if not HAS_ORCHESTRATOR_REGISTRY:
+        return None
+
+    try:
+        registry = OrchestratorRegistry.get_instance()
+        holder = registry.get_role_holder(OrchestratorRole.P2P_LEADER)
+
+        if holder and holder.is_alive():
+            leader_url = holder.metadata.get("p2p_leader_url")
+            if leader_url:
+                logger.debug(f"Found P2P leader in registry: {leader_url}")
+                return leader_url
+
+    except Exception as e:
+        logger.debug(f"Could not get P2P leader from registry: {e}")
+
+    return None
+
+
+def sync_p2p_leader_heartbeat(leader_url: str, leader_id: str = "") -> None:
+    """Update P2P leader heartbeat in registry.
+
+    Call this periodically to keep the registry updated with leader status.
+
+    Args:
+        leader_url: URL of the P2P leader
+        leader_id: Optional P2P node ID
+    """
+    if not HAS_ORCHESTRATOR_REGISTRY:
+        return
+
+    try:
+        registry = OrchestratorRegistry.get_instance()
+
+        # Update metadata with heartbeat
+        registry.heartbeat(metadata_update={
+            "p2p_leader_url": leader_url,
+            "p2p_leader_id": leader_id,
+            "last_sync": time.time(),
+        })
+
+    except Exception as e:
+        logger.debug(f"Failed to sync P2P leader heartbeat: {e}")
+
+
+async def get_p2p_backend_with_registry(
+    seed_urls: Optional[List[str]] = None,
+    leader_url: Optional[str] = None,
+    auth_token: Optional[str] = None,
+    use_registry: bool = True,
+) -> P2PBackend:
+    """Get a P2P backend with OrchestratorRegistry integration.
+
+    This version first checks the registry for a known leader before
+    falling back to seed discovery.
+
+    Args:
+        seed_urls: List of seed URLs for leader discovery
+        leader_url: Direct leader URL (skips discovery if provided)
+        auth_token: Optional authentication token
+        use_registry: Whether to check registry first
+
+    Returns:
+        Configured P2PBackend instance
+
+    Raises:
+        RuntimeError: If no leader can be found
+    """
+    # Direct leader URL provided
+    if leader_url:
+        return P2PBackend(leader_url, auth_token)
+
+    # Try registry first for cached leader
+    if use_registry:
+        registry_leader = get_p2p_leader_from_registry()
+        if registry_leader:
+            try:
+                backend = P2PBackend(registry_leader, auth_token)
+                # Verify it's still reachable
+                if HAS_AIOHTTP:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(f"{registry_leader}/health", timeout=aiohttp.ClientTimeout(total=5.0)) as resp:
+                            if resp.status == 200:
+                                logger.info(f"Using P2P leader from registry: {registry_leader}")
+                                return backend
+            except Exception as e:
+                logger.debug(f"Registry leader not reachable: {e}")
+
+    # Fall back to seed discovery
+    if not seed_urls:
+        env_seeds = os.environ.get("RINGRIFT_P2P_SEEDS", "")
+        seed_urls = [s.strip() for s in env_seeds.split(",") if s.strip()]
+
+    if not seed_urls:
+        raise RuntimeError("No P2P seed URLs provided and RINGRIFT_P2P_SEEDS not set")
+
+    discovered = await discover_p2p_leader_url(seed_urls, auth_token=auth_token or "")
+    if not discovered:
+        raise RuntimeError(f"Could not discover P2P leader from seeds: {seed_urls}")
+
+    # Register discovered leader in registry
+    register_p2p_leader_in_registry(discovered)
+
+    return P2PBackend(discovered, auth_token)
+
+
 __all__ = [
     "P2PBackend",
     "P2PNodeInfo",
@@ -630,4 +810,10 @@ __all__ = [
     "P2P_JOB_POLL_INTERVAL",
     "MAX_PHASE_WAIT_MINUTES",
     "HAS_AIOHTTP",
+    # OrchestratorRegistry integration
+    "register_p2p_leader_in_registry",
+    "get_p2p_leader_from_registry",
+    "sync_p2p_leader_heartbeat",
+    "get_p2p_backend_with_registry",
+    "HAS_ORCHESTRATOR_REGISTRY",
 ]

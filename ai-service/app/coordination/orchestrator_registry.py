@@ -49,6 +49,18 @@ from typing import Dict, List, Optional, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Import DataCatalog for data availability tracking (December 2025)
+try:
+    from app.distributed.data_catalog import DataCatalog, get_data_catalog, CatalogStats
+    HAS_DATA_CATALOG = True
+except ImportError:
+    HAS_DATA_CATALOG = False
+    DataCatalog = None
+    CatalogStats = None
+
+    def get_data_catalog():
+        return None
+
 
 # ============================================
 # Configuration
@@ -578,6 +590,210 @@ class OrchestratorRegistry:
             'my_role': self._my_role.value if self._my_role else None,
             'my_id': self._my_id,
             'active_orchestrators': [o.to_dict() for o in active],
+        }
+
+    # =========================================================================
+    # DataCatalog Integration (December 2025)
+    # =========================================================================
+
+    def get_data_availability(
+        self,
+        board_type: Optional[str] = None,
+        num_players: Optional[int] = None,
+        min_quality: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Query DataCatalog for current data availability.
+
+        Args:
+            board_type: Optional filter by board type
+            num_players: Optional filter by player count
+            min_quality: Minimum quality threshold
+
+        Returns:
+            Dict with data availability stats
+        """
+        if not HAS_DATA_CATALOG:
+            return {
+                'available': False,
+                'error': 'DataCatalog not available',
+                'total_games': 0,
+                'high_quality_games': 0,
+            }
+
+        try:
+            catalog = get_data_catalog()
+            if catalog is None:
+                return {
+                    'available': False,
+                    'error': 'DataCatalog instance not available',
+                    'total_games': 0,
+                    'high_quality_games': 0,
+                }
+
+            # Get catalog stats
+            stats = catalog.get_stats()
+
+            # Get high-quality game count
+            high_quality_games = stats.high_quality_games if stats else 0
+
+            # Get filtered game count if filters provided
+            filtered_games = 0
+            if board_type or num_players:
+                training_data = catalog.get_training_data(
+                    min_quality=min_quality,
+                    max_games=100000,
+                    board_type=board_type,
+                    num_players=num_players,
+                )
+                filtered_games = len(training_data)
+
+            return {
+                'available': True,
+                'total_sources': stats.total_sources if stats else 0,
+                'total_games': stats.total_games if stats else 0,
+                'high_quality_games': high_quality_games,
+                'avg_quality_score': stats.avg_quality_score if stats else 0.0,
+                'board_type_distribution': dict(stats.board_type_distribution) if stats else {},
+                'filtered_games': filtered_games if (board_type or num_players) else None,
+                'filter_board_type': board_type,
+                'filter_num_players': num_players,
+                'filter_min_quality': min_quality,
+                'timestamp': datetime.now().isoformat(),
+            }
+
+        except Exception as e:
+            logger.warning(f"Failed to get data availability: {e}")
+            return {
+                'available': False,
+                'error': str(e),
+                'total_games': 0,
+                'high_quality_games': 0,
+            }
+
+    def heartbeat_with_data_status(
+        self,
+        board_type: Optional[str] = None,
+        num_players: Optional[int] = None,
+    ) -> None:
+        """Update heartbeat with data availability status.
+
+        This enriches the orchestrator's metadata with current data
+        availability from the DataCatalog, enabling data-aware coordination.
+
+        Args:
+            board_type: Optional filter by board type
+            num_players: Optional filter by player count
+        """
+        data_availability = self.get_data_availability(
+            board_type=board_type,
+            num_players=num_players,
+        )
+
+        metadata_update = {
+            'data_availability': data_availability,
+            'last_data_check': datetime.now().isoformat(),
+        }
+
+        self.heartbeat(metadata_update=metadata_update)
+
+    def has_sufficient_data(
+        self,
+        min_games: int = 500,
+        board_type: Optional[str] = None,
+        num_players: Optional[int] = None,
+        min_quality: float = 0.0,
+    ) -> bool:
+        """Check if there's sufficient data for training.
+
+        Args:
+            min_games: Minimum number of games required
+            board_type: Optional filter by board type
+            num_players: Optional filter by player count
+            min_quality: Minimum quality threshold
+
+        Returns:
+            True if sufficient data is available
+        """
+        availability = self.get_data_availability(
+            board_type=board_type,
+            num_players=num_players,
+            min_quality=min_quality,
+        )
+
+        if not availability.get('available', False):
+            return False
+
+        # Use filtered count if filters were applied
+        if board_type or num_players:
+            return (availability.get('filtered_games', 0) or 0) >= min_games
+
+        return availability.get('total_games', 0) >= min_games
+
+    def get_training_readiness(
+        self,
+        config_key: str = "",
+        min_games: int = 500,
+        min_quality: float = 0.3,
+    ) -> Dict[str, Any]:
+        """Check training readiness including data availability.
+
+        Combines data catalog stats with training signal checks to
+        provide a comprehensive readiness assessment.
+
+        Args:
+            config_key: Configuration key (e.g., "square8_2p")
+            min_games: Minimum games required for training
+            min_quality: Minimum average quality threshold
+
+        Returns:
+            Dict with training readiness assessment
+        """
+        # Parse config_key
+        board_type = None
+        num_players = None
+        if config_key:
+            parts = config_key.replace("_", " ").replace("p", "").split()
+            if len(parts) >= 1:
+                board_type = parts[0]
+            if len(parts) >= 2 and parts[1].isdigit():
+                num_players = int(parts[1])
+
+        # Get data availability
+        availability = self.get_data_availability(
+            board_type=board_type,
+            num_players=num_players,
+            min_quality=min_quality,
+        )
+
+        # Compute readiness
+        total_games = availability.get('total_games', 0)
+        avg_quality = availability.get('avg_quality_score', 0.0)
+        has_data = availability.get('available', False)
+
+        is_ready = (
+            has_data and
+            total_games >= min_games and
+            avg_quality >= min_quality
+        )
+
+        reasons = []
+        if not has_data:
+            reasons.append("DataCatalog not available")
+        if total_games < min_games:
+            reasons.append(f"Insufficient games: {total_games} < {min_games}")
+        if avg_quality < min_quality:
+            reasons.append(f"Low quality: {avg_quality:.2f} < {min_quality}")
+
+        return {
+            'ready': is_ready,
+            'config_key': config_key,
+            'reasons': reasons if reasons else ['Ready for training'],
+            'data_availability': availability,
+            'thresholds': {
+                'min_games': min_games,
+                'min_quality': min_quality,
+            },
+            'timestamp': datetime.now().isoformat(),
         }
 
 

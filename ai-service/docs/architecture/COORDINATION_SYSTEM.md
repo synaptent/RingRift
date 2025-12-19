@@ -676,3 +676,5 @@ print(json.dumps(get_utilization_status(), indent=2))
 - **Admin Endpoints**:
   - `GET /admin/health/coordinators` - Coordinator health status
   - `GET /admin/health/full` - Full system health check
+  - `GET /admin/sync/status` - Sync coordinator status
+  - `POST /admin/sync/trigger` - Trigger a manual sync (games/training/models)

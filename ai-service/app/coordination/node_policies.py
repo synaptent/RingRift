@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-import yaml
+from app.utils.yaml_utils import safe_load_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -81,34 +81,29 @@ class NodePolicyManager:
 
     def _load_config(self) -> None:
         """Load configuration from YAML file."""
-        if not self.config_path.exists():
-            logger.warning(f"Node policies config not found: {self.config_path}")
+        config = safe_load_yaml(self.config_path, default=None, log_errors=True)
+        if config is None:
+            if not self.config_path.exists():
+                logger.warning(f"Node policies config not found: {self.config_path}")
             return
 
-        try:
-            with open(self.config_path) as f:
-                config = yaml.safe_load(f) or {}
+        # Load default policy
+        if "default" in config:
+            self.default_policy = self._parse_policy("default", config["default"])
 
-            # Load default policy
-            if "default" in config:
-                self.default_policy = self._parse_policy("default", config["default"])
+        # Load named policies
+        for name in ["gpu_heavy", "gpu_medium", "apple_silicon", "cpu_only", "vast_gpu"]:
+            if name in config:
+                self.policies[name] = self._parse_policy(name, config[name])
 
-            # Load named policies
-            for name in ["gpu_heavy", "gpu_medium", "apple_silicon", "cpu_only", "vast_gpu"]:
-                if name in config:
-                    self.policies[name] = self._parse_policy(name, config[name])
+        # Load overrides for specific nodes
+        if "overrides" in config and config["overrides"]:
+            for node_id, policy_config in config["overrides"].items():
+                self.overrides[node_id.lower()] = self._parse_policy(
+                    f"override:{node_id}", policy_config
+                )
 
-            # Load overrides for specific nodes
-            if "overrides" in config and config["overrides"]:
-                for node_id, policy_config in config["overrides"].items():
-                    self.overrides[node_id.lower()] = self._parse_policy(
-                        f"override:{node_id}", policy_config
-                    )
-
-            logger.info(f"Loaded {len(self.policies)} node policies, {len(self.overrides)} overrides")
-
-        except Exception as e:
-            logger.error(f"Failed to load node policies: {e}")
+        logger.info(f"Loaded {len(self.policies)} node policies, {len(self.overrides)} overrides")
 
     def _parse_policy(self, name: str, config: Dict[str, Any]) -> NodePolicy:
         """Parse a policy from config dict."""

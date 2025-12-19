@@ -49,11 +49,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+# Add app/ to path (must be early for app.* imports)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Ramdrive utilities for high-speed I/O
 from app.utils.ramdrive import add_ramdrive_args, get_config_from_args, get_games_directory, RamdriveSyncer
-
-# Add app/ to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser
 
 import torch
 
@@ -1041,53 +1042,19 @@ def run_gpu_selfplay(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="GPU-accelerated self-play data generation"
+    # Use unified argument parser from SelfplayConfig
+    parser = create_argument_parser(
+        description="GPU-accelerated self-play data generation",
+        include_gpu=True,
+        include_ramdrive=True,
     )
-    parser.add_argument(
-        "--board",
-        type=str,
-        default="square8",
-        choices=["square8", "square19", "hex", "hexagonal", "hex8"],
-        help="Board type",
-    )
-    parser.add_argument(
-        "--engine-mode",
-        type=str,
-        default="heuristic-only",
-        choices=["random-only", "heuristic-only", "nnue-guided"],
-        help="Engine mode: random-only (uniform random), heuristic-only (GPU heuristic), or nnue-guided (NNUE + heuristic)",
-    )
-    parser.add_argument(
-        "--num-players",
-        type=int,
-        default=2,
-        choices=[2, 3, 4],
-        help="Number of players",
-    )
-    parser.add_argument(
-        "--num-games",
-        type=int,
-        default=1000,
-        help="Number of games to generate",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=256,
-        help="GPU batch size (games per batch)",
-    )
+
+    # Add GPU-specific arguments
     parser.add_argument(
         "--max-moves",
         type=int,
         default=500,
         help="Maximum moves per game",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="data/selfplay/gpu",
-        help="Output directory",
     )
     parser.add_argument(
         "--output-db",
@@ -1096,38 +1063,15 @@ def main():
         help="Output SQLite DB path for canonical game storage (default: output-dir/games.db)",
     )
     parser.add_argument(
-        "--weights-file",
-        type=str,
-        help="Path to heuristic weights JSON file",
-    )
-    parser.add_argument(
         "--profile",
+        dest="weights_profile",
         type=str,
-        help="Profile name in weights file",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed",
+        help="Profile name in weights file (alias for --weights-profile)",
     )
     parser.add_argument(
         "--benchmark-only",
         action="store_true",
         help="Only run GPU benchmark",
-    )
-
-    # Shadow validation options
-    parser.add_argument(
-        "--shadow-validation",
-        action="store_true",
-        help="Enable shadow validation (GPU/CPU parity checking)",
-    )
-    parser.add_argument(
-        "--shadow-sample-rate",
-        type=float,
-        default=0.05,
-        help="Fraction of moves to validate against CPU (default: 0.05 = 5%%)",
     )
     parser.add_argument(
         "--shadow-threshold",
@@ -1135,39 +1079,27 @@ def main():
         default=0.001,
         help="Max divergence rate before error (default: 0.001 = 0.1%%)",
     )
-
-    # Game rule configuration
-    parser.add_argument(
-        "--lps-victory-rounds",
-        type=int,
-        default=3,
-        help="LPS victory threshold in consecutive rounds (default: 3)",
-    )
     parser.add_argument(
         "--rings-per-player",
         type=int,
         default=None,
         help="Starting rings per player (default: board default - 18/72/96)",
     )
-
-    # Move selection mode
     parser.add_argument(
         "--use-heuristic",
         action="store_true",
-        help="Use heuristic-based move selection (center distance, capture value, line potential) instead of center-bias random",
+        help="Use heuristic-based move selection instead of center-bias random",
     )
     parser.add_argument(
         "--weight-noise",
         type=float,
         default=0.0,
-        help="Multiplicative noise (0.0-1.0) for heuristic weights to increase training diversity. "
-             "Each weight is multiplied by uniform(1-noise, 1+noise). Default: 0.0 (no noise)",
+        help="Multiplicative noise (0.0-1.0) for heuristic weights diversity",
     )
     parser.add_argument(
         "--use-policy",
         action="store_true",
-        help="Use policy network for move selection instead of heuristic/center-bias. "
-             "Loads the trained policy model from models/nnue/nnue_policy_{board}_{num_players}p.pt",
+        help="Use policy network for move selection",
     )
     parser.add_argument(
         "--policy-model",
@@ -1175,54 +1107,104 @@ def main():
         default=None,
         help="Path to custom policy model (default: auto-detect based on board type)",
     )
-
-    # Curriculum learning parameters
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=1.0,
-        help="Softmax temperature for move sampling (higher = more random). "
-             "Used for curriculum learning. Default: 1.0",
-    )
     parser.add_argument(
         "--noise-scale",
         type=float,
         default=0.1,
-        help="Scale of noise added to move scores. "
-             "Used for curriculum learning diversity. Default: 0.1",
+        help="Scale of noise added to move scores (default: 0.1)",
     )
-
-    # Data quality filters
-    parser.add_argument(
-        "--min-game-length",
-        type=int,
-        default=0,
-        help="Minimum move count for a game to be recorded (default: 0 = no filter). "
-             "Games shorter than this are discarded to improve training data quality.",
-    )
-    parser.add_argument(
-        "--random-opening-moves",
-        type=int,
-        default=0,
-        help="Number of initial moves to select uniformly at random (default: 0). "
-             "Increases opening diversity for training by randomizing the first N moves.",
-    )
-
-    # Difficulty mixing for training diversity
     parser.add_argument(
         "--temperature-mix",
         type=str,
         default=None,
         choices=["uniform", "weighted", "random"],
-        help="Mix different temperature levels per game for training diversity. "
-             "'uniform' = equal split across temps, 'weighted' = bias toward optimal, "
-             "'random' = random temperature per batch. Temps: [0.5, 1.0, 2.0, 4.0]",
+        help="Mix different temperature levels per game for training diversity",
+    )
+    # Additional ramdrive args beyond base parser
+    parser.add_argument("--ram-storage", action="store_true", help="Use ramdrive storage")
+    parser.add_argument("--sync-target", type=str, help="Target directory for ramdrive sync")
+
+    parsed = parser.parse_args()
+    engine_mode = parsed.engine_mode
+    if engine_mode == "random":
+        engine_mode = "random-only"
+    elif engine_mode not in ("random-only", "heuristic-only", "nnue-guided"):
+        logger.warning(
+            "Unsupported engine_mode '%s' for GPU selfplay; falling back to heuristic-only",
+            engine_mode,
+        )
+        engine_mode = "heuristic-only"
+
+    # Create SelfplayConfig from parsed args
+    selfplay_config = SelfplayConfig(
+        board_type=parsed.board,
+        num_players=parsed.num_players,
+        num_games=parsed.num_games,
+        batch_size=parsed.batch_size,
+        output_dir=parsed.output_dir or "data/selfplay/gpu",
+        seed=parsed.seed or 42,
+        temperature=parsed.temperature,
+        weights_file=parsed.weights_file,
+        weights_profile=parsed.weights_profile,
+        shadow_validation=parsed.shadow_validation,
+        shadow_sample_rate=parsed.shadow_sample_rate,
+        lps_victory_rounds=parsed.lps_victory_rounds,
+        min_game_length=parsed.min_game_length,
+        random_opening_moves=parsed.random_opening_moves,
+        use_ramdrive=parsed.use_ramdrive,
+        ramdrive_path=parsed.ramdrive_path,
+        sync_interval=parsed.sync_interval,
+        source="run_gpu_selfplay.py",
+        extra_options={
+            "max_moves": parsed.max_moves,
+            "output_db": parsed.output_db,
+            "benchmark_only": parsed.benchmark_only,
+            "shadow_threshold": parsed.shadow_threshold,
+            "rings_per_player": parsed.rings_per_player,
+            "use_heuristic": parsed.use_heuristic,
+            "weight_noise": parsed.weight_noise,
+            "use_policy": parsed.use_policy,
+            "policy_model": parsed.policy_model,
+            "noise_scale": parsed.noise_scale,
+            "temperature_mix": parsed.temperature_mix,
+            "engine_mode": engine_mode,
+            "ram_storage": getattr(parsed, "ram_storage", False),
+            "sync_target": getattr(parsed, "sync_target", None),
+        },
     )
 
-    # Add ramdrive storage options
-    add_ramdrive_args(parser)
-
-    args = parser.parse_args()
+    # Create backward-compatible args object
+    args = type("Args", (), {
+        "board": selfplay_config.board_type,
+        "num_players": selfplay_config.num_players,
+        "num_games": selfplay_config.num_games,
+        "batch_size": selfplay_config.batch_size,
+        "output_dir": selfplay_config.output_dir,
+        "seed": selfplay_config.seed,
+        "temperature": selfplay_config.temperature,
+        "weights_file": selfplay_config.weights_file,
+        "weights_profile": selfplay_config.weights_profile,
+        "shadow_validation": selfplay_config.shadow_validation,
+        "shadow_sample_rate": selfplay_config.shadow_sample_rate,
+        "lps_victory_rounds": selfplay_config.lps_victory_rounds,
+        "min_game_length": selfplay_config.min_game_length,
+        "random_opening_moves": selfplay_config.random_opening_moves,
+        "max_moves": selfplay_config.extra_options["max_moves"],
+        "output_db": selfplay_config.extra_options["output_db"],
+        "benchmark_only": selfplay_config.extra_options["benchmark_only"],
+        "shadow_threshold": selfplay_config.extra_options["shadow_threshold"],
+        "rings_per_player": selfplay_config.extra_options["rings_per_player"],
+        "use_heuristic": selfplay_config.extra_options["use_heuristic"],
+        "weight_noise": selfplay_config.extra_options["weight_noise"],
+        "use_policy": selfplay_config.extra_options["use_policy"],
+        "policy_model": selfplay_config.extra_options["policy_model"],
+        "noise_scale": selfplay_config.extra_options["noise_scale"],
+        "temperature_mix": selfplay_config.extra_options["temperature_mix"],
+        "engine_mode": selfplay_config.extra_options["engine_mode"],
+        "ram_storage": selfplay_config.extra_options["ram_storage"],
+        "sync_target": selfplay_config.extra_options["sync_target"],
+        "sync_interval": selfplay_config.sync_interval,
+    })()
 
     if args.benchmark_only:
         logger.info("Running GPU benchmark...")
@@ -1244,9 +1226,9 @@ def main():
 
     # Load weights if specified
     weights = None
-    if args.weights_file and args.profile:
-        weights = load_weights_from_profile(args.weights_file, args.profile)
-        logger.info(f"Loaded weights from {args.weights_file}:{args.profile}")
+    if args.weights_file and args.weights_profile:
+        weights = load_weights_from_profile(args.weights_file, args.weights_profile)
+        logger.info(f"Loaded weights from {args.weights_file}:{args.weights_profile}")
 
     # Resource guard: Check disk/memory/GPU before starting (80% limits)
     # Also import graceful degradation functions for dynamic resource management

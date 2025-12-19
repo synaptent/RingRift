@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-import yaml
+from app.utils.yaml_utils import safe_load_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -137,14 +137,10 @@ class UnifiedInventory:
     def _load_configs(self) -> None:
         """Load configuration files."""
         # Load distributed_hosts.yaml
-        if DISTRIBUTED_HOSTS_PATH.exists():
-            try:
-                with open(DISTRIBUTED_HOSTS_PATH) as f:
-                    config = yaml.safe_load(f) or {}
-                self._distributed_hosts = config.get("hosts", {})
-                logger.info(f"Loaded {len(self._distributed_hosts)} hosts from distributed_hosts.yaml")
-            except Exception as e:
-                logger.warning(f"Failed to load distributed_hosts.yaml: {e}")
+        config = safe_load_yaml(DISTRIBUTED_HOSTS_PATH, default={}, log_errors=True)
+        if config:
+            self._distributed_hosts = config.get("hosts", {})
+            logger.info(f"Loaded {len(self._distributed_hosts)} hosts from distributed_hosts.yaml")
 
         # Load cluster_nodes.env
         if CLUSTER_NODES_PATH.exists():

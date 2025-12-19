@@ -51,6 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.models import BoardType
 from app.training.env import get_theoretical_max_moves
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser
 from app.utils.ramdrive import add_ramdrive_args, get_config_from_args, get_games_directory, RamdriveSyncer
 
 # Unified logging setup
@@ -381,18 +382,56 @@ async def run_diverse_selfplay(config: DiverseSelfplayConfig) -> Dict[str, Any]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Diverse Selfplay Generator")
+    # Use unified argument parser from SelfplayConfig
+    parser = create_argument_parser(
+        description="Diverse Selfplay Generator",
+        include_ramdrive=True,
+        include_gpu=True,
+    )
+    # Add script-specific arguments
     parser.add_argument("--config", type=str, help="Specific config to run (e.g., hexagonal_2p)")
-    parser.add_argument("--board", type=str, help="Board type (square8, square19, hexagonal)")
-    parser.add_argument("--players", type=int, help="Number of players (2, 3, 4)")
     parser.add_argument("--games-per-matchup", type=int, default=50, help="Games per matchup type")
-    parser.add_argument("--gpu", type=int, default=0, help="GPU ID to use")
-    parser.add_argument("--output-dir", type=str, help="Output directory (overrides --ram-storage)")
     parser.add_argument("--all-configs", action="store_true", help="Run all 9 configs")
     parser.add_argument("--priority-configs", action="store_true",
                         help="Run priority configs (least models first)")
-    add_ramdrive_args(parser)  # Add --ram-storage, --sync-interval, --sync-target
-    args = parser.parse_args()
+    # Note: ramdrive args added by create_argument_parser(include_ramdrive=True)
+    # Add extra ramdrive args not in base parser
+    parser.add_argument("--ram-storage", action="store_true", help="Use ramdrive storage")
+    parser.add_argument("--sync-target", type=str, help="Target directory for ramdrive sync")
+    parsed = parser.parse_args()
+
+    # Create base SelfplayConfig from parsed args
+    base_config = SelfplayConfig(
+        board_type=parsed.board,
+        num_players=parsed.num_players,
+        num_games=parsed.games_per_matchup * 10,  # Estimated total
+        output_dir=parsed.output_dir,
+        use_gpu=not getattr(parsed, "no_gpu", False),
+        gpu_device=getattr(parsed, "gpu_device", 0),
+        seed=parsed.seed,
+        source="run_diverse_selfplay.py",
+        extra_options={
+            "games_per_matchup": parsed.games_per_matchup,
+            "all_configs": parsed.all_configs,
+            "priority_configs": parsed.priority_configs,
+            "config_key": parsed.config,
+        },
+    )
+
+    # Map old args names for backward compatibility
+    args = type("Args", (), {
+        "config": parsed.config,
+        "board": parsed.board,
+        "players": parsed.num_players,
+        "games_per_matchup": parsed.games_per_matchup,
+        "gpu": base_config.gpu_device,
+        "output_dir": parsed.output_dir,
+        "all_configs": parsed.all_configs,
+        "priority_configs": parsed.priority_configs,
+        "ram_storage": getattr(parsed, "ram_storage", False),
+        "sync_interval": base_config.sync_interval,  # From SelfplayConfig
+        "sync_target": getattr(parsed, "sync_target", None),
+    })()
 
     # Determine output directory: explicit path > ramdrive > default
     if args.output_dir:

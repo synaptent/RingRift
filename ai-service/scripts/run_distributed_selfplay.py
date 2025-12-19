@@ -102,6 +102,7 @@ from app.training.cloud_storage import (  # noqa: E402
     TrainingSample,
     get_storage,
 )
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser  # noqa: E402
 from app.game_engine import GameEngine  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -924,26 +925,20 @@ def run_worker(config: WorkerConfig) -> WorkerStats:
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Distributed self-play worker for training data generation")
+    """Parse command line arguments using unified SelfplayConfig parser."""
+    # Use unified argument parser from SelfplayConfig
+    parser = create_argument_parser(
+        description="Distributed self-play worker for training data generation",
+        include_gpu=True,
+        include_ramdrive=False,
+    )
 
+    # Add script-specific arguments
     parser.add_argument(
-        "--num-games",
-        type=int,
-        default=1000,
-        help="Number of games to play (default: 1000)",
-    )
-    parser.add_argument(
-        "--board-type",
-        choices=["square8", "square19", "hexagonal", "hex8"],
-        default="square8",
-        help="Board type (default: square8)",
-    )
-    parser.add_argument(
-        "--num-players",
-        type=int,
-        default=2,
-        help="Number of players (default: 2)",
+        "--output",
+        type=str,
+        required=True,
+        help="Output URI: file://, s3://, or gs://",
     )
     parser.add_argument(
         "--max-moves",
@@ -952,45 +947,10 @@ def parse_args() -> argparse.Namespace:
         help="Maximum moves per game (auto-calculated from board/players if not set)",
     )
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="Base RNG seed for reproducibility",
-    )
-    parser.add_argument(
-        "--engine-mode",
-        choices=["mixed", "descent-only", "diverse"],
-        default="mixed",
-        help=(
-            "AI engine mode: 'mixed' uses difficulty-based AI types, "
-            "'descent-only' uses only neural descent, "
-            "'diverse' uses all AI types with random model assignments for richer Elo calibration "
-            "(default: mixed)"
-        ),
-    )
-    parser.add_argument(
-        "--difficulty-band",
-        choices=["canonical", "light"],
-        default="light",
-        help="Difficulty band for mixed mode (default: light)",
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        required=True,
-        help="Output URI: file://, s3://, or gs://",
-    )
-    parser.add_argument(
         "--sample-interval",
         type=int,
         default=3,
         help="Sample every N moves (default: 3)",
-    )
-    parser.add_argument(
-        "--checkpoint-interval",
-        type=int,
-        default=100,
-        help="Save checkpoint every N games (default: 100)",
     )
     parser.add_argument(
         "--checkpoint-path",
@@ -1004,44 +964,18 @@ def parse_args() -> argparse.Namespace:
         default=50,
         help="Run garbage collection every N games (default: 50)",
     )
+    # Override engine-mode choices for this script's specific modes
     parser.add_argument(
-        "--worker-id",
-        type=str,
-        default=None,
-        help="Worker ID (auto-generated if not provided)",
-    )
-
-    # Telemetry options
-    parser.add_argument(
-        "--telemetry-path",
-        type=str,
-        default=None,
-        help="Path for telemetry JSON file (real-time metrics for monitoring)",
-    )
-    parser.add_argument(
-        "--telemetry-interval",
-        type=int,
-        default=50,
-        help="Log telemetry every N games (default: 50)",
-    )
-
-    # Performance optimization options
-    parser.add_argument(
-        "--enable-nn-batching",
-        action="store_true",
-        help="Enable async neural network batching for improved GPU throughput",
-    )
-    parser.add_argument(
-        "--nn-batch-timeout-ms",
-        type=int,
-        default=50,
-        help="Neural batch timeout in milliseconds (default: 50)",
-    )
-    parser.add_argument(
-        "--nn-max-batch-size",
-        type=int,
-        default=256,
-        help="Maximum neural batch size (default: 256)",
+        "--distributed-engine-mode",
+        choices=["mixed", "descent-only", "diverse"],
+        default="mixed",
+        dest="distributed_engine_mode",
+        help=(
+            "AI engine mode: 'mixed' uses difficulty-based AI types, "
+            "'descent-only' uses only neural descent, "
+            "'diverse' uses all AI types with random model assignments "
+            "(default: mixed)"
+        ),
     )
 
     return parser.parse_args()
@@ -1051,42 +985,66 @@ def main():
     """Main entry point."""
     args = parse_args()
 
+    # Create SelfplayConfig from parsed args for tracking
+    selfplay_config = SelfplayConfig(
+        board_type=args.board,
+        num_players=args.num_players,
+        num_games=args.num_games,
+        seed=args.seed,
+        checkpoint_interval=args.checkpoint_interval,
+        worker_id=args.worker_id,
+        telemetry_path=args.telemetry_path,
+        telemetry_interval=args.telemetry_interval,
+        nn_batch_enabled=args.nn_batch_enabled,
+        nn_batch_timeout_ms=args.nn_batch_timeout_ms,
+        nn_max_batch_size=args.nn_max_batch_size,
+        difficulty_band=args.difficulty_band,
+        source="run_distributed_selfplay.py",
+        extra_options={
+            "output_uri": args.output,
+            "sample_interval": args.sample_interval,
+            "checkpoint_path": args.checkpoint_path,
+            "gc_interval": args.gc_interval,
+            "distributed_engine_mode": args.distributed_engine_mode,
+        },
+    )
+
     # Configure neural network batching if requested
     # This must be done before importing AI modules
-    if args.enable_nn_batching:
+    if selfplay_config.nn_batch_enabled:
         os.environ["RINGRIFT_NN_EVAL_QUEUE"] = "1"
-        os.environ["RINGRIFT_NN_EVAL_BATCH_TIMEOUT_MS"] = str(args.nn_batch_timeout_ms)
-        os.environ["RINGRIFT_NN_EVAL_MAX_BATCH"] = str(args.nn_max_batch_size)
-        logger.info(f"Neural batching enabled: timeout={args.nn_batch_timeout_ms}ms, max_batch={args.nn_max_batch_size}")
+        os.environ["RINGRIFT_NN_EVAL_BATCH_TIMEOUT_MS"] = str(selfplay_config.nn_batch_timeout_ms)
+        os.environ["RINGRIFT_NN_EVAL_MAX_BATCH"] = str(selfplay_config.nn_max_batch_size)
+        logger.info(f"Neural batching enabled: timeout={selfplay_config.nn_batch_timeout_ms}ms, max_batch={selfplay_config.nn_max_batch_size}")
 
     # Generate worker ID if not provided
-    worker_id = args.worker_id or os.environ.get("WORKER_ID")
+    worker_id = selfplay_config.worker_id or os.environ.get("WORKER_ID")
     if not worker_id:
         worker_id = f"worker_{uuid.uuid4().hex[:8]}"
 
     # Auto-calculate max_moves from board type and player count if not specified
-    board_type = parse_board_type(args.board_type)
+    board_type = parse_board_type(args.board)
     max_moves = args.max_moves
     if max_moves is None:
         max_moves = get_theoretical_max_moves(board_type, args.num_players)
-        logger.info(f"Auto-calculated max_moves={max_moves} for {args.board_type} {args.num_players}p")
+        logger.info(f"Auto-calculated max_moves={max_moves} for {args.board} {args.num_players}p")
 
     config = WorkerConfig(
         worker_id=worker_id,
-        num_games=args.num_games,
+        num_games=selfplay_config.num_games,
         board_type=board_type,
-        num_players=args.num_players,
+        num_players=selfplay_config.num_players,
         max_moves=max_moves,
-        seed=args.seed,
-        engine_mode=args.engine_mode,
-        difficulty_band=args.difficulty_band,
-        output_uri=args.output,
-        checkpoint_interval=args.checkpoint_interval,
-        checkpoint_path=args.checkpoint_path,
-        sample_every_n_moves=args.sample_interval,
-        gc_interval=args.gc_interval,
-        telemetry_path=args.telemetry_path,
-        telemetry_interval=args.telemetry_interval,
+        seed=selfplay_config.seed,
+        engine_mode=selfplay_config.extra_options["distributed_engine_mode"],
+        difficulty_band=selfplay_config.difficulty_band,
+        output_uri=selfplay_config.extra_options["output_uri"],
+        checkpoint_interval=selfplay_config.checkpoint_interval,
+        checkpoint_path=selfplay_config.extra_options["checkpoint_path"],
+        sample_every_n_moves=selfplay_config.extra_options["sample_interval"],
+        gc_interval=selfplay_config.extra_options["gc_interval"],
+        telemetry_path=selfplay_config.telemetry_path,
+        telemetry_interval=selfplay_config.telemetry_interval,
     )
 
     logger.info(f"Starting distributed self-play worker: {worker_id}")

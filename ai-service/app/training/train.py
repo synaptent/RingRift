@@ -205,6 +205,15 @@ except ImportError:
     AdaptiveGradientClipper = None
     HAS_TRAINING_ENHANCEMENTS = False
 
+# DataCatalog for cluster-wide training data discovery (2025-12)
+try:
+    from app.distributed.data_catalog import DataCatalog, get_data_catalog
+    HAS_DATA_CATALOG = True
+except ImportError:
+    DataCatalog = None
+    get_data_catalog = None
+    HAS_DATA_CATALOG = False
+
 # Auto-streaming threshold: datasets larger than this will automatically use
 # StreamingDataLoader to avoid OOM. Default 5GB.
 AUTO_STREAMING_THRESHOLD_BYTES = int(os.environ.get(
@@ -599,6 +608,11 @@ def train_model(
     enable_graceful_shutdown: bool = True,
     # Regularization (2025-12)
     dropout: float = 0.08,
+    # Quality-aware data discovery (2025-12)
+    discover_synced_data: bool = False,
+    min_quality_score: float = 0.0,
+    include_local_data: bool = True,
+    include_nfs_data: bool = True,
 ):
     """
     Train the RingRift neural network model.
@@ -894,6 +908,8 @@ def train_model(
         policy_encoding: Optional[str] = None
         dataset_history_length: Optional[int] = None
         dataset_feature_version: Optional[int] = None
+        dataset_in_channels: Optional[int] = None
+        dataset_globals_dim: Optional[int] = None
         if data_path_str:
             try:
                 if os.path.exists(data_path_str):
@@ -902,6 +918,14 @@ def train_model(
                         mmap_mode="r",
                         allow_pickle=True,
                     ) as d:
+                        if "features" in d:
+                            feat_shape = d["features"].shape
+                            if len(feat_shape) >= 2:
+                                dataset_in_channels = int(feat_shape[1])
+                        if "globals" in d:
+                            glob_shape = d["globals"].shape
+                            if len(glob_shape) >= 2:
+                                dataset_globals_dim = int(glob_shape[1])
                         if "policy_encoding" in d:
                             try:
                                 policy_encoding = str(np.asarray(d["policy_encoding"]).item())
@@ -982,6 +1006,31 @@ def train_model(
                     data_path_str,
                 )
 
+        expected_in_channels = 14 * (config.history_length + 1)
+        if dataset_in_channels is not None and dataset_in_channels != expected_in_channels:
+            raise ValueError(
+                "Dataset feature channels do not match the square-board encoder.\n"
+                f"  dataset={data_path_str}\n"
+                f"  dataset_in_channels={dataset_in_channels}\n"
+                f"  expected_in_channels={expected_in_channels}\n"
+                "Regenerate the dataset with scripts/export_replay_dataset.py "
+                "or app.training.generate_data using the default CNN encoder."
+            )
+        if dataset_globals_dim is None:
+            raise ValueError(
+                "Dataset is missing globals features required for training.\n"
+                f"  dataset={data_path_str}\n"
+                "Regenerate the dataset with scripts/export_replay_dataset.py."
+            )
+        if dataset_globals_dim != 20:
+            raise ValueError(
+                "Dataset globals feature dimension does not match the CNN encoder.\n"
+                f"  dataset={data_path_str}\n"
+                f"  dataset_globals_dim={dataset_globals_dim}\n"
+                "Regenerate the dataset with scripts/export_replay_dataset.py "
+                "to produce 20 global features."
+            )
+
         if model_version in ('v3', 'v4'):
             if policy_encoding == "legacy_max_n":
                 raise ValueError(
@@ -1057,6 +1106,10 @@ def train_model(
     else:
         # Hex or streaming: try to infer from data, fall back to board defaults.
         inferred_hex_size: Optional[int] = None
+        dataset_history_length: Optional[int] = None
+        policy_encoding: Optional[str] = None
+        dataset_feature_version: Optional[int] = None
+        dataset_globals_dim: Optional[int] = None
         if use_hex_model and not use_streaming:
             # Try to infer policy_size from hex data
             if isinstance(data_path, list):
@@ -1067,6 +1120,25 @@ def train_model(
                 try:
                     if os.path.exists(data_path_str):
                         with np.load(data_path_str, mmap_mode="r", allow_pickle=True) as d:
+                            if "globals" in d:
+                                glob_shape = d["globals"].shape
+                                if len(glob_shape) >= 2:
+                                    dataset_globals_dim = int(glob_shape[1])
+                            if "policy_encoding" in d:
+                                try:
+                                    policy_encoding = str(np.asarray(d["policy_encoding"]).item())
+                                except Exception:
+                                    policy_encoding = None
+                            if "history_length" in d:
+                                try:
+                                    dataset_history_length = int(np.asarray(d["history_length"]).item())
+                                except Exception:
+                                    dataset_history_length = None
+                            if "feature_version" in d:
+                                try:
+                                    dataset_feature_version = int(np.asarray(d["feature_version"]).item())
+                                except Exception:
+                                    dataset_feature_version = None
                             if "policy_indices" in d:
                                 pi = d["policy_indices"]
                                 max_idx = -1
@@ -1087,14 +1159,112 @@ def train_model(
                             exc,
                         )
 
-        if inferred_hex_size is not None:
-            policy_size = inferred_hex_size
-            if not distributed or is_main_process():
-                logger.info(
-                    "Using inferred hex policy_size=%d from dataset %s",
-                    policy_size,
-                    data_path_str,
+            if dataset_history_length is not None and dataset_history_length != config.history_length:
+                raise ValueError(
+                    "Training history_length does not match dataset metadata.\n"
+                    f"  dataset={data_path_str}\n"
+                    f"  dataset_history_length={dataset_history_length}\n"
+                    f"  config.history_length={config.history_length}\n"
+                    "Regenerate the dataset with matching --history-length or "
+                    "update the training config."
                 )
+            elif dataset_history_length is None and config.history_length != 3:
+                if not distributed or is_main_process():
+                    logger.warning(
+                        "Dataset %s missing history_length metadata; using "
+                        "config.history_length=%d. Ensure the dataset was built "
+                        "with matching history frames.",
+                        data_path_str,
+                        config.history_length,
+                    )
+
+            if dataset_feature_version is not None and dataset_feature_version != config_feature_version:
+                raise ValueError(
+                    "Training feature_version does not match dataset metadata.\n"
+                    f"  dataset={data_path_str}\n"
+                    f"  dataset_feature_version={dataset_feature_version}\n"
+                    f"  config_feature_version={config_feature_version}\n"
+                    "Regenerate the dataset with matching --feature-version or "
+                    "update the training config."
+                )
+            elif dataset_feature_version is None:
+                if config_feature_version != 1:
+                    raise ValueError(
+                        "Dataset is missing feature_version metadata but training "
+                        "was configured for feature_version="
+                        f"{config_feature_version}.\n"
+                        f"  dataset={data_path_str}\n"
+                        "Regenerate the dataset with --feature-version or "
+                        "set feature_version=1 to use legacy features."
+                    )
+                if not distributed or is_main_process():
+                    logger.warning(
+                        "Dataset %s missing feature_version metadata; assuming legacy "
+                        "feature_version=1.",
+                        data_path_str,
+                    )
+
+            if dataset_globals_dim is None:
+                raise ValueError(
+                    "Dataset is missing globals features required for training.\n"
+                    f"  dataset={data_path_str}\n"
+                    "Regenerate the dataset with scripts/export_replay_dataset.py."
+                )
+            if dataset_globals_dim != 20:
+                raise ValueError(
+                    "Dataset globals feature dimension does not match the CNN encoder.\n"
+                    f"  dataset={data_path_str}\n"
+                    f"  dataset_globals_dim={dataset_globals_dim}\n"
+                    "Regenerate the dataset with scripts/export_replay_dataset.py "
+                    "to produce 20 global features."
+                )
+
+            if model_version in ('v3', 'v4'):
+                if policy_encoding == "legacy_max_n":
+                    raise ValueError(
+                        f"Dataset uses legacy MAX_N policy encoding but --model-version={model_version} "
+                        "requires board-aware policy encoding.\n"
+                        f"  dataset={data_path_str}\n"
+                        "Regenerate the dataset with --board-aware-encoding."
+                    )
+                if policy_encoding is None and (not distributed or is_main_process()):
+                    logger.warning(
+                        "Dataset %s missing policy_encoding metadata; assuming board-aware "
+                        "encoding for %s. If this dataset was exported with legacy MAX_N, "
+                        "regenerate with --board-aware-encoding.",
+                        data_path_str,
+                        model_version,
+                    )
+
+        if inferred_hex_size is not None:
+            if model_version in ('v3', 'v4'):
+                board_default_size = get_policy_size_for_board(config.board_type)
+                if inferred_hex_size > board_default_size:
+                    raise ValueError(
+                        f"Dataset policy indices exceed the {model_version} board-aware policy space. "
+                        "This usually means the dataset was exported with legacy MAX_N encoding.\n"
+                        f"  dataset={data_path_str}\n"
+                        f"  inferred_policy_size={inferred_hex_size}\n"
+                        f"  board_default_policy_size={board_default_size}\n\n"
+                        "Regenerate the dataset with --board-aware-encoding (see scripts/export_replay_dataset.py).\n"
+                    )
+                policy_size = board_default_size
+                if not distributed or is_main_process():
+                    logger.info(
+                        "%s model requires board-aware policy space; using "
+                        "board-default policy_size=%d (dataset max index implies %d)",
+                        model_version.upper(),
+                        policy_size,
+                        inferred_hex_size,
+                    )
+            else:
+                policy_size = inferred_hex_size
+                if not distributed or is_main_process():
+                    logger.info(
+                        "Using inferred hex policy_size=%d from dataset %s",
+                        policy_size,
+                        data_path_str,
+                    )
         elif use_hex_model:
             # Use board-specific policy size (4500 for HEX8, 91876 for HEXAGONAL)
             policy_size = get_policy_size_for_board(config.board_type)
@@ -1141,7 +1311,20 @@ def train_model(
                         exc,
                     )
 
+        hex_base_channels = 16 if use_hex_v3 else 10
+        expected_in_channels = hex_base_channels * (config.history_length + 1)
+
         if inferred_in_channels is not None:
+            if inferred_in_channels != expected_in_channels:
+                raise ValueError(
+                    "Hex dataset feature channels do not match the selected model version.\n"
+                    f"  dataset={data_path_str}\n"
+                    f"  inferred_in_channels={inferred_in_channels}\n"
+                    f"  expected_in_channels={expected_in_channels}\n"
+                    f"  model_version={model_version}\n"
+                    "Regenerate the dataset with the matching encoder version "
+                    "or adjust --model-version."
+                )
             hex_in_channels = inferred_in_channels
             if not distributed or is_main_process():
                 logger.info(
@@ -1151,8 +1334,7 @@ def train_model(
                 )
         else:
             # Fallback to computed value
-            hex_base_channels = 16 if use_hex_v3 else 10
-            hex_in_channels = hex_base_channels * (config.history_length + 1)
+            hex_in_channels = expected_in_channels
         hex_num_players = MAX_PLAYERS if multi_player else num_players
 
     if not distributed or is_main_process():
@@ -1538,20 +1720,55 @@ def train_model(
 
     # Collect data paths for streaming mode
     data_paths: List[str] = []
+
+    # Quality-aware data discovery from synced sources
+    if discover_synced_data and HAS_DATA_CATALOG:
+        try:
+            catalog = get_data_catalog()
+            discovered_paths = catalog.get_recommended_training_sources(
+                target_games=100000,
+                board_type=config.board_type.value if hasattr(config, 'board_type') else None,
+                num_players=num_players,
+            )
+            if discovered_paths:
+                # Convert discovered .db paths to training data
+                # Note: These are SQLite databases that need to be processed
+                # by the streaming loader or converted to .npz format
+                data_paths.extend([str(p) for p in discovered_paths])
+                if not distributed or is_main_process():
+                    stats = catalog.get_stats()
+                    logger.info(
+                        f"DataCatalog discovered {len(discovered_paths)} sources "
+                        f"with {stats.total_games} total games "
+                        f"(avg quality: {stats.avg_quality_score:.3f})"
+                    )
+        except Exception as e:
+            if not distributed or is_main_process():
+                logger.warning(f"DataCatalog discovery failed: {e}")
+
     if use_streaming:
         # Use streaming data loader for large datasets
         if data_dir is not None:
             # Collect all .npz files from directory
             npz_pattern = os.path.join(data_dir, "*.npz")
-            data_paths = sorted(glob.glob(npz_pattern))
+            data_paths.extend(sorted(glob.glob(npz_pattern)))
             if not distributed or is_main_process():
                 logger.info(
                     f"Found {len(data_paths)} .npz files in {data_dir}"
                 )
         elif isinstance(data_path, list):
-            data_paths = data_path
-        else:
-            data_paths = [data_path]
+            data_paths.extend(data_path)
+        elif data_path:
+            data_paths.append(data_path)
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_paths = []
+        for p in data_paths:
+            if p not in seen:
+                seen.add(p)
+                unique_paths.append(p)
+        data_paths = unique_paths
 
         if not data_paths:
             if not distributed or is_main_process():
@@ -1566,9 +1783,20 @@ def train_model(
         dataset_history_length: Optional[int] = None
         policy_encoding: Optional[str] = None
         dataset_feature_version: Optional[int] = None
+        dataset_in_channels: Optional[int] = None
+        dataset_globals_dim: Optional[int] = None
+        is_npz = bool(first_path and first_path.endswith(".npz"))
         try:
             if first_path and os.path.exists(first_path):
                 with np.load(first_path, mmap_mode="r", allow_pickle=True) as d:
+                    if "features" in d:
+                        feat_shape = d["features"].shape
+                        if len(feat_shape) >= 2:
+                            dataset_in_channels = int(feat_shape[1])
+                    if "globals" in d:
+                        glob_shape = d["globals"].shape
+                        if len(glob_shape) >= 2:
+                            dataset_globals_dim = int(glob_shape[1])
                     if "policy_encoding" in d:
                         try:
                             policy_encoding = str(np.asarray(d["policy_encoding"]).item())
@@ -1636,6 +1864,44 @@ def train_model(
                     "feature_version=1.",
                     first_path,
                 )
+
+        if dataset_globals_dim is None:
+            if is_npz:
+                raise ValueError(
+                    "Dataset is missing globals features required for training.\n"
+                    f"  dataset={first_path}\n"
+                    "Regenerate the dataset with scripts/export_replay_dataset.py."
+                )
+        elif dataset_globals_dim != 20:
+            raise ValueError(
+                "Dataset globals feature dimension does not match the CNN encoder.\n"
+                f"  dataset={first_path}\n"
+                f"  dataset_globals_dim={dataset_globals_dim}\n"
+                "Regenerate the dataset with scripts/export_replay_dataset.py "
+                "to produce 20 global features."
+            )
+
+        if dataset_in_channels is not None:
+            if use_hex_model:
+                hex_base = 16 if use_hex_v3 else 10
+                expected_in_channels = hex_base * (config.history_length + 1)
+            else:
+                expected_in_channels = 14 * (config.history_length + 1)
+            if dataset_in_channels != expected_in_channels:
+                raise ValueError(
+                    "Dataset feature channels do not match the expected encoder.\n"
+                    f"  dataset={first_path}\n"
+                    f"  dataset_in_channels={dataset_in_channels}\n"
+                    f"  expected_in_channels={expected_in_channels}\n"
+                    "Regenerate the dataset with scripts/export_replay_dataset.py "
+                    "or app.training.generate_data using the matching encoder."
+                )
+        elif is_npz:
+            raise ValueError(
+                "Dataset is missing features required for training.\n"
+                f"  dataset={first_path}\n"
+                "Regenerate the dataset with scripts/export_replay_dataset.py."
+            )
 
         if model_version in ('v3', 'v4'):
             if policy_encoding == "legacy_max_n":
@@ -3476,8 +3742,8 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         help=(
             'Model architecture version: v2 (flat policy), v3 (spatial policy '
             'heads with rank distribution), v4 (NAS-optimized with attention), '
-            'or hex (HexNeuralNet). '
-            'Default: board-aware (square8→v3, square19→v2, hexagonal→hex).'
+            'or hex (legacy HexNeuralNet_v2). '
+            'Default: board-aware (square8→v3, square19→v2, hexagonal→v3).'
         ),
     )
 

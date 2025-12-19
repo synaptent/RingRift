@@ -57,6 +57,7 @@ from app.models import (
 )
 from app.game_engine import GameEngine
 from app.training.generate_data import create_initial_state
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser
 
 # Unified logging setup
 try:
@@ -524,7 +525,13 @@ def run_balanced_selfplay(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Cross-AI Self-Play Generator")
+    # Use unified argument parser from SelfplayConfig
+    parser = create_argument_parser(
+        description="Cross-AI Self-Play Generator",
+        include_gpu=False,  # Cross-AI is CPU-based
+        include_ramdrive=False,
+    )
+    # Add script-specific arguments
     parser.add_argument(
         "--games-per-config",
         type=int,
@@ -536,12 +543,6 @@ def main():
         choices=list(MATCHUP_TYPES.keys()),
         default="balanced",
         help="Type of AI matchups to generate",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default=str(ROOT / "data" / "games" / "cross_ai"),
-        help="Output directory for game results",
     )
     parser.add_argument(
         "--max-moves",
@@ -559,28 +560,41 @@ def main():
         type=int,
         help="Target game count per config (for prioritization)",
     )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=1,
-        help="Number of parallel workers (default: 1 for sequential execution)",
-    )
 
-    args = parser.parse_args()
+    parsed = parser.parse_args()
+
+    # Create SelfplayConfig from parsed args
+    config = SelfplayConfig(
+        board_type=parsed.board,
+        num_players=parsed.num_players,
+        num_games=parsed.games_per_config * len(ALL_CONFIGS),  # Total games
+        output_dir=parsed.output_dir or str(ROOT / "data" / "games" / "cross_ai"),
+        num_workers=parsed.num_workers,
+        seed=parsed.seed,
+        source="run_cross_ai_selfplay.py",
+        # Store script-specific options
+        extra_options={
+            "matchup_type": parsed.matchup_type,
+            "prioritize_underrepresented": parsed.prioritize_underrepresented,
+            "target_games": parsed.target_games,
+            "max_moves": parsed.max_moves,
+            "games_per_config": parsed.games_per_config,
+        },
+    )
 
     # Limit workers to avoid resource exhaustion
     cpu_count = mp.cpu_count()
-    max_workers = min(args.workers, cpu_count - 2, 32)  # Leave 2 CPUs free, cap at 32
+    max_workers = min(config.num_workers, cpu_count - 2, 32)  # Leave 2 CPUs free, cap at 32
     if max_workers < 1:
         max_workers = 1
 
     run_balanced_selfplay(
-        games_per_config=args.games_per_config,
-        matchup_type=args.matchup_type,
-        output_dir=Path(args.output_dir),
-        max_moves=args.max_moves,
-        prioritize_underrepresented=args.prioritize_underrepresented,
-        target_games=args.target_games,
+        games_per_config=config.extra_options["games_per_config"],
+        matchup_type=config.extra_options["matchup_type"],
+        output_dir=Path(config.output_dir),
+        max_moves=config.extra_options["max_moves"],
+        prioritize_underrepresented=config.extra_options["prioritize_underrepresented"],
+        target_games=config.extra_options["target_games"],
         num_workers=max_workers,
     )
 

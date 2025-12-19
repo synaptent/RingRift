@@ -61,9 +61,15 @@ class StreamingConfig:
     # Sampling
     priority_sampling: bool = True
     recency_weight: float = 0.3  # Weight for newer samples
+    quality_weight: float = 0.4  # Weight for manifest quality score in priority
 
     # Data augmentation
     augmentation_enabled: bool = True
+
+    # Quality-based sampling (populated from manifest via DataPipelineController)
+    # Dict mapping game_id -> quality_score [0, 1]
+    quality_lookup: Optional[Dict[str, float]] = None
+    elo_lookup: Optional[Dict[str, float]] = None
 
 
 @dataclass
@@ -79,6 +85,8 @@ class GameSample:
     policy_target: Optional[np.ndarray] = None
     features: Optional[np.ndarray] = None
     priority: float = 1.0
+    quality_score: float = 0.5  # Manifest quality score [0, 1]
+    avg_elo: float = 1500.0  # Average player Elo from manifest
 
 
 class CircularBuffer:
@@ -383,6 +391,36 @@ class StreamingDataPipeline:
         self._db_executor.shutdown(wait=False)
         logger.info("Stopped streaming pipeline")
 
+    def set_quality_lookup(
+        self,
+        quality_lookup: Optional[Dict[str, float]] = None,
+        elo_lookup: Optional[Dict[str, float]] = None,
+    ) -> None:
+        """Set quality lookup tables for priority sampling.
+
+        Call this with data from DataPipelineController to enable
+        quality-weighted sampling of training data.
+
+        Args:
+            quality_lookup: Dict mapping game_id to quality_score [0, 1]
+            elo_lookup: Dict mapping game_id to avg_player_elo
+        """
+        self.config.quality_lookup = quality_lookup
+        self.config.elo_lookup = elo_lookup
+
+        if quality_lookup:
+            logger.info(f"Set quality lookup with {len(quality_lookup)} games")
+
+        # Re-score existing buffer samples with new quality data
+        if quality_lookup or elo_lookup:
+            with self.buffer.lock:
+                for sample in self.buffer.buffer:
+                    if quality_lookup and sample.game_id in quality_lookup:
+                        sample.quality_score = quality_lookup[sample.game_id]
+                        sample.priority = sample.quality_score
+                    if elo_lookup and sample.game_id in elo_lookup:
+                        sample.avg_elo = elo_lookup[sample.game_id]
+
     async def _async_get_new_games(self, limit: int) -> List[Dict[str, Any]]:
         """Run DB query in thread pool (non-blocking).
 
@@ -432,6 +470,16 @@ class StreamingDataPipeline:
                         samples = extract_samples_from_game(game)
                         new_samples.extend(samples)
 
+                    # Enrich samples with quality data from manifest
+                    if self.config.quality_lookup or self.config.elo_lookup:
+                        for sample in new_samples:
+                            if self.config.quality_lookup and sample.game_id in self.config.quality_lookup:
+                                sample.quality_score = self.config.quality_lookup[sample.game_id]
+                                # Set priority based on quality for weighted sampling
+                                sample.priority = sample.quality_score
+                            if self.config.elo_lookup and sample.game_id in self.config.elo_lookup:
+                                sample.avg_elo = self.config.elo_lookup[sample.game_id]
+
                     # Deduplicate using OrderedDict for O(1) FIFO eviction
                     if self.config.dedupe_enabled:
                         unique_samples = []
@@ -462,26 +510,46 @@ class StreamingDataPipeline:
             await asyncio.sleep(self.config.poll_interval_seconds)
 
     def _compute_sample_weights(self, samples: List[GameSample]) -> np.ndarray:
-        """Compute sampling weights based on recency and priority."""
+        """Compute sampling weights based on recency, quality, and priority.
+
+        Weight formula:
+        - recency_weight: Weight for time-based recency factor
+        - quality_weight: Weight for manifest quality score
+        - remainder: Weight for base priority
+
+        High-quality games from high-Elo players get sampled more frequently.
+        """
         if not samples:
             return np.array([])
 
         weights = np.ones(len(samples))
         current_time = time.time()
 
+        # Normalize weights to sum to 1.0
+        recency_w = self.config.recency_weight
+        quality_w = self.config.quality_weight
+        priority_w = max(0.0, 1.0 - recency_w - quality_w)
+
         for i, sample in enumerate(samples):
-            # Recency weight (newer samples weighted higher)
+            # Recency factor (newer samples weighted higher)
             age_hours = (current_time - sample.timestamp) / 3600
             recency_factor = np.exp(-age_hours / 24)  # Half-life of 24 hours
 
-            # Priority weight
+            # Quality factor from manifest (0-1)
+            quality_factor = sample.quality_score
+
+            # Priority factor (base priority, could be recency-adjusted externally)
             priority_factor = sample.priority
 
             # Combined weight
             weights[i] = (
-                self.config.recency_weight * recency_factor
-                + (1 - self.config.recency_weight) * priority_factor
+                recency_w * recency_factor
+                + quality_w * quality_factor
+                + priority_w * priority_factor
             )
+
+        # Ensure minimum weight to prevent starvation
+        weights = np.maximum(weights, 0.01)
 
         return weights
 

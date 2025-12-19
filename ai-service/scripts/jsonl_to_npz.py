@@ -422,7 +422,11 @@ class HexEncoderWrapper:
         return self._encoder.encode(state)
 
 
-def build_encoder(board_type: BoardType, encoder_version: str = "v2"):
+def build_encoder(
+    board_type: BoardType,
+    encoder_version: str = "v2",
+    feature_version: int = 2,
+):
     """Build an encoder instance for feature extraction.
 
     For hexagonal boards, uses HexStateEncoder (v2, 10 channels) or
@@ -442,10 +446,10 @@ def build_encoder(board_type: BoardType, encoder_version: str = "v2"):
     if board_type == BoardType.HEXAGONAL:
         # Use proper hex encoders for compatible training data
         if encoder_version == "v3":
-            hex_encoder = HexStateEncoderV3()
+            hex_encoder = HexStateEncoderV3(feature_version=feature_version)
             logger.info("Using HexStateEncoderV3 (16 base channels -> 64 total)")
         else:
-            hex_encoder = HexStateEncoder()
+            hex_encoder = HexStateEncoder(feature_version=feature_version)
             logger.info("Using HexStateEncoder (10 base channels -> 40 total)")
         return HexEncoderWrapper(hex_encoder, board_size=25)
 
@@ -461,6 +465,7 @@ def build_encoder(board_type: BoardType, encoder_version: str = "v2"):
         use_neural_net=True,
     )
     encoder = NeuralNetAI(player_number=1, config=config)
+    encoder.feature_version = int(feature_version)
     encoder.board_size = {
         BoardType.SQUARE8: 8,
         BoardType.SQUARE19: 19,
@@ -594,6 +599,9 @@ class CheckpointManager:
         checkpoint_dir: Path,
         checkpoint_interval: int = 100,
         enabled: bool = True,
+        history_length: int = 3,
+        feature_version: int = 2,
+        policy_encoding: str = "board_aware",
     ):
         self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
         self.checkpoint_interval = checkpoint_interval
@@ -601,6 +609,9 @@ class CheckpointManager:
         self.chunk_count = 0
         self.progress_file: Optional[Path] = None
         self.progress: Dict[str, Any] = {}
+        self.history_length = int(history_length)
+        self.feature_version = int(feature_version)
+        self.policy_encoding = policy_encoding
 
         if self.enabled:
             self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -674,6 +685,9 @@ class CheckpointManager:
                 move_numbers=np.array(move_numbers, dtype=np.int32),
                 total_game_moves=np.array(total_game_moves, dtype=np.int32),
                 phases=np.array(phases, dtype=object),
+                history_length=np.asarray(int(self.history_length)),
+                feature_version=np.asarray(int(self.feature_version)),
+                policy_encoding=np.asarray(self.policy_encoding),
             )
 
             self.chunk_count += 1
@@ -751,6 +765,9 @@ class CheckpointManager:
             phases=phases_arr,
             values_mp=values_mp_arr,
             num_players=num_players_arr,
+            history_length=np.asarray(int(self.history_length)),
+            feature_version=np.asarray(int(self.feature_version)),
+            policy_encoding=np.asarray(self.policy_encoding),
         )
 
         logger.info(f"Merged {len(features_arr)} samples into {output_path}")
@@ -1008,6 +1025,7 @@ def convert_jsonl_to_npz(
     max_games: Optional[int] = None,
     sample_every: int = 1,
     history_length: int = 3,
+    feature_version: int = 2,
     gpu_selfplay_mode: bool = False,
     checkpoint_dir: Optional[Path] = None,
     checkpoint_interval: int = 100,
@@ -1024,19 +1042,27 @@ def convert_jsonl_to_npz(
         max_games: Maximum number of games to process
         sample_every: Sample every Nth position
         history_length: Number of history frames to stack
+        feature_version: Feature encoding version for global feature layout
         gpu_selfplay_mode: Use GPU selfplay simplified format
         checkpoint_dir: Directory for checkpoint chunks (enables checkpointing)
         checkpoint_interval: Save checkpoint every N games
         resume: Resume from existing checkpoint
     """
     board_type = BOARD_TYPE_MAP.get(board_type_str, BoardType.SQUARE8)
-    encoder = build_encoder(board_type, encoder_version=encoder_version)
+    encoder = build_encoder(
+        board_type,
+        encoder_version=encoder_version,
+        feature_version=feature_version,
+    )
 
     # Initialize checkpoint manager
     checkpoint_mgr = CheckpointManager(
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=checkpoint_interval,
         enabled=checkpoint_dir is not None,
+        history_length=history_length,
+        feature_version=feature_version,
+        policy_encoding="board_aware",
     )
 
     # Check for resume
@@ -1181,6 +1207,9 @@ def convert_jsonl_to_npz(
             phases=phases_arr,
             values_mp=values_mp_arr,
             num_players=num_players_arr,
+            history_length=np.asarray(int(history_length)),
+            feature_version=np.asarray(int(feature_version)),
+            policy_encoding=np.asarray("board_aware"),
         )
     else:
         logger.warning("No training data extracted!")
@@ -1243,6 +1272,15 @@ def main():
         help="Number of historical frames to stack (default: 3)",
     )
     parser.add_argument(
+        "--feature-version",
+        type=int,
+        default=2,
+        help=(
+            "Feature encoding version for global feature layout (default: 2). "
+            "Use 1 to keep legacy hex globals without chain/FE flags."
+        ),
+    )
+    parser.add_argument(
         "--gpu-selfplay",
         action="store_true",
         help="Enable GPU selfplay mode: auto-inject phase transitions for simplified move format",
@@ -1295,6 +1333,7 @@ def main():
         max_games=args.max_games,
         sample_every=args.sample_every,
         history_length=args.history_length,
+        feature_version=args.feature_version,
         gpu_selfplay_mode=args.gpu_selfplay,
         checkpoint_dir=Path(args.checkpoint_dir) if args.checkpoint_dir else None,
         checkpoint_interval=args.checkpoint_interval,

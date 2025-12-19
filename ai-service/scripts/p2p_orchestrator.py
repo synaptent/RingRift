@@ -446,19 +446,14 @@ except ImportError:
 # Prefer new sync_coordinator, fallback to deprecated data_sync
 try:
     from app.distributed.sync_coordinator import SyncCoordinator, full_cluster_sync
-    HAS_DATA_SYNC = True
-    # Compatibility shim: expose get_sync_manager for legacy code
-    def get_sync_manager():
+    HAS_SYNC_COORDINATOR = True
+
+    def get_sync_coordinator():
         return SyncCoordinator.get_instance()
-    DataSyncManager = SyncCoordinator  # Alias for compatibility
 except ImportError:
-    try:
-        from app.distributed.data_sync import DataSyncManager, get_sync_manager
-        HAS_DATA_SYNC = True
-    except ImportError:
-        HAS_DATA_SYNC = False
-        DataSyncManager = None
-        get_sync_manager = None
+    HAS_SYNC_COORDINATOR = False
+    SyncCoordinator = None
+    full_cluster_sync = None
 
 # Phase 3.1: Curriculum weights integration for selfplay prioritization
 try:
@@ -5381,18 +5376,17 @@ class P2POrchestrator:
                         for err in errors[:3]:
                             logger.info(f"Model sync error: {err}")
 
-                    # Also use DataSyncManager for additional transport methods (tailscale, aria2)
-                    if HAS_DATA_SYNC and errors:
+                    # Use SyncCoordinator for additional transport methods (aria2, ssh, p2p)
+                    if HAS_SYNC_COORDINATOR and errors:
                         try:
-                            sync_manager = get_sync_manager()
-                            # Run async sync for failed nodes using alternative transports
-                            model_results = await sync_manager.sync_best_models()
-                            success_count = sum(1 for v in model_results.values() if v)
-                            if success_count > 0:
-                                logger.info(f"DataSync fallback: {success_count}/{len(model_results)} additional syncs")
-                        except Exception as dsync_err:
+                            coordinator = get_sync_coordinator()
+                            # Sync models using alternative transports
+                            model_stats = await coordinator.sync_models()
+                            if model_stats.files_synced > 0:
+                                logger.info(f"SyncCoordinator fallback: {model_stats.files_synced} models via {model_stats.transport_used}")
+                        except Exception as sync_err:
                             if self.verbose:
-                                logger.info(f"DataSync fallback error: {dsync_err}")
+                                logger.info(f"SyncCoordinator fallback error: {sync_err}")
                 else:
                     collected, distributed, errors = result[:3]
                     if errors:

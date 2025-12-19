@@ -3,21 +3,27 @@
 Distributed Data Synchronization Module
 
 .. deprecated:: 2025-12-18
-    This module is deprecated in favor of :class:`UnifiedDataSyncService` from
-    :mod:`app.distributed.unified_data_sync`, which provides a consolidated sync
-    implementation with:
-    - Multi-transport failover (SSH/rsync → P2P HTTP → aria2)
-    - Write-ahead log for crash safety
-    - Content deduplication
-    - Manifest replication for fault tolerance
-    - Circuit breaker integration
+    This module is deprecated. Use the following replacements:
+
+    **Sync Coordination** (cluster-wide orchestration):
+        - :class:`app.coordination.sync_coordinator.SyncCoordinator`
+        - Features: backpressure-aware scheduling, priority queues, host tracking
+
+    **Low-Level Sync** (actual data transfer):
+        - :class:`app.distributed.unified_data_sync.UnifiedDataSyncService`
+        - Features: multi-transport failover, WAL, deduplication, circuit breaker
+
+    **Data Discovery** (finding training data):
+        - :class:`app.distributed.data_catalog.DataCatalog`
+        - Features: cluster-wide discovery, quality-aware selection
+
+    **Quality Scoring** (game quality computation):
+        - :class:`app.quality.unified_quality.UnifiedQualityScorer`
+        - Features: unified algorithm, sync priority computation
 
     **Note**: This module remains functional during the transition period.
-    The high-level methods (`sync_best_models()`, `collect_training_data()`)
-    have different API patterns in `UnifiedDataSyncService`. Scripts using
-    `DataSyncManager` will continue to work but will show deprecation warnings.
-
-    For new code, prefer `UnifiedDataSyncService` for its reliability features.
+    Scripts using `DataSyncManager` will continue to work but show deprecation warnings.
+    For new code, prefer the replacement modules above.
 
 Provides multiple transport methods for synchronizing training data and models
 across cluster nodes, handling hard-to-reach instances via:
@@ -52,7 +58,11 @@ import yaml
 # Emit deprecation warning on module import
 warnings.warn(
     "app.distributed.data_sync is deprecated since 2025-12-18. "
-    "Use app.distributed.unified_data_sync.UnifiedDataSyncService instead. "
+    "Migration guide:\n"
+    "  - For sync coordination: use app.coordination.sync_coordinator.SyncCoordinator\n"
+    "  - For low-level sync: use app.distributed.unified_data_sync.UnifiedDataSyncService\n"
+    "  - For data discovery: use app.distributed.data_catalog.DataCatalog\n"
+    "  - For quality scoring: use app.quality.unified_quality.UnifiedQualityScorer\n"
     "This module will be removed in a future release.",
     DeprecationWarning,
     stacklevel=2

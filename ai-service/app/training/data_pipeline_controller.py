@@ -43,6 +43,18 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# Import manifest for quality-based data selection
+try:
+    from app.distributed.unified_manifest import (
+        DataManifest,
+        GameQualityMetadata,
+    )
+    HAS_MANIFEST = True
+except ImportError:
+    HAS_MANIFEST = False
+    DataManifest = None
+    GameQualityMetadata = None
+
 
 class DataSourceType(Enum):
     """Types of data sources supported by the pipeline."""
@@ -77,6 +89,34 @@ class DataSourceConfig:
     # Remote source options (for ARIA2/REMOTE types)
     remote_urls: Optional[List[str]] = None  # URLs for aria2 download
     sync_on_startup: bool = False  # Whether to sync before loading
+    # Quality tracking (P4: Data source registry for training)
+    avg_quality_score: float = 0.5  # Average quality of games from this source
+    total_games_used: int = 0  # Games used in training from this source
+    quality_trend: float = 0.0  # Positive = improving quality over time
+    last_quality_update: float = 0.0  # Timestamp of last quality update
+
+    def update_quality(self, quality_score: float, alpha: float = 0.1) -> None:
+        """Update rolling average quality score.
+
+        Args:
+            quality_score: New quality score to incorporate
+            alpha: Smoothing factor for exponential moving average
+        """
+        old_quality = self.avg_quality_score
+        self.avg_quality_score = (1 - alpha) * self.avg_quality_score + alpha * quality_score
+        self.total_games_used += 1
+        self.quality_trend = self.avg_quality_score - old_quality
+        self.last_quality_update = time.time()
+
+    @property
+    def effective_weight(self) -> float:
+        """Get quality-adjusted sampling weight.
+
+        High-quality sources get proportionally more sampling weight.
+        """
+        # Scale weight by quality (0.5-1.5x multiplier based on quality)
+        quality_multiplier = 0.5 + self.avg_quality_score
+        return self.weight * quality_multiplier
 
 
 @dataclass
@@ -119,6 +159,14 @@ class PipelineConfig:
     fail_on_validation_error: bool = False  # Raise exception if validation fails
     max_validation_issues: int = 100  # Max issues to report per file
 
+    # Quality-based data selection
+    enable_quality_filtering: bool = True  # Use manifest quality scores for selection
+    min_quality_score: float = 0.5  # Minimum quality score for training data
+    quality_weighted_sampling: bool = True  # Weight samples by quality score
+    prefer_high_elo_games: bool = True  # Prioritize high-Elo games
+    min_elo_threshold: float = 1400.0  # Minimum average Elo for games
+    manifest_db_path: Optional[str] = None  # Path to data manifest for quality lookup
+
 
 @dataclass
 class PipelineStats:
@@ -141,6 +189,12 @@ class PipelineStats:
     validation_issues_total: int = 0
     samples_with_issues: int = 0
 
+    # Quality stats
+    avg_batch_quality: float = 0.0  # Average quality score of recent batches
+    high_quality_ratio: float = 0.0  # % of samples with quality > 0.7
+    avg_elo_in_batch: float = 0.0  # Average player Elo in recent batches
+    quality_filtered_count: int = 0  # Games filtered out due to low quality
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert stats to dictionary."""
         return {
@@ -159,6 +213,12 @@ class PipelineStats:
                 "sources_invalid": self.sources_invalid,
                 "validation_issues_total": self.validation_issues_total,
                 "samples_with_issues": self.samples_with_issues,
+            },
+            "quality": {
+                "avg_batch_quality": self.avg_batch_quality,
+                "high_quality_ratio": self.high_quality_ratio,
+                "avg_elo_in_batch": self.avg_elo_in_batch,
+                "quality_filtered_count": self.quality_filtered_count,
             },
         }
 
@@ -210,10 +270,76 @@ class DataPipelineController:
         # Validation results cache
         self._validation_results: Dict[str, Any] = {}
 
+        # Quality-based data selection via manifest
+        self._manifest: Optional[DataManifest] = None
+        self._quality_lookup: Dict[str, float] = {}  # game_id -> quality_score
+        self._elo_lookup: Dict[str, float] = {}  # game_id -> avg_elo
+        self._init_manifest()
+
         logger.info(
             f"DataPipelineController initialized with {len(self._sources)} sources "
-            f"(mode={self.config.mode.value})"
+            f"(mode={self.config.mode.value}, quality_filtering={self.config.enable_quality_filtering})"
         )
+
+    def _init_manifest(self):
+        """Initialize manifest for quality-based data selection."""
+        if not HAS_MANIFEST or not self.config.enable_quality_filtering:
+            return
+
+        # Try to find manifest database
+        manifest_path = self.config.manifest_db_path
+        if manifest_path is None:
+            # Default locations to search
+            candidates = [
+                Path("data/data_manifest.db"),
+                Path(__file__).parent.parent.parent / "data" / "data_manifest.db",
+                Path("/lambda/nfs/RingRift/manifests/data_manifest.db"),
+            ]
+            for p in candidates:
+                if p.exists():
+                    manifest_path = str(p)
+                    break
+
+        if manifest_path and Path(manifest_path).exists():
+            try:
+                self._manifest = DataManifest(Path(manifest_path))
+                logger.info(f"Loaded data manifest from {manifest_path}")
+                # Pre-load quality lookup for configured filters
+                self._refresh_quality_lookup()
+            except Exception as e:
+                logger.warning(f"Failed to load manifest: {e}")
+                self._manifest = None
+
+    def _refresh_quality_lookup(self, limit: int = 50000):
+        """Refresh the quality lookup table from manifest.
+
+        Args:
+            limit: Maximum games to cache in lookup
+        """
+        if not self._manifest:
+            return
+
+        try:
+            high_quality_games = self._manifest.get_high_quality_games(
+                min_quality_score=self.config.min_quality_score,
+                limit=limit,
+                board_type=self.config.board_type,
+                num_players=self.config.num_players,
+            )
+
+            self._quality_lookup.clear()
+            self._elo_lookup.clear()
+
+            for game in high_quality_games:
+                self._quality_lookup[game.game_id] = game.quality_score
+                self._elo_lookup[game.game_id] = game.avg_player_elo
+
+            logger.info(
+                f"Refreshed quality lookup: {len(self._quality_lookup)} high-quality games "
+                f"(min_score={self.config.min_quality_score})"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to refresh quality lookup: {e}")
 
     def _init_sources(self):
         """Initialize data sources from paths."""
@@ -261,6 +387,54 @@ class DataPipelineController:
     def get_sources(self) -> List[DataSourceConfig]:
         """Get all configured data sources."""
         return self._sources.copy()
+
+    def get_sources_by_quality(self, min_quality: float = 0.0) -> List[DataSourceConfig]:
+        """Get sources sorted by quality score (highest first).
+
+        Args:
+            min_quality: Minimum quality threshold (0.0-1.0)
+
+        Returns:
+            List of sources sorted by avg_quality_score descending
+        """
+        qualified = [s for s in self._sources if s.enabled and s.avg_quality_score >= min_quality]
+        return sorted(qualified, key=lambda s: s.avg_quality_score, reverse=True)
+
+    def get_source_quality_stats(self) -> Dict[str, Dict[str, Any]]:
+        """Get quality statistics for all sources.
+
+        Returns:
+            Dict mapping source path to quality stats
+        """
+        stats = {}
+        for source in self._sources:
+            stats[source.path] = {
+                "type": source.source_type.value,
+                "enabled": source.enabled,
+                "avg_quality_score": source.avg_quality_score,
+                "total_games_used": source.total_games_used,
+                "quality_trend": source.quality_trend,
+                "effective_weight": source.effective_weight,
+                "last_quality_update": source.last_quality_update,
+            }
+        return stats
+
+    def update_source_quality(self, path: str, quality_score: float) -> bool:
+        """Update quality score for a specific source.
+
+        Args:
+            path: Source path to update
+            quality_score: New quality score (0.0-1.0)
+
+        Returns:
+            True if source was found and updated
+        """
+        for source in self._sources:
+            if source.path == path:
+                source.update_quality(quality_score)
+                logger.debug(f"Updated quality for {path}: {source.avg_quality_score:.3f}")
+                return True
+        return False
 
     def _get_validator(self):
         """Lazy-load the data validator."""
@@ -433,24 +607,79 @@ class DataPipelineController:
         categories: Optional[List[str]] = None,
         max_age_hours: float = 168,
     ) -> Dict[str, int]:
-        """Sync data from remote sources using aria2 transport.
+        """Sync data from remote sources using SyncCoordinator.
 
-        This method fetches training data from remote cluster nodes using
-        aria2's high-performance multi-connection downloads.
+        This method uses the unified SyncCoordinator which provides:
+        - aria2 high-performance multi-connection downloads
+        - SSH fallback for direct transfers
+        - P2P fallback for decentralized sync
+        - NFS optimization (skips sync when shared storage available)
+        - Gossip sync for eventually-consistent replication
 
         Args:
             source_urls: List of data server URLs (e.g., ["http://host1:8766"])
-                        If None, uses configured remote_urls from sources
+                        If None, auto-discovers from cluster
             categories: Data categories to sync (default: ["games", "training"])
             max_age_hours: Only sync files newer than this
 
         Returns:
             Dict mapping category to number of files synced
         """
+        # Try SyncCoordinator first (preferred)
+        try:
+            from app.distributed.sync_coordinator import (
+                SyncCoordinator,
+                SyncCategory,
+            )
+            coordinator = SyncCoordinator.get_instance()
+            results = {}
+
+            if categories is None:
+                categories = ["games", "training"]
+
+            # Map string categories to SyncCategory enum
+            category_map = {
+                "games": SyncCategory.GAMES,
+                "training": SyncCategory.TRAINING,
+                "training_data": SyncCategory.TRAINING,
+                "models": SyncCategory.MODELS,
+            }
+
+            for cat_name in categories:
+                cat_enum = category_map.get(cat_name)
+                if cat_enum is None:
+                    continue
+
+                if cat_enum == SyncCategory.GAMES:
+                    stats = await coordinator.sync_games(sources=source_urls)
+                elif cat_enum == SyncCategory.TRAINING:
+                    stats = await coordinator.sync_training_data(
+                        sources=source_urls,
+                        max_age_hours=max_age_hours,
+                    )
+                elif cat_enum == SyncCategory.MODELS:
+                    stats = await coordinator.sync_models(sources=source_urls)
+                else:
+                    continue
+
+                results[cat_name] = stats.files_synced
+                if stats.files_synced > 0:
+                    logger.info(
+                        f"Synced {stats.files_synced} {cat_name} files "
+                        f"({stats.bytes_transferred / (1024*1024):.1f}MB) "
+                        f"via {stats.transport_used}"
+                    )
+
+            return results
+
+        except ImportError:
+            pass  # Fall back to direct aria2
+
+        # Fallback: Direct aria2 transport
         try:
             from app.distributed.aria2_transport import Aria2Transport, check_aria2_available
         except ImportError:
-            logger.warning("aria2_transport not available, skipping remote sync")
+            logger.warning("Neither SyncCoordinator nor aria2_transport available")
             return {}
 
         if not check_aria2_available():
@@ -548,6 +777,9 @@ class DataPipelineController:
                     min_buffer_fill=self.config.min_buffer_fill,
                     priority_sampling=self.config.priority_sampling,
                     recency_weight=self.config.recency_weight,
+                    # Pass quality data for weighted sampling
+                    quality_lookup=self._quality_lookup if self.config.quality_weighted_sampling else None,
+                    elo_lookup=self._elo_lookup if self.config.prefer_high_elo_games else None,
                 )
 
                 if len(db_sources) == 1:
@@ -566,6 +798,13 @@ class DataPipelineController:
                     )
 
                 self.stats.buffer_capacity = self.config.buffer_size
+
+                # Log quality integration status
+                if self._quality_lookup:
+                    logger.info(
+                        f"Streaming pipeline initialized with quality weighting "
+                        f"({len(self._quality_lookup)} games in quality lookup)"
+                    )
 
             except ImportError as e:
                 logger.error(f"Failed to import streaming pipeline: {e}")
@@ -816,6 +1055,172 @@ class DataPipelineController:
             )
 
         return self.stats
+
+    def get_sync_status(self) -> Dict[str, Any]:
+        """Get comprehensive sync status from SyncCoordinator.
+
+        Returns:
+            Dict with sync status including:
+            - storage_provider: Type of storage (nfs, ephemeral, local)
+            - shared_storage: Whether shared NFS storage is available
+            - sync_stats: Recent sync operation statistics
+            - transports: Available transport methods
+            - gossip_status: Gossip sync daemon status (if enabled)
+        """
+        try:
+            from app.distributed.sync_coordinator import SyncCoordinator
+
+            coordinator = SyncCoordinator.get_instance()
+            return coordinator.get_status()
+        except ImportError:
+            return {"error": "SyncCoordinator not available"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # =========================================================================
+    # Quality-Based Data Selection
+    # =========================================================================
+
+    def get_high_quality_game_ids(
+        self,
+        min_quality: Optional[float] = None,
+        min_elo: Optional[float] = None,
+        limit: int = 10000,
+    ) -> List[str]:
+        """Get list of high-quality game IDs from manifest.
+
+        Args:
+            min_quality: Minimum quality score (default: config value)
+            min_elo: Minimum average Elo (default: config value)
+            limit: Maximum number of game IDs to return
+
+        Returns:
+            List of game IDs sorted by quality score descending
+        """
+        if not self._manifest:
+            return []
+
+        min_quality = min_quality or self.config.min_quality_score
+        min_elo = min_elo or self.config.min_elo_threshold
+
+        try:
+            games = self._manifest.get_high_quality_games(
+                min_quality_score=min_quality,
+                limit=limit,
+                board_type=self.config.board_type,
+                num_players=self.config.num_players,
+            )
+
+            # Apply Elo filter
+            if self.config.prefer_high_elo_games:
+                games = [g for g in games if g.avg_player_elo >= min_elo]
+
+            return [g.game_id for g in games]
+        except Exception as e:
+            logger.warning(f"Failed to get high-quality game IDs: {e}")
+            return []
+
+    def get_quality_weights(self, game_ids: List[str]) -> Dict[str, float]:
+        """Get quality-based sampling weights for a list of game IDs.
+
+        Weights are normalized so they sum to 1.0.
+
+        Args:
+            game_ids: List of game IDs to get weights for
+
+        Returns:
+            Dict mapping game_id to sampling weight
+        """
+        if not self._quality_lookup or not self.config.quality_weighted_sampling:
+            # Uniform weights
+            n = len(game_ids)
+            return {gid: 1.0 / n for gid in game_ids} if n > 0 else {}
+
+        weights = {}
+        total = 0.0
+
+        for gid in game_ids:
+            # Use quality score as weight, with minimum floor
+            quality = self._quality_lookup.get(gid, 0.5)
+            weight = max(quality, 0.1)  # Minimum weight to ensure coverage
+            weights[gid] = weight
+            total += weight
+
+        # Normalize
+        if total > 0:
+            for gid in weights:
+                weights[gid] /= total
+
+        return weights
+
+    def get_quality_distribution(self) -> Dict[str, Any]:
+        """Get quality distribution statistics from manifest.
+
+        Returns:
+            Dict with quality distribution stats
+        """
+        if not self._manifest:
+            return {"error": "Manifest not available"}
+
+        try:
+            return self._manifest.get_quality_distribution(
+                board_type=self.config.board_type,
+                num_players=self.config.num_players,
+            )
+        except Exception as e:
+            return {"error": str(e)}
+
+    def is_high_quality_game(self, game_id: str) -> bool:
+        """Check if a game is in the high-quality set.
+
+        Args:
+            game_id: Game ID to check
+
+        Returns:
+            True if game is high quality, False otherwise
+        """
+        return game_id in self._quality_lookup
+
+    def get_game_quality(self, game_id: str) -> Optional[float]:
+        """Get quality score for a specific game.
+
+        Args:
+            game_id: Game ID to look up
+
+        Returns:
+            Quality score or None if not found
+        """
+        return self._quality_lookup.get(game_id)
+
+    def get_game_elo(self, game_id: str) -> Optional[float]:
+        """Get average Elo for a specific game.
+
+        Args:
+            game_id: Game ID to look up
+
+        Returns:
+            Average player Elo or None if not found
+        """
+        return self._elo_lookup.get(game_id)
+
+    def build_priority_weights_for_streaming(self) -> Dict[str, float]:
+        """Build a priority weight lookup for streaming pipeline.
+
+        Returns quality scores that can be used as priority weights
+        in the streaming pipeline for prioritized sampling.
+
+        Returns:
+            Dict mapping game_id to priority weight
+        """
+        # Return quality scores directly as priority weights
+        return dict(self._quality_lookup)
+
+    def refresh_quality_data(self):
+        """Refresh quality data from manifest.
+
+        Call this periodically to pick up newly synced high-quality games.
+        """
+        self._refresh_quality_lookup()
 
     def set_epoch(self, epoch: int):
         """Set epoch for reproducible shuffling.

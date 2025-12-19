@@ -256,6 +256,112 @@ MODEL_SYNC_TOTAL: Final[Counter] = _safe_metric(Counter,
 )
 
 # =============================================================================
+# Enhanced Sync Coordinator Metrics
+# =============================================================================
+
+SYNC_COORDINATOR_OPS: Final[Counter] = _safe_metric(Counter,
+    "ringrift_sync_coordinator_operations_total",
+    "Total sync operations by category and transport.",
+    labelnames=("category", "transport"),
+)
+
+SYNC_COORDINATOR_BYTES: Final[Counter] = _safe_metric(Counter,
+    "ringrift_sync_coordinator_bytes_total",
+    "Total bytes transferred by sync coordinator.",
+    labelnames=("category", "transport", "direction"),
+)
+
+SYNC_COORDINATOR_FILES: Final[Counter] = _safe_metric(Counter,
+    "ringrift_sync_coordinator_files_total",
+    "Total files synced by category.",
+    labelnames=("category", "transport"),
+)
+
+SYNC_COORDINATOR_DURATION: Final[Histogram] = _safe_metric(Histogram,
+    "ringrift_sync_coordinator_duration_seconds",
+    "Duration of sync coordinator operations.",
+    labelnames=("category", "transport"),
+    buckets=(1, 5, 10, 30, 60, 120, 300, 600, 1800),
+)
+
+SYNC_COORDINATOR_ERRORS: Final[Counter] = _safe_metric(Counter,
+    "ringrift_sync_coordinator_errors_total",
+    "Total errors during sync operations.",
+    labelnames=("category", "transport", "error_type"),
+)
+
+DATA_SERVER_STATUS: Final[Gauge] = _safe_metric(Gauge,
+    "ringrift_data_server_running",
+    "Whether the aria2 data server is running (1=running, 0=stopped).",
+    labelnames=("port",),
+)
+
+SYNC_SOURCES_DISCOVERED: Final[Gauge] = _safe_metric(Gauge,
+    "ringrift_sync_sources_discovered",
+    "Number of aria2 data sources discovered in cluster.",
+    labelnames=(),
+)
+
+SYNC_NFS_SKIP: Final[Counter] = _safe_metric(Counter,
+    "ringrift_sync_nfs_skip_total",
+    "Sync operations skipped due to shared NFS storage.",
+    labelnames=("category",),
+)
+
+# =============================================================================
+# Training Data Quality Metrics
+# =============================================================================
+
+TRAINING_DATA_QUALITY_SCORE: Final[Gauge] = _safe_metric(Gauge,
+    "ringrift_training_data_quality_score",
+    "Quality score of training data (avg/min/max).",
+    labelnames=("board_type", "num_players", "stat_type"),
+)
+
+TRAINING_DATA_QUALITY_HISTOGRAM: Final[Histogram] = _safe_metric(Histogram,
+    "ringrift_training_data_quality_distribution",
+    "Distribution of quality scores in training data.",
+    labelnames=("board_type", "num_players"),
+    buckets=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
+)
+
+TRAINING_DATA_HIGH_QUALITY_COUNT: Final[Gauge] = _safe_metric(Gauge,
+    "ringrift_training_data_high_quality_count",
+    "Number of high-quality games (quality > 0.7) available for training.",
+    labelnames=("board_type", "num_players"),
+)
+
+TRAINING_DATA_ELO: Final[Gauge] = _safe_metric(Gauge,
+    "ringrift_training_data_avg_elo",
+    "Average player Elo in training data (avg/min/max).",
+    labelnames=("board_type", "num_players", "stat_type"),
+)
+
+TRAINING_DATA_DECISIVE_RATIO: Final[Gauge] = _safe_metric(Gauge,
+    "ringrift_training_data_decisive_ratio",
+    "Ratio of decisive games in training data.",
+    labelnames=("board_type", "num_players"),
+)
+
+TRAINING_DATA_GAMES_TOTAL: Final[Gauge] = _safe_metric(Gauge,
+    "ringrift_training_data_games_total",
+    "Total games available for training with quality scores.",
+    labelnames=("board_type", "num_players"),
+)
+
+QUALITY_BRIDGE_STATUS: Final[Gauge] = _safe_metric(Gauge,
+    "ringrift_quality_bridge_status",
+    "Quality bridge status metrics.",
+    labelnames=("metric_type",),
+)
+
+QUALITY_SYNC_STATS: Final[Counter] = _safe_metric(Counter,
+    "ringrift_quality_sync_high_quality_games_total",
+    "High-quality games synced with priority.",
+    labelnames=("transport",),
+)
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -465,6 +571,63 @@ def record_model_sync(
     MODEL_SYNC_TOTAL.labels(model_type, direction).inc()
 
 
+def record_sync_coordinator_op(
+    category: str,
+    transport: str,
+    files_synced: int,
+    bytes_transferred: int,
+    duration_seconds: float,
+    success: bool = True,
+    error_type: Optional[str] = None,
+) -> None:
+    """Record metrics for a SyncCoordinator operation.
+
+    Args:
+        category: Sync category (games, training, models)
+        transport: Transport used (aria2, ssh, p2p, gossip)
+        files_synced: Number of files synced
+        bytes_transferred: Total bytes transferred
+        duration_seconds: Operation duration
+        success: Whether operation succeeded
+        error_type: Error type if failed
+    """
+    SYNC_COORDINATOR_OPS.labels(category, transport).inc()
+    SYNC_COORDINATOR_FILES.labels(category, transport).inc(files_synced)
+    SYNC_COORDINATOR_BYTES.labels(category, transport, "download").inc(bytes_transferred)
+    SYNC_COORDINATOR_DURATION.labels(category, transport).observe(duration_seconds)
+
+    if not success and error_type:
+        SYNC_COORDINATOR_ERRORS.labels(category, transport, error_type).inc()
+
+
+def update_data_server_status(port: int, running: bool) -> None:
+    """Update data server status gauge.
+
+    Args:
+        port: Server port
+        running: Whether server is running
+    """
+    DATA_SERVER_STATUS.labels(str(port)).set(1 if running else 0)
+
+
+def update_sync_sources_count(count: int) -> None:
+    """Update the count of discovered sync sources.
+
+    Args:
+        count: Number of sources discovered
+    """
+    SYNC_SOURCES_DISCOVERED.set(count)
+
+
+def record_nfs_skip(category: str) -> None:
+    """Record that a sync was skipped due to shared NFS storage.
+
+    Args:
+        category: Sync category that was skipped
+    """
+    SYNC_NFS_SKIP.labels(category).inc()
+
+
 @contextmanager
 def time_pipeline_stage(stage: str) -> Generator[None, None, None]:
     """Context manager to time a pipeline stage.
@@ -504,3 +667,180 @@ PIPELINE_SELFPLAY = 1
 PIPELINE_TRAINING = 2
 PIPELINE_EVALUATION = 3
 PIPELINE_PROMOTION = 4
+
+
+# =============================================================================
+# Training Data Quality Helper Functions
+# =============================================================================
+
+
+def record_training_data_quality(
+    board_type: str,
+    num_players: int,
+    avg_quality: float,
+    min_quality: float = 0.0,
+    max_quality: float = 1.0,
+    high_quality_count: int = 0,
+    total_games: int = 0,
+    avg_elo: float = 1500.0,
+    min_elo: float = 1200.0,
+    max_elo: float = 2400.0,
+    decisive_ratio: float = 0.5,
+    quality_scores: Optional[list] = None,
+) -> None:
+    """Record comprehensive training data quality metrics.
+
+    Args:
+        board_type: Board type (square8, square19, hexagonal)
+        num_players: Number of players
+        avg_quality: Average quality score of training data
+        min_quality: Minimum quality score
+        max_quality: Maximum quality score
+        high_quality_count: Number of games with quality > 0.7
+        total_games: Total games available for training
+        avg_elo: Average player Elo in training data
+        min_elo: Minimum Elo in training data
+        max_elo: Maximum Elo in training data
+        decisive_ratio: Ratio of decisive (non-draw) games
+        quality_scores: Optional list of quality scores for histogram
+    """
+    np_str = str(num_players)
+
+    # Quality score gauges
+    TRAINING_DATA_QUALITY_SCORE.labels(board_type, np_str, "avg").set(avg_quality)
+    TRAINING_DATA_QUALITY_SCORE.labels(board_type, np_str, "min").set(min_quality)
+    TRAINING_DATA_QUALITY_SCORE.labels(board_type, np_str, "max").set(max_quality)
+
+    # High quality count and total
+    TRAINING_DATA_HIGH_QUALITY_COUNT.labels(board_type, np_str).set(high_quality_count)
+    TRAINING_DATA_GAMES_TOTAL.labels(board_type, np_str).set(total_games)
+
+    # Elo gauges
+    TRAINING_DATA_ELO.labels(board_type, np_str, "avg").set(avg_elo)
+    TRAINING_DATA_ELO.labels(board_type, np_str, "min").set(min_elo)
+    TRAINING_DATA_ELO.labels(board_type, np_str, "max").set(max_elo)
+
+    # Decisive ratio
+    TRAINING_DATA_DECISIVE_RATIO.labels(board_type, np_str).set(decisive_ratio)
+
+    # Histogram of quality scores (if provided)
+    if quality_scores:
+        for score in quality_scores:
+            TRAINING_DATA_QUALITY_HISTOGRAM.labels(board_type, np_str).observe(score)
+
+
+def update_quality_bridge_status(
+    quality_lookup_size: int,
+    elo_lookup_size: int,
+    refresh_age_seconds: float,
+    avg_quality: float = 0.0,
+) -> None:
+    """Update quality bridge status metrics.
+
+    Args:
+        quality_lookup_size: Number of games in quality lookup
+        elo_lookup_size: Number of games in Elo lookup
+        refresh_age_seconds: Seconds since last refresh
+        avg_quality: Average quality score in lookup
+    """
+    QUALITY_BRIDGE_STATUS.labels("quality_lookup_size").set(quality_lookup_size)
+    QUALITY_BRIDGE_STATUS.labels("elo_lookup_size").set(elo_lookup_size)
+    QUALITY_BRIDGE_STATUS.labels("refresh_age_seconds").set(refresh_age_seconds)
+    QUALITY_BRIDGE_STATUS.labels("avg_quality").set(avg_quality)
+
+
+def record_high_quality_sync(
+    games_synced: int,
+    transport: str = "aria2",
+) -> None:
+    """Record high-quality games synced with priority.
+
+    Args:
+        games_synced: Number of high-quality games synced
+        transport: Transport used for sync
+    """
+    QUALITY_SYNC_STATS.labels(transport).inc(games_synced)
+
+
+def collect_quality_metrics_from_bridge() -> bool:
+    """Collect and update quality metrics from the QualityBridge.
+
+    This function should be called periodically to update Prometheus metrics
+    from the quality bridge's current state.
+
+    Returns:
+        True if metrics were collected successfully
+    """
+    try:
+        from app.training.quality_bridge import get_quality_bridge
+
+        bridge = get_quality_bridge()
+        status = bridge.get_status()
+
+        update_quality_bridge_status(
+            quality_lookup_size=status.get("quality_lookup_size", 0),
+            elo_lookup_size=status.get("elo_lookup_size", 0),
+            refresh_age_seconds=status.get("last_refresh_age_seconds", 0),
+            avg_quality=status.get("avg_quality_score", 0),
+        )
+
+        return True
+    except Exception:
+        return False
+
+
+def collect_quality_metrics_from_manifest(
+    board_type: str = "all",
+    num_players: int = 2,
+) -> bool:
+    """Collect and update quality metrics from the DataManifest.
+
+    Args:
+        board_type: Board type to collect metrics for
+        num_players: Number of players
+
+    Returns:
+        True if metrics were collected successfully
+    """
+    try:
+        from app.distributed.unified_manifest import DataManifest
+        from pathlib import Path
+
+        # Try to load manifest
+        manifest_paths = [
+            Path(__file__).parent.parent.parent / "data" / "data_manifest.db",
+            Path.home() / "ringrift" / "ai-service" / "data" / "data_manifest.db",
+        ]
+
+        manifest = None
+        for path in manifest_paths:
+            if path.exists():
+                manifest = DataManifest(path)
+                break
+
+        if not manifest:
+            return False
+
+        # Get quality distribution
+        dist = manifest.get_quality_distribution(
+            board_type=board_type if board_type != "all" else None,
+            num_players=num_players if board_type != "all" else None,
+        )
+
+        record_training_data_quality(
+            board_type=board_type,
+            num_players=num_players,
+            avg_quality=dist.get("avg_quality_score", 0.0),
+            min_quality=dist.get("min_quality_score", 0.0),
+            max_quality=dist.get("max_quality_score", 0.0),
+            high_quality_count=0,  # Would need additional query
+            total_games=dist.get("total_games", 0),
+            avg_elo=dist.get("avg_player_elo", 1500.0),
+            min_elo=1200.0,  # Default
+            max_elo=2400.0,  # Default
+            decisive_ratio=dist.get("decisive_rate", 0.5),
+        )
+
+        return True
+    except Exception:
+        return False

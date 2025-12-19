@@ -34,6 +34,13 @@ curl -H "X-Admin-Key: $KEY" http://localhost:8001/admin/health/coordinators
 # Full system health
 curl -H "X-Admin-Key: $KEY" http://localhost:8001/admin/health/full
 
+# Sync coordinator status
+curl -H "X-Admin-Key: $KEY" http://localhost:8001/admin/sync/status
+
+# Trigger sync (optional categories: games, training, models)
+curl -X POST -H "X-Admin-Key: $KEY" \
+  "http://localhost:8001/admin/sync/trigger?categories=games&categories=training"
+
 # Prometheus metrics
 curl http://localhost:8001/metrics
 ```

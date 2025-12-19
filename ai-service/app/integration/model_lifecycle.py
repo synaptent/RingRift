@@ -508,15 +508,28 @@ class ModelSyncCoordinator:
     Coordinates model synchronization across P2P cluster.
 
     Handles:
-    - Push new models to cluster nodes
+    - Push new models to cluster nodes (via aria2 or HTTP)
     - Pull latest production model
     - Sync model registry state
+
+    Integrates with distributed SyncCoordinator for optimal transport selection.
     """
 
     def __init__(self, config: LifecycleConfig):
         self.config = config
         self._sync_state: Dict[str, Any] = {}
         self._last_sync: Dict[str, float] = {}
+        self._distributed_coordinator = None
+
+    def _get_distributed_coordinator(self):
+        """Lazily get the distributed SyncCoordinator."""
+        if self._distributed_coordinator is None:
+            try:
+                from app.distributed.sync_coordinator import SyncCoordinator
+                self._distributed_coordinator = SyncCoordinator.get_instance()
+            except ImportError:
+                pass
+        return self._distributed_coordinator
 
     async def get_cluster_status(self) -> Dict[str, Any]:
         """Get current cluster status from P2P orchestrator."""
@@ -546,12 +559,46 @@ class ModelSyncCoordinator:
         """
         Push model to cluster nodes.
 
+        Uses distributed SyncCoordinator for optimal transport (aria2, SSH, P2P)
+        when available, with fallback to direct HTTP push.
+
         Returns: {node_id: success}
         """
+        results = {}
+
+        # Try distributed SyncCoordinator first (has aria2, SSH, P2P support)
+        dist_coord = self._get_distributed_coordinator()
+        if dist_coord:
+            try:
+                sync_stats = await dist_coord.sync_models(
+                    model_ids=[f"{model_id}_v{version}"],
+                )
+                if sync_stats.files_synced > 0:
+                    logger.info(
+                        f"Model {model_id}:v{version} synced via {sync_stats.transport_used} "
+                        f"({sync_stats.bytes_transferred / (1024*1024):.1f}MB)"
+                    )
+                    # Record metrics
+                    try:
+                        from app.metrics.orchestrator import record_sync_coordinator_op
+                        record_sync_coordinator_op(
+                            category="models",
+                            transport=sync_stats.transport_used,
+                            files_synced=sync_stats.files_synced,
+                            bytes_transferred=sync_stats.bytes_transferred,
+                            duration_seconds=sync_stats.duration_seconds,
+                        )
+                    except ImportError:
+                        pass
+
+                    self._last_sync[model_id] = time.time()
+                    return {"distributed_sync": True}
+            except Exception as e:
+                logger.warning(f"Distributed sync failed, falling back to HTTP: {e}")
+
+        # Fallback to direct HTTP push
         if not HAS_AIOHTTP:
             return {}
-
-        results = {}
 
         # Get target nodes if not specified
         if target_nodes is None:
@@ -1002,6 +1049,14 @@ class ModelLifecycleManager:
         results = await self.sync_coordinator.push_model(
             model_path, model_id, version
         )
+
+        if results.get("distributed_sync"):
+            logger.info(
+                "Triggered distributed sync for %s:v%s",
+                model_id,
+                version,
+            )
+            return
 
         success_count = sum(1 for v in results.values() if v)
         logger.info(

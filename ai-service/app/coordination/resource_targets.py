@@ -38,7 +38,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import yaml
+from app.utils.yaml_utils import safe_load_yaml
 
 # Import hardware-aware selfplay limits from resource_optimizer (single source of truth)
 # Lazy import to avoid circular dependency
@@ -70,14 +70,8 @@ _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "unified
 def _load_config_targets(config_path: Optional[Path] = None) -> Dict[str, Any]:
     """Load resource_targets from config file."""
     path = config_path or _DEFAULT_CONFIG_PATH
-    try:
-        if path.exists():
-            with open(path) as f:
-                config = yaml.safe_load(f) or {}
-            return config.get("resource_targets", {})
-    except Exception as e:
-        print(f"[ResourceTargets] Config load error: {e}")
-    return {}
+    config = safe_load_yaml(path, default={}, log_errors=True)
+    return config.get("resource_targets", {})
 
 
 class HostTier(Enum):

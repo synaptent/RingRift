@@ -78,11 +78,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-# Setup path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+# Use centralized path constants
+from app.utils.paths import AI_SERVICE_ROOT, DATA_DIR
 
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-COORDINATION_DIR = AI_SERVICE_ROOT / "data" / "coordination"
+COORDINATION_DIR = DATA_DIR / "coordination"
 LOCK_DIR = COORDINATION_DIR / "locks"
 REGISTRY_DB = COORDINATION_DIR / "task_registry.db"
 

@@ -101,6 +101,10 @@ class DataEventType(Enum):
     # Data quality events
     DATA_QUALITY_ALERT = "data_quality_alert"
     QUALITY_CHECK_FAILED = "quality_check_failed"
+    QUALITY_SCORE_UPDATED = "quality_score_updated"  # Game quality recalculated
+    QUALITY_DISTRIBUTION_CHANGED = "quality_distribution_changed"  # Significant shift
+    HIGH_QUALITY_DATA_AVAILABLE = "high_quality_data_available"  # Ready for training
+    LOW_QUALITY_DATA_WARNING = "low_quality_data_warning"  # Below threshold
 
     # Regression detection events (from unified RegressionDetector)
     REGRESSION_DETECTED = "regression_detected"  # Any regression

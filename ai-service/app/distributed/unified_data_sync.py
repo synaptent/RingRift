@@ -53,12 +53,8 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-# Determine AI_SERVICE_ROOT
-_THIS_FILE = Path(__file__).resolve()
-AI_SERVICE_ROOT = _THIS_FILE.parents[2]
-
-# Add to path for imports
-sys.path.insert(0, str(AI_SERVICE_ROOT))
+# Use centralized path constants
+from app.utils.paths import AI_SERVICE_ROOT
 
 # Import sub-components with graceful fallback
 try:
@@ -91,6 +87,22 @@ try:
 except ImportError:
     HAS_CONTENT_DEDUP = False
     ContentDeduplicator = None
+
+# Quality extraction for priority-based sync
+try:
+    from app.distributed.quality_extractor import (
+        extract_batch_quality,
+        extract_quality_from_synced_db,
+        get_elo_lookup_from_service,
+        compute_priority_score,
+        QualityExtractorConfig,
+    )
+    from app.distributed.unified_manifest import GameQualityMetadata
+    HAS_QUALITY_EXTRACTION = True
+except ImportError:
+    HAS_QUALITY_EXTRACTION = False
+    extract_batch_quality = None
+    GameQualityMetadata = None
 
 # Storage provider for NFS detection and provider-specific paths
 try:
@@ -321,6 +333,13 @@ class SyncConfig:
     aria2_connections_per_server: int = 16
     aria2_split: int = 16
     aria2_source_urls: List[str] = field(default_factory=list)  # type: ignore[misc]
+
+    # Quality extraction for priority-based sync
+    enable_quality_extraction: bool = True  # Extract quality scores during sync
+    quality_elo_weight: float = 0.4
+    quality_length_weight: float = 0.3
+    quality_decisive_weight: float = 0.3
+    min_quality_score_for_priority: float = 0.5  # Minimum quality for priority queue
 
 
 # HostSyncState - use unified implementation if available
@@ -715,6 +734,77 @@ class UnifiedDataSyncService:
                     logger.info("Aria2 transport disabled (aria2c not found)")
             except Exception as e:
                 logger.warning(f"Could not initialize aria2 transport: {e}")
+
+        # Quality extraction for priority-based sync
+        self._elo_lookup = None
+        self._quality_config = None
+        if self.config.enable_quality_extraction and HAS_QUALITY_EXTRACTION:
+            try:
+                self._elo_lookup = get_elo_lookup_from_service()
+                self._quality_config = QualityExtractorConfig(
+                    elo_weight=self.config.quality_elo_weight,
+                    length_weight=self.config.quality_length_weight,
+                    decisive_weight=self.config.quality_decisive_weight,
+                )
+                logger.info("Quality extraction enabled for priority-based sync")
+            except Exception as e:
+                logger.warning(f"Could not initialize quality extraction: {e}")
+
+    def _extract_and_store_quality(self, local_dir: Path, host_name: str) -> int:
+        """Extract quality scores from synced databases and store in manifest.
+
+        Args:
+            local_dir: Directory containing synced .db files
+            host_name: Name of the source host
+
+        Returns:
+            Number of games with quality scores extracted
+        """
+        if not HAS_QUALITY_EXTRACTION or not self.config.enable_quality_extraction:
+            return 0
+
+        try:
+            # Extract quality from all synced databases
+            quality_results = extract_quality_from_synced_db(
+                local_dir=local_dir,
+                elo_lookup=self._elo_lookup,
+                config=self._quality_config or QualityExtractorConfig(),
+            )
+
+            total_extracted = 0
+            for db_name, qualities in quality_results.items():
+                # Store quality metadata in manifest
+                marked = self.manifest.mark_games_synced_with_quality(
+                    games=qualities,
+                    source_host=host_name,
+                    source_db=db_name,
+                )
+                total_extracted += marked
+
+                # Add high-quality games to priority queue for future reference
+                for quality in qualities:
+                    if quality.quality_score >= self.config.min_quality_score_for_priority:
+                        try:
+                            self.manifest.add_to_priority_queue(
+                                game_id=quality.game_id,
+                                source_host=host_name,
+                                source_db=db_name,
+                                priority_score=quality.quality_score,
+                                avg_player_elo=quality.avg_player_elo,
+                                game_length=quality.game_length,
+                                is_decisive=quality.is_decisive,
+                            )
+                        except Exception as e:
+                            logger.debug(f"Failed to add {quality.game_id} to priority queue: {e}")
+
+            if total_extracted > 0:
+                logger.info(f"{host_name}: Extracted quality for {total_extracted} games")
+
+            return total_extracted
+
+        except Exception as e:
+            logger.warning(f"{host_name}: Quality extraction failed: {e}")
+            return 0
 
     def _build_ssh_args(self, host: HostConfig) -> str:
         """Build SSH arguments string.
@@ -1117,6 +1207,12 @@ class UnifiedDataSyncService:
                     logger.warning(f"{host.name}: Checksum validation failed: {validation_result['errors']}")
                     # Continue anyway but log the warning - don't fail the sync
 
+            # Extract and store quality scores for priority-based training
+            if games_synced > 0:
+                quality_count = self._extract_and_store_quality(local_dir, host.name)
+                if quality_count > 0:
+                    self._sync_stats["quality_extracted"] = self._sync_stats.get("quality_extracted", 0) + quality_count
+
             # Update statistics
             self._sync_stats[sync_method] += 1
 
@@ -1469,6 +1565,14 @@ class UnifiedDataSyncService:
         if self._gossip_daemon:
             stats["gossip_sync"] = self._gossip_daemon.get_status()
 
+        # Quality extraction stats
+        if self.config.enable_quality_extraction and HAS_QUALITY_EXTRACTION:
+            try:
+                stats["quality_distribution"] = self.manifest.get_quality_distribution()
+                stats["priority_queue"] = self.manifest.get_priority_queue_stats()
+            except Exception as e:
+                logger.debug(f"Failed to get quality stats: {e}")
+
         return stats
 
     @classmethod
@@ -1485,6 +1589,12 @@ class UnifiedDataSyncService:
         # Build sync config
         di = data.get("data_ingestion", {})
         aria2_cfg = di.get("aria2", {})
+        cluster_cfg = data.get("cluster", {})
+
+        # Gossip config can be in cluster section (gossip_sync_enabled) or data_ingestion (enable_gossip_sync)
+        enable_gossip = cluster_cfg.get("gossip_sync_enabled", di.get("enable_gossip_sync", False))
+        gossip_port = cluster_cfg.get("gossip_port", di.get("gossip_port", GOSSIP_PORT))
+
         config = SyncConfig(
             poll_interval_seconds=di.get("poll_interval_seconds", 60),
             ephemeral_poll_interval_seconds=di.get("ephemeral_poll_interval_seconds", 15),
@@ -1496,14 +1606,20 @@ class UnifiedDataSyncService:
             retry_base_delay_seconds=di.get("retry_base_delay_seconds", 5.0),
             dead_letter_enabled=di.get("dead_letter_enabled", True),
             training_threshold=data.get("training", {}).get("trigger_threshold_games", 300),
-            enable_gossip_sync=di.get("enable_gossip_sync", False),
-            gossip_port=di.get("gossip_port", GOSSIP_PORT),
+            enable_gossip_sync=enable_gossip,
+            gossip_port=gossip_port,
             # Aria2 transport configuration
             enable_aria2_transport=aria2_cfg.get("enabled", True),
             aria2_data_server_port=aria2_cfg.get("data_server_port", 8766),
             aria2_connections_per_server=aria2_cfg.get("connections_per_server", 16),
             aria2_split=aria2_cfg.get("split", 16),
             aria2_source_urls=aria2_cfg.get("source_urls", []),
+            # Quality extraction configuration
+            enable_quality_extraction=di.get("enable_quality_extraction", True),
+            quality_elo_weight=di.get("quality_elo_weight", 0.4),
+            quality_length_weight=di.get("quality_length_weight", 0.3),
+            quality_decisive_weight=di.get("quality_decisive_weight", 0.3),
+            min_quality_score_for_priority=di.get("min_quality_score_for_priority", 0.5),
         )
 
         # Determine hosts config path

@@ -39,10 +39,14 @@ try:
         get_training_threshold,
         IntegratedEnhancementsConfig,
         create_training_manager,
+        DataLoadingConfig,
+        QualityConfig,
     )
     HAS_UNIFIED_CONFIG = True
 except ImportError:
     HAS_UNIFIED_CONFIG = False
+    DataLoadingConfig = None
+    QualityConfig = None
 
 __all__ = [
     "CMAESConfig",
@@ -62,4 +66,6 @@ if HAS_UNIFIED_CONFIG:
         "get_training_threshold",
         "IntegratedEnhancementsConfig",
         "create_training_manager",
+        "DataLoadingConfig",
+        "QualityConfig",
     ])

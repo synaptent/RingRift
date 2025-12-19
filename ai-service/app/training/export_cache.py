@@ -48,6 +48,9 @@ class ExportCacheEntry:
     games_exported: int
     output_size: int
     output_mtime: float
+    history_length: Optional[int] = None
+    feature_version: Optional[int] = None
+    policy_encoding: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -82,11 +85,25 @@ def _get_db_stats(db_path: str) -> Dict[str, Any]:
     return stats
 
 
-def _get_cache_key(board_type: str, num_players: int, output_path: str) -> str:
+def _get_cache_key(
+    board_type: str,
+    num_players: int,
+    output_path: str,
+    history_length: Optional[int] = None,
+    feature_version: Optional[int] = None,
+    policy_encoding: Optional[str] = None,
+) -> str:
     """Generate a unique cache key for this export configuration."""
-    # Use a hash of the normalized output path
+    # Use a hash of the normalized output path plus feature context.
     output_norm = os.path.normpath(os.path.abspath(output_path))
-    key_str = f"{board_type}_{num_players}p_{output_norm}"
+    key_parts = [f"{board_type}_{num_players}p_{output_norm}"]
+    if history_length is not None:
+        key_parts.append(f"h{int(history_length)}")
+    if feature_version is not None:
+        key_parts.append(f"fv{int(feature_version)}")
+    if policy_encoding:
+        key_parts.append(str(policy_encoding))
+    key_str = "_".join(key_parts)
     return hashlib.md5(key_str.encode()).hexdigest()[:16]
 
 
@@ -127,6 +144,9 @@ class ExportCache:
         output_path: str,
         board_type: str,
         num_players: int,
+        history_length: Optional[int] = None,
+        feature_version: Optional[int] = None,
+        policy_encoding: Optional[str] = None,
         force: bool = False,
     ) -> bool:
         """Check if export is needed or if cached output is still valid.
@@ -148,7 +168,14 @@ class ExportCache:
             return True
 
         # Load cache entry
-        cache_key = _get_cache_key(board_type, num_players, output_path)
+        cache_key = _get_cache_key(
+            board_type,
+            num_players,
+            output_path,
+            history_length=history_length,
+            feature_version=feature_version,
+            policy_encoding=policy_encoding,
+        )
         entry = self._load_cache_entry(cache_key)
         if entry is None:
             return True
@@ -199,11 +226,21 @@ class ExportCache:
         output_path: str,
         board_type: str,
         num_players: int,
+        history_length: Optional[int] = None,
+        feature_version: Optional[int] = None,
+        policy_encoding: Optional[str] = None,
         samples_exported: int = 0,
         games_exported: int = 0,
     ) -> None:
         """Record a completed export to the cache."""
-        cache_key = _get_cache_key(board_type, num_players, output_path)
+        cache_key = _get_cache_key(
+            board_type,
+            num_players,
+            output_path,
+            history_length=history_length,
+            feature_version=feature_version,
+            policy_encoding=policy_encoding,
+        )
 
         # Collect source DB stats
         db_sources = {}
@@ -227,6 +264,9 @@ class ExportCache:
             games_exported=games_exported,
             output_size=output_size,
             output_mtime=output_mtime,
+            history_length=history_length,
+            feature_version=feature_version,
+            policy_encoding=policy_encoding,
         )
 
         self._save_cache_entry(cache_key, entry)
@@ -236,9 +276,19 @@ class ExportCache:
         output_path: str,
         board_type: str,
         num_players: int,
+        history_length: Optional[int] = None,
+        feature_version: Optional[int] = None,
+        policy_encoding: Optional[str] = None,
     ) -> bool:
         """Invalidate a cache entry. Returns True if entry was found and removed."""
-        cache_key = _get_cache_key(board_type, num_players, output_path)
+        cache_key = _get_cache_key(
+            board_type,
+            num_players,
+            output_path,
+            history_length=history_length,
+            feature_version=feature_version,
+            policy_encoding=policy_encoding,
+        )
         cache_file = self.cache_dir / f"export_{cache_key}.json"
 
         if cache_file.exists():
@@ -251,9 +301,19 @@ class ExportCache:
         output_path: str,
         board_type: str,
         num_players: int,
+        history_length: Optional[int] = None,
+        feature_version: Optional[int] = None,
+        policy_encoding: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Get cache entry info for debugging/inspection."""
-        cache_key = _get_cache_key(board_type, num_players, output_path)
+        cache_key = _get_cache_key(
+            board_type,
+            num_players,
+            output_path,
+            history_length=history_length,
+            feature_version=feature_version,
+            policy_encoding=policy_encoding,
+        )
         entry = self._load_cache_entry(cache_key)
         if entry:
             return entry.to_dict()
@@ -292,11 +352,21 @@ def needs_export(
     output_path: str,
     board_type: str,
     num_players: int,
+    history_length: Optional[int] = None,
+    feature_version: Optional[int] = None,
+    policy_encoding: Optional[str] = None,
     force: bool = False,
 ) -> bool:
     """Check if export is needed using the default cache."""
     return get_export_cache().needs_export(
-        db_paths, output_path, board_type, num_players, force
+        db_paths,
+        output_path,
+        board_type,
+        num_players,
+        history_length=history_length,
+        feature_version=feature_version,
+        policy_encoding=policy_encoding,
+        force=force,
     )
 
 
@@ -305,11 +375,21 @@ def record_export(
     output_path: str,
     board_type: str,
     num_players: int,
+    history_length: Optional[int] = None,
+    feature_version: Optional[int] = None,
+    policy_encoding: Optional[str] = None,
     samples_exported: int = 0,
     games_exported: int = 0,
 ) -> None:
     """Record an export using the default cache."""
     get_export_cache().record_export(
-        db_paths, output_path, board_type, num_players,
-        samples_exported, games_exported
+        db_paths,
+        output_path,
+        board_type,
+        num_players,
+        history_length=history_length,
+        feature_version=feature_version,
+        policy_encoding=policy_encoding,
+        samples_exported=samples_exported,
+        games_exported=games_exported,
     )

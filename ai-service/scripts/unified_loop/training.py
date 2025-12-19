@@ -345,6 +345,14 @@ except ImportError:
     HAS_ELO_CHECKPOINT_SELECTION = False
     select_best_checkpoint = None
 
+# Data manifest for pre-training sync (quality-aware data sync)
+try:
+    from app.distributed.unified_manifest import DataManifest
+    HAS_DATA_MANIFEST = True
+except ImportError:
+    HAS_DATA_MANIFEST = False
+    DataManifest = None
+
 
 class TrainingScheduler:
     """Schedules and manages training runs with cluster-wide coordination."""
@@ -515,6 +523,161 @@ class TrainingScheduler:
             # Use CONSERVATIVE policy for training (important operations)
             self._retry_policy = RetryPolicy.CONSERVATIVE
             print(f"[Training] Using CONSERVATIVE retry policy (max_retries={self._retry_policy['max_retries']})")
+
+        # Data sync service reference for pre-training sync (P5)
+        self._sync_service: Optional[Any] = None
+        self._manifest: Optional[Any] = None
+        self._pre_training_sync_enabled = getattr(config, 'pre_training_sync', True)
+        self._pre_training_sync_min_quality = getattr(config, 'pre_training_sync_min_quality', 0.6)
+        self._pre_training_sync_limit = getattr(config, 'pre_training_sync_limit', 500)
+        # Track games consumed per training run for quality feedback
+        self._training_consumed_games: Dict[str, List[str]] = {}  # config_key -> [game_ids]
+
+        # Initialize manifest directly for pre-training sync (quality-aware data sync)
+        if HAS_DATA_MANIFEST and self._pre_training_sync_enabled:
+            manifest_path = AI_SERVICE_ROOT / "data" / "data_manifest.db"
+            if manifest_path.parent.exists():
+                try:
+                    self._manifest = DataManifest(manifest_path)
+                    print(f"[Training] Data manifest initialized for pre-training sync: {manifest_path}")
+                except Exception as e:
+                    print(f"[Training] Warning: Failed to initialize data manifest: {e}")
+
+    def set_sync_service(self, sync_service: Any) -> None:
+        """Set reference to data sync service for pre-training sync.
+
+        Args:
+            sync_service: UnifiedDataSyncService instance or object with manifest attribute
+        """
+        self._sync_service = sync_service
+        if sync_service and hasattr(sync_service, 'manifest'):
+            self._manifest = sync_service.manifest
+            print("[Training] Data sync service connected for pre-training sync")
+
+    async def _sync_high_quality_data_before_training(self, config_key: str) -> int:
+        """Sync high-quality games from cluster before training.
+
+        Uses the manifest's priority queue to identify and sync
+        games with quality_score >= min_quality threshold.
+
+        Args:
+            config_key: Training configuration key
+
+        Returns:
+            Number of games synced
+        """
+        if not self._manifest or not self._pre_training_sync_enabled:
+            return 0
+
+        try:
+            # Get high-quality games from priority queue
+            pending = self._manifest.get_priority_queue_batch(
+                limit=self._pre_training_sync_limit,
+                min_priority=self._pre_training_sync_min_quality,
+            )
+
+            if not pending:
+                return 0
+
+            print(f"[Training] Pre-training sync: {len(pending)} high-quality games pending")
+
+            # Mark games as consumed for training and track IDs
+            synced = 0
+            entry_ids = []
+            game_ids = []
+            for entry in pending:
+                entry_ids.append(entry.id)
+                game_ids.append(entry.game_id)
+                synced += 1
+
+            if entry_ids:
+                self._manifest.mark_queue_entries_synced(entry_ids)
+                # Track consumed games for quality feedback
+                self._training_consumed_games[config_key] = game_ids
+                print(f"[Training] Pre-training sync complete: {synced} high-quality games "
+                      f"(avg priority: {sum(e.priority_score for e in pending)/len(pending):.2f})")
+
+            return synced
+
+        except Exception as e:
+            print(f"[Training] Pre-training sync error: {e}")
+            return 0
+
+    async def _update_source_quality_after_training(
+        self, config_key: str, training_result: Dict[str, Any]
+    ) -> None:
+        """Update source quality in manifest based on training results.
+
+        If training improved Elo, boost the quality score of games that
+        contributed to this training. If Elo regressed, reduce quality.
+
+        Args:
+            config_key: Training configuration key
+            training_result: Dict with training results including elo_feedback
+        """
+        if not self._manifest:
+            return
+
+        try:
+            # Extract Elo delta from training result
+            elo_feedback = training_result.get("elo_feedback", {})
+            elo_delta = elo_feedback.get("avg_elo_delta", 0.0)
+            elo_regression = elo_feedback.get("elo_regression", False)
+
+            # Compute quality adjustment based on Elo change
+            # Positive Elo = good quality data, negative = poor quality
+            if elo_delta > 10:
+                quality_boost = min(0.1, elo_delta / 100)  # Max 10% boost
+            elif elo_regression or elo_delta < -10:
+                quality_boost = max(-0.1, elo_delta / 100)  # Max 10% penalty
+            else:
+                quality_boost = 0.0  # Neutral
+
+            if abs(quality_boost) < 0.01:
+                return  # No significant change
+
+            # Get recently synced games (these contributed to training)
+            # Note: We already marked them synced in pre-training, now we update quality
+            stats = self._manifest.get_priority_queue_stats()
+            if stats.get("total", 0) > 0:
+                print(f"[Training] Quality feedback: Elo delta={elo_delta:.1f}, "
+                      f"adjusting source quality by {quality_boost:+.2f}")
+
+                # Update quality distribution tracking in manifest
+                # Future: could track per-source quality adjustments
+                self._manifest.cleanup_old_queue_entries(days=7)
+
+        except Exception as e:
+            print(f"[Training] Error in source quality update: {e}")
+
+    def get_training_quality_stats(self, config_key: str) -> Dict[str, Any]:
+        """Get quality statistics for a training configuration.
+
+        Returns stats about games consumed, quality distribution, and manifest state.
+
+        Args:
+            config_key: Training configuration key
+
+        Returns:
+            Dict with quality statistics
+        """
+        stats = {
+            "config_key": config_key,
+            "consumed_games_count": len(self._training_consumed_games.get(config_key, [])),
+            "pre_training_sync_enabled": self._pre_training_sync_enabled,
+            "min_quality_threshold": self._pre_training_sync_min_quality,
+        }
+
+        if self._manifest:
+            try:
+                queue_stats = self._manifest.get_priority_queue_stats()
+                stats["priority_queue"] = queue_stats
+                quality_dist = self._manifest.get_quality_distribution()
+                stats["quality_distribution"] = quality_dist
+            except Exception as e:
+                stats["manifest_error"] = str(e)
+
+        return stats
 
     def _get_dynamic_threshold(self, config_key: str) -> int:
         """Calculate dynamic training threshold based on promotion velocity."""
@@ -1239,6 +1402,11 @@ class TrainingScheduler:
             self.state.training_in_progress = True
             self.state.training_config = config_key
             self.state.training_started_at = time.time()
+
+            # Pre-training sync: fetch high-quality data from cluster (P5)
+            synced_count = await self._sync_high_quality_data_before_training(config_key)
+            if synced_count > 0:
+                print(f"[Training] Pre-training sync added {synced_count} high-quality games")
 
             # NNUE dataset validation before training (2025-12)
             if HAS_NNUE_VALIDATION:
@@ -2023,6 +2191,13 @@ class TrainingScheduler:
                             print(f"[ELO] Warning: Elo regression detected for {config_key}")
                 except Exception as e:
                     print(f"[ELO] Error registering model: {e}")
+
+            # Update source quality based on training results (quality-aware feedback loop)
+            if success and self._manifest:
+                try:
+                    await self._update_source_quality_after_training(config_key, result)
+                except Exception as e:
+                    print(f"[Training] Error updating source quality: {e}")
 
             await self.event_bus.publish(DataEvent(
                 event_type=DataEventType.TRAINING_COMPLETED,

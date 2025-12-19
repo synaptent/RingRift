@@ -435,6 +435,138 @@ async def emit_training_failed_safe(
 
 
 # =============================================================================
+# Quality event helpers (December 2025)
+# =============================================================================
+
+async def emit_quality_score_updated_safe(
+    game_id: str,
+    old_score: float,
+    new_score: float,
+    config: str = "",
+    source: str = ""
+) -> bool:
+    """Safely emit QUALITY_SCORE_UPDATED event.
+
+    Args:
+        game_id: ID of the game whose quality was updated
+        old_score: Previous quality score (0-1)
+        new_score: New quality score (0-1)
+        config: Configuration key (optional)
+        source: Source component name
+
+    Returns:
+        True if emitted successfully, False otherwise.
+    """
+    return await emit_event_safe(
+        "QUALITY_SCORE_UPDATED",
+        {
+            "game_id": game_id,
+            "old_score": old_score,
+            "new_score": new_score,
+            "config": config,
+        },
+        source
+    )
+
+
+async def emit_quality_distribution_changed_safe(
+    config: str,
+    avg_quality: float,
+    high_quality_ratio: float,
+    low_quality_ratio: float,
+    total_games: int,
+    source: str = ""
+) -> bool:
+    """Safely emit QUALITY_DISTRIBUTION_CHANGED event.
+
+    Args:
+        config: Configuration key (e.g., "square8_2p")
+        avg_quality: Average quality score (0-1)
+        high_quality_ratio: Ratio of high-quality games (0-1)
+        low_quality_ratio: Ratio of low-quality games (0-1)
+        total_games: Total number of games
+        source: Source component name
+
+    Returns:
+        True if emitted successfully, False otherwise.
+    """
+    return await emit_event_safe(
+        "QUALITY_DISTRIBUTION_CHANGED",
+        {
+            "config": config,
+            "avg_quality": avg_quality,
+            "high_quality_ratio": high_quality_ratio,
+            "low_quality_ratio": low_quality_ratio,
+            "total_games": total_games,
+        },
+        source
+    )
+
+
+async def emit_high_quality_data_available_safe(
+    config: str,
+    high_quality_count: int,
+    avg_quality: float,
+    source: str = ""
+) -> bool:
+    """Safely emit HIGH_QUALITY_DATA_AVAILABLE event.
+
+    Indicates that enough high-quality data is available for training.
+
+    Args:
+        config: Configuration key
+        high_quality_count: Number of high-quality games
+        avg_quality: Average quality score of high-quality games
+        source: Source component name
+
+    Returns:
+        True if emitted successfully, False otherwise.
+    """
+    return await emit_event_safe(
+        "HIGH_QUALITY_DATA_AVAILABLE",
+        {
+            "config": config,
+            "high_quality_count": high_quality_count,
+            "avg_quality": avg_quality,
+        },
+        source
+    )
+
+
+async def emit_low_quality_data_warning_safe(
+    config: str,
+    low_quality_count: int,
+    low_quality_ratio: float,
+    avg_quality: float,
+    source: str = ""
+) -> bool:
+    """Safely emit LOW_QUALITY_DATA_WARNING event.
+
+    Warns that data quality is below acceptable threshold.
+
+    Args:
+        config: Configuration key
+        low_quality_count: Number of low-quality games
+        low_quality_ratio: Ratio of low-quality games (0-1)
+        avg_quality: Current average quality
+        source: Source component name
+
+    Returns:
+        True if emitted successfully, False otherwise.
+    """
+    return await emit_event_safe(
+        "LOW_QUALITY_DATA_WARNING",
+        {
+            "config": config,
+            "low_quality_count": low_quality_count,
+            "low_quality_ratio": low_quality_ratio,
+            "avg_quality": avg_quality,
+        },
+        source
+    )
+
+
+# =============================================================================
 # Sync wrappers (for non-async contexts)
 # =============================================================================
 

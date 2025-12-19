@@ -105,6 +105,15 @@ except ImportError:
     require_resources = lambda *args, **kwargs: True  # type: ignore
     RESOURCE_LIMITS = None  # type: ignore
 
+# Unified selfplay configuration
+try:
+    from app.training.selfplay_config import SelfplayConfig, create_argument_parser
+    HAS_SELFPLAY_CONFIG = True
+except ImportError:
+    HAS_SELFPLAY_CONFIG = False
+    SelfplayConfig = None  # type: ignore
+    create_argument_parser = None  # type: ignore
+
 # Board configurations with appropriate max moves
 BOARD_CONFIGS: Dict[str, Dict[int, int]] = {
     # board_type: {num_players: max_moves}
@@ -1210,7 +1219,24 @@ def run_parity_checks(db_paths: List[str], ringrift_ai_dir: str) -> Tuple[int, i
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run distributed self-play soaks across multiple machines")
+    # Use unified parser if available, otherwise fall back to standard argparse
+    if HAS_SELFPLAY_CONFIG and create_argument_parser is not None:
+        parser = create_argument_parser(
+            description="Run distributed self-play soaks across multiple machines",
+            include_gpu=False,
+            include_ramdrive=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(description="Run distributed self-play soaks across multiple machines")
+        # Add base args that would come from unified parser
+        parser.add_argument("--output-dir", type=str, default="data/games/distributed_soak")
+        parser.add_argument("--seed", type=int, default=42)
+        parser.add_argument("--difficulty-band", type=str, choices=["canonical", "light", "full"], default="light")
+        parser.add_argument("--engine-mode", type=str, default="mixed")
+        parser.add_argument("--max-parallel-per-host", type=int, default=2)
+        parser.add_argument("--hosts", type=str, default="local")
+
+    # Add soak-specific arguments
     parser.add_argument(
         "--mode",
         type=str,
@@ -1237,36 +1263,13 @@ def main():
         help="Comma-separated player counts to run (default: 2,3,4)",
     )
     parser.add_argument(
-        "--hosts",
-        type=str,
-        default="local",
-        help="Comma-separated list of hosts to use (local, m1-pro, aws-staging). Default: local. Ignored if --mode is specified.",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="data/games/distributed_soak",
-        help="Directory for output databases and logs",
-    )
-    parser.add_argument(
         "--base-seed",
         type=int,
         default=42,
         help="Base random seed for reproducibility",
     )
     parser.add_argument(
-        "--difficulty-band",
-        type=str,
-        choices=["canonical", "light"],
-        default="light",
-        help=(
-            "AI difficulty band for engine_mode='mixed' during the soak. "
-            "'light' avoids heavy MCTS/Descent tiers for faster, more debuggable runs "
-            "(default: light)."
-        ),
-    )
-    parser.add_argument(
-        "--engine-mode",
+        "--soak-engine-mode",
         type=str,
         choices=[
             "mixed",
@@ -1284,26 +1287,14 @@ def main():
             "gumbel-mcts-only",
         ],
         default="mixed",
-        help=(
-            "Engine mode for selfplay. 'diverse' uses GPU-optimized distribution "
-            "with all 11 AI types (GUMBEL_MCTS 20%%, POLICY_ONLY 15%%, GPU_MINIMAX 12%%). "
-            "Default: mixed."
-        ),
-    )
-    parser.add_argument(
-        "--max-parallel-per-host",
-        type=int,
-        default=2,
-        help="Maximum parallel jobs per host (default: 2 to avoid memory exhaustion)",
+        dest="soak_engine_mode",
+        help="Engine mode for soak selfplay jobs (default: mixed).",
     )
     parser.add_argument(
         "--job-timeout-seconds",
         type=int,
         default=7200,
-        help=(
-            "Per-job wall-clock timeout in seconds (default: 7200). "
-            "Use 0 to disable the timeout entirely."
-        ),
+        help="Per-job wall-clock timeout in seconds (default: 7200). Use 0 to disable.",
     )
     parser.add_argument(
         "--fetch-timeout-seconds",
@@ -1329,19 +1320,13 @@ def main():
     parser.add_argument(
         "--cleanup-remote",
         action="store_true",
-        help=(
-            "After successfully fetching a remote job's DB (and JSONL, if enabled), "
-            "delete those remote artifacts to conserve disk space."
-        ),
+        help="After successfully fetching remote artifacts, delete them to conserve disk space.",
     )
     parser.add_argument(
         "--min-remote-free-disk-gb",
         type=int,
         default=2,
-        help=(
-            "Minimum free disk (GB) required on remote hosts to schedule jobs (default: 2). "
-            "Use 0 to disable this preflight."
-        ),
+        help="Minimum free disk (GB) required on remote hosts to schedule jobs (default: 2).",
     )
     parser.add_argument(
         "--run-parity",
@@ -1355,7 +1340,51 @@ def main():
         help=f"Path to host configuration YAML file (default: {CONFIG_FILE_PATH})",
     )
 
-    args = parser.parse_args()
+    parsed = parser.parse_args()
+
+    # Create SelfplayConfig if available (for tracking/logging)
+    if HAS_SELFPLAY_CONFIG and SelfplayConfig is not None:
+        selfplay_config = SelfplayConfig(
+            board_type=getattr(parsed, "board", "square8"),
+            num_players=2,  # Will vary per job
+            num_games=parsed.games_per_config,
+            output_dir=parsed.output_dir,
+            seed=getattr(parsed, "seed", parsed.base_seed),
+            difficulty_band=parsed.difficulty_band,
+            hosts=getattr(parsed, "hosts", "local"),
+            max_parallel_per_host=parsed.max_parallel_per_host,
+            source="run_distributed_selfplay_soak.py",
+            extra_options={
+                "mode": parsed.mode,
+                "board_types": parsed.board_types,
+                "soak_engine_mode": parsed.soak_engine_mode,
+                "job_timeout_seconds": parsed.job_timeout_seconds,
+                "dry_run": parsed.dry_run,
+            },
+        )
+
+    # Create backward-compatible args object
+    args = type("Args", (), {
+        "mode": parsed.mode,
+        "games_per_config": parsed.games_per_config,
+        "board_types": parsed.board_types,
+        "num_players": getattr(parsed, "num_players", None),
+        "hosts": getattr(parsed, "hosts", "local"),
+        "output_dir": parsed.output_dir,
+        "base_seed": parsed.base_seed,
+        "difficulty_band": parsed.difficulty_band,
+        "engine_mode": parsed.soak_engine_mode,
+        "max_parallel_per_host": parsed.max_parallel_per_host,
+        "job_timeout_seconds": parsed.job_timeout_seconds,
+        "fetch_timeout_seconds": parsed.fetch_timeout_seconds,
+        "dry_run": parsed.dry_run,
+        "skip_fetch": parsed.skip_fetch,
+        "fetch_jsonl": parsed.fetch_jsonl,
+        "cleanup_remote": parsed.cleanup_remote,
+        "min_remote_free_disk_gb": parsed.min_remote_free_disk_gb,
+        "run_parity": parsed.run_parity,
+        "config": parsed.config,
+    })()
 
     # Entry point resource validation (enforced 2025-12-16)
     # Check local resources before starting distributed work

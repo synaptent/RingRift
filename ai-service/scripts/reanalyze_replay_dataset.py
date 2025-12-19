@@ -30,7 +30,12 @@ from scripts.export_replay_dataset import (
 )
 
 
-def _build_encoder(board_type: BoardType, nn_model_id: Optional[str], encoder_version: str = "v3") -> NeuralNetAI:
+def _build_encoder(
+    board_type: BoardType,
+    nn_model_id: Optional[str],
+    encoder_version: str = "v3",
+    feature_version: int = 2,
+) -> NeuralNetAI:
     os.environ.setdefault("RINGRIFT_FORCE_CPU", "1")
     cfg = AIConfig(
         difficulty=5,
@@ -40,6 +45,7 @@ def _build_encoder(board_type: BoardType, nn_model_id: Optional[str], encoder_ve
         use_neural_net=True,
     )
     enc = NeuralNetAI(player_number=1, config=cfg)
+    enc.feature_version = int(feature_version)
     enc.board_size = {
         BoardType.SQUARE8: 8,
         BoardType.SQUARE19: 19,
@@ -50,7 +56,11 @@ def _build_encoder(board_type: BoardType, nn_model_id: Optional[str], encoder_ve
     # For hex boards, attach specialized encoder for consistent feature shapes
     if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
         effective_version = encoder_version if encoder_version in ("v2", "v3") else "v3"
-        enc._hex_encoder = get_encoder_for_board_type(board_type, effective_version)
+        enc._hex_encoder = get_encoder_for_board_type(
+            board_type,
+            effective_version,
+            feature_version=feature_version,
+        )
         enc._hex_encoder_version = effective_version
 
     return enc
@@ -147,6 +157,7 @@ def reanalyze_replay_dataset(
     output_path: str,
     *,
     history_length: int = 3,
+    feature_version: int = 2,
     sample_every: int = 1,
     max_games: Optional[int] = None,
     require_completed: bool = False,
@@ -165,7 +176,7 @@ def reanalyze_replay_dataset(
         raise ValueError("policy_target must be mcts_visits or descent_softmax")
 
     db = GameReplayDB(db_path)
-    encoder = _build_encoder(board_type, nn_model_id)
+    encoder = _build_encoder(board_type, nn_model_id, feature_version=feature_version)
 
     mcts_ais: Dict[int, Any] = {}
     descent_ais: Dict[int, Any] = {}
@@ -365,6 +376,7 @@ def reanalyze_replay_dataset(
         print(f"No samples generated from {db_path}.")
         return
 
+    policy_encoding = "board_aware" if use_board_aware_encoding else "legacy_max_n"
     np.savez_compressed(
         output_path,
         features=np.stack(features_list, axis=0).astype(np.float32),
@@ -377,6 +389,9 @@ def reanalyze_replay_dataset(
         move_numbers=np.array(move_numbers_list, dtype=np.int32),
         total_game_moves=np.array(total_game_moves_list, dtype=np.int32),
         phases=np.array(phases_list, dtype=object),
+        history_length=np.asarray(int(history_length)),
+        feature_version=np.asarray(int(feature_version)),
+        policy_encoding=np.asarray(policy_encoding),
     )
 
     print(
@@ -391,6 +406,15 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--num-players", type=int, choices=[2, 3, 4], required=True)
     p.add_argument("--output", required=True)
     p.add_argument("--history-length", type=int, default=3)
+    p.add_argument(
+        "--feature-version",
+        type=int,
+        default=2,
+        help=(
+            "Feature encoding version for global feature layout (default: 2). "
+            "Use 1 to keep legacy hex globals without chain/FE flags."
+        ),
+    )
     p.add_argument("--sample-every", type=int, default=1)
     p.add_argument("--max-games", type=int, default=None)
     p.add_argument("--require-completed", action="store_true")
@@ -423,6 +447,7 @@ def main() -> None:
         num_players=args.num_players,
         output_path=args.output,
         history_length=args.history_length,
+        feature_version=args.feature_version,
         sample_every=args.sample_every,
         max_games=args.max_games,
         require_completed=args.require_completed,

@@ -149,6 +149,7 @@ def export_parallel(
     num_workers: Optional[int] = None,
     encoder_version: str = "v3",
     history_length: int = 3,
+    feature_version: int = 2,
     sample_every: int = 1,
     max_games: Optional[int] = None,
     require_completed: bool = False,
@@ -185,10 +186,18 @@ def export_parallel(
             output_path=output_path,
             board_type=board_type.value,
             num_players=num_players,
+            history_length=history_length,
+            feature_version=feature_version,
+            policy_encoding="board_aware" if use_board_aware_encoding else "legacy_max_n",
             force=force_export,
         ):
             cache_info = cache.get_cache_info(
-                output_path, board_type.value, num_players
+                output_path,
+                board_type.value,
+                num_players,
+                history_length=history_length,
+                feature_version=feature_version,
+                policy_encoding="board_aware" if use_board_aware_encoding else "legacy_max_n",
             )
             samples = cache_info.get("samples_exported", "?") if cache_info else "?"
             logger.info(f"[CACHE HIT] Skipping export - source DBs unchanged")
@@ -227,6 +236,7 @@ def export_parallel(
         board_type=board_type,
         num_workers=num_workers,
         encoder_version=encoder_version,
+        feature_version=feature_version,
         history_length=history_length,
         sample_every=sample_every,
         use_board_aware_encoding=use_board_aware_encoding,
@@ -251,6 +261,8 @@ def export_parallel(
     # Add metadata
     arrays["board_type"] = np.asarray(board_type.value)
     arrays["board_size"] = np.asarray(int(arrays["features"].shape[-1]))
+    arrays["history_length"] = np.asarray(int(history_length))
+    arrays["feature_version"] = np.asarray(int(feature_version))
     arrays["policy_encoding"] = np.asarray(
         "board_aware" if use_board_aware_encoding else "legacy_max_n"
     )
@@ -276,6 +288,9 @@ def export_parallel(
             output_path=output_path,
             board_type=board_type.value,
             num_players=num_players,
+            history_length=history_length,
+            feature_version=feature_version,
+            policy_encoding="board_aware" if use_board_aware_encoding else "legacy_max_n",
             samples_exported=len(samples),
             games_exported=len(games),
         )
@@ -329,6 +344,15 @@ def main():
         "--history-length",
         type=int,
         default=3,
+    )
+    parser.add_argument(
+        "--feature-version",
+        type=int,
+        default=2,
+        help=(
+            "Feature encoding version for global feature layout (default: 2). "
+            "Use 1 to keep legacy hex globals without chain/FE flags."
+        ),
     )
     parser.add_argument(
         "--sample-every",
@@ -385,6 +409,7 @@ def main():
         num_workers=args.workers,
         encoder_version=args.encoder_version,
         history_length=args.history_length,
+        feature_version=args.feature_version,
         sample_every=args.sample_every,
         max_games=args.max_games,
         require_completed=args.require_completed,

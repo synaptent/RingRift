@@ -48,6 +48,18 @@ try:
     )
 except ImportError:
     INITIAL_ELO_RATING = 1500.0
+
+# Import centralized path utilities
+try:
+    from app.utils.paths import AI_SERVICE_ROOT, ensure_dir, ensure_parent_dir
+except ImportError:
+    AI_SERVICE_ROOT = Path(__file__).parent.parent.parent
+    def ensure_dir(path: Path) -> Path:
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    def ensure_parent_dir(path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
     ELO_K_FACTOR = 32
     ELO_DROP_ROLLBACK = 50.0
     MIN_GAMES_FOR_ELO = 30
@@ -485,6 +497,115 @@ class PERConfig:
 
 
 @dataclass
+class DataLoadingConfig:
+    """Configuration for data loading and streaming.
+
+    Centralizes settings previously scattered across:
+    - data_loader.py (StreamingDataLoader)
+    - streaming_pipeline.py (StreamingDataPipeline)
+    - datasets.py (RingRiftDataset)
+    """
+    # Policy encoding
+    policy_size: int = 55000  # Policy vector size
+    max_policy_size: int = 60000  # Maximum policy size for safety
+
+    # Batch settings
+    batch_size: int = 512
+    num_workers: int = 4
+    prefetch_factor: int = 2
+    pin_memory: bool = True
+
+    # Filtering
+    filter_empty_policies: bool = True
+    max_samples: Optional[int] = None
+
+    # Streaming buffer
+    buffer_size: int = 10000
+    poll_interval_seconds: float = 5.0
+    dedupe_window: int = 50000
+
+    # Multi-source loading
+    enable_multi_source: bool = True
+    max_sources: int = 10
+
+    # Phase-based weighting (consolidated from 3 locations)
+    phase_weights: Dict[str, float] = field(default_factory=lambda: {
+        "ring_placement": 0.8,
+        "movement": 1.0,
+        "capture": 1.2,
+        "late_game": 1.5,
+    })
+
+    # Victory type weighting
+    victory_type_weights: Dict[str, float] = field(default_factory=lambda: {
+        "elimination": 1.0,
+        "territory": 1.2,
+        "ring_out": 0.8,
+        "timeout": 0.5,
+    })
+
+
+@dataclass
+class QualityConfig:
+    """Configuration for game quality scoring and weighting.
+
+    Consolidates quality computation from:
+    - game_quality_scorer.py
+    - quality_extractor.py
+    - streaming_pipeline.py
+    - unified_manifest.py
+
+    This is the SINGLE SOURCE OF TRUTH for quality scoring parameters.
+    """
+    # Game quality component weights (must sum to 1.0)
+    outcome_weight: float = 0.25
+    length_weight: float = 0.25
+    phase_balance_weight: float = 0.20
+    diversity_weight: float = 0.15
+    source_reputation_weight: float = 0.15
+
+    # Sync priority weights (for quality_extractor.py compatibility)
+    sync_elo_weight: float = 0.4
+    sync_length_weight: float = 0.3
+    sync_decisive_weight: float = 0.3
+
+    # Elo normalization bounds
+    min_elo: float = 1200.0
+    max_elo: float = 2400.0
+    default_elo: float = 1500.0
+
+    # Game length normalization
+    min_game_length: int = 10
+    max_game_length: int = 200
+    optimal_game_length: int = 80
+
+    # Sampling weights
+    quality_weight: float = 0.4
+    recency_weight: float = 0.3
+    priority_weight: float = 0.3
+
+    # Recency decay
+    recency_half_life_hours: float = 24.0
+
+    # Thresholds
+    min_quality_for_training: float = 0.3
+    min_quality_for_priority_sync: float = 0.5
+    high_quality_threshold: float = 0.7
+
+    # Decisive outcome credit
+    decisive_bonus: float = 1.0
+    draw_credit: float = 0.3
+
+    def get_sync_weights(self) -> Dict[str, float]:
+        """Get weights for sync quality extraction."""
+        return {
+            "elo_weight": self.sync_elo_weight,
+            "length_weight": self.sync_length_weight,
+            "decisive_weight": self.sync_decisive_weight,
+        }
+
+
+@dataclass
 class StoragePathsConfig:
     """Storage paths for a specific provider."""
     selfplay_games: str = "data/selfplay"
@@ -642,6 +763,12 @@ class UnifiedConfig:
 
     # Storage configuration (provider-specific paths)
     storage: StorageConfig = field(default_factory=StorageConfig)
+
+    # Data loading configuration (December 2025)
+    data_loading: DataLoadingConfig = field(default_factory=DataLoadingConfig)
+
+    # Quality scoring configuration (December 2025)
+    quality: QualityConfig = field(default_factory=QualityConfig)
 
     # Paths
     hosts_config_path: str = "config/distributed_hosts.yaml"
@@ -920,6 +1047,66 @@ class UnifiedConfig:
         config.log_dir = data.get("log_dir", config.log_dir)
         config.metrics_enabled = data.get("metrics_enabled", config.metrics_enabled)
         config.metrics_port = data.get("metrics_port", config.metrics_port)
+
+        # Load data loading configuration (December 2025)
+        if "data_loading" in data:
+            dl_data = data["data_loading"]
+            config.data_loading = DataLoadingConfig(
+                policy_size=dl_data.get("policy_size", 55000),
+                max_policy_size=dl_data.get("max_policy_size", 60000),
+                batch_size=dl_data.get("batch_size", 512),
+                num_workers=dl_data.get("num_workers", 4),
+                prefetch_factor=dl_data.get("prefetch_factor", 2),
+                pin_memory=dl_data.get("pin_memory", True),
+                filter_empty_policies=dl_data.get("filter_empty_policies", True),
+                max_samples=dl_data.get("max_samples"),
+                buffer_size=dl_data.get("buffer_size", 10000),
+                poll_interval_seconds=dl_data.get("poll_interval_seconds", 5.0),
+                dedupe_window=dl_data.get("dedupe_window", 50000),
+                enable_multi_source=dl_data.get("enable_multi_source", True),
+                max_sources=dl_data.get("max_sources", 10),
+                phase_weights=dl_data.get("phase_weights", {
+                    "ring_placement": 0.8,
+                    "movement": 1.0,
+                    "capture": 1.2,
+                    "late_game": 1.5,
+                }),
+                victory_type_weights=dl_data.get("victory_type_weights", {
+                    "elimination": 1.0,
+                    "territory": 1.2,
+                    "ring_out": 0.8,
+                    "timeout": 0.5,
+                }),
+            )
+
+        # Load quality configuration (December 2025)
+        if "quality" in data:
+            q_data = data["quality"]
+            config.quality = QualityConfig(
+                outcome_weight=q_data.get("outcome_weight", 0.25),
+                length_weight=q_data.get("length_weight", 0.25),
+                phase_balance_weight=q_data.get("phase_balance_weight", 0.20),
+                diversity_weight=q_data.get("diversity_weight", 0.15),
+                source_reputation_weight=q_data.get("source_reputation_weight", 0.15),
+                sync_elo_weight=q_data.get("sync_elo_weight", 0.4),
+                sync_length_weight=q_data.get("sync_length_weight", 0.3),
+                sync_decisive_weight=q_data.get("sync_decisive_weight", 0.3),
+                min_elo=q_data.get("min_elo", 1200.0),
+                max_elo=q_data.get("max_elo", 2400.0),
+                default_elo=q_data.get("default_elo", 1500.0),
+                min_game_length=q_data.get("min_game_length", 10),
+                max_game_length=q_data.get("max_game_length", 200),
+                optimal_game_length=q_data.get("optimal_game_length", 80),
+                quality_weight=q_data.get("quality_weight", 0.4),
+                recency_weight=q_data.get("recency_weight", 0.3),
+                priority_weight=q_data.get("priority_weight", 0.3),
+                recency_half_life_hours=q_data.get("recency_half_life_hours", 24.0),
+                min_quality_for_training=q_data.get("min_quality_for_training", 0.3),
+                min_quality_for_priority_sync=q_data.get("min_quality_for_priority_sync", 0.5),
+                high_quality_threshold=q_data.get("high_quality_threshold", 0.7),
+                decisive_bonus=q_data.get("decisive_bonus", 1.0),
+                draw_credit=q_data.get("draw_credit", 0.3),
+            )
 
         # Load board configurations
         config._board_configs = data.get("configurations", [])
@@ -1480,14 +1667,12 @@ def ensure_storage_dirs(provider: Optional[str] = None) -> None:
         path = Path(path_str)
         if not path.is_absolute():
             # Make relative paths absolute from ai-service root
-            ai_service_root = Path(__file__).parent.parent.parent
-            path = ai_service_root / path
+            path = AI_SERVICE_ROOT / path
 
-        path.mkdir(parents=True, exist_ok=True)
+        ensure_dir(path)
 
     # Also create parent dir for elo database
     elo_path = Path(paths.elo_database)
     if not elo_path.is_absolute():
-        ai_service_root = Path(__file__).parent.parent.parent
-        elo_path = ai_service_root / elo_path
-    elo_path.parent.mkdir(parents=True, exist_ok=True)
+        elo_path = AI_SERVICE_ROOT / elo_path
+    ensure_parent_dir(elo_path)
