@@ -138,6 +138,12 @@ def save_checkpoint(
                     },
                     es_temp_path,
                 )
+                # Ensure flushed to disk before rename (December 2025)
+                try:
+                    with open(es_temp_path, 'rb') as f:
+                        os.fsync(f.fileno())
+                except (OSError, IOError):
+                    pass  # Best effort for early stopping state
                 es_temp_path.rename(es_path)
             except Exception as e:
                 es_temp_path.unlink(missing_ok=True)

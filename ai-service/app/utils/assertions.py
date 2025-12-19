@@ -21,7 +21,7 @@ Usage:
 from __future__ import annotations
 
 import os
-from typing import Any, Callable, Optional, Type, TypeVar, Union
+from typing import Any, Optional, Type, TypeVar, Union
 
 T = TypeVar("T")
 
