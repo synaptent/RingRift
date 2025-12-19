@@ -76,6 +76,14 @@ except ImportError:
     GRADIENT_CLIP_NORM = None
     GRADIENT_NORM = None
 
+# Optional: Dashboard metrics collector for persistent storage (2025-12)
+try:
+    from app.monitoring.training_dashboard import MetricsCollector
+    HAS_METRICS_COLLECTOR = True
+except ImportError:
+    HAS_METRICS_COLLECTOR = False
+    MetricsCollector = None  # type: ignore
+
 from app.ai.neural_net import (
     RingRiftCNN_v2,
     RingRiftCNN_v3,
@@ -568,6 +576,7 @@ def train_model(
     use_hot_data_buffer: bool = False,
     hot_buffer_size: int = 10000,
     hot_buffer_mix_ratio: float = 0.3,
+    external_hot_buffer: Optional[Any] = None,  # Pre-populated HotDataBuffer from caller
     use_integrated_enhancements: bool = False,
     enable_curriculum: bool = False,
     enable_augmentation: bool = False,
@@ -770,13 +779,29 @@ def train_model(
         logger.info(f"2024-12 Training Improvements enabled: {', '.join(improvements_enabled)}")
 
     # Initialize hot data buffer if requested
+    # NOTE (2025-12): HotDataBuffer enables mixing fresh selfplay games with static
+    # training data for online/streaming training. For the buffer to receive games:
+    # 1. Pass external_hot_buffer (pre-populated buffer from unified_orchestrator), OR
+    # 2. Subscribe to EventBus NEW_GAME_AVAILABLE events and call hot_buffer.add_game()
     hot_buffer = None
-    if use_hot_data_buffer and HAS_HOT_DATA_BUFFER:
+    if external_hot_buffer is not None:
+        # Use externally-provided buffer (e.g., from unified_orchestrator)
+        hot_buffer = external_hot_buffer
+        current_samples = getattr(hot_buffer, 'total_samples', 0)
+        logger.info(
+            f"Using external hot data buffer with {current_samples} samples "
+            f"(mix_ratio={hot_buffer_mix_ratio})"
+        )
+    elif use_hot_data_buffer and HAS_HOT_DATA_BUFFER:
         hot_buffer = HotDataBuffer(
             max_size=hot_buffer_size,
             training_threshold=config.batch_size * 5,
         )
         logger.info(f"Hot data buffer enabled (size={hot_buffer_size}, mix_ratio={hot_buffer_mix_ratio})")
+        logger.info(
+            "Note: Hot buffer requires external game population via add_game() "
+            "or event bus subscription to receive selfplay games"
+        )
     elif use_hot_data_buffer and not HAS_HOT_DATA_BUFFER:
         logger.warning("Hot data buffer requested but not available (import failed)")
 
@@ -813,6 +838,15 @@ def train_model(
     scaler = torch.amp.GradScaler('cuda', enabled=use_grad_scaler)
     if amp_enabled:
         logger.info(f"Mixed precision training enabled with {amp_dtype}")
+
+    # Initialize dashboard metrics collector for persistent metric storage (2025-12)
+    metrics_collector = None
+    if HAS_METRICS_COLLECTOR and (not distributed or is_main_process()):
+        try:
+            metrics_collector = MetricsCollector()
+            logger.info("Dashboard metrics collector initialized")
+        except Exception as e:
+            logger.warning(f"Could not initialize metrics collector: {e}")
 
     # Determine canonical spatial board_size for the CNN from config.
     if config.board_type == BoardType.SQUARE19:
@@ -2897,6 +2931,30 @@ def train_model(
                 if 'calibration_ece' in epoch_record:
                     CALIBRATION_ECE.labels(config=config_label).set(epoch_record['calibration_ece'])
                     CALIBRATION_MCE.labels(config=config_label).set(epoch_record['calibration_mce'])
+
+            # Record to dashboard metrics collector for persistent storage (2025-12)
+            if metrics_collector is not None and (not distributed or is_main_process()):
+                try:
+                    # Get GPU memory usage if available
+                    gpu_memory_mb = 0.0
+                    if device.type == 'cuda':
+                        gpu_memory_mb = torch.cuda.memory_allocated(device) / (1024 * 1024)
+
+                    metrics_collector.record_training_step(
+                        epoch=epoch + 1,
+                        step=epoch_record.get('train_batches', 0),
+                        loss=avg_val_loss,  # Use validation loss as primary
+                        policy_loss=epoch_record.get('avg_policy_loss', 0.0),
+                        value_loss=epoch_record.get('avg_value_loss', 0.0),
+                        accuracy=0.0,  # TODO: Add accuracy tracking
+                        learning_rate=optimizer.param_groups[0]['lr'],
+                        batch_size=config.batch_size,
+                        samples_per_second=epoch_record.get('samples_per_second', 0.0),
+                        gpu_memory_mb=gpu_memory_mb,
+                        model_id=config.model_id,
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to record metrics to dashboard: {e}")
 
             # Check early stopping (only on main process for DDP)
             # Get model for checkpointing (unwrap DDP if needed)
