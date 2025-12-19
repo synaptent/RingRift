@@ -75,6 +75,9 @@ class DataEventType(Enum):
     PLATEAU_DETECTED = "plateau_detected"
     HYPERPARAMETER_UPDATED = "hyperparameter_updated"
 
+    # P2P/Model sync events
+    P2P_MODEL_SYNCED = "p2p_model_synced"
+
     # System events
     DAEMON_STARTED = "daemon_started"
     DAEMON_STOPPED = "daemon_stopped"
@@ -264,16 +267,31 @@ def reset_event_bus() -> None:
 # Cross-process bridging configuration
 # Events that should be propagated to cross-process queue for multi-daemon coordination
 CROSS_PROCESS_EVENT_TYPES = {
+    # Success events - coordination across processes
     DataEventType.MODEL_PROMOTED,
     DataEventType.TRAINING_STARTED,
     DataEventType.TRAINING_COMPLETED,
-    DataEventType.TRAINING_FAILED,
     DataEventType.EVALUATION_COMPLETED,
+    DataEventType.CURRICULUM_REBALANCED,
     DataEventType.ELO_SIGNIFICANT_CHANGE,
-    DataEventType.DAEMON_STARTED,
-    DataEventType.DAEMON_STOPPED,
+    DataEventType.P2P_MODEL_SYNCED,
+    DataEventType.PLATEAU_DETECTED,
+    DataEventType.DATA_SYNC_COMPLETED,
+    DataEventType.HYPERPARAMETER_UPDATED,
+    # Failure events - important for distributed health awareness
+    DataEventType.TRAINING_FAILED,
+    DataEventType.EVALUATION_FAILED,
+    DataEventType.PROMOTION_FAILED,
+    DataEventType.DATA_SYNC_FAILED,
+    # Host/cluster events - topology awareness
     DataEventType.HOST_ONLINE,
     DataEventType.HOST_OFFLINE,
+    DataEventType.DAEMON_STARTED,
+    DataEventType.DAEMON_STOPPED,
+    # Trigger events - distributed optimization
+    DataEventType.CMAES_TRIGGERED,
+    DataEventType.NAS_TRIGGERED,
+    DataEventType.TRAINING_THRESHOLD_REACHED,
 }
 
 
