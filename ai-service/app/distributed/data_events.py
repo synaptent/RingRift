@@ -71,9 +71,36 @@ class DataEventType(Enum):
 
     # Optimization events
     CMAES_TRIGGERED = "cmaes_triggered"
+    CMAES_COMPLETED = "cmaes_completed"
     NAS_TRIGGERED = "nas_triggered"
     PLATEAU_DETECTED = "plateau_detected"
     HYPERPARAMETER_UPDATED = "hyperparameter_updated"
+
+    # PBT events
+    PBT_STARTED = "pbt_started"
+    PBT_GENERATION_COMPLETE = "pbt_generation_complete"
+    PBT_COMPLETED = "pbt_completed"
+
+    # NAS events
+    NAS_STARTED = "nas_started"
+    NAS_GENERATION_COMPLETE = "nas_generation_complete"
+    NAS_COMPLETED = "nas_completed"
+    NAS_BEST_ARCHITECTURE = "nas_best_architecture"
+
+    # PER (Prioritized Experience Replay) events
+    PER_BUFFER_REBUILT = "per_buffer_rebuilt"
+    PER_PRIORITIES_UPDATED = "per_priorities_updated"
+
+    # Tier gating events
+    TIER_PROMOTION = "tier_promotion"
+
+    # Parity validation events
+    PARITY_VALIDATION_STARTED = "parity_validation_started"
+    PARITY_VALIDATION_COMPLETED = "parity_validation_completed"
+
+    # Data quality events
+    DATA_QUALITY_ALERT = "data_quality_alert"
+    QUALITY_CHECK_FAILED = "quality_check_failed"
 
     # Regression detection events (from unified RegressionDetector)
     REGRESSION_DETECTED = "regression_detected"  # Any regression
@@ -85,6 +112,10 @@ class DataEventType(Enum):
 
     # P2P/Model sync events
     P2P_MODEL_SYNCED = "p2p_model_synced"
+    P2P_CLUSTER_HEALTHY = "p2p_cluster_healthy"
+    P2P_CLUSTER_UNHEALTHY = "p2p_cluster_unhealthy"
+    P2P_NODES_DEAD = "p2p_nodes_dead"
+    P2P_SELFPLAY_SCALED = "p2p_selfplay_scaled"
 
     # System events
     DAEMON_STARTED = "daemon_started"

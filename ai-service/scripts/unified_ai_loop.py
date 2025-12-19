@@ -73,6 +73,9 @@ from scripts.unified_loop.config import (
     FeedbackState,
 )
 
+# Import canonical EventBus (consolidated 2025-12-18)
+from app.distributed.data_events import EventBus as CanonicalEventBus, get_event_bus
+
 # Import refactored service classes (Phase 2 refactoring)
 from scripts.unified_loop.evaluation import ModelPruningService
 from scripts.unified_loop.curriculum import AdaptiveCurriculum
@@ -1635,95 +1638,13 @@ def start_metrics_server(port: int = 9090) -> Optional[HTTPServer]:
 # ============================================
 
 
-class EventBus:
-    """Simple async event bus for component coordination.
-
-    Supports optional cross-process event publishing for events that should
-    be visible to other daemons (cluster_orchestrator, data_sync_daemon, etc.)
-    """
-
-    # Event types that should be published to cross-process queue
-    # These are significant events that other orchestrators/daemons need to know about
-    CROSS_PROCESS_EVENT_TYPES = {
-        # Success events - coordination across processes
-        DataEventType.MODEL_PROMOTED,
-        DataEventType.TRAINING_COMPLETED,
-        DataEventType.EVALUATION_COMPLETED,
-        DataEventType.CURRICULUM_REBALANCED,
-        DataEventType.ELO_SIGNIFICANT_CHANGE,
-        DataEventType.P2P_MODEL_SYNCED,
-        DataEventType.PLATEAU_DETECTED,
-        DataEventType.DATA_SYNC_COMPLETED,
-        DataEventType.HYPERPARAMETER_UPDATED,
-        # Failure events - important for distributed health awareness
-        DataEventType.TRAINING_FAILED,
-        DataEventType.EVALUATION_FAILED,
-        DataEventType.PROMOTION_FAILED,
-        DataEventType.DATA_SYNC_FAILED,
-        # Host/cluster events - topology awareness
-        DataEventType.HOST_ONLINE,
-        DataEventType.HOST_OFFLINE,
-        DataEventType.DAEMON_STARTED,
-        DataEventType.DAEMON_STOPPED,
-        # Trigger events - distributed optimization
-        DataEventType.CMAES_TRIGGERED,
-        DataEventType.NAS_TRIGGERED,
-        DataEventType.TRAINING_THRESHOLD_REACHED,
-    }
-
-    def __init__(self, cross_process_queue: Optional["CrossProcessEventQueue"] = None):
-        self._subscribers: Dict[DataEventType, List[Callable]] = {}
-        self._event_history: List[DataEvent] = []
-        self._max_history = 1000
-        self._cross_process_queue = cross_process_queue
-
-    def set_cross_process_queue(self, queue: "CrossProcessEventQueue"):
-        """Set the cross-process queue for outbound event publishing."""
-        self._cross_process_queue = queue
-
-    def subscribe(self, event_type: DataEventType, callback: Callable):
-        """Subscribe to an event type."""
-        if event_type not in self._subscribers:
-            self._subscribers[event_type] = []
-        self._subscribers[event_type].append(callback)
-
-    async def publish(self, event: DataEvent):
-        """Publish an event to all subscribers and optionally to cross-process queue."""
-        self._event_history.append(event)
-        if len(self._event_history) > self._max_history:
-            self._event_history = self._event_history[-self._max_history:]
-
-        # Publish to cross-process queue for significant events
-        # Skip if event was already bridged from cross-process (avoid echo)
-        if (
-            self._cross_process_queue is not None
-            and event.event_type in self.CROSS_PROCESS_EVENT_TYPES
-            and "_cross_process_source" not in event.payload
-        ):
-            try:
-                self._cross_process_queue.publish(
-                    event_type=event.event_type.value,
-                    payload=event.payload,
-                    source="unified_ai_loop"
-                )
-            except Exception as e:
-                print(f"[EventBus] Failed to publish to cross-process queue: {e}")
-
-        if event.event_type in self._subscribers:
-            for callback in self._subscribers[event.event_type]:
-                try:
-                    result = callback(event)
-                    if asyncio.iscoroutine(result):
-                        await result
-                except Exception as e:
-                    print(f"[EventBus] Error in subscriber: {e}")
-
-    def get_recent_events(self, event_type: Optional[DataEventType] = None, limit: int = 100) -> List[DataEvent]:
-        """Get recent events, optionally filtered by type."""
-        events = self._event_history
-        if event_type:
-            events = [e for e in events if e.event_type == event_type]
-        return events[-limit:]
+# =============================================================================
+# EventBus - DEPRECATED: Use canonical EventBus from app.distributed.data_events
+# =============================================================================
+# The local EventBus class has been consolidated into app.distributed.data_events.
+# The canonical EventBus handles cross-process bridging internally.
+# This alias is kept for backward compatibility with any remaining local references.
+EventBus = CanonicalEventBus
 
 
 class ConfigPriorityQueue:
@@ -2525,15 +2446,16 @@ class UnifiedAILoop:
     def __init__(self, config: UnifiedLoopConfig):
         self.config = config
         self.state = UnifiedLoopState()
-        self.event_bus = EventBus()
+        # Use canonical EventBus singleton (handles cross-process bridging internally)
+        self.event_bus = get_event_bus()
 
-        # Initialize cross-process event queue for bidirectional event bridging
+        # Cross-process queue for inbound events (bidirectional bridging)
+        # Note: Outbound cross-process publishing is handled by canonical EventBus
         self._cross_process_queue: Optional[CrossProcessEventQueue] = None
         if HAS_CROSS_PROCESS_EVENTS:
             try:
                 self._cross_process_queue = CrossProcessEventQueue()
-                self.event_bus.set_cross_process_queue(self._cross_process_queue)
-                print("[UnifiedLoop] Cross-process event publishing enabled")
+                print("[UnifiedLoop] Cross-process event queue initialized (canonical EventBus handles outbound)")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Cross-process queue init failed: {e}")
 
@@ -6493,7 +6415,7 @@ class UnifiedAILoop:
                 # Auto-start PBT after training completes (if enabled)
                 elif self.config.pbt.auto_start and not self.state.training_in_progress:
                     # Check if training just completed
-                    recent_events = self.event_bus.get_recent_events(DataEventType.TRAINING_COMPLETED, limit=1)
+                    recent_events = self.event_bus.get_history(event_type=DataEventType.TRAINING_COMPLETED, limit=1)
                     if recent_events and time.time() - recent_events[-1].timestamp < 300:
                         config_key = recent_events[-1].payload.get("config", "square8_2p")
                         parts = config_key.rsplit("_", 1)

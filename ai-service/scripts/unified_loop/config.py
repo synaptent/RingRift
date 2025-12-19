@@ -4,19 +4,22 @@ This module contains all configuration dataclasses and event types
 for the unified AI improvement loop.
 Extracted from unified_ai_loop.py for better modularity.
 
-CONSOLIDATION NOTE (2025-12-17):
+CONSOLIDATION NOTE (2025-12-18):
 ================================
 Core configuration classes have been migrated to the canonical location:
     app.config.unified_config
 
+Event types consolidated to canonical location:
+    app.distributed.data_events
+
 The following classes are now re-exported from canonical:
 - PBTConfig, NASConfig, PERConfig, FeedbackConfig, P2PClusterConfig, ModelPruningConfig
+- DataEventType, DataEvent (from app.distributed.data_events)
 
 This module retains:
 - Extended TrainingConfig with advanced options
 - UnifiedLoopConfig (script-specific root config)
 - Runtime state classes (ConfigState, FeedbackState, HostState)
-- Event types (DataEventType, DataEvent)
 
 For new integrations, prefer importing from app.config.unified_config.
 See docs/CONSOLIDATION_ROADMAP.md for consolidation status.
@@ -707,81 +710,12 @@ class UnifiedLoopConfig:
 
 
 # =============================================================================
-# Event System
+# Event System - Re-exported from canonical module (2025-12-18)
 # =============================================================================
+# DataEventType and DataEvent are now imported from the canonical module
+# app.distributed.data_events for consolidation and consistency.
 
-class DataEventType(Enum):
-    """Types of data pipeline events."""
-    # Data collection events
-    NEW_GAMES_AVAILABLE = "new_games"
-    DATA_SYNC_STARTED = "sync_started"
-    DATA_SYNC_COMPLETED = "sync_completed"
-    DATA_SYNC_FAILED = "sync_failed"
-    # Training events
-    TRAINING_THRESHOLD_REACHED = "training_threshold"
-    TRAINING_STARTED = "training_started"
-    TRAINING_PROGRESS = "training_progress"
-    TRAINING_COMPLETED = "training_completed"
-    TRAINING_FAILED = "training_failed"
-    # Evaluation events
-    EVALUATION_STARTED = "evaluation_started"
-    EVALUATION_PROGRESS = "evaluation_progress"
-    EVALUATION_COMPLETED = "evaluation_completed"
-    EVALUATION_FAILED = "evaluation_failed"
-    ELO_UPDATED = "elo_updated"
-    # Promotion events
-    PROMOTION_CANDIDATE = "promotion_candidate"
-    PROMOTION_STARTED = "promotion_started"
-    MODEL_PROMOTED = "model_promoted"
-    PROMOTION_FAILED = "promotion_failed"
-    PROMOTION_REJECTED = "promotion_rejected"
-    # Curriculum events
-    CURRICULUM_REBALANCED = "curriculum_rebalanced"
-    WEIGHT_UPDATED = "weight_updated"
-    ELO_SIGNIFICANT_CHANGE = "elo_significant_change"  # Triggers event-driven curriculum rebalance
-    # System events
-    DAEMON_STARTED = "daemon_started"
-    DAEMON_STOPPED = "daemon_stopped"
-    HOST_ONLINE = "host_online"
-    HOST_OFFLINE = "host_offline"
-    ERROR = "error"
-    # PBT events
-    PBT_STARTED = "pbt_started"
-    PBT_GENERATION_COMPLETE = "pbt_generation_complete"
-    PBT_COMPLETED = "pbt_completed"
-    # NAS events
-    NAS_STARTED = "nas_started"
-    NAS_GENERATION_COMPLETE = "nas_generation_complete"
-    NAS_COMPLETED = "nas_completed"
-    NAS_BEST_ARCHITECTURE = "nas_best_architecture"
-    # PER events
-    PER_BUFFER_REBUILT = "per_buffer_rebuilt"
-    PER_PRIORITIES_UPDATED = "per_priorities_updated"
-    # Optimization events
-    CMAES_TRIGGERED = "cmaes_triggered"
-    CMAES_COMPLETED = "cmaes_completed"
-    NAS_TRIGGERED = "nas_triggered"
-    PLATEAU_DETECTED = "plateau_detected"
-    HYPERPARAMETER_UPDATED = "hyperparameter_updated"
-    # Tier gating events
-    TIER_PROMOTION = "tier_promotion"
-    # Parity validation events
-    PARITY_VALIDATION_STARTED = "parity_validation_started"
-    PARITY_VALIDATION_COMPLETED = "parity_validation_completed"
-    # P2P cluster events
-    P2P_CLUSTER_HEALTHY = "p2p_cluster_healthy"
-    P2P_CLUSTER_UNHEALTHY = "p2p_cluster_unhealthy"
-    P2P_NODES_DEAD = "p2p_nodes_dead"
-    P2P_SELFPLAY_SCALED = "p2p_selfplay_scaled"
-    P2P_MODEL_SYNCED = "p2p_model_synced"
-
-
-@dataclass
-class DataEvent:
-    """A data pipeline event."""
-    event_type: DataEventType
-    payload: Dict[str, Any]
-    timestamp: float = field(default_factory=time.time)
+from app.distributed.data_events import DataEventType, DataEvent
 
 
 # =============================================================================
