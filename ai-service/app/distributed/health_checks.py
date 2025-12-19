@@ -40,6 +40,20 @@ except ImportError:
     HAS_RESOURCE_GUARD = False
     RESOURCE_LIMITS = None
 
+# Coordinator metrics for monitoring
+try:
+    from app.metrics.coordinator import (
+        collect_all_coordinator_metrics_sync,
+        update_coordinator_status,
+        update_coordinator_uptime,
+    )
+    HAS_COORDINATOR_METRICS = True
+except ImportError:
+    collect_all_coordinator_metrics_sync = None
+    update_coordinator_status = None
+    update_coordinator_uptime = None
+    HAS_COORDINATOR_METRICS = False
+
 # Resource thresholds - aligned with 80% max utilization (2025-12-16)
 MEMORY_WARNING_THRESHOLD = 70.0  # Below 80% limit
 MEMORY_CRITICAL_THRESHOLD = 80.0  # At limit
@@ -97,6 +111,7 @@ class HealthChecker:
             self.check_training(),
             self.check_evaluation(),
             self.check_coordinator(),
+            self.check_coordinators(),  # New: coordinator metrics
             self.check_resources(),
         ]
 
@@ -350,6 +365,86 @@ class HealthChecker:
                 healthy=False,
                 status="error",
                 message=f"Failed to read coordinator database: {e}",
+            )
+
+    def check_coordinators(self) -> ComponentHealth:
+        """Check coordinator manager health via metrics collection.
+
+        This collects metrics from RecoveryManager, BandwidthManager, and
+        SyncCoordinator, updating Prometheus metrics and returning health status.
+        """
+        name = "coordinator_managers"
+
+        if not HAS_COORDINATOR_METRICS or collect_all_coordinator_metrics_sync is None:
+            return ComponentHealth(
+                name=name,
+                healthy=True,
+                status="ok",
+                message="Coordinator metrics not available (optional)",
+            )
+
+        try:
+            # Collect metrics from all coordinators (sync version for health checks)
+            metrics = collect_all_coordinator_metrics_sync()
+            coordinators = metrics.get("coordinators", {})
+
+            if not coordinators:
+                return ComponentHealth(
+                    name=name,
+                    healthy=True,
+                    status="ok",
+                    message="No coordinators active (standalone mode)",
+                )
+
+            # Check status of each coordinator
+            error_coordinators = []
+            running_coordinators = []
+
+            for coord_name, stats in coordinators.items():
+                status = stats.get("status", "unknown")
+                if status == "error":
+                    error_coordinators.append(coord_name)
+                elif status in ("running", "ready"):
+                    running_coordinators.append(coord_name)
+
+            details = {
+                "coordinators": list(coordinators.keys()),
+                "running": running_coordinators,
+                "errors": error_coordinators,
+            }
+
+            if error_coordinators:
+                return ComponentHealth(
+                    name=name,
+                    healthy=False,
+                    status="error",
+                    message=f"Coordinators in error: {', '.join(error_coordinators)}",
+                    details=details,
+                )
+
+            if running_coordinators:
+                return ComponentHealth(
+                    name=name,
+                    healthy=True,
+                    status="ok",
+                    message=f"{len(running_coordinators)} coordinators running",
+                    details=details,
+                )
+
+            return ComponentHealth(
+                name=name,
+                healthy=True,
+                status="ok",
+                message=f"{len(coordinators)} coordinators tracked",
+                details=details,
+            )
+
+        except Exception as e:
+            return ComponentHealth(
+                name=name,
+                healthy=False,
+                status="warning",
+                message=f"Failed to collect coordinator metrics: {e}",
             )
 
     def check_resources(self) -> ComponentHealth:

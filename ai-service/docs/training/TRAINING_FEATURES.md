@@ -1,6 +1,6 @@
 # RingRift Training Features Reference
 
-> **Last Updated**: 2025-12-18 (Fault Tolerance Features - circuit breaker, anomaly detection, graceful shutdown)
+> **Last Updated**: 2025-12-18 (Phase 6 bottleneck optimizations summary table, P2P database batching documentation)
 > **Status**: Active
 
 This document provides a comprehensive reference for all training features, parameters, and techniques available in the RingRift AI training pipeline.
@@ -1742,6 +1742,19 @@ training:
 
 ## Phase 6: Bottleneck Optimizations (2025-12-17)
 
+This phase implements 6 critical performance optimizations targeting the most impactful bottlenecks in the training pipeline, achieving **3-5x overall speedup**.
+
+### Summary of Optimizations
+
+| Optimization                     | Location                                                      | Impact                 | Status                |
+| -------------------------------- | ------------------------------------------------------------- | ---------------------- | --------------------- |
+| **Batch Size Auto-Tuning**       | `app/training/config.py:BatchSizeAutoTuner`                   | 15-30% throughput      | ✅ Enabled by default |
+| **Async Checkpointing**          | `app/training/train.py:AsyncCheckpointer`                     | 5-10% faster epochs    | ✅ Enabled by default |
+| **Parallel Selfplay**            | `app/training/parallel_selfplay.py`                           | 4-8x data generation   | ✅ Available          |
+| **Vectorized Policy Conversion** | `app/training/data_loader.py:_batch_sparse_to_dense_policies` | 5-8% data loading      | ✅ Always active      |
+| **Async Data Pipeline**          | `app/training/data_loader.py:PrefetchIterator`                | 10-20% GPU utilization | ✅ Enabled by default |
+| **P2P Database Batching**        | `scripts/p2p_orchestrator.py:_metrics_buffer`                 | 5% reduced I/O         | ✅ Always active      |
+
 ### Auto-Tune Batch Size
 
 Binary search profiling to find optimal batch size for GPU memory.
@@ -1900,6 +1913,43 @@ prefetch_iter = PrefetchIterator(
     non_blocking=True,
 )
 ```
+
+### P2P Database Batching
+
+Buffered metrics writes to SQLite for reduced I/O overhead (5% indirect speedup).
+
+The P2P orchestrator buffers metrics and flushes them in batches to reduce database write contention:
+
+```python
+# Automatic batching - metrics are buffered and flushed every 30s or 100 entries
+orchestrator.record_metric(
+    metric_type="training_loss",
+    value=0.0523,
+    board_type="square8",
+    num_players=2,
+    metadata={"epoch": 10}
+)
+
+# Get buffered metrics history
+history = orchestrator.get_metrics_history(
+    metric_type="elo_rating",
+    hours=24
+)
+```
+
+**Configuration:**
+
+| Parameter                 | Default | Description                     |
+| ------------------------- | ------- | ------------------------------- |
+| `_metrics_flush_interval` | 30.0s   | Time between automatic flushes  |
+| `_metrics_max_buffer`     | 100     | Max entries before forced flush |
+
+**Benefits:**
+
+- Reduces SQLite write contention from per-metric to batch operations
+- Uses `executemany()` for efficient bulk inserts
+- Thread-safe buffer with lock protection
+- Automatic flush on interval or buffer full
 
 ---
 
