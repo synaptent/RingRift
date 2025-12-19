@@ -343,10 +343,10 @@ class Move(BaseModel):
         default=None, alias="eliminationContext"
     )
 
-    # Timing / ordering
-    timestamp: datetime
-    think_time: int = Field(alias="thinkTime")
-    move_number: int = Field(alias="moveNumber")
+    # Timing / ordering (optional for backward compatibility with JSONL imports)
+    timestamp: Optional[datetime] = None
+    think_time: Optional[int] = Field(default=None, alias="thinkTime")
+    move_number: Optional[int] = Field(default=None, alias="moveNumber")
 
 
 class BoardState(BaseModel):
