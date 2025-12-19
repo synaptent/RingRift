@@ -1166,25 +1166,23 @@ class TestQualityBridge:
 
     def test_get_quality_bridge_singleton(self):
         """Test get_quality_bridge returns singleton."""
-        from app.training.quality_bridge import (
-            get_quality_bridge,
-            reset_quality_bridge,
-        )
+        from app.training.quality_bridge import get_quality_bridge, QualityBridge
 
-        reset_quality_bridge()
+        # Reset singleton for isolation
+        QualityBridge.reset_instance()
 
         bridge1 = get_quality_bridge()
         bridge2 = get_quality_bridge()
 
         assert bridge1 is bridge2
 
-        reset_quality_bridge()
+        QualityBridge.reset_instance()
 
     def test_quality_score_range(self):
         """Test quality score is in valid range."""
-        from app.training.quality_bridge import get_quality_bridge, reset_quality_bridge
+        from app.training.quality_bridge import get_quality_bridge, QualityBridge
 
-        reset_quality_bridge()
+        QualityBridge.reset_instance()
         bridge = get_quality_bridge()
 
         # Get default quality score
@@ -1193,7 +1191,7 @@ class TestQualityBridge:
         # Should be between 0 and 1
         assert 0.0 <= score <= 1.0
 
-        reset_quality_bridge()
+        QualityBridge.reset_instance()
 
 
 # =============================================================================
