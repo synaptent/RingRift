@@ -196,6 +196,8 @@ ARM. To include GH200 in standard partitions:
 
 1. Build PyTorch 2.6.0 + torchvision 0.21.0 from source on a GH200 node into
    `/lambda/nfs/RingRift/ai-service/venv-arm64`.
+   - If CMake 4.x errors on protobuf, set `CMAKE_POLICY_VERSION_MINIMUM=3.5`
+     during the build or use the system CMake (>= 3.18).
 2. Set `slurm.venv_activate_arm64` to that path so Slurm jobs auto-select the
    correct venv based on `uname -m`.
 3. Move GH200 nodes back into `gpu-train` and `gpu-selfplay` once validated.
