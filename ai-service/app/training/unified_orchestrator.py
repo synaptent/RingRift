@@ -47,16 +47,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Lazy imports to prevent OOM in orchestrator processes
-_torch = None
-
-
-def _get_torch():
-    global _torch
-    if _torch is None:
-        import torch
-        _torch = torch
-    return _torch
+# Use shared lazy torch import to prevent OOM in orchestrator processes
+from app.training.utils import get_torch
 
 
 # =============================================================================
@@ -527,7 +519,7 @@ class UnifiedTrainingOrchestrator:
             return
 
         import time as _time
-        torch = _get_torch()
+        torch = get_torch()
 
         # Track component health and initialization times
         component_health: Dict[str, Dict[str, Any]] = {}
@@ -646,7 +638,7 @@ class UnifiedTrainingOrchestrator:
 
         checkpoint = self._checkpoint.load_latest()
         if checkpoint is not None:
-            torch = _get_torch()
+            torch = get_torch()
             self._model.load_state_dict(checkpoint.get("model_state_dict", {}))
             if self._optimizer and "optimizer_state_dict" in checkpoint:
                 self._optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -715,7 +707,7 @@ class UnifiedTrainingOrchestrator:
         Returns:
             Dictionary of losses and metrics
         """
-        torch = _get_torch()
+        torch = get_torch()
 
         if not self._initialized:
             self.initialize()

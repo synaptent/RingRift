@@ -23,16 +23,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
-# Lazy torch import to prevent OOM
-_torch = None
-
-
-def _get_torch():
-    global _torch
-    if _torch is None:
-        import torch
-        _torch = torch
-    return _torch
+# Use shared lazy torch import to prevent OOM
+from app.training.utils import get_torch
 
 
 class CheckpointType(Enum):
@@ -325,7 +317,7 @@ class UnifiedCheckpointManager:
         Returns:
             CheckpointMetadata for the saved checkpoint
         """
-        torch = _get_torch()
+        torch = get_torch()
 
         metrics = metrics or {}
 
@@ -505,7 +497,7 @@ class UnifiedCheckpointManager:
         Raises:
             ValueError: If strict_version=True and version/class mismatch detected
         """
-        torch = _get_torch()
+        torch = get_torch()
 
         metadata = None
 

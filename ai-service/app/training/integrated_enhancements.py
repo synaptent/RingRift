@@ -26,19 +26,19 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Lazy imports for PyTorch to prevent OOM in orchestrator
-_torch = None
+# Use shared lazy torch import; extend with torch.nn
+from app.training.utils import get_torch
 _nn = None
 
 
-def _get_torch():
-    global _torch, _nn
-    if _torch is None:
-        import torch
+def _get_torch_nn():
+    """Get torch and torch.nn modules lazily."""
+    global _nn
+    torch = get_torch()
+    if _nn is None:
         import torch.nn as nn
-        _torch = torch
         _nn = nn
-    return _torch, _nn
+    return torch, _nn
 
 
 # =============================================================================
@@ -528,11 +528,11 @@ class IntegratedTrainingManager:
             (total_aux_loss, loss_breakdown)
         """
         if self._auxiliary_module is not None:
-            torch, _ = _get_torch()
+            torch, _ = _get_torch_nn()
             predictions = self._auxiliary_module(features)
             return self._auxiliary_module.compute_loss(predictions, targets)
 
-        torch, _ = _get_torch()
+        torch, _ = _get_torch_nn()
         return torch.tensor(0.0), {}
 
     def apply_gradient_surgery(

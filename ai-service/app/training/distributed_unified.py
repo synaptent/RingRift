@@ -47,22 +47,22 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Lazy torch imports
-_torch = None
+# Use shared lazy torch import; extend with distributed modules
+from app.training.utils import get_torch
 _dist = None
 _DDP = None
 
 
-def _get_torch():
-    global _torch, _dist, _DDP
-    if _torch is None:
-        import torch
+def _get_torch_distributed():
+    """Get torch, torch.distributed, and DDP lazily."""
+    global _dist, _DDP
+    torch = get_torch()
+    if _dist is None:
         import torch.distributed as dist
         from torch.nn.parallel import DistributedDataParallel as DDP
-        _torch = torch
         _dist = dist
         _DDP = DDP
-    return _torch, _dist, _DDP
+    return torch, _dist, _DDP
 
 
 # =============================================================================
@@ -167,7 +167,7 @@ class GradientCompressor:
         Returns:
             Dictionary of parameter name -> (values, indices) sparse representation
         """
-        torch, _, _ = _get_torch()
+        torch, _, _ = _get_torch_distributed()
         self._step += 1
 
         # Skip compression during warmup
@@ -214,7 +214,7 @@ class GradientCompressor:
         Returns:
             Dictionary of parameter name -> decompressed gradient tensor
         """
-        torch, _, _ = _get_torch()
+        torch, _, _ = _get_torch_distributed()
         decompressed = {}
 
         for name, (values, indices) in compressed.items():
@@ -285,7 +285,7 @@ class AsyncSGD:
         Returns:
             Aggregated gradients or None if no updates pending
         """
-        torch, _, _ = _get_torch()
+        torch, _, _ = _get_torch_distributed()
 
         if not self._gradient_queue:
             return None
@@ -393,7 +393,7 @@ class UnifiedDistributedTrainer:
         Returns:
             True if initialization successful
         """
-        torch, dist, DDP = _get_torch()
+        torch, dist, DDP = _get_torch_distributed()
         config = self.config
 
         # Set environment variables
@@ -479,7 +479,7 @@ class UnifiedDistributedTrainer:
 
     def _register_node(self):
         """Register this node in the cluster."""
-        torch, _, _ = _get_torch()
+        torch, _, _ = _get_torch_distributed()
         config = self.config
 
         self._nodes[config.rank] = NodeInfo(
@@ -506,7 +506,7 @@ class UnifiedDistributedTrainer:
         Returns:
             Loss value
         """
-        torch, _, _ = _get_torch()
+        torch, _, _ = _get_torch_distributed()
 
         if not self._initialized or self._ddp_model is None:
             raise RuntimeError("Distributed trainer not initialized. Call setup() first.")
@@ -578,7 +578,7 @@ class UnifiedDistributedTrainer:
         Args:
             path: Optional custom path (defaults to checkpoint_dir)
         """
-        torch, _, _ = _get_torch()
+        torch, _, _ = _get_torch_distributed()
         config = self.config
 
         # Only rank 0 saves checkpoints
@@ -614,7 +614,7 @@ class UnifiedDistributedTrainer:
 
     def _try_resume(self):
         """Try to resume from latest checkpoint."""
-        torch, _, _ = _get_torch()
+        torch, _, _ = _get_torch_distributed()
 
         checkpoints = sorted(self._checkpoint_dir.glob("checkpoint_*.pt"))
         if not checkpoints:
@@ -640,7 +640,7 @@ class UnifiedDistributedTrainer:
 
     def cleanup(self):
         """Cleanup distributed training resources."""
-        _, dist, _ = _get_torch()
+        _, dist, _ = _get_torch_distributed()
 
         if self._initialized:
             if dist.is_initialized():
@@ -650,7 +650,7 @@ class UnifiedDistributedTrainer:
 
     def barrier(self):
         """Synchronization barrier across all processes."""
-        _, dist, _ = _get_torch()
+        _, dist, _ = _get_torch_distributed()
 
         if self._initialized and dist.is_initialized():
             dist.barrier()
