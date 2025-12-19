@@ -13507,28 +13507,20 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
                 try:
                     status = wq.get_queue_status()
+                    by_status = status.get("by_status", {})
 
-                    # Basic queue counts
-                    pending = status.get("pending", 0)
-                    running = status.get("running", 0)
-                    lines.append(f"ringrift_work_queue_pending {pending}")
-                    lines.append(f"ringrift_work_queue_running {running}")
-                    lines.append(f'ringrift_work_queue_total{{status="pending"}} {pending}')
-                    lines.append(f'ringrift_work_queue_total{{status="running"}} {running}')
+                    # Basic queue counts from by_status dict
+                    pending_count = by_status.get("pending", 0)
+                    running_count = by_status.get("running", 0) + by_status.get("claimed", 0)
+                    lines.append(f"ringrift_work_queue_pending {pending_count}")
+                    lines.append(f"ringrift_work_queue_running {running_count}")
+                    lines.append(f'ringrift_work_queue_total{{status="pending"}} {pending_count}')
+                    lines.append(f'ringrift_work_queue_total{{status="running"}} {running_count}')
 
-                    # Count by work type from queue
-                    type_counts = {"pending": {}, "running": {}}
-                    for item in status.get("queue", []):
-                        wtype = item.get("work_type", "unknown")
-                        type_counts["pending"][wtype] = type_counts["pending"].get(wtype, 0) + 1
-                    for item in status.get("claimed", []):
-                        wtype = item.get("work_type", "unknown")
-                        type_counts["running"][wtype] = type_counts["running"].get(wtype, 0) + 1
-
-                    for wtype, count in type_counts["pending"].items():
-                        lines.append(f'ringrift_work_queue_by_type{{work_type="{wtype}",status="pending"}} {count}')
-                    for wtype, count in type_counts["running"].items():
-                        lines.append(f'ringrift_work_queue_by_type{{work_type="{wtype}",status="running"}} {count}')
+                    # Count by work type from by_type dict
+                    by_type = status.get("by_type", {})
+                    for wtype, count in by_type.items():
+                        lines.append(f'ringrift_work_queue_by_type{{work_type="{wtype}"}} {count}')
 
                     # Historical counts from database
                     history = wq.get_history(limit=1000)
