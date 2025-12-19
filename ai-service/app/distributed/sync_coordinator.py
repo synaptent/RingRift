@@ -39,7 +39,6 @@ from typing import Any, Dict, List, Optional, Set
 
 from .storage_provider import (
     StorageProvider,
-    StorageProviderType,
     TransportConfig,
     get_storage_provider,
     get_optimal_transport_config,

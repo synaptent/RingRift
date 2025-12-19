@@ -831,6 +831,7 @@ def train_model(
 
     # Determine whether to use HexNeuralNet for hexagonal boards (including hex8)
     use_hex_model = config.board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
+    config_feature_version = int(getattr(config, "feature_version", 1) or 1)
 
     # Validate model_id matches board_type to prevent architecture mismatch errors (P0)
     # A hex model saved with "sq8" in the name causes runtime failures when loading
@@ -858,6 +859,7 @@ def train_model(
         inferred_size: Optional[int] = None
         policy_encoding: Optional[str] = None
         dataset_history_length: Optional[int] = None
+        dataset_feature_version: Optional[int] = None
         if data_path_str:
             try:
                 if os.path.exists(data_path_str):
@@ -876,6 +878,11 @@ def train_model(
                                 dataset_history_length = int(np.asarray(d["history_length"]).item())
                             except Exception:
                                 dataset_history_length = None
+                        if "feature_version" in d:
+                            try:
+                                dataset_feature_version = int(np.asarray(d["feature_version"]).item())
+                            except Exception:
+                                dataset_feature_version = None
                         if "policy_indices" in d:
                             pi = d["policy_indices"]
                             max_idx = -1
@@ -913,6 +920,32 @@ def train_model(
                     "with matching history frames.",
                     data_path_str,
                     config.history_length,
+                )
+
+        if dataset_feature_version is not None and dataset_feature_version != config_feature_version:
+            raise ValueError(
+                "Training feature_version does not match dataset metadata.\n"
+                f"  dataset={data_path_str}\n"
+                f"  dataset_feature_version={dataset_feature_version}\n"
+                f"  config_feature_version={config_feature_version}\n"
+                "Regenerate the dataset with matching --feature-version or "
+                "update the training config."
+            )
+        elif dataset_feature_version is None:
+            if config_feature_version != 1:
+                raise ValueError(
+                    "Dataset is missing feature_version metadata but training "
+                    "was configured for feature_version="
+                    f"{config_feature_version}.\n"
+                    f"  dataset={data_path_str}\n"
+                    "Regenerate the dataset with --feature-version or "
+                    "set feature_version=1 to use legacy features."
+                )
+            if not distributed or is_main_process():
+                logger.warning(
+                    "Dataset %s missing feature_version metadata; assuming legacy "
+                    "feature_version=1.",
+                    data_path_str,
                 )
 
         if model_version in ('v3', 'v4'):
@@ -1049,10 +1082,9 @@ def train_model(
 
     hex_in_channels = 0
     hex_num_players = num_players
-    # NOTE: HexNeuralNet_v3 has hardcoded spatial policy indices that assume P_HEX encoding.
-    # If the dataset uses a different policy encoding, v3 will fail with scatter index OOB.
-    # For now, disable v3 and always use v2 which has a flexible FC policy head.
-    use_hex_v3 = False  # Disabled: use_hex_model and model_version == 'v3'
+    # HexNeuralNet_v3 uses spatial policy heads that assume board-aware (P_HEX)
+    # indices. Enforce board-aware encoding for v3 via dataset metadata checks.
+    use_hex_v3 = bool(use_hex_model and model_version == 'v3')
     if use_hex_model:
         # Try to infer in_channels from the dataset's feature shape
         inferred_in_channels = None
@@ -1217,6 +1249,10 @@ def train_model(
             num_res_blocks=effective_blocks,
             num_filters=effective_filters,
         )
+    try:
+        setattr(model, "feature_version", config_feature_version)
+    except Exception:
+        pass
     model.to(device)
 
     # Initialize enhancements manager with model reference
@@ -1495,6 +1531,7 @@ def train_model(
         first_path = data_paths[0]
         dataset_history_length: Optional[int] = None
         policy_encoding: Optional[str] = None
+        dataset_feature_version: Optional[int] = None
         try:
             if first_path and os.path.exists(first_path):
                 with np.load(first_path, mmap_mode="r", allow_pickle=True) as d:
@@ -1508,6 +1545,11 @@ def train_model(
                             dataset_history_length = int(np.asarray(d["history_length"]).item())
                         except Exception:
                             dataset_history_length = None
+                    if "feature_version" in d:
+                        try:
+                            dataset_feature_version = int(np.asarray(d["feature_version"]).item())
+                        except Exception:
+                            dataset_feature_version = None
         except Exception as exc:
             if not distributed or is_main_process():
                 logger.warning(
@@ -1533,6 +1575,32 @@ def train_model(
                     "with matching history frames.",
                     first_path,
                     config.history_length,
+                )
+
+        if dataset_feature_version is not None and dataset_feature_version != config_feature_version:
+            raise ValueError(
+                "Training feature_version does not match dataset metadata.\n"
+                f"  dataset={first_path}\n"
+                f"  dataset_feature_version={dataset_feature_version}\n"
+                f"  config_feature_version={config_feature_version}\n"
+                "Regenerate the dataset with matching --feature-version or "
+                "update the training config."
+            )
+        elif dataset_feature_version is None:
+            if config_feature_version != 1:
+                raise ValueError(
+                    "Dataset is missing feature_version metadata but training "
+                    "was configured for feature_version="
+                    f"{config_feature_version}.\n"
+                    f"  dataset={first_path}\n"
+                    "Regenerate the dataset with --feature-version or "
+                    "set feature_version=1 to use legacy features."
+                )
+            if not distributed or is_main_process():
+                logger.warning(
+                    "Dataset %s missing feature_version metadata; assuming legacy "
+                    "feature_version=1.",
+                    first_path,
                 )
 
         if model_version in ('v3', 'v4'):
@@ -3355,6 +3423,17 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        '--feature-version',
+        type=int,
+        default=None,
+        help=(
+            "Feature encoding version (default: TrainConfig.feature_version). "
+            "v1 matches legacy encoders; v2 adds chain/forced-elimination "
+            "signals for hex encoders."
+        ),
+    )
+
     # Model architecture size (for scaling up models)
     parser.add_argument(
         '--num-res-blocks', type=int, default=None,
@@ -3757,6 +3836,8 @@ def main():
         config.weight_decay = args.weight_decay
     if hasattr(args, 'label_smoothing') and args.label_smoothing > 0:
         config.policy_label_smoothing = args.label_smoothing
+    if args.feature_version is not None:
+        config.feature_version = args.feature_version
     if args.filter_empty_policies:
         config.allow_empty_policies = False
     if args.board_type is not None:

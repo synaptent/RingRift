@@ -70,19 +70,38 @@ STALE_DATA_HOURS = 12  # Alert if no new data in this time
 MIN_WIN_RATE = 0.35  # Alert if win rate drops below this
 
 
-class HealthStatus(Enum):
-    """Overall health status."""
-    HEALTHY = "healthy"
-    DEGRADED = "degraded"
-    UNHEALTHY = "unhealthy"
-    UNKNOWN = "unknown"
+# HealthStatus is imported from app.monitoring.base when available
+# For backwards compatibility, define a fallback if monitoring framework not available
+if not HAS_MONITORING_FRAMEWORK:
+    class HealthStatus(Enum):  # type: ignore
+        """Overall health status (fallback when monitoring framework unavailable)."""
+        HEALTHY = "healthy"
+        DEGRADED = "degraded"
+        UNHEALTHY = "unhealthy"
+        UNKNOWN = "unknown"
 
 
+# AlertSeverity is kept for backwards compatibility but maps to AlertLevel
 class AlertSeverity(Enum):
-    """Alert severity levels."""
+    """Alert severity levels.
+
+    Note: For new code, prefer using AlertLevel from app.monitoring.thresholds.
+    This enum is maintained for backwards compatibility.
+    """
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
+
+    def to_alert_level(self) -> "AlertLevel":
+        """Convert to AlertLevel from monitoring framework."""
+        if HAS_MONITORING_FRAMEWORK:
+            mapping = {
+                AlertSeverity.INFO: AlertLevel.WARNING,  # No INFO in AlertLevel
+                AlertSeverity.WARNING: AlertLevel.WARNING,
+                AlertSeverity.CRITICAL: AlertLevel.CRITICAL,
+            }
+            return mapping.get(self, AlertLevel.WARNING)
+        return self  # type: ignore
 
 
 @dataclass
@@ -151,15 +170,80 @@ class HealthReport:
         }
 
 
-class TrainingHealthMonitor:
-    """Monitors training pipeline health."""
+class TrainingHealthMonitor(BaseHealthMonitor):
+    """Monitors training pipeline health.
 
-    def __init__(self, state_path: Optional[Path] = None):
+    Inherits from BaseHealthMonitor when available, providing:
+    - Unified check_health() interface for CompositeMonitor aggregation
+    - Standardized alert format compatible with monitoring framework
+    - Integration with cluster-wide health reporting
+    """
+
+    def __init__(self, state_path: Optional[Path] = None, name: str = "training"):
+        if HAS_MONITORING_FRAMEWORK:
+            super().__init__(name=name)
         self.state_path = state_path or HEALTH_DB_PATH
         self._configs: Dict[str, ConfigHealth] = {}
         self._active_runs: Dict[str, TrainingRunStatus] = {}
         self._alerts: Dict[str, Alert] = {}
         self._load_state()
+
+    def check_health(self) -> "MonitoringResult":
+        """Perform health check and return result.
+
+        Implements the HealthMonitor interface for integration with
+        the unified monitoring framework.
+
+        Returns:
+            MonitoringResult with status, metrics, and any alerts
+        """
+        if not HAS_MONITORING_FRAMEWORK:
+            # Return a dict-like fallback when framework not available
+            report = self.get_health_status()
+            return {  # type: ignore
+                "status": report.status,
+                "metrics": {"configs": len(self._configs), "active_alerts": len(report.active_alerts)},
+                "alerts": report.active_alerts,
+            }
+
+        start_time = time.time()
+        report = self.get_health_status()
+
+        # Convert local alerts to framework Alert format
+        framework_alerts = []
+        for alert in report.active_alerts:
+            framework_alerts.append(BaseAlert(
+                level=alert.severity.to_alert_level(),
+                category="training",
+                message=alert.message,
+                timestamp=datetime.fromtimestamp(alert.created_at),
+                node=alert.config_key,
+                details={"alert_id": alert.id},
+            ))
+
+        # Build metrics dict
+        metrics = {
+            "configs_tracked": len(self._configs),
+            "active_runs": len(self._active_runs),
+            "active_alerts": len(report.active_alerts),
+        }
+        for key, config in self._configs.items():
+            metrics[f"{key}_consecutive_failures"] = config.consecutive_failures
+            metrics[f"{key}_win_rate"] = config.win_rate
+
+        result = MonitoringResult(
+            status=report.status,
+            metrics=metrics,
+            alerts=framework_alerts,
+            details={"summary": report.summary},
+            duration_ms=(time.time() - start_time) * 1000,
+        )
+
+        # Store for base class interface
+        self._last_result = result
+        self._last_check = datetime.now()
+
+        return result
 
     def _load_state(self) -> None:
         """Load state from disk."""
