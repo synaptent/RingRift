@@ -1,7 +1,7 @@
 # RingRift AI-Service Consolidation Status
 
 **Date:** December 19, 2025
-**Status:** Phase 4 Complete (Event System Audit + Unit Tests)
+**Status:** Phase 5 Complete (Checkpointing Migration + Test Coverage)
 
 ---
 
@@ -237,6 +237,62 @@ Added runtime `DeprecationWarning` to legacy modules:
 - `app/training/checkpointing.py` - warns on import
 - `app/training/data_validation.py` - warns on import
 - `app/distributed/__init__.py` - warns on legacy symbol access
+
+---
+
+## Phase 5 Consolidation Work (December 19, 2025)
+
+### 22. Checkpointing Import Migration ✓
+
+Migrated all checkpointing imports to use unified module:
+
+- Added re-exports to `checkpoint_unified.py`:
+  - `GracefulShutdownHandler`
+  - `save_checkpoint`, `load_checkpoint`
+  - `AsyncCheckpointer`
+- Updated imports in:
+  - `train_setup.py` → imports from `checkpoint_unified`
+  - `train.py` → imports from `checkpoint_unified`
+  - `app/training/__init__.py` → re-exports from `checkpoint_unified`
+
+### 23. Global Event Router Activation ✓
+
+Enabled unified event router at application startup:
+
+- Added `set_use_router_by_default(True)` in `app/main.py` lifespan
+- All `emit_*_safe` calls now route through unified router
+- Router provides cross-system event delivery (EventBus + StageEventBus + CrossProcessEventQueue)
+
+### 24. High-Traffic Module Router Migration ✓
+
+Migrated key event emitters to use router directly:
+
+- `app/training/hot_data_buffer.py` - Added `router_publish` with fallback
+- `app/monitoring/unified_cluster_monitor.py` - Added `_emit_event()` helper using router
+- `app/coordination/event_emitters.py` - Already had `USE_UNIFIED_ROUTER = True`
+
+### 25. Comprehensive Test Coverage ✓
+
+Added extensive test coverage:
+
+- **5,554 total tests** (up from ~1,400)
+- New test files:
+  - `test_lib_metrics.py` (600 lines)
+  - `test_lib_transfer.py` (509 lines)
+  - `test_gpu_game_types.py` (190 lines)
+  - `test_training_pipeline.py` (322 lines)
+  - `test_multi_provider_orchestrator.py` (530 lines)
+  - `test_sync_orchestrator.py` (441 lines)
+- Added `pytest-cov` for coverage reporting
+
+### 26. New AI Module: IG-GMO ✓
+
+Added Information-Gain GMO (IG-GMO) research module:
+
+- `app/ai/ig_gmo.py` (676 lines)
+- Uses mutual information for exploration instead of variance
+- GNN-based state encoding
+- Soft legality constraints during optimization
 
 ---
 
