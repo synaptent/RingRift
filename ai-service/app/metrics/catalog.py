@@ -45,9 +45,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set, Type, Union
-
-from prometheus_client import Counter, Gauge, Histogram, Summary, Info
+from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 

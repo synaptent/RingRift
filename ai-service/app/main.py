@@ -1714,7 +1714,6 @@ async def choose_capture_direction_option(
 @app.delete("/ai/cache", dependencies=[Depends(verify_admin_api_key)])
 async def clear_ai_cache():
     """Clear cached AI instances. Requires X-Admin-Key header."""
-    global ai_instances
     with _ai_cache_lock:
         removed = len(ai_instances)
         ai_instances.clear()

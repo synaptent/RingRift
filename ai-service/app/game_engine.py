@@ -33,11 +33,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
-import sys
-import os
 import json
+import os
+import sys
 import time
-import hashlib
 from .models import (
     GameState,
     Move,
@@ -53,6 +52,12 @@ from .models import (
 )
 from .board_manager import BoardManager
 
+__all__ = [
+    # Classes
+    "GameEngine",
+    "PhaseRequirement",
+    "PhaseRequirementType",
+]
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PHASE REQUIREMENT TYPES (RR-CANON-R074/R075/R076)
@@ -99,7 +104,6 @@ from .rules.geometry import BoardGeometry
 from .rules.core import count_rings_in_play_for_player, get_effective_line_length
 from .rules.capture_chain import enumerate_capture_moves_py
 from .rules.recovery import (
-    get_recovery_moves,
     get_expanded_recovery_moves,
     has_any_recovery_move,
     apply_recovery_slide,
@@ -950,7 +954,6 @@ class GameEngine:
             territory_counts[p_id] += 1
 
         # Get minimum threshold (use new field, fall back to legacy for old states)
-        from app.rules.core import get_territory_victory_minimum
         territory_minimum = (
             game_state.territory_victory_minimum
             if game_state.territory_victory_minimum is not None
@@ -2907,8 +2910,6 @@ class GameEngine:
         """
         if game_state.game_status != GameStatus.ACTIVE:
             return
-
-        board = game_state.board
 
         # Active players for LPS tracking are those with any material remaining
         # in the game (RR-CANON-R172 / RR-CANON-R175): rings on the board in
