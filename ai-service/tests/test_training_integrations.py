@@ -818,5 +818,104 @@ class TestDistributedFaultTolerance(unittest.TestCase):
         self.assertEqual(len(callback_called), 0)
 
 
+class TestGradNormWeighting(unittest.TestCase):
+    """Tests for GradNorm adaptive task weighting (2025-12)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Import GradNorm components."""
+        try:
+            from app.training.multi_task_learning import (
+                GradNormWeighter,
+                MultiTaskLoss,
+                MultiTaskConfig,
+            )
+            cls.GradNormWeighter = GradNormWeighter
+            cls.MultiTaskLoss = MultiTaskLoss
+            cls.MultiTaskConfig = MultiTaskConfig
+            cls.has_gradnorm = True
+        except ImportError:
+            cls.has_gradnorm = False
+
+    def test_gradnorm_weighter_initialization(self) -> None:
+        """Test GradNormWeighter initializes correctly."""
+        if not self.has_gradnorm:
+            self.skipTest("GradNormWeighter not available")
+
+        weighter = self.GradNormWeighter(num_tasks=3, alpha=1.5)
+        self.assertEqual(weighter.num_tasks, 3)
+        self.assertEqual(weighter.alpha, 1.5)
+        self.assertEqual(len(weighter.weights), 3)
+
+    def test_gradnorm_weights_are_positive(self) -> None:
+        """Test that GradNorm weights are always positive."""
+        if not self.has_gradnorm:
+            self.skipTest("GradNormWeighter not available")
+
+        weighter = self.GradNormWeighter(num_tasks=4)
+        weights = weighter.weights
+        self.assertTrue(all(w > 0 for w in weights))
+
+    def test_gradnorm_weights_sum_to_num_tasks(self) -> None:
+        """Test that normalized weights sum to num_tasks."""
+        if not self.has_gradnorm:
+            self.skipTest("GradNormWeighter not available")
+
+        weighter = self.GradNormWeighter(num_tasks=3)
+        weights_sum = weighter.weights.sum().item()
+        self.assertAlmostEqual(weights_sum, 3.0, places=5)
+
+    def test_gradnorm_initial_weights(self) -> None:
+        """Test custom initial weights."""
+        if not self.has_gradnorm:
+            self.skipTest("GradNormWeighter not available")
+
+        initial = [0.5, 1.0, 1.5]
+        weighter = self.GradNormWeighter(num_tasks=3, initial_weights=initial)
+
+        # Weights should preserve relative ratios
+        weights = weighter.weights.detach().numpy()
+        self.assertLess(weights[0], weights[1])
+        self.assertLess(weights[1], weights[2])
+
+    def test_gradnorm_get_stats(self) -> None:
+        """Test statistics retrieval from GradNorm."""
+        if not self.has_gradnorm:
+            self.skipTest("GradNormWeighter not available")
+
+        weighter = self.GradNormWeighter(num_tasks=2)
+        stats = weighter.get_stats()
+
+        self.assertIn('task_0_weight', stats)
+        self.assertIn('task_1_weight', stats)
+        self.assertIn('task_0_train_rate', stats)
+        self.assertIn('task_1_train_rate', stats)
+
+    def test_multitask_loss_with_gradnorm(self) -> None:
+        """Test MultiTaskLoss with gradnorm weighting strategy."""
+        if not self.has_gradnorm:
+            self.skipTest("GradNormWeighter not available")
+
+        config = self.MultiTaskConfig(task_weighting="gradnorm")
+        loss_fn = self.MultiTaskLoss(config=config)
+
+        # Create mock outputs and targets
+        auxiliary_outputs = {
+            'outcome': torch.randn(4, 3),  # batch=4, 3 classes
+            'legality': torch.randn(4, 100),  # batch=4, 100 moves
+        }
+        targets = {
+            'outcome': torch.randint(0, 3, (4,)),
+            'legality': torch.randint(0, 2, (4, 100)),
+        }
+
+        total_loss, loss_dict = loss_fn(auxiliary_outputs, targets)
+
+        self.assertIsInstance(total_loss.item(), float)
+        self.assertIn('total_auxiliary_loss', loss_dict)
+        self.assertIn('outcome_weight', loss_dict)
+        self.assertIn('legality_weight', loss_dict)
+
+
 if __name__ == "__main__":
     unittest.main()
