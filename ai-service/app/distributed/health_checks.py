@@ -559,6 +559,244 @@ def format_health_report(summary: HealthSummary) -> str:
     return "\n".join(lines)
 
 
+class HealthRecoveryIntegration:
+    """
+    Integrates health checks with automatic recovery.
+
+    When health checks detect issues:
+    - Stale jobs → attempt job recovery
+    - Unhealthy nodes → attempt node recovery
+    - Persistent failures → escalate to human operators
+
+    Usage:
+        from app.distributed.health_checks import HealthRecoveryIntegration
+
+        integration = HealthRecoveryIntegration(recovery_manager)
+        integration.start_monitoring(check_interval=60)
+    """
+
+    def __init__(
+        self,
+        recovery_manager=None,
+        notifier=None,
+        auto_recover: bool = True,
+        check_interval: int = 60,
+    ):
+        """
+        Initialize health-recovery integration.
+
+        Args:
+            recovery_manager: RecoveryManager instance for triggering recovery
+            notifier: Optional notifier for alerts
+            auto_recover: Whether to automatically trigger recovery
+            check_interval: Seconds between health checks
+        """
+        self.recovery_manager = recovery_manager
+        self.notifier = notifier
+        self.auto_recover = auto_recover
+        self.check_interval = check_interval
+        self.checker = HealthChecker()
+        self._running = False
+        self._consecutive_failures: Dict[str, int] = {}
+        self._last_recovery_attempt: Dict[str, float] = {}
+        self._recovery_cooldown = 300  # 5 minutes between recovery attempts
+
+    async def check_and_recover(self) -> HealthSummary:
+        """
+        Run health check and trigger recovery if needed.
+
+        Returns:
+            HealthSummary from the check
+        """
+        summary = self.checker.check_all()
+
+        if summary.healthy:
+            # Reset failure counters on healthy check
+            self._consecutive_failures.clear()
+            return summary
+
+        # Process each unhealthy component
+        for component in summary.components:
+            if component.status in ("error", "warning"):
+                await self._handle_unhealthy_component(component)
+
+        return summary
+
+    async def _handle_unhealthy_component(self, component: ComponentHealth) -> None:
+        """Handle an unhealthy component."""
+        component_name = component.name
+
+        # Track consecutive failures
+        self._consecutive_failures[component_name] = \
+            self._consecutive_failures.get(component_name, 0) + 1
+
+        failures = self._consecutive_failures[component_name]
+        logger.warning(
+            f"[Health→Recovery] {component_name} unhealthy "
+            f"(consecutive={failures}): {component.message}"
+        )
+
+        # Check recovery cooldown
+        last_attempt = self._last_recovery_attempt.get(component_name, 0)
+        if time.time() - last_attempt < self._recovery_cooldown:
+            logger.debug(f"[Health→Recovery] {component_name} in recovery cooldown")
+            return
+
+        # Trigger recovery based on component and failure count
+        if self.auto_recover and self.recovery_manager:
+            await self._trigger_recovery(component, failures)
+
+    async def _trigger_recovery(
+        self,
+        component: ComponentHealth,
+        failure_count: int
+    ) -> None:
+        """Trigger appropriate recovery action."""
+        component_name = component.name
+        self._last_recovery_attempt[component_name] = time.time()
+
+        try:
+            if component_name == "coordinator" and failure_count >= 2:
+                # Stale tasks - try to recover stuck jobs
+                details = component.details or {}
+                stale_count = details.get("stale_count", 0)
+                if stale_count > 0:
+                    logger.info(f"[Health→Recovery] Attempting to recover {stale_count} stale jobs")
+                    # Would call recovery_manager.recover_stuck_job() for each
+                    if hasattr(self.recovery_manager, 'cleanup_stale_jobs'):
+                        await self.recovery_manager.cleanup_stale_jobs()
+
+            elif component_name == "data_sync" and failure_count >= 3:
+                # Data sync stale - restart sync daemon
+                logger.info("[Health→Recovery] Data sync stale, triggering sync restart")
+                if hasattr(self.recovery_manager, 'restart_data_sync'):
+                    await self.recovery_manager.restart_data_sync()
+
+            elif component_name == "resources":
+                # Resource issues - log for manual intervention
+                logger.warning(f"[Health→Recovery] Resource issue: {component.message}")
+                if self.notifier and failure_count >= 5:
+                    await self._notify_resource_issue(component)
+
+            elif failure_count >= 5:
+                # Persistent failures - escalate
+                logger.error(
+                    f"[Health→Recovery] Persistent failures for {component_name}, "
+                    f"escalating to human operator"
+                )
+                if self.notifier:
+                    await self._notify_escalation(component, failure_count)
+
+        except Exception as e:
+            logger.error(f"[Health→Recovery] Recovery failed for {component_name}: {e}")
+
+    async def _notify_resource_issue(self, component: ComponentHealth) -> None:
+        """Notify about resource issues."""
+        if self.notifier and hasattr(self.notifier, 'send_alert'):
+            await self.notifier.send_alert(
+                level="warning",
+                title="Resource Issue Detected",
+                message=component.message,
+                details=component.details
+            )
+
+    async def _notify_escalation(
+        self,
+        component: ComponentHealth,
+        failure_count: int
+    ) -> None:
+        """Notify about escalation to human operator."""
+        if self.notifier and hasattr(self.notifier, 'send_alert'):
+            await self.notifier.send_alert(
+                level="critical",
+                title=f"Persistent Failure: {component.name}",
+                message=f"Component has failed {failure_count} consecutive times. "
+                        f"Manual intervention may be required.",
+                details={
+                    "component": component.name,
+                    "status": component.status,
+                    "message": component.message,
+                    "failure_count": failure_count,
+                    **component.details
+                }
+            )
+
+    async def start_monitoring(self) -> None:
+        """Start background health monitoring loop."""
+        import asyncio
+
+        self._running = True
+        logger.info(
+            f"[Health→Recovery] Starting health monitoring "
+            f"(interval={self.check_interval}s, auto_recover={self.auto_recover})"
+        )
+
+        while self._running:
+            try:
+                summary = await self.check_and_recover()
+                if not summary.healthy:
+                    logger.info(
+                        f"[Health→Recovery] Check complete: "
+                        f"{len(summary.issues)} issues, {len(summary.warnings)} warnings"
+                    )
+            except Exception as e:
+                logger.error(f"[Health→Recovery] Health check error: {e}")
+
+            await asyncio.sleep(self.check_interval)
+
+    def stop_monitoring(self) -> None:
+        """Stop background health monitoring."""
+        self._running = False
+        logger.info("[Health→Recovery] Health monitoring stopped")
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get integration status."""
+        return {
+            "running": self._running,
+            "auto_recover": self.auto_recover,
+            "check_interval": self.check_interval,
+            "consecutive_failures": dict(self._consecutive_failures),
+            "recovery_cooldown": self._recovery_cooldown,
+        }
+
+
+def integrate_health_with_recovery(
+    recovery_manager=None,
+    notifier=None,
+    auto_recover: bool = True,
+) -> HealthRecoveryIntegration:
+    """
+    Create health-recovery integration.
+
+    Usage:
+        from app.distributed.health_checks import integrate_health_with_recovery
+
+        integration = integrate_health_with_recovery(
+            recovery_manager=recovery_manager,
+            notifier=slack_notifier,
+            auto_recover=True
+        )
+
+        # Start monitoring (in async context)
+        await integration.start_monitoring()
+
+    Args:
+        recovery_manager: RecoveryManager for triggering recovery
+        notifier: Optional notification service
+        auto_recover: Whether to automatically trigger recovery
+
+    Returns:
+        Configured HealthRecoveryIntegration
+    """
+    integration = HealthRecoveryIntegration(
+        recovery_manager=recovery_manager,
+        notifier=notifier,
+        auto_recover=auto_recover
+    )
+    logger.info("[Health→Recovery] Integration created")
+    return integration
+
+
 if __name__ == "__main__":
     summary = get_health_summary()
     print(format_health_report(summary))

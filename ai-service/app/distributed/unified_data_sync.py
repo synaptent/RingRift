@@ -254,8 +254,16 @@ except ImportError:
 # =============================================================================
 
 @dataclass
-class HostConfig:
-    """Configuration for a remote host."""
+class SyncHostConfig:
+    """Configuration for a data sync source host.
+
+    This is the sync-specific host configuration with fields for remote data
+    paths, sync roles, and ephemeral status. For general-purpose distributed
+    worker configuration (with Cloudflare tunnels, worker ports, etc.), use:
+
+        from app.distributed.hosts import HostConfig
+    """
+
     name: str
     ssh_host: str
     ssh_user: str = "ubuntu"
@@ -265,6 +273,10 @@ class HostConfig:
     enabled: bool = True
     role: str = "selfplay"
     is_ephemeral: bool = False  # Vast.ai instances
+
+
+# Backwards-compatible alias
+HostConfig = SyncHostConfig
 
 
 @dataclass

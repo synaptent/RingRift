@@ -65,6 +65,14 @@ from app.monitoring.cluster_monitor import (
 # P2P monitoring
 from app.monitoring.p2p_monitoring import MonitoringManager
 
+# Unified health orchestrator
+from app.monitoring.unified_health import (
+    UnifiedHealthOrchestrator,
+    get_health_orchestrator,
+    check_system_health,
+    system_is_healthy,
+)
+
 __all__ = [
     # Thresholds
     "THRESHOLDS",
@@ -89,4 +97,9 @@ __all__ = [
     "check_local_health",
     # P2P monitoring
     "MonitoringManager",
+    # Unified health
+    "UnifiedHealthOrchestrator",
+    "get_health_orchestrator",
+    "check_system_health",
+    "system_is_healthy",
 ]
