@@ -5442,27 +5442,104 @@ def evaluate_positions_batch(
         recovery_eligible = has_buried & no_controlled & has_markers
         recovery_potential = buried_rings * recovery_eligible.float()
 
-        # === PENALTY/BONUS FLAGS ===
-        no_stacks_flag = (stack_count == 0).float()
-        single_stack_flag = (stack_count == 1).float()
-        stack_diversity = (stack_count - adjacency_score / 2).clamp(min=0)  # Spread bonus
-        near_victory = (victory_proximity > 0.8).float()
+        # === PENALTY/BONUS FLAGS (SYMMETRIC) ===
+        # v2.0: Made symmetric to match CPU heuristic evaluation.
+        # CPU computes (my_diversity - opp_diversity), so GPU must do the same.
+        # This ensures parity and avoids divergence at game start when all players
+        # have 0 stacks (penalties should cancel out to 0, not apply absolutely).
 
-        # === COMBINE ALL COMPONENTS ===
-        # Core position weights
+        # Compute total opponent stack count
+        opponent_stack_count = torch.zeros(batch_size, device=device)
+        for opp in range(1, num_players + 1):
+            if opp != p:
+                opp_stacks = (state.stack_owner == opp).sum(dim=(1, 2)).float()
+                opponent_stack_count += opp_stacks
+        # Average opponent stack count for fair comparison
+        opponent_stack_count = opponent_stack_count / max(1, num_players - 1)
+
+        # Compute diversity scores (mirroring CPU diversification_score function)
+        # CPU: if stacks == 0: return -penalty; elif stacks == 1: return -single_penalty; else: return stacks * bonus
+        no_stacks_penalty = get_weight("WEIGHT_NO_STACKS_PENALTY", None, 51.02)
+        single_stack_penalty = get_weight("WEIGHT_SINGLE_STACK_PENALTY", None, 10.53)
+        diversity_bonus = get_weight("WEIGHT_STACK_DIVERSITY_BONUS", None, -0.74)
+
+        # My diversity score
+        my_diversity = torch.where(
+            stack_count == 0,
+            -torch.full((batch_size,), no_stacks_penalty, device=device),
+            torch.where(
+                stack_count == 1,
+                -torch.full((batch_size,), single_stack_penalty, device=device),
+                stack_count * diversity_bonus
+            )
+        )
+
+        # Opponent diversity score (using average opponent stack count)
+        opp_diversity = torch.where(
+            opponent_stack_count < 0.5,  # Effectively 0 stacks
+            -torch.full((batch_size,), no_stacks_penalty, device=device),
+            torch.where(
+                opponent_stack_count < 1.5,  # Effectively 1 stack
+                -torch.full((batch_size,), single_stack_penalty, device=device),
+                opponent_stack_count * diversity_bonus
+            )
+        )
+
+        # Relative diversity advantage (symmetric like CPU)
+        diversity_advantage = my_diversity - opp_diversity
+
+        near_victory = (victory_proximity > 0.8).float()
+        # Note: stack_diversity bonus now computed as part of diversity_advantage
+
+        # === COMPUTE OPPONENT METRICS FOR SYMMETRIC EVALUATION ===
+        # v2.0: CPU heuristic computes (my_value - opponent_value) for most features.
+        # To achieve parity, we compute average/max opponent values and use relative differences.
+        opp_stack_count = torch.zeros(batch_size, device=device)
+        opp_ring_count = torch.zeros(batch_size, device=device)
+        opp_cap_height = torch.zeros(batch_size, device=device)
+        opp_territory = torch.zeros(batch_size, device=device)
+        max_opp_rings_in_hand = torch.zeros(batch_size, device=device)
+        opp_center_control = torch.zeros(batch_size, device=device)
+        opp_eliminated_rings = torch.zeros(batch_size, device=device)
+
+        for opp in range(1, num_players + 1):
+            if opp != p:
+                opp_stacks_mask = (state.stack_owner == opp)
+                opp_stack_count += opp_stacks_mask.sum(dim=(1, 2)).float()
+                opp_heights = state.stack_height * opp_stacks_mask.int()
+                opp_ring_count += opp_heights.sum(dim=(1, 2)).float()
+                opp_cap_height += opp_ring_count  # Same as ring count for now
+                opp_territory += state.territory_count[:, opp].float()
+                max_opp_rings_in_hand = torch.max(max_opp_rings_in_hand, state.rings_in_hand[:, opp].float())
+                opp_center_control += (center_bonus.unsqueeze(0) * opp_stacks_mask.float()).sum(dim=(1, 2))
+                opp_eliminated_rings += state.eliminated_rings[:, opp].float()
+
+        # Average opponent values (for symmetric comparison)
+        num_opps = max(1, num_players - 1)
+        opp_stack_count_avg = opp_stack_count / num_opps
+        opp_ring_count_avg = opp_ring_count / num_opps
+        opp_cap_height_avg = opp_cap_height / num_opps
+        opp_territory_avg = opp_territory / num_opps
+        opp_center_control_avg = opp_center_control / num_opps
+        opp_eliminated_rings_avg = opp_eliminated_rings / num_opps
+
+        # === COMBINE ALL COMPONENTS (SYMMETRIC) ===
+        # v2.0: Use relative differences like CPU heuristic for parity.
+        # CPU: score += (my_value - opponent_value) * weight
         score = torch.zeros(batch_size, device=device)
-        score += stack_count * get_weight("WEIGHT_STACK_CONTROL", "material_weight", 9.39)
-        score += total_ring_count * get_weight("WEIGHT_STACK_HEIGHT", "ring_count_weight", 6.81)
-        score += cap_height * get_weight("WEIGHT_CAP_HEIGHT", None, 4.82)
-        score += territory * get_weight("WEIGHT_TERRITORY", "territory_weight", 8.66)
-        score += rings_in_hand * get_weight("WEIGHT_RINGS_IN_HAND", None, 5.17)
-        score += center_control * get_weight("WEIGHT_CENTER_CONTROL", "center_control_weight", 2.28)
-        score += adjacency_score * get_weight("WEIGHT_ADJACENCY", None, 1.57)
+        score += (stack_count - opp_stack_count_avg) * get_weight("WEIGHT_STACK_CONTROL", "material_weight", 9.39)
+        score += (total_ring_count - opp_ring_count_avg) * get_weight("WEIGHT_STACK_HEIGHT", "ring_count_weight", 6.81)
+        score += (cap_height - opp_cap_height_avg) * get_weight("WEIGHT_CAP_HEIGHT", None, 4.82)
+        score += (territory - opp_territory_avg) * get_weight("WEIGHT_TERRITORY", "territory_weight", 8.66)
+        score += (rings_in_hand - max_opp_rings_in_hand) * get_weight("WEIGHT_RINGS_IN_HAND", None, 5.17)
+        score += (center_control - opp_center_control_avg) * get_weight("WEIGHT_CENTER_CONTROL", "center_control_weight", 2.28)
+        score += adjacency_score * get_weight("WEIGHT_ADJACENCY", None, 1.57)  # Keep absolute (CPU doesn't compare)
 
         # Threat/defense weights
         score -= opponent_threat * get_weight("WEIGHT_OPPONENT_THREAT", None, 6.11)
         score += mobility * get_weight("WEIGHT_MOBILITY", "mobility_weight", 5.31)
-        score += eliminated_rings * get_weight("WEIGHT_ELIMINATED_RINGS", None, 13.12)
+        # Eliminated rings: relative advantage over opponents
+        score += (eliminated_rings - opp_eliminated_rings_avg) * get_weight("WEIGHT_ELIMINATED_RINGS", None, 13.12)
         score -= vulnerability * get_weight("WEIGHT_VULNERABILITY", None, 9.32)
 
         # Line/victory weights
@@ -5490,10 +5567,10 @@ def evaluate_positions_batch(
         score += lps_advantage * get_weight("WEIGHT_LPS_ACTION_ADVANTAGE", None, 0.99)
         score -= multi_leader * get_weight("WEIGHT_MULTI_LEADER_THREAT", None, 1.03)
 
-        # Penalty/bonus weights
-        score -= no_stacks_flag * get_weight("WEIGHT_NO_STACKS_PENALTY", None, 51.02)
-        score -= single_stack_flag * get_weight("WEIGHT_SINGLE_STACK_PENALTY", None, 10.53)
-        score += stack_diversity * get_weight("WEIGHT_STACK_DIVERSITY_BONUS", None, -0.74)
+        # Penalty/bonus weights (v2.0: symmetric diversity scoring)
+        # Use relative diversity advantage instead of absolute penalties
+        # This matches CPU: score += (my_diversity - opp_diversity)
+        score += diversity_advantage
         score -= blocked_stacks * get_weight("WEIGHT_BLOCKED_STACK_PENALTY", None, 4.57)
         score += near_victory * get_weight("WEIGHT_VICTORY_THRESHOLD_BONUS", None, 998.52)
 

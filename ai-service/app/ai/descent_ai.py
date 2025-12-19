@@ -1523,29 +1523,35 @@ class DescentAI(BaseAI):
             return [self.evaluate_position(s) for s in game_states]
 
     def _gpu_batch_heuristic_eval(self, game_states: List[GameState]) -> List[float]:
-        """Batch-evaluate positions using GPU heuristic.
+        """Batch-evaluate positions using full-parity GPU heuristic.
 
-        Converts game states to GPU format and evaluates in parallel.
+        Uses the 49-feature evaluate_positions_batch for CPU heuristic parity,
+        rather than the simplified GPUHeuristicEvaluator.
+
+        Converts game states to BatchGameState format and evaluates in parallel.
         Returns values adjusted to this agent's perspective.
         """
-        if self.gpu_heuristic is None:
-            raise RuntimeError("GPU heuristic evaluator not initialized")
-
         # Import here to avoid circular deps at module load
-        from .gpu_batch import GPUBoardState
+        from .gpu_parallel_games import BatchGameState, evaluate_positions_batch
+        from .heuristic_weights import get_weights_for_player_count
+        from .gpu_batch import get_device
 
-        # Convert states to GPU format
-        gpu_states = GPUBoardState.from_game_states(
-            game_states, device=self.gpu_heuristic.device
-        )
+        # Convert states to BatchGameState for full-parity evaluation
+        device = get_device() if self.gpu_heuristic is None else self.gpu_heuristic.device
+        batch_state = BatchGameState.from_game_states(game_states, device=device)
 
-        # Evaluate for this player
-        scores = self.gpu_heuristic.evaluate_batch(gpu_states, self.player_number)
+        # Get weights for current player count
+        num_players = len(game_states[0].players) if game_states else 2
+        weights = get_weights_for_player_count(num_players)
+
+        # Full 49-feature GPU evaluation - returns (batch_size, num_players+1) tensor
+        scores_tensor = evaluate_positions_batch(batch_state, weights)
 
         # Convert to list and adjust perspective
         adjusted: List[float] = []
         for i, st in enumerate(game_states):
-            val = float(scores[i].item())
+            # Get score for this player from the batch result
+            val = float(scores_tensor[i, self.player_number].item())
             # Negate if opponent to move (paranoid perspective)
             if st.current_player != self.player_number:
                 val = -val
