@@ -35,6 +35,10 @@ __all__ = [
     "DataQualityError",
     "LifecycleError",
     "CheckpointError",
+    "ModelVersioningError",
+    "EvaluationError",
+    "SelfplayError",
+    "DataLoadError",
     # Infrastructure errors
     "InfrastructureError",
     "StorageError",
@@ -520,6 +524,45 @@ class CheckpointError(TrainingError):
     incompatible version, save failure).
     """
     code: str = "CHECKPOINT_ERROR"
+
+
+class ModelVersioningError(CheckpointError):
+    """Model versioning failure.
+
+    Raised when model version operations fail (version mismatch,
+    checksum mismatch, legacy checkpoint issues).
+
+    NOTE: Subclasses (VersionMismatchError, ChecksumMismatchError, etc.)
+    remain in app.training.model_versioning for specialized handling.
+    """
+    code: str = "MODEL_VERSIONING_ERROR"
+
+
+class EvaluationError(TrainingError):
+    """Evaluation-related failure.
+
+    Raised when evaluation operations fail (game errors, timeout,
+    baseline comparison issues).
+    """
+    code: str = "EVALUATION_ERROR"
+
+
+class SelfplayError(TrainingError):
+    """Selfplay generation failure.
+
+    Raised when selfplay operations fail (worker crash, data corruption,
+    resource exhaustion).
+    """
+    code: str = "SELFPLAY_ERROR"
+
+
+class DataLoadError(TrainingError):
+    """Data loading failure.
+
+    Raised when data loading operations fail (I/O error, corrupt data,
+    invalid format).
+    """
+    code: str = "DATA_LOAD_ERROR"
 
 
 # =============================================================================

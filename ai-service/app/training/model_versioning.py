@@ -60,10 +60,11 @@ logger = logging.getLogger(__name__)
 # Exceptions
 # =============================================================================
 
+# Import base exception from canonical source (December 2025 consolidation)
+from app.errors import ModelVersioningError as _BaseModelVersioningError
 
-class ModelVersioningError(Exception):
-    """Base exception for model versioning errors."""
-    pass
+# Re-export for backwards compatibility
+ModelVersioningError = _BaseModelVersioningError
 
 
 class VersionMismatchError(ModelVersioningError):

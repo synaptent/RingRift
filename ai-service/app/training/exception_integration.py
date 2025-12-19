@@ -87,30 +87,16 @@ __all__ = [
 # =============================================================================
 # Training-Specific Exception Types
 # =============================================================================
+# NOTE (December 2025): Import from canonical source app.errors
+# These re-exports maintain backward compatibility
 
-class TrainingError(RingRiftError):
-    """Base exception for training operations."""
-    pass
-
-
-class CheckpointError(TrainingError):
-    """Exception for checkpoint operations."""
-    pass
-
-
-class EvaluationError(TrainingError):
-    """Exception for evaluation operations."""
-    pass
-
-
-class SelfplayError(TrainingError):
-    """Exception for selfplay operations."""
-    pass
-
-
-class DataLoadError(TrainingError):
-    """Exception for data loading operations."""
-    pass
+from app.errors import (
+    TrainingError,
+    CheckpointError,
+    EvaluationError,
+    SelfplayError,
+    DataLoadError,
+)
 
 
 # =============================================================================
