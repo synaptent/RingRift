@@ -454,6 +454,109 @@ async def metrics():
     return Response(content=data, media_type=CONTENT_TYPE_LATEST)
 
 
+@app.get("/admin/health/coordinators")
+async def admin_health_coordinators(
+    _: bool = Depends(verify_admin_api_key),
+) -> Dict[str, Any]:
+    """Get health status of all coordinator managers.
+
+    Requires X-Admin-Key header for authentication.
+
+    Returns detailed status of:
+    - RecoveryManager: Node/job recovery tracking
+    - BandwidthManager: Transfer bandwidth allocation
+    - SyncCoordinator: Data synchronization across cluster
+    """
+    try:
+        from app.metrics.coordinator import collect_all_coordinator_metrics_sync
+
+        metrics = collect_all_coordinator_metrics_sync()
+        coordinators = metrics.get("coordinators", {})
+
+        # Build detailed response
+        status_summary = {}
+        all_healthy = True
+
+        for name, stats in coordinators.items():
+            coord_status = stats.get("status", "unknown")
+            is_healthy = coord_status in ("ready", "running")
+            if not is_healthy:
+                all_healthy = False
+
+            status_summary[name] = {
+                "status": coord_status,
+                "healthy": is_healthy,
+                "uptime_seconds": stats.get("uptime_seconds", 0),
+                "details": {k: v for k, v in stats.items() if k not in ("status", "uptime_seconds")},
+            }
+
+        return {
+            "healthy": all_healthy,
+            "coordinator_count": len(coordinators),
+            "coordinators": status_summary,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    except ImportError:
+        return {
+            "healthy": True,
+            "coordinator_count": 0,
+            "coordinators": {},
+            "message": "Coordinator metrics module not available",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to collect coordinator health: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to collect coordinator health: {e}" if not IS_PRODUCTION else "Internal error",
+        )
+
+
+@app.get("/admin/health/full")
+async def admin_health_full(
+    _: bool = Depends(verify_admin_api_key),
+) -> Dict[str, Any]:
+    """Get comprehensive health check of all pipeline components.
+
+    Requires X-Admin-Key header for authentication.
+
+    Includes:
+    - Data sync status
+    - Training status
+    - Evaluation status
+    - Coordinator status
+    - Coordinator managers status
+    - System resources
+    """
+    try:
+        from app.distributed.health_checks import get_health_summary
+
+        summary = get_health_summary()
+
+        return {
+            "healthy": summary.healthy,
+            "timestamp": summary.timestamp,
+            "components": {
+                c.name: {
+                    "status": c.status,
+                    "healthy": c.healthy,
+                    "message": c.message,
+                    "details": c.details,
+                }
+                for c in summary.components
+            },
+            "issues": summary.issues,
+            "warnings": summary.warnings,
+        }
+    except Exception as e:
+        logger.error(f"Failed to get health summary: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get health summary: {e}" if not IS_PRODUCTION else "Internal error",
+        )
+
+
 @app.post("/ai/move", response_model=MoveResponse)
 async def get_ai_move(request: MoveRequest):
     """
