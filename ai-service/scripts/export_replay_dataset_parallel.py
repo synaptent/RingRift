@@ -21,7 +21,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 import sys
 import time
@@ -37,15 +36,9 @@ if ROOT not in sys.path:
 os.environ.setdefault("RINGRIFT_FORCE_CPU", "1")
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("export_replay_dataset_parallel", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("export_replay_dataset_parallel")
 
 from app.db import GameReplayDB
 from app.models import BoardType

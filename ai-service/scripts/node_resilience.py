@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import fcntl
 import json
-import logging
 import os
 import random
 import signal

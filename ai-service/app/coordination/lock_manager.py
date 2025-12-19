@@ -1,10 +1,19 @@
 """Unified Lock Manager with Deadlock Detection.
 
-Consolidates lock management across the codebase with:
-- Unified interface for file locks, distributed locks, mutexes
+Provides in-process async lock management with:
+- Unified interface for async lock coordination
 - Lock tracking for observability
 - Deadlock detection via wait-for graph analysis
 - Event emission for monitoring
+
+When to Use This vs DistributedLock (December 2025):
+- **LockManager** (this module): Use for in-process async coordination
+  with deadlock detection. Suitable for coordinating async tasks within
+  a single Python process. Does NOT provide cross-process locking.
+
+- **DistributedLock** (app.coordination.distributed_lock): Use for
+  cross-node/cross-process coordination via Redis or file locks.
+  Suitable for training locks, model registry, resource allocation.
 
 Usage:
     from app.coordination.lock_manager import get_lock_manager

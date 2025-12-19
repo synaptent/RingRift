@@ -19,7 +19,6 @@ Environment:
 
 import argparse
 import json
-import logging
 import os
 import sys
 import time
@@ -39,15 +38,9 @@ from app.training.generate_data import create_initial_state
 import hashlib
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("reanalyze_mcts_policy", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("reanalyze_mcts_policy")
 
 
 class GameStateAdapter(MCTSGameState):

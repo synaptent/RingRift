@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import logging
 import os
 import sys
 import time
@@ -48,21 +47,9 @@ CONFIG_FILE = AI_SERVICE_ROOT / "config" / "promotion_daemon.yaml"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("unified_promotion_daemon", log_file=LOG_FILE)
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [PromotionDaemon] %(levelname)s: %(message)s",
-        handlers=[
-            logging.FileHandler(LOG_FILE),
-            logging.StreamHandler(),
-        ],
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
 
+logger = setup_script_logging("unified_promotion_daemon")
 
 # =============================================================================
 # Configuration

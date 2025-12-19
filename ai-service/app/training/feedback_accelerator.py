@@ -44,11 +44,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-# Import canonical Elo constants
+# Import canonical Elo and timeout constants
 try:
-    from app.config.thresholds import INITIAL_ELO_RATING
+    from app.config.thresholds import INITIAL_ELO_RATING, SQLITE_TIMEOUT
 except ImportError:
     INITIAL_ELO_RATING = 1500.0
+    SQLITE_TIMEOUT = 30
 
 # Import unified signals for cross-system consistency
 from .unified_signals import (
@@ -357,7 +358,7 @@ class FeedbackAccelerator:
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection."""
-        conn = sqlite3.connect(str(self._db_path), timeout=30)
+        conn = sqlite3.connect(str(self._db_path), timeout=SQLITE_TIMEOUT)
         conn.row_factory = sqlite3.Row
         return conn
 

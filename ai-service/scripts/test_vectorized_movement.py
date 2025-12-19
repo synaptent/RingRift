@@ -6,7 +6,6 @@ Python-loop implementation to ensure identical results.
 """
 
 import argparse
-import logging
 import os
 import sys
 import time
@@ -30,15 +29,9 @@ from app.ai.gpu_parallel_games import (
 from app.ai.gpu_batch import get_device
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("test_vectorized_movement", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s"
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("test_vectorized_movement")
 
 
 def moves_to_set(moves):

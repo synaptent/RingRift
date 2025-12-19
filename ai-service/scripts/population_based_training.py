@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import copy
 import json
-import logging
 import os
 import random
 import shutil
@@ -50,15 +49,9 @@ import numpy as np
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("population_based_training", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("population_based_training")
 
 
 # Default hyperparameter ranges for exploration

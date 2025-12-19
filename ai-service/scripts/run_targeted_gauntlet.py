@@ -10,7 +10,6 @@ Usage:
 
 import argparse
 import asyncio
-import logging
 import os
 import sqlite3
 import sys
@@ -25,15 +24,9 @@ from app.tournament.distributed_gauntlet import (
 )
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("run_targeted_gauntlet", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("run_targeted_gauntlet")
 
 
 def get_low_game_models(db_path: Path, config_key: str, max_games: int = 20) -> list:

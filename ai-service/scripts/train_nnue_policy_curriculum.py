@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -45,16 +44,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# Ensure ai-service root on path for scripts/lib imports
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("train_nnue_policy_curriculum", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("train_nnue_policy_curriculum")
 
 
 @dataclass

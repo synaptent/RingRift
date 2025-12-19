@@ -42,18 +42,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 AI_SERVICE_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("unified_data_sync", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [UnifiedSync] %(levelname)s: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
 
+logger = setup_script_logging("unified_data_sync")
 
 def run_with_watchdog(service_args: list, check_interval: int = 30, max_restarts: int = 10):
     """Run the service with watchdog monitoring.

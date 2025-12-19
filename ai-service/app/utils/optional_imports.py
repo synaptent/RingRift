@@ -29,6 +29,50 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    # Helper functions
+    "get_module",
+    "require_module",
+    "get_availability_summary",
+    "log_availability",
+    # Availability flags
+    "NUMPY_AVAILABLE",
+    "TORCH_AVAILABLE",
+    "CUDA_AVAILABLE",
+    "MPS_AVAILABLE",
+    "AIOHTTP_AVAILABLE",
+    "ASYNCIO_AVAILABLE",
+    "WEBSOCKETS_AVAILABLE",
+    "HTTPX_AVAILABLE",
+    "PROMETHEUS_AVAILABLE",
+    "PANDAS_AVAILABLE",
+    "SCIPY_AVAILABLE",
+    "H5PY_AVAILABLE",
+    "PARAMIKO_AVAILABLE",
+    "FABRIC_AVAILABLE",
+    "YAML_AVAILABLE",
+    "RICH_AVAILABLE",
+    "MATPLOTLIB_AVAILABLE",
+    "OPENTELEMETRY_AVAILABLE",
+    # Module aliases
+    "numpy",
+    "np",
+    "torch",
+    "aiohttp",
+    "websockets",
+    "httpx",
+    "prometheus_client",
+    "pandas",
+    "pd",
+    "scipy",
+    "h5py",
+    "paramiko",
+    "fabric",
+    "yaml",
+    "rich",
+    "matplotlib",
+]
+
 
 # =============================================================================
 # Helper functions

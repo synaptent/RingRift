@@ -18,7 +18,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 import sqlite3
 import sys
@@ -30,15 +29,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("cleanup_corrupt_games", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("cleanup_corrupt_games")
 
 
 def analyze_move_corruption(db_path: str, sample_size: int = 1000) -> Dict:

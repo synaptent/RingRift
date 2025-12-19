@@ -48,6 +48,13 @@ except ImportError:
     HAS_UNIFIED_SIGNALS = False
     get_signal_computer = None
 
+# Import centralized timeout constants (December 2025)
+try:
+    from app.config.thresholds import URLOPEN_SHORT_TIMEOUT, URLOPEN_TIMEOUT
+except ImportError:
+    URLOPEN_SHORT_TIMEOUT = 5
+    URLOPEN_TIMEOUT = 10
+
 logger = logging.getLogger(__name__)
 
 
@@ -666,7 +673,7 @@ class PromotionController:
             )
 
             try:
-                urllib.request.urlopen(req, timeout=5)
+                urllib.request.urlopen(req, timeout=URLOPEN_SHORT_TIMEOUT)
                 logger.debug(f"Notified P2P orchestrator about promotion")
             except urllib.error.URLError:
                 pass  # P2P might not be running
@@ -717,7 +724,7 @@ class PromotionController:
                 data=payload,
                 headers={"Content-Type": "application/json"},
             )
-            urllib.request.urlopen(req, timeout=10)
+            urllib.request.urlopen(req, timeout=URLOPEN_TIMEOUT)
             logger.debug(f"Sent Slack notification for promotion")
         except Exception as e:
             logger.debug(f"Slack notification failed: {e}")

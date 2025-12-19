@@ -51,6 +51,19 @@ from typing import Any, Callable, Dict, Optional, TypeVar
 
 T = TypeVar("T")
 
+# Import centralized circuit breaker configurations (December 2025)
+try:
+    from app.config.thresholds import CIRCUIT_BREAKER_CONFIGS
+except ImportError:
+    # Fallback defaults if central config not available
+    CIRCUIT_BREAKER_CONFIGS = {
+        "ssh": {"failure_threshold": 3, "recovery_timeout": 60.0},
+        "http": {"failure_threshold": 5, "recovery_timeout": 30.0},
+        "p2p": {"failure_threshold": 3, "recovery_timeout": 45.0},
+        "aria2": {"failure_threshold": 2, "recovery_timeout": 120.0},
+        "rsync": {"failure_threshold": 2, "recovery_timeout": 90.0},
+    }
+
 # ============================================
 # Prometheus Metrics (optional)
 # ============================================
@@ -656,13 +669,8 @@ class CircuitBreakerRegistry:
 
     def __init__(self):
         self._breakers: Dict[str, CircuitBreaker] = {}
-        self._configs = {
-            "ssh": {"failure_threshold": 3, "recovery_timeout": 60.0},
-            "http": {"failure_threshold": 5, "recovery_timeout": 30.0},
-            "p2p": {"failure_threshold": 3, "recovery_timeout": 45.0},
-            "aria2": {"failure_threshold": 2, "recovery_timeout": 120.0},
-            "rsync": {"failure_threshold": 2, "recovery_timeout": 90.0},
-        }
+        # Use centralized config from app/config/thresholds.py (December 2025)
+        self._configs = CIRCUIT_BREAKER_CONFIGS.copy()
 
     @classmethod
     def get_instance(cls) -> "CircuitBreakerRegistry":

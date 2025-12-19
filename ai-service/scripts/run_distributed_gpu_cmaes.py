@@ -31,7 +31,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import logging
 import os
 import sys
 import time
@@ -58,15 +57,9 @@ from app.ai.gpu_parallel_games import (
 )
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("run_distributed_gpu_cmaes", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("run_distributed_gpu_cmaes")
 
 # =============================================================================
 # Default Configuration

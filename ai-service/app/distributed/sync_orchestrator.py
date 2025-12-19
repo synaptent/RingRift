@@ -138,6 +138,7 @@ class SyncOrchestrator:
         self._elo_sync_manager = None
         self._registry_sync_manager = None
         self._quality_sync_watcher = None
+        self._quality_orchestrator = None
 
     async def initialize(self) -> bool:
         """Initialize all sync components.
@@ -208,6 +209,25 @@ class SyncOrchestrator:
             except ImportError as e:
                 logger.debug(f"[SyncOrchestrator] Quality sync watcher not available: {e}")
 
+        # Wire DataQualityOrchestrator for holistic quality state (December 2025)
+        try:
+            from app.quality.data_quality_orchestrator import (
+                wire_quality_events,
+                get_quality_orchestrator,
+            )
+
+            # Wire and get orchestrator
+            self._quality_orchestrator = wire_quality_events(
+                high_quality_threshold=self.config.min_quality_for_priority_sync,
+            )
+            components_loaded.append("quality_orchestrator")
+
+            # Subscribe to quality events for sync prioritization
+            await self._subscribe_to_quality_events()
+
+        except ImportError as e:
+            logger.debug(f"[SyncOrchestrator] DataQualityOrchestrator not available: {e}")
+
         self.state.components_loaded = components_loaded
         self.state.initialized = True
 
@@ -255,8 +275,33 @@ class SyncOrchestrator:
         start_time = time.time()
 
         try:
-            stats = await self._data_sync_coordinator.sync_all(
-                categories=categories,
+            from app.distributed.sync_coordinator import SyncCategory
+
+            category_map = {
+                "games": SyncCategory.GAMES,
+                "training": SyncCategory.TRAINING,
+                "models": SyncCategory.MODELS,
+                "elo": SyncCategory.ELO,
+            }
+
+            category_list = None
+            if categories:
+                mapped = [
+                    category_map.get(category.lower())
+                    for category in categories
+                    if category.lower() in category_map
+                ]
+                # Keep data-only categories for this entrypoint
+                category_list = [
+                    c for c in mapped
+                    if c in (SyncCategory.GAMES, SyncCategory.TRAINING)
+                ]
+
+            if category_list is None:
+                category_list = [SyncCategory.GAMES, SyncCategory.TRAINING]
+
+            stats = await self._data_sync_coordinator.full_cluster_sync(
+                categories=category_list,
                 sync_high_quality_first=self.config.high_quality_priority,
             )
 
@@ -265,11 +310,11 @@ class SyncOrchestrator:
             return SyncResult(
                 component="data_sync",
                 success=True,
-                items_synced=stats.files_synced,
+                items_synced=stats.total_files_synced,
                 duration_seconds=time.time() - start_time,
                 details={
-                    "bytes_transferred": stats.bytes_transferred,
-                    "high_quality_games": getattr(stats, "total_high_quality_games", 0),
+                    "bytes_transferred": stats.total_bytes_transferred,
+                    "high_quality_games": stats.total_high_quality_games,
                     "categories": list(stats.categories.keys()) if stats.categories else [],
                 },
             )
@@ -632,6 +677,197 @@ class SyncOrchestrator:
         except Exception as e:
             logger.warning(f"[SyncOrchestrator] Failed to subscribe to triggers: {e}")
 
+    async def _subscribe_to_quality_events(self) -> None:
+        """Subscribe to quality events from DataQualityOrchestrator for sync prioritization.
+
+        This bridges the DataQualityOrchestrator's holistic quality state to
+        intelligent sync decisions:
+        - HIGH_QUALITY_DATA_AVAILABLE → Immediate priority data sync
+        - LOW_QUALITY_DATA_WARNING → Deprioritize affected configs
+        - QUALITY_DISTRIBUTION_CHANGED → Adjust sync priority based on trends
+        """
+        try:
+            from app.distributed.data_events import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+
+            # On high-quality data available, trigger immediate data sync
+            async def on_high_quality_available(event):
+                payload = event.payload if hasattr(event, 'payload') else {}
+                config_key = payload.get("config", "")
+                high_quality_count = payload.get("high_quality_count", 0)
+
+                if config_key and high_quality_count >= 100:  # Minimum threshold
+                    logger.info(
+                        f"[SyncOrchestrator] High-quality data available for {config_key} "
+                        f"({high_quality_count} games), triggering priority sync"
+                    )
+                    await self.sync_data_for_config(config_key, priority=True)
+
+            bus.subscribe(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, on_high_quality_available)
+
+            # On low quality data warning, deprioritize affected configs (December 2025)
+            async def on_low_quality_warning(event):
+                payload = event.payload if hasattr(event, 'payload') else {}
+                config_key = payload.get("config", "")
+                quality_ratio = payload.get("quality_ratio", 0.0)
+                low_count = payload.get("low_quality_count", 0)
+
+                if config_key and quality_ratio > 0.3:  # More than 30% low quality
+                    logger.info(
+                        f"[SyncOrchestrator] Low quality data warning for {config_key} "
+                        f"({low_count} games, {quality_ratio:.1%} low quality), "
+                        f"deprioritizing sync"
+                    )
+                    # Track deprioritized configs to skip in priority sync
+                    if not hasattr(self, '_deprioritized_configs'):
+                        self._deprioritized_configs = set()
+                    self._deprioritized_configs.add(config_key)
+
+            bus.subscribe(DataEventType.LOW_QUALITY_DATA_WARNING, on_low_quality_warning)
+
+            # On quality distribution change, log and potentially adjust
+            async def on_distribution_changed(event):
+                payload = event.payload if hasattr(event, 'payload') else {}
+                config_key = payload.get("config", "")
+                avg_quality = payload.get("avg_quality", 0.5)
+
+                # If quality improved significantly, prioritize this config
+                if avg_quality >= self.config.min_quality_for_priority_sync:
+                    logger.debug(
+                        f"[SyncOrchestrator] Quality improved for {config_key}: {avg_quality:.2f}"
+                    )
+                    # Remove from deprioritized if quality recovered (December 2025)
+                    if hasattr(self, '_deprioritized_configs') and config_key in self._deprioritized_configs:
+                        self._deprioritized_configs.discard(config_key)
+                        logger.info(
+                            f"[SyncOrchestrator] Config {config_key} quality recovered, "
+                            f"removing from deprioritized set"
+                        )
+
+            bus.subscribe(DataEventType.QUALITY_DISTRIBUTION_CHANGED, on_distribution_changed)
+
+            logger.debug("[SyncOrchestrator] Subscribed to quality events for sync prioritization")
+
+        except ImportError:
+            logger.debug("[SyncOrchestrator] Data event bus not available")
+        except Exception as e:
+            logger.warning(f"[SyncOrchestrator] Failed to subscribe to quality events: {e}")
+
+    async def sync_data_for_config(
+        self,
+        config_key: str,
+        priority: bool = False,
+    ) -> SyncResult:
+        """Sync data for a specific configuration.
+
+        Args:
+            config_key: Configuration key (e.g., "square8_2p")
+            priority: Whether this is a priority sync (bypasses cooldown)
+
+        Returns:
+            SyncResult with sync details
+        """
+        if not self._data_sync_coordinator:
+            return SyncResult(
+                component="data_sync",
+                success=False,
+                error="Data sync coordinator not available",
+            )
+
+        start_time = time.time()
+
+        try:
+            from app.distributed.sync_coordinator import SyncCategory
+
+            stats = await self._data_sync_coordinator.full_cluster_sync(
+                categories=[SyncCategory.GAMES, SyncCategory.TRAINING],
+                sync_high_quality_first=priority,
+            )
+
+            self.state.last_data_sync = time.time()
+
+            logger.info(
+                f"[SyncOrchestrator] Config sync complete for {config_key}: "
+                f"{stats.files_synced} files"
+            )
+
+            return SyncResult(
+                component="data_sync",
+                success=True,
+                items_synced=stats.files_synced,
+                duration_seconds=time.time() - start_time,
+                details={
+                    "config_key": config_key,
+                    "priority": priority,
+                    "categories": list(stats.categories.keys()) if stats.categories else [],
+                },
+            )
+
+        except Exception as e:
+            logger.error(f"[SyncOrchestrator] Config sync failed for {config_key}: {e}")
+            self.state.sync_errors += 1
+            return SyncResult(
+                component="data_sync",
+                success=False,
+                duration_seconds=time.time() - start_time,
+                error=str(e),
+            )
+
+    def get_quality_driven_sync_priority(self) -> List[str]:
+        """Get configs ordered by quality-driven sync priority.
+
+        Uses DataQualityOrchestrator state to determine which configs
+        should be synced first based on:
+        1. Configs ready for training (highest priority)
+        2. Configs with high average quality
+        3. Configs with recent activity
+
+        Returns:
+            List of config keys ordered by sync priority
+        """
+        if not self._quality_orchestrator:
+            return []
+
+        try:
+            # Get configs ready for training (highest priority)
+            ready_configs = self._quality_orchestrator.get_configs_ready_for_training()
+
+            # Get all config states for sorting
+            all_configs = []
+            for config in self._quality_orchestrator._configs.values():
+                all_configs.append({
+                    "key": config.config_key,
+                    "ready": config.is_ready_for_training,
+                    "avg_quality": config.avg_quality_score,
+                    "last_update": config.last_update_time,
+                    "has_warning": config.has_active_warning,
+                })
+
+            # Sort by priority:
+            # 1. Ready for training (descending)
+            # 2. No warnings (descending)
+            # 3. Higher quality (descending)
+            # 4. More recent updates (descending)
+            all_configs.sort(
+                key=lambda c: (
+                    c["ready"],
+                    not c["has_warning"],
+                    c["avg_quality"],
+                    c["last_update"],
+                ),
+                reverse=True,
+            )
+
+            return [c["key"] for c in all_configs]
+
+        except Exception as e:
+            logger.warning(f"[SyncOrchestrator] Failed to get quality priority: {e}")
+            return []
+
     def needs_sync(self, component: str) -> bool:
         """Check if a component needs sync based on interval.
 
@@ -660,7 +896,7 @@ class SyncOrchestrator:
         Returns:
             Dict with status information
         """
-        return {
+        status = {
             "initialized": self.state.initialized,
             "components_loaded": self.state.components_loaded,
             "total_syncs": self.state.total_syncs,
@@ -680,6 +916,22 @@ class SyncOrchestrator:
             },
             "errors": self.state.errors,
         }
+
+        # Add quality orchestrator state if available
+        if self._quality_orchestrator:
+            try:
+                quality_status = self._quality_orchestrator.get_status()
+                status["quality_orchestrator"] = {
+                    "configs_tracked": quality_status.get("configs_tracked", 0),
+                    "configs_ready_for_training": quality_status.get("configs_ready_for_training", 0),
+                    "configs_with_warnings": quality_status.get("configs_with_warnings", 0),
+                    "avg_quality": quality_status.get("avg_quality_across_configs", 0.0),
+                }
+                status["quality_priority_order"] = self.get_quality_driven_sync_priority()
+            except Exception:
+                pass
+
+        return status
 
 
 # Singleton instance

@@ -18,7 +18,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import logging
 import shutil
 import sqlite3
 import sys
@@ -31,15 +30,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.db.game_replay import SCHEMA_VERSION, GameReplayDB
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("migrate_game_db", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("migrate_game_db")
 
 
 def get_db_schema_version(db_path: str) -> int:

@@ -181,6 +181,10 @@ class DataEventType(Enum):
     LEADER_LOST = "leader_lost"
     LEADER_STEPDOWN = "leader_stepdown"
 
+    # Encoding/Processing events (December 2025)
+    ENCODING_BATCH_COMPLETED = "encoding_batch_completed"
+    CALIBRATION_COMPLETED = "calibration_completed"
+
 
 @dataclass
 class DataEvent:
@@ -1537,6 +1541,52 @@ async def emit_leader_lost(
         payload={
             "old_leader_id": old_leader_id,
             "reason": reason,
+        },
+        source=source,
+    ))
+
+
+# Encoding/Processing Events (December 2025)
+
+async def emit_encoding_batch_completed(
+    games_count: int,
+    samples_count: int,
+    errors_count: int,
+    board_type: str = "",
+    duration_seconds: float = 0.0,
+    source: str = "parallel_encoding",
+) -> None:
+    """Emit an ENCODING_BATCH_COMPLETED event."""
+    await _emit_event(DataEvent(
+        event_type=DataEventType.ENCODING_BATCH_COMPLETED,
+        payload={
+            "games_count": games_count,
+            "samples_count": samples_count,
+            "errors_count": errors_count,
+            "board_type": board_type,
+            "duration_seconds": duration_seconds,
+        },
+        source=source,
+    ))
+
+
+async def emit_calibration_completed(
+    config_key: str,
+    calibration_type: str,
+    old_value: float = 0.0,
+    new_value: float = 0.0,
+    games_analyzed: int = 0,
+    source: str = "tier_calibrator",
+) -> None:
+    """Emit a CALIBRATION_COMPLETED event."""
+    await _emit_event(DataEvent(
+        event_type=DataEventType.CALIBRATION_COMPLETED,
+        payload={
+            "config_key": config_key,
+            "calibration_type": calibration_type,
+            "old_value": old_value,
+            "new_value": new_value,
+            "games_analyzed": games_analyzed,
         },
         source=source,
     ))

@@ -16,7 +16,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 import sqlite3
 import sys
@@ -31,15 +30,9 @@ from app.models import GameState, Move
 from app.rules.serialization import deserialize_game_state
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("backfill_snapshots", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("backfill_snapshots")
 
 DEFAULT_SNAPSHOT_INTERVAL = 20
 

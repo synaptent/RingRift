@@ -189,6 +189,52 @@ class BackgroundSelfplayManager:
             print(f"[background] Failed to start selfplay: {e}")
             return None
 
+    def _emit_selfplay_complete(
+        self,
+        task: BackgroundSelfplayTask,
+        success: bool,
+        games_generated: int,
+    ) -> None:
+        """Emit selfplay completion event via SelfplayOrchestrator (December 2025)."""
+        try:
+            from app.coordination.selfplay_orchestrator import emit_selfplay_completion
+            import asyncio
+            import socket
+
+            node_id = socket.gethostname()
+            task_id = f"background_selfplay_{task.iteration}_{int(task.start_time)}"
+
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(emit_selfplay_completion(
+                    task_id=task_id,
+                    board_type=task.board_type,
+                    num_players=task.num_players,
+                    games_generated=games_generated,
+                    success=success,
+                    node_id=node_id,
+                    selfplay_type="background",
+                    iteration=task.iteration,
+                ))
+            except RuntimeError:
+                # No event loop, run synchronously
+                asyncio.run(emit_selfplay_completion(
+                    task_id=task_id,
+                    board_type=task.board_type,
+                    num_players=task.num_players,
+                    games_generated=games_generated,
+                    success=success,
+                    node_id=node_id,
+                    selfplay_type="background",
+                    iteration=task.iteration,
+                ))
+
+            print(f"[background] Emitted SELFPLAY_COMPLETE for iteration {task.iteration}")
+        except ImportError:
+            pass  # SelfplayOrchestrator not available
+        except Exception as e:
+            print(f"[background] Failed to emit SELFPLAY_COMPLETE: {e}")
+
     def get_current_task(self) -> Optional[BackgroundSelfplayTask]:
         """Get the current background task."""
         return self._current_task
@@ -224,6 +270,9 @@ class BackgroundSelfplayManager:
         # Move to history
         self._history.append(task)
         self._current_task = None
+
+        # Emit selfplay completion event (December 2025)
+        self._emit_selfplay_complete(task, success, games)
 
         return success, staging_path, games
 

@@ -26,6 +26,17 @@ from typing import Optional, Tuple
 
 from app.models import BoardType
 
+__all__ = [
+    "normalize_board_type",
+    "get_board_type_enum",
+    "make_config_key",
+    "parse_config_key",
+    "is_valid_board_type",
+    "get_all_config_keys",
+    "normalize_database_filename",
+    "CANONICAL_CONFIG_KEYS",
+]
+
 
 # Mapping of common aliases to canonical board type values
 _BOARD_TYPE_ALIASES: dict[str, str] = {

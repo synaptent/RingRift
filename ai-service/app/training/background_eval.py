@@ -563,3 +563,194 @@ def create_background_evaluator(
         board_type=board_type,
         use_real_games=use_real_games,
     )
+
+
+# =============================================================================
+# Auto-wiring and Singleton Management (December 2025)
+# =============================================================================
+
+_background_evaluator: Optional[BackgroundEvaluator] = None
+
+
+def wire_background_evaluator(
+    model_getter: Callable[[], Any],
+    board_type: Optional[Any] = None,
+    use_real_games: bool = False,
+    eval_interval: int = 1000,
+    games_per_eval: int = 20,
+    use_event_driven: bool = True,
+) -> BackgroundEvaluator:
+    """Wire and start a background evaluator with event-driven mode.
+
+    This is the recommended way to create a BackgroundEvaluator as it:
+    1. Creates a singleton instance
+    2. Automatically wires to training events (event-driven mode)
+    3. Falls back to polling mode if events unavailable
+
+    Args:
+        model_getter: Callable that returns model info
+        board_type: Board type for real game evaluation
+        use_real_games: If True, play actual games
+        eval_interval: Steps between evaluations
+        games_per_eval: Number of games per evaluation
+        use_event_driven: If True (default), use event-driven mode
+
+    Returns:
+        BackgroundEvaluator instance
+
+    Example:
+        from app.training.background_eval import wire_background_evaluator
+
+        # Wire evaluator to training events
+        evaluator = wire_background_evaluator(
+            model_getter=lambda: {"path": trainer.checkpoint_path},
+            board_type=board_type,
+            use_real_games=True,
+        )
+
+        # Evaluator is now running and responding to training events
+    """
+    global _background_evaluator
+
+    if _background_evaluator is not None:
+        logger.warning(
+            "[wire_background_evaluator] Evaluator already wired, returning existing instance"
+        )
+        return _background_evaluator
+
+    config = BackgroundEvalConfig(
+        eval_interval_steps=eval_interval,
+        games_per_eval=games_per_eval,
+    )
+
+    _background_evaluator = BackgroundEvaluator(
+        model_getter=model_getter,
+        config=config,
+        board_type=board_type,
+        use_real_games=use_real_games,
+    )
+
+    if use_event_driven:
+        event_driven = _background_evaluator.start_event_driven()
+        mode = "event-driven" if event_driven else "polling"
+    else:
+        _background_evaluator.start()
+        mode = "polling"
+
+    logger.info(
+        f"[wire_background_evaluator] BackgroundEvaluator wired in {mode} mode "
+        f"(interval={eval_interval}, games={games_per_eval}, real_games={use_real_games})"
+    )
+
+    return _background_evaluator
+
+
+def get_background_evaluator() -> Optional[BackgroundEvaluator]:
+    """Get the global background evaluator if configured.
+
+    Returns:
+        BackgroundEvaluator instance or None if not wired
+    """
+    return _background_evaluator
+
+
+def reset_background_evaluator() -> None:
+    """Reset the background evaluator singleton (for testing)."""
+    global _background_evaluator
+    if _background_evaluator is not None:
+        _background_evaluator.stop()
+    _background_evaluator = None
+
+
+def auto_wire_from_training_coordinator() -> Optional[BackgroundEvaluator]:
+    """Auto-wire background evaluator from training coordinator context.
+
+    This function attempts to automatically create and wire a BackgroundEvaluator
+    by discovering the active training context from the TrainingCoordinator.
+
+    Returns:
+        BackgroundEvaluator instance or None if no active training
+
+    Example:
+        # In training_coordinator.py start_training:
+        from app.training.background_eval import auto_wire_from_training_coordinator
+
+        # Automatically wire evaluator when training starts
+        evaluator = auto_wire_from_training_coordinator()
+    """
+    global _background_evaluator
+
+    if _background_evaluator is not None:
+        return _background_evaluator
+
+    try:
+        from app.coordination.training_coordinator import get_training_coordinator
+
+        coordinator = get_training_coordinator()
+        if coordinator is None:
+            logger.debug("[auto_wire] No training coordinator available")
+            return None
+
+        # Get active training jobs
+        active_jobs = coordinator.get_active_jobs()
+        if not active_jobs:
+            logger.debug("[auto_wire] No active training jobs")
+            return None
+
+        # Use the first active job's context
+        job = active_jobs[0]
+        job_id = job.get("job_id", "")
+        config_key = job.get("config_key", "")
+
+        # Create a model getter that retrieves from the job's checkpoint path
+        def model_getter():
+            return {
+                "job_id": job_id,
+                "config_key": config_key,
+                "step": coordinator.get_job_progress(job_id) if hasattr(coordinator, "get_job_progress") else 0,
+            }
+
+        # Try to get board_type from config_key
+        board_type = None
+        try:
+            from app.game.board_type import BoardType
+            parts = config_key.split("_")
+            if len(parts) >= 1:
+                board_type = BoardType.from_string(parts[0])
+        except Exception:
+            pass
+
+        _background_evaluator = wire_background_evaluator(
+            model_getter=model_getter,
+            board_type=board_type,
+            use_real_games=board_type is not None,
+            use_event_driven=True,
+        )
+
+        logger.info(
+            f"[auto_wire] BackgroundEvaluator auto-wired for job {job_id} ({config_key})"
+        )
+        return _background_evaluator
+
+    except ImportError as e:
+        logger.debug(f"[auto_wire] Training coordinator not available: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"[auto_wire] Failed to auto-wire evaluator: {e}")
+        return None
+
+
+__all__ = [
+    # Core classes
+    "BackgroundEvaluator",
+    "BackgroundEvalConfig",
+    "EvalConfig",  # Backwards-compatible alias
+    "EvalResult",
+    # Factory functions
+    "create_background_evaluator",
+    # Auto-wiring (December 2025)
+    "wire_background_evaluator",
+    "get_background_evaluator",
+    "reset_background_evaluator",
+    "auto_wire_from_training_coordinator",
+]

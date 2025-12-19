@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import pickle
 import sqlite3
@@ -51,15 +50,9 @@ import numpy as np
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("prioritized_replay", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("prioritized_replay")
 
 
 # PER hyperparameters

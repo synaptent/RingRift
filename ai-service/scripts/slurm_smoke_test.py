@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -103,6 +104,11 @@ def _get_status(job_id: str) -> Tuple[Optional[str], Optional[str]]:
 
     result = _run(["sacct", "-j", job_id, "--format=State,ExitCode", "-n", "-P"])
     if result.returncode != 0:
+        fallback = _run(["scontrol", "show", "job", job_id])
+        if fallback.returncode == 0:
+            match = re.search(r"JobState=([A-Z_]+)", fallback.stdout)
+            if match:
+                return match.group(1), None
         return None, result.stderr.strip() or result.stdout.strip()
 
     for line in result.stdout.splitlines():

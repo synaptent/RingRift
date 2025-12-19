@@ -20,6 +20,52 @@ import os
 from pathlib import Path
 from typing import Optional
 
+__all__ = [
+    # Core paths
+    "AI_SERVICE_ROOT",
+    "get_project_root",
+    # Data directories
+    "DATA_DIR",
+    "GAMES_DIR",
+    "SELFPLAY_DIR",
+    "METRICS_DIR",
+    "HOLDOUT_DIR",
+    "QUARANTINE_DIR",
+    "BACKUP_DIR",
+    # Model directories
+    "MODELS_DIR",
+    "ARCHIVED_MODELS_DIR",
+    # Log directories
+    "LOGS_DIR",
+    "TRAINING_LOGS_DIR",
+    "DEPLOYMENT_LOGS_DIR",
+    # Runtime directories
+    "RUNS_DIR",
+    "PROMOTION_DIR",
+    "LOCKS_DIR",
+    # Configuration directories
+    "CONFIG_DIR",
+    "SCRIPTS_DIR",
+    # Database paths
+    "UNIFIED_ELO_DB",
+    "TRAINING_METRICS_DB",
+    "WORK_QUEUE_DB",
+    # Configuration files
+    "PROMOTION_HISTORY_FILE",
+    "GAUNTLET_RESULTS_FILE",
+    "MODEL_REGISTRY_FILE",
+    # Helper functions
+    "get_models_dir",
+    "get_data_dir",
+    "get_games_db_path",
+    "get_selfplay_db_path",
+    "get_model_path",
+    "get_log_path",
+    "ensure_dir",
+    "ensure_parent_dir",
+    "get_env_path",
+]
+
 # =============================================================================
 # Core Project Root
 # =============================================================================

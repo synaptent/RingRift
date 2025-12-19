@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import sqlite3
 import subprocess
@@ -42,17 +41,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.models import BoardType
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("hot_data_path", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-    )
-    logger = logging.getLogger("HotDataPath")
+from scripts.lib.logging_config import setup_script_logging
 
+logger = setup_script_logging("hot_data_path")
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 

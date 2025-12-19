@@ -1247,6 +1247,9 @@ class TaskCoordinator:
 
         logger.debug(f"Registered task {task_id} ({task_type.value}) on {node_id}")
 
+        # Emit TASK_SPAWNED event (December 2025)
+        self._emit_task_spawned(task)
+
     def unregister_task(self, task_id: str) -> None:
         """Unregister a completed/stopped task."""
         self.registry.unregister_task(task_id)
@@ -1282,6 +1285,9 @@ class TaskCoordinator:
 
         # Emit task completion event (December 2025)
         self._emit_task_event(task, success, result_data or {})
+
+        # Emit TASK_COMPLETED or TASK_FAILED via data_events (December 2025)
+        self._emit_task_completed_or_failed(task, success, result_data or {})
 
         # Unregister
         self.registry.unregister_task(task_id)
@@ -1375,6 +1381,84 @@ class TaskCoordinator:
             logger.debug("StageEventBus not available for task events")
         except Exception as e:
             logger.debug(f"Failed to emit task event: {e}")
+
+    def _emit_task_spawned(self, task: TaskInfo) -> None:
+        """Emit TASK_SPAWNED event via data_events (December 2025).
+
+        This provides visibility into task lifecycle for monitoring
+        and coordination systems like TaskLifecycleCoordinator.
+        """
+        try:
+            from app.distributed.data_events import emit_task_spawned
+            import asyncio
+
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(emit_task_spawned(
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    node_id=task.node_id,
+                    source="task_coordinator",
+                ))
+            except RuntimeError:
+                asyncio.run(emit_task_spawned(
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    node_id=task.node_id,
+                    source="task_coordinator",
+                ))
+
+            logger.debug(f"Emitted TASK_SPAWNED for {task.task_id}")
+
+        except ImportError:
+            logger.debug("emit_task_spawned not available")
+        except Exception as e:
+            logger.debug(f"Failed to emit TASK_SPAWNED: {e}")
+
+    def _emit_task_completed_or_failed(
+        self,
+        task: TaskInfo,
+        success: bool,
+        result_data: Dict[str, Any],
+    ) -> None:
+        """Emit TASK_COMPLETED or TASK_FAILED event (December 2025)."""
+        try:
+            from app.distributed.data_events import emit_task_completed, emit_task_failed
+            import asyncio
+
+            duration = time.time() - task.started_at
+
+            if success:
+                emit_fn = emit_task_completed
+                event_name = "TASK_COMPLETED"
+            else:
+                emit_fn = emit_task_failed
+                event_name = "TASK_FAILED"
+
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(emit_fn(
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    node_id=task.node_id,
+                    duration_seconds=duration,
+                    source="task_coordinator",
+                ))
+            except RuntimeError:
+                asyncio.run(emit_fn(
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    node_id=task.node_id,
+                    duration_seconds=duration,
+                    source="task_coordinator",
+                ))
+
+            logger.debug(f"Emitted {event_name} for {task.task_id}")
+
+        except ImportError:
+            logger.debug("Task lifecycle events not available")
+        except Exception as e:
+            logger.debug(f"Failed to emit task lifecycle event: {e}")
 
     def update_task_status(self, task_id: str, status: str) -> None:
         """Update task status."""

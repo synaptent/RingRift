@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import sqlite3
 import sys
@@ -76,15 +75,9 @@ except ImportError:
     HAS_MODEL_VALIDATION = False
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("curriculum_training", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("curriculum_training")
 
 
 @dataclass

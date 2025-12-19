@@ -18,7 +18,6 @@ Usage:
 
 import argparse
 import json
-import logging
 import os
 import sys
 import time
@@ -35,14 +34,9 @@ from app.training.train import train_from_file
 from app.training.config import TrainConfig
 from app.training.env import get_theoretical_max_moves
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("run_descent_vs_mcts_experiment", log_dir="logs")
-except ImportError:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
 
+logger = setup_script_logging("descent_vs_mcts")
 
 def run_experiment(
     num_games: int = 500,

@@ -48,12 +48,22 @@ from typing import Any, Dict, Generator, List, Optional
 # Default database location
 DEFAULT_SYNC_DB = Path("/tmp/ringrift_coordination/sync_mutex.db")
 
-# Lock configuration
-LOCK_TIMEOUT_SECONDS = 120  # Reduced from 300s to 120s for faster recovery
-MAX_CONCURRENT_SYNCS_PER_HOST = 1  # Only 1 sync per host at a time
-MAX_GLOBAL_CONCURRENT_SYNCS = 5  # Max total concurrent syncs across cluster
+# Import centralized defaults (December 2025)
+try:
+    from app.config.coordination_defaults import SyncDefaults, HeartbeatDefaults
+    LOCK_TIMEOUT_SECONDS = SyncDefaults.LOCK_TIMEOUT
+    MAX_CONCURRENT_SYNCS_PER_HOST = SyncDefaults.MAX_CONCURRENT_PER_HOST
+    MAX_GLOBAL_CONCURRENT_SYNCS = SyncDefaults.MAX_CONCURRENT_CLUSTER
+    HEARTBEAT_INTERVAL = HeartbeatDefaults.INTERVAL
+except ImportError:
+    # Fallback for standalone use
+    LOCK_TIMEOUT_SECONDS = 120
+    MAX_CONCURRENT_SYNCS_PER_HOST = 1
+    MAX_GLOBAL_CONCURRENT_SYNCS = 5
+    HEARTBEAT_INTERVAL = 30
+
+# Non-configurable constants
 LOCK_POLL_INTERVAL = 0.5  # Polling interval when waiting for lock
-HEARTBEAT_INTERVAL = 30  # Heartbeat interval for long-running syncs
 CRASH_DETECTION_THRESHOLD = 60  # Consider process crashed if no heartbeat for this long
 
 

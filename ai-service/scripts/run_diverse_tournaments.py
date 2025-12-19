@@ -30,7 +30,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -46,15 +45,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("run_diverse_tournaments", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("run_diverse_tournaments")
 
 
 # ---------------------------------------------------------------------------

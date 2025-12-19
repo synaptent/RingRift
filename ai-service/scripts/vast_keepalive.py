@@ -19,7 +19,6 @@ Designed to be run via cron every 15-30 minutes.
 
 import argparse
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -34,20 +33,12 @@ LOG_FILE = LOG_DIR / "vast_keepalive.log"
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("vast_keepalive", log_file=LOG_FILE)
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [VastKeepAlive] %(levelname)s: %(message)s",
-        handlers=[
-            logging.FileHandler(LOG_FILE),
-            logging.StreamHandler(),
-        ],
-    )
-    logger = logging.getLogger(__name__)
+# Ensure ai-service root on path for scripts/lib imports
+sys.path.insert(0, str(AI_SERVICE_ROOT))
+
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("vast_keepalive")
 
 # Vastai CLI path
 VASTAI_CMD = "/Users/armand/.pyenv/versions/3.10.13/bin/vastai"

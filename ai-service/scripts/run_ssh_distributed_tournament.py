@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import shlex
 import sys
@@ -47,15 +46,9 @@ from app.models import BoardType
 from scripts.run_distributed_tournament import DistributedTournament, TournamentState
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("run_ssh_distributed_tournament", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("run_ssh_distributed_tournament")
 
 
 Matchup = Tuple[str, str]

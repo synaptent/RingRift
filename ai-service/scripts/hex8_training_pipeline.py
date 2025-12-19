@@ -13,7 +13,6 @@ Usage:
 
 import argparse
 import asyncio
-import logging
 import os
 import shutil
 import sqlite3
@@ -23,6 +22,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# Ensure ai-service root on path for scripts/lib imports
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Try to import SyncCoordinator for enhanced data collection
 # Unified sync coordinator (consolidated from deprecated DataSyncManager)
@@ -54,21 +56,9 @@ except ImportError:
     wait_for_resources = lambda *args, **kwargs: True  # type: ignore
     RESOURCE_LIMITS = None  # type: ignore
 
-# Unified logging setup (use app.core.logging_config instead of basicConfig)
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging(
-        "hex8_training_pipeline",
-        log_dir="logs",
-        format_style="default",
-    )
-except ImportError:
-    # Fallback if app.core not available
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("hex8_training_pipeline")
 
 # Configuration - use unified config as single source of truth
 try:

@@ -41,15 +41,9 @@ from typing import Dict, List, Optional, Set, Tuple
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("validate_models", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("validate_models")
 
 AI_SERVICE_ROOT = Path(__file__).parent.parent
 MODELS_DIR = AI_SERVICE_ROOT / "models"

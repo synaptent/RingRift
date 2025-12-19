@@ -7,11 +7,13 @@ convergence detection and performance trends. It implements:
 2. Dynamic scaling: More selfplay games when improving, fewer when stable
 3. Early stopping: Confidence-based evaluation termination
 4. Win rate tracking: Historical analysis for trend detection
+5. Quality-aware adaptation: Reduce games when data quality is poor (Dec 2025)
 
 Event Integration:
 - Emits PLATEAU_DETECTED when training stalls
 - Emits HYPERPARAMETER_UPDATED when game counts change
-- Can subscribe to TRAINING_COMPLETED, EVALUATION_FAILED for automatic updates
+- Subscribes to TRAINING_COMPLETED, EVALUATION_FAILED for automatic updates
+- Subscribes to LOW_QUALITY_DATA_WARNING to reduce game generation (Dec 2025)
 """
 
 from __future__ import annotations
@@ -78,6 +80,9 @@ class AdaptiveController:
     _last_game_count: int = field(default=0, repr=False)
     _last_eval_count: int = field(default=0, repr=False)
     _plateau_emitted: bool = field(default=False, repr=False)
+    # Quality degradation factor (0.0 = no penalty, 1.0 = max penalty)
+    _quality_penalty: float = field(default=0.0, repr=False)
+    _quality_penalty_decay: float = field(default=0.1, repr=False)  # Per-iteration decay
 
     def record_iteration(
         self,
@@ -98,6 +103,8 @@ class AdaptiveController:
         # Reset plateau emitted flag if we got a promotion
         if promoted:
             self._plateau_emitted = False
+        # Decay quality penalty each iteration
+        self._quality_penalty = max(0.0, self._quality_penalty - self._quality_penalty_decay)
 
     async def record_iteration_async(
         self,
@@ -191,12 +198,14 @@ class AdaptiveController:
         self,
         on_training_completed: Optional[Callable] = None,
         on_evaluation_failed: Optional[Callable] = None,
+        on_quality_warning: Optional[Callable] = None,
     ) -> None:
         """Set up subscriptions to relevant events.
 
         Args:
             on_training_completed: Optional custom handler for training completion
             on_evaluation_failed: Optional custom handler for evaluation failures
+            on_quality_warning: Optional custom handler for quality warnings
         """
         if not HAS_EVENT_SYSTEM:
             logger.warning("Event system not available - cannot set up subscriptions")
@@ -223,6 +232,26 @@ class AdaptiveController:
                 logger.debug(f"Evaluation failed for {self.config_name}")
 
         bus.subscribe(DataEventType.EVALUATION_FAILED, handle_evaluation_failed)
+
+        # Subscribe to quality warnings for adaptive game reduction (December 2025)
+        async def handle_low_quality_warning(event):
+            payload = event.payload
+            if payload.get("config") == self.config_name:
+                # Compute penalty from quality ratio
+                quality_ratio = payload.get("quality_ratio", 0.0)
+                low_count = payload.get("low_quality_count", 0)
+
+                # Higher quality_ratio = more low quality data = higher penalty
+                penalty = min(1.0, quality_ratio * 1.5)  # Scale up ratio
+                self.apply_quality_penalty(
+                    penalty,
+                    reason=f"{low_count} low quality games ({quality_ratio:.1%})"
+                )
+
+                if on_quality_warning:
+                    await on_quality_warning(event)
+
+        bus.subscribe(DataEventType.LOW_QUALITY_DATA_WARNING, handle_low_quality_warning)
 
         logger.info(f"Event subscriptions set up for AdaptiveController({self.config_name})")
 
@@ -297,32 +326,59 @@ class AdaptiveController:
             return self.min_eval_games
 
     def _compute_trend_factor(self) -> float:
-        """Compute trend factor based on recent history.
+        """Compute trend factor based on recent history and quality.
 
         Returns:
             > 1.0: Improving trend (boost games)
             < 1.0: Declining/plateau trend (reduce games)
             = 1.0: No clear trend
+
+        Quality penalty reduces the trend factor when data quality is poor,
+        preventing wasteful game generation with bad data.
         """
         if len(self.history) < 3:
-            return 1.0
-
-        recent_wins = [r.promoted for r in self.history[-5:]]
-        win_count = sum(1 for w in recent_wins if w)
-        win_ratio = win_count / len(recent_wins)
-
-        if win_ratio > 0.6:
-            # Strong improvement - boost games
-            return 1.3
-        elif win_ratio > 0.4:
-            # Moderate improvement - slight boost
-            return 1.1
-        elif win_ratio > 0.2:
-            # Weak improvement - maintain
-            return 1.0
+            base_factor = 1.0
         else:
-            # Plateau - reduce games
-            return 0.8
+            recent_wins = [r.promoted for r in self.history[-5:]]
+            win_count = sum(1 for w in recent_wins if w)
+            win_ratio = win_count / len(recent_wins)
+
+            if win_ratio > 0.6:
+                # Strong improvement - boost games
+                base_factor = 1.3
+            elif win_ratio > 0.4:
+                # Moderate improvement - slight boost
+                base_factor = 1.1
+            elif win_ratio > 0.2:
+                # Weak improvement - maintain
+                base_factor = 1.0
+            else:
+                # Plateau - reduce games
+                base_factor = 0.8
+
+        # Apply quality penalty (reduce games when quality is poor)
+        # Penalty of 1.0 reduces factor by 30%
+        quality_adjustment = 1.0 - (self._quality_penalty * 0.3)
+        return base_factor * quality_adjustment
+
+    def apply_quality_penalty(self, penalty: float, reason: str = "") -> None:
+        """Apply a quality penalty to reduce game generation.
+
+        Called when LOW_QUALITY_DATA_WARNING is received. The penalty
+        decays over iterations as quality may improve.
+
+        Args:
+            penalty: Penalty value (0.0 to 1.0, higher = worse quality)
+            reason: Optional reason for logging
+        """
+        old_penalty = self._quality_penalty
+        self._quality_penalty = max(self._quality_penalty, min(1.0, penalty))
+        if self._quality_penalty > old_penalty:
+            logger.info(
+                f"Quality penalty applied for {self.config_name}: "
+                f"{old_penalty:.2f} -> {self._quality_penalty:.2f}"
+                f"{f' ({reason})' if reason else ''}"
+            )
 
     def get_statistics(self) -> dict:
         """Get summary statistics of the improvement loop."""
@@ -360,6 +416,7 @@ class AdaptiveController:
             "avg_win_rate": statistics.mean(win_rates),
             "plateau_count": self.get_plateau_count(),
             "trend": trend,
+            "quality_penalty": self._quality_penalty,
         }
 
     def save(self, path: Path) -> None:
@@ -374,6 +431,7 @@ class AdaptiveController:
             "config_name": self.config_name,
             "enable_events": self.enable_events,
             "history": [asdict(r) for r in self.history],
+            "quality_penalty": self._quality_penalty,
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(state, indent=2))
@@ -394,7 +452,7 @@ class AdaptiveController:
             history = [
                 IterationResult(**r) for r in state.get("history", [])
             ]
-            return cls(
+            controller = cls(
                 plateau_threshold=state.get("plateau_threshold", 5),
                 min_games=state.get("min_games", 50),
                 max_games=state.get("max_games", 200),
@@ -405,6 +463,9 @@ class AdaptiveController:
                 enable_events=state.get("enable_events", True),
                 history=history,
             )
+            # Restore quality penalty if saved (December 2025)
+            controller._quality_penalty = state.get("quality_penalty", 0.0)
+            return controller
         except (json.JSONDecodeError, TypeError, KeyError):
             return cls()
 

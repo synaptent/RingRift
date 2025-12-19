@@ -27,6 +27,18 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Set, Union
 
+__all__ = [
+    "mask_secret",
+    "mask_secret_prefix",
+    "is_sensitive_key",
+    "sanitize_value",
+    "sanitize_for_log",
+    "SecretString",
+    "load_secret_from_env",
+    "get_env_masked",
+    "SENSITIVE_KEY_PATTERNS",
+]
+
 
 # Keys that should be masked when sanitizing dicts/objects
 SENSITIVE_KEY_PATTERNS = {

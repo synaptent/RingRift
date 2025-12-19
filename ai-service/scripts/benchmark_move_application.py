@@ -2,7 +2,6 @@
 """Benchmark vectorized vs legacy move application functions."""
 
 import argparse
-import logging
 import os
 import sys
 import time
@@ -28,14 +27,9 @@ from app.ai.gpu_parallel_games import (
 )
 from app.ai.gpu_batch import get_device
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("benchmark_move_application", log_dir="logs")
-except ImportError:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
 
+logger = setup_script_logging("benchmark_move_application")
 
 def clone_state(state: BatchGameState) -> BatchGameState:
     """Create a deep copy of BatchGameState by cloning all tensors."""

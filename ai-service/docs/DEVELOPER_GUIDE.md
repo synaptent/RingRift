@@ -32,17 +32,41 @@ threshold = get_training_threshold()
 - Create duplicate config classes
 - Load config from environment variables directly (use the config module)
 
-### Logging
+### Coordination Defaults
 
-**Canonical Source:** `app/core/logging_config.py`
+**Canonical Source:** `app/config/coordination_defaults.py`
 
 ```python
-from app.core.logging_config import setup_logging, get_logger
+from app.config.coordination_defaults import (
+    LockDefaults,
+    SyncDefaults,
+    HeartbeatDefaults,
+)
 
+lock_timeout = LockDefaults.LOCK_TIMEOUT
+sync_interval = SyncDefaults.DATA_SYNC_INTERVAL
+heartbeat_interval = HeartbeatDefaults.INTERVAL
+```
+
+**Do NOT:**
+
+- Hardcode lock timeouts or sync intervals in coordination modules
+- Define duplicate coordination defaults in scripts or services
+
+### Logging
+
+**Canonical Sources:**
+
+- Scripts: `scripts/lib/logging_config.py`
+- App modules: `app/core/logging_config.py`
+
+```python
 # In script entry points
-logger = setup_logging("my_script", log_dir="logs")
+from scripts.lib.logging_config import setup_script_logging
+logger = setup_script_logging("my_script")
 
-# In modules
+# In app modules
+from app.core.logging_config import get_logger
 logger = get_logger(__name__)
 ```
 
@@ -283,15 +307,15 @@ For optional dependencies, use import guards:
 
 ```python
 try:
-    from app.core.logging_config import setup_logging
+    from scripts.lib.logging_config import setup_script_logging
     HAS_LOGGING_CONFIG = True
 except ImportError:
     HAS_LOGGING_CONFIG = False
-    setup_logging = None
+    setup_script_logging = None
 
 # Later in code
 if HAS_LOGGING_CONFIG:
-    logger = setup_logging("my_script")
+    logger = setup_script_logging("my_script")
 else:
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
@@ -470,23 +494,16 @@ These deprecated scripts emit `DeprecationWarning` on import.
 
 ## Migration Status
 
-### Unified Logging (87 scripts migrated)
+### Unified Logging (scripts use scripts.lib)
 
-All 87 scripts in the codebase now use the unified logging pattern from `app.core.logging_config`. The migration was completed in December 2025.
+All scripts now use the unified logging pattern from `scripts.lib.logging_config`. App modules continue to use `app.core.logging_config`. The migration was completed in December 2025.
 
 **Pattern used:**
 
 ```python
-# Unified logging setup with graceful fallback
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("script_name", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("script_name")
 ```
 
 **Scripts with intentional basicConfig:**

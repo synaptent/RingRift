@@ -26,7 +26,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 import sqlite3
 import subprocess
@@ -45,15 +44,9 @@ if PROJECT_ROOT not in sys.path:
 from app.models import BoardType
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("train_all_nnue_models", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("train_all_nnue_models")
 
 
 @dataclass

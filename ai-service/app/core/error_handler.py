@@ -222,11 +222,15 @@ def retry_async(
     on_retry: Optional[Callable[[Exception, int], None]] = None,
     reraise: bool = True,
     jitter: bool = False,
+    circuit_breaker_key: Optional[str] = None,
 ) -> Callable[[AF], AF]:
     """Async version of retry decorator.
 
     Args:
-        Same as retry()
+        Same as retry(), plus:
+        circuit_breaker_key: Optional key for circuit breaker integration.
+            When provided, checks circuit breaker state before execution
+            and records success/failure. (December 2025)
 
     Returns:
         Decorated async function
@@ -237,20 +241,48 @@ def retry_async(
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     return await response.json()
+
+        @retry_async(max_attempts=3, circuit_breaker_key="external_api")
+        async def call_external_api():
+            # Circuit breaker will prevent calls when circuit is open
+            ...
     """
     import random
+
+    # Circuit breaker integration (December 2025)
+    breaker = None
+    if circuit_breaker_key:
+        try:
+            from app.distributed.circuit_breaker import get_operation_breaker
+            breaker = get_operation_breaker(circuit_breaker_key)
+        except ImportError:
+            pass
 
     def decorator(func: AF) -> AF:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
+            # Check circuit breaker before attempting
+            if breaker and not breaker.can_execute():
+                raise RetryableError(
+                    f"Circuit breaker '{circuit_breaker_key}' is open, refusing execution"
+                )
+
             current_delay = delay
             last_exception = None
 
             for attempt in range(1, max_attempts + 1):
                 try:
-                    return await func(*args, **kwargs)
+                    result = await func(*args, **kwargs)
+                    # Record success with circuit breaker
+                    if breaker:
+                        breaker.record_success()
+                    return result
                 except exceptions as e:
                     last_exception = e
+
+                    # Record failure with circuit breaker
+                    if breaker:
+                        breaker.record_failure()
 
                     # Don't retry FatalError
                     if isinstance(e, FatalError):

@@ -28,7 +28,6 @@ import argparse
 import asyncio
 import hashlib
 import json
-import logging
 import os
 import shutil
 import signal
@@ -41,18 +40,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("vastai_termination_guard", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [TermGuard] %(levelname)s: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-    )
-    logger = logging.getLogger(__name__)
+# Ensure ai-service root on path for scripts/lib imports
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("vastai_termination_guard")
 
 @dataclass
 class GuardConfig:

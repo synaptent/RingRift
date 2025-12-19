@@ -46,6 +46,9 @@ from pathlib import Path
 from queue import Queue
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
+# Ensure ai-service root on path for scripts/lib imports
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 
 def is_gzip_file(filepath: Path) -> bool:
     """Check if a file is gzip-compressed by reading magic bytes."""
@@ -65,15 +68,9 @@ def open_jsonl_file(filepath: Path):
         return open(filepath, "r", encoding="utf-8", errors="replace")
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("chunked_jsonl_converter", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("chunked_jsonl_converter")
 
 
 @dataclass

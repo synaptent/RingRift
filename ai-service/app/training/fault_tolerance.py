@@ -49,6 +49,20 @@ T = TypeVar('T')
 # =============================================================================
 # Retry Decorator with Exponential Backoff
 # =============================================================================
+# NOTE: December 2025 - Consolidated to use app.core.error_handler as canonical source
+# The implementations below are backward-compatible wrappers
+
+# Import canonical retry decorators from error_handler.py
+try:
+    from app.core.error_handler import (
+        retry as _canonical_retry,
+        retry_async as _canonical_retry_async,
+    )
+    _HAS_CANONICAL_RETRY = True
+except ImportError:
+    _HAS_CANONICAL_RETRY = False
+    _canonical_retry = None
+    _canonical_retry_async = None
 
 
 def retry_with_backoff(
@@ -62,6 +76,10 @@ def retry_with_backoff(
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Decorator that retries a function with exponential backoff.
+
+    NOTE (December 2025): For new code, prefer using:
+        from app.core.error_handler import retry
+    This wrapper is maintained for backward compatibility.
 
     Args:
         max_retries: Maximum number of retry attempts
@@ -132,6 +150,11 @@ def async_retry_with_backoff(
 ):
     """
     Async decorator that retries an async function with exponential backoff.
+
+    NOTE (December 2025): For new code, prefer using:
+        from app.core.error_handler import retry_async
+    This wrapper is maintained for backward compatibility.
+    The canonical retry_async now supports circuit_breaker_key.
 
     Args:
         max_retries: Maximum number of retry attempts

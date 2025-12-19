@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -42,21 +41,9 @@ STATE_FILE = AI_SERVICE_ROOT / "data" / "autoscaler_state.json"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("vast_autoscaler", log_file=LOG_FILE)
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [Autoscaler] %(levelname)s: %(message)s",
-        handlers=[
-            logging.FileHandler(LOG_FILE),
-            logging.StreamHandler(),
-        ],
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
 
+logger = setup_script_logging("vast_autoscaler")
 
 # =============================================================================
 # Configuration

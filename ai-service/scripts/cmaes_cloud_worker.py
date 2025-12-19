@@ -36,7 +36,6 @@ Environment variables:
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 import signal
 import socket
@@ -68,15 +67,9 @@ from scripts.run_cmaes_optimization import (
 from app.distributed.game_collector import InMemoryGameCollector
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("cmaes_cloud_worker", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("cmaes_cloud_worker")
 
 
 # ---------------------------------------------------------------------------

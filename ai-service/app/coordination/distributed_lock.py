@@ -11,6 +11,15 @@ Features:
 - Lock timeout and retry support
 - Context manager interface
 
+When to Use This vs LockManager (December 2025):
+- **DistributedLock** (this module): Use for cross-node/cross-process
+  coordination. Uses Redis or file locks for true distributed locking.
+  Suitable for training locks, model registry, resource allocation.
+
+- **LockManager** (app.coordination.lock_manager): Use for in-process
+  async coordination with deadlock detection. Suitable for coordinating
+  async tasks within a single Python process.
+
 Usage:
     from app.coordination.distributed_lock import DistributedLock
 
@@ -45,10 +54,18 @@ from app.utils.paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
+# Import centralized defaults (December 2025)
+try:
+    from app.config.coordination_defaults import LockDefaults
+    DEFAULT_LOCK_TIMEOUT = LockDefaults.LOCK_TIMEOUT
+    DEFAULT_ACQUIRE_TIMEOUT = LockDefaults.ACQUIRE_TIMEOUT
+except ImportError:
+    # Fallback for standalone use
+    DEFAULT_LOCK_TIMEOUT = 3600  # 1 hour max lock time
+    DEFAULT_ACQUIRE_TIMEOUT = 60  # 60 seconds to acquire
+
 # Constants
 LOCK_DIR = DATA_DIR / "locks"
-DEFAULT_LOCK_TIMEOUT = 3600  # 1 hour max lock time
-DEFAULT_ACQUIRE_TIMEOUT = 60  # 60 seconds to acquire
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
 # Try to import Redis

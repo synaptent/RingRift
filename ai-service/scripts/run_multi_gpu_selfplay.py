@@ -25,7 +25,6 @@ Output:
 from __future__ import annotations
 
 import json
-import logging
 import multiprocessing as mp
 import os
 import sys
@@ -42,15 +41,9 @@ from app.training.selfplay_config import SelfplayConfig, create_argument_parser,
 import torch
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("run_multi_gpu_selfplay", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("run_multi_gpu_selfplay")
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 

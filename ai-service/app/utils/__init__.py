@@ -183,6 +183,29 @@ from .file_utils import (
     get_file_size,
     get_file_mtime,
 )
+from .assertions import (
+    AssertionError as AssertionFailure,  # Rename to avoid shadowing builtin
+    PreconditionError,
+    PostconditionError,
+    InvariantError,
+    require,
+    ensure,
+    check,
+    require_type,
+    require_not_none,
+    require_in_range,
+    require_non_empty,
+    unreachable,
+    ASSERTIONS_ENABLED,
+)
+from .rate_limit import (
+    Cooldown,
+    RateLimiter,
+    KeyedRateLimiter,
+    rate_limit,
+    rate_limit_async,
+    RateLimitExceeded,
+)
 
 __all__ = [
     # Paths
@@ -352,4 +375,25 @@ __all__ = [
     "remove_safe",
     "get_file_size",
     "get_file_mtime",
+    # Assertions
+    "AssertionFailure",
+    "PreconditionError",
+    "PostconditionError",
+    "InvariantError",
+    "require",
+    "ensure",
+    "check",
+    "require_type",
+    "require_not_none",
+    "require_in_range",
+    "require_non_empty",
+    "unreachable",
+    "ASSERTIONS_ENABLED",
+    # Rate limiting
+    "Cooldown",
+    "RateLimiter",
+    "KeyedRateLimiter",
+    "rate_limit",
+    "rate_limit_async",
+    "RateLimitExceeded",
 ]

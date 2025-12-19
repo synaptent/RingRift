@@ -206,6 +206,46 @@ HTTP_TIMEOUT = 30
 P2P_TIMEOUT = 30
 
 # =============================================================================
+# Training Pipeline Timeouts (December 2025)
+# =============================================================================
+
+# SQLite connection timeout (seconds)
+SQLITE_TIMEOUT = 30
+
+# SQLite short operations timeout (seconds)
+SQLITE_SHORT_TIMEOUT = 10
+
+# URL open timeout for quick health checks (seconds)
+URLOPEN_SHORT_TIMEOUT = 5
+
+# URL open timeout for data operations (seconds)
+URLOPEN_TIMEOUT = 10
+
+# Rsync transfer timeout (seconds)
+RSYNC_TIMEOUT = 30
+
+# Async subprocess wait timeout (seconds)
+ASYNC_SUBPROCESS_TIMEOUT = 180
+
+# Process/thread join timeout (seconds)
+THREAD_JOIN_TIMEOUT = 5
+
+# Future result timeout for parallel operations (seconds)
+FUTURE_RESULT_TIMEOUT = 300
+
+# Checkpoint future timeout (seconds)
+CHECKPOINT_FUTURE_TIMEOUT = 120
+
+# Long training job timeout (seconds) - 4 hours
+TRAINING_JOB_TIMEOUT = 14400
+
+# Training lock timeout (seconds) - 2 hours
+TRAINING_LOCK_TIMEOUT = 7200
+
+# Resource wait timeout (seconds)
+RESOURCE_WAIT_TIMEOUT = 300
+
+# =============================================================================
 # Cluster Health & Monitoring
 # =============================================================================
 
@@ -278,6 +318,18 @@ CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3
 
 # Time to wait before attempting recovery (seconds)
 CIRCUIT_BREAKER_RECOVERY_TIMEOUT = 300  # 5 minutes
+
+# Per-operation circuit breaker configurations (December 2025)
+# Keys: failure_threshold (int), recovery_timeout (float in seconds)
+CIRCUIT_BREAKER_CONFIGS = {
+    "ssh": {"failure_threshold": 3, "recovery_timeout": 60.0},
+    "http": {"failure_threshold": 5, "recovery_timeout": 30.0},
+    "p2p": {"failure_threshold": 3, "recovery_timeout": 45.0},
+    "aria2": {"failure_threshold": 2, "recovery_timeout": 120.0},
+    "rsync": {"failure_threshold": 2, "recovery_timeout": 90.0},
+    "database": {"failure_threshold": 3, "recovery_timeout": 30.0},
+    "external_api": {"failure_threshold": 5, "recovery_timeout": 60.0},
+}
 
 # Maximum retry attempts for recoverable errors
 MAX_RETRY_ATTEMPTS = 3

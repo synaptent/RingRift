@@ -30,7 +30,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
@@ -45,18 +44,13 @@ from app.coordination.stage_events import (
     get_event_bus,
 )
 
+# Use centralized executor pool (December 2025)
+from app.coordination.async_bridge_manager import (
+    get_bridge_manager,
+    get_shared_executor,
+)
+
 logger = logging.getLogger(__name__)
-
-# Thread pool for running sync operations
-_executor: Optional[ThreadPoolExecutor] = None
-
-
-def _get_executor() -> ThreadPoolExecutor:
-    """Get shared thread pool for sync operations."""
-    global _executor
-    if _executor is None:
-        _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="training_bridge")
-    return _executor
 
 
 @dataclass
@@ -112,12 +106,8 @@ class AsyncTrainingBridge:
         self._progress_callbacks: list[Callable[[TrainingProgressEvent], None]] = []
 
     async def _run_sync(self, func: Callable, *args, **kwargs) -> Any:
-        """Run synchronous function in thread pool."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _get_executor(),
-            lambda: func(*args, **kwargs)
-        )
+        """Run synchronous function in shared bridge pool."""
+        return await get_bridge_manager().run_sync(func, *args, **kwargs)
 
     async def can_start_training(self, board_type: str, num_players: int) -> bool:
         """Check if training can be started (async wrapper).

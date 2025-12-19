@@ -170,6 +170,12 @@ def save_checkpoint(
         temp_path = path_obj.with_suffix('.pth.tmp')
         try:
             torch.save(checkpoint, temp_path)
+            # Ensure checkpoint is flushed to disk before rename (December 2025)
+            try:
+                with open(temp_path, 'rb') as f:
+                    os.fsync(f.fileno())
+            except (OSError, IOError):
+                os.sync()  # Fallback for NFS/network filesystems
             temp_path.rename(path_obj)
         except Exception as e:
             temp_path.unlink(missing_ok=True)

@@ -33,7 +33,6 @@ import argparse
 import hashlib
 import http.server
 import json
-import logging
 import os
 import shutil
 import socketserver

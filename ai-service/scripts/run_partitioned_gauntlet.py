@@ -8,21 +8,14 @@ Each instance evaluates models where hash(model_id) % total_partitions == partit
 """
 import argparse
 import asyncio
-import logging
 import sys
 import time
 from pathlib import Path
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("run_partitioned_gauntlet", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("run_partitioned_gauntlet")
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))

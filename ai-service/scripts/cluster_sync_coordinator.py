@@ -109,8 +109,19 @@ class ClusterSyncCoordinator:
             logger.error(f"Hosts config not found: {self.hosts_config}")
             return
 
-        with open(self.hosts_config) as f:
-            config = yaml.safe_load(f)
+        try:
+            with open(self.hosts_config) as f:
+                config = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            logger.error(f"Failed to parse hosts config: {e}")
+            return
+        except OSError as e:
+            logger.error(f"Failed to read hosts config: {e}")
+            return
+
+        if not config:
+            logger.warning("Empty hosts config")
+            return
 
         hosts = config.get("hosts", {})
         for name, info in hosts.items():
@@ -163,8 +174,10 @@ class ClusterSyncCoordinator:
                     return True, result.stdout.strip()
 
             except subprocess.TimeoutExpired:
+                logger.debug(f"SSH to {node.name} via {transport} timed out")
                 continue
             except Exception as e:
+                logger.debug(f"SSH to {node.name} via {transport} failed: {e}")
                 continue
 
         return False, ""

@@ -370,6 +370,17 @@ class UnifiedCheckpointManager:
                 # Save checkpoint
                 torch.save(checkpoint_data, file_path)
 
+                # Ensure checkpoint is flushed to disk before continuing (December 2025)
+                # This prevents emitting CHECKPOINT_SAVED before data is durable
+                try:
+                    with open(file_path, 'rb') as f:
+                        os.fsync(f.fileno())
+                except (OSError, IOError) as e:
+                    # fsync may fail on some filesystems (e.g., NFS without sync option)
+                    # Fall back to global sync as a last resort
+                    logger.debug(f"fsync failed ({e}), using os.sync() fallback")
+                    os.sync()
+
                 # Compute hash if enabled
                 file_hash = self._compute_hash(file_path) if self.config.verify_hash else ""
 

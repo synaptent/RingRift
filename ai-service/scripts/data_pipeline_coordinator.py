@@ -152,12 +152,12 @@ def check_node_status(instance_id: str, host: str, port: int) -> NodeStatus:
             status.error = "SSH connection failed"
             return status
 
-        # Check if generation is running
-        ssh_cmd[-1] = "ps aux | grep generate_gumbel | grep -v grep | wc -l"
+        # Check if generation is running (more robust check)
+        ssh_cmd[-1] = "pgrep -f 'generate_gumbel_selfplay' 2>/dev/null | head -1"
         result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
         if result.returncode == 0:
-            count = int(result.stdout.strip().split("\n")[-1])
-            status.is_generating = count > 0
+            output = result.stdout.strip().split("\n")[-1]
+            status.is_generating = output.isdigit() and int(output) > 0
 
         # Get data files and game counts
         ssh_cmd[-1] = f"ls -1 {REMOTE_DATA_PATH}/sq8_gumbel_aligned_*.jsonl 2>/dev/null"
@@ -244,10 +244,51 @@ def collect_data_from_node(
     return total_games, collected_files
 
 
-def count_local_games(data_dir: Path) -> int:
+def is_aligned_data_file(filepath: Path) -> bool:
+    """Check if a data file has properly aligned move indices.
+
+    Aligned files have scattered move indices (42, 57, 72, 129, etc.)
+    Broken files have sequential indices (0, 1, 2, 3, etc.)
+    """
+    try:
+        with open(filepath) as f:
+            first_line = f.readline()
+            if not first_line.strip():
+                return False
+            data = json.loads(first_line)
+            if 'moves' not in data or not data['moves']:
+                return False
+            policy = data['moves'][0].get('mcts_policy', {})
+            if not policy:
+                return False
+            keys = sorted([int(k) for k in policy.keys()])
+            if len(keys) < 2:
+                return False
+            # Check if keys are sequential (broken) or scattered (aligned)
+            gaps = [keys[i+1] - keys[i] for i in range(len(keys)-1)]
+            return not all(g == 1 for g in gaps)
+    except Exception:
+        return False
+
+
+def get_aligned_data_files(data_dir: Path) -> List[Path]:
+    """Get only data files with properly aligned move indices."""
+    aligned = []
+    for jsonl_file in data_dir.glob("*.jsonl"):
+        if is_aligned_data_file(jsonl_file):
+            aligned.append(jsonl_file)
+    return aligned
+
+
+def count_local_games(data_dir: Path, aligned_only: bool = False) -> int:
     """Count total games in local data directory."""
     total = 0
-    for jsonl_file in data_dir.glob("*.jsonl"):
+    if aligned_only:
+        files = get_aligned_data_files(data_dir)
+    else:
+        files = list(data_dir.glob("*.jsonl"))
+
+    for jsonl_file in files:
         with open(jsonl_file) as f:
             total += sum(1 for _ in f)
     return total
@@ -261,8 +302,8 @@ def trigger_training(
     pretrained: Optional[Path] = None,
 ) -> Tuple[bool, Dict]:
     """Trigger KL training on collected data."""
-    # Find all aligned data files
-    data_files = list(data_dir.glob("*gumbel_aligned*.jsonl"))
+    # Find all properly aligned data files (validates actual content)
+    data_files = get_aligned_data_files(data_dir)
     if not data_files:
         return False, {"error": "No aligned data files found"}
 
@@ -340,7 +381,12 @@ def print_status(state: PipelineState, node_statuses: List[NodeStatus]):
     print("DATA PIPELINE STATUS")
     print("=" * 70)
 
-    print(f"\nTotal games collected locally: {state.total_games_collected}")
+    # Count aligned games
+    aligned_games = count_local_games(DATA_DIR, aligned_only=True)
+    total_games = count_local_games(DATA_DIR, aligned_only=False)
+
+    print(f"\nAligned games (usable): {aligned_games}")
+    print(f"Total games collected: {total_games}")
     print(f"Last collection: {state.last_collection_time or 'Never'}")
     print(f"Last training: {state.last_training_time or 'Never'}")
     print(f"Current model: {state.current_model_version or 'None'}")

@@ -31,6 +31,16 @@ import hashlib
 from pathlib import Path
 from typing import Optional, Union
 
+__all__ = [
+    "compute_file_checksum",
+    "compute_bytes_checksum",
+    "compute_string_checksum",
+    "verify_file_checksum",
+    "compute_content_id",
+    "DEFAULT_CHUNK_SIZE",
+    "LARGE_CHUNK_SIZE",
+]
+
 # Default chunk size for file reading (8KB - good balance for most files)
 DEFAULT_CHUNK_SIZE = 8192
 

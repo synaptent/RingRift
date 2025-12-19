@@ -15,7 +15,6 @@ Usage:
 """
 
 import argparse
-import logging
 import sqlite3
 import sys
 from pathlib import Path
@@ -33,18 +32,9 @@ sys.path.insert(0, str(AI_SERVICE_ROOT))
 DATA_DIR = AI_SERVICE_ROOT / "data"
 UNIFIED_ELO_DB = DATA_DIR / "unified_elo.db"
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("fix_database_integrity", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [DBFix] %(levelname)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
 
+logger = setup_script_logging("fix_database_integrity")
 
 def check_elo_duplicates(db_path: Path) -> dict:
     """Check for duplicate matches in ELO database."""

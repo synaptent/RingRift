@@ -21,7 +21,6 @@ Usage:
 """
 
 import json
-import logging
 import os
 import sys
 import time
@@ -39,15 +38,9 @@ from app.models import AIConfig, BoardType, GameStatus
 from app.training.env import RingRiftEnv
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("run_mcts_balanced_selfplay", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("run_mcts_balanced_selfplay")
 
 
 def _serialize_move(move) -> Dict[str, Any]:

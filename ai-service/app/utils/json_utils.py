@@ -24,6 +24,16 @@ from pathlib import Path
 from typing import Any, Optional, Union
 from uuid import UUID
 
+__all__ = [
+    "JSONEncoder",
+    "dumps",
+    "dump",
+    "pretty_dumps",
+    "json_default",
+    "load_json",
+    "save_json",
+]
+
 
 class JSONEncoder(json.JSONEncoder):
     """Extended JSON encoder that handles common Python types.

@@ -44,7 +44,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -56,16 +55,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+# Ensure ai-service root on path for scripts/lib imports
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("ab_test_gpu_training_quality", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("ab_test_gpu_training_quality")
 
 
 # =============================================================================

@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import sys
 import time
@@ -39,15 +38,9 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 # Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("incremental_export", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("incremental_export")
 
 from app.training.incremental_export import (
     IncrementalExporter,
