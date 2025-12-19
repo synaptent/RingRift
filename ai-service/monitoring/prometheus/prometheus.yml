@@ -1,4 +1,5 @@
 # Prometheus configuration for RingRift AI training pipeline
+# Updated: 2025-12-19 for full cluster monitoring
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -15,19 +16,73 @@ rule_files:
 
 # Scrape configuration
 scrape_configs:
-  # Unified AI Loop metrics
+  # Unified AI Loop metrics (local orchestrator)
   - job_name: 'unified_ai_loop'
     static_configs:
       - targets: ['localhost:9090']
     metrics_path: /metrics
     scrape_interval: 10s
 
-  # Python training dashboard (if running)
-  - job_name: 'training_dashboard'
+  # P2P Orchestrator - Leader node (aggregates cluster stats)
+  # The leader collects stats from all peers, so this is the main source
+  - job_name: 'p2p_orchestrator_leader'
     static_configs:
-      - targets: ['localhost:8080']
-    metrics_path: /metrics
+      - targets: ['192.222.57.178:8770'] # lambda-gh200-f (current leader)
+        labels:
+          role: leader
+          provider: lambda
+    metrics_path: /metrics/prometheus
     scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # P2P Orchestrator - Lambda GH200 nodes
+  - job_name: 'p2p_lambda_gh200'
+    static_configs:
+      - targets:
+          - '192.222.51.29:8770' # lambda-gh200-a
+          - '192.222.51.162:8770' # lambda-gh200-c
+          - '192.222.58.122:8770' # lambda-gh200-d
+          - '192.222.57.162:8770' # lambda-gh200-e
+          - '192.222.57.79:8770' # lambda-gh200-g
+          - '192.222.56.123:8770' # lambda-gh200-h
+          - '192.222.50.112:8770' # lambda-gh200-i
+          - '192.222.51.150:8770' # lambda-gh200-k
+          - '192.222.51.233:8770' # lambda-gh200-l
+          - '192.222.50.219:8770' # lambda-gh200-m
+          - '192.222.51.204:8770' # lambda-gh200-n
+          - '192.222.51.161:8770' # lambda-gh200-b
+          - '192.222.51.92:8770' # lambda-gh200-o
+          - '192.222.51.215:8770' # lambda-gh200-p
+        labels:
+          provider: lambda
+          gpu: GH200
+    metrics_path: /metrics/prometheus
+    scrape_interval: 60s # Less frequent for non-leader nodes
+
+  # P2P Orchestrator - Lambda H100 nodes
+  - job_name: 'p2p_lambda_h100'
+    static_configs:
+      - targets:
+          - '209.20.157.81:8770' # lambda-h100
+          - '192.222.53.22:8770' # lambda-2xh100
+        labels:
+          provider: lambda
+          gpu: H100
+    metrics_path: /metrics/prometheus
+    scrape_interval: 60s
+
+  # P2P Orchestrator - Lambda A10 nodes
+  - job_name: 'p2p_lambda_a10'
+    static_configs:
+      - targets:
+          - '150.136.65.197:8770' # lambda-a10
+          - '129.153.159.191:8770' # lambda-a10-b
+          - '150.136.56.240:8770' # lambda-a10-c
+        labels:
+          provider: lambda
+          gpu: A10
+    metrics_path: /metrics/prometheus
+    scrape_interval: 60s
 
   # Elo Sync Coordinator metrics
   - job_name: 'elo_sync'
@@ -36,7 +91,12 @@ scrape_configs:
     metrics_path: /metrics
     scrape_interval: 30s
 
-  # Remote cluster nodes (optional - update with actual IPs)
-  # - job_name: 'cluster_nodes'
-  #   static_configs:
-  #     - targets: ['192.222.51.29:9090', '192.222.57.162:9090']
+  # Python training dashboard (if running)
+  - job_name: 'training_dashboard'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+# Recording rules for efficient dashboard queries
+# (Define in rules/*.yml files)

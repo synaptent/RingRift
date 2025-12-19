@@ -114,6 +114,12 @@ class AutoScaler:
         self._active_instances: Dict[str, NodeMetrics] = {}
         self._node_idle_since: Dict[str, float] = {}  # node_id -> timestamp
 
+        # Cost tracking
+        self._cost_start_time: float = time.time()
+        self._cost_samples: List[tuple] = []  # (timestamp, hourly_cost)
+        self._total_cost_accumulated: float = 0.0  # Cumulative cost in $
+        self._last_cost_update: float = time.time()
+
         # Reference to work queue (set by orchestrator)
         self._work_queue: Optional["WorkQueue"] = None
 
@@ -128,6 +134,9 @@ class AutoScaler:
     def update_node_metrics(self, node_id: str, metrics: NodeMetrics) -> None:
         """Update metrics for a node."""
         self._active_instances[node_id] = metrics
+
+        # Update cumulative cost
+        self._update_cumulative_cost()
 
         # Track idle state transitions
         if metrics.is_idle:
@@ -172,6 +181,70 @@ class AutoScaler:
     def _get_current_hourly_cost(self) -> float:
         """Get current total hourly cost of all instances."""
         return sum(m.hourly_cost for m in self._active_instances.values())
+
+    def _update_cumulative_cost(self) -> None:
+        """Update cumulative cost based on time elapsed and current hourly rate."""
+        now = time.time()
+        elapsed_hours = (now - self._last_cost_update) / 3600.0
+        current_hourly = self._get_current_hourly_cost()
+
+        # Accumulate cost
+        if elapsed_hours > 0:
+            self._total_cost_accumulated += current_hourly * elapsed_hours
+            self._cost_samples.append((now, current_hourly))
+
+            # Keep only last 24 hours of samples
+            cutoff = now - 86400
+            self._cost_samples = [(t, c) for t, c in self._cost_samples if t > cutoff]
+
+        self._last_cost_update = now
+
+    def get_cost_metrics(self) -> Dict[str, Any]:
+        """Get cost tracking metrics.
+
+        Returns:
+            Dictionary with cost metrics including:
+            - current_hourly_cost: Current $/hour burn rate
+            - total_cost_accumulated: Total $ spent since tracking started
+            - tracking_hours: Hours since tracking started
+            - average_hourly_cost: Average $/hour over tracking period
+            - cost_last_24h: Estimated cost in last 24 hours
+            - projected_monthly: Projected monthly cost at current rate
+        """
+        self._update_cumulative_cost()
+        now = time.time()
+
+        tracking_hours = (now - self._cost_start_time) / 3600.0
+        current_hourly = self._get_current_hourly_cost()
+
+        # Calculate 24h cost from samples
+        cutoff_24h = now - 86400
+        samples_24h = [(t, c) for t, c in self._cost_samples if t > cutoff_24h]
+        cost_last_24h = 0.0
+        if len(samples_24h) >= 2:
+            for i in range(1, len(samples_24h)):
+                t1, c1 = samples_24h[i - 1]
+                t2, _ = samples_24h[i]
+                hours = (t2 - t1) / 3600.0
+                cost_last_24h += c1 * hours
+
+        # Average hourly cost
+        avg_hourly = 0.0
+        if tracking_hours > 0:
+            avg_hourly = self._total_cost_accumulated / tracking_hours
+
+        return {
+            "current_hourly_cost": round(current_hourly, 4),
+            "total_cost_accumulated": round(self._total_cost_accumulated, 2),
+            "tracking_hours": round(tracking_hours, 2),
+            "average_hourly_cost": round(avg_hourly, 4),
+            "cost_last_24h": round(cost_last_24h, 2),
+            "projected_daily": round(current_hourly * 24, 2),
+            "projected_monthly": round(current_hourly * 24 * 30, 2),
+            "budget_hourly": self.config.max_hourly_cost,
+            "budget_remaining_hourly": round(self.config.max_hourly_cost - current_hourly, 4),
+            "budget_utilization_pct": round(current_hourly / max(self.config.max_hourly_cost, 0.01) * 100, 1),
+        }
 
     def _get_instance_count(self) -> int:
         """Get current number of active instances."""
@@ -338,13 +411,14 @@ class AutoScaler:
         scale_down_count = sum(1 for e in recent_events if e.action == ScalingAction.SCALE_DOWN and e.success)
         failed_count = sum(1 for e in recent_events if not e.success)
 
+        # Get cost metrics
+        cost_metrics = self.get_cost_metrics()
+
         return {
             "enabled": self.config.enabled,
             "current_instances": self._get_instance_count(),
             "min_instances": self.config.min_instances,
             "max_instances": self.config.max_instances,
-            "current_hourly_cost": self._get_current_hourly_cost(),
-            "max_hourly_cost": self.config.max_hourly_cost,
             "pending_work": self.get_pending_count(),
             "running_work": self.get_running_count(),
             "idle_nodes": len(self._get_idle_nodes()),
@@ -353,6 +427,8 @@ class AutoScaler:
             "scale_up_last_hour": scale_up_count,
             "scale_down_last_hour": scale_down_count,
             "failed_scales_last_hour": failed_count,
+            # Cost tracking
+            **cost_metrics,
         }
 
 

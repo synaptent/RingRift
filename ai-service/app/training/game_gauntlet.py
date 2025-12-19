@@ -190,12 +190,34 @@ def create_neural_ai(
         return PolicyOnlyAI(player, config, board_type=board_type)
 
     elif model_getter is not None:
-        # TODO: Support in-memory model loading for BackgroundEvaluator
-        # This requires modifying PolicyOnlyAI to accept model weights directly
-        raise NotImplementedError(
-            "In-memory model loading not yet implemented. "
-            "Use model_path with a saved checkpoint instead."
+        # In-memory model loading for BackgroundEvaluator (zero disk I/O)
+        model_info = model_getter()
+
+        # Extract state_dict from model_info
+        if isinstance(model_info, dict):
+            if 'state_dict' in model_info:
+                state_dict = model_info['state_dict']
+            else:
+                # Assume the dict is the state_dict itself
+                state_dict = model_info
+        elif hasattr(model_info, 'state_dict'):
+            # It's an nn.Module - extract state_dict
+            state_dict = model_info.state_dict()
+        else:
+            raise ValueError(
+                f"model_getter must return a dict with 'state_dict', a state_dict, "
+                f"or an nn.Module. Got: {type(model_info)}"
+            )
+
+        config = AIConfig(
+            ai_type=AIType.POLICY_ONLY,
+            board_type=board_type,
+            difficulty=8,
+            use_neural_net=True,
+            nn_state_dict=state_dict,
+            policy_temperature=temperature,
         )
+        return PolicyOnlyAI(player, config, board_type=board_type)
 
     else:
         raise ValueError("Must provide either model_path or model_getter")
@@ -260,28 +282,32 @@ def play_single_game(
 
 
 def run_baseline_gauntlet(
-    model_path: Union[str, Path],
-    board_type: Any,  # BoardType
+    model_path: Optional[Union[str, Path]] = None,
+    board_type: Any = None,  # BoardType
     opponents: Optional[List[BaselineOpponent]] = None,
     games_per_opponent: int = 20,
     num_players: int = 2,
     check_baseline_gating: bool = True,
     verbose: bool = False,
+    model_getter: Optional[Callable[[], Any]] = None,
 ) -> GauntletResult:
     """Run a gauntlet evaluation against baseline opponents.
 
     Args:
-        model_path: Path to the model checkpoint
+        model_path: Path to the model checkpoint (file-based loading)
         board_type: Board type for games
         opponents: List of baselines to test against (default: RANDOM, HEURISTIC)
         games_per_opponent: Number of games per opponent
         num_players: Number of players in each game
         check_baseline_gating: Whether to check minimum win rate thresholds
         verbose: Whether to log per-game results
+        model_getter: Callable returning model weights (in-memory loading, zero disk I/O)
 
     Returns:
         GauntletResult with aggregated statistics
     """
+    if model_path is None and model_getter is None:
+        raise ValueError("Must provide either model_path or model_getter")
     _ensure_game_modules()
 
     if opponents is None:
@@ -300,7 +326,9 @@ def run_baseline_gauntlet(
 
             try:
                 candidate_ai = create_neural_ai(
-                    candidate_player, board_type, model_path=model_path
+                    candidate_player, board_type,
+                    model_path=model_path,
+                    model_getter=model_getter,
                 )
                 opponent_ai = create_baseline_ai(
                     baseline, opponent_player, board_type

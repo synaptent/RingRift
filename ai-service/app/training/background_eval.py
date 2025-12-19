@@ -194,12 +194,6 @@ class BackgroundEvaluator:
             BaselineOpponent,
         )
 
-        # Save model weights to temp file for evaluation
-        model_path = self._save_temp_model(model_info)
-        if model_path is None:
-            logger.warning("[BackgroundEval] Could not save model for evaluation, using placeholder")
-            return self._run_placeholder_evaluation(step)
-
         # Map config baselines to BaselineOpponent enums
         opponents = []
         for baseline_name in self.config.baselines:
@@ -213,6 +207,24 @@ class BackgroundEvaluator:
 
         games_per = self.config.games_per_eval // len(opponents)
 
+        # Prefer in-memory loading (zero disk I/O) when model_info supports it
+        model_path = None
+        model_getter = None
+
+        if isinstance(model_info, (str, Path)):
+            # File path - use file-based loading
+            model_path = Path(model_info)
+        elif isinstance(model_info, dict) and 'path' in model_info and model_info['path']:
+            # Dict with path - use file-based loading
+            model_path = Path(model_info['path'])
+        else:
+            # In-memory model (dict with state_dict or nn.Module)
+            # Use model_getter to return the model_info for zero-disk-IO loading
+            def _model_getter(captured_info=model_info):
+                return captured_info
+            model_getter = _model_getter
+            logger.info("[BackgroundEval] Using in-memory model loading (zero disk I/O)")
+
         try:
             logger.info(f"[BackgroundEval] Playing {games_per} games per opponent (real mode)")
             gauntlet_result = run_baseline_gauntlet(
@@ -222,6 +234,7 @@ class BackgroundEvaluator:
                 games_per_opponent=games_per,
                 check_baseline_gating=True,
                 verbose=False,
+                model_getter=model_getter,
             )
 
             # Convert to EvalResult format

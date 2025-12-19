@@ -82,6 +82,41 @@ training:
   policy_label_smoothing: 0.05 # Policy label smoothing factor (prevents overconfident predictions)
   use_hex_augmentation: true # D6 symmetry augmentation for hex boards
 
+  # GH200-specific training optimizations (96GB HBM3 + Grace ARM CPU)
+  gh200:
+    batch_size: 1024 # 4x larger batch for 96GB HBM3
+    max_batch_size: 2048 # Progressive can go higher
+    gradient_accumulation: 4 # Effective batch size of 4096-8192
+    mixed_precision: 'bf16' # BF16 preferred on GH200 (native support)
+    num_workers: 16 # More workers for Grace CPU (72 cores)
+    pin_memory: true # Pin memory for faster GPU transfer
+    prefetch_factor: 4 # Prefetch more batches
+    compile_model: true # Use torch.compile for speed
+    cudnn_benchmark: true # Optimize cuDNN for fixed input sizes
+    memory_efficient_attention: true # Use flash attention if available
+
+  # H100-specific training optimizations (80GB HBM3)
+  h100:
+    batch_size: 512 # 2x larger batch for 80GB
+    max_batch_size: 1024
+    gradient_accumulation: 2 # Effective batch size of 1024-2048
+    mixed_precision: 'bf16' # BF16 preferred on H100
+    num_workers: 8
+    pin_memory: true
+    compile_model: true
+    cudnn_benchmark: true
+    memory_efficient_attention: true
+
+  # Default GPU (A10, RTX series)
+  default_gpu:
+    batch_size: 256
+    max_batch_size: 512
+    gradient_accumulation: 1
+    mixed_precision: 'fp16' # FP16 for older GPUs
+    num_workers: 4
+    pin_memory: true
+    compile_model: false # May have issues on older architectures
+
 # Continuous evaluation (shadow + full tournaments)
 evaluation:
   # Shadow tournaments: quick evaluation during normal operation

@@ -524,6 +524,16 @@ class AIConfig(BaseModel):
     rng_seed: Optional[int] = Field(None, alias="rngSeed")
     heuristic_profile_id: Optional[str] = None
     nn_model_id: Optional[str] = None
+    nn_state_dict: Optional[dict] = Field(
+        default=None,
+        description=(
+            "When provided, NeuralNetAI loads weights from this in-memory state "
+            "dict instead of from disk. This enables zero-disk-IO evaluation for "
+            "BackgroundEvaluator and other in-process inference paths. The dict "
+            "should be a PyTorch state_dict (parameter name -> tensor mapping). "
+            "Takes precedence over nn_model_id when both are set."
+        ),
+    )
     heuristic_eval_mode: Optional[str] = None
     use_neural_net: Optional[bool] = Field(
         default=None,

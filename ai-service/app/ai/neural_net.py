@@ -3501,6 +3501,18 @@ class NeuralNetAI(BaseAI):
         # Update board_size based on board_type
         self.board_size = get_spatial_size_for_board(board_type)
 
+        # =====================================================================
+        # In-memory state_dict loading path (zero disk I/O)
+        # =====================================================================
+        # If nn_state_dict is provided in config, skip all file-based loading
+        # and load weights directly from memory. This is used by
+        # BackgroundEvaluator for efficient in-process evaluation.
+        nn_state_dict = getattr(self.config, "nn_state_dict", None)
+        if nn_state_dict is not None and isinstance(nn_state_dict, dict):
+            logger.info("Loading model from in-memory state_dict (zero disk I/O)")
+            self._init_from_state_dict(nn_state_dict, board_type, num_players)
+            return
+
         models_dir = os.path.join(self._base_dir, "models")
 
         model_id = getattr(self.config, "nn_model_id", None)
@@ -4300,6 +4312,176 @@ class NeuralNetAI(BaseAI):
         logger.info(
             f"Cached model: board={board_type}, arch={self.architecture_type}, "
             f"device={self.device} (total cached: {len(_MODEL_CACHE)})"
+        )
+
+    def _init_from_state_dict(
+        self,
+        state_dict: Dict[str, Any],
+        board_type: BoardType,
+        num_players: Optional[int] = None,
+    ) -> None:
+        """Initialize model from an in-memory state_dict (zero disk I/O).
+
+        This is the fast path used by BackgroundEvaluator to avoid writing
+        checkpoints to disk. Architecture parameters are inferred from tensor
+        shapes in the state_dict.
+
+        Args:
+            state_dict: PyTorch state_dict (parameter name -> tensor)
+            board_type: Board type for the model
+            num_players: Optional player count override
+        """
+        import re
+
+        # Strip module. prefix (DDP compatibility)
+        state_dict = _strip_module_prefix(state_dict)
+
+        # Infer architecture parameters from state_dict tensor shapes
+        num_filters = 192  # Default
+        num_res_blocks = 12  # Default
+        num_players_override = num_players or 2
+        history_length_override = 3
+        policy_size_override: Optional[int] = None
+        in_channels_override: Optional[int] = None
+
+        # Infer num_filters from conv1.weight shape[0]
+        conv1_weight = state_dict.get("conv1.weight")
+        if conv1_weight is not None and hasattr(conv1_weight, "shape"):
+            num_filters = int(conv1_weight.shape[0])
+
+        # Infer in_channels from conv1.weight shape[1]
+        # conv1.weight.shape[1] is TOTAL channels (base * (history_length + 1))
+        # We need to extract BASE channels for model constructor
+        if conv1_weight is not None and hasattr(conv1_weight, "shape"):
+            total_channels = int(conv1_weight.shape[1])
+            # Try to infer history_length from total_channels
+            # Common base channels: 14 (square), 16 (hex v3), 10 (hex v2)
+            for base in (14, 16, 10, 12):
+                if total_channels % base == 0:
+                    frames = total_channels // base
+                    if frames in (1, 2, 3, 4, 5):  # history_length 0-4
+                        in_channels_override = base
+                        history_length_override = frames - 1
+                        break
+            else:
+                # Fallback: assume 4 frames (history_length=3)
+                in_channels_override = total_channels // 4 if total_channels >= 4 else total_channels
+
+        # Infer num_players from value_fc2.weight shape[0]
+        value_fc2_weight = state_dict.get("value_fc2.weight")
+        if value_fc2_weight is not None and hasattr(value_fc2_weight, "shape"):
+            inferred_players = int(value_fc2_weight.shape[0])
+            if inferred_players in (2, 3, 4):
+                num_players_override = inferred_players
+
+        # Infer policy_size from policy_fc2.weight shape[0] (V2 models)
+        policy_fc2_weight = state_dict.get("policy_fc2.weight")
+        if policy_fc2_weight is not None and hasattr(policy_fc2_weight, "shape"):
+            policy_size_override = int(policy_fc2_weight.shape[0])
+
+        # Infer res-block count from state_dict keys
+        indices: set[int] = set()
+        for key in state_dict.keys():
+            if isinstance(key, str):
+                m = re.match(r"res_blocks\.(\d+)\.", key)
+                if m:
+                    indices.add(int(m.group(1)))
+        if indices:
+            num_res_blocks = max(indices) + 1
+
+        # Determine model class from state_dict signatures
+        v3_spatial_keys = ("spatial_policy_conv.weight",)
+        v3_rank_dist_keys = ("rank_dist_fc1.weight", "rank_dist_fc2.weight")
+        v2_policy_keys = ("policy_fc1.weight", "policy_fc2.weight")
+        v4_attention_patterns = ("res_blocks.0.query.weight", "res_blocks.0.key.weight")
+
+        has_v3_spatial = any(k in state_dict for k in v3_spatial_keys)
+        has_v3_rank_dist = any(k in state_dict for k in v3_rank_dist_keys)
+        has_v2_policy = any(k in state_dict for k in v2_policy_keys)
+        has_v4_attention = any(k in state_dict for k in v4_attention_patterns)
+
+        # Check value_fc1 hidden size to distinguish Lite from full models
+        # V2/V3 full: 128 hidden units, Lite: 64 hidden units
+        value_fc1_weight = state_dict.get("value_fc1.weight")
+        is_lite_fc = False
+        if value_fc1_weight is not None and hasattr(value_fc1_weight, "shape"):
+            hidden_units = int(value_fc1_weight.shape[0])
+            is_lite_fc = hidden_units <= 64
+
+        if has_v4_attention:
+            model_class_name = "RingRiftCNN_v4"
+        elif has_v3_spatial and has_v3_rank_dist:
+            # Lite models have smaller FC layers (is_lite_fc) - prioritize this check
+            if is_lite_fc:
+                model_class_name = "RingRiftCNN_v3_Lite"
+            else:
+                model_class_name = "RingRiftCNN_v3"
+        elif has_v2_policy:
+            # Lite models have smaller FC layers (is_lite_fc) - prioritize this check
+            if is_lite_fc:
+                model_class_name = "RingRiftCNN_v2_Lite"
+            else:
+                model_class_name = "RingRiftCNN_v2"
+        else:
+            model_class_name = "RingRiftCNN_v3"  # Default
+
+        logger.info(
+            "Inferred architecture from state_dict: class=%s, filters=%d, blocks=%d, players=%d",
+            model_class_name,
+            num_filters,
+            num_res_blocks,
+            num_players_override,
+        )
+
+        # Build the model
+        square_model_classes = {
+            "RingRiftCNN_v2": RingRiftCNN_v2,
+            "RingRiftCNN_v2_Lite": RingRiftCNN_v2_Lite,
+            "RingRiftCNN_v3": RingRiftCNN_v3,
+            "RingRiftCNN_v3_Lite": RingRiftCNN_v3_Lite,
+            "RingRiftCNN_v4": RingRiftCNN_v4,
+        }
+
+        if model_class_name in square_model_classes:
+            cls = square_model_classes[model_class_name]
+            self.model = cls(
+                board_size=self.board_size,
+                in_channels=in_channels_override or 14,
+                global_features=20,
+                num_res_blocks=num_res_blocks,
+                num_filters=num_filters,
+                history_length=history_length_override,
+                policy_size=policy_size_override,
+                num_players=num_players_override,
+            )
+        else:
+            # Fallback to create_model_for_board
+            self.model = create_model_for_board(
+                board_type=board_type,
+                in_channels=in_channels_override or 14,
+                global_features=20,
+                num_res_blocks=num_res_blocks,
+                num_filters=num_filters,
+                history_length=history_length_override,
+                num_players=num_players_override,
+                policy_size=policy_size_override,
+            )
+
+        self.history_length = history_length_override
+        self.model.to(self.device)
+
+        # Load the state_dict
+        self.model.load_state_dict(state_dict)
+        self.model.eval()
+
+        self._initialized_board_type = board_type
+        self.loaded_checkpoint_path = "<in-memory>"
+        logger.info(
+            "Initialized %s from in-memory state_dict (filters=%d, blocks=%d, players=%d)",
+            model_class_name,
+            num_filters,
+            num_res_blocks,
+            num_players_override,
         )
 
     def _maybe_rebuild_model_to_match_checkpoint(
