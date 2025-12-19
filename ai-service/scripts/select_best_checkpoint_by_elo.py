@@ -1,18 +1,31 @@
 #!/usr/bin/env python
-"""Select the best checkpoint based on Elo evaluation rather than loss.
+"""Select the best checkpoint based on Elo evaluation with baseline gating.
 
 This script addresses the loss/Elo disconnect where lower validation loss
 doesn't always correlate with better playing strength. It:
 
 1. Finds all checkpoints for a training run (epoch checkpoints + final)
 2. Runs a mini-gauntlet (fast games against random/heuristic)
-3. Selects the checkpoint with highest estimated Elo
-4. Copies it as the "best" checkpoint
+3. **GATES** checkpoints that don't meet minimum win rates vs baselines
+4. Selects the checkpoint with highest estimated Elo among passing checkpoints
+5. Copies it as the "best" checkpoint
+
+IMPORTANT: Checkpoints must beat random at MIN_RANDOM_WIN_RATE (default 85%)
+and heuristic at MIN_HEURISTIC_WIN_RATE (default 60%) to be considered.
+This prevents selecting checkpoints that are strong in neural-vs-neural
+but weak against basic baselines.
 
 Usage:
     python scripts/select_best_checkpoint_by_elo.py \
         --candidate-id sq8_2p_d8_cand_20251218_040151 \
         --games 20
+
+    # Custom thresholds
+    python scripts/select_best_checkpoint_by_elo.py \
+        --candidate-id sq8_2p_d10_cand_20251218_171759 \
+        --min-random-win-rate 0.90 \
+        --min-heuristic-win-rate 0.70 \
+        --games 30
 """
 
 from __future__ import annotations
@@ -35,6 +48,12 @@ from app.ai.random_ai import RandomAI
 from app.ai.policy_only_ai import PolicyOnlyAI
 from app.training.generate_data import create_initial_state
 from app.rules.default_engine import DefaultRulesEngine
+
+# Minimum win rate thresholds for checkpoint gating
+# Checkpoints that don't meet these are considered "unqualified" and skipped
+# These can be overridden via command line arguments
+DEFAULT_MIN_RANDOM_WIN_RATE = 0.85  # Must beat random at 85%+
+DEFAULT_MIN_HEURISTIC_WIN_RATE = 0.60  # Must beat heuristic at 60%+
 
 
 def is_versioned_checkpoint(checkpoint_path: Path) -> bool:
@@ -284,8 +303,15 @@ def select_best_checkpoint(
     games_per_opponent: int = 10,
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
+    min_random_win_rate: float = DEFAULT_MIN_RANDOM_WIN_RATE,
+    min_heuristic_win_rate: float = DEFAULT_MIN_HEURISTIC_WIN_RATE,
 ) -> Tuple[Optional[Path], List[Dict[str, Any]]]:
     """Evaluate all checkpoints and select the best one by Elo.
+
+    Checkpoints must pass baseline gating requirements before being
+    considered for Elo-based selection:
+    - Must beat random at min_random_win_rate
+    - Must beat heuristic at min_heuristic_win_rate
 
     Returns (best_checkpoint_path, all_results).
     """
@@ -296,8 +322,10 @@ def select_best_checkpoint(
         return None, []
 
     print(f"Found {len(checkpoints)} checkpoints for {candidate_id}")
+    print(f"Baseline requirements: random >= {min_random_win_rate:.0%}, heuristic >= {min_heuristic_win_rate:.0%}")
 
     all_results = []
+    qualified_checkpoints = []  # Checkpoints that pass baseline gating
     best_elo = float("-inf")
     best_checkpoint = None
 
@@ -313,14 +341,41 @@ def select_best_checkpoint(
             )
             all_results.append(result)
 
+            vs_random = result['vs_random']['win_rate']
+            vs_heuristic = result['vs_heuristic']['win_rate']
+
             print(f"  Win rate: {result['win_rate']:.1%}")
-            print(f"  vs Random: {result['vs_random']['win_rate']:.1%}")
-            print(f"  vs Heuristic: {result['vs_heuristic']['win_rate']:.1%}")
+            print(f"  vs Random: {vs_random:.1%}", end="")
+            if vs_random < min_random_win_rate:
+                print(f" [BELOW {min_random_win_rate:.0%} THRESHOLD]")
+            else:
+                print(" [OK]")
+
+            print(f"  vs Heuristic: {vs_heuristic:.1%}", end="")
+            if vs_heuristic < min_heuristic_win_rate:
+                print(f" [BELOW {min_heuristic_win_rate:.0%} THRESHOLD]")
+            else:
+                print(" [OK]")
+
             print(f"  Estimated Elo: {result['estimated_elo']:.0f}")
 
-            if result["estimated_elo"] > best_elo:
-                best_elo = result["estimated_elo"]
-                best_checkpoint = ckpt
+            # Check baseline gating
+            passes_gating = (
+                vs_random >= min_random_win_rate and
+                vs_heuristic >= min_heuristic_win_rate
+            )
+
+            if passes_gating:
+                result["qualified"] = True
+                qualified_checkpoints.append((ckpt, result))
+                print("  STATUS: QUALIFIED")
+
+                if result["estimated_elo"] > best_elo:
+                    best_elo = result["estimated_elo"]
+                    best_checkpoint = ckpt
+            else:
+                result["qualified"] = False
+                print("  STATUS: DISQUALIFIED (below baseline thresholds)")
 
         except CheckpointLoadError as e:
             print(f"  SKIPPED: {e}")
@@ -330,12 +385,29 @@ def select_best_checkpoint(
             print(f"  Error evaluating {ckpt.name}: {e}")
             continue
 
+    # Summary
+    print(f"\n{'='*60}")
+    print(f"SUMMARY: {len(qualified_checkpoints)}/{len(all_results)} checkpoints qualified")
+
+    if not qualified_checkpoints:
+        print("WARNING: No checkpoints passed baseline gating!")
+        print("Consider:")
+        print("  1. Lowering thresholds (--min-random-win-rate, --min-heuristic-win-rate)")
+        print("  2. Training longer or with more diverse data")
+        print("  3. Checking for training issues (data quality, hyperparameters)")
+
+        # Fall back to loss-best (original checkpoint) if no qualified checkpoints
+        main_ckpt = Path(models_dir) / f"{candidate_id}.pth"
+        if main_ckpt.exists():
+            print(f"\nFalling back to loss-best checkpoint: {main_ckpt.name}")
+            return main_ckpt, all_results
+
     return best_checkpoint, all_results
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Select best checkpoint by Elo evaluation"
+        description="Select best checkpoint by Elo evaluation with baseline gating"
     )
     parser.add_argument(
         "--candidate-id",
@@ -370,6 +442,23 @@ def main():
         action="store_true",
         help="Copy best checkpoint to {candidate_id}_best.pth",
     )
+    parser.add_argument(
+        "--min-random-win-rate",
+        type=float,
+        default=DEFAULT_MIN_RANDOM_WIN_RATE,
+        help=f"Minimum win rate vs random to qualify (default: {DEFAULT_MIN_RANDOM_WIN_RATE:.0%})",
+    )
+    parser.add_argument(
+        "--min-heuristic-win-rate",
+        type=float,
+        default=DEFAULT_MIN_HEURISTIC_WIN_RATE,
+        help=f"Minimum win rate vs heuristic to qualify (default: {DEFAULT_MIN_HEURISTIC_WIN_RATE:.0%})",
+    )
+    parser.add_argument(
+        "--no-gating",
+        action="store_true",
+        help="Disable baseline gating (use original Elo-only selection)",
+    )
 
     args = parser.parse_args()
 
@@ -379,12 +468,18 @@ def main():
         "hexagonal": BoardType.HEXAGONAL,
     }
 
+    # If --no-gating, set thresholds to 0
+    min_random = 0.0 if args.no_gating else args.min_random_win_rate
+    min_heuristic = 0.0 if args.no_gating else args.min_heuristic_win_rate
+
     best_ckpt, results = select_best_checkpoint(
         candidate_id=args.candidate_id,
         models_dir=args.models_dir,
         games_per_opponent=args.games,
         board_type=board_type_map[args.board_type],
         num_players=args.num_players,
+        min_random_win_rate=min_random,
+        min_heuristic_win_rate=min_heuristic,
     )
 
     if best_ckpt:

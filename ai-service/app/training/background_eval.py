@@ -33,6 +33,11 @@ class EvalConfig:
     """Configuration for background evaluation.
 
     Note: Uses thresholds from app.config.thresholds.
+
+    IMPORTANT: min_baseline_win_rates defines minimum win rates against each
+    baseline that must be met for a checkpoint to be considered "qualified".
+    This prevents selecting checkpoints that are strong in neural-vs-neural
+    play but weak against basic baselines.
     """
     eval_interval_steps: int = 1000  # Steps between evaluations
     games_per_eval: int = 20  # Games per evaluation
@@ -41,6 +46,12 @@ class EvalConfig:
     elo_drop_threshold: float = ELO_DROP_ROLLBACK  # Elo drop for early stopping
     auto_checkpoint: bool = True
     checkpoint_dir: str = "data/eval_checkpoints"
+    # Baseline gating: minimum win rates required against each baseline
+    # Checkpoints that don't meet these are considered "unqualified"
+    min_baseline_win_rates: Dict[str, float] = field(default_factory=lambda: {
+        "random": 0.85,  # Must beat random at 85%+
+        "heuristic": 0.60,  # Must beat heuristic at 60%+
+    })
 
 
 @dataclass
@@ -53,6 +64,8 @@ class EvalResult:
     games_played: int
     win_rate: float
     baseline_results: Dict[str, float]  # baseline -> win rate
+    passes_baseline_gating: bool = True  # Whether all baseline thresholds are met
+    failed_baselines: List[str] = field(default_factory=list)  # Which baselines failed
 
 
 class BackgroundEvaluator:
@@ -154,6 +167,19 @@ class BackgroundEvaluator:
         elo_estimate = self.current_elo + 400 * np.log10(win_rate / (1 - win_rate + 1e-8))
         elo_std = 100.0 / np.sqrt(total_games)  # Approximate
 
+        # Check baseline gating
+        passes_gating = True
+        failed_baselines = []
+        for baseline, win_rate_against in baseline_results.items():
+            min_required = self.config.min_baseline_win_rates.get(baseline, 0.0)
+            if win_rate_against < min_required:
+                passes_gating = False
+                failed_baselines.append(baseline)
+                logger.warning(
+                    f"[BackgroundEval] Failed baseline gating: {baseline} "
+                    f"({win_rate_against:.1%} < {min_required:.0%} required)"
+                )
+
         result = EvalResult(
             step=step,
             timestamp=time.time(),
@@ -162,6 +188,8 @@ class BackgroundEvaluator:
             games_played=total_games,
             win_rate=win_rate,
             baseline_results=baseline_results,
+            passes_baseline_gating=passes_gating,
+            failed_baselines=failed_baselines,
         )
 
         with self._lock:
@@ -181,11 +209,19 @@ class BackgroundEvaluator:
             # Check for improvement
             elo_gain = result.elo_estimate - self.best_elo
 
+            # Only checkpoint if baseline gating passes
             if elo_gain > self.config.elo_checkpoint_threshold:
-                self.best_elo = result.elo_estimate
-                if self.config.auto_checkpoint:
-                    self._save_checkpoint(result)
-                logger.info(f"[BackgroundEval] New best Elo: {result.elo_estimate:.0f} (+{elo_gain:.0f})")
+                if result.passes_baseline_gating:
+                    self.best_elo = result.elo_estimate
+                    if self.config.auto_checkpoint:
+                        self._save_checkpoint(result)
+                    logger.info(f"[BackgroundEval] New best Elo: {result.elo_estimate:.0f} (+{elo_gain:.0f})")
+                else:
+                    logger.warning(
+                        f"[BackgroundEval] Elo improved to {result.elo_estimate:.0f} (+{elo_gain:.0f}) "
+                        f"but FAILED baseline gating ({', '.join(result.failed_baselines)}). "
+                        "Checkpoint NOT saved."
+                    )
 
             # Check for drop (early stopping trigger)
             elif (self.best_elo - result.elo_estimate) > self.config.elo_drop_threshold:
