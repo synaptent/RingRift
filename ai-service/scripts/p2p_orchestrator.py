@@ -1096,6 +1096,9 @@ class P2POrchestrator:
             except Exception as e:
                 logger.error(f"Failed to initialize EloSyncManager: {e}")
 
+        # Queue Populator - Maintains 50+ work items until 2000 Elo target met
+        self._queue_populator: Optional["QueuePopulator"] = None
+
         # PFSP (Prioritized Fictitious Self-Play) opponent pool (leader-only)
         # Maintains a pool of historical models weighted by difficulty for diverse training
         self.pfsp_pools: Dict[str, Any] = {}  # config_key -> PFSPOpponentPool
@@ -6440,6 +6443,8 @@ class P2POrchestrator:
     async def handle_work_complete(self, request: web.Request) -> web.Response:
         """Mark work as completed successfully."""
         try:
+            from app.coordination.work_queue import WorkType
+
             if not self.is_leader:
                 return web.json_response({'error': 'not_leader', 'leader_id': self.leader_id}, status=403)
 
@@ -6453,7 +6458,37 @@ class P2POrchestrator:
             if not work_id:
                 return web.json_response({'error': 'work_id_required'}, status=400)
 
+            # Get work item before completing to track type
+            work_item = wq.items.get(work_id)
+            work_type = work_item.work_type if work_item else None
+            config = work_item.config if work_item else {}
+
             success = wq.complete_work(work_id, result)
+
+            # Update queue populator with Elo data if applicable
+            if success and self._queue_populator is not None:
+                board_type = config.get('board_type', '')
+                num_players = config.get('num_players', 0)
+
+                if work_type == WorkType.TOURNAMENT:
+                    # Tournament results include Elo updates
+                    elo = result.get('best_elo') or result.get('elo') or result.get('winner_elo')
+                    model_id = result.get('best_model') or result.get('winner_model')
+                    if elo and board_type and num_players:
+                        self._queue_populator.update_target_elo(board_type, num_players, elo, model_id)
+                        logger.info(f"Updated populator Elo: {board_type}_{num_players}p = {elo}")
+
+                elif work_type == WorkType.SELFPLAY:
+                    # Selfplay increments games count
+                    games = result.get('games_generated', config.get('games', 0))
+                    if games and board_type and num_players:
+                        self._queue_populator.increment_games(board_type, num_players, games)
+
+                elif work_type == WorkType.TRAINING:
+                    # Training increments training runs
+                    if board_type and num_players:
+                        self._queue_populator.increment_training(board_type, num_players)
+
             return web.json_response({'status': 'completed' if success else 'failed', 'work_id': work_id})
         except Exception as e:
             logger.error(f"Error completing work: {e}")
@@ -6499,6 +6534,22 @@ class P2POrchestrator:
             return web.json_response(status)
         except Exception as e:
             logger.error(f"Error getting work status: {e}")
+            return web.json_response({'error': str(e)}, status=500)
+
+    async def handle_populator_status(self, request: web.Request) -> web.Response:
+        """Get queue populator status for monitoring."""
+        try:
+            if self._queue_populator is None:
+                return web.json_response({
+                    'enabled': False,
+                    'message': 'Queue populator not initialized',
+                })
+
+            status = self._queue_populator.get_status()
+            status['is_leader'] = self.is_leader
+            return web.json_response(status)
+        except Exception as e:
+            logger.error(f"Error getting populator status: {e}")
             return web.json_response({'error': str(e)}, status=500)
 
     async def handle_work_for_node(self, request: web.Request) -> web.Response:
@@ -17600,6 +17651,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             populator = QueuePopulator(config=populator_config)
             populator.set_work_queue(get_work_queue())
+            self._queue_populator = populator
         except Exception as e:
             logger.error(f"Failed to initialize queue populator: {e}")
             return
@@ -27191,6 +27243,7 @@ print(json.dumps({{
         app.router.add_post('/work/complete', self.handle_work_complete)
         app.router.add_post('/work/fail', self.handle_work_fail)
         app.router.add_get('/work/status', self.handle_work_status)
+        app.router.add_get('/work/populator', self.handle_populator_status)
         app.router.add_get('/work/node/{node_id}', self.handle_work_for_node)
         app.router.add_post('/work/cancel', self.handle_work_cancel)
         app.router.add_get('/work/history', self.handle_work_history)

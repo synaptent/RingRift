@@ -585,6 +585,38 @@ auto_scaling:
   predictive_scaling: true # Enable demand prediction
   prediction_hours_ahead: 2 # Hours ahead to predict
 
+# Queue Populator - Maintain minimum work queue depth until Elo targets met
+queue_populator:
+  enabled: true
+  min_queue_depth: 50 # Always maintain at least 50 work items
+  target_elo: 2000.0 # Target Elo for all configurations
+  check_interval_seconds: 60 # Check queue depth every minute
+
+  # Work distribution (must sum to 1.0)
+  selfplay_ratio: 0.60 # 60% selfplay for data generation
+  training_ratio: 0.30 # 30% training for model improvement
+  tournament_ratio: 0.10 # 10% tournament for Elo measurement
+
+  # Board types and player counts to train
+  board_types:
+    - square8
+    - square19
+    - hex8
+    - hexagonal
+  player_counts: [2, 3, 4] # 2p, 3p, 4p for each board
+
+  # Selfplay settings
+  selfplay_games_per_item: 50 # Games per selfplay work item
+  selfplay_priority: 50 # Lower priority (background)
+
+  # Training settings
+  training_priority: 100 # Highest priority
+  min_games_for_training: 300 # Min games before training trigger
+
+  # Tournament settings
+  tournament_games: 50 # Games per tournament
+  tournament_priority: 80 # Medium-high priority
+
 # Self-healing - Auto-recover from failures without manual intervention
 self_healing:
   enabled: true
