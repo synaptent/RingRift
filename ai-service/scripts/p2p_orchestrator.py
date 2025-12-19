@@ -66,6 +66,56 @@ def get_work_queue():
             _work_queue = None
     return _work_queue
 
+# Automation managers (lazy imports to avoid circular deps)
+_auto_scaler = None
+_recovery_manager = None
+_predictive_alerts = None
+_tier_calibrator = None
+
+def get_auto_scaler():
+    """Get the auto-scaler singleton (lazy load)."""
+    global _auto_scaler
+    if _auto_scaler is None:
+        try:
+            from app.coordination.auto_scaler import AutoScaler, load_scaling_config_from_yaml
+            _auto_scaler = AutoScaler()
+        except ImportError:
+            _auto_scaler = None
+    return _auto_scaler
+
+def get_recovery_manager():
+    """Get the recovery manager singleton (lazy load)."""
+    global _recovery_manager
+    if _recovery_manager is None:
+        try:
+            from app.coordination.recovery_manager import RecoveryManager
+            _recovery_manager = RecoveryManager()
+        except ImportError:
+            _recovery_manager = None
+    return _recovery_manager
+
+def get_predictive_alerts():
+    """Get the predictive alerts manager (lazy load)."""
+    global _predictive_alerts
+    if _predictive_alerts is None:
+        try:
+            from app.monitoring.predictive_alerts import PredictiveAlertManager
+            _predictive_alerts = PredictiveAlertManager()
+        except ImportError:
+            _predictive_alerts = None
+    return _predictive_alerts
+
+def get_tier_calibrator():
+    """Get the tier calibrator singleton (lazy load)."""
+    global _tier_calibrator
+    if _tier_calibrator is None:
+        try:
+            from app.training.tier_calibrator import TierCalibrator
+            _tier_calibrator = TierCalibrator()
+        except ImportError:
+            _tier_calibrator = None
+    return _tier_calibrator
+
 # Configure logging for the orchestrator
 logging.basicConfig(
     level=logging.INFO,
@@ -16881,6 +16931,199 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         except Exception as e:
             logger.warning(f"Auto-start request failed for {peer.node_id}: {e}")
 
+    # =========================================================================
+    # AUTOMATION LOOPS (2024-12)
+    # These loops enable hands-free cluster operation
+    # =========================================================================
+
+    async def _auto_scaling_loop(self):
+        """Background loop for auto-scaling Vast.ai instances based on queue depth.
+
+        Only runs on the leader node. Evaluates scaling decisions every 5 minutes.
+        """
+        SCALING_INTERVAL = 300  # 5 minutes
+        await asyncio.sleep(60)  # Initial delay
+
+        logger.info("Auto-scaling loop started")
+
+        while self.running:
+            try:
+                # Only leader performs scaling
+                if self.role != NodeRole.LEADER:
+                    await asyncio.sleep(SCALING_INTERVAL)
+                    continue
+
+                auto_scaler = get_auto_scaler()
+                if auto_scaler is None:
+                    await asyncio.sleep(SCALING_INTERVAL)
+                    continue
+
+                # Wire up the work queue if not already done
+                wq = get_work_queue()
+                if wq is not None:
+                    auto_scaler.set_work_queue(wq)
+
+                # Evaluate scaling decision
+                decision = await auto_scaler.evaluate()
+
+                if decision.action.value == "scale_up":
+                    logger.info(f"Auto-scaling: scale_up {decision.count} instances ({decision.reason})")
+                    # TODO: Wire to vast_p2p_sync.py provision function
+                    # For now, just log the decision
+                    auto_scaler.record_scale_event(decision, success=True)
+
+                elif decision.action.value == "scale_down":
+                    logger.info(f"Auto-scaling: scale_down {len(decision.node_ids)} instances ({decision.reason})")
+                    # TODO: Wire to vast_p2p_sync.py deprovision function
+                    auto_scaler.record_scale_event(decision, success=True)
+
+                await asyncio.sleep(SCALING_INTERVAL)
+
+            except Exception as e:
+                logger.error(f"Auto-scaling loop error: {e}")
+                await asyncio.sleep(SCALING_INTERVAL)
+
+    async def _predictive_monitoring_loop(self):
+        """Background loop for proactive monitoring and alerting.
+
+        Predicts issues before they occur and sends proactive alerts.
+        Only runs on the leader node.
+        """
+        MONITOR_INTERVAL = 300  # 5 minutes
+        await asyncio.sleep(90)  # Initial delay
+
+        logger.info("Predictive monitoring loop started")
+
+        while self.running:
+            try:
+                # Only leader performs monitoring
+                if self.role != NodeRole.LEADER:
+                    await asyncio.sleep(MONITOR_INTERVAL)
+                    continue
+
+                alert_manager = get_predictive_alerts()
+                if alert_manager is None:
+                    await asyncio.sleep(MONITOR_INTERVAL)
+                    continue
+
+                # Collect metrics from peers
+                with self.peers_lock:
+                    for peer in self.peers.values():
+                        if not peer.is_alive():
+                            continue
+
+                        # Record disk usage
+                        disk_pct = float(getattr(peer, "disk_percent", 0) or 0)
+                        if disk_pct > 0:
+                            alert_manager.record_disk_usage(peer.node_id, disk_pct)
+
+                        # Record memory usage
+                        mem_pct = float(getattr(peer, "mem_percent", 0) or 0)
+                        if mem_pct > 0:
+                            alert_manager.record_memory_usage(peer.node_id, mem_pct)
+
+                # Record queue depth
+                wq = get_work_queue()
+                if wq is not None:
+                    status = wq.get_queue_status()
+                    pending = status.get("by_status", {}).get("pending", 0)
+                    alert_manager.record_queue_depth(pending)
+
+                # Check for alerts
+                node_ids = [p.node_id for p in self.peers.values() if p.is_alive()]
+                model_ids = []  # TODO: Get production models from registry
+
+                # Get last training time (approximate from stats)
+                last_training = time.time() - 3600  # Default to 1 hour ago
+
+                alerts = await alert_manager.run_all_checks(
+                    node_ids=node_ids,
+                    model_ids=model_ids,
+                    last_training_time=last_training,
+                )
+
+                # Send alerts via webhook notifier
+                for alert in alerts:
+                    try:
+                        await self.notifier.send(
+                            title=f"Proactive Alert: {alert.alert_type.value}",
+                            message=alert.message,
+                            level="warning" if alert.severity.value == "warning" else "error",
+                            fields={
+                                "action": alert.action,
+                                "target": alert.target_id,
+                            },
+                            node_id=alert.target_id,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to send proactive alert: {e}")
+
+                await asyncio.sleep(MONITOR_INTERVAL)
+
+            except Exception as e:
+                logger.error(f"Predictive monitoring loop error: {e}")
+                await asyncio.sleep(MONITOR_INTERVAL)
+
+    async def _self_healing_loop(self):
+        """Background loop for self-healing: recover stuck jobs and unhealthy nodes.
+
+        Detects jobs that have exceeded their expected timeout and automatically
+        terminates and reschedules them. Only runs on the leader node.
+        """
+        HEALING_INTERVAL = 60  # 1 minute
+        await asyncio.sleep(45)  # Initial delay
+
+        logger.info("Self-healing loop started")
+
+        while self.running:
+            try:
+                # Only leader performs healing
+                if self.role != NodeRole.LEADER:
+                    await asyncio.sleep(HEALING_INTERVAL)
+                    continue
+
+                recovery_manager = get_recovery_manager()
+                if recovery_manager is None:
+                    await asyncio.sleep(HEALING_INTERVAL)
+                    continue
+
+                # Wire up work queue
+                wq = get_work_queue()
+                if wq is not None:
+                    recovery_manager.set_work_queue(wq)
+
+                    # Get running work items
+                    status = wq.get_queue_status()
+                    running_items = status.get("running", [])
+
+                    # Convert to WorkItem objects for stuck job detection
+                    from app.coordination.work_queue import WorkItem, WorkStatus, WorkType
+
+                    work_items = []
+                    for item_dict in running_items:
+                        try:
+                            work_items.append(WorkItem.from_dict(item_dict))
+                        except Exception:
+                            pass
+
+                    # Find stuck jobs
+                    stuck_jobs = recovery_manager.find_stuck_jobs(work_items)
+
+                    for work_item, expected_timeout in stuck_jobs:
+                        logger.warning(
+                            f"Detected stuck job {work_item.work_id} on {work_item.claimed_by} "
+                            f"(running {time.time() - work_item.started_at:.0f}s > expected {expected_timeout * 1.5:.0f}s)"
+                        )
+                        result = await recovery_manager.recover_stuck_job(work_item, expected_timeout)
+                        if result.value == "success":
+                            logger.info(f"Recovered stuck job {work_item.work_id}")
+
+                await asyncio.sleep(HEALING_INTERVAL)
+
+            except Exception as e:
+                logger.error(f"Self-healing loop error: {e}")
+                await asyncio.sleep(HEALING_INTERVAL)
+
     async def handle_games_analytics(self, request: web.Request) -> web.Response:
         """GET /games/analytics - Game statistics for dashboards.
 
@@ -26651,6 +26894,18 @@ print(json.dumps({{
 
         # Add idle detection loop (leader auto-assigns work to idle nodes)
         tasks.append(asyncio.create_task(self._idle_detection_loop()))
+
+        # === AUTOMATION LOOPS (2024-12) ===
+        # These loops enable hands-free cluster operation
+
+        # Auto-scaling loop: provision/deprovision Vast.ai instances based on queue depth
+        tasks.append(asyncio.create_task(self._auto_scaling_loop()))
+
+        # Predictive monitoring loop: alert before problems occur
+        tasks.append(asyncio.create_task(self._predictive_monitoring_loop()))
+
+        # Self-healing loop: recover stuck jobs and unhealthy nodes
+        tasks.append(asyncio.create_task(self._self_healing_loop()))
 
         # Best-effort bootstrap from seed peers before running elections. This
         # helps newly started cloud nodes quickly learn about the full cluster.

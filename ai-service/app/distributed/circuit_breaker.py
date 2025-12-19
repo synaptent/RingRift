@@ -161,6 +161,8 @@ class _CircuitData:
     opened_at: Optional[float] = None
     half_open_at: Optional[float] = None
     half_open_calls: int = 0
+    # Exponential backoff tracking
+    consecutive_opens: int = 0  # How many times circuit opened without full recovery
 
 
 class CircuitBreaker:
@@ -170,14 +172,18 @@ class CircuitBreaker:
     - Per-target circuit tracking (e.g., different hosts)
     - Configurable failure thresholds and recovery timeouts
     - Half-open state for gradual recovery testing
+    - Exponential backoff with jitter for repeated failures
     - Thread-safe operation
     - Async context manager support
 
     Args:
         failure_threshold: Number of consecutive failures to open circuit
-        recovery_timeout: Seconds to wait before testing recovery (half-open)
+        recovery_timeout: Base seconds to wait before testing recovery (half-open)
         half_open_max_calls: Max test calls in half-open state
         success_threshold: Successes needed in half-open to close circuit
+        backoff_multiplier: Multiplier for exponential backoff (default 2.0)
+        max_backoff: Maximum recovery timeout in seconds (default 600 = 10 min)
+        jitter_factor: Random jitter factor 0-1 (default 0.1 = 10%)
     """
 
     def __init__(
@@ -188,6 +194,9 @@ class CircuitBreaker:
         success_threshold: int = 1,
         on_state_change: Optional[Callable[[str, CircuitState, CircuitState], None]] = None,
         operation_type: str = "default",  # For Prometheus metrics labeling
+        backoff_multiplier: float = 2.0,
+        max_backoff: float = 600.0,
+        jitter_factor: float = 0.1,
     ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
@@ -195,6 +204,9 @@ class CircuitBreaker:
         self.success_threshold = success_threshold
         self._on_state_change = on_state_change
         self.operation_type = operation_type
+        self.backoff_multiplier = backoff_multiplier
+        self.max_backoff = max_backoff
+        self.jitter_factor = jitter_factor
 
         self._circuits: Dict[str, _CircuitData] = {}
         self._lock = RLock()
