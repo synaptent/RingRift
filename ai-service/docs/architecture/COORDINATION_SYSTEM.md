@@ -40,6 +40,149 @@ The coordination system provides distributed resource management, task schedulin
     +-----------------------------------------------------+
 ```
 
+## Core Abstractions
+
+### CoordinatorBase (`coordinator_base.py`)
+
+Abstract base class providing unified lifecycle management for all coordinators.
+
+**Key Features:**
+
+- Status management (INITIALIZING → READY → RUNNING → DRAINING → STOPPED)
+- Async lifecycle methods (initialize, start, stop, shutdown)
+- Dependency injection via setters
+- Stats/metrics tracking
+- Error recording
+
+**Usage:**
+
+```python
+from app.coordination.coordinator_base import CoordinatorBase, CoordinatorStatus
+
+class MyCoordinator(CoordinatorBase):
+    def __init__(self):
+        super().__init__(name="MyCoordinator")
+
+    async def _do_start(self) -> None:
+        # Custom start logic
+        pass
+
+    async def _do_stop(self) -> None:
+        # Custom stop logic
+        pass
+
+    async def get_stats(self) -> Dict[str, Any]:
+        stats = await super().get_stats()
+        stats["custom_metric"] = self._my_metric
+        return stats
+```
+
+**Status States:**
+| Status | Description |
+|--------------|----------------------------------------|
+| INITIALIZING | Initial state before setup |
+| READY | Initialized, ready to start |
+| RUNNING | Actively processing |
+| PAUSED | Temporarily suspended |
+| DRAINING | Finishing in-progress work |
+| ERROR | Error state |
+| STOPPED | Shutdown complete |
+
+### Mixins
+
+**SQLitePersistenceMixin:**
+Thread-local SQLite connections with WAL mode for concurrent access.
+
+```python
+class MyManager(CoordinatorBase, SQLitePersistenceMixin):
+    def __init__(self, db_path: Path):
+        super().__init__()
+        self.init_db(db_path)
+
+    def _get_schema(self) -> str:
+        return '''CREATE TABLE IF NOT EXISTS my_table (...)'''
+```
+
+**SingletonMixin:**
+Ensures only one instance per class exists.
+
+```python
+class MyManager(CoordinatorBase, SingletonMixin):
+    @classmethod
+    def get_instance(cls) -> 'MyManager':
+        return cls._get_or_create_instance()
+```
+
+**CallbackMixin:**
+Event-driven extensibility via callbacks.
+
+```python
+class MyCoordinator(CoordinatorBase, CallbackMixin):
+    async def on_job_complete(self, job_id: str):
+        await self.invoke_callbacks("job_complete", job_id)
+
+# Register handlers
+coordinator.register_callback("job_complete", my_handler)
+```
+
+### CoordinatorRegistry
+
+Singleton registry for centralized coordinator management and graceful shutdown.
+
+**Key Features:**
+
+- Register/unregister coordinators
+- Orchestrated shutdown with timeouts
+- Signal handler integration (SIGTERM/SIGINT)
+- Health summary aggregation
+
+**Usage:**
+
+```python
+from app.coordination.coordinator_base import (
+    CoordinatorRegistry,
+    get_coordinator_registry,
+    shutdown_all_coordinators,
+)
+
+# Get the singleton registry
+registry = get_coordinator_registry()
+
+# Register coordinators
+registry.register(my_coordinator, shutdown_priority=0)
+
+# Install signal handlers for graceful shutdown
+registry.install_signal_handlers()
+
+# Get health summary
+health = registry.get_health_summary()
+
+# Manual shutdown (with 30s timeout per coordinator)
+results = await shutdown_all_coordinators(timeout=30.0)
+```
+
+**Graceful Shutdown Flow:**
+
+```
+SIGTERM/SIGINT received
+       │
+       ▼
+┌─────────────────────┐
+│ shutdown_all()      │
+│ (reverse reg order) │
+└──────────┬──────────┘
+           │
+     ┌─────┴─────┐
+     ▼           ▼
+┌────────┐  ┌────────┐
+│Coord 1 │  │Coord 2 │  ...
+│shutdown│  │shutdown│
+└────────┘  └────────┘
+           │
+           ▼
+    Shutdown complete
+```
+
 ## Core Modules
 
 ### 1. Task Coordinator (`task_coordinator.py`)
@@ -522,6 +665,14 @@ print(json.dumps(get_utilization_status(), indent=2))
 
 ## Related Documentation
 
-- [TRAINING_OPTIMIZATIONS.md](TRAINING_OPTIMIZATIONS.md) - Training pipeline optimizations
-- [FEEDBACK_ACCELERATOR.md](FEEDBACK_ACCELERATOR.md) - Elo momentum tracking
-- [scripts/README.md](../scripts/README.md) - Resource guard usage
+- [TRAINING_OPTIMIZATIONS.md](../training/TRAINING_OPTIMIZATIONS.md) - Training pipeline optimizations
+- [FEEDBACK_ACCELERATOR.md](../training/FEEDBACK_ACCELERATOR.md) - Elo momentum tracking
+- [scripts/README.md](../../scripts/README.md) - Resource guard usage
+
+### Monitoring
+
+- **Grafana Dashboard**: `monitoring/grafana/dashboards/coordinators.json`
+- **Prometheus Alerts**: `monitoring/prometheus/rules/coordinator_alerts.yml`
+- **Admin Endpoints**:
+  - `GET /admin/health/coordinators` - Coordinator health status
+  - `GET /admin/health/full` - Full system health check
