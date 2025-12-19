@@ -99,24 +99,23 @@ except ImportError:
 class LifecycleConfig:
     """Configuration for model lifecycle management.
 
-    NOTE: Use canonical values from app.config.unified_config:
-    - get_min_elo_improvement() for min_elo_improvement
-    - get_training_threshold() for min_games_for_training
+    Defaults are sourced from app.config.thresholds (single source of truth).
+    Override at instantiation if needed.
     """
     # Registry paths
     registry_dir: str = "data/model_registry"
     model_storage_dir: str = "data/models"
 
-    # Promotion criteria - match unified_config.py
-    min_elo_improvement: float = 25.0  # Canonical: 25 (was 20)
-    min_games_for_staging: int = 50
-    min_games_for_production: int = 200
-    min_win_rate_vs_production: float = 0.52
+    # Promotion criteria - from thresholds.py
+    min_elo_improvement: float = field(default_factory=lambda: float(ELO_IMPROVEMENT_PROMOTE))
+    min_games_for_staging: int = field(default_factory=lambda: MIN_GAMES_REGRESSION)
+    min_games_for_production: int = field(default_factory=lambda: MIN_GAMES_PROMOTE * 2)
+    min_win_rate_vs_production: float = field(default_factory=lambda: MIN_WIN_RATE_PROMOTE)
     max_value_mse_degradation: float = 0.05
 
-    # Training triggers - match unified_config.py
-    min_games_for_training: int = 500  # Canonical: 500
-    training_data_staleness_hours: int = 24
+    # Training triggers - from thresholds.py
+    min_games_for_training: int = field(default_factory=lambda: TRAINING_TRIGGER_GAMES)
+    training_data_staleness_hours: float = field(default_factory=lambda: TRAINING_STALENESS_HOURS)
     auto_train_on_data_threshold: bool = True
 
     # Sync settings
@@ -124,13 +123,13 @@ class LifecycleConfig:
     p2p_api_base: str = "http://localhost:8770"
     sync_timeout_seconds: float = 60.0
 
-    # Rollback settings
+    # Rollback settings - from thresholds.py
     auto_rollback_on_regression: bool = True
-    regression_threshold_elo: float = -30.0
+    regression_threshold_elo: float = field(default_factory=lambda: -float(ELO_DROP_ROLLBACK))
 
     # Calibration settings
     recalibrate_on_promotion: bool = True
-    calibration_games_required: int = 100
+    calibration_games_required: int = field(default_factory=lambda: MIN_GAMES_PROMOTE)
 
     # Lifecycle hooks
     on_promotion_webhook: Optional[str] = None

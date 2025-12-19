@@ -54,13 +54,34 @@ except ImportError:
     update_coordinator_uptime = None
     HAS_COORDINATOR_METRICS = False
 
-# Resource thresholds - aligned with 80% max utilization (2025-12-16)
-MEMORY_WARNING_THRESHOLD = 70.0  # Below 80% limit
-MEMORY_CRITICAL_THRESHOLD = 80.0  # At limit
-DISK_WARNING_THRESHOLD = 65.0  # Below 70% limit
-DISK_CRITICAL_THRESHOLD = 70.0  # At disk limit (tighter than other resources)
-CPU_WARNING_THRESHOLD = 70.0  # Below 80% limit
-CPU_CRITICAL_THRESHOLD = 80.0  # At limit
+# Import centralized thresholds (single source of truth)
+try:
+    from app.config.thresholds import (
+        MEMORY_WARNING_PERCENT,
+        MEMORY_CRITICAL_PERCENT,
+        DISK_WARNING_PERCENT,
+        DISK_CRITICAL_PERCENT,
+        CPU_WARNING_PERCENT,
+        CPU_CRITICAL_PERCENT,
+        CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
+    )
+    # Use centralized thresholds
+    MEMORY_WARNING_THRESHOLD = MEMORY_WARNING_PERCENT
+    MEMORY_CRITICAL_THRESHOLD = MEMORY_CRITICAL_PERCENT
+    DISK_WARNING_THRESHOLD = DISK_WARNING_PERCENT
+    DISK_CRITICAL_THRESHOLD = DISK_CRITICAL_PERCENT
+    CPU_WARNING_THRESHOLD = CPU_WARNING_PERCENT
+    CPU_CRITICAL_THRESHOLD = CPU_CRITICAL_PERCENT
+    RECOVERY_COOLDOWN = CIRCUIT_BREAKER_RECOVERY_TIMEOUT
+except ImportError:
+    # Fallback defaults matching thresholds.py
+    MEMORY_WARNING_THRESHOLD = 70.0
+    MEMORY_CRITICAL_THRESHOLD = 80.0
+    DISK_WARNING_THRESHOLD = 65.0
+    DISK_CRITICAL_THRESHOLD = 70.0
+    CPU_WARNING_THRESHOLD = 70.0
+    CPU_CRITICAL_THRESHOLD = 80.0
+    RECOVERY_COOLDOWN = 300
 
 
 @dataclass
@@ -599,7 +620,7 @@ class HealthRecoveryIntegration:
         self._running = False
         self._consecutive_failures: Dict[str, int] = {}
         self._last_recovery_attempt: Dict[str, float] = {}
-        self._recovery_cooldown = 300  # 5 minutes between recovery attempts
+        self._recovery_cooldown = RECOVERY_COOLDOWN  # From thresholds.py
 
     async def check_and_recover(self) -> HealthSummary:
         """

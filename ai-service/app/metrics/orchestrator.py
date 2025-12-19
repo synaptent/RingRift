@@ -85,6 +85,7 @@ SELFPLAY_ERRORS_TOTAL: Final[Counter] = _safe_metric(Counter,
     labelnames=("board_type", "num_players", "error_type"),
 )
 
+# TODO(2025-12): Wire to orchestrator job queue tracking
 SELFPLAY_QUEUE_SIZE: Final[Gauge] = _safe_metric(Gauge,
     "ringrift_selfplay_queue_size",
     "Current size of the selfplay job queue.",
@@ -201,6 +202,7 @@ PIPELINE_STAGE_DURATION: Final[Histogram] = _safe_metric(Histogram,
     buckets=(10, 30, 60, 300, 600, 1200, 1800, 3600, 7200),
 )
 
+# TODO(2025-12): Wire to main training loop iteration counter
 PIPELINE_ITERATIONS_TOTAL: Final[Counter] = _safe_metric(Counter,
     "ringrift_pipeline_iterations_total",
     "Total pipeline iterations completed.",
