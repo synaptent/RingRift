@@ -24,14 +24,22 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Try to import DataSyncManager for enhanced data collection
+# Try to import SyncCoordinator for enhanced data collection
+# Uses new unified sync coordinator, falls back to deprecated data_sync
 try:
-    from app.distributed.data_sync import DataSyncManager, get_sync_manager
+    from app.distributed.sync_coordinator import SyncCoordinator
     HAS_DATA_SYNC = True
+    def get_sync_manager():
+        return SyncCoordinator.get_instance()
+    DataSyncManager = SyncCoordinator
 except ImportError:
-    HAS_DATA_SYNC = False
-    DataSyncManager = None
-    get_sync_manager = None
+    try:
+        from app.distributed.data_sync import DataSyncManager, get_sync_manager
+        HAS_DATA_SYNC = True
+    except ImportError:
+        HAS_DATA_SYNC = False
+        DataSyncManager = None
+        get_sync_manager = None
 
 # Unified resource guard - 80% utilization limits (enforced 2025-12-16)
 try:

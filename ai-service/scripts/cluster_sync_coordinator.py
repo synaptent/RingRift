@@ -56,13 +56,21 @@ except ImportError:
     )
     logger = logging.getLogger(__name__)
 
-# Import DataSyncManager for transport fallback chain (tailscale → cloudflare → ssh)
+# Import SyncCoordinator for transport fallback chain (aria2 → ssh → p2p)
+# Uses new unified sync coordinator, falls back to deprecated data_sync
 try:
-    from app.distributed.data_sync import DataSyncManager, get_sync_manager
+    from app.distributed.sync_coordinator import SyncCoordinator
     HAS_DATA_SYNC = True
+    def get_sync_manager():
+        return SyncCoordinator.get_instance()
+    DataSyncManager = SyncCoordinator
 except ImportError:
-    HAS_DATA_SYNC = False
-    logger.warning("DataSyncManager not available, using direct rsync")
+    try:
+        from app.distributed.data_sync import DataSyncManager, get_sync_manager
+        HAS_DATA_SYNC = True
+    except ImportError:
+        HAS_DATA_SYNC = False
+        logger.warning("SyncCoordinator not available, using direct rsync")
 
 
 @dataclass

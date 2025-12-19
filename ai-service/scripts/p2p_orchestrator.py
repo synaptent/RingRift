@@ -443,13 +443,22 @@ except ImportError:
     ensure_elo_synced = None
 
 # Distributed data sync manager for model/data distribution
+# Prefer new sync_coordinator, fallback to deprecated data_sync
 try:
-    from app.distributed.data_sync import DataSyncManager, get_sync_manager
+    from app.distributed.sync_coordinator import SyncCoordinator, full_cluster_sync
     HAS_DATA_SYNC = True
+    # Compatibility shim: expose get_sync_manager for legacy code
+    def get_sync_manager():
+        return SyncCoordinator.get_instance()
+    DataSyncManager = SyncCoordinator  # Alias for compatibility
 except ImportError:
-    HAS_DATA_SYNC = False
-    DataSyncManager = None
-    get_sync_manager = None
+    try:
+        from app.distributed.data_sync import DataSyncManager, get_sync_manager
+        HAS_DATA_SYNC = True
+    except ImportError:
+        HAS_DATA_SYNC = False
+        DataSyncManager = None
+        get_sync_manager = None
 
 # Phase 3.1: Curriculum weights integration for selfplay prioritization
 try:

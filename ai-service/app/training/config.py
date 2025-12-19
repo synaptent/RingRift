@@ -588,10 +588,16 @@ def get_model_version_for_board(board_type: BoardType) -> str:
 
 @dataclass
 class SelfPlayConfig:
-    """Configuration for self-play data generation.
+    """Configuration for self-play data generation in training pipelines.
 
     Controls how training games are generated during the self-play phase
-    of the training pipeline.
+    of the training pipeline. This is a simplified config for pipeline use.
+
+    For standalone selfplay scripts with full argument parsing support, use:
+        from app.training.selfplay_config import SelfplayConfig
+
+    Note: The canonical SelfplayConfig in selfplay_config.py has more options
+    including engine modes, output formats, and recording options.
     """
     # Number of games to generate per iteration
     games_per_iteration: int = 500
@@ -609,6 +615,11 @@ class SelfPlayConfig:
     temperature: float = 1.0  # MCTS/policy temperature
     noise_scale: float = 0.25  # Dirichlet noise scale
     random_opening_moves: int = 0  # Random moves at start for diversity
+
+    @property
+    def num_games(self) -> int:
+        """Alias for games_per_iteration for compatibility with SelfplayConfig."""
+        return self.games_per_iteration
 
 
 @dataclass

@@ -6,7 +6,6 @@ import sys
 import os
 import logging
 import time
-import torch
 from typing import Dict, Optional
 from datetime import datetime
 
@@ -17,6 +16,14 @@ from app.models import (
     GameState, BoardType, BoardState, GamePhase, GameStatus, TimeControl,
     Player, AIConfig
 )
+
+# Model cache for memory-efficient model sharing (2025-12)
+try:
+    from app.ai.model_cache import clear_model_cache
+    HAS_MODEL_CACHE = True
+except ImportError:
+    HAS_MODEL_CACHE = False
+    clear_model_cache = None  # type: ignore
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -47,6 +47,7 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.models import BoardType, GameState
+from app.utils.json_utils import json_default
 from app.ai.heuristic_weights import (
     BASE_V1_BALANCED_WEIGHTS,
     HEURISTIC_WEIGHT_KEYS,
@@ -405,13 +406,6 @@ class WorkerRequestHandler(BaseHTTPRequestHandler):
 
     def send_json_response(self, status_code: int, data: Dict[str, Any]) -> None:
         """Send a JSON response."""
-
-        def json_default(obj: Any) -> Any:
-            """Handle non-serializable types."""
-            if isinstance(obj, datetime):
-                return obj.isoformat()
-            raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
-
         body = json.dumps(data, default=json_default).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")

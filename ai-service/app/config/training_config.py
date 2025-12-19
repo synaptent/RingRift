@@ -278,7 +278,13 @@ class NeuralNetConfig:
 
 @dataclass
 class SelfPlayConfig:
-    """Configuration for self-play data generation."""
+    """Configuration for self-play data generation.
+
+    .. deprecated:: 2025-12
+        Use :class:`app.training.selfplay_config.SelfplayConfig` instead.
+        This legacy config is maintained for backwards compatibility with
+        existing scripts that use `from_env()`.
+    """
 
     # Generation settings
     num_games: int = 1000

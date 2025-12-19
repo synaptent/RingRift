@@ -22,6 +22,13 @@ from .paths import (
     ensure_dir,
     ensure_parent_dir,
 )
+from .json_utils import (
+    JSONEncoder,
+    dumps as json_dumps,
+    dump as json_dump,
+    pretty_dumps,
+    json_default,
+)
 from .progress_reporter import (
     OptimizationProgressReporter,
     ProgressReporter,
@@ -77,6 +84,12 @@ __all__ = [
     "get_log_path",
     "ensure_dir",
     "ensure_parent_dir",
+    # JSON utilities
+    "JSONEncoder",
+    "json_dumps",
+    "json_dump",
+    "pretty_dumps",
+    "json_default",
     # Memory
     "MemoryConfig",
     "OptimizationProgressReporter",

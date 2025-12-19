@@ -167,6 +167,38 @@ from .sync_utils import (
     rsync_push_file,
 )
 
+# Storage provider abstraction for NFS, ephemeral, and local storage
+from .storage_provider import (
+    StorageProvider,
+    StorageProviderType,
+    StorageCapabilities,
+    StoragePaths,
+    LambdaNFSProvider,
+    VastEphemeralProvider,
+    LocalStorageProvider,
+    get_storage_provider,
+    detect_storage_provider,
+    get_optimal_transport_config,
+    is_nfs_available,
+    should_sync_to_node,
+    get_selfplay_dir,
+    get_models_dir,
+    get_training_dir,
+    get_scratch_dir,
+)
+
+# Sync coordinator - unified entry point for all sync operations
+from .sync_coordinator import (
+    SyncCoordinator,
+    SyncCategory,
+    SyncStats,
+    ClusterSyncStats,
+    sync_training_data,
+    sync_models,
+    sync_games,
+    full_cluster_sync,
+)
+
 __all__ = [
     # Host configuration and memory detection
     "HostConfig",

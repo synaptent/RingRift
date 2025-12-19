@@ -89,7 +89,7 @@ from app.ai.neural_net import (
     multi_player_value_loss,
     get_policy_size_for_board,
 )
-from app.training.config import TrainConfig
+from app.training.config import TrainConfig, get_model_version_for_board
 from app.models import BoardType
 from app.utils.resource_guard import check_disk_space, get_disk_usage, LIMITS
 from app.training.hex_augmentation import HexSymmetryTransform
@@ -3772,17 +3772,10 @@ def main():
         config.model_dir,
         f"{config.model_id}.pth",
     )
-    # Board-aware default model version.
-    # The training CLI is frequently invoked without specifying --model-version,
-    # and we want square8 runs to default to the preferred v3 architecture.
+    # Board-aware default model version (centralized in config.py)
     model_version = args.model_version
     if model_version is None:
-        if config.board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
-            model_version = "hex"
-        elif config.board_type == BoardType.SQUARE8:
-            model_version = "v3"
-        else:
-            model_version = "v2"
+        model_version = get_model_version_for_board(config.board_type)
     # Run training
     train_model(
         config=config,

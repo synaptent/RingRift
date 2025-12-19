@@ -92,6 +92,21 @@ except ImportError:
     HAS_CONTENT_DEDUP = False
     ContentDeduplicator = None
 
+# Storage provider for NFS detection and provider-specific paths
+try:
+    from app.distributed.storage_provider import (
+        StorageProvider,
+        get_storage_provider,
+        should_sync_to_node,
+        is_nfs_available,
+    )
+    HAS_STORAGE_PROVIDER = True
+except ImportError:
+    HAS_STORAGE_PROVIDER = False
+    get_storage_provider = None
+    should_sync_to_node = lambda x: True  # Always sync if no provider
+    is_nfs_available = lambda: False
+
 try:
     from app.distributed.ingestion_wal import (
         IngestionWAL,
@@ -999,6 +1014,18 @@ class UnifiedDataSyncService:
     async def _sync_host(self, host: HostConfig) -> int:
         """Sync games from a single host. Returns count of new games."""
         state = self.host_states[host.name]
+
+        # NFS optimization: Skip sync if both nodes have shared NFS storage
+        # This is a major performance win for Lambda Labs where all nodes
+        # have access to the same 14PB shared filesystem
+        if HAS_STORAGE_PROVIDER and not should_sync_to_node(host.name):
+            if is_nfs_available():
+                logger.debug(
+                    f"{host.name}: Skipping sync - both nodes have shared NFS storage"
+                )
+                # Still need to update state to reflect games available on NFS
+                # The games are already accessible via the shared filesystem
+                return 0
 
         # Circuit breaker check
         if HAS_CIRCUIT_BREAKER:
