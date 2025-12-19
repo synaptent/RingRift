@@ -16967,11 +16967,14 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 await asyncio.sleep(IDLE_CHECK_INTERVAL)
 
     async def _auto_start_selfplay(self, peer, idle_duration: float):
-        """Auto-start GPU selfplay on an idle node.
+        """Auto-start diverse hybrid selfplay on an idle node.
 
         Works with both NodeInfo (P2P peers) and DiscoveredNode (unified inventory).
-        Uses GPU batch processing - starts 2-4 parallel processes with large game counts.
-        This is more efficient than many small processes competing for GPU memory.
+        Uses diverse profiles for high-quality training data:
+        - Multiple engine modes (gumbel-mcts, nnue-guided, policy-only, mcts)
+        - Multiple board types (hex8, square8, square19)
+        - Multiple player counts (2, 3, 4)
+        - Multiple heuristic profiles (balanced, aggressive, territorial, defensive)
         """
         # Check for GPU - works with both NodeInfo and DiscoveredNode
         gpu_name = getattr(peer, "gpu_name", "") or ""
@@ -16982,58 +16985,158 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         if not has_gpu and not is_gpu_node:
             return
 
-        # GPU selfplay uses batch processing - start 2-4 processes with large game counts
-        # This is more efficient than 40 small processes competing for GPU memory
+        # GPU selfplay uses batch processing - scale based on GPU power
         if "GH200" in gpu_name.upper():
             num_processes = 4
             games_per_process = 10000
+            gpu_tier = "high"
         elif "H100" in gpu_name.upper() or "H200" in gpu_name.upper():
             num_processes = 4
             games_per_process = 10000
-        elif "A100" in gpu_name.upper():
-            num_processes = 2
+            gpu_tier = "high"
+        elif "A100" in gpu_name.upper() or "A40" in gpu_name.upper():
+            num_processes = 3
             games_per_process = 5000
+            gpu_tier = "high"
         elif "4090" in gpu_name.upper() or "5090" in gpu_name.upper():
-            num_processes = 2
+            num_processes = 3
             games_per_process = 5000
-        else:
+            gpu_tier = "mid"
+        elif "4080" in gpu_name.upper() or "5080" in gpu_name.upper() or "5070" in gpu_name.upper():
+            num_processes = 2
+            games_per_process = 3000
+            gpu_tier = "mid"
+        elif "3090" in gpu_name.upper() or "4070" in gpu_name.upper():
             num_processes = 2
             games_per_process = 2500
+            gpu_tier = "mid"
+        else:
+            num_processes = 2
+            games_per_process = 2000
+            gpu_tier = "low"
 
-        logger.info(f"Auto-starting {num_processes} GPU selfplay processes on idle node {peer.node_id} "
-                   f"(GPU={gpu_name}, {games_per_process} games each, idle for {idle_duration:.0f}s)")
+        logger.info(f"Auto-starting {num_processes} diverse selfplay processes on idle node {peer.node_id} "
+                   f"(GPU={gpu_name}, tier={gpu_tier}, {games_per_process} games each, idle for {idle_duration:.0f}s)")
 
         # Send parallel requests to /selfplay/start endpoint
         try:
             url = self._url_for_peer(peer, "/selfplay/start")
             timeout = ClientTimeout(total=30)
 
-            # Mix of job types for quality + throughput:
-            # - Hybrid (CPU rules + GPU eval) for diverse, high-quality samples
-            # - GPU-only (heuristic) for pure throughput
-            # Half-and-half split to balance quality and quantity
+            # Diverse profile configurations for high-quality training data
+            # Each profile targets different aspects of game understanding
+            DIVERSE_PROFILES = [
+                # High-quality neural-guided profiles (60% of games)
+                {
+                    "engine_mode": "gumbel-mcts",
+                    "board_type": "hex",
+                    "num_players": 2,
+                    "profile": "balanced",
+                    "weight": 0.20,
+                    "description": "Gumbel MCTS 2P hex - highest quality",
+                },
+                {
+                    "engine_mode": "policy-only",
+                    "board_type": "hex",
+                    "num_players": 2,
+                    "profile": "balanced",
+                    "weight": 0.15,
+                    "description": "Policy-only 2P hex - fast NN inference",
+                },
+                {
+                    "engine_mode": "nnue-guided",
+                    "board_type": "square8",
+                    "num_players": 2,
+                    "profile": "aggressive",
+                    "weight": 0.10,
+                    "description": "NNUE-guided 2P square - aggressive style",
+                },
+                {
+                    "engine_mode": "gumbel-mcts",
+                    "board_type": "square8",
+                    "num_players": 3,
+                    "profile": "balanced",
+                    "weight": 0.08,
+                    "description": "Gumbel MCTS 3P square - multiplayer strategy",
+                },
+                {
+                    "engine_mode": "mcts",
+                    "board_type": "hex",
+                    "num_players": 2,
+                    "profile": "territorial",
+                    "weight": 0.07,
+                    "description": "MCTS 2P hex - territorial focus",
+                },
+                # GPU-accelerated throughput profiles (30% of games)
+                {
+                    "engine_mode": "heuristic-only",
+                    "board_type": "hex",
+                    "num_players": 2,
+                    "profile": "balanced",
+                    "weight": 0.12,
+                    "description": "GPU heuristic 2P hex - fast throughput",
+                },
+                {
+                    "engine_mode": "heuristic-only",
+                    "board_type": "square8",
+                    "num_players": 2,
+                    "profile": "defensive",
+                    "weight": 0.08,
+                    "description": "GPU heuristic 2P square - defensive style",
+                },
+                {
+                    "engine_mode": "heuristic-only",
+                    "board_type": "hex",
+                    "num_players": 4,
+                    "profile": "balanced",
+                    "weight": 0.05,
+                    "description": "GPU heuristic 4P hex - large multiplayer",
+                },
+                # Exploration profiles (10% of games)
+                {
+                    "engine_mode": "mixed",
+                    "board_type": "square19",
+                    "num_players": 2,
+                    "profile": "balanced",
+                    "weight": 0.05,
+                    "description": "Mixed 2P large board - strategic depth",
+                },
+                {
+                    "engine_mode": "nnue-guided",
+                    "board_type": "hex",
+                    "num_players": 3,
+                    "profile": "aggressive",
+                    "weight": 0.05,
+                    "description": "NNUE 3P hex - aggressive multiplayer",
+                },
+                {
+                    "engine_mode": "policy-only",
+                    "board_type": "square8",
+                    "num_players": 4,
+                    "profile": "territorial",
+                    "weight": 0.05,
+                    "description": "Policy 4P square - territory control",
+                },
+            ]
+
+            # Select profiles based on weighted random sampling
+            import random
+            weights = [p["weight"] for p in DIVERSE_PROFILES]
+            selected_profiles = random.choices(DIVERSE_PROFILES, weights=weights, k=num_processes)
+
+            # Build job configs from selected profiles
             job_configs = []
-            for i in range(num_processes):
-                if i < num_processes // 2:
-                    # Hybrid: CPU MCTS rules + GPU evaluation = quality/diversity
-                    job_configs.append({
-                        "board_type": "hex",
-                        "num_players": 2,
-                        "num_games": games_per_process,
-                        "engine_mode": "nnue-guided",  # CPU rules + GPU NNUE eval
-                        "auto_assigned": True,
-                        "reason": f"auto_idle_hybrid_{int(idle_duration)}s_proc{i}",
-                    })
-                else:
-                    # GPU-only: pure throughput
-                    job_configs.append({
-                        "board_type": "hex",
-                        "num_players": 2,
-                        "num_games": games_per_process,
-                        "engine_mode": "heuristic-only",  # GPU-accelerated heuristic
-                        "auto_assigned": True,
-                        "reason": f"auto_idle_gpu_{int(idle_duration)}s_proc{i}",
-                    })
+            for i, profile in enumerate(selected_profiles):
+                job_configs.append({
+                    "board_type": profile["board_type"],
+                    "num_players": profile["num_players"],
+                    "num_games": games_per_process,
+                    "engine_mode": profile["engine_mode"],
+                    "heuristic_profile": profile["profile"],
+                    "auto_assigned": True,
+                    "reason": f"auto_idle_{profile['engine_mode']}_{profile['board_type']}_{profile['num_players']}p_{int(idle_duration)}s",
+                })
+                logger.debug(f"  Process {i}: {profile['description']}")
 
             async def send_selfplay_request(session, payload):
                 """Send a single selfplay start request."""
@@ -17049,10 +17152,16 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 tasks = [send_selfplay_request(session, cfg) for cfg in job_configs]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 started = sum(1 for r in results if r is True)
-                hybrid_count = num_processes // 2
-                gpu_count = num_processes - hybrid_count
-                logger.info(f"Auto-started {started}/{num_processes} selfplay processes on {peer.node_id} "
-                           f"({hybrid_count} hybrid + {gpu_count} GPU)")
+
+                # Log profile distribution
+                from collections import Counter
+                engine_counts = Counter(cfg["engine_mode"] for cfg in job_configs)
+                board_counts = Counter(cfg["board_type"] for cfg in job_configs)
+                profile_summary = ", ".join(f"{k}:{v}" for k, v in engine_counts.items())
+                board_summary = ", ".join(f"{k}:{v}" for k, v in board_counts.items())
+
+                logger.info(f"Auto-started {started}/{num_processes} diverse selfplay on {peer.node_id} "
+                           f"[engines: {profile_summary}] [boards: {board_summary}]")
 
         except Exception as e:
             logger.warning(f"Auto-start request failed for {peer.node_id}: {e}")
