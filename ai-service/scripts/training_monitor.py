@@ -43,6 +43,9 @@ from typing import Any, Dict, List, Optional, Tuple
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.utils.paths import AI_SERVICE_ROOT
+from app.monitoring.thresholds import get_threshold, AlertLevel
+
 # Unified resource checking utilities (80% max utilization)
 try:
     from app.utils.resource_guard import (
@@ -69,16 +72,14 @@ except ImportError:
     )
     logger = logging.getLogger(__name__)
 
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
-
-# Alert thresholds
+# Alert thresholds - using centralized monitoring thresholds
 THRESHOLDS = {
-    "training_stale_hours": 24,           # Alert if no training for 24h
-    "model_stale_hours": 48,              # Alert if no new model in 48h
-    "disk_warning_percent": 70,           # Disk usage warning
-    "disk_critical_percent": 85,          # Disk usage critical
+    "training_stale_hours": get_threshold("training", "stale_hours", default=24),
+    "model_stale_hours": get_threshold("training", "model_stale_hours", default=48),
+    "disk_warning_percent": get_threshold("disk", "warning", default=70),
+    "disk_critical_percent": get_threshold("disk", "critical", default=85),
     "consecutive_failures_warning": 3,    # Failures before warning
-    "low_gpu_utilization": 10,            # GPU util % threshold
+    "low_gpu_utilization": get_threshold("gpu_utilization", "low", default=10),
 }
 
 # Priority configs that need attention (sparse data configs)

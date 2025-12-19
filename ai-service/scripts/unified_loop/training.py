@@ -778,6 +778,54 @@ class TrainingScheduler:
         weights = self.get_curriculum_weights()
         return weights.get(config_key, 1.0)
 
+    def get_training_quality(self, config_key: str) -> Dict[str, Any]:
+        """Get training quality metrics for feedback to selfplay.
+
+        This enables the selfplay generator to adjust engine selection
+        based on training health - using more exploratory engines when
+        training shows signs of overfitting or plateau.
+
+        Args:
+            config_key: Config identifier (e.g., "square8_2p")
+
+        Returns:
+            Dict with quality metrics:
+            - loss_plateau: True if training loss not improving
+            - overfit_detected: True if train/val divergence detected
+            - last_val_loss: Most recent validation loss
+            - parity_failure_rate: Rate of parity validation failures
+        """
+        quality: Dict[str, Any] = {
+            'loss_plateau': False,
+            'overfit_detected': False,
+            'last_val_loss': None,
+            'parity_failure_rate': self._parity_failure_rate,
+        }
+
+        # Check CMA-ES auto-tuner for plateau detection
+        if hasattr(self, '_cmaes_auto_tuners') and config_key in self._cmaes_auto_tuners:
+            tuner = self._cmaes_auto_tuners[config_key]
+            if hasattr(tuner, 'is_plateau_detected'):
+                quality['loss_plateau'] = tuner.is_plateau_detected()
+
+        # Check simplified triggers for regression signals
+        if self._simplified_triggers is not None:
+            state = self._simplified_triggers.get_config_state(config_key)
+            if hasattr(state, 'regression_detected'):
+                # Regression can indicate overfitting
+                quality['overfit_detected'] = state.regression_detected
+
+        # Check streaming pipeline for data quality issues
+        if hasattr(self, '_streaming_pipelines') and config_key in self._streaming_pipelines:
+            pipeline = self._streaming_pipelines[config_key]
+            if hasattr(pipeline, 'get_stats'):
+                stats = pipeline.get_stats()
+                if stats and stats.get('duplicate_rate', 0) > 0.5:
+                    # High duplicate rate suggests need for more diverse data
+                    quality['overfit_detected'] = True
+
+        return quality
+
     def record_training_complete_for_curriculum(self, config_key: str) -> None:
         """Record training completion for curriculum feedback."""
         if self._curriculum_feedback is not None:
