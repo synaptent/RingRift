@@ -109,13 +109,18 @@ class QueuePopulator:
         self,
         config: Optional[PopulatorConfig] = None,
         work_queue: Optional["WorkQueue"] = None,
+        elo_db_path: Optional[str] = None,
     ):
         self.config = config or PopulatorConfig()
         self._work_queue = work_queue
+        self._elo_db_path = elo_db_path
 
         # Track configuration targets
         self._targets: Dict[str, ConfigTarget] = {}
         self._init_targets()
+
+        # Load existing Elo ratings from database
+        self._load_existing_elo()
 
         # Track what we've queued
         self._queued_work_ids: Set[str] = set()
@@ -131,6 +136,82 @@ class QueuePopulator:
                     target_elo=self.config.target_elo,
                 )
                 self._targets[target.config_key] = target
+
+    def _load_existing_elo(self) -> None:
+        """Load existing Elo ratings from the database.
+
+        Queries the unified_elo.db to get the best current Elo for each
+        board/player configuration, so the populator knows the actual
+        starting point rather than assuming 1500 for everything.
+        """
+        import sqlite3
+        from pathlib import Path
+
+        # Find the Elo database
+        if self._elo_db_path:
+            db_path = Path(self._elo_db_path)
+        else:
+            # Try common locations
+            candidates = [
+                Path(__file__).parent.parent.parent / "data" / "unified_elo.db",
+                Path("/lambda/nfs/RingRift/elo/unified_elo.db"),
+                Path.home() / "ringrift" / "ai-service" / "data" / "unified_elo.db",
+            ]
+            db_path = None
+            for candidate in candidates:
+                if candidate.exists():
+                    db_path = candidate
+                    break
+
+        if not db_path or not db_path.exists():
+            logger.info("No Elo database found, starting with default 1500 Elo")
+            return
+
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+
+            # Get best Elo per board_type/num_players combination
+            # Use subquery to get the correct model_id for the max rating
+            cursor.execute("""
+                SELECT e.board_type, e.num_players, e.rating as best_elo,
+                       e.participant_id, e.games_played
+                FROM elo_ratings e
+                INNER JOIN (
+                    SELECT board_type, num_players, MAX(rating) as max_rating
+                    FROM elo_ratings
+                    WHERE archived_at IS NULL
+                    GROUP BY board_type, num_players
+                ) m ON e.board_type = m.board_type
+                   AND e.num_players = m.num_players
+                   AND e.rating = m.max_rating
+                WHERE e.archived_at IS NULL
+            """)
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            for row in rows:
+                board_type, num_players, best_elo, model_id, games = row
+                key = f"{board_type}_{num_players}p"
+                if key in self._targets:
+                    self._targets[key].current_best_elo = best_elo
+                    self._targets[key].best_model_id = model_id
+                    self._targets[key].games_played = games or 0
+                    logger.info(
+                        f"Loaded existing Elo for {key}: {best_elo:.1f} "
+                        f"(model: {model_id}, games: {games})"
+                    )
+
+            # Log summary
+            met = sum(1 for t in self._targets.values() if t.target_met)
+            logger.info(
+                f"Loaded Elo data: {met}/{len(self._targets)} configs already at target "
+                f"({self.config.target_elo}+ Elo)"
+            )
+
+        except Exception as e:
+            logger.warning(f"Failed to load existing Elo data: {e}")
 
     def set_work_queue(self, work_queue: "WorkQueue") -> None:
         """Set the work queue reference."""
