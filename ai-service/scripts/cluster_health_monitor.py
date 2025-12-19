@@ -36,10 +36,14 @@ from typing import Dict, List, Optional, Any
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
+# Add app/ to path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.utils.paths import AI_SERVICE_ROOT, CONFIG_DIR
+from app.monitoring.thresholds import AlertLevel, get_threshold, should_alert as threshold_should_alert
+
 # Config file location
-SCRIPT_DIR = Path(__file__).parent
-AI_SERVICE_ROOT = SCRIPT_DIR.parent
-CONFIG_PATH = AI_SERVICE_ROOT / "config" / "distributed_hosts.yaml"
+CONFIG_PATH = CONFIG_DIR / "distributed_hosts.yaml"
 
 HEALTH_PORT = 8770
 
@@ -84,17 +88,25 @@ def load_cluster_nodes() -> Dict[str, Dict[str, str]]:
 # Load nodes from config
 CLUSTER_NODES = load_cluster_nodes()
 
-# Alert thresholds - aligned with 80% max utilization (2025-12-16)
-THRESHOLDS = {
+# Alert thresholds - imported from centralized monitoring module
+# Local overrides only where needed for script-specific behavior
+LOCAL_THRESHOLDS = {
     "leader_missing_seconds": 300,  # Alert if no leader seen for 5 minutes
     "min_active_peers": 2,          # Alert if fewer than 2 active peers
-    "disk_percent_warning": 65,     # Alert at warning level (70% is hard limit)
-    "disk_percent_critical": 70,    # Critical at disk limit
-    "memory_percent_warning": 70,   # Alert below 80% limit
-    "memory_percent_critical": 80,  # Critical at memory limit
-    "cpu_percent_warning": 70,      # Alert below 80% limit
-    "cpu_percent_critical": 80,     # Critical at CPU limit
 }
+
+# Use centralized thresholds for common metrics
+def get_disk_threshold(level: str) -> float:
+    """Get disk threshold from centralized config."""
+    return get_threshold("disk", level)
+
+def get_memory_threshold(level: str) -> float:
+    """Get memory threshold from centralized config."""
+    return get_threshold("memory", level, default=80 if level == "critical" else 70)
+
+def get_cpu_threshold(level: str) -> float:
+    """Get CPU threshold from centralized config."""
+    return get_threshold("cluster", f"cpu_{level}", default=80 if level == "critical" else 70)
 
 # Track last alert times to avoid spam
 last_alert_times: Dict[str, float] = {}
@@ -217,24 +229,24 @@ def check_cluster(webhook_url: Optional[str] = None, verbose: bool = False) -> L
         elif result["data"]:
             data = result["data"]
 
-            # Disk warning
+            # Disk warning - using centralized thresholds
             disk = data.get("disk_percent", 0)
-            if disk >= THRESHOLDS["disk_percent_critical"]:
+            if disk >= get_disk_threshold("critical"):
                 alert_key = f"disk_critical_{node_id}"
                 if should_alert(alert_key):
                     msg = f"CRITICAL: {node_id} disk at {disk:.1f}%"
                     alerts.append(msg)
                     send_webhook(webhook_url, msg, "critical")
-            elif disk >= THRESHOLDS["disk_percent_warning"]:
+            elif disk >= get_disk_threshold("warning"):
                 alert_key = f"disk_warning_{node_id}"
                 if should_alert(alert_key):
                     msg = f"Warning: {node_id} disk at {disk:.1f}%"
                     alerts.append(msg)
                     send_webhook(webhook_url, msg, "warning")
 
-            # Memory warning
+            # Memory warning - using centralized thresholds
             mem = data.get("memory_percent", 0)
-            if mem >= THRESHOLDS["memory_percent_warning"]:
+            if mem >= get_memory_threshold("warning"):
                 alert_key = f"memory_{node_id}"
                 if should_alert(alert_key):
                     msg = f"Warning: {node_id} memory at {mem:.1f}%"
@@ -244,7 +256,7 @@ def check_cluster(webhook_url: Optional[str] = None, verbose: bool = False) -> L
             # Leader missing (check on one node only)
             if node_id == list(CLUSTER_NODES.keys())[0]:
                 leader_last_seen = data.get("leader_last_seen_seconds")
-                if leader_last_seen and leader_last_seen > THRESHOLDS["leader_missing_seconds"]:
+                if leader_last_seen and leader_last_seen > LOCAL_THRESHOLDS["leader_missing_seconds"]:
                     alert_key = "leader_missing"
                     if should_alert(alert_key):
                         msg = f"Warning: No leader seen for {leader_last_seen:.0f}s (cluster may be leaderless)"
@@ -253,7 +265,7 @@ def check_cluster(webhook_url: Optional[str] = None, verbose: bool = False) -> L
 
                 # Low peer count
                 active_peers = data.get("active_peers", 0)
-                if active_peers < THRESHOLDS["min_active_peers"]:
+                if active_peers < LOCAL_THRESHOLDS["min_active_peers"]:
                     alert_key = "low_peers"
                     if should_alert(alert_key):
                         msg = f"Warning: Only {active_peers} active peers in cluster"

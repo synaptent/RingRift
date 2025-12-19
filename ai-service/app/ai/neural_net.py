@@ -3883,11 +3883,13 @@ class NeuralNetAI(BaseAI):
                         self._hex_encoder = HexStateEncoder(
                             board_size=HEX8_BOARD_SIZE,
                             policy_size=POLICY_SIZE_HEX8,
+                            feature_version=self.feature_version,
                         )
                     else:
                         self._hex_encoder = HexStateEncoder(
                             board_size=HEX_BOARD_SIZE,
                             policy_size=P_HEX,
+                            feature_version=self.feature_version,
                         )
                 else:
                     from ..training.encoding import HexStateEncoderV3
@@ -3895,11 +3897,13 @@ class NeuralNetAI(BaseAI):
                         self._hex_encoder = HexStateEncoderV3(
                             board_size=HEX8_BOARD_SIZE,
                             policy_size=POLICY_SIZE_HEX8,
+                            feature_version=self.feature_version,
                         )
                     else:
                         self._hex_encoder = HexStateEncoderV3(
                             board_size=HEX_BOARD_SIZE,
                             policy_size=P_HEX,
+                            feature_version=self.feature_version,
                         )
 
             logger.debug(
@@ -4304,6 +4308,10 @@ class NeuralNetAI(BaseAI):
             setattr(self.model, "_ringrift_history_length", int(self.history_length))
         except Exception:
             pass
+        try:
+            setattr(self.model, "_ringrift_feature_version", int(self.feature_version))
+        except Exception:
+            pass
 
         # Initialize hex encoder for hex boards
         # Select encoder version based on model architecture:
@@ -4324,11 +4332,13 @@ class NeuralNetAI(BaseAI):
                     self._hex_encoder = HexStateEncoder(
                         board_size=HEX8_BOARD_SIZE,
                         policy_size=POLICY_SIZE_HEX8,
+                        feature_version=self.feature_version,
                     )
                 else:
                     self._hex_encoder = HexStateEncoder(
                         board_size=HEX_BOARD_SIZE,
                         policy_size=P_HEX,
+                        feature_version=self.feature_version,
                     )
                 logger.info(
                     "Initialized HexStateEncoder (V2) for %s (board_size=%d, in_channels=%s)",
@@ -4344,11 +4354,13 @@ class NeuralNetAI(BaseAI):
                     self._hex_encoder = HexStateEncoderV3(
                         board_size=HEX8_BOARD_SIZE,
                         policy_size=POLICY_SIZE_HEX8,
+                        feature_version=self.feature_version,
                     )
                 else:
                     self._hex_encoder = HexStateEncoderV3(
                         board_size=HEX_BOARD_SIZE,
                         policy_size=P_HEX,
+                        feature_version=self.feature_version,
                     )
                 logger.info(
                     "Initialized HexStateEncoderV3 for %s (board_size=%d)",

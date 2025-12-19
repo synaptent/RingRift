@@ -122,8 +122,10 @@ class HexStateEncoder:
         15: Opponent marker count (normalized)
         16: Current player stack count (normalized)
         17: Opponent stack count (normalized)
-        18: Game progress (move_number / 200, capped at 1.0)
-        19: Reserved (always 0.0)
+        18: Game progress (move_number / 200, capped at 1.0) [feature_version=1]
+            Chain-capture flag [feature_version>=2]
+        19: Reserved (always 0.0) [feature_version=1]
+            Forced-elimination flag [feature_version>=2]
     """
 
     # Canonical hex board dimensions
@@ -133,7 +135,12 @@ class HexStateEncoder:
     NUM_GLOBAL_FEATURES = 20  # Match NeuralNetAI for model compatibility
     POLICY_SIZE = P_HEX  # 91,876
 
-    def __init__(self, board_size: int = HEX_BOARD_SIZE, policy_size: int = P_HEX):
+    def __init__(
+        self,
+        board_size: int = HEX_BOARD_SIZE,
+        policy_size: int = P_HEX,
+        feature_version: int = 1,
+    ):
         """
         Initialize the hex state encoder.
 
@@ -143,10 +150,13 @@ class HexStateEncoder:
                         Use 9 for hex8 (radius=4) boards.
             policy_size: Size of the policy head. Default is P_HEX (91,876).
                         Use POLICY_SIZE_HEX8 (4,500) for hex8 boards.
+            feature_version: Feature encoding version for global feature layout.
+            feature_version: Feature encoding version for global feature layout.
         """
         self.board_size = board_size
         self.radius = (board_size - 1) // 2
         self.policy_size = policy_size
+        self.feature_version = int(feature_version)
         self.action_encoder = ActionEncoderHex(
             board_size=board_size, policy_size=policy_size
         )
@@ -525,13 +535,22 @@ class HexStateEncoder:
         globals_vec[16] = min(my_stacks / max_stacks, 1.0)
         globals_vec[17] = min(opp_stacks / max_stacks, 1.0)
 
-        # Game progress (move number normalized by expected game length)
-        move_number = getattr(state, 'turn_number', 0)
-        if move_number == 0 and hasattr(state, 'move_history'):
-            move_number = len(state.move_history)
-        globals_vec[18] = min(move_number / 200.0, 1.0)
-
-        # Reserved (index 19) - already 0.0 from initialization
+        if self.feature_version >= 2:
+            globals_vec[18] = (
+                1.0 if state.current_phase == GamePhase.CHAIN_CAPTURE else 0.0
+            )
+            globals_vec[19] = (
+                1.0
+                if state.current_phase == GamePhase.FORCED_ELIMINATION
+                else 0.0
+            )
+        else:
+            # Game progress (move number normalized by expected game length)
+            move_number = getattr(state, 'turn_number', 0)
+            if move_number == 0 and hasattr(state, 'move_history'):
+                move_number = len(state.move_history)
+            globals_vec[18] = min(move_number / 200.0, 1.0)
+            # Reserved (index 19) - already 0.0 from initialization
 
         return features, globals_vec
 
@@ -686,8 +705,9 @@ class HexStateEncoderV3:
         0-4: Game phase one-hot
         5-8: Ring counts (current/opponent rings_in_hand, eliminated_rings)
         9: Turn indicator
-        10-14: Extended phase info (chain length, captures pending, etc.)
-        15-19: Reserved for future use
+        10-14: Board stats (marker/stack totals and ratios)
+        15-16: Chain-capture / forced-elimination flags (feature_version>=2)
+        17-19: Reserved for future use
     """
 
     BOARD_SIZE = HEX_BOARD_SIZE  # 25
@@ -696,7 +716,12 @@ class HexStateEncoderV3:
     NUM_GLOBAL_FEATURES = 20  # Extended global features for V3
     POLICY_SIZE = P_HEX  # 91,876
 
-    def __init__(self, board_size: int = HEX_BOARD_SIZE, policy_size: int = P_HEX):
+    def __init__(
+        self,
+        board_size: int = HEX_BOARD_SIZE,
+        policy_size: int = P_HEX,
+        feature_version: int = 1,
+    ):
         """Initialize the V3 hex state encoder.
 
         Args:
@@ -709,6 +734,7 @@ class HexStateEncoderV3:
         self.board_size = board_size
         self.radius = (board_size - 1) // 2
         self.policy_size = policy_size
+        self.feature_version = int(feature_version)
         self.action_encoder = ActionEncoderHex(
             board_size=board_size, policy_size=policy_size
         )
@@ -1086,7 +1112,17 @@ class HexStateEncoderV3:
         if total_stacks > 0:
             globals_vec[14] = my_stacks / total_stacks
 
-        # Indices 15-19: Reserved (zeros for now)
+        if self.feature_version >= 2:
+            globals_vec[15] = (
+                1.0 if state.current_phase == GamePhase.CHAIN_CAPTURE else 0.0
+            )
+            globals_vec[16] = (
+                1.0
+                if state.current_phase == GamePhase.FORCED_ELIMINATION
+                else 0.0
+            )
+
+        # Indices 17-19: Reserved (zeros for now)
 
         return features, globals_vec
 
@@ -1202,6 +1238,7 @@ def detect_board_type_from_features(features: np.ndarray) -> BoardType:
 def get_encoder_for_board_type(
     board_type: BoardType,
     version: str = "v2",
+    feature_version: int = 1,
 ) -> Union[HexStateEncoder, HexStateEncoderV3, None]:
     """
     Get the appropriate encoder for a board type.
@@ -1210,6 +1247,7 @@ def get_encoder_for_board_type(
         board_type: The board type
         version: Encoder version ("v2" or "v3"). V3 produces 16 channels
                  (64 with frame stacking) for HexNeuralNet_v3.
+        feature_version: Feature encoding version for global feature layout.
 
     Returns:
         HexStateEncoder/HexStateEncoderV3 for HEXAGONAL/HEX8 boards, None for square boards
@@ -1217,11 +1255,19 @@ def get_encoder_for_board_type(
     """
     if board_type == BoardType.HEXAGONAL:
         if version.lower() == "v3":
-            return HexStateEncoderV3()
-        return HexStateEncoder()
+            return HexStateEncoderV3(feature_version=feature_version)
+        return HexStateEncoder(feature_version=feature_version)
     elif board_type == BoardType.HEX8:
         # Hex8: radius=4, board_size=9, policy_size=4500
         if version.lower() == "v3":
-            return HexStateEncoderV3(board_size=HEX8_BOARD_SIZE, policy_size=POLICY_SIZE_HEX8)
-        return HexStateEncoder(board_size=HEX8_BOARD_SIZE, policy_size=POLICY_SIZE_HEX8)
+            return HexStateEncoderV3(
+                board_size=HEX8_BOARD_SIZE,
+                policy_size=POLICY_SIZE_HEX8,
+                feature_version=feature_version,
+            )
+        return HexStateEncoder(
+            board_size=HEX8_BOARD_SIZE,
+            policy_size=POLICY_SIZE_HEX8,
+            feature_version=feature_version,
+        )
     return None

@@ -114,6 +114,8 @@ class LocalSelfplayGenerator:
         self._generation_task: Optional[asyncio.Task] = None
         # Reference to training scheduler for PFSP and priority access
         self._training_scheduler = training_scheduler
+        # Reference to signal computer for evaluation feedback loop
+        self._signal_computer = None
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -124,6 +126,14 @@ class LocalSelfplayGenerator:
     def set_training_scheduler(self, scheduler: Any) -> None:
         """Set reference to training scheduler for PFSP integration."""
         self._training_scheduler = scheduler
+
+    def set_signal_computer(self, signal_computer: Any) -> None:
+        """Set reference to signal computer for evaluation feedback loop.
+
+        This enables selfplay priority to account for ELO regression/momentum,
+        giving more attention to configs that are underperforming.
+        """
+        self._signal_computer = signal_computer
 
     def get_pfsp_opponent(self, config_key: str, current_elo: float = INITIAL_ELO_RATING) -> Optional[str]:
         """Get PFSP-selected opponent for selfplay.
@@ -146,6 +156,7 @@ class LocalSelfplayGenerator:
         1. Proximity to training threshold (closer = higher priority)
         2. Curriculum weights (higher weight = higher priority)
         3. Time since last training (longer = higher priority)
+        4. Evaluation feedback (regressing configs get priority boost)
 
         Returns:
             Config key with highest priority, or None if no configs
@@ -161,22 +172,52 @@ class LocalSelfplayGenerator:
 
             # Factor 1: Proximity to training threshold (0-1)
             # Closer to threshold = higher priority
+            # Weight: 40% (reduced from 50% to make room for evaluation feedback)
             if self._training_scheduler:
                 threshold = self._training_scheduler._get_dynamic_threshold(config_key)
                 if threshold > 0:
                     proximity = min(1.0, config_state.games_since_training / threshold)
-                    priority += proximity * 0.5
+                    priority += proximity * 0.4
 
             # Factor 2: Curriculum weight (0.5-2.0 normalized to 0-1)
+            # Weight: 25% (reduced from 30%)
             curriculum_weight = getattr(config_state, 'curriculum_weight', 1.0)
             normalized_curriculum = (curriculum_weight - 0.5) / 1.5
-            priority += normalized_curriculum * 0.3
+            priority += max(0, normalized_curriculum * 0.25)
 
             # Factor 3: Time since last training (0-1)
+            # Weight: 15% (reduced from 20%)
             time_since_training = time.time() - config_state.last_training_time
             hours_since = time_since_training / 3600
             staleness_factor = min(1.0, hours_since / 6.0)  # Cap at 6 hours
-            priority += staleness_factor * 0.2
+            priority += staleness_factor * 0.15
+
+            # Factor 4: Evaluation feedback - boost regressing configs
+            # Weight: 20% (new factor)
+            # Regressing/plateauing configs get more selfplay attention
+            if self._signal_computer:
+                try:
+                    current_elo = getattr(config_state, 'current_elo', None) or 1500
+                    signals = self._signal_computer.compute_signals(
+                        current_games=config_state.games_since_training,
+                        current_elo=current_elo,
+                        config_key=config_key,
+                    )
+                    if signals.elo_regression_detected:
+                        # Full boost for regression - needs urgent attention
+                        priority += 0.20
+                        logger.debug(f"[Priority] {config_key}: +0.20 (ELO regression detected)")
+                    elif hasattr(signals, 'elo_trend') and signals.elo_trend < 0:
+                        # Partial boost for declining performance
+                        priority += 0.10
+                        logger.debug(f"[Priority] {config_key}: +0.10 (ELO declining)")
+                    elif hasattr(signals, 'elo_trend') and signals.elo_trend > 20:
+                        # Slight reduction for configs doing very well (+20 Elo/hour)
+                        # They need less attention, let others catch up
+                        priority -= 0.05
+                except Exception as e:
+                    # Don't let signal computation errors break priority
+                    logger.debug(f"[Priority] Signal computation failed for {config_key}: {e}")
 
             if priority > best_priority:
                 best_priority = priority
@@ -188,49 +229,109 @@ class LocalSelfplayGenerator:
         """Get priority scores for all configs.
 
         Returns:
-            Dict mapping config_key to priority score (0-1)
+            Dict mapping config_key to priority score (0-1+)
+            Note: Score can exceed 1.0 when evaluation feedback boosts priority.
         """
         priorities = {}
 
         for config_key, config_state in self.state.configs.items():
             priority = 0.0
 
-            # Proximity to threshold
+            # Factor 1: Proximity to threshold (40%)
             if self._training_scheduler:
                 threshold = self._training_scheduler._get_dynamic_threshold(config_key)
                 if threshold > 0:
                     proximity = min(1.0, config_state.games_since_training / threshold)
-                    priority += proximity * 0.5
+                    priority += proximity * 0.4
 
-            # Curriculum weight
+            # Factor 2: Curriculum weight (25%)
             curriculum_weight = getattr(config_state, 'curriculum_weight', 1.0)
             normalized_curriculum = (curriculum_weight - 0.5) / 1.5
-            priority += max(0, normalized_curriculum * 0.3)
+            priority += max(0, normalized_curriculum * 0.25)
 
-            # Staleness
+            # Factor 3: Staleness (15%)
             time_since_training = time.time() - config_state.last_training_time
             hours_since = time_since_training / 3600
             staleness_factor = min(1.0, hours_since / 6.0)
-            priority += staleness_factor * 0.2
+            priority += staleness_factor * 0.15
+
+            # Factor 4: Evaluation feedback (20%)
+            if self._signal_computer:
+                try:
+                    current_elo = getattr(config_state, 'current_elo', None) or 1500
+                    signals = self._signal_computer.compute_signals(
+                        current_games=config_state.games_since_training,
+                        current_elo=current_elo,
+                        config_key=config_key,
+                    )
+                    if signals.elo_regression_detected:
+                        priority += 0.20
+                    elif hasattr(signals, 'elo_trend') and signals.elo_trend < 0:
+                        priority += 0.10
+                    elif hasattr(signals, 'elo_trend') and signals.elo_trend > 20:
+                        priority -= 0.05
+                except Exception:
+                    pass  # Silent fallback if signal computation fails
 
             priorities[config_key] = priority
 
         return priorities
 
-    def get_adaptive_engine(self, config_key: str, quality_threshold: float = 0.7) -> str:
-        """Select selfplay engine based on training proximity.
+    def _get_diversity_need(self, config_key: str) -> float:
+        """Get diversity need from training metrics (0-1).
 
-        Uses higher quality (but slower) 'gumbel' engine when config is
-        close to training threshold, and faster 'descent' engine when
-        far from threshold to maximize throughput.
+        Returns higher values when training shows signs of:
+        - Loss plateau (training not improving)
+        - Overfitting (train/val loss divergence)
+
+        In these cases, more diverse/exploratory selfplay is needed.
+
+        Args:
+            config_key: Config identifier
+
+        Returns:
+            Diversity need score (0-1), where higher = need more exploration
+        """
+        if not self._training_scheduler:
+            return 0.0
+
+        try:
+            # Try to get training quality metrics from scheduler
+            if hasattr(self._training_scheduler, 'get_training_quality'):
+                quality = self._training_scheduler.get_training_quality(config_key)
+                if quality:
+                    if quality.get('overfit_detected'):
+                        return 0.9  # High diversity need
+                    if quality.get('loss_plateau'):
+                        return 0.6  # Moderate diversity need
+        except Exception as e:
+            logger.debug(f"[DiversityNeed] Failed to get training quality for {config_key}: {e}")
+
+        return 0.0
+
+    def get_adaptive_engine(self, config_key: str, quality_threshold: float = 0.7) -> str:
+        """Select selfplay engine based on training proximity and diversity needs.
+
+        Engine selection priority:
+        1. If diversity needed (overfit/plateau): 'mcts' for exploration
+        2. If close to training threshold: 'gumbel' for quality
+        3. Otherwise: 'descent' for throughput
 
         Args:
             config_key: Config identifier
             quality_threshold: Proximity threshold to switch to gumbel (0-1)
 
         Returns:
-            Engine name: 'gumbel' for high quality, 'descent' for throughput
+            Engine name: 'mcts' for diversity, 'gumbel' for quality, 'descent' for throughput
         """
+        # Check for diversity need from training feedback
+        diversity_needed = self._get_diversity_need(config_key)
+
+        if diversity_needed > 0.7:
+            # High diversity need: use MCTS for more exploration
+            logger.info(f"[AdaptiveEngine] {config_key} diversity={diversity_needed:.2f} > 0.7 -> using 'mcts'")
+            return "mcts"
+
         priorities = self.get_config_priorities()
         priority = priorities.get(config_key, 0.0)
 

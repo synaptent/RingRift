@@ -89,7 +89,11 @@ BOARD_TYPE_MAP: Dict[str, BoardType] = {
 }
 
 
-def build_encoder(board_type: BoardType, encoder_version: str = "default") -> NeuralNetAI:
+def build_encoder(
+    board_type: BoardType,
+    encoder_version: str = "default",
+    feature_version: int = 1,
+) -> NeuralNetAI:
     """
     Construct a NeuralNetAI instance for feature and policy encoding.
 
@@ -100,6 +104,8 @@ def build_encoder(board_type: BoardType, encoder_version: str = "default") -> Ne
       - "default": Maps to "v3" (HexStateEncoderV3, 16 channels)
       - "v2": Use HexStateEncoder (10 channels) for HexNeuralNet_v2
       - "v3": Use HexStateEncoderV3 (16 channels) for HexNeuralNet_v3
+
+    feature_version controls the global feature layout for encoders.
 
     IMPORTANT: Hex boards ALWAYS use specialized encoders to ensure consistent
     feature shapes across all games. The "default" option maps to v3.
@@ -119,6 +125,7 @@ def build_encoder(board_type: BoardType, encoder_version: str = "default") -> Ne
         use_neural_net=True,
     )
     encoder = NeuralNetAI(player_number=1, config=config)
+    encoder.feature_version = int(feature_version)
     # Ensure the encoder's board_size hint is consistent with the dataset.
     encoder.board_size = {
         BoardType.SQUARE8: 8,
@@ -131,7 +138,11 @@ def build_encoder(board_type: BoardType, encoder_version: str = "default") -> Ne
     # feature shapes. Default to v3 (newest, 16 channels).
     if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
         effective_version = encoder_version if encoder_version in ("v2", "v3") else "v3"
-        encoder._hex_encoder = get_encoder_for_board_type(board_type, effective_version)
+        encoder._hex_encoder = get_encoder_for_board_type(
+            board_type,
+            effective_version,
+            feature_version=feature_version,
+        )
         encoder._hex_encoder_version = effective_version
 
     return encoder
@@ -329,6 +340,7 @@ def export_replay_dataset_multi(
     output_path: str,
     *,
     history_length: int = 3,
+    feature_version: int = 1,
     sample_every: int = 1,
     max_games: Optional[int] = None,
     require_completed: bool = False,
@@ -357,6 +369,7 @@ def export_replay_dataset_multi(
         num_players: Number of players to filter games by
         output_path: Path to output .npz dataset
         history_length: Number of past feature frames to stack (default: 3)
+        feature_version: Feature encoding version for global feature layout
         sample_every: Use every Nth move as a training sample (default: 1)
         max_games: Optional cap on total number of games to process across all DBs
         require_completed: If True, only include games with normal termination
@@ -368,7 +381,11 @@ def export_replay_dataset_multi(
         encoder_version: Encoder version for hex boards ('default', 'v2', 'v3')
         require_moves: If True, only include games with move data (default: True)
     """
-    encoder = build_encoder(board_type, encoder_version)
+    encoder = build_encoder(
+        board_type,
+        encoder_version=encoder_version,
+        feature_version=feature_version,
+    )
 
     features_list: List[np.ndarray] = []
     globals_list: List[np.ndarray] = []
@@ -718,6 +735,7 @@ def export_replay_dataset_multi(
         "board_type": np.asarray(board_type.value),
         "board_size": np.asarray(int(features_arr.shape[-1])),
         "history_length": np.asarray(int(history_length)),
+        "feature_version": np.asarray(int(feature_version)),
         "policy_encoding": np.asarray("board_aware" if use_board_aware_encoding else "legacy_max_n"),
         "move_numbers": move_numbers_arr,
         "total_game_moves": total_game_moves_arr,
@@ -740,6 +758,7 @@ def export_replay_dataset(
     output_path: str,
     *,
     history_length: int = 3,
+    feature_version: int = 1,
     sample_every: int = 1,
     max_games: Optional[int] = None,
     require_completed: bool = False,
@@ -768,6 +787,7 @@ def export_replay_dataset(
         num_players=num_players,
         output_path=output_path,
         history_length=history_length,
+        feature_version=feature_version,
         sample_every=sample_every,
         max_games=max_games,
         require_completed=require_completed,
@@ -833,6 +853,15 @@ def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         type=int,
         default=3,
         help="Number of past feature frames to stack (default: 3).",
+    )
+    parser.add_argument(
+        "--feature-version",
+        type=int,
+        default=1,
+        help=(
+            "Feature encoding version for global feature layout (default: 1). "
+            "Use 2 to include chain/forced-elimination flags in hex encoders."
+        ),
     )
     parser.add_argument(
         "--sample-every",
@@ -985,6 +1014,7 @@ def main(argv: List[str] | None = None) -> int:
             num_workers=args.workers,
             encoder_version=args.encoder_version,
             history_length=args.history_length,
+            feature_version=args.feature_version,
             sample_every=args.sample_every,
             max_games=args.max_games,
             require_completed=args.require_completed,
@@ -1024,6 +1054,7 @@ def main(argv: List[str] | None = None) -> int:
         num_players=args.num_players,
         output_path=args.output,
         history_length=args.history_length,
+        feature_version=args.feature_version,
         sample_every=args.sample_every,
         max_games=args.max_games,
         require_completed=args.require_completed,
