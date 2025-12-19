@@ -292,28 +292,6 @@ class DataManifest:
                 created_at REAL
             );
 
-            CREATE INDEX IF NOT EXISTS idx_synced_games_host
-            ON synced_games(source_host);
-
-            CREATE INDEX IF NOT EXISTS idx_synced_games_time
-            ON synced_games(synced_at);
-
-            CREATE INDEX IF NOT EXISTS idx_synced_games_content
-            ON synced_games(content_hash);
-
-            CREATE INDEX IF NOT EXISTS idx_synced_games_config
-            ON synced_games(board_type, num_players);
-
-            -- Quality score indexes for priority-based training data selection
-            CREATE INDEX IF NOT EXISTS idx_synced_games_quality
-            ON synced_games(quality_score DESC);
-
-            CREATE INDEX IF NOT EXISTS idx_synced_games_elo
-            ON synced_games(avg_player_elo DESC);
-
-            CREATE INDEX IF NOT EXISTS idx_synced_games_decisive
-            ON synced_games(is_decisive, quality_score DESC);
-
             -- Priority sync queue for high-quality games
             CREATE TABLE IF NOT EXISTS sync_priority_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -328,12 +306,6 @@ class DataManifest:
                 synced INTEGER DEFAULT 0,
                 synced_at REAL
             );
-
-            CREATE INDEX IF NOT EXISTS idx_priority_queue_priority
-            ON sync_priority_queue(synced, priority_score DESC);
-
-            CREATE INDEX IF NOT EXISTS idx_priority_queue_host
-            ON sync_priority_queue(source_host, synced);
 
             -- Host sync state with ephemeral support
             CREATE TABLE IF NOT EXISTS host_states (
@@ -361,12 +333,6 @@ class DataManifest:
                 error_message TEXT
             );
 
-            CREATE INDEX IF NOT EXISTS idx_sync_history_time
-            ON sync_history(sync_time);
-
-            CREATE INDEX IF NOT EXISTS idx_sync_history_host
-            ON sync_history(host_name, sync_time);
-
             -- Dead letter queue for failed syncs
             CREATE TABLE IF NOT EXISTS dead_letter_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -380,12 +346,6 @@ class DataManifest:
                 last_retry_at REAL,
                 resolved INTEGER DEFAULT 0
             );
-
-            CREATE INDEX IF NOT EXISTS idx_dead_letter_unresolved
-            ON dead_letter_queue(resolved, added_at);
-
-            CREATE INDEX IF NOT EXISTS idx_dead_letter_host
-            ON dead_letter_queue(source_host, resolved);
 
             -- Metadata table
             CREATE TABLE IF NOT EXISTS manifest_metadata (
@@ -409,6 +369,13 @@ class DataManifest:
         """Ensure newer schema additions exist on older databases."""
         cursor = conn.cursor()
         existing_cols = {row[1] for row in cursor.execute("PRAGMA table_info(synced_games)")}
+        base_columns = {
+            "board_type": "TEXT",
+            "num_players": "INTEGER",
+            "content_hash": "TEXT",
+            "game_length": "INTEGER",
+            "winner": "TEXT",
+        }
         quality_columns = {
             "avg_player_elo": "REAL",
             "min_player_elo": "REAL",
@@ -420,11 +387,27 @@ class DataManifest:
             "model_version": "TEXT",
             "created_at": "REAL",
         }
-        for col, col_type in quality_columns.items():
+        for col, col_type in {**base_columns, **quality_columns}.items():
             if col not in existing_cols:
                 cursor.execute(f"ALTER TABLE synced_games ADD COLUMN {col} {col_type}")
 
         # Ensure indexes exist (safe on older DBs).
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_synced_games_host "
+            "ON synced_games(source_host)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_synced_games_time "
+            "ON synced_games(synced_at)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_synced_games_content "
+            "ON synced_games(content_hash)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_synced_games_config "
+            "ON synced_games(board_type, num_players)"
+        )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_synced_games_quality "
             "ON synced_games(quality_score DESC)"
@@ -445,6 +428,22 @@ class DataManifest:
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_priority_queue_host "
             "ON sync_priority_queue(source_host, synced)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_history_time "
+            "ON sync_history(sync_time)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_history_host "
+            "ON sync_history(host_name, sync_time)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dead_letter_unresolved "
+            "ON dead_letter_queue(resolved, added_at)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dead_letter_host "
+            "ON dead_letter_queue(source_host, resolved)"
         )
 
         cursor.execute(
