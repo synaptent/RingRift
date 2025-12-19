@@ -867,6 +867,324 @@ class SSHBackend(OrchestratorBackend):
 
 
 # ============================================================================
+# P2P Work Queue Backend
+# ============================================================================
+
+
+class P2PBackend(OrchestratorBackend):
+    """Execute jobs via P2P orchestrator work queue.
+
+    This backend adds work items to the centralized work queue and waits
+    for results. Workers pull work from the queue and report completion.
+    """
+
+    def __init__(
+        self,
+        leader_url: Optional[str] = None,
+        poll_interval: float = 5.0,
+        timeout: float = 3600.0,
+    ):
+        """Initialize P2P backend.
+
+        Args:
+            leader_url: URL of the P2P leader (auto-detect if None)
+            poll_interval: Seconds between status polls
+            timeout: Default timeout for work items
+        """
+        self.leader_url = leader_url
+        self.poll_interval = poll_interval
+        self.default_timeout = timeout
+        self._session = None
+
+    async def _get_session(self):
+        """Get or create aiohttp session."""
+        if self._session is None:
+            import aiohttp
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def _get_leader_url(self) -> str:
+        """Get the P2P leader URL."""
+        if self.leader_url:
+            return self.leader_url
+
+        # Try to get from work queue module
+        try:
+            from app.coordination.work_queue import get_work_queue
+            wq = get_work_queue()
+            if wq and hasattr(wq, 'leader_url'):
+                return wq.leader_url
+        except ImportError:
+            pass
+
+        # Try common localhost port
+        return "http://localhost:8770"
+
+    async def get_available_workers(self) -> List[WorkerStatus]:
+        """Get available workers from P2P cluster."""
+        try:
+            session = await self._get_session()
+            url = f"{await self._get_leader_url()}/health"
+            async with session.get(url, timeout=10) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+                # Return leader as a worker
+                return [WorkerStatus(
+                    name=data.get("node_id", "unknown"),
+                    available=data.get("healthy", False),
+                    cpu_percent=data.get("cpu_percent", 0),
+                    memory_percent=data.get("memory_percent", 0),
+                    active_jobs=data.get("selfplay_jobs", 0) + data.get("training_jobs", 0),
+                )]
+        except Exception as e:
+            logger.warning(f"Failed to get P2P workers: {e}")
+            return []
+
+    async def _add_work(
+        self,
+        work_type: str,
+        priority: int,
+        config: Dict[str, Any],
+        timeout_seconds: Optional[float] = None,
+    ) -> Optional[str]:
+        """Add a work item to the queue."""
+        try:
+            session = await self._get_session()
+            url = f"{await self._get_leader_url()}/work/add"
+            payload = {
+                "work_type": work_type,
+                "priority": priority,
+                "config": config,
+            }
+            if timeout_seconds:
+                payload["timeout_seconds"] = timeout_seconds
+
+            async with session.post(url, json=payload, timeout=30) as resp:
+                if resp.status != 200:
+                    logger.error(f"Failed to add work: {resp.status}")
+                    return None
+                data = await resp.json()
+                return data.get("work_id")
+        except Exception as e:
+            logger.error(f"Error adding work: {e}")
+            return None
+
+    async def _wait_for_completion(
+        self,
+        work_id: str,
+        timeout: float,
+    ) -> Dict[str, Any]:
+        """Wait for a work item to complete."""
+        import time
+        start = time.time()
+        session = await self._get_session()
+        url = f"{await self._get_leader_url()}/work/status"
+
+        while time.time() - start < timeout:
+            try:
+                async with session.get(url, timeout=10) as resp:
+                    if resp.status != 200:
+                        await asyncio.sleep(self.poll_interval)
+                        continue
+
+                    data = await resp.json()
+
+                    # Check if work is completed (in running list with completed status)
+                    for item in data.get("running", []):
+                        if item.get("work_id") == work_id:
+                            status = item.get("status")
+                            if status in ("completed", "failed", "timeout"):
+                                return item
+
+                    # Check if still pending
+                    for item in data.get("pending", []):
+                        if item.get("work_id") == work_id:
+                            # Still pending, wait
+                            break
+                    else:
+                        # Not found in pending or running - check history
+                        hist_url = f"{await self._get_leader_url()}/work/history?limit=10"
+                        async with session.get(hist_url, timeout=10) as hist_resp:
+                            if hist_resp.status == 200:
+                                hist_data = await hist_resp.json()
+                                for item in hist_data.get("history", []):
+                                    if item.get("work_id") == work_id:
+                                        return item
+
+            except Exception as e:
+                logger.warning(f"Error polling work status: {e}")
+
+            await asyncio.sleep(self.poll_interval)
+
+        return {"status": "timeout", "work_id": work_id, "error": "Timeout waiting for completion"}
+
+    async def run_selfplay(
+        self,
+        games: int,
+        board_type: str,
+        num_players: int,
+        model_path: Optional[str] = None,
+        **kwargs,
+    ) -> List[JobResult]:
+        """Run selfplay via work queue."""
+        import time
+        from uuid import uuid4
+
+        work_id = await self._add_work(
+            work_type="selfplay",
+            priority=kwargs.get("priority", 50),
+            config={
+                "board_type": board_type,
+                "num_players": num_players,
+                "games": games,
+                "model_path": model_path,
+            },
+            timeout_seconds=kwargs.get("timeout", self.default_timeout),
+        )
+
+        if not work_id:
+            return [JobResult(
+                job_id=str(uuid4())[:8],
+                success=False,
+                worker="unknown",
+                output=None,
+                duration_seconds=0,
+                error="Failed to add work to queue",
+            )]
+
+        start = time.time()
+        result = await self._wait_for_completion(
+            work_id,
+            timeout=kwargs.get("timeout", self.default_timeout),
+        )
+
+        return [JobResult(
+            job_id=work_id,
+            success=result.get("status") == "completed",
+            worker=result.get("claimed_by", "unknown"),
+            output=result.get("result"),
+            duration_seconds=time.time() - start,
+            error=result.get("error"),
+        )]
+
+    async def run_tournament(
+        self,
+        agent_ids: List[str],
+        board_type: str = "square8",
+        num_players: int = 2,
+        games_per_pairing: int = 20,
+        **kwargs,
+    ) -> JobResult:
+        """Run tournament via work queue."""
+        import time
+        from uuid import uuid4
+
+        work_id = await self._add_work(
+            work_type="tournament",
+            priority=kwargs.get("priority", 70),
+            config={
+                "agent_ids": agent_ids,
+                "board_type": board_type,
+                "num_players": num_players,
+                "games_per_pairing": games_per_pairing,
+            },
+            timeout_seconds=kwargs.get("timeout", 7200),
+        )
+
+        if not work_id:
+            return JobResult(
+                job_id=str(uuid4())[:8],
+                success=False,
+                worker="unknown",
+                output=None,
+                duration_seconds=0,
+                error="Failed to add tournament work to queue",
+            )
+
+        start = time.time()
+        result = await self._wait_for_completion(
+            work_id,
+            timeout=kwargs.get("timeout", 7200),
+        )
+
+        return JobResult(
+            job_id=work_id,
+            success=result.get("status") == "completed",
+            worker=result.get("claimed_by", "unknown"),
+            output=result.get("result"),
+            duration_seconds=time.time() - start,
+            error=result.get("error"),
+        )
+
+    async def run_training(
+        self,
+        data_path: str,
+        model_output_path: str,
+        epochs: int = 100,
+        **kwargs,
+    ) -> JobResult:
+        """Run training via work queue."""
+        import time
+        from uuid import uuid4
+
+        board_type = kwargs.get("board_type", "square8")
+        num_players = kwargs.get("num_players", 2)
+
+        work_id = await self._add_work(
+            work_type="training",
+            priority=kwargs.get("priority", 80),
+            config={
+                "data_path": data_path,
+                "model_output_path": model_output_path,
+                "epochs": epochs,
+                "board_type": board_type,
+                "num_players": num_players,
+            },
+            timeout_seconds=kwargs.get("timeout", 14400),  # 4 hours default
+        )
+
+        if not work_id:
+            return JobResult(
+                job_id=str(uuid4())[:8],
+                success=False,
+                worker="unknown",
+                output=None,
+                duration_seconds=0,
+                error="Failed to add training work to queue",
+            )
+
+        start = time.time()
+        result = await self._wait_for_completion(
+            work_id,
+            timeout=kwargs.get("timeout", 14400),
+        )
+
+        return JobResult(
+            job_id=work_id,
+            success=result.get("status") == "completed",
+            worker=result.get("claimed_by", "unknown"),
+            output=result.get("result"),
+            duration_seconds=time.time() - start,
+            error=result.get("error"),
+        )
+
+    async def sync_data(
+        self,
+        source_workers: Optional[List[str]] = None,
+        target_path: Optional[str] = None,
+    ) -> Dict[str, int]:
+        """Sync data is handled by P2P orchestrator - not needed."""
+        return {}
+
+    async def close(self):
+        """Close the HTTP session."""
+        if self._session:
+            await self._session.close()
+            self._session = None
+
+
+# ============================================================================
 # Backend Factory
 # ============================================================================
 
@@ -908,6 +1226,8 @@ def get_backend(
     # Create backend
     if backend_type == BackendType.SSH:
         _backend_instance = SSHBackend()
+    elif backend_type == BackendType.P2P:
+        _backend_instance = P2PBackend()
     elif backend_type == BackendType.LOCAL:
         _backend_instance = LocalBackend()
     else:

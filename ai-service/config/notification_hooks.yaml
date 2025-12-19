@@ -18,7 +18,7 @@ logging:
 
 # Slack webhook integration
 slack:
-  enabled: false
+  enabled: true
   webhook_url: '' # Set your Slack webhook URL
   # webhook_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
   timeout_seconds: 10
@@ -30,7 +30,7 @@ slack:
 
 # Discord webhook integration
 discord:
-  enabled: false
+  enabled: true
   webhook_url: '' # Set your Discord webhook URL
   # webhook_url: 'https://discord.com/api/webhooks/YOUR/WEBHOOK'
   timeout_seconds: 10
@@ -41,7 +41,7 @@ discord:
 
 # PagerDuty integration (for critical alerts)
 pagerduty:
-  enabled: false
+  enabled: true
   routing_key: '' # Your PagerDuty Events API v2 routing key
   # routing_key: 'your-pagerduty-routing-key'
   severity_mapping:
@@ -51,7 +51,7 @@ pagerduty:
 
 # OpsGenie integration (for critical alerts)
 opsgenie:
-  enabled: false
+  enabled: true
   api_key: '' # Your OpsGenie API key
   # api_key: 'your-opsgenie-api-key'
   region: 'us' # 'us' or 'eu'
@@ -62,7 +62,7 @@ opsgenie:
 
 # Generic webhook (for custom integrations)
 generic:
-  enabled: false
+  enabled: true
   webhook_url: '' # Your custom webhook URL
   timeout_seconds: 10
   # Optional headers to include

@@ -653,14 +653,14 @@ def main():
     parser.add_argument(
         "--policy-temperature",
         type=float,
-        default=2.0,
-        help="Temperature for policy softmax (higher = flatter distribution). Default: 2.0",
+        default=1.5,
+        help="Temperature for policy softmax (higher = flatter distribution). Default: 1.5",
     )
     parser.add_argument(
         "--prior-uniform-mix",
         type=float,
-        default=0.3,
-        help="Mix ratio with uniform distribution (0=pure policy, 1=pure uniform). Default: 0.3",
+        default=0.5,
+        help="Mix ratio with uniform distribution (0=pure policy, 1=pure uniform). Default: 0.5",
     )
 
     args = parser.parse_args()

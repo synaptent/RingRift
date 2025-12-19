@@ -69,13 +69,27 @@ fi
 echo ""
 echo "Deploying to Lambda nodes..."
 
-LAMBDA_NODES=(
-    "ubuntu@100.91.25.13"    # lambda-a10
-    "ubuntu@100.78.101.123"  # lambda-h100
-    "ubuntu@100.97.104.89"   # lambda-2xh100
-    "ubuntu@100.123.183.70"  # lambda-gh200-a
-    "ubuntu@100.104.165.116" # lambda-gh200-f
-)
+# Load node configuration from config file
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="$SCRIPT_DIR/../config/cluster_nodes.env"
+
+declare -a LAMBDA_NODES=()
+if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE"
+    # Add H100 node if configured
+    [[ -n "$H100_IP" ]] && LAMBDA_NODES+=("ubuntu@$H100_IP")
+    # Add A10 node if configured
+    [[ -n "$A10_IP" ]] && LAMBDA_NODES+=("ubuntu@$A10_IP")
+    # Add GH200 nodes from array
+    if [[ -n "${GH200_NODES+x}" ]]; then
+        for node in "${GH200_NODES[@]}"; do
+            ip="${node%%:*}"
+            LAMBDA_NODES+=("ubuntu@$ip")
+        done
+    fi
+else
+    echo "Warning: No config/cluster_nodes.env found. No nodes to configure."
+fi
 
 for node in "${LAMBDA_NODES[@]}"; do
     if ssh -o ConnectTimeout=5 -o BatchMode=yes $node "

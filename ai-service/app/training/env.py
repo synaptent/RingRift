@@ -59,9 +59,20 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 
 # Repetition detection threshold for draw declaration.
-# Games with the same position occurring this many times are declared draws.
-# Set to 0 to disable repetition detection.
-REPETITION_THRESHOLD = int(os.getenv("RINGRIFT_REPETITION_THRESHOLD", "3"))
+# IMPORTANT: This MUST remain disabled (0) for RingRift!
+#
+# The S-invariant (S = Markers + Collapsed + Eliminated) is monotonically
+# non-decreasing, which mathematically guarantees that game states cannot
+# repeat. See docs/rules/INVARIANTS_AND_PARITY_FRAMEWORK.md for details.
+#
+# Any apparent "repetition" in the zobrist hash indicates either:
+#   1. A hash collision (extremely rare for 64-bit hashes)
+#   2. A bug in the zobrist hash maintenance
+#   3. A rules engine bug violating the S-invariant
+#
+# If you observe repeated hashes, investigate as a bug rather than treating
+# it as a valid draw condition.
+REPETITION_THRESHOLD = int(os.getenv("RINGRIFT_REPETITION_THRESHOLD", "0"))
 
 
 THEORETICAL_MAX_MOVES: Dict[BoardType, Dict[int, int]] = {
@@ -774,7 +785,7 @@ class RingRiftEnv:
             self._move_count += 1
             auto_generated_moves.append(auto_move)
 
-        # Track position for repetition detection
+        # Track position for repetition detection (SHOULD BE DISABLED - see REPETITION_THRESHOLD)
         terminated_by_repetition = False
         if self._repetition_threshold > 0:
             pos_hash = getattr(self._state, 'zobrist_hash', 0)
@@ -782,9 +793,14 @@ class RingRiftEnv:
                 self._position_counts[pos_hash] = self._position_counts.get(pos_hash, 0) + 1
                 if self._position_counts[pos_hash] >= self._repetition_threshold:
                     terminated_by_repetition = True
-                    logger.info(
-                        "GAME_DRAW_BY_REPETITION: position repeated %d times. "
-                        "board_type=%s, num_players=%d, move_count=%d",
+                    # ERROR: This should NEVER happen! The S-invariant guarantees no repetition.
+                    # If this triggers, investigate as a bug (zobrist hash collision or rules violation).
+                    logger.error(
+                        "BUG: GAME_DRAW_BY_REPETITION triggered but S-invariant should prevent this! "
+                        "position_hash=%d repeated %d times. "
+                        "board_type=%s, num_players=%d, move_count=%d. "
+                        "Investigate: hash collision or S-invariant violation.",
+                        pos_hash,
                         self._position_counts[pos_hash],
                         self.board_type.value,
                         self.num_players,

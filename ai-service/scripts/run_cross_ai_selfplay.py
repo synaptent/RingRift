@@ -439,12 +439,22 @@ def run_balanced_selfplay(
 
                 game_num += 1
 
-                # Progress logging
+                # Enhanced progress logging with ETA
                 log_interval = max(10, total_games // 20)
-                if game_num % log_interval == 0 or game_num == 1:
+                if game_num % log_interval == 0 or game_num == 1 or game_num == total_games:
                     elapsed = time.time() - start_time
                     rate = game_num / elapsed if elapsed > 0 else 0
-                    logger.info(f"Progress: {game_num}/{total_games} games ({rate:.2f} games/sec)")
+                    remaining = total_games - game_num
+                    eta_seconds = remaining / rate if rate > 0 else 0
+                    pct = game_num / total_games * 100
+                    logger.info(
+                        "[cross-ai-selfplay] Game %d/%d (%.1f%%) | %.2f games/s | ETA: %.0fs",
+                        game_num,
+                        total_games,
+                        pct,
+                        rate,
+                        eta_seconds,
+                    )
     else:
         # Sequential execution (original behavior)
         for task in game_tasks:
@@ -475,12 +485,22 @@ def run_balanced_selfplay(
 
             game_num += 1
 
-            # Progress logging (every game if < 20, otherwise every 10)
+            # Enhanced progress logging with ETA
             log_interval = 10 if total_games >= 20 else 1
-            if game_num % log_interval == 0 or game_num == 1:
+            if game_num % log_interval == 0 or game_num == 1 or game_num == total_games:
                 elapsed = time.time() - start_time
                 rate = game_num / elapsed if elapsed > 0 else 0
-                logger.info(f"Progress: {game_num}/{total_games} games ({rate:.2f} games/sec)")
+                remaining = total_games - game_num
+                eta_seconds = remaining / rate if rate > 0 else 0
+                pct = game_num / total_games * 100
+                logger.info(
+                    "[cross-ai-selfplay] Game %d/%d (%.1f%%) | %.2f games/s | ETA: %.0fs",
+                    game_num,
+                    total_games,
+                    pct,
+                    rate,
+                    eta_seconds,
+                )
 
     # Summary
     logger.info("=" * 50)

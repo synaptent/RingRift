@@ -7,6 +7,7 @@ This explores the game tree more uniformly and may hit rare scenarios like recov
 import argparse
 import fcntl
 import json
+import logging
 import os
 import random
 import sys
@@ -14,6 +15,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 # Add app/ to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -188,7 +195,13 @@ def main():
     victory_types = {}
     stalemate_tiebreakers = {}
 
-    print(f"Running {args.num_games} random AI games on {args.board_type} {args.num_players}p...")
+    logger.info(
+        "[random-selfplay] Starting %d games on %s %dp",
+        args.num_games,
+        args.board_type,
+        args.num_players,
+    )
+    progress_interval = max(1, min(10, args.num_games // 20))  # Report ~20 times during run
 
     with open(games_file, 'a') as f:
         # Acquire exclusive lock to prevent concurrent writes from multiple processes
@@ -225,8 +238,24 @@ def main():
             if game.get('stalemate_tiebreaker'):
                 stalemate_tiebreakers[game['stalemate_tiebreaker']] = stalemate_tiebreakers.get(game['stalemate_tiebreaker'], 0) + 1
 
-            if (i + 1) % 10 == 0:
-                print(f"  Completed {i+1}/{args.num_games} games, {games_with_recovery} had recovery opportunities")
+            # Progress logging with ETA and throughput
+            if (i + 1) % progress_interval == 0 or (i + 1) == args.num_games:
+                elapsed = time.time() - start_time
+                games_per_sec = (i + 1) / elapsed if elapsed > 0 else 0
+                remaining = args.num_games - (i + 1)
+                eta_seconds = remaining / games_per_sec if games_per_sec > 0 else 0
+                pct = (i + 1) / args.num_games * 100
+                logger.info(
+                    "[random-selfplay] Game %d/%d (%.1f%%) | %.2f games/s | ETA: %.0fs | "
+                    "recovery: %d games | victory: %s",
+                    i + 1,
+                    args.num_games,
+                    pct,
+                    games_per_sec,
+                    eta_seconds,
+                    games_with_recovery,
+                    dict(victory_types),
+                )
 
     elapsed = time.time() - start_time
 
@@ -247,10 +276,20 @@ def main():
     with open(stats_file, 'w') as f:
         json.dump(stats, f, indent=2)
 
-    print(f"\nCompleted in {elapsed:.1f}s ({args.num_games/elapsed:.2f} games/sec)")
-    print(f"Games with recovery opportunities: {games_with_recovery}/{args.num_games}")
-    print(f"Total recovery opportunities: {total_recovery}")
-    print(f"Results saved to {output_dir}")
+    logger.info(
+        "[random-selfplay] Completed %d games in %.1fs (%.2f games/s)",
+        args.num_games,
+        elapsed,
+        args.num_games / elapsed if elapsed > 0 else 0,
+    )
+    logger.info(
+        "[random-selfplay] Recovery: %d/%d games | Total opportunities: %d",
+        games_with_recovery,
+        args.num_games,
+        total_recovery,
+    )
+    logger.info("[random-selfplay] Victory types: %s", victory_types)
+    logger.info("[random-selfplay] Results saved to %s", output_dir)
 
     # Record task completion for duration learning
     if HAS_COORDINATION and task_id:

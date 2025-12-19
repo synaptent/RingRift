@@ -199,10 +199,25 @@ def run_selfplay(
                 vtype = game["victory_type"]
                 stats["victory_types"][vtype] = stats["victory_types"].get(vtype, 0) + 1
 
-                # Progress
-                if (i + 1) % 10 == 0 or i == 0:
+                # Progress logging with ETA and detailed metrics
+                progress_interval = max(1, min(10, num_games // 20))
+                if (i + 1) % progress_interval == 0 or i == 0 or (i + 1) == num_games:
                     rate = stats["total_games"] / stats["total_time"] if stats["total_time"] > 0 else 0
-                    logger.info(f"  Game {i+1}/{num_games} - {rate:.2f} games/sec - winner: {game['winner']}")
+                    remaining = num_games - (i + 1)
+                    eta_seconds = remaining / rate if rate > 0 else 0
+                    pct = (i + 1) / num_games * 100
+                    logger.info(
+                        "[mcts-selfplay] Game %d/%d (%.1f%%) | %.2f games/s | ETA: %.0fs | "
+                        "winner: P%s (%s, %d moves)",
+                        i + 1,
+                        num_games,
+                        pct,
+                        rate,
+                        eta_seconds,
+                        game["winner"] or "draw",
+                        game["victory_type"],
+                        game["move_count"],
+                    )
 
             except Exception as e:
                 logger.error(f"Game {i+1} failed: {e}")
@@ -225,7 +240,17 @@ def run_selfplay(
     with open(stats_file, "w") as f:
         json.dump(stats, f, indent=2)
 
-    logger.info(f"Completed {total} games. Win rates: {stats.get('win_rates', {})}")
+    logger.info(
+        "[mcts-selfplay] Completed %d games on %s %dp in %.1fs (%.2f games/s)",
+        total,
+        board_type.value,
+        num_players,
+        stats.get("total_time", 0),
+        stats.get("games_per_second", 0),
+    )
+    logger.info("[mcts-selfplay] Win rates: %s", stats.get("win_rates", {}))
+    logger.info("[mcts-selfplay] Victory types: %s", stats.get("victory_types", {}))
+    logger.info("[mcts-selfplay] Output: %s", output_file)
 
     return stats
 

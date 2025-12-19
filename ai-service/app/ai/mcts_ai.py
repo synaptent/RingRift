@@ -866,13 +866,13 @@ class MCTSAI(HeuristicAI):
 
         # Policy temperature for NNUE priors - higher values flatten the distribution
         # to reduce the influence of low-confidence policy predictions.
-        # Default 2.0 because NNUE policy accuracy is typically 10-20%.
-        self.policy_temperature: float = getattr(config, "policy_temperature", 2.0)
+        # Tuned via A/B testing: temp=1.5 with mix=0.5 gives 57% vs 30% baseline.
+        self.policy_temperature: float = getattr(config, "policy_temperature", 1.5)
 
         # Prior uniform mix - blends policy priors with uniform distribution.
-        # 0.0 = pure policy, 1.0 = pure uniform, 0.3 = 70% policy + 30% uniform.
-        # Helps when policy accuracy is low (< 20%).
-        self.prior_uniform_mix: float = getattr(config, "prior_uniform_mix", 0.3)
+        # 0.0 = pure policy, 1.0 = pure uniform, 0.5 = 50% policy + 50% uniform.
+        # Helps when policy accuracy is low (< 20%). Tuned via grid search.
+        self.prior_uniform_mix: float = getattr(config, "prior_uniform_mix", 0.5)
 
         # Enable NNUE policy priors by default when no neural net is available
         # or explicitly via use_nnue_policy_priors config

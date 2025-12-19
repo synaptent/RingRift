@@ -32,6 +32,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Try to import node policies (graceful fallback if not available)
+try:
+    from app.coordination.node_policies import get_policy_manager, is_work_allowed, get_best_work_type
+    HAS_POLICIES = True
+except ImportError:
+    HAS_POLICIES = False
+    def is_work_allowed(node_id: str, work_type: str) -> bool:
+        return True  # Allow all if policies not available
+    def get_best_work_type(node_id: str, available: List[str]) -> Optional[str]:
+        return available[0] if available else None
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -585,16 +599,19 @@ def rebalance_cluster(nodes: List[NodeCapabilities], dry_run: bool = False) -> i
         board, players = configs[config_idx % len(configs)]
         config_idx += 1
 
-        # Priority 1: Training (if slots available)
-        if trigger_training_on_node(node.node_id, board, players):
-            logger.info(f"Started training on {node.node_id}")
-            changes += 1
-            time.sleep(1)
-            continue
+        # Use policy to determine best work type
+        best_work = get_best_work_type(node.node_id, ["training", "gpu_cmaes", "tournament"])
+
+        if best_work == "training" and is_work_allowed(node.node_id, "training"):
+            if trigger_training_on_node(node.node_id, board, players):
+                logger.info(f"Started training on {node.node_id} (policy: allowed)")
+                changes += 1
+                time.sleep(1)
+                continue
 
         # Priority 2: GPU CMA-ES (10-100x faster than CPU)
-        if node.host:
-            logger.info(f"Starting GPU CMA-ES on {node.node_id}")
+        if node.host and is_work_allowed(node.node_id, "gpu_cmaes"):
+            logger.info(f"Starting GPU CMA-ES on {node.node_id} (policy: allowed)")
             if start_gpu_cmaes_on_node(node.host, board, players):
                 changes += 1
                 time.sleep(1)
@@ -605,6 +622,11 @@ def rebalance_cluster(nodes: List[NodeCapabilities], dry_run: bool = False) -> i
         if node.cmaes_running:
             continue  # Already running
 
+        # Check policy allows CPU CMA-ES on this node
+        if not is_work_allowed(node.node_id, "cpu_cmaes"):
+            logger.debug(f"Skipping {node.node_id}: cpu_cmaes not allowed by policy")
+            continue
+
         if dry_run:
             logger.info(f"[DRY RUN] Would start CPU CMA-ES on {node.node_id}")
             changes += 1
@@ -614,7 +636,7 @@ def rebalance_cluster(nodes: List[NodeCapabilities], dry_run: bool = False) -> i
             board, players = configs[config_idx % len(configs)]
             config_idx += 1
 
-            logger.info(f"Starting CPU CMA-ES on available CPU node {node.node_id}")
+            logger.info(f"Starting CPU CMA-ES on available CPU node {node.node_id} (policy: allowed)")
             if start_cpu_cmaes_on_node(node.host, board, players):
                 changes += 1
 

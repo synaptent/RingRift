@@ -321,9 +321,16 @@ async def run_diverse_selfplay(config: DiverseSelfplayConfig) -> Dict[str, Any]:
     }
 
     matchups = get_diverse_matchups(config)
-    logger.info(f"Generated {len(matchups)} matchup configurations for {config.board_type}_{config.num_players}p")
+    total_matchups = len(matchups)
+    logger.info(
+        "[diverse-selfplay] Starting %d matchups for %s_%dp",
+        total_matchups,
+        config.board_type,
+        config.num_players,
+    )
+    start_time = time.time()
 
-    for matchup in matchups:
+    for matchup_idx, matchup in enumerate(matchups, 1):
         num_games = int(matchup.weight)
         if num_games <= 0:
             continue
@@ -342,6 +349,33 @@ async def run_diverse_selfplay(config: DiverseSelfplayConfig) -> Dict[str, Any]:
             results["matchups_completed"] += 1
             results["total_games"] += games
 
+        # Progress logging with ETA
+        elapsed = time.time() - start_time
+        rate = matchup_idx / elapsed if elapsed > 0 else 0
+        remaining = total_matchups - matchup_idx
+        eta_seconds = remaining / rate if rate > 0 else 0
+        pct = matchup_idx / total_matchups * 100
+        status_str = "OK" if success else "FAILED"
+        logger.info(
+            "[diverse-selfplay] Matchup %d/%d (%.1f%%) %s | %.2f matchups/min | "
+            "ETA: %.0fs | games: %d total",
+            matchup_idx,
+            total_matchups,
+            pct,
+            status_str,
+            rate * 60,
+            eta_seconds,
+            results["total_games"],
+        )
+
+    elapsed_total = time.time() - start_time
+    logger.info(
+        "[diverse-selfplay] Completed %d/%d matchups in %.1fs | %d games total",
+        results["matchups_completed"],
+        total_matchups,
+        elapsed_total,
+        results["total_games"],
+    )
     results["completed_at"] = datetime.now().isoformat()
     return results
 

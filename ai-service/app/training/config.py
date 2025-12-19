@@ -569,7 +569,7 @@ class SelfPlayConfig:
 
     # Game rules
     max_moves: int = 2000  # Maximum moves before draw (minimum 2000 for all boards)
-    repetition_threshold: int = 3  # Draw on N-fold repetition (0 = disabled)
+    repetition_threshold: int = 0  # MUST be 0 - S-invariant guarantees no repetition
     swap_enabled: bool = False  # Pie rule for 2-player games
 
     # Move selection

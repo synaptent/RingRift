@@ -28,19 +28,31 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from app.models import BoardType, GameState, GameStatus, Move, MoveType
+from app.models import BoardType, GameState, GameStatus, Move, MoveType, Position
 from app.rules.default_engine import DefaultRulesEngine
 from app.training.generate_data import create_initial_state
 
 
-def parse_move(move_data: Dict[str, Any]) -> Move:
+def parse_position(pos_data: Optional[Dict[str, Any]]) -> Optional[Position]:
+    """Convert position dict to Position object."""
+    if pos_data is None:
+        return None
+    return Position(x=pos_data["x"], y=pos_data["y"], z=pos_data.get("z"))
+
+
+def parse_move(move_data: Dict[str, Any], move_idx: int = 0) -> Move:
     """Convert move dict to Move object."""
+    from datetime import datetime, timezone
     move_type = MoveType(move_data["type"])
     return Move(
+        id=f"move_{move_idx}",
         type=move_type,
         player=move_data["player"],
-        from_pos=move_data.get("from"),
-        to=move_data.get("to"),
+        from_pos=parse_position(move_data.get("from")),
+        to=parse_position(move_data.get("to")),
+        timestamp=datetime.now(timezone.utc),
+        think_time=0,
+        move_number=move_idx,
     )
 
 
@@ -91,10 +103,11 @@ def extract_states_from_game(
 
         # Apply move to advance state
         try:
-            move = parse_move(move_data)
+            move = parse_move(move_data, move_num)
             state = engine.apply_move(state, move)
         except Exception as e:
             # Stop if move application fails
+            print(f"    Move {move_num} failed: {e}")
             break
 
         # Stop if game is over

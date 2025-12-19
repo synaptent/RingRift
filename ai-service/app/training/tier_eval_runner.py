@@ -9,8 +9,12 @@ for actually playing games and computing gating metrics.
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from app.models import AIConfig, AIType, BoardType, GameStatus
 from app.training.env import TrainingEnvConfig, make_env
@@ -243,6 +247,15 @@ def _play_matchup(
         opponent_ai_type=resolved_ai_type.value if resolved_ai_type else None,
     )
 
+    logger.info(
+        "[tier-gate] Starting matchup vs %s (difficulty=%d, ai=%s, games=%d)",
+        opponent.id,
+        opponent.difficulty,
+        resolved_ai_type.value if resolved_ai_type else "default",
+        games_to_play,
+    )
+    matchup_start = time.time()
+
     env_config = TrainingEnvConfig(
         board_type=tier_config.board_type,
         num_players=tier_config.num_players,
@@ -361,10 +374,13 @@ def _play_matchup(
             winner = game_state.winner
             if winner == candidate_seat:
                 stats.wins += 1
+                result_str = "WIN"
             elif winner is None:
                 stats.draws += 1
+                result_str = "DRAW"
             else:
                 stats.losses += 1
+                result_str = "LOSS"
 
             victory_reason = last_info.get("victory_reason", "unknown")
             stats.victory_reasons[victory_reason] = (
@@ -372,6 +388,32 @@ def _play_matchup(
             )
             stats.total_moves += last_info.get("moves_played", moves_played)
 
+            # Progress logging
+            win_rate = stats.win_rate * 100.0
+            logger.info(
+                "[tier-gate] Game %d/%d vs %s: %s (%s, %d moves) | W/D/L: %d/%d/%d (%.1f%%)",
+                game_index + 1,
+                games_to_play,
+                opponent.id,
+                result_str,
+                victory_reason,
+                moves_played,
+                stats.wins,
+                stats.draws,
+                stats.losses,
+                win_rate,
+            )
+
+    elapsed = time.time() - matchup_start
+    logger.info(
+        "[tier-gate] Matchup vs %s completed in %.1fs | Final W/D/L: %d/%d/%d (%.1f%%)",
+        opponent.id,
+        elapsed,
+        stats.wins,
+        stats.draws,
+        stats.losses,
+        stats.win_rate * 100.0,
+    )
     return stats
 
 
@@ -407,7 +449,22 @@ def run_tier_evaluation(
     prev_wins = 0
     prev_games = 0
 
-    for opponent in tier_config.opponents:
+    num_opponents = len(tier_config.opponents)
+    logger.info(
+        "[tier-gate] Starting tier %s evaluation for candidate %s (%d opponents)",
+        tier_config.tier_name,
+        candidate_id,
+        num_opponents,
+    )
+    eval_start = time.time()
+
+    for opponent_idx, opponent in enumerate(tier_config.opponents, 1):
+        logger.info(
+            "[tier-gate] Opponent %d/%d: %s",
+            opponent_idx,
+            num_opponents,
+            opponent.id,
+        )
         stats = _play_matchup(
             tier_config=tier_config,
             opponent=opponent,
@@ -488,6 +545,24 @@ def run_tier_evaluation(
     for value in criteria.values():
         if value is False:
             overall_pass = False
+
+    elapsed = time.time() - eval_start
+    result_str = "PASSED" if overall_pass else "FAILED"
+    total_wins = sum(m.wins for m in matchups)
+    total_losses = sum(m.losses for m in matchups)
+    total_draws = sum(m.draws for m in matchups)
+    overall_win_rate = total_wins / total_games * 100.0 if total_games > 0 else 0.0
+    logger.info(
+        "[tier-gate] Tier %s evaluation %s in %.1fs | Total W/D/L: %d/%d/%d (%.1f%%) | Games: %d",
+        tier_config.tier_name,
+        result_str,
+        elapsed,
+        total_wins,
+        total_draws,
+        total_losses,
+        overall_win_rate,
+        total_games,
+    )
 
     return TierEvaluationResult(
         tier_name=tier_config.tier_name,
