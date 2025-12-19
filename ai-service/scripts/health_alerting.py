@@ -54,8 +54,27 @@ logger = setup_script_logging("health_alerting", log_dir=str(LOG_DIR))
 # Host Configuration
 # =============================================================================
 
+# Try to use unified hosts module
+try:
+    from scripts.lib.hosts import get_p2p_voters, get_active_hosts
+    USE_UNIFIED_HOSTS = True
+except ImportError:
+    USE_UNIFIED_HOSTS = False
+
+
 def _load_p2p_leaders_from_config():
     """Load P2P leader hosts from config file or environment."""
+    # Prefer unified hosts module
+    if USE_UNIFIED_HOSTS:
+        voters = get_p2p_voters()
+        leaders = []
+        for h in voters[:3]:
+            ip = h.tailscale_ip or h.ssh_host
+            if ip:
+                leaders.append(f"http://{ip}:8770")
+        return leaders
+
+    # Fallback to direct YAML loading
     from pathlib import Path
 
     config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"

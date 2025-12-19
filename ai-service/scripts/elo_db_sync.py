@@ -79,8 +79,33 @@ ARIA2_TIMEOUT = 120
 # Host Configuration Loading
 # ============================================
 
+# Try to use unified hosts module
+try:
+    from scripts.lib.hosts import (
+        get_hosts, get_active_hosts, get_elo_sync_config,
+        get_host, HostConfig, EloSyncConfig
+    )
+    USE_UNIFIED_HOSTS = True
+except ImportError:
+    USE_UNIFIED_HOSTS = False
+
+
 def load_hosts_config() -> Dict[str, Any]:
     """Load cluster hosts from distributed_hosts.yaml."""
+    # Prefer unified hosts module
+    if USE_UNIFIED_HOSTS:
+        hosts = {}
+        for h in get_hosts():
+            hosts[h.name] = {
+                'ssh_host': h.ssh_host,
+                'tailscale_ip': h.tailscale_ip,
+                'ssh_user': h.ssh_user,
+                'status': h.status,
+                'role': h.role,
+            }
+        return hosts
+
+    # Fallback to direct YAML loading
     if not HOSTS_CONFIG.exists():
         return {}
 
@@ -118,15 +143,29 @@ def get_coordinator_address() -> Tuple[str, int]:
 
     Priority:
     1. Environment variable ELO_COORDINATOR_IP
-    2. Config file (elo_sync.coordinator)
-    3. Error if neither is set
+    2. Unified hosts module (elo_sync config)
+    3. Config file (elo_sync.coordinator)
+    4. Error if none is set
     """
     # Check environment variable first
     env_ip = os.environ.get('ELO_COORDINATOR_IP')
     if env_ip:
         return env_ip, DEFAULT_PORT
 
-    # Try loading from config
+    # Prefer unified hosts module
+    if USE_UNIFIED_HOSTS:
+        try:
+            elo_config = get_elo_sync_config()
+            if elo_config and elo_config.coordinator:
+                coord_host = get_host(elo_config.coordinator)
+                if coord_host:
+                    ip = coord_host.tailscale_ip or coord_host.ssh_host
+                    if ip:
+                        return ip, elo_config.sync_port
+        except Exception as e:
+            print(f"[Script] Warning: Error getting coordinator from unified hosts: {e}")
+
+    # Fallback to direct config loading
     hosts = load_hosts_config()
     if not hosts:
         print("[Script] Warning: No config found and ELO_COORDINATOR_IP not set")
