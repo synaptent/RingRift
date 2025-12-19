@@ -105,6 +105,8 @@ class IntegratedEnhancementsConfig:
     eval_elo_drop_threshold: float = 50.0
     eval_auto_checkpoint: bool = True
     eval_checkpoint_dir: str = "data/eval_checkpoints"
+    eval_use_real_games: bool = False  # If True, play actual games against baselines
+    eval_board_type: Optional[Any] = None  # Board type for real games (required if eval_use_real_games=True)
 
     # =========================================================================
     # ELO Weighting
@@ -322,6 +324,7 @@ class IntegratedTrainingManager:
             )
 
             def model_getter():
+                # Return model in a format the evaluator can use
                 return self.model
 
             eval_config = EvalConfig(
@@ -332,8 +335,17 @@ class IntegratedTrainingManager:
                 auto_checkpoint=self.config.eval_auto_checkpoint,
                 checkpoint_dir=self.config.eval_checkpoint_dir,
             )
-            self._background_evaluator = BackgroundEvaluator(model_getter, eval_config)
-            logger.info("[IntegratedEnhancements] Background evaluator initialized")
+
+            # Create evaluator with real games support if configured
+            self._background_evaluator = BackgroundEvaluator(
+                model_getter,
+                eval_config,
+                board_type=self.config.eval_board_type,
+                use_real_games=self.config.eval_use_real_games,
+            )
+
+            mode = "real games" if self.config.eval_use_real_games else "placeholder"
+            logger.info(f"[IntegratedEnhancements] Background evaluator initialized ({mode} mode)")
         except Exception as e:
             logger.warning(f"[IntegratedEnhancements] Failed to init background eval: {e}")
 

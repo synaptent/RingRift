@@ -436,10 +436,28 @@ def create_background_evaluator(
     model_getter: Callable[[], Any],
     eval_interval: int = 1000,
     games_per_eval: int = 20,
+    board_type: Optional[Any] = None,
+    use_real_games: bool = False,
 ) -> BackgroundEvaluator:
-    """Create a background evaluator."""
+    """Create a background evaluator.
+
+    Args:
+        model_getter: Callable that returns model info (path, state_dict, or nn.Module)
+        eval_interval: Steps between evaluations
+        games_per_eval: Number of games per evaluation
+        board_type: Board type for real game evaluation (required if use_real_games=True)
+        use_real_games: If True, play actual games instead of placeholder simulation
+
+    Returns:
+        BackgroundEvaluator instance
+    """
     config = EvalConfig(
         eval_interval_steps=eval_interval,
         games_per_eval=games_per_eval,
     )
-    return BackgroundEvaluator(model_getter, config)
+    return BackgroundEvaluator(
+        model_getter,
+        config,
+        board_type=board_type,
+        use_real_games=use_real_games,
+    )
