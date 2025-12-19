@@ -35,6 +35,7 @@ import asyncio
 import json
 import logging
 import os
+import shlex
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -387,13 +388,14 @@ class SSHTransport:
         endpoint = self._command_type_to_endpoint(command_type)
         payload_json = json.dumps(payload)
 
-        # Escape JSON for shell
-        escaped_payload = payload_json.replace("'", "'\\''")
+        # Use shlex.quote() for proper shell escaping to prevent command injection
+        # This handles all shell metacharacters safely, not just single quotes
+        escaped_payload = shlex.quote(payload_json)
 
         curl_cmd = (
             f"curl -s -X POST 'http://localhost:{LOCAL_P2P_PORT}{endpoint}' "
             f"-H 'Content-Type: application/json' "
-            f"-d '{escaped_payload}' "
+            f"-d {escaped_payload} "
             f"--connect-timeout 5 --max-time 20"
         )
 
