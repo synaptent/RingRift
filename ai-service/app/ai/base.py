@@ -22,7 +22,6 @@ from typing import Optional, List, Dict, TypeVar, Sequence, Any
 import random
 
 from ..models import GameState, Move, MoveType, AIConfig
-from ..rules.factory import get_rules_engine
 from ..rules.interfaces import RulesEngine
 from .swap_evaluation import SwapEvaluator
 
@@ -84,6 +83,8 @@ class BaseAI(ABC):
         self.config: AIConfig = config
         # Incremented each time select_move returns a (non‑None) move.
         self.move_count: int = 0
+        # Late import to avoid circular dependency (rules.factory -> default_engine -> game_engine -> ai)
+        from ..rules.factory import get_rules_engine
         self.rules_engine: RulesEngine = get_rules_engine()
 
         # Per-instance RNG used for all stochastic behaviour (random move

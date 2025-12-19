@@ -864,7 +864,7 @@ def load_ebmo_model(
     Returns:
         (model, checkpoint_info) tuple
     """
-    checkpoint = torch.load(path, map_location=device or "cpu")
+    checkpoint = torch.load(path, map_location=device or "cpu", weights_only=False)
 
     # Use saved config unless overridden
     model_config = config or checkpoint.get("config", EBMOConfig())

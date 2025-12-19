@@ -536,9 +536,12 @@ def create_ebmo_ai(
     """
     return EBMO_AI(player_number, config, model_path)
 
+EBMOAI = EBMO_AI
+
 
 __all__ = [
     "EBMO_AI",
+    "EBMOAI",
     "create_ebmo_ai",
     "EBMO_MODEL_PATH_ENV",
     "EBMO_DEFAULT_MODEL_PATH",
