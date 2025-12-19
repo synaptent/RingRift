@@ -145,6 +145,11 @@ from app.training.model_versioning import (  # noqa: E402
 from app.training.seed_utils import seed_all
 from app.training.fault_tolerance import HeartbeatMonitor  # noqa: E402
 from app.training.value_calibration import CalibrationTracker  # noqa: E402
+from app.training.train_setup import (  # noqa: E402
+    FaultToleranceConfig,
+    setup_fault_tolerance,
+    TrainingState,
+)
 
 # Data validation (2025-12) - use unified module
 try:
@@ -553,7 +558,8 @@ except ImportError:
     HAS_UNIFIED_CHECKPOINT = False
 
 # Legacy checkpointing functions (still available for backward compatibility)
-from app.training.checkpointing import (
+# Migrated to import from checkpoint_unified (December 2025)
+from app.training.checkpoint_unified import (
     save_checkpoint,
     load_checkpoint,
     AsyncCheckpointer,
@@ -2303,57 +2309,36 @@ def train_model(
         enhancements_manager.start_background_services()
         logger.info("Integrated enhancements background services started")
 
-    # Initialize training circuit breaker for fault tolerance (2025-12)
-    training_breaker = None
-    if enable_circuit_breaker and HAS_CIRCUIT_BREAKER and get_training_breaker:
-        training_breaker = get_training_breaker()
-        logger.info("Training circuit breaker enabled for fault tolerance")
-    elif not enable_circuit_breaker:
-        logger.info("Training circuit breaker disabled by configuration")
+    # Initialize fault tolerance components via factory (2025-12, refactored)
+    ft_config = FaultToleranceConfig(
+        enable_circuit_breaker=enable_circuit_breaker,
+        enable_anomaly_detection=enable_anomaly_detection,
+        enable_graceful_shutdown=enable_graceful_shutdown,
+        gradient_clip_mode=gradient_clip_mode,
+        gradient_clip_max_norm=gradient_clip_max_norm,
+        anomaly_spike_threshold=anomaly_spike_threshold,
+        anomaly_gradient_threshold=anomaly_gradient_threshold,
+    )
+    ft_components = setup_fault_tolerance(
+        ft_config,
+        distributed=distributed,
+        is_main_process_fn=is_main_process if distributed else None,
+    )
 
-    # Initialize anomaly detector for NaN/Inf detection (2025-12)
-    anomaly_detector = None
+    # Extract components for use in training loop
+    training_breaker = ft_components.training_breaker
+    anomaly_detector = ft_components.anomaly_detector
+    adaptive_clipper = ft_components.adaptive_clipper
+    fixed_clip_norm = ft_components.fixed_clip_norm
+    gradient_clip_mode = ft_components.gradient_clip_mode
     anomaly_step = 0  # Track step for anomaly detection
-    if enable_anomaly_detection and HAS_TRAINING_ENHANCEMENTS and TrainingAnomalyDetector:
-        anomaly_detector = TrainingAnomalyDetector(
-            loss_spike_threshold=anomaly_spike_threshold,
-            gradient_norm_threshold=anomaly_gradient_threshold,
-            loss_window_size=100,  # Rolling window for statistics
-            halt_on_nan=False,  # Don't halt, let circuit breaker handle
-            max_consecutive_anomalies=10,  # Allow some recovery attempts
-        )
-        logger.info(
-            f"Training anomaly detector enabled (spike_threshold={anomaly_spike_threshold}, "
-            f"gradient_threshold={anomaly_gradient_threshold})"
-        )
-    elif not enable_anomaly_detection:
-        logger.info("Training anomaly detection disabled by configuration")
 
-    # Initialize gradient clipping based on mode (2025-12)
-    adaptive_clipper = None
-    fixed_clip_norm = gradient_clip_max_norm
-    if gradient_clip_mode == 'adaptive':
-        if HAS_TRAINING_ENHANCEMENTS and AdaptiveGradientClipper:
-            adaptive_clipper = AdaptiveGradientClipper(
-                initial_max_norm=gradient_clip_max_norm,
-                percentile=90.0,
-                history_size=100,
-                min_clip=0.1,
-                max_clip=10.0,
-            )
-            logger.info(f"Adaptive gradient clipping enabled (initial_norm={gradient_clip_max_norm})")
-        else:
-            logger.warning("Adaptive gradient clipping requested but not available, using fixed")
-            gradient_clip_mode = 'fixed'
-    if gradient_clip_mode == 'fixed':
-        logger.info(f"Fixed gradient clipping enabled (max_norm={fixed_clip_norm})")
-
-    # Mutable training state for graceful shutdown checkpoint (2025-12)
-    _training_state = {
-        'epoch': start_epoch,
-        'best_val_loss': float('inf'),
-        'avg_val_loss': float('inf'),
-    }
+    # Training state for checkpoint tracking and rollback (2025-12, refactored)
+    training_state = TrainingState(
+        epoch=start_epoch,
+        best_val_loss=float('inf'),
+        avg_val_loss=float('inf'),
+    )
 
     # Setup graceful shutdown handler for emergency checkpoints (2025-12)
     shutdown_handler: Optional[GracefulShutdownHandler] = None
@@ -2363,13 +2348,13 @@ def train_model(
             model_to_save = model.module if distributed else model
             emergency_path = os.path.join(
                 checkpoint_dir,
-                f"checkpoint_emergency_epoch_{_training_state['epoch']}.pth",
+                f"checkpoint_emergency_epoch_{training_state.epoch}.pth",
             )
             save_checkpoint(
                 model_to_save,
                 optimizer,
-                _training_state['epoch'],
-                _training_state['avg_val_loss'],
+                training_state.epoch,
+                training_state.avg_val_loss,
                 emergency_path,
                 scheduler=epoch_scheduler,
                 early_stopping=early_stopper,
@@ -2378,11 +2363,11 @@ def train_model(
         shutdown_handler = GracefulShutdownHandler()
         shutdown_handler.setup(_emergency_checkpoint_callback)
 
-    # Track last good checkpoint for rollback on circuit breaker (2025-12)
-    _last_good_checkpoint_path: Optional[str] = None
-    _last_good_epoch: int = start_epoch
-    _circuit_breaker_rollbacks: int = 0
-    _max_circuit_breaker_rollbacks: int = 3  # Max rollbacks before giving up
+    # Aliases for backwards compatibility with existing loop code
+    _last_good_checkpoint_path = training_state.last_good_checkpoint_path
+    _last_good_epoch = training_state.last_good_epoch
+    _circuit_breaker_rollbacks = training_state.circuit_breaker_rollbacks
+    _max_circuit_breaker_rollbacks = training_state.max_circuit_breaker_rollbacks
 
     # Publish training started event (2025-12)
     if HAS_EVENT_BUS and get_event_bus is not None and (not distributed or is_main_process()):
@@ -3113,10 +3098,10 @@ def train_model(
                 avg_val_loss = 0.0
 
             # Update training state for emergency checkpoints (2025-12)
-            _training_state['epoch'] = epoch
-            _training_state['avg_val_loss'] = avg_val_loss
-            if avg_val_loss < _training_state['best_val_loss']:
-                _training_state['best_val_loss'] = avg_val_loss
+            training_state.epoch = epoch
+            training_state.avg_val_loss = avg_val_loss
+            if avg_val_loss < training_state.best_val_loss:
+                training_state.best_val_loss = avg_val_loss
 
             # Update scheduler at end of epoch
             if epoch_scheduler is not None:

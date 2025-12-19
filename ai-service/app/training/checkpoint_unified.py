@@ -696,6 +696,23 @@ class UnifiedCheckpointManager:
 SmartCheckpointManager = UnifiedCheckpointManager
 CheckpointManager = UnifiedCheckpointManager
 
+# Re-export legacy checkpointing functions for migration
+# This allows callers to import from checkpoint_unified instead of deprecated checkpointing
+try:
+    from app.training.checkpointing import (
+        GracefulShutdownHandler,
+        save_checkpoint,
+        load_checkpoint,
+        AsyncCheckpointer,
+    )
+    _HAS_LEGACY_CHECKPOINTING = True
+except ImportError:
+    _HAS_LEGACY_CHECKPOINTING = False
+    GracefulShutdownHandler = None  # type: ignore
+    save_checkpoint = None  # type: ignore
+    load_checkpoint = None  # type: ignore
+    AsyncCheckpointer = None  # type: ignore
+
 
 def create_checkpoint_manager(
     checkpoint_dir: Union[str, Path],

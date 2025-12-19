@@ -20,7 +20,7 @@ if TYPE_CHECKING:
         TrainingAnomalyDetector,
         AdaptiveGradientClipper,
     )
-    from app.training.checkpointing import GracefulShutdownHandler
+    from app.training.checkpoint_unified import GracefulShutdownHandler
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ def _try_import_circuit_breaker():
 def _try_import_shutdown_handler():
     """Lazy import GracefulShutdownHandler."""
     try:
-        from app.training.checkpointing import GracefulShutdownHandler
+        from app.training.checkpoint_unified import GracefulShutdownHandler
         return GracefulShutdownHandler
     except ImportError:
         return None

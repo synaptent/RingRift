@@ -373,8 +373,9 @@ if HAS_VALUE_CALIBRATION:
     ])
 
 # Import checkpointing utilities (December 2025)
+# Migrated to import from checkpoint_unified
 try:
-    from app.training.checkpointing import (
+    from app.training.checkpoint_unified import (
         save_checkpoint,
         load_checkpoint,
         AsyncCheckpointer,
