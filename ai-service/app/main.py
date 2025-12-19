@@ -7,6 +7,7 @@ import asyncio
 import logging
 import time
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from dataclasses import dataclass
 import threading
@@ -105,11 +106,60 @@ try:
 except Exception:  # pragma: no cover - defensive startup path
     logger.warning("Failed to load trained heuristic profiles", exc_info=True)
 
+# Import CoordinatorRegistry for graceful shutdown
+try:
+    from app.coordination.coordinator_base import (
+        get_coordinator_registry,
+        shutdown_all_coordinators,
+    )
+    HAS_COORDINATOR_REGISTRY = True
+except ImportError:  # pragma: no cover
+    HAS_COORDINATOR_REGISTRY = False
+    get_coordinator_registry = None  # type: ignore
+    shutdown_all_coordinators = None  # type: ignore
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan context manager for startup/shutdown.
+
+    - On startup: Install signal handlers for graceful coordinator shutdown
+    - On shutdown: Gracefully shutdown all registered coordinators
+    """
+    # Startup
+    if HAS_COORDINATOR_REGISTRY:
+        registry = get_coordinator_registry()
+        # Install signal handlers (SIGTERM/SIGINT)
+        try:
+            registry.install_signal_handlers()
+            logger.info("Installed coordinator signal handlers for graceful shutdown")
+        except Exception as e:
+            logger.warning(f"Could not install signal handlers: {e}")
+
+    logger.info("RingRift AI Service started")
+
+    yield  # App runs here
+
+    # Shutdown
+    logger.info("RingRift AI Service shutting down")
+    if HAS_COORDINATOR_REGISTRY:
+        try:
+            results = await shutdown_all_coordinators(timeout=30.0)
+            if results:
+                succeeded = sum(1 for v in results.values() if v)
+                logger.info(f"Coordinator shutdown: {succeeded}/{len(results)} succeeded")
+        except Exception as e:
+            logger.error(f"Error during coordinator shutdown: {e}")
+
+    logger.info("RingRift AI Service shutdown complete")
+
+
 # Create FastAPI app
 app = FastAPI(
     title="RingRift AI Service",
     description="AI move selection and evaluation service for RingRift",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS middleware - allows sandbox UI to access replay API
