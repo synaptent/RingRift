@@ -1792,30 +1792,38 @@ class NNUEPolicyDataset(Dataset):
                     games_skipped += 1
                     continue
 
-                # Detect GPU selfplay data
-                is_gpu_selfplay = game.get("source", "").startswith("run_gpu") or game.get("engine_mode") == "gpu_heuristic"
+                # Detect selfplay data that skips phase handling moves
+                # GPU selfplay and Gumbel MCTS both record only the "main" moves
+                # without intermediate line_processing/territory_processing phases
+                source = game.get("source", "")
+                engine_mode = game.get("engine_mode", "")
+                is_gpu_selfplay = (
+                    source.startswith("run_gpu") or
+                    engine_mode == "gpu_heuristic" or
+                    "gumbel" in source.lower() or
+                    engine_mode == "gumbel_mcts"
+                )
 
-                # Warn about GPU selfplay incompatibility
-                # Hex boards: completely incompatible (skip)
-                # Square boards: partially incompatible (low extraction rate expected)
+                # Warn about phase-skipping selfplay incompatibility
+                # Hex boards: GPU mode is completely incompatible (skip)
+                # Square boards: Auto-advance through phases will be attempted
                 if is_gpu_selfplay and not gpu_warned:
-                    if is_hex_board:
+                    if is_hex_board and engine_mode == "gpu_heuristic":
                         logger.warning(
                             f"Skipping GPU selfplay JSONL for hex board ({self.config.board_type.value}). "
                             "GPU uses 8-dir grid movement, hex requires 6-dir hex movement. "
                             "Use DB data from CPU/MCTS selfplay instead."
                         )
                     else:
-                        logger.warning(
-                            f"GPU selfplay JSONL detected for {self.config.board_type.value}. "
-                            "Extraction rate will be low (~1-5 samples/game vs ~100 expected) "
-                            "due to turn structure differences. "
-                            "Use DB data from CPU/MCTS selfplay for better coverage."
+                        logger.info(
+                            f"Phase-skipping selfplay detected (source={source[:30]}, engine={engine_mode}). "
+                            "Auto-advancing through line/territory processing phases."
                         )
                     gpu_warned = True
 
-                # Skip hex GPU selfplay entirely (incompatible movement rules)
-                if is_hex_board and is_gpu_selfplay:
+                # Skip hex GPU heuristic selfplay entirely (incompatible movement rules)
+                # Note: Gumbel MCTS on hex boards is fine, only GPU heuristic is broken
+                if is_hex_board and engine_mode == "gpu_heuristic":
                     games_skipped += 1
                     continue
 
