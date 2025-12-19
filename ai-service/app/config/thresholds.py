@@ -188,3 +188,125 @@ DISK_WARNING_PERCENT = 65
 
 # Disk utilization critical threshold
 DISK_CRITICAL_PERCENT = 70
+
+# =============================================================================
+# Network/SSH Timeouts
+# =============================================================================
+
+# SSH connection timeout (seconds)
+SSH_CONNECT_TIMEOUT = 10
+
+# SSH command timeout (seconds)
+SSH_COMMAND_TIMEOUT = 30
+
+# HTTP request timeout (seconds)
+HTTP_TIMEOUT = 30
+
+# P2P operations timeout (seconds)
+P2P_TIMEOUT = 30
+
+# =============================================================================
+# Cluster Health & Monitoring
+# =============================================================================
+
+# Heartbeat interval for health checks (seconds)
+HEARTBEAT_INTERVAL = 30
+
+# Peer timeout - no heartbeat means dead (seconds)
+PEER_TIMEOUT = 90
+
+# Election timeout for leader election (seconds)
+ELECTION_TIMEOUT = 10
+
+# Leader lease renewal interval (seconds)
+LEADER_LEASE_RENEW_INTERVAL = 10
+
+# Job status check interval (seconds)
+JOB_CHECK_INTERVAL = 60
+
+# Peer discovery broadcast interval (seconds)
+DISCOVERY_INTERVAL = 120
+
+# Stale entry cleanup interval (seconds)
+STALE_CLEANUP_INTERVAL = 60
+
+# =============================================================================
+# Data Sync Intervals
+# =============================================================================
+
+# Main sync cycle interval (seconds)
+SYNC_INTERVAL = 60
+
+# Transport health check interval (seconds)
+TRANSPORT_HEALTH_CHECK_INTERVAL = 300  # 5 minutes
+
+# Freshness check interval (seconds)
+FRESHNESS_CHECK_INTERVAL = 60
+
+# Checkpoint interval for ephemeral data (seconds)
+CHECKPOINT_INTERVAL = 60
+
+# =============================================================================
+# Lock & Mutex Settings
+# =============================================================================
+
+# Default lock timeout (seconds)
+DEFAULT_LOCK_TIMEOUT = 3600  # 1 hour
+
+# Lock acquisition timeout (seconds)
+DEFAULT_ACQUIRE_TIMEOUT = 60
+
+# Lock poll interval when waiting (seconds)
+LOCK_POLL_INTERVAL = 0.5
+
+# Crash detection threshold - no heartbeat (seconds)
+CRASH_DETECTION_THRESHOLD = 60
+
+# =============================================================================
+# Circuit Breaker & Retry
+# =============================================================================
+
+# Number of failures before circuit opens
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3
+
+# Time to wait before attempting recovery (seconds)
+CIRCUIT_BREAKER_RECOVERY_TIMEOUT = 300  # 5 minutes
+
+# Maximum retry attempts for recoverable errors
+MAX_RETRY_ATTEMPTS = 3
+
+# Base delay between retries (seconds)
+RETRY_BASE_DELAY = 1.0
+
+# Maximum delay between retries (seconds)
+RETRY_MAX_DELAY = 60.0
+
+# =============================================================================
+# Model Management
+# =============================================================================
+
+# Model count threshold to trigger culling
+MODEL_CULL_THRESHOLD = 100
+
+# Win rate threshold for model promotion
+PROMOTION_WIN_RATE_THRESHOLD = 0.55  # 55%
+
+# ELO underserved threshold (fewer games = underserved)
+ELO_UNDERSERVED_THRESHOLD = 100
+
+# =============================================================================
+# File Transfer
+# =============================================================================
+
+# Maximum timeout for batch operations (seconds)
+MAX_BATCH_TIMEOUT = 1800  # 30 minutes
+
+# Maximum timeout per file (seconds)
+MAX_PER_FILE_TIMEOUT = 120  # 2 minutes
+
+# =============================================================================
+# Shadow Validation
+# =============================================================================
+
+# Maximum divergence allowed between implementations
+DIVERGENCE_THRESHOLD = 0.001  # 0.1%

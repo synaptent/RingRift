@@ -24,16 +24,22 @@ import shutil
 logger = logging.getLogger(__name__)
 
 # Re-export checkpoint classes from checkpoint_unified.py (canonical source)
-# These were duplicated here; now consolidated in checkpoint_unified.py
+# All checkpoint management is consolidated in checkpoint_unified.py
 try:
     from app.training.checkpoint_unified import (
         CheckpointType,
         CheckpointMetadata,
         TrainingProgress,
+        UnifiedCheckpointManager,
+        UnifiedCheckpointConfig,
+        create_checkpoint_manager,
     )
     _HAS_UNIFIED_CHECKPOINT = True
 except ImportError:
     _HAS_UNIFIED_CHECKPOINT = False
+    UnifiedCheckpointManager = None  # type: ignore
+    UnifiedCheckpointConfig = None  # type: ignore
+    create_checkpoint_manager = None  # type: ignore
     # Fallback definitions below will be used
 
 T = TypeVar('T')
@@ -287,116 +293,57 @@ class RetryPolicy:
 
 
 # =============================================================================
-# Training Exception Hierarchy
+# Training Exception Hierarchy - Imported from canonical source
 # =============================================================================
 
+# Import all training-related errors from the unified errors module
+# These are re-exported for backwards compatibility
+try:
+    from app.errors import (
+        TrainingError,
+        RecoverableError,
+        NonRecoverableError,
+        ValidationError,
+        DataQualityError,
+        LifecycleError,
+        ResourceError,
+        CheckpointError,
+    )
+except ImportError:
+    # Fallback definitions for when app.errors is not available
+    class TrainingError(Exception):
+        """Base exception for all training-related errors."""
+        def __init__(self, message: str, context: Optional[Dict[str, Any]] = None):
+            super().__init__(message)
+            self.context = context or {}
 
-class TrainingError(Exception):
-    """Base exception for all training-related errors."""
+    class RecoverableError(TrainingError):
+        """Exception that indicates a recoverable error (can retry)."""
+        pass
 
-    def __init__(self, message: str, context: Optional[Dict[str, Any]] = None):
-        super().__init__(message)
-        self.context = context or {}
+    class NonRecoverableError(TrainingError):
+        """Exception that indicates a non-recoverable error (skip retry)."""
+        pass
 
+    class ValidationError(TrainingError):
+        """Exception for configuration or data validation failures."""
+        pass
 
-class RecoverableError(TrainingError):
-    """Exception that indicates a recoverable error (can retry)."""
-    pass
+    class DataQualityError(TrainingError):
+        """Exception for data quality issues."""
+        pass
 
+    class LifecycleError(TrainingError):
+        """Exception for model lifecycle errors."""
+        pass
 
-class NonRecoverableError(TrainingError):
-    """Exception that indicates a non-recoverable error (skip retry)."""
-    pass
+    class ResourceError(TrainingError):
+        """Exception for resource-related failures."""
+        pass
 
-
-class ValidationError(TrainingError):
-    """Exception for configuration or data validation failures.
-
-    Examples:
-    - Invalid TrainingConfig values
-    - Invalid model checkpoint format
-    - Schema validation failures
-    """
-    pass
-
-
-class DataQualityError(TrainingError):
-    """Exception for data quality issues.
-
-    Examples:
-    - Parity validation failures
-    - Corrupted training data
-    - NaN/Inf values in training data
-    - Too many duplicate samples
-    """
-
-    def __init__(
-        self,
-        message: str,
-        quality_score: Optional[float] = None,
-        samples_affected: Optional[int] = None,
-        context: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message, context)
-        self.quality_score = quality_score
-        self.samples_affected = samples_affected
-
-
-class LifecycleError(TrainingError):
-    """Exception for model lifecycle errors.
-
-    Examples:
-    - Invalid stage transition (e.g., skipping from training to production)
-    - Model not found during promotion
-    - Archive/delete failures
-    """
-
-    def __init__(
-        self,
-        message: str,
-        model_id: Optional[str] = None,
-        current_stage: Optional[str] = None,
-        target_stage: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message, context)
-        self.model_id = model_id
-        self.current_stage = current_stage
-        self.target_stage = target_stage
-
-
-class ResourceError(TrainingError):
-    """Exception for resource-related failures.
-
-    Examples:
-    - GPU out of memory
-    - Disk space exhausted
-    - CPU/memory limits exceeded
-    """
-
-    def __init__(
-        self,
-        message: str,
-        resource_type: Optional[str] = None,
-        available: Optional[float] = None,
-        required: Optional[float] = None,
-        context: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message, context)
-        self.resource_type = resource_type
-        self.available = available
-        self.required = required
-
-
-class CheckpointError(TrainingError):
-    """Exception for checkpoint-related failures.
-
-    Examples:
-    - Checkpoint file corrupted
-    - Incompatible checkpoint version
-    - Failed to save checkpoint
-    """
-    pass
+    class CheckpointError(TrainingError):
+        """Exception for checkpoint-related failures."""
+        pass
 
 
 def handle_gpu_error(
@@ -666,9 +613,13 @@ if not _HAS_UNIFIED_CHECKPOINT:
             return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
-class CheckpointManager:
+class _LegacyCheckpointManager:
     """
-    Manages training checkpoints with automatic cleanup and versioning.
+    Legacy checkpoint manager (fallback when checkpoint_unified not available).
+
+    Note: This is kept for backwards compatibility. New code should use
+    UnifiedCheckpointManager from checkpoint_unified.py which provides
+    additional features like adaptive checkpointing and architecture versioning.
     """
 
     def __init__(
@@ -910,6 +861,13 @@ class CheckpointManager:
     def list_checkpoints(self) -> List[CheckpointMetadata]:
         """List all available checkpoints."""
         return list(self.checkpoints)
+
+
+# Use UnifiedCheckpointManager when available (preferred), fallback to legacy
+if _HAS_UNIFIED_CHECKPOINT and UnifiedCheckpointManager is not None:
+    CheckpointManager = UnifiedCheckpointManager
+else:
+    CheckpointManager = _LegacyCheckpointManager  # type: ignore
 
 
 class HeartbeatMonitor:

@@ -10,12 +10,17 @@ Keeps:
 import os
 import re
 import json
+import sys
 import argparse
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 
-MODELS_DIR = os.path.expanduser("~/Development/RingRift/ai-service/models")
-PROMOTION_HISTORY = os.path.join(MODELS_DIR, "../data/model_promotion_history.json")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.utils.paths import MODELS_DIR, DATA_DIR
+
+PROMOTION_HISTORY = str(DATA_DIR / "model_promotion_history.json")
 KEEP_PER_CONFIG = 5  # Keep most recent N models per board config
 
 def parse_model_filename(filename):
@@ -42,7 +47,7 @@ def parse_model_filename(filename):
     timestamp_str = match.group(1)
     try:
         timestamp = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
-    except:
+    except ValueError:
         return None
 
     # Extract board config
@@ -78,7 +83,7 @@ def get_protected_models():
                 model_id = p.get("model_id", "")
                 if model_id:
                     protected.add(model_id)
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
 
     return protected

@@ -519,15 +519,15 @@ def train_model(
     config: TrainConfig,
     data_path: Union[str, List[str]],
     save_path: str,
-    early_stopping_patience: int = 10,
-    elo_early_stopping_patience: int = 10,
-    elo_min_improvement: float = 5.0,
+    early_stopping_patience: Optional[int] = None,
+    elo_early_stopping_patience: Optional[int] = None,
+    elo_min_improvement: Optional[float] = None,
     checkpoint_dir: str = 'checkpoints',
     checkpoint_interval: int = 5,
     save_all_epochs: bool = True,  # Save every epoch for Elo-based selection
-    warmup_epochs: int = 0,
-    lr_scheduler: str = 'none',
-    lr_min: float = 1e-6,
+    warmup_epochs: Optional[int] = None,
+    lr_scheduler: Optional[str] = None,
+    lr_min: Optional[float] = None,
     lr_t0: int = 10,
     lr_t_mult: int = 2,
     resume_path: Optional[str] = None,
@@ -637,6 +637,22 @@ def train_model(
         enable_background_eval: Enable background Elo evaluation during training
             Provides early stopping based on Elo tracking
     """
+    # Resolve optional parameters from config (use config as source of truth)
+    # This ensures callers that don't pass these params get the config defaults
+    # rather than arbitrary function defaults
+    if early_stopping_patience is None:
+        early_stopping_patience = getattr(config, 'early_stopping_patience', 5)
+    if elo_early_stopping_patience is None:
+        elo_early_stopping_patience = getattr(config, 'elo_early_stopping_patience', 10)
+    if elo_min_improvement is None:
+        elo_min_improvement = getattr(config, 'elo_min_improvement', 5.0)
+    if warmup_epochs is None:
+        warmup_epochs = getattr(config, 'warmup_epochs', 1)
+    if lr_scheduler is None:
+        lr_scheduler = getattr(config, 'lr_scheduler', 'cosine')
+    if lr_min is None:
+        lr_min = getattr(config, 'lr_min', 1e-6)
+
     # Set up distributed training if enabled
     if distributed:
         # Setup distributed process group
@@ -3116,16 +3132,14 @@ def train_from_file(
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     try:
+        # train_model now extracts scheduler/stopping params from config automatically
+        # Only pass params that need explicit override
         result = train_model(
             config=config,
             data_path=data_path,
             save_path=output_path,
-            early_stopping_patience=config.early_stopping_patience,
             checkpoint_dir=str(checkpoint_dir),
             checkpoint_interval=config.epochs_per_iter,
-            warmup_epochs=config.warmup_epochs,
-            lr_scheduler=config.lr_scheduler,
-            lr_min=config.lr_min,
             resume_path=initial_model_path,
         )
 

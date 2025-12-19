@@ -388,18 +388,7 @@ class CheckpointWrapper:
             self._manager = UnifiedCheckpointManager(ckpt_config)
             logger.info(f"[Orchestrator] UnifiedCheckpointManager initialized (dir={self.config.checkpoint_dir})")
         except ImportError as e:
-            logger.warning(f"[Orchestrator] UnifiedCheckpointManager not available: {e}")
-            # Fallback to original fault_tolerance
-            try:
-                from app.training.fault_tolerance import CheckpointManager
-                self._manager = CheckpointManager(
-                    checkpoint_dir=Path(self.config.checkpoint_dir),
-                    max_checkpoints=self.config.keep_top_k_checkpoints + 2,
-                    keep_best=self.config.keep_top_k_checkpoints,
-                )
-                logger.info("[Orchestrator] Using fallback CheckpointManager")
-            except ImportError:
-                pass
+            logger.warning(f"[Orchestrator] Checkpoint manager not available: {e}")
 
     def should_save(self, epoch: int, loss: float, step: int = None) -> bool:
         """Check if checkpoint should be saved using adaptive logic."""
@@ -413,10 +402,8 @@ class CheckpointWrapper:
     def save(self, model_state: Dict, progress: Any, metrics: Dict = None):
         """Save checkpoint."""
         if self._manager is not None:
-            try:
-                from app.training.checkpoint_unified import CheckpointType, TrainingProgress
-            except ImportError:
-                from app.training.fault_tolerance import CheckpointType, TrainingProgress
+            # Import from canonical source (fault_tolerance re-exports from checkpoint_unified)
+            from app.training.fault_tolerance import CheckpointType
 
             self._manager.save_checkpoint(
                 model_state=model_state,
@@ -781,11 +768,8 @@ class UnifiedTrainingOrchestrator:
             return
 
         try:
-            # Import from unified module first, fallback to legacy
-            try:
-                from app.training.checkpoint_unified import TrainingProgress
-            except ImportError:
-                from app.training.fault_tolerance import TrainingProgress
+            # Import from canonical source (fault_tolerance re-exports from checkpoint_unified)
+            from app.training.fault_tolerance import TrainingProgress
 
             progress = TrainingProgress(
                 epoch=self._epoch,

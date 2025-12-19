@@ -126,7 +126,7 @@ def get_vast_instances() -> List[Dict]:
                 if result.returncode == 0:
                     vastai_cmd = path
                     break
-            except:
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
                 continue
 
         if not vastai_cmd:

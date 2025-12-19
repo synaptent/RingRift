@@ -235,7 +235,8 @@ for db in glob.glob('/root/ringrift/ai-service/data/**/*.db', recursive=True):
         conn=sqlite3.connect(db)
         total+=conn.execute('SELECT COUNT(*) FROM games').fetchone()[0]
         conn.close()
-    except: pass
+    except (sqlite3.Error, OSError):
+        pass
 print(total)
 " 2>/dev/null || echo 0""",
         timeout=20,

@@ -557,6 +557,30 @@ def get_training_config_for_board(
 # Use get_default_config_for_board() for board-specific settings instead.
 
 
+def get_model_version_for_board(board_type: BoardType) -> str:
+    """Get the appropriate model version string for a board type.
+
+    This centralizes the board-to-model-version mapping used by both
+    train_loop.py and train.py to avoid duplication.
+
+    Parameters
+    ----------
+    board_type : BoardType
+        The board type to get model version for.
+
+    Returns
+    -------
+    str
+        Model version string: 'hex' for hex boards, 'v3' for square8, 'v2' otherwise.
+    """
+    if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
+        return "hex"
+    elif board_type == BoardType.SQUARE8:
+        return "v3"
+    else:
+        return "v2"
+
+
 # =============================================================================
 # Unified Training Pipeline Configuration
 # =============================================================================

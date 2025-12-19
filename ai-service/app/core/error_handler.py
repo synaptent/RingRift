@@ -40,45 +40,20 @@ EMERGENCY_HALT_FILE = AI_SERVICE_ROOT / "data" / "coordination" / "EMERGENCY_HAL
 
 
 # ============================================================================
-# Custom Exception Hierarchy
+# Custom Exception Hierarchy - Imported from canonical source
 # ============================================================================
 
-class RingRiftError(Exception):
-    """Base exception for all RingRift-specific errors."""
-
-    def __init__(self, message: str, context: Optional[dict] = None):
-        super().__init__(message)
-        self.context = context or {}
-
-
-class RetryableError(RingRiftError):
-    """Error that can be retried (network issues, transient failures)."""
-    pass
-
-
-class FatalError(RingRiftError):
-    """Error that should not be retried (invalid config, data corruption)."""
-    pass
-
-
-class EmergencyHaltError(RingRiftError):
-    """Raised when emergency halt is detected."""
-    pass
-
-
-class SSHError(RetryableError):
-    """SSH connection or command execution error."""
-    pass
-
-
-class DatabaseError(RingRiftError):
-    """Database access error."""
-    pass
-
-
-class ConfigurationError(FatalError):
-    """Configuration error that cannot be recovered."""
-    pass
+# Import all error classes from the unified errors module
+from app.errors import (
+    RingRiftError,
+    RetryableError,
+    NonRetryableError,
+    FatalError,  # Alias for NonRetryableError
+    EmergencyHaltError,
+    SSHError,
+    DatabaseError,
+    ConfigurationError,
+)
 
 
 # ============================================================================

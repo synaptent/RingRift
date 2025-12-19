@@ -187,7 +187,7 @@ class WorkItem:
             import json
             try:
                 d["depends_on"] = json.loads(d["depends_on"]) if d["depends_on"] else []
-            except:
+            except (json.JSONDecodeError, TypeError):
                 d["depends_on"] = []
         return cls(**d)
 

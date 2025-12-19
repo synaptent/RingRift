@@ -40,6 +40,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.utils.paths import AI_SERVICE_ROOT, DATA_DIR, QUARANTINE_DIR
+
 # Unified logging setup
 try:
     from app.core.logging_config import setup_logging
@@ -51,8 +53,6 @@ except ImportError:
         datefmt='%Y-%m-%d %H:%M:%S',
     )
     logger = logging.getLogger(__name__)
-
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 # Required tables for training databases
 REQUIRED_TABLES = {
@@ -71,7 +71,7 @@ class DBHealthChecker:
     """Database health checker and repair utility."""
 
     def __init__(self, quarantine_dir: Optional[Path] = None):
-        self.quarantine_dir = quarantine_dir or AI_SERVICE_ROOT / "data" / "quarantine"
+        self.quarantine_dir = quarantine_dir or QUARANTINE_DIR
         self.results: Dict[str, Dict[str, Any]] = {}
 
     def check_integrity(self, db_path: Path) -> Tuple[bool, str]:
@@ -114,7 +114,7 @@ class DBHealthChecker:
             count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
             conn.close()
             return count
-        except:
+        except (sqlite3.Error, OSError):
             return -1
 
     def get_db_size(self, db_path: Path) -> int:
@@ -261,7 +261,7 @@ class DBHealthChecker:
                             quarantine: bool = False) -> Dict[str, Dict[str, Any]]:
         """Check all databases in data directory."""
         if data_dir is None:
-            data_dir = AI_SERVICE_ROOT / "data"
+            data_dir = DATA_DIR
 
         results = {}
 

@@ -91,7 +91,7 @@ def main():
             print(f"Error processing {db_path}: {e}")
             try:
                 conn_out.execute("DETACH DATABASE src")
-            except:
+            except sqlite3.Error:
                 pass
     
     # Final stats

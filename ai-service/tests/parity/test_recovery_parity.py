@@ -462,7 +462,13 @@ class TestHasAnyRecoveryMove:
 
         assert has_any_recovery_move(state, 1) is True
 
-    @pytest.mark.skip(reason="Recovery module may support non-line recovery modes; needs further investigation")
+    @pytest.mark.skip(
+        reason="TODO-RECOVERY-MODES: Recovery module semantics unclear. The current "
+        "implementation per RR-CANON-R112 requires recovery slides to complete a line, "
+        "but the test setup may not correctly model the scenario. Investigation needed "
+        "to determine: (1) whether non-line-completing recovery modes exist, (2) exact "
+        "rules for when recovery is available. See recovery.ts for current logic."
+    )
     def test_no_recovery_when_no_valid_slide(self):
         """Player has no recovery move when no valid slide completes a line."""
         # Per RR-CANON-R112, square8 2-player requires 4 markers for a line

@@ -104,7 +104,7 @@ class OrchestratorInfo:
             last_hb = datetime.fromisoformat(self.last_heartbeat)
             timeout = timedelta(seconds=HEARTBEAT_TIMEOUT_SECONDS)
             return datetime.now() - last_hb < timeout
-        except:
+        except (ValueError, TypeError):
             return False
 
     def to_dict(self) -> Dict[str, Any]:
@@ -435,7 +435,7 @@ class OrchestratorRegistry:
         """Cleanup handler called on process exit."""
         try:
             self.release_role()
-        except:
+        except Exception:
             pass
 
     # =========================================================================

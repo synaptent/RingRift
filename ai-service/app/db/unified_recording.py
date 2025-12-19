@@ -43,9 +43,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.db import GameReplayDB, GameWriter
+from app.db.game_replay import GameReplayDB, GameWriter
 from app.models import BoardType, GameState, Move
-from app.rules.fsm import validate_move_for_phase, FSMValidationResult
+from app.rules.fsm import validate_move_for_phase
 from app.utils.canonical_naming import (
     normalize_board_type,
     make_config_key,

@@ -219,17 +219,8 @@ export async function withQueryTimeoutStrict<T>(
   return { success: true, data: result as T };
 }
 
-// Graceful shutdown
+// Graceful shutdown on process exit (not on signals - those are handled by index.ts)
+// beforeExit fires when the Node.js event loop has no additional work to schedule
 process.on('beforeExit', async () => {
   await disconnectDatabase();
-});
-
-process.on('SIGINT', async () => {
-  await disconnectDatabase();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  await disconnectDatabase();
-  process.exit(0);
 });

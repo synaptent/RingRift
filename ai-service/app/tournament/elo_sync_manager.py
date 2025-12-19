@@ -424,7 +424,7 @@ class EloSyncManager:
 
         try:
             remote_count = int(stdout.decode().strip())
-        except:
+        except (ValueError, AttributeError):
             return False
 
         # Compare counts - sync from node with more data
@@ -529,7 +529,7 @@ class EloSyncManager:
 
         try:
             remote_count = int(stdout.decode().strip().split('\n')[-1])
-        except:
+        except (ValueError, AttributeError, IndexError):
             return False
 
         # Sync logic

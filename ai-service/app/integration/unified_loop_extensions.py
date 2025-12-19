@@ -408,7 +408,7 @@ class UnifiedLoopExtensions:
                     event_type=DataEventType.CMAES_TRIGGERED,
                     payload={'reason': 'plateau_detected', 'plateau_count': self.state.plateau_count}
                 ))
-            except:
+            except Exception:
                 pass
 
     async def _trigger_nas(self):
@@ -424,7 +424,7 @@ class UnifiedLoopExtensions:
                     event_type=DataEventType.NAS_TRIGGERED,
                     payload={'reason': 'severe_plateau', 'plateau_count': self.state.plateau_count}
                 ))
-            except:
+            except Exception:
                 pass
 
     async def _benchmark_loop(self):
@@ -475,7 +475,7 @@ class UnifiedLoopExtensions:
                             )
                             if result.returncode == 0:
                                 gpu_util = float(result.stdout.strip().split('\n')[0])
-                        except:
+                        except (subprocess.SubprocessError, ValueError, IndexError, OSError):
                             pass
 
                         self.dashboard_collector.record_cluster_status(

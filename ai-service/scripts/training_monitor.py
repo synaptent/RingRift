@@ -151,7 +151,7 @@ def check_db_health(db_path: Path) -> Tuple[bool, str, int, int, int]:
 
         try:
             total_count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
-        except:
+        except sqlite3.Error:
             pass
 
         # Check columns
@@ -184,7 +184,7 @@ def check_db_health(db_path: Path) -> Tuple[bool, str, int, int, int]:
                     with_moves_count = conn.execute("""
                         SELECT COUNT(DISTINCT game_id) FROM game_moves
                     """).fetchone()[0]
-        except:
+        except sqlite3.Error:
             pass
 
         conn.close()

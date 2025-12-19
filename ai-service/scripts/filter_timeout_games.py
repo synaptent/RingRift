@@ -373,8 +373,8 @@ for data_dir in data_dirs:
                             removed += 1
                         else:
                             lines.append(line)
-                    except:
-                        lines.append(line)
+                    except (json.JSONDecodeError, TypeError, AttributeError):
+                        lines.append(line)  # Keep unparseable lines
             if removed > 0:
                 if not dry_run:
                     backup_path = str(jsonl_file) + ".pre_timeout_filter"

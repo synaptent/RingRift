@@ -11,8 +11,8 @@ import { apiRequestLogger } from './middleware/requestLogger';
 import { securityMiddleware } from './middleware/securityHeaders';
 import { metricsMiddleware } from './middleware/metricsMiddleware';
 import { logger } from './utils/logger';
-import { connectDatabase } from './database/connection';
-import { connectRedis } from './cache/redis';
+import { connectDatabase, disconnectDatabase } from './database/connection';
+import { connectRedis, disconnectRedis } from './cache/redis';
 import client from 'prom-client';
 import { config, enforceAppTopology } from './config';
 import { HealthCheckService, isServiceReady } from './services/HealthCheckService';
@@ -276,21 +276,53 @@ async function startServer() {
   }
 }
 
-function gracefulShutdown(signal: string) {
+async function gracefulShutdown(signal: string) {
   logger.info(`Received ${signal}. Starting graceful shutdown...`);
 
-  server.close(() => {
-    logger.info('HTTP server closed');
-
-    // Close database connections, Redis, etc.
-    process.exit(0);
-  });
-
-  // Force close after 30 seconds
-  setTimeout(() => {
+  // Set a hard timeout for the entire shutdown process
+  const forceExitTimeout = setTimeout(() => {
     logger.error('Could not close connections in time, forcefully shutting down');
     process.exit(1);
   }, 30000);
+
+  try {
+    // 1. Stop accepting new connections
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => {
+        if (err) {
+          logger.warn('Error closing HTTP server:', err);
+          reject(err);
+        } else {
+          logger.info('HTTP server closed');
+          resolve();
+        }
+      });
+    });
+
+    // 2. Close Redis connection
+    try {
+      await disconnectRedis();
+      logger.info('Redis connection closed');
+    } catch (err) {
+      logger.warn('Error closing Redis connection:', err);
+    }
+
+    // 3. Close database connection
+    try {
+      await disconnectDatabase();
+      logger.info('Database connection closed');
+    } catch (err) {
+      logger.warn('Error closing database connection:', err);
+    }
+
+    clearTimeout(forceExitTimeout);
+    logger.info('Graceful shutdown complete');
+    process.exit(0);
+  } catch (err) {
+    logger.error('Error during graceful shutdown:', err);
+    clearTimeout(forceExitTimeout);
+    process.exit(1);
+  }
 }
 
 // Handle uncaught exceptions

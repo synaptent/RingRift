@@ -57,14 +57,14 @@ def aggregate():
                     g = json.loads(line.strip())
                     conn.execute(
                         "INSERT OR IGNORE INTO games (game_id, board_type, num_players, moves, winner, final_scores, metadata, source_file) VALUES (?,?,?,?,?,?,?,?)",
-                        (g.get("game_id"), g.get("board_type"), g.get("num_players"), 
-                         json.dumps(g.get("moves", [])), g.get("winner"), 
+                        (g.get("game_id"), g.get("board_type"), g.get("num_players"),
+                         json.dumps(g.get("moves", [])), g.get("winner"),
                          json.dumps(g.get("final_scores", {})), json.dumps(g),
                          os.path.basename(jsonl_file))
                     )
                     imported += 1
-                except:
-                    pass
+                except (json.JSONDecodeError, sqlite3.Error, KeyError):
+                    pass  # Skip malformed lines or duplicate entries
         conn.commit()
         if imported > 0:
             print(f"  {os.path.basename(jsonl_file)}: +{imported}")

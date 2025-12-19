@@ -51,7 +51,14 @@ class TestRingRiftEnv(unittest.TestCase):
         # Check internal env state update
         self.assertEqual(env.state.id, new_state_env.id)
 
-    @pytest.mark.skip(reason="Terminal reward semantics changed - needs verification")
+    @pytest.mark.skip(
+        reason="TODO-TERMINAL-REWARD: Terminal reward semantics changed during "
+        "multi-player support addition. The env now uses per-player reward arrays "
+        "instead of scalar +1/-1/0 values. This test assumes the old 2-player "
+        "terminal_only reward mode. Needs update to verify new reward structure "
+        "via env.get_player_rewards() and handle 3/4 player scenarios. "
+        "See training/env.py for current reward implementation."
+    )
     def test_terminal_reward_semantics(self):
         """
         Verify terminal reward logic (+1/-1/0)

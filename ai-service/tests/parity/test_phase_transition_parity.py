@@ -59,7 +59,13 @@ VALID_PHASE_TRANSITIONS: List[Tuple[str, str]] = [
 ]
 
 
-@pytest.mark.skip(reason="Recorded game format changed - needs update to new DB schema")
+@pytest.mark.skip(
+    reason="TODO-DB-SCHEMA: Recorded game format changed during GameReplayDB schema "
+    "migration. The test expects game_history entries with phase transition data in "
+    "the old format. Needs update to: (1) use new schema with GameHistoryEntry model, "
+    "(2) extract phase transitions from the state field instead of dedicated columns. "
+    "See database/replay.py for current schema."
+)
 def test_valid_phase_transitions_in_recorded_game():
     """Verify that all recorded phase transitions are valid according to rules."""
     # Find a test database with recorded games

@@ -8,6 +8,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 
 from app.models import (  # noqa: E402
     Position,
+    LineInfo,
     Move,
     MoveType,
     AIConfig,
@@ -24,6 +25,24 @@ from app.ai.neural_net import (  # noqa: E402
     INVALID_MOVE_INDEX,
     ActionEncoderHex,
     P_HEX,
+    encode_move_for_board,
+    decode_move_for_board,
+    SQUARE8_LINE_FORM_BASE,
+    SQUARE19_LINE_FORM_BASE,
+    SQUARE8_NO_PLACEMENT_ACTION_IDX,
+    SQUARE8_NO_MOVEMENT_ACTION_IDX,
+    SQUARE8_SKIP_CAPTURE_IDX,
+    SQUARE8_NO_LINE_ACTION_IDX,
+    SQUARE8_NO_TERRITORY_ACTION_IDX,
+    SQUARE8_SKIP_TERRITORY_PROCESSING_IDX,
+    SQUARE8_FORCED_ELIMINATION_IDX,
+    SQUARE19_NO_PLACEMENT_ACTION_IDX,
+    SQUARE19_NO_MOVEMENT_ACTION_IDX,
+    SQUARE19_SKIP_CAPTURE_IDX,
+    SQUARE19_NO_LINE_ACTION_IDX,
+    SQUARE19_NO_TERRITORY_ACTION_IDX,
+    SQUARE19_SKIP_TERRITORY_PROCESSING_IDX,
+    SQUARE19_FORCED_ELIMINATION_IDX,
 )
 from app.rules.core import (  # noqa: E402
     get_rings_per_player,
@@ -172,6 +191,83 @@ class TestActionEncoding(unittest.TestCase):
 
         idx = self.ai.encode_move(move, self.board_size)
         self.assertNotEqual(idx, INVALID_MOVE_INDEX)
+
+
+class TestActionEncodingSquarePolicies(unittest.TestCase):
+    def setUp(self):
+        self.board8 = BoardState(type=BoardType.SQUARE8, size=8)
+        self.board19 = BoardState(type=BoardType.SQUARE19, size=19)
+        self.now = datetime.now()
+
+    def test_process_line_uses_anchor_position(self):
+        """PROCESS_LINE encodes using the first line anchor position."""
+        line = LineInfo(
+            positions=[
+                Position(x=2, y=1),
+                Position(x=3, y=1),
+                Position(x=4, y=1),
+                Position(x=5, y=1),
+            ],
+            player=1,
+            length=4,
+            direction=Position(x=1, y=0),
+        )
+        move = Move(
+            id="line-test",
+            type=MoveType.PROCESS_LINE,
+            player=1,
+            to=None,
+            formedLines=(line,),
+            timestamp=self.now,
+            thinkTime=0,
+            moveNumber=1,
+        )
+
+        idx8 = encode_move_for_board(move, self.board8)
+        pos_idx8 = 1 * 8 + 2
+        self.assertEqual(idx8, SQUARE8_LINE_FORM_BASE + pos_idx8 * 4)
+
+        idx19 = encode_move_for_board(move, self.board19)
+        pos_idx19 = 1 * 19 + 2
+        self.assertEqual(idx19, SQUARE19_LINE_FORM_BASE + pos_idx19 * 4)
+
+    def test_extra_special_indices_round_trip(self):
+        """Extra special actions map to fixed indices and decode as specials."""
+        cases = [
+            (MoveType.NO_PLACEMENT_ACTION, SQUARE8_NO_PLACEMENT_ACTION_IDX, SQUARE19_NO_PLACEMENT_ACTION_IDX, "no_placement_action"),
+            (MoveType.NO_MOVEMENT_ACTION, SQUARE8_NO_MOVEMENT_ACTION_IDX, SQUARE19_NO_MOVEMENT_ACTION_IDX, "no_movement_action"),
+            (MoveType.SKIP_CAPTURE, SQUARE8_SKIP_CAPTURE_IDX, SQUARE19_SKIP_CAPTURE_IDX, "skip_capture"),
+            (MoveType.NO_LINE_ACTION, SQUARE8_NO_LINE_ACTION_IDX, SQUARE19_NO_LINE_ACTION_IDX, "no_line_action"),
+            (MoveType.NO_TERRITORY_ACTION, SQUARE8_NO_TERRITORY_ACTION_IDX, SQUARE19_NO_TERRITORY_ACTION_IDX, "no_territory_action"),
+            (MoveType.SKIP_TERRITORY_PROCESSING, SQUARE8_SKIP_TERRITORY_PROCESSING_IDX, SQUARE19_SKIP_TERRITORY_PROCESSING_IDX, "skip_territory_processing"),
+            (MoveType.FORCED_ELIMINATION, SQUARE8_FORCED_ELIMINATION_IDX, SQUARE19_FORCED_ELIMINATION_IDX, "forced_elimination"),
+        ]
+
+        for move_type, idx8_expected, idx19_expected, action_type in cases:
+            move = Move(
+                id=f"special-{move_type.value}",
+                type=move_type,
+                player=1,
+                timestamp=self.now,
+                thinkTime=0,
+                moveNumber=1,
+            )
+
+            idx8 = encode_move_for_board(move, self.board8)
+            self.assertEqual(idx8, idx8_expected)
+            decoded8 = decode_move_for_board(idx8, BoardType.SQUARE8)
+            self.assertIsNotNone(decoded8)
+            assert decoded8 is not None
+            self.assertTrue(decoded8.is_special)
+            self.assertEqual(decoded8.action_type, action_type)
+
+            idx19 = encode_move_for_board(move, self.board19)
+            self.assertEqual(idx19, idx19_expected)
+            decoded19 = decode_move_for_board(idx19, BoardType.SQUARE19)
+            self.assertIsNotNone(decoded19)
+            assert decoded19 is not None
+            self.assertTrue(decoded19.is_special)
+            self.assertEqual(decoded19.action_type, action_type)
 
 
 class TestActionEncodingHex(unittest.TestCase):

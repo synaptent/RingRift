@@ -313,3 +313,174 @@ class ParityError(ValidationError):
             self.context["python_result"] = str(python_result)
         if typescript_result is not None:
             self.context["typescript_result"] = str(typescript_result)
+
+
+# =============================================================================
+# Retry and Recovery Errors
+# =============================================================================
+
+
+class RetryableError(RingRiftError):
+    """Error that can be retried (network issues, transient failures).
+
+    Use this for errors where a retry may succeed, such as:
+    - Network timeouts
+    - SSH connection drops
+    - Temporary resource unavailability
+    """
+    code: str = "RETRYABLE_ERROR"
+
+
+class NonRetryableError(RingRiftError):
+    """Error that should not be retried.
+
+    Alias for FatalError - use when retry would be futile.
+    """
+    code: str = "NON_RETRYABLE_ERROR"
+
+
+# Alias for backwards compatibility with fault_tolerance.py
+FatalError = NonRetryableError
+
+
+class EmergencyHaltError(RingRiftError):
+    """Raised when emergency halt is detected.
+
+    Used to stop all training and selfplay loops when
+    a critical issue is detected.
+    """
+    code: str = "EMERGENCY_HALT"
+
+
+class SSHError(RetryableError):
+    """SSH connection or command execution error.
+
+    Raised when SSH commands fail or connections drop.
+    """
+    code: str = "SSH_ERROR"
+
+    def __init__(
+        self,
+        message: str,
+        host: Optional[str] = None,
+        exit_code: Optional[int] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(message, context=context)
+        if host:
+            self.context["host"] = host
+        if exit_code is not None:
+            self.context["exit_code"] = exit_code
+
+
+class DatabaseError(RingRiftError):
+    """Database access error.
+
+    Raised for SQLite, PostgreSQL, or other database failures.
+    """
+    code: str = "DATABASE_ERROR"
+
+    def __init__(
+        self,
+        message: str,
+        db_path: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(message, context=context)
+        if db_path:
+            self.context["db_path"] = db_path
+
+
+# =============================================================================
+# Resource Errors
+# =============================================================================
+
+
+class ResourceError(RingRiftError):
+    """Base class for resource-related errors.
+
+    Raised when system resources are exhausted or unavailable.
+    """
+    code: str = "RESOURCE_ERROR"
+
+
+class OutOfMemoryError(ResourceError):
+    """GPU or system memory exhausted."""
+    code: str = "OUT_OF_MEMORY"
+
+
+class DiskSpaceError(ResourceError):
+    """Insufficient disk space."""
+    code: str = "DISK_SPACE_ERROR"
+
+
+# =============================================================================
+# Data Quality Errors
+# =============================================================================
+
+
+class DataQualityError(TrainingError):
+    """Data quality issue detected.
+
+    Raised when training data has quality problems like:
+    - NaN/Inf values
+    - Corrupted samples
+    - Too many duplicates
+    """
+    code: str = "DATA_QUALITY_ERROR"
+
+    def __init__(
+        self,
+        message: str,
+        quality_score: Optional[float] = None,
+        samples_affected: Optional[int] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(message, context=context)
+        if quality_score is not None:
+            self.context["quality_score"] = quality_score
+        if samples_affected is not None:
+            self.context["samples_affected"] = samples_affected
+
+
+class LifecycleError(TrainingError):
+    """Model lifecycle error.
+
+    Raised for invalid stage transitions, model not found during
+    promotion, or archive/delete failures.
+    """
+    code: str = "LIFECYCLE_ERROR"
+
+    def __init__(
+        self,
+        message: str,
+        model_id: Optional[str] = None,
+        current_stage: Optional[str] = None,
+        target_stage: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(message, context=context)
+        if model_id:
+            self.context["model_id"] = model_id
+        if current_stage:
+            self.context["current_stage"] = current_stage
+        if target_stage:
+            self.context["target_stage"] = target_stage
+
+
+class CheckpointError(TrainingError):
+    """Checkpoint-related failure.
+
+    Raised when checkpoint operations fail (corrupted file,
+    incompatible version, save failure).
+    """
+    code: str = "CHECKPOINT_ERROR"
+
+
+# =============================================================================
+# Recoverable/Non-Recoverable Training Errors
+# =============================================================================
+
+# Aliases for training-specific error patterns
+RecoverableError = RetryableError
+NonRecoverableError = NonRetryableError

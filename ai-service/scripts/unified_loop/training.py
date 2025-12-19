@@ -928,7 +928,7 @@ class TrainingScheduler:
         except (OSError, BlockingIOError) as e:
             try:
                 os.close(fd)
-            except:
+            except OSError:
                 pass
             print(f"[Training] Lock acquisition failed for {config_key}: {e}")
             return False

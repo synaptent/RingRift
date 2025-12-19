@@ -8,7 +8,7 @@ from app.training.train import train_model  # noqa: E402
 from app.models import AIConfig, BoardType  # noqa: E402
 from app.ai.descent_ai import DescentAI  # noqa: E402
 from app.training.tournament import Tournament  # noqa: E402
-from app.training.config import TrainConfig  # noqa: E402
+from app.training.config import TrainConfig, get_model_version_for_board  # noqa: E402
 from app.ai.heuristic_weights import HEURISTIC_WEIGHT_PROFILES  # noqa: E402
 
 
@@ -131,18 +131,25 @@ def run_training_loop(config: Optional[TrainConfig] = None):
             config.model_dir,
             f"{config.model_id}_candidate.pth",
         )
-        # Board-aware default model version (mirror train.py).
-        if config.board_type == BoardType.HEXAGONAL:
-            model_version = "hex"
-        elif config.board_type == BoardType.SQUARE8:
-            model_version = "v3"
-        else:
-            model_version = "v2"
+        # Board-aware model version (centralized in config.py)
+        model_version = get_model_version_for_board(config.board_type)
+
+        # Create checkpoint directory for this iteration
+        checkpoint_dir = os.path.join(base_dir, config.log_dir, "checkpoints")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+
+        # train_model now extracts warmup/scheduler/stopping params from config
+        # Enable safety features for production training loops
         train_model(
             config=config,
             data_path=data_file,
             save_path=candidate_model_file,
             model_version=model_version,
+            checkpoint_dir=checkpoint_dir,
+            checkpoint_interval=max(1, config.epochs_per_iter // 5),  # ~5 checkpoints per iter
+            enable_circuit_breaker=True,
+            enable_anomaly_detection=True,
+            enable_graceful_shutdown=True,
         )
 
         # 3. Evaluation (Tournament)

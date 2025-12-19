@@ -283,7 +283,7 @@ for path in paths:
         if last:
             age = (datetime.utcnow() - datetime.fromisoformat(last.replace('Z',''))).total_seconds() / 3600
             min_age = min(min_age, age)
-    except:
+    except (sqlite3.Error, OSError, ValueError):
         pass
 print(f'{total}|{min_age:.2f}')
 " """,

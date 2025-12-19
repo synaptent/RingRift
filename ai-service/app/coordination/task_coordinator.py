@@ -329,7 +329,7 @@ class OrchestratorLock:
             if self._fd is not None:
                 try:
                     os.close(self._fd)
-                except:
+                except OSError:
                     pass
                 self._fd = None
             return False
@@ -340,7 +340,7 @@ class OrchestratorLock:
             try:
                 fcntl.flock(self._fd, fcntl.LOCK_UN)
                 os.close(self._fd)
-            except:
+            except OSError:
                 pass
             self._fd = None
             self._holder_pid = None
@@ -352,7 +352,7 @@ class OrchestratorLock:
                 content = self.lock_file.read_text().strip()
                 if content:
                     return int(content)
-        except:
+        except (OSError, ValueError):
             pass
         return None
 

@@ -7,6 +7,8 @@
     "batch_size": 256,
     "hidden_dim": 256,
     "num_hidden_layers": 2,
+    "num_filters": 192,
+    "num_res_blocks": 12,
     "weight_decay": 0.0001,
     "dropout": 0.1,
     "epochs": 50,
@@ -17,26 +19,38 @@
     "sampling_weights": "victory_type",
     "lr_scheduler": "cosine"
   },
+  "large_model": {
+    "description": "Larger model for breaking Elo plateaus (256 filters, 16 blocks)",
+    "num_filters": 256,
+    "num_res_blocks": 16,
+    "hidden_dim": 512,
+    "learning_rate": 0.0001,
+    "epochs": 100,
+    "warmup_epochs": 10
+  },
   "configs": {
     "square8_2p": {
       "optimized": true,
       "confidence": "high",
       "tuning_method": "bayesian_optimization",
-      "last_tuned": "2025-12-15T00:52:00Z",
+      "last_tuned": "2025-12-19T15:00:00Z",
       "tuning_trials": 22,
       "hyperparameters": {
-        "learning_rate": 0.000748,
+        "learning_rate": 0.0001,
+        "fine_tune_lr": 0.00005,
         "batch_size": 128,
         "hidden_dim": 768,
         "num_hidden_layers": 2,
+        "num_filters": 256,
+        "num_res_blocks": 16,
         "weight_decay": 8.787e-6,
         "dropout": 0.44,
-        "epochs": 50,
-        "early_stopping_patience": 15,
+        "epochs": 100,
+        "early_stopping_patience": 20,
         "value_weight": 0.625,
         "policy_weight": 1.57
       },
-      "notes": "Optimized via HP tuning on H100. Trial 1 achieved best val_loss=0.4325, combined_score=1.0"
+      "notes": "Updated for 2000 Elo push: larger model (256 filters, 16 blocks), extended epochs (100), lower LR for fine-tuning"
     },
     "square8_3p": {
       "optimized": true,

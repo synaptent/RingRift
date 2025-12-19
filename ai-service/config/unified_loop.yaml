@@ -440,8 +440,14 @@ selfplay:
 
   # Quality settings
   mcts_simulations: 200
-  temperature: 0.5
-  noise_fraction: 0.25
+  temperature: 0.7 # Increased from 0.5 for more diverse positions
+  noise_fraction: 0.35 # Increased from 0.25 for more exploration
+
+  # Diversity settings for breaking plateaus
+  use_diverse_openings: true # Random opening moves for variety
+  diverse_opening_moves: 4 # First 4 moves randomized
+  use_challenging_positions: true # Focus on tactically complex positions
+  min_game_length: 20 # Skip very short games
 
   # Board type weights (even distribution with hex8)
   # Used for balanced training data across all board types

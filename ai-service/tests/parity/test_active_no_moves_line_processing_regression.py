@@ -46,7 +46,13 @@ SNAPSHOT_PATH = os.path.join(
 
 
 @pytest.mark.slow
-@pytest.mark.skip(reason="Line processing logic changed - needs verification after engine updates")
+@pytest.mark.skip(
+    reason="TODO-LINE-PROCESSING: Line processing logic changed during FSM refactoring. "
+    "The snapshot was recorded before the _advance_to_line_processing fix that now "
+    "correctly handles transitions from ACTIVE when no moves are available. The test "
+    "expects the old broken behavior. Needs verification that the fix works correctly, "
+    "then update or delete this regression test. See globalActions.ts for current logic."
+)
 @pytest.mark.skipif(
     not os.path.exists(SNAPSHOT_PATH),
     reason="Invariant-failure snapshot not found; run strict soak to regenerate",

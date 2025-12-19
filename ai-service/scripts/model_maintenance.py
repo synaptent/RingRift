@@ -192,7 +192,7 @@ def main():
                     mtime = datetime.fromtimestamp(p.stat().st_mtime)
                     if mtime < cutoff:
                         old_archives += 1
-                except:
+                except OSError:
                     pass
 
             if old_archives:

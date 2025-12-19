@@ -328,7 +328,7 @@ def trigger_retraining(
         try:
             with open(retrain_queue) as f:
                 queue = json.load(f)
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
 
     queue.append(request)

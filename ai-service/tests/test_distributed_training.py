@@ -897,7 +897,13 @@ class TestStreamingDataLoaderSharding:
         loader.close()
 
 
-@pytest.mark.skip(reason="Tests written for deleted distributed_training.py interface")
+@pytest.mark.skip(
+    reason="TODO-DISTRIBUTED-REFACTOR: Tests written for the old distributed_training.py "
+    "module which was refactored into separate modules: training/loop.py, training/config.py, "
+    "and distributed/unified_data_sync.py. The DistributedTrainer class was replaced by "
+    "IntegratedTrainingManager. These tests should be migrated to test the new architecture "
+    "or deleted if covered by other test files. See training/README.md for current architecture."
+)
 class TestDistributedTrainer:
     """Tests for DistributedTrainer class."""
 

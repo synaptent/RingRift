@@ -102,7 +102,13 @@ class TestDescentAIHex(unittest.TestCase):
         )
 
     @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
-    @pytest.mark.skip(reason="Hex neural network path changed - needs update")
+    @pytest.mark.skip(
+        reason="TODO-HEX-NN-PATH: Hex neural network integration changed during "
+        "v3 architecture migration. The HexNeuralNet_v2 model path and HexStateEncoder "
+        "initialization differ from this test's expectations. Needs update to use "
+        "NeuralNetAI with board_type=BoardType.HEXAGONAL instead of legacy hex paths. "
+        "Workaround: manually test hex NN via test_hex_parity.py"
+    )
     def test_select_move_uses_hex_network_for_hex_board(self) -> None:
         """Selecting a move on a hex board should hit the hex NN path.
 

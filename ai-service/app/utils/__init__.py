@@ -1,6 +1,27 @@
 """Utility modules for the AI service."""
 
 from .memory_config import MemoryConfig
+from .paths import (
+    AI_SERVICE_ROOT,
+    DATA_DIR,
+    GAMES_DIR,
+    SELFPLAY_DIR,
+    METRICS_DIR,
+    MODELS_DIR,
+    LOGS_DIR,
+    RUNS_DIR,
+    PROMOTION_DIR,
+    UNIFIED_ELO_DB,
+    get_project_root,
+    get_models_dir,
+    get_data_dir,
+    get_games_db_path,
+    get_selfplay_db_path,
+    get_model_path,
+    get_log_path,
+    ensure_dir,
+    ensure_parent_dir,
+)
 from .progress_reporter import (
     OptimizationProgressReporter,
     ProgressReporter,
@@ -36,6 +57,27 @@ from .secrets import (
 )
 
 __all__ = [
+    # Paths
+    "AI_SERVICE_ROOT",
+    "DATA_DIR",
+    "GAMES_DIR",
+    "SELFPLAY_DIR",
+    "METRICS_DIR",
+    "MODELS_DIR",
+    "LOGS_DIR",
+    "RUNS_DIR",
+    "PROMOTION_DIR",
+    "UNIFIED_ELO_DB",
+    "get_project_root",
+    "get_models_dir",
+    "get_data_dir",
+    "get_games_db_path",
+    "get_selfplay_db_path",
+    "get_model_path",
+    "get_log_path",
+    "ensure_dir",
+    "ensure_parent_dir",
+    # Memory
     "MemoryConfig",
     "OptimizationProgressReporter",
     "ProgressReporter",

@@ -110,7 +110,7 @@ def check_p2p_health(inst: VastInstance) -> Tuple[bool, int, float]:
             health.get('selfplay_jobs', 0),
             health.get('disk_percent', 0.0),
         )
-    except:
+    except (json.JSONDecodeError, TypeError, KeyError):
         return False, 0, 0.0
 
 
