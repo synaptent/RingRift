@@ -1,4 +1,4 @@
-"""DataCatalog - Cluster-wide training data discovery service.
+"""DataCatalog - Cluster-wide training data discovery service (December 2025).
 
 This module provides a centralized service for discovering and selecting
 high-quality training data from across the cluster. It integrates with
@@ -9,25 +9,36 @@ the unified manifest to enable:
 3. Cross-node data availability tracking
 4. Centralized view of cluster-wide training resources
 
+Architecture Note (December 2025):
+    This module consolidates two complementary components:
+    - DataManifest (unified_manifest.py): Tracks synced game IDs and host states
+    - DataCatalog (this file): Discovery and selection of training data
+
+    The UnifiedDataRegistry provides a single facade to access both:
+    - Use get_data_registry() for unified access
+    - Use get_data_catalog() for catalog-only access
+    - Use get_manifest() for manifest-only access
+
 Usage:
-    from app.distributed.data_catalog import DataCatalog, get_data_catalog
-
-    # Get singleton instance
-    catalog = get_data_catalog()
-
-    # Discover available data
-    sources = catalog.discover_data_sources()
-
-    # Get high-quality games for training
-    games = catalog.get_training_data(
-        min_quality=0.5,
-        board_type="square8",
-        num_players=2,
-        limit=10000,
+    from app.distributed.data_catalog import (
+        DataCatalog,
+        get_data_catalog,
+        UnifiedDataRegistry,
+        get_data_registry,
     )
 
-    # Get paths to synced databases
-    db_paths = catalog.get_synced_db_paths(host_filter="lambda-*")
+    # Get unified registry (recommended)
+    registry = get_data_registry()
+
+    # Access catalog features
+    sources = registry.catalog.discover_data_sources()
+
+    # Access manifest features
+    is_synced = registry.manifest.is_game_synced("game_123")
+
+    # Or use direct accessors
+    catalog = get_data_catalog()
+    sources = catalog.discover_data_sources()
 """
 
 from __future__ import annotations
@@ -561,3 +572,203 @@ def reset_data_catalog() -> None:
     """Reset the singleton instance (mainly for testing)."""
     global _catalog_instance
     _catalog_instance = None
+
+
+# =============================================================================
+# Unified Data Registry - Facade for DataManifest + DataCatalog (December 2025)
+# =============================================================================
+
+class UnifiedDataRegistry:
+    """Unified facade for accessing DataManifest and DataCatalog.
+
+    Provides a single entry point for all data management operations:
+    - Game tracking and deduplication (via DataManifest)
+    - Data discovery and selection (via DataCatalog)
+    - Quality-aware data management
+    - Cross-node data availability
+
+    Usage:
+        registry = get_data_registry()
+
+        # Check if game is synced
+        is_synced = registry.is_game_synced("game_123")
+
+        # Get high-quality games for training
+        games = registry.get_high_quality_games(min_quality=0.5, limit=1000)
+
+        # Discover data sources
+        sources = registry.discover_sources()
+
+        # Get stats
+        stats = registry.get_combined_stats()
+    """
+
+    def __init__(
+        self,
+        catalog: Optional[DataCatalog] = None,
+        manifest: Optional["DataManifest"] = None,
+    ):
+        """Initialize the unified registry.
+
+        Args:
+            catalog: DataCatalog instance (uses singleton if None)
+            manifest: DataManifest instance (uses catalog's manifest if None)
+        """
+        self._catalog = catalog or get_data_catalog()
+        self._manifest = manifest or self._catalog._manifest
+
+    @property
+    def catalog(self) -> DataCatalog:
+        """Get the DataCatalog instance."""
+        return self._catalog
+
+    @property
+    def manifest(self) -> Optional["DataManifest"]:
+        """Get the DataManifest instance."""
+        return self._manifest
+
+    # Manifest operations
+    def is_game_synced(self, game_id: str) -> bool:
+        """Check if a game has been synced."""
+        if not self._manifest:
+            return False
+        return self._manifest.is_game_synced(game_id)
+
+    def mark_games_synced(
+        self,
+        game_ids: List[str],
+        source_host: str,
+        board_type: Optional[str] = None,
+        num_players: Optional[int] = None,
+    ) -> int:
+        """Mark games as synced."""
+        if not self._manifest:
+            return 0
+        return self._manifest.mark_synced(
+            game_ids=game_ids,
+            source_host=source_host,
+            board_type=board_type,
+            num_players=num_players,
+        )
+
+    def get_synced_game_count(self) -> int:
+        """Get total synced game count."""
+        if not self._manifest:
+            return 0
+        return self._manifest.get_synced_count()
+
+    # Catalog operations
+    def discover_sources(self, force: bool = False) -> List[DataSource]:
+        """Discover available data sources."""
+        return self._catalog.discover_data_sources(force=force)
+
+    def get_synced_db_paths(
+        self,
+        board_type: Optional[str] = None,
+        num_players: Optional[int] = None,
+        host_filter: Optional[str] = None,
+    ) -> List[Path]:
+        """Get paths to synced databases."""
+        return self._catalog.get_synced_db_paths(
+            board_type=board_type,
+            num_players=num_players,
+            host_filter=host_filter,
+        )
+
+    def get_high_quality_sources(
+        self,
+        min_quality: float = 0.5,
+        limit: int = 10,
+    ) -> List[DataSource]:
+        """Get data sources sorted by quality."""
+        return self._catalog.get_sources_by_quality(
+            min_quality=min_quality,
+            limit=limit,
+        )
+
+    def get_recommended_sources(
+        self,
+        target_games: int = 50000,
+        board_type: Optional[str] = None,
+        num_players: Optional[int] = None,
+    ) -> List[Path]:
+        """Get recommended data sources for training."""
+        return self._catalog.get_recommended_training_sources(
+            target_games=target_games,
+            board_type=board_type,
+            num_players=num_players,
+        )
+
+    # Combined operations
+    def get_combined_stats(self) -> Dict[str, Any]:
+        """Get combined statistics from catalog and manifest.
+
+        Returns:
+            Dict with combined stats from both components
+        """
+        catalog_stats = self._catalog.get_stats()
+
+        manifest_stats = {}
+        if self._manifest:
+            try:
+                manifest_stats = {
+                    "synced_games": self._manifest.get_synced_count(),
+                    "quality_distribution": self._manifest.get_quality_distribution(),
+                }
+            except Exception as e:
+                logger.debug(f"Failed to get manifest stats: {e}")
+
+        return {
+            "catalog": {
+                "total_sources": catalog_stats.total_sources,
+                "total_games": catalog_stats.total_games,
+                "total_size_bytes": catalog_stats.total_size_bytes,
+                "avg_quality": catalog_stats.avg_quality_score,
+                "high_quality_games": catalog_stats.high_quality_games,
+                "sources_by_type": catalog_stats.sources_by_type,
+                "board_distribution": catalog_stats.board_type_distribution,
+            },
+            "manifest": manifest_stats,
+            "node_id": self._catalog.node_id,
+        }
+
+    def refresh(self) -> None:
+        """Refresh both catalog and manifest data."""
+        self._catalog.refresh()
+
+
+# Singleton registry instance
+_registry_instance: Optional[UnifiedDataRegistry] = None
+
+
+def get_data_registry() -> UnifiedDataRegistry:
+    """Get the singleton UnifiedDataRegistry instance.
+
+    Returns:
+        UnifiedDataRegistry singleton instance
+    """
+    global _registry_instance
+
+    if _registry_instance is None:
+        _registry_instance = UnifiedDataRegistry()
+
+    return _registry_instance
+
+
+def reset_data_registry() -> None:
+    """Reset the registry singleton (for testing)."""
+    global _registry_instance
+    _registry_instance = None
+
+
+__all__ = [
+    "DataCatalog",
+    "DataSource",
+    "CatalogStats",
+    "get_data_catalog",
+    "reset_data_catalog",
+    # Unified registry (December 2025)
+    "UnifiedDataRegistry",
+    "get_data_registry",
+    "reset_data_registry",
+]

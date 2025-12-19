@@ -113,12 +113,14 @@ class UnifiedLoopExtensions:
         unified_loop,  # UnifiedAILoop instance
         config: Optional[ExtensionConfig] = None
     ):
+        from app.utils.paths import AI_SERVICE_ROOT
+
         self.loop = unified_loop
         self.config = config or ExtensionConfig()
         self.state = ExtensionState()
 
         # Base paths
-        self.ai_service_dir = Path(__file__).resolve().parents[2]
+        self.ai_service_dir = AI_SERVICE_ROOT
 
         # Initialize components (lazy loading)
         self._model_registry = None

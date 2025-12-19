@@ -39,6 +39,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Callable, List, Tuple
 
+from app.utils.paths import AI_SERVICE_ROOT
+
 logger = logging.getLogger(__name__)
 
 # Standard ramdrive locations
@@ -183,7 +185,7 @@ def get_data_directory(
         fallback = Path(config.fallback_path) / base_name
     else:
         # Use ai-service/data as default
-        fallback = Path(__file__).resolve().parents[2] / "data" / base_name
+        fallback = AI_SERVICE_ROOT / "data" / base_name
 
     fallback.mkdir(parents=True, exist_ok=True)
     logger.info(f"Using disk storage at {fallback}")
@@ -612,7 +614,7 @@ def get_auto_storage_path(
     if fallback_path:
         path = fallback_path / base_name
     else:
-        path = Path(__file__).resolve().parents[2] / "data" / base_name
+        path = AI_SERVICE_ROOT / "data" / base_name
 
     if subdirectory:
         path = path.parent / subdirectory / path.name

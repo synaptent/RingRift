@@ -246,6 +246,13 @@ FRESHNESS_CHECK_INTERVAL = 60
 # Checkpoint interval for ephemeral data (seconds)
 CHECKPOINT_INTERVAL = 60
 
+# Stale data thresholds (December 2025)
+STALE_DATA_THRESHOLD_SECONDS = 1800  # 30 minutes - data older than this is stale
+CRITICAL_STALE_THRESHOLD_SECONDS = 3600  # 1 hour - urgent sync needed
+
+# Max items in sync queue
+MAX_SYNC_QUEUE_SIZE = 20
+
 # =============================================================================
 # Lock & Mutex Settings
 # =============================================================================
@@ -310,6 +317,147 @@ MAX_PER_FILE_TIMEOUT = 120  # 2 minutes
 
 # Maximum divergence allowed between implementations
 DIVERGENCE_THRESHOLD = 0.001  # 0.1%
+
+
+# =============================================================================
+# Distillation & Temperature (December 2025)
+# =============================================================================
+
+# Knowledge distillation temperature (higher = softer)
+DISTILL_TEMPERATURE = 3.0
+
+# Distillation loss weight (alpha between student/teacher)
+DISTILL_ALPHA = 0.7
+
+# Value head distillation temperature
+VALUE_TEMPERATURE = 1.0
+
+# Policy head distillation temperature
+POLICY_TEMPERATURE = 3.0
+
+# EMA decay for model averaging
+EMA_DECAY = 0.999
+
+# Focal loss gamma for hard example mining
+FOCAL_GAMMA = 2.0
+
+# Policy label smoothing factor
+POLICY_LABEL_SMOOTHING = 0.05
+
+
+# =============================================================================
+# Quality Thresholds (December 2025)
+# =============================================================================
+
+# Minimum quality score for training data
+MIN_QUALITY_FOR_TRAINING = 0.3
+
+# Minimum quality score for priority sync (higher than training minimum)
+MIN_QUALITY_FOR_PRIORITY_SYNC = 0.5
+
+# High quality threshold (affects priority)
+HIGH_QUALITY_THRESHOLD = 0.7
+
+# Overfit detection threshold (train-val gap)
+OVERFIT_THRESHOLD = 0.15
+
+
+# =============================================================================
+# Selfplay & Gameplay (December 2025)
+# =============================================================================
+
+# Maximum moves per game before termination
+SELFPLAY_MAX_MOVES = 10000
+
+# Base temperature for move selection
+SELFPLAY_TEMPERATURE = 1.0
+
+# Higher temperature for opening moves (diversity)
+SELFPLAY_OPENING_TEMPERATURE = 1.5
+
+# Quality threshold for adaptive engine selection
+SELFPLAY_QUALITY_THRESHOLD = 0.7
+
+
+# =============================================================================
+# GPU Batch Scaling (December 2025)
+# =============================================================================
+
+# Reserved GPU memory for system overhead (GB)
+GPU_RESERVED_MEMORY_GB = 8.0
+
+# Maximum batch size regardless of memory
+GPU_MAX_BATCH_SIZE = 16384
+
+# Batch multipliers by GPU type (base batch = 64)
+GH200_BATCH_MULTIPLIER = 64  # NVIDIA GH200 (96GB)
+H100_BATCH_MULTIPLIER = 32   # NVIDIA H100 (80GB)
+A100_BATCH_MULTIPLIER = 16   # NVIDIA A100 (40/80GB)
+A10_BATCH_MULTIPLIER = 8     # NVIDIA A10 (24GB)
+RTX_BATCH_MULTIPLIER = 4     # RTX 4090/3090 (24GB)
+
+
+# =============================================================================
+# Coordination & Concurrency (December 2025)
+# =============================================================================
+
+# Idle GPU utilization threshold (below = available)
+IDLE_GPU_THRESHOLD = 10
+
+# Default P2P communication port
+P2P_DEFAULT_PORT = 8770
+
+# Ephemeral data evacuation threshold (games)
+EVACUATION_THRESHOLD = 50
+
+# Maximum concurrent syncs per host
+MAX_CONCURRENT_SYNCS_PER_HOST = 1
+
+# Maximum global concurrent syncs
+MAX_CONCURRENT_SYNCS_GLOBAL = 5
+
+# Target GPU utilization range
+TARGET_GPU_UTILIZATION_MIN = 60
+TARGET_GPU_UTILIZATION_MAX = 80
+
+
+# =============================================================================
+# Data Streaming (December 2025)
+# =============================================================================
+
+# Streaming buffer size (games)
+DATA_STREAMING_BUFFER_SIZE = 10000
+
+# Minimum buffer fill before training starts (0-1)
+DATA_STREAMING_MIN_BUFFER_FILL = 0.2
+
+# Deduplication window size (games)
+DATA_STREAMING_DEDUPE_WINDOW = 50000
+
+# Weighting factors for data sampling
+DATA_SAMPLING_RECENCY_WEIGHT = 0.3
+DATA_SAMPLING_QUALITY_WEIGHT = 0.4
+
+
+# =============================================================================
+# Feedback Loop Thresholds (December 2025)
+# =============================================================================
+
+# ELO momentum lookback (number of updates)
+ELO_MOMENTUM_LOOKBACK = 5
+
+# Strong ELO improvement threshold (per update)
+ELO_STRONG_IMPROVEMENT = 25.0
+
+# Moderate ELO improvement threshold
+ELO_MODERATE_IMPROVEMENT = 12.0
+
+# ELO plateau threshold (below = stagnant)
+ELO_PLATEAU_THRESHOLD = 5.0
+
+# Training intensity multiplier range
+MAX_INTENSITY_MULTIPLIER = 2.5
+MIN_INTENSITY_MULTIPLIER = 0.5
 
 
 # =============================================================================

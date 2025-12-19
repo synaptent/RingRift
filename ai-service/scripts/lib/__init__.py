@@ -62,6 +62,19 @@ from scripts.lib.alerts import (
     check_cpu_alert,
 )
 
+from scripts.lib.cluster import (
+    ClusterManager,
+    ClusterNode,
+    ClusterAutomation,
+    VastNodeManager,
+    NodeStatus,
+    NodeHealth,
+    GPUInfo,
+    CommandResult,
+    get_cluster,
+    get_automation,
+)
+
 __all__ = [
     # logging_config
     "setup_logging",
@@ -97,4 +110,15 @@ __all__ = [
     "check_disk_alert",
     "check_memory_alert",
     "check_cpu_alert",
+    # cluster
+    "ClusterManager",
+    "ClusterNode",
+    "ClusterAutomation",
+    "VastNodeManager",
+    "NodeStatus",
+    "NodeHealth",
+    "GPUInfo",
+    "CommandResult",
+    "get_cluster",
+    "get_automation",
 ]

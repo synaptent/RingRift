@@ -30,6 +30,15 @@ from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Event emission for quality updates (optional integration)
+try:
+    import asyncio
+    from app.distributed.data_events import emit_quality_score_updated
+    HAS_QUALITY_EVENTS = True
+except ImportError:
+    HAS_QUALITY_EVENTS = False
+    emit_quality_score_updated = None
+
 
 class QualityCategory(str, Enum):
     """Quality category for games.
@@ -360,6 +369,22 @@ class UnifiedQualityScorer:
         # Compute training weight and sync priority
         quality.training_weight = self.compute_sample_weight(quality)
         quality.sync_priority = self.compute_sync_priority(quality)
+
+        # Emit quality event for coordination (async, non-blocking)
+        if HAS_QUALITY_EVENTS and emit_quality_score_updated is not None and game_id:
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.ensure_future(emit_quality_score_updated(
+                    game_id=game_id,
+                    quality_score=quality.quality_score,
+                    quality_category=quality.category.value,
+                    training_weight=quality.training_weight,
+                    game_length=game_length,
+                    is_decisive=is_decisive,
+                    source="unified_quality",
+                ))
+            except RuntimeError:
+                pass  # No running loop - skip event emission
 
         return quality
 

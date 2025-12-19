@@ -53,6 +53,16 @@ except ImportError:
     HAS_CLUSTER_CONFIG = False
     get_cluster_config = None
 
+# Event bus for status change notifications (Phase 10 consolidation)
+try:
+    from app.distributed.data_events import (
+        DataEvent, DataEventType, get_event_bus
+    )
+    HAS_EVENT_BUS = True
+except ImportError:
+    HAS_EVENT_BUS = False
+    get_event_bus = None
+
 
 @dataclass
 class ClusterNodeStatus:
@@ -403,11 +413,15 @@ class UnifiedClusterMonitor:
     async def start_monitoring(self, interval: int = 60) -> None:
         """Start continuous monitoring."""
         self._running = True
+        self._last_healthy = True  # Track for status change detection
         logger.info(f"[UnifiedMonitor] Starting monitoring (interval={interval}s)")
 
         while self._running:
             try:
                 status = await self.get_full_status()
+
+                # Emit events for status changes (Phase 10)
+                await self._emit_status_events(status)
 
                 # Fire callbacks
                 for callback in self._callbacks:
@@ -434,6 +448,75 @@ class UnifiedClusterMonitor:
                 logger.error(f"[UnifiedMonitor] Monitoring error: {e}")
 
             await asyncio.sleep(interval)
+
+    async def _emit_status_events(self, status: ClusterStatus) -> None:
+        """Emit events based on cluster status changes."""
+        if not HAS_EVENT_BUS:
+            return
+
+        event_bus = get_event_bus()
+
+        # Detect overall health state change
+        if status.healthy != self._last_healthy:
+            self._last_healthy = status.healthy
+
+            await event_bus.publish(DataEvent(
+                event_type=DataEventType.CLUSTER_STATUS_CHANGED,
+                payload={
+                    "healthy": status.healthy,
+                    "healthy_nodes": status.healthy_nodes,
+                    "node_count": status.node_count,
+                    "alerts": status.alerts,
+                },
+                source="unified_cluster_monitor",
+            ))
+
+            cluster_event_type = (
+                DataEventType.P2P_CLUSTER_HEALTHY
+                if status.healthy
+                else DataEventType.P2P_CLUSTER_UNHEALTHY
+            )
+            await event_bus.publish(DataEvent(
+                event_type=cluster_event_type,
+                payload={
+                    "healthy": status.healthy,
+                    "healthy_nodes": status.healthy_nodes,
+                    "node_count": status.node_count,
+                    "alerts": status.alerts,
+                },
+                source="unified_cluster_monitor",
+            ))
+
+        # Emit alerts as individual events
+        for alert in status.alerts:
+            # Determine alert type based on content
+            if "node" in alert.lower():
+                event_type = DataEventType.NODE_UNHEALTHY
+            elif any(r in alert.lower() for r in ["disk", "memory", "cpu", "gpu"]):
+                event_type = DataEventType.RESOURCE_CONSTRAINT
+            else:
+                event_type = DataEventType.HEALTH_ALERT
+
+            await event_bus.publish(DataEvent(
+                event_type=event_type,
+                payload={"alert": alert, "timestamp": status.timestamp},
+                source="unified_cluster_monitor",
+            ))
+
+        # Emit node-specific events for unhealthy nodes
+        for node in status.nodes:
+            if not node.is_healthy:
+                await event_bus.publish(DataEvent(
+                    event_type=DataEventType.NODE_UNHEALTHY,
+                    payload={
+                        "node_name": node.name,
+                        "node_ip": node.ip,
+                        "error": node.error,
+                        "gpu_utilization": node.gpu_utilization,
+                        "disk_used_percent": node.disk_used_percent,
+                    },
+                    source="unified_cluster_monitor",
+                ))
 
     def stop_monitoring(self) -> None:
         """Stop continuous monitoring."""

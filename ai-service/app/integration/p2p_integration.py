@@ -1021,10 +1021,9 @@ class P2PIntegrationManager:
         try:
             # Get authoritative Elo from local DB or primary source
             from app.tournament.unified_elo_db import EloDatabase
-            from pathlib import Path
+            from app.utils.paths import AI_SERVICE_ROOT
 
-            ai_service_root = Path(__file__).resolve().parents[2]
-            local_elo_db = ai_service_root / "data" / "unified_elo.db"
+            local_elo_db = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 
             if not local_elo_db.exists():
                 logger.warning("Local Elo database not found, skipping reconciliation")

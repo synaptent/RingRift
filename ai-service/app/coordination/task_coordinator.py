@@ -32,7 +32,6 @@ import os
 import signal
 import socket
 import sqlite3
-import tempfile
 import threading
 import time
 from dataclasses import dataclass, field, asdict
@@ -59,78 +58,21 @@ except ImportError:
     QueueType = None
     BackpressureLevel = None
 
-
-# ============================================
-# Atomic File Operations (merged from cluster_lock.py)
-# ============================================
-
-
-def atomic_write_json(filepath: Path, data: Any, indent: int = 2) -> None:
-    """Write JSON data to file atomically.
-
-    Uses write-to-temp-then-rename pattern to prevent corruption
-    if process crashes during write.
-
-    Args:
-        filepath: Target file path
-        data: Data to serialize as JSON
-        indent: JSON indentation (default 2)
-    """
-    filepath = Path(filepath)
-    filepath.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write to temp file in same directory (for atomic rename)
-    fd, temp_path = tempfile.mkstemp(
-        dir=filepath.parent,
-        prefix=f".{filepath.name}.",
-        suffix=".tmp"
+# Import host health policy for pre-spawn health checks (December 2025)
+try:
+    from app.coordination.host_health_policy import (
+        is_host_healthy,
+        pre_spawn_check,
+        check_host_health,
+        mark_host_unhealthy,
     )
-    try:
-        with os.fdopen(fd, 'w') as f:
-            json.dump(data, f, indent=indent)
-            f.flush()
-            os.fsync(f.fileno())  # Ensure data hits disk
-
-        # Atomic rename (POSIX guarantees atomicity)
-        os.rename(temp_path, filepath)
-    except Exception:
-        # Clean up temp file on error
-        try:
-            os.unlink(temp_path)
-        except Exception:
-            pass
-        raise
-
-
-def safe_read_json(filepath: Path, default: Any = None) -> Any:
-    """Safely read JSON file with fallback on corruption.
-
-    Args:
-        filepath: File to read
-        default: Value to return if file doesn't exist or is corrupt
-
-    Returns:
-        Parsed JSON data or default value
-    """
-    filepath = Path(filepath)
-    if not filepath.exists():
-        return default
-
-    try:
-        with open(filepath, 'r') as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
-        logger.warning(f"Failed to read {filepath}: {e}")
-        # Attempt to read backup if it exists
-        backup = filepath.with_suffix(filepath.suffix + '.bak')
-        if backup.exists():
-            try:
-                with open(backup, 'r') as f:
-                    logger.info(f"Recovered from backup: {backup}")
-                    return json.load(f)
-            except Exception:
-                pass
-        return default
+    HAS_HOST_HEALTH = True
+except ImportError:
+    HAS_HOST_HEALTH = False
+    is_host_healthy = None
+    pre_spawn_check = None
+    check_host_health = None
+    mark_host_unhealthy = None
 
 
 # ============================================
@@ -667,6 +609,127 @@ class TaskRegistry:
             metadata=json.loads(row['metadata_json'] or '{}')
         )
 
+    def update_heartbeat(self, task_id: str) -> None:
+        """Update task heartbeat timestamp."""
+        self.conn.execute("""
+            UPDATE tasks SET metadata_json = json_set(
+                COALESCE(metadata_json, '{}'),
+                '$.last_heartbeat',
+                ?
+            ) WHERE task_id = ?
+        """, (time.time(), task_id))
+        self.conn.commit()
+
+    def get_orphaned_tasks(self, timeout_seconds: float = 300.0) -> List[TaskInfo]:
+        """Get tasks that haven't sent heartbeat within timeout.
+
+        Args:
+            timeout_seconds: Seconds without heartbeat to consider task orphaned
+
+        Returns:
+            List of orphaned TaskInfo objects
+        """
+        cutoff = time.time() - timeout_seconds
+        cursor = self.conn.execute("""
+            SELECT * FROM tasks
+            WHERE status = 'running'
+            AND (
+                json_extract(metadata_json, '$.last_heartbeat') IS NULL
+                OR json_extract(metadata_json, '$.last_heartbeat') < ?
+            )
+            AND started_at < ?
+        """, (cutoff, cutoff))
+        return [self._row_to_task(row) for row in cursor.fetchall()]
+
+
+# ============================================
+# Task Heartbeat Monitor (December 2025)
+# ============================================
+
+class TaskHeartbeatMonitor:
+    """Monitors tasks for heartbeat timeouts and emits orphan events.
+
+    Usage:
+        monitor = TaskHeartbeatMonitor(registry, timeout=300)
+        monitor.start()  # Background thread
+        ...
+        monitor.stop()
+    """
+
+    def __init__(
+        self,
+        registry: TaskRegistry,
+        timeout_seconds: float = 300.0,
+        check_interval_seconds: float = 60.0,
+    ):
+        self.registry = registry
+        self.timeout_seconds = timeout_seconds
+        self.check_interval = check_interval_seconds
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+
+        # Event emission
+        try:
+            from app.distributed.data_events import emit_task_orphaned
+            self._emit_orphaned = emit_task_orphaned
+        except ImportError:
+            self._emit_orphaned = None
+
+    def start(self) -> None:
+        """Start monitoring in background thread."""
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self._thread.start()
+        logger.info(f"[HeartbeatMonitor] Started (timeout={self.timeout_seconds}s)")
+
+    def stop(self) -> None:
+        """Stop monitoring."""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=5.0)
+        logger.info("[HeartbeatMonitor] Stopped")
+
+    def _monitor_loop(self) -> None:
+        """Main monitoring loop."""
+        while self._running:
+            try:
+                self.check_for_orphans()
+            except Exception as e:
+                logger.warning(f"[HeartbeatMonitor] Check failed: {e}")
+            time.sleep(self.check_interval)
+
+    def check_for_orphans(self) -> List[TaskInfo]:
+        """Check for orphaned tasks and emit events."""
+        orphans = self.registry.get_orphaned_tasks(self.timeout_seconds)
+
+        for task in orphans:
+            logger.warning(
+                f"[HeartbeatMonitor] Task orphaned: {task.task_id} "
+                f"(type={task.task_type.value}, node={task.node_id})"
+            )
+
+            # Mark as orphaned
+            self.registry.update_task_status(task.task_id, "orphaned")
+
+            # Emit event
+            if self._emit_orphaned:
+                try:
+                    import asyncio
+                    last_hb = task.metadata.get('last_heartbeat', task.started_at)
+                    asyncio.get_event_loop().create_task(self._emit_orphaned(
+                        task_id=task.task_id,
+                        task_type=task.task_type.value,
+                        node_id=task.node_id,
+                        last_heartbeat_seconds_ago=time.time() - last_hb,
+                        source="heartbeat_monitor",
+                    ))
+                except RuntimeError:
+                    pass  # No event loop
+
+        return orphans
+
 
 # ============================================
 # Task Coordinator
@@ -742,11 +805,20 @@ class TaskCoordinator:
         self._gauntlet_reserved: Set[str] = set()
         self._gauntlet_lock = threading.RLock()
 
-        logger.info("Task coordinator initialized")
+        # Heartbeat monitor for orphan detection (December 2025)
+        self._heartbeat_monitor = TaskHeartbeatMonitor(
+            registry=self.registry,
+            timeout_seconds=300.0,  # 5 minutes
+            check_interval_seconds=60.0,  # Check every minute
+        )
+        self._heartbeat_monitor.start()
+
+        logger.info("Task coordinator initialized (with heartbeat monitor)")
 
     def _shutdown(self) -> None:
         """Cleanup on shutdown."""
-        pass
+        if hasattr(self, '_heartbeat_monitor'):
+            self._heartbeat_monitor.stop()
 
     # ==========================================
     # State Management
@@ -885,6 +957,7 @@ class TaskCoordinator:
         node_id: str,
         check_resources: bool = True,
         check_backpressure: bool = True,
+        check_health: bool = True,
     ) -> tuple:
         """
         Check if a task can be spawned.
@@ -894,6 +967,7 @@ class TaskCoordinator:
             node_id: Node where task will run
             check_resources: Whether to check CPU/memory/disk resources
             check_backpressure: Whether to check queue backpressure (December 2025)
+            check_health: Whether to check node health via SSH (December 2025)
 
         Returns: (allowed: bool, reason: str)
         """
@@ -914,6 +988,13 @@ class TaskCoordinator:
         last = self._last_spawn.get(node_id, 0)
         if time.time() - last < self.limits.spawn_cooldown_seconds:
             return (False, "Spawn cooldown active")
+
+        # Check node health (December 2025)
+        # Uses cached SSH connectivity checks to avoid spawning on unreachable hosts
+        if check_health:
+            denied, reason = self._check_node_health(node_id)
+            if denied:
+                return (False, reason)
 
         # Check per-node limits
         denied, reason = self._check_node_limits(task_type, node_id)
@@ -1001,6 +1082,43 @@ class TaskCoordinator:
                 return (True, f"Cluster improvement loop limit ({self.limits.max_total_improvement_loops})")
 
         return (False, "")
+
+    def _check_node_health(self, node_id: str) -> tuple:
+        """Check if node is healthy via SSH connectivity check (December 2025).
+
+        Uses cached health checks to avoid overloading hosts with SSH probes.
+        Results are cached for 60s (healthy) or 30s (unhealthy).
+
+        Args:
+            node_id: Node identifier to check
+
+        Returns: (denied: bool, reason: str)
+        """
+        if not HAS_HOST_HEALTH:
+            return (False, "")  # No health checking available, allow
+
+        # Skip health check for localhost
+        if node_id in ("localhost", "local", socket.gethostname()):
+            return (False, "")
+
+        try:
+            # Use pre_spawn_check which includes load checking
+            can_spawn, reason = pre_spawn_check(
+                host=node_id,
+                check_load=True,
+                max_load_per_cpu=0.8,
+            )
+
+            if not can_spawn:
+                logger.debug(f"[TaskCoordinator] Node {node_id} health check failed: {reason}")
+                return (True, f"Node unhealthy: {reason}")
+
+            return (False, "")
+
+        except Exception as e:
+            # Fail open on health check errors to avoid blocking all spawns
+            logger.warning(f"[TaskCoordinator] Health check error for {node_id}: {e}")
+            return (False, "")
 
     def _check_resources(self, node_id: str) -> tuple:
         """Check if resources allow spawning."""
@@ -1133,6 +1251,130 @@ class TaskCoordinator:
         """Unregister a completed/stopped task."""
         self.registry.unregister_task(task_id)
         logger.debug(f"Unregistered task {task_id}")
+
+    def complete_task(
+        self,
+        task_id: str,
+        success: bool = True,
+        result_data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Complete a task and emit appropriate StageEvent.
+
+        This is the preferred method for task completion as it:
+        1. Updates task status
+        2. Emits completion events for downstream consumers
+        3. Cleans up task registration
+
+        Args:
+            task_id: The task ID to complete
+            success: Whether the task succeeded
+            result_data: Optional result data (games_generated, model_path, etc.)
+        """
+        # Get task info before unregistering
+        task = self.registry.get_task(task_id)
+        if not task:
+            logger.warning(f"Completing unknown task: {task_id}")
+            return
+
+        # Update status
+        status = "completed" if success else "failed"
+        self.registry.update_task_status(task_id, status)
+
+        # Emit task completion event (December 2025)
+        self._emit_task_event(task, success, result_data or {})
+
+        # Unregister
+        self.registry.unregister_task(task_id)
+        logger.debug(f"Completed task {task_id} ({task.task_type.value}): {status}")
+
+    def fail_task(
+        self,
+        task_id: str,
+        error: Optional[str] = None,
+    ) -> None:
+        """Fail a task and emit appropriate StageEvent.
+
+        Args:
+            task_id: The task ID to fail
+            error: Optional error message
+        """
+        self.complete_task(
+            task_id,
+            success=False,
+            result_data={"error": error} if error else None,
+        )
+
+    def _emit_task_event(
+        self,
+        task: TaskInfo,
+        success: bool,
+        result_data: Dict[str, Any],
+    ) -> None:
+        """Emit StageEvent for task completion.
+
+        Maps TaskType to appropriate StageEvent:
+        - SELFPLAY → SELFPLAY_COMPLETE
+        - TRAINING → TRAINING_COMPLETE/TRAINING_FAILED
+        - EVALUATION → EVALUATION_COMPLETE
+        - DATA_SYNC → SYNC_COMPLETE
+        """
+        try:
+            from app.coordination.stage_events import (
+                StageEvent,
+                StageCompletionResult,
+                get_event_bus,
+            )
+            from datetime import datetime
+            import asyncio
+
+            # Map TaskType to StageEvent
+            event_map = {
+                TaskType.SELFPLAY: StageEvent.SELFPLAY_COMPLETE,
+                TaskType.GPU_SELFPLAY: StageEvent.GPU_SELFPLAY_COMPLETE,
+                TaskType.TRAINING: StageEvent.TRAINING_COMPLETE if success else StageEvent.TRAINING_FAILED,
+                TaskType.EVALUATION: StageEvent.EVALUATION_COMPLETE,
+                TaskType.DATA_SYNC: StageEvent.SYNC_COMPLETE,
+                TaskType.NPZ_EXPORT: StageEvent.NPZ_EXPORT_COMPLETE,
+            }
+
+            stage_event = event_map.get(task.task_type)
+            if not stage_event:
+                logger.debug(f"No StageEvent mapping for {task.task_type.value}")
+                return
+
+            result = StageCompletionResult(
+                event=stage_event,
+                success=success,
+                iteration=0,
+                timestamp=datetime.now().isoformat(),
+                games_generated=result_data.get("games_generated", 0),
+                model_path=result_data.get("model_path"),
+                elo_delta=result_data.get("elo_delta"),
+                win_rate=result_data.get("win_rate"),
+                metadata={
+                    "task_id": task.task_id,
+                    "task_type": task.task_type.value,
+                    "node_id": task.node_id,
+                    "duration_seconds": time.time() - task.started_at,
+                    **result_data,
+                },
+            )
+
+            bus = get_event_bus()
+
+            # Try async emit, fall back to sync
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(bus.emit(result))
+            except RuntimeError:
+                asyncio.run(bus.emit(result))
+
+            logger.debug(f"Emitted {stage_event.value} for task {task.task_id}")
+
+        except ImportError:
+            logger.debug("StageEventBus not available for task events")
+        except Exception as e:
+            logger.debug(f"Failed to emit task event: {e}")
 
     def update_task_status(self, task_id: str, status: str) -> None:
         """Update task status."""

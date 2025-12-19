@@ -38,7 +38,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shlex
+import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -85,6 +87,62 @@ class JobResult:
     output: Any
     duration_seconds: float
     error: Optional[str] = None
+
+
+def _materialize_model_output(
+    model_output_path: str,
+    run_dir: str,
+    repo_root: Path,
+) -> Optional[str]:
+    report_path = Path(run_dir) / "nn_training_report.json"
+    if not report_path.is_absolute():
+        report_path = repo_root / report_path
+
+    if not report_path.exists():
+        logger.warning(f"Training report missing: {report_path}")
+        return None
+
+    try:
+        with open(report_path, "r", encoding="utf-8") as handle:
+            report = json.load(handle)
+    except Exception as exc:
+        logger.warning(f"Failed to read training report {report_path}: {exc}")
+        return None
+
+    model_path = report.get("model_path")
+    if not model_path:
+        logger.warning(f"Training report missing model_path: {report_path}")
+        return None
+
+    src = Path(model_path)
+    if not src.is_absolute():
+        src = repo_root / src
+    if not src.exists():
+        logger.warning(f"Trained model not found: {src}")
+        return None
+
+    dest = Path(model_output_path)
+    if not dest.is_absolute():
+        dest = repo_root / dest
+
+    try:
+        if src.resolve() == dest.resolve():
+            return str(dest)
+    except Exception:
+        pass
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() or dest.is_symlink():
+        if dest.is_dir():
+            logger.warning(f"Model output path is a directory: {dest}")
+            return None
+        dest.unlink()
+
+    try:
+        os.symlink(src, dest)
+    except (OSError, NotImplementedError):
+        shutil.copy2(src, dest)
+    return str(dest)
 
 
 class OrchestratorBackend(ABC):
@@ -235,7 +293,7 @@ class LocalBackend(OrchestratorBackend):
 
         cmd = (
             f"python scripts/run_self_play_soak.py "
-            f"--games {games} "
+            f"--num-games {games} "
             f"--board-type {board_type} "
             f"--num-players {num_players}"
         )
@@ -311,20 +369,38 @@ class LocalBackend(OrchestratorBackend):
         job_id = str(uuid4())[:8]
         start = time.time()
 
+        board_type = kwargs.get("board_type", "square8")
+        num_players = kwargs.get("num_players", 2)
+        run_id = f"{board_type}_{num_players}p_{int(time.time())}"
+        run_dir = f"runs/{run_id}"
+
         cmd = (
             f"python scripts/run_nn_training_baseline.py "
-            f"--data {data_path} "
-            f"--output {model_output_path} "
+            f"--run-dir {run_dir} "
+            f"--data-path {data_path} "
+            f"--board {board_type} "
+            f"--num-players {num_players} "
             f"--epochs {epochs}"
         )
 
         result = await self.executor.run(cmd, timeout=kwargs.get("timeout", 14400))
+        materialized = None
+        if result.success:
+            materialized = _materialize_model_output(
+                model_output_path=model_output_path,
+                run_dir=run_dir,
+                repo_root=self._ai_service_root,
+            )
 
         return JobResult(
             job_id=job_id,
             success=result.success,
             worker="local",
-            output=result.stdout,
+            output={
+                "stdout": result.stdout,
+                "run_dir": run_dir,
+                "model_output_path": materialized or model_output_path,
+            },
             duration_seconds=time.time() - start,
             error=result.stderr if not result.success else None,
         )
@@ -468,7 +544,7 @@ class SSHBackend(OrchestratorBackend):
                 cmd += f"{venv_activate} && "
             cmd += (
                 f"python scripts/run_self_play_soak.py "
-                f"--games {num_games} "
+                f"--num-games {num_games} "
                 f"--board-type {board_type} "
                 f"--num-players {num_players}"
             )
@@ -1241,6 +1317,13 @@ class SlurmBackend(OrchestratorBackend):
         start = time.time()
         state, detail = await self._wait_for_job(job_id, timeout=kwargs.get("timeout", 14400))
         success = state == "COMPLETED"
+        materialized = None
+        if success:
+            materialized = _materialize_model_output(
+                model_output_path=model_output_path,
+                run_dir=run_dir,
+                repo_root=self.repo_root,
+            )
         return JobResult(
             job_id=job_id,
             success=success,
@@ -1250,6 +1333,7 @@ class SlurmBackend(OrchestratorBackend):
                 "detail": detail,
                 "script_path": str(script_path) if script_path else None,
                 "run_dir": run_dir,
+                "model_output_path": materialized or model_output_path,
                 "log_stdout": str(self.log_dir / f"{self._normalize_job_name(job_name)}.{job_id}.out"),
                 "log_stderr": str(self.log_dir / f"{self._normalize_job_name(job_name)}.{job_id}.err"),
             },

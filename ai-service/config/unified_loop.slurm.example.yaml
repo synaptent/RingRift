@@ -1,0 +1,30 @@
+# Slurm-focused unified loop example (shared filesystem)
+version: '1.2'
+execution_backend: 'slurm'
+
+slurm:
+  enabled: true
+  partition_training: 'gpu-train'
+  partition_selfplay: 'gpu-selfplay'
+  partition_tournament: 'cpu-eval'
+  account: null
+  qos: null
+  default_time_training: '08:00:00'
+  default_time_selfplay: '02:00:00'
+  default_time_tournament: '02:00:00'
+  gpus_training: 1
+  cpus_training: 16
+  mem_training: '64G'
+  gpus_selfplay: 0
+  cpus_selfplay: 8
+  mem_selfplay: '16G'
+  gpus_tournament: 0
+  cpus_tournament: 8
+  mem_tournament: '16G'
+  shared_root: '/lambda/nfs/RingRift'
+  repo_subdir: 'ai-service'
+  venv_activate: '/lambda/nfs/RingRift/ai-service/venv/bin/activate'
+  job_dir: 'data/slurm/jobs'
+  log_dir: 'data/slurm/logs'
+  setup_commands:
+    - 'export PYTHONPATH=/lambda/nfs/RingRift/ai-service'

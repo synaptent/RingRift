@@ -338,6 +338,16 @@ class TrainingCoordinator:
                 )
                 conn.commit()
                 logger.info(f"Started training job {job_id} on {self._node_name}")
+
+                # Emit TRAINING_STARTED event (December 2025)
+                self._emit_training_event(
+                    "started",
+                    job_id=job_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    model_version=model_version,
+                )
+
                 return job_id
 
             except sqlite3.IntegrityError:
@@ -456,7 +466,90 @@ class TrainingCoordinator:
         lock.release()
 
         logger.info(f"Completed training job {job_id} with status {status}")
+
+        # Emit TRAINING_COMPLETE or TRAINING_FAILED event (December 2025)
+        event_type = "complete" if status == "completed" else "failed"
+        self._emit_training_event(
+            event_type,
+            job_id=job_id,
+            board_type=job["board_type"],
+            num_players=job["num_players"],
+            final_val_loss=final_val_loss or job["best_val_loss"],
+            final_elo=final_elo or job["current_elo"],
+            epochs_completed=job["epochs_completed"],
+            status=status,
+        )
+
         return True
+
+    def _emit_training_event(
+        self,
+        event_type: str,
+        job_id: str,
+        board_type: str,
+        num_players: int,
+        **kwargs,
+    ) -> None:
+        """Emit training-related StageEvent.
+
+        Args:
+            event_type: One of "started", "complete", "failed"
+            job_id: Training job ID
+            board_type: Board type
+            num_players: Number of players
+            **kwargs: Additional event data
+        """
+        try:
+            from app.coordination.stage_events import (
+                StageEvent,
+                StageCompletionResult,
+                get_event_bus,
+            )
+            from datetime import datetime
+            import asyncio
+
+            # Map event type to StageEvent
+            event_map = {
+                "started": StageEvent.TRAINING_STARTED,
+                "complete": StageEvent.TRAINING_COMPLETE,
+                "failed": StageEvent.TRAINING_FAILED,
+            }
+            stage_event = event_map.get(event_type)
+            if not stage_event:
+                return
+
+            result = StageCompletionResult(
+                event=stage_event,
+                success=(event_type != "failed"),
+                iteration=0,
+                timestamp=datetime.now().isoformat(),
+                model_path=kwargs.get("model_path"),
+                elo_delta=kwargs.get("final_elo", 0) - 1500.0 if kwargs.get("final_elo") else None,
+                metadata={
+                    "job_id": job_id,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "node_name": self._node_name,
+                    **kwargs,
+                },
+            )
+
+            bus = get_event_bus()
+
+            # Try async emit, fall back to sync
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(bus.emit(result))
+            except RuntimeError:
+                # No event loop running - run emit synchronously
+                asyncio.run(bus.emit(result))
+
+            logger.debug(f"Emitted {stage_event.value} for job {job_id}")
+
+        except ImportError:
+            logger.debug("StageEventBus not available for training events")
+        except Exception as e:
+            logger.debug(f"Failed to emit training event: {e}")
 
     def get_active_jobs(self) -> List[TrainingJob]:
         """Get all active training jobs."""

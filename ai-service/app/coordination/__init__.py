@@ -439,6 +439,19 @@ from app.coordination.training_coordinator import (
     training_slot,
 )
 
+# Async Training Bridge (async wrapper + event integration)
+from app.coordination.async_training_bridge import (
+    AsyncTrainingBridge,
+    TrainingProgressEvent,
+    get_training_bridge,
+    reset_training_bridge,
+    async_can_train,
+    async_request_training,
+    async_update_progress,
+    async_complete_training,
+    async_get_training_status,
+)
+
 # Coordinator Base (common patterns for coordinators/managers)
 from app.coordination.coordinator_base import (
     CoordinatorBase,
@@ -775,6 +788,26 @@ __all__ = [
     "acquire_training_lock",
     "release_training_lock",
     "training_lock",
+    # Training Coordination (cluster-wide training management)
+    "TrainingCoordinator",
+    "TrainingJob",
+    "get_training_coordinator",
+    "request_training_slot",
+    "release_training_slot",
+    "update_training_progress",
+    "can_train",
+    "get_training_status",
+    "training_slot",
+    # Async Training Bridge (async wrapper + event integration)
+    "AsyncTrainingBridge",
+    "TrainingProgressEvent",
+    "get_training_bridge",
+    "reset_training_bridge",
+    "async_can_train",
+    "async_request_training",
+    "async_update_progress",
+    "async_complete_training",
+    "async_get_training_status",
     # Coordinator Base (common patterns for coordinators/managers)
     "CoordinatorBase",
     "CoordinatorProtocol",

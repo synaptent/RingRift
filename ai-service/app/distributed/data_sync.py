@@ -59,6 +59,7 @@ import yaml
 # Emit deprecation warning on module import
 warnings.warn(
     "app.distributed.data_sync is deprecated since 2025-12-18. "
+    "Use app.distributed.sync_orchestrator.SyncOrchestrator for unified sync access. "
     "Migration guide:\n"
     "  - For sync coordination: use app.coordination.sync_coordinator.SyncCoordinator\n"
     "  - For low-level sync: use app.distributed.unified_data_sync.UnifiedDataSyncService\n"
@@ -85,14 +86,15 @@ except ImportError:
     unified_get_disk_usage = None
     RESOURCE_LIMITS = None
 
+from app.utils.env_config import env
+from app.utils.paths import AI_SERVICE_ROOT, MODELS_DIR, DATA_DIR
+
 # Disk usage limits - 70% max enforced 2025-12-16
-MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
+MAX_DISK_USAGE_PERCENT = env.max_disk_percent
 
 # Configuration
-CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml"
-SYNC_STATE_PATH = Path(__file__).parent.parent.parent / "data" / "sync_state.json"
-MODELS_DIR = Path(__file__).parent.parent.parent / "models"
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+CONFIG_PATH = AI_SERVICE_ROOT / "config" / "distributed_hosts.yaml"
+SYNC_STATE_PATH = DATA_DIR / "sync_state.json"
 
 
 def check_disk_usage(path: Path = None) -> Tuple[bool, float]:

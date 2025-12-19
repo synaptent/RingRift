@@ -198,6 +198,15 @@ from .sync_coordinator import (
     sync_games,
     full_cluster_sync,
 )
+from .sync_orchestrator import (
+    SyncOrchestrator,
+    SyncOrchestratorConfig,
+    SyncOrchestratorState,
+    SyncResult,
+    FullSyncResult,
+    get_sync_orchestrator,
+    reset_sync_orchestrator,
+)
 
 __all__ = [
     # Host configuration and memory detection
@@ -352,6 +361,14 @@ __all__ = [
     "sync_models",
     "sync_games",
     "full_cluster_sync",
+    # Sync orchestrator
+    "SyncOrchestrator",
+    "SyncOrchestratorConfig",
+    "SyncOrchestratorState",
+    "SyncResult",
+    "FullSyncResult",
+    "get_sync_orchestrator",
+    "reset_sync_orchestrator",
     # Deprecated cluster coordination (lazy loaded)
     "ClusterCoordinator",
     "TaskRole",

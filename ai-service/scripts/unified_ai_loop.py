@@ -287,6 +287,8 @@ try:
         get_cpu_rich_hosts,
         get_gpu_rich_hosts,
     )
+    # Host offline → job migration wiring
+    from app.coordination.job_scheduler import wire_host_dead_to_job_migration
     HAS_JOB_SCHEDULER = True
 except ImportError:
     HAS_JOB_SCHEDULER = False
@@ -294,6 +296,7 @@ except ImportError:
     JobPriority = None
     ScheduledJob = None
     get_job_scheduler = None
+    wire_host_dead_to_job_migration = None
 
 # Stage event bus for pipeline orchestration
 try:
@@ -399,6 +402,7 @@ try:
         get_curriculum_weights as get_momentum_curriculum_weights,
         get_selfplay_rate_recommendation,
         get_aggregate_selfplay_recommendation,
+        wire_evaluation_to_feedback,
     )
     HAS_FEEDBACK_ACCELERATOR = True
 except ImportError:
@@ -416,6 +420,7 @@ except ImportError:
     get_momentum_curriculum_weights = None
     get_selfplay_rate_recommendation = None
     get_aggregate_selfplay_recommendation = None
+    wire_evaluation_to_feedback = None
 
 # Improvement optimizer for maximizing AI training throughput
 try:
@@ -2835,6 +2840,13 @@ class UnifiedAILoop:
                         print("[UnifiedLoop] Selfplay ↔ Evaluation feedback loop connected via signal computer")
                     except Exception as e:
                         print(f"[UnifiedLoop] Warning: Could not connect signal computer: {e}")
+                # Wire evaluation events to momentum tracking for feedback loop
+                if HAS_FEEDBACK_ACCELERATOR and wire_evaluation_to_feedback is not None:
+                    try:
+                        wire_evaluation_to_feedback()
+                        print("[UnifiedLoop] Evaluation → Momentum feedback loop wired")
+                    except Exception as e:
+                        print(f"[UnifiedLoop] Warning: Could not wire evaluation feedback: {e}")
                 print(f"[UnifiedLoop] Local selfplay generator initialized (workers={num_workers or 'auto'})")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize local selfplay: {e}")
@@ -2858,6 +2870,10 @@ class UnifiedAILoop:
             try:
                 self.job_scheduler = get_job_scheduler()
                 print("[UnifiedLoop] Priority job scheduler initialized (CRITICAL > HIGH > NORMAL > LOW)")
+                # Wire HOST_OFFLINE events to automatic job migration
+                if wire_host_dead_to_job_migration is not None:
+                    wire_host_dead_to_job_migration(scheduler=self.job_scheduler)
+                    print("[UnifiedLoop] Cluster health → Job migration wired (HOST_OFFLINE events)")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize job scheduler: {e}")
 
@@ -4469,17 +4485,19 @@ class UnifiedAILoop:
             self.state.tier_promotions_count += 1
             self._save_state()
 
-            # Publish tier promotion event
+            # Publish tier promotion event (using dedicated event type)
             await self.event_bus.publish(DataEvent(
-                event_type=DataEventType.MODEL_PROMOTED,  # Reuse promotion event
+                event_type=DataEventType.TIER_PROMOTION,
                 payload={
-                    "type": "tier_promotion",
                     "config": config_key,
                     "old_tier": current_tier,
                     "new_tier": next_tier,
                     "win_rate": estimated_win_rate,
                     "elo": current_elo,
-                }
+                    "model_id": "",  # TODO: Add model_id when available
+                    "games_played": 0,  # TODO: Add games count when available
+                },
+                source="unified_ai_loop"
             ))
 
             return True, next_tier
@@ -7426,9 +7444,7 @@ class UnifiedAILoop:
             new_elo = payload.get('new_elo')
             previous_model_id = payload.get('previous_model_id')
 
-            # Skip tier promotions (they have different semantics)
-            if payload.get('type') == 'tier_promotion':
-                return
+            # Note: Tier promotions now use TIER_PROMOTION event type (Dec 2025)
 
             if not model_id or not config_key:
                 return

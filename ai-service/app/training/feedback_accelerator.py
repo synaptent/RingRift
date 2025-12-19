@@ -1014,3 +1014,77 @@ def get_aggregate_selfplay_recommendation() -> Dict[str, Any]:
         Dict with 'recommended_multiplier', 'reason', 'aggregate_momentum', 'states'
     """
     return get_feedback_accelerator().get_aggregate_selfplay_recommendation()
+
+
+# =============================================================================
+# Event Bus Integration (December 2025)
+# =============================================================================
+
+_evaluation_watcher_active = False
+
+
+def _on_evaluation_completed(event) -> None:
+    """Handle EVALUATION_COMPLETED event to update momentum tracking.
+
+    This connects evaluation results to selfplay rate recommendations.
+    """
+    payload = event.payload if hasattr(event, 'payload') else {}
+
+    config = payload.get("config", "")
+    new_elo = payload.get("new_elo") or payload.get("elo")
+    games_played = payload.get("games_played", 0)
+    model_id = payload.get("model_id")
+
+    if not config or new_elo is None:
+        return
+
+    try:
+        record_elo_update(config, float(new_elo), games_played, model_id)
+        logger.debug(f"[FeedbackAccelerator] Updated momentum for {config}: elo={new_elo}")
+    except Exception as e:
+        logger.warning(f"[FeedbackAccelerator] Failed to update momentum from evaluation: {e}")
+
+
+def wire_evaluation_to_feedback() -> bool:
+    """Subscribe to EVALUATION_COMPLETED events to update momentum tracking.
+
+    This enables the feedback loop:
+    EVALUATION_COMPLETED → momentum update → selfplay rate recommendation
+
+    Returns:
+        True if successfully subscribed
+    """
+    global _evaluation_watcher_active
+
+    if _evaluation_watcher_active:
+        return True
+
+    try:
+        from app.distributed.data_events import DataEventType, get_event_bus
+
+        bus = get_event_bus()
+        bus.subscribe(DataEventType.EVALUATION_COMPLETED, _on_evaluation_completed)
+        _evaluation_watcher_active = True
+        logger.info("[FeedbackAccelerator] Subscribed to EVALUATION_COMPLETED events")
+        return True
+    except Exception as e:
+        logger.warning(f"[FeedbackAccelerator] Failed to subscribe to evaluation events: {e}")
+        return False
+
+
+def unwire_evaluation_from_feedback() -> None:
+    """Unsubscribe from EVALUATION_COMPLETED events."""
+    global _evaluation_watcher_active
+
+    if not _evaluation_watcher_active:
+        return
+
+    try:
+        from app.distributed.data_events import DataEventType, get_event_bus
+
+        bus = get_event_bus()
+        bus.unsubscribe(DataEventType.EVALUATION_COMPLETED, _on_evaluation_completed)
+        _evaluation_watcher_active = False
+        logger.info("[FeedbackAccelerator] Unsubscribed from EVALUATION_COMPLETED events")
+    except Exception:
+        pass

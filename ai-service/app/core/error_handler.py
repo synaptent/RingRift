@@ -23,10 +23,8 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-import os
 import time
-from pathlib import Path
-from typing import Any, Callable, Optional, Sequence, Type, TypeVar, Union
+from typing import Any, Callable, Optional, Sequence, Type, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +137,7 @@ def retry(
     exceptions: Sequence[Type[Exception]] = (Exception,),
     on_retry: Optional[Callable[[Exception, int], None]] = None,
     reraise: bool = True,
+    jitter: bool = False,
 ) -> Callable[[F], F]:
     """Decorator for retrying a function on failure.
 
@@ -150,6 +149,7 @@ def retry(
         exceptions: Tuple of exception types to catch and retry on
         on_retry: Optional callback called on each retry with (exception, attempt)
         reraise: If True, reraise the last exception. If False, return None.
+        jitter: If True, add random jitter to prevent thundering herd (default False)
 
     Returns:
         Decorated function
@@ -161,10 +161,12 @@ def retry(
             response.raise_for_status()
             return response.json()
 
-        @retry(max_attempts=5, exceptions=(SSHError, TimeoutError))
+        @retry(max_attempts=5, exceptions=(SSHError, TimeoutError), jitter=True)
         def run_remote_command(host, cmd):
             ...
     """
+    import random
+
     def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -182,15 +184,20 @@ def retry(
                         raise
 
                     if attempt < max_attempts:
+                        # Apply jitter if enabled (±25% of delay)
+                        actual_delay = current_delay
+                        if jitter:
+                            actual_delay = current_delay * (0.75 + random.random() * 0.5)
+
                         if on_retry:
                             on_retry(e, attempt)
                         else:
                             logger.warning(
                                 f"{func.__name__} failed (attempt {attempt}/{max_attempts}): {e}. "
-                                f"Retrying in {current_delay:.1f}s..."
+                                f"Retrying in {actual_delay:.1f}s..."
                             )
 
-                        time.sleep(current_delay)
+                        time.sleep(actual_delay)
                         current_delay = min(current_delay * backoff, max_delay)
                     else:
                         logger.error(
@@ -214,6 +221,7 @@ def retry_async(
     exceptions: Sequence[Type[Exception]] = (Exception,),
     on_retry: Optional[Callable[[Exception, int], None]] = None,
     reraise: bool = True,
+    jitter: bool = False,
 ) -> Callable[[AF], AF]:
     """Async version of retry decorator.
 
@@ -224,12 +232,14 @@ def retry_async(
         Decorated async function
 
     Example:
-        @retry_async(max_attempts=3)
+        @retry_async(max_attempts=3, jitter=True)
         async def fetch_data():
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     return await response.json()
     """
+    import random
+
     def decorator(func: AF) -> AF:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
@@ -247,15 +257,20 @@ def retry_async(
                         raise
 
                     if attempt < max_attempts:
+                        # Apply jitter if enabled (±25% of delay)
+                        actual_delay = current_delay
+                        if jitter:
+                            actual_delay = current_delay * (0.75 + random.random() * 0.5)
+
                         if on_retry:
                             on_retry(e, attempt)
                         else:
                             logger.warning(
                                 f"{func.__name__} failed (attempt {attempt}/{max_attempts}): {e}. "
-                                f"Retrying in {current_delay:.1f}s..."
+                                f"Retrying in {actual_delay:.1f}s..."
                             )
 
-                        await asyncio.sleep(current_delay)
+                        await asyncio.sleep(actual_delay)
                         current_delay = min(current_delay * backoff, max_delay)
                     else:
                         logger.error(
@@ -277,8 +292,6 @@ def retry_async(
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Tuple
-import random
 
 
 class RetryStrategy(Enum):

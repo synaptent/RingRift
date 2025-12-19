@@ -35,7 +35,6 @@ import argparse
 import asyncio
 import gzip
 import hashlib
-import logging
 import os
 import shutil
 import subprocess
@@ -46,11 +45,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Add project root for scripts.lib imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("cluster_file_sync")
 
 # Default SSH key for Vast.ai
 DEFAULT_SSH_KEY = os.path.expanduser("~/.ssh/id_cluster")

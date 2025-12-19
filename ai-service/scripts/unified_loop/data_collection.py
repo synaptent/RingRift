@@ -20,8 +20,7 @@ if TYPE_CHECKING:
     from unified_ai_loop import EventBus, UnifiedLoopState
     from app.training.hot_data_buffer import HotDataBuffer
 
-# Path constants
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+from app.utils.paths import AI_SERVICE_ROOT
 
 # Resource checking
 try:

@@ -146,16 +146,9 @@ def _cleanup_training_slot():
 import atexit
 atexit.register(_cleanup_training_slot)
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("train_nnue", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("train_nnue")
 
 # Board-specific hyperparameters config path
 HYPERPARAMS_CONFIG = Path(__file__).parent.parent / "config" / "training_hyperparams.yaml"

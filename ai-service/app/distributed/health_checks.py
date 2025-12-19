@@ -83,6 +83,16 @@ except ImportError:
     CPU_CRITICAL_THRESHOLD = 80.0
     RECOVERY_COOLDOWN = 300
 
+# Event bus for health/recovery events (Phase 10 consolidation)
+try:
+    from app.distributed.data_events import (
+        DataEvent, DataEventType, get_event_bus
+    )
+    HAS_EVENT_BUS = True
+except ImportError:
+    HAS_EVENT_BUS = False
+    get_event_bus = None
+
 
 @dataclass
 class ComponentHealth:
@@ -675,29 +685,51 @@ class HealthRecoveryIntegration:
         """Trigger appropriate recovery action."""
         component_name = component.name
         self._last_recovery_attempt[component_name] = time.time()
+        recovery_action = None
+        recovery_success = False
 
         try:
+            # Emit RECOVERY_INITIATED event
+            await self._emit_recovery_event(
+                DataEventType.RECOVERY_INITIATED if HAS_EVENT_BUS else None,
+                component_name, failure_count, component.message
+            )
+
             if component_name == "coordinator" and failure_count >= 2:
                 # Stale tasks - try to recover stuck jobs
                 details = component.details or {}
                 stale_count = details.get("stale_count", 0)
                 if stale_count > 0:
                     logger.info(f"[Health→Recovery] Attempting to recover {stale_count} stale jobs")
-                    # Would call recovery_manager.recover_stuck_job() for each
+                    recovery_action = "cleanup_stale_jobs"
                     if hasattr(self.recovery_manager, 'cleanup_stale_jobs'):
                         await self.recovery_manager.cleanup_stale_jobs()
+                        recovery_success = True
 
             elif component_name == "data_sync" and failure_count >= 3:
                 # Data sync stale - restart sync daemon
                 logger.info("[Health→Recovery] Data sync stale, triggering sync restart")
+                recovery_action = "restart_data_sync"
                 if hasattr(self.recovery_manager, 'restart_data_sync'):
                     await self.recovery_manager.restart_data_sync()
+                    recovery_success = True
 
             elif component_name == "resources":
                 # Resource issues - log for manual intervention
                 logger.warning(f"[Health→Recovery] Resource issue: {component.message}")
                 if self.notifier and failure_count >= 5:
+                    recovery_action = "notify_resource_issue"
                     await self._notify_resource_issue(component)
+                    recovery_success = True
+
+                # Emit RESOURCE_CONSTRAINT event
+                await self._emit_recovery_event(
+                    DataEventType.RESOURCE_CONSTRAINT if HAS_EVENT_BUS else None,
+                    component_name,
+                    failure_count,
+                    component.message,
+                    details=component.details,
+                )
 
             elif failure_count >= 5:
                 # Persistent failures - escalate
@@ -705,11 +737,54 @@ class HealthRecoveryIntegration:
                     f"[Health→Recovery] Persistent failures for {component_name}, "
                     f"escalating to human operator"
                 )
+                recovery_action = "escalate_to_human"
                 if self.notifier:
                     await self._notify_escalation(component, failure_count)
 
+            # Emit RECOVERY_COMPLETED or RECOVERY_FAILED
+            if recovery_action and HAS_EVENT_BUS:
+                event_type = (
+                    DataEventType.RECOVERY_COMPLETED if recovery_success
+                    else DataEventType.RECOVERY_FAILED
+                )
+                await self._emit_recovery_event(
+                    event_type, component_name, failure_count,
+                    f"Recovery action: {recovery_action}",
+                    action=recovery_action, success=recovery_success
+                )
+
         except Exception as e:
             logger.error(f"[Health→Recovery] Recovery failed for {component_name}: {e}")
+            # Emit RECOVERY_FAILED event
+            if HAS_EVENT_BUS:
+                await self._emit_recovery_event(
+                    DataEventType.RECOVERY_FAILED,
+                    component_name, failure_count, str(e)
+                )
+
+    async def _emit_recovery_event(
+        self,
+        event_type,
+        component: str,
+        failure_count: int,
+        message: str,
+        **kwargs
+    ) -> None:
+        """Emit a recovery-related event."""
+        if not HAS_EVENT_BUS or event_type is None:
+            return
+
+        event_bus = get_event_bus()
+        await event_bus.publish(DataEvent(
+            event_type=event_type,
+            payload={
+                "component": component,
+                "failure_count": failure_count,
+                "message": message,
+                **kwargs
+            },
+            source="health_recovery_integration",
+        ))
 
     async def _notify_resource_issue(self, component: ComponentHealth) -> None:
         """Notify about resource issues."""

@@ -31,8 +31,7 @@ if TYPE_CHECKING:
     from unified_ai_loop import ConfigPriorityQueue, EventBus, UnifiedLoopState
     from app.integration.pipeline_feedback import PipelineFeedbackController
 
-# Path constants
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+from app.utils.paths import AI_SERVICE_ROOT
 
 # Feature flag: disable local tasks when running on dedicated hosts
 DISABLE_LOCAL_TASKS = os.environ.get("RINGRIFT_DISABLE_LOCAL_TASKS", "").lower() in ("1", "true", "yes")

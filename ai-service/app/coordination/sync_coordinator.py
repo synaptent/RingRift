@@ -114,11 +114,20 @@ from app.utils.paths import DATA_DIR, CONFIG_DIR
 DEFAULT_COORDINATOR_DB = DATA_DIR / "coordination" / "sync_coordinator.db"
 HOST_CONFIG_PATH = CONFIG_DIR / "remote_hosts.yaml"
 
-# Thresholds
-STALE_DATA_THRESHOLD_SECONDS = 1800  # 30 minutes - data older than this is stale
-CRITICAL_STALE_THRESHOLD_SECONDS = 3600  # 1 hour - urgent sync needed
-MAX_SYNC_QUEUE_SIZE = 20
-FRESHNESS_CHECK_INTERVAL = 60  # Check freshness every minute
+# Thresholds - import from centralized config (December 2025)
+try:
+    from app.config.thresholds import (
+        STALE_DATA_THRESHOLD_SECONDS,
+        CRITICAL_STALE_THRESHOLD_SECONDS,
+        MAX_SYNC_QUEUE_SIZE,
+        FRESHNESS_CHECK_INTERVAL,
+    )
+except ImportError:
+    # Fallback defaults if thresholds module unavailable
+    STALE_DATA_THRESHOLD_SECONDS = 1800  # 30 minutes
+    CRITICAL_STALE_THRESHOLD_SECONDS = 3600  # 1 hour
+    MAX_SYNC_QUEUE_SIZE = 20
+    FRESHNESS_CHECK_INTERVAL = 60
 SYNC_PRIORITY_WEIGHTS = {
     "games_behind": 1.0,      # Weight per game behind
     "time_since_sync": 0.01,  # Weight per second since last sync

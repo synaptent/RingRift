@@ -53,7 +53,6 @@ From the ``ai-service`` root::
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -62,8 +61,12 @@ from typing import Iterator, List, Optional, Tuple
 
 import numpy as np
 
-# Allow imports from app/
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Allow imports from app/ and scripts/
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("distill_to_nnue")
 
 import torch
 import torch.nn as nn
@@ -76,17 +79,6 @@ from app.ai.nnue import (
 )
 from app.models import BoardType, GameState
 from app.db import GameReplayDB
-
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("distill_to_nnue", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger("distill_to_nnue")
 
 
 @dataclass

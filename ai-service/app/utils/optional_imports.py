@@ -194,8 +194,13 @@ else:
 matplotlib, MATPLOTLIB_AVAILABLE = _try_import("matplotlib")
 
 if MATPLOTLIB_AVAILABLE:
-    pyplot = matplotlib.pyplot
-    plt = pyplot  # Common alias
+    try:
+        from matplotlib import pyplot as pyplot
+        plt = pyplot  # Common alias
+    except Exception:
+        MATPLOTLIB_AVAILABLE = False
+        pyplot = None
+        plt = None
 else:
     pyplot = None
     plt = None

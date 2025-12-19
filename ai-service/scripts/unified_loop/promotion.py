@@ -27,8 +27,7 @@ from .config import DataEvent, DataEventType, PromotionConfig
 if TYPE_CHECKING:
     from unified_ai_loop import EventBus, UnifiedLoopState
 
-# Path constants
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+from app.utils.paths import AI_SERVICE_ROOT
 
 # Board name abbreviations for champion model IDs (must match model_promotion_manager.py)
 BOARD_ALIAS_TOKENS = {

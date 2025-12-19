@@ -1550,6 +1550,8 @@ class HighQualityDataSyncWatcher:
         - QUALITY_DISTRIBUTION_CHANGED: Adjusts sync priority based on new distribution
         - LOW_QUALITY_DATA_WARNING: Deprioritizes sync from low-quality sources
         - QUALITY_SCORE_UPDATED: Tracks quality changes for adaptive sync
+        - ELO_SIGNIFICANT_CHANGE: Prioritizes sync from high-performing configs (Dec 2025)
+        - MODEL_PROMOTED: Refreshes data from promoted configs (Dec 2025)
 
         Returns:
             Number of event types subscribed to
@@ -1578,6 +1580,14 @@ class HighQualityDataSyncWatcher:
 
             # Quality score updates - track for adaptive sync
             bus.subscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_score_updated)
+            subscribed += 1
+
+            # ELO_SIGNIFICANT_CHANGE - prioritize syncing from high-performing configs (Dec 2025)
+            bus.subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, self._on_elo_significant_change)
+            subscribed += 1
+
+            # MODEL_PROMOTED - refresh data from promoted configs (Dec 2025)
+            bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
             subscribed += 1
 
             self._subscribed = True
@@ -1656,6 +1666,61 @@ class HighQualityDataSyncWatcher:
         logger.debug(
             f"[HighQualityDataSyncWatcher] Quality score updated for {config}: {new_quality:.2f}"
         )
+
+    def _on_elo_significant_change(self, event) -> None:
+        """Handle ELO_SIGNIFICANT_CHANGE event (December 2025).
+
+        When a config shows significant Elo improvement, we prioritize syncing
+        data from that config since it's producing valuable training data.
+
+        A positive Elo change suggests the model is improving and generating
+        higher-quality games that should be synced sooner.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        config = payload.get("config", "")
+        elo_change = payload.get("elo_change", 0)
+        new_elo = payload.get("new_elo", 0)
+
+        # Only trigger sync for positive Elo changes (improving configs)
+        if elo_change > 0:
+            logger.info(
+                f"[HighQualityDataSyncWatcher] Significant Elo improvement for {config}: "
+                f"+{elo_change:.1f} (new Elo: {new_elo:.0f}) - prioritizing sync"
+            )
+            # Trigger priority sync to get the high-quality data being generated
+            self._maybe_trigger_sync()
+        else:
+            logger.debug(
+                f"[HighQualityDataSyncWatcher] Elo change for {config}: "
+                f"{elo_change:.1f} (skipping sync trigger for negative change)"
+            )
+
+    def _on_model_promoted(self, event) -> None:
+        """Handle MODEL_PROMOTED event (December 2025).
+
+        When a model is promoted to production, we trigger a priority sync
+        to ensure the latest high-quality data from that config is available
+        for continued training improvements.
+
+        This helps maintain data freshness after promotion decisions.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        config = payload.get("config", "")
+        model_id = payload.get("model_id", "")
+        elo_gain = payload.get("elo_gain", 0)
+
+        if not config:
+            return
+
+        logger.info(
+            f"[HighQualityDataSyncWatcher] Model promoted for {config}: "
+            f"{model_id} (Elo gain: {elo_gain:.1f}) - triggering data refresh"
+        )
+
+        # Trigger priority sync to refresh data from this config
+        self._maybe_trigger_sync()
 
     def unsubscribe(self) -> None:
         """Unsubscribe from high-quality data events."""

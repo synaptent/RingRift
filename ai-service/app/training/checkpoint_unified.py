@@ -26,6 +26,15 @@ logger = logging.getLogger(__name__)
 # Use shared lazy torch import to prevent OOM
 from app.training.utils import get_torch
 
+# Event emission for checkpoint observability (optional)
+try:
+    from app.distributed.data_events import emit_checkpoint_saved, emit_checkpoint_loaded
+    HAS_CHECKPOINT_EVENTS = True
+except ImportError:
+    HAS_CHECKPOINT_EVENTS = False
+    emit_checkpoint_saved = None
+    emit_checkpoint_loaded = None
+
 
 class CheckpointType(Enum):
     """Types of checkpoints."""
@@ -399,6 +408,21 @@ class UnifiedCheckpointManager:
 
                 logger.info(f"Saved checkpoint: {checkpoint_id} (adaptive_interval={self._adaptive_interval})")
 
+                # Emit checkpoint event for observability
+                if HAS_CHECKPOINT_EVENTS and emit_checkpoint_saved is not None:
+                    try:
+                        import asyncio
+                        asyncio.get_event_loop().create_task(emit_checkpoint_saved(
+                            config=self.config.board_type if hasattr(self.config, 'board_type') else "",
+                            checkpoint_path=str(file_path),
+                            epoch=progress.epoch,
+                            step=progress.global_step,
+                            metrics=metrics,
+                            source="checkpoint_unified",
+                        ))
+                    except RuntimeError:
+                        pass  # No running event loop - skip event emission
+
                 return metadata
 
         if self.config.async_save:
@@ -557,6 +581,21 @@ class UnifiedCheckpointManager:
                     raise ValueError(msg)
                 else:
                     logger.warning(msg)
+
+        # Emit checkpoint loaded event for observability
+        if HAS_CHECKPOINT_EVENTS and emit_checkpoint_loaded is not None:
+            try:
+                import asyncio
+                progress = checkpoint_data.get('progress', {})
+                asyncio.get_event_loop().create_task(emit_checkpoint_loaded(
+                    config=self.config.board_type if hasattr(self.config, 'board_type') else "",
+                    checkpoint_path=str(file_path),
+                    epoch=progress.get('epoch', 0),
+                    step=progress.get('global_step', 0),
+                    source="checkpoint_unified",
+                ))
+            except RuntimeError:
+                pass  # No running event loop - skip event emission
 
         return checkpoint_data
 

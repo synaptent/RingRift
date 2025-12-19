@@ -502,6 +502,11 @@ class UnifiedTrainingOrchestrator:
         self._epoch = 0
         self._initialized = False
 
+        # Loss history for training quality feedback (plateau/overfit detection)
+        self._loss_history: List[float] = []
+        self._val_loss_history: List[float] = []
+        self._loss_history_maxlen = 100  # Keep last 100 steps
+
         # Component wrappers
         self._hot_buffer = HotBufferWrapper(self.config)
         self._enhancements = EnhancementsWrapper(self.config)
@@ -768,6 +773,16 @@ class UnifiedTrainingOrchestrator:
         if self.config.verbose and self._step % self.config.log_interval == 0:
             self._log_progress(metrics)
 
+        # Track loss history for training quality feedback
+        if "loss" in metrics:
+            self._loss_history.append(metrics["loss"])
+            if len(self._loss_history) > self._loss_history_maxlen:
+                self._loss_history.pop(0)
+        if "val_loss" in metrics:
+            self._val_loss_history.append(metrics["val_loss"])
+            if len(self._val_loss_history) > self._loss_history_maxlen:
+                self._val_loss_history.pop(0)
+
         return metrics
 
     def _save_checkpoint(self, metrics: Dict[str, float]):
@@ -845,6 +860,64 @@ class UnifiedTrainingOrchestrator:
     def should_stop(self) -> bool:
         """Check if training should stop (early stopping)."""
         return self._background_eval.should_early_stop()
+
+    def get_training_quality(self, config_key: str = "") -> Dict[str, Any]:
+        """Get training quality metrics for selfplay feedback loop.
+
+        Analyzes recent loss history to detect plateau and overfitting,
+        which signals that selfplay should generate more diverse data.
+
+        Args:
+            config_key: Config identifier (unused, for API compatibility)
+
+        Returns:
+            Dict with training quality indicators:
+            - loss_plateau: True if loss not improving
+            - overfit_detected: True if train/val loss diverging
+            - last_loss: Most recent loss value
+            - loss_trend: Slope of recent losses (negative = improving)
+            - train_val_gap: Gap between train and val loss
+        """
+        result = {
+            "loss_plateau": False,
+            "overfit_detected": False,
+            "last_loss": None,
+            "loss_trend": 0.0,
+            "train_val_gap": 0.0,
+        }
+
+        # Need at least 10 samples for meaningful analysis
+        if len(self._loss_history) < 10:
+            return result
+
+        # Get recent loss values
+        recent = self._loss_history[-20:]  # Last 20 steps
+        result["last_loss"] = recent[-1]
+
+        # Detect plateau: loss not decreasing significantly
+        # Compare first half to second half of recent history
+        first_half = sum(recent[:len(recent)//2]) / max(1, len(recent)//2)
+        second_half = sum(recent[len(recent)//2:]) / max(1, len(recent) - len(recent)//2)
+        improvement = (first_half - second_half) / max(first_half, 1e-6)
+
+        # Plateau if improvement < 1% over recent window
+        result["loss_plateau"] = improvement < 0.01
+        result["loss_trend"] = -improvement  # Negative = improving
+
+        # Detect overfitting: train loss decreasing but val loss increasing
+        if len(self._val_loss_history) >= 10:
+            val_recent = self._val_loss_history[-20:]
+            val_first_half = sum(val_recent[:len(val_recent)//2]) / max(1, len(val_recent)//2)
+            val_second_half = sum(val_recent[len(val_recent)//2:]) / max(1, len(val_recent) - len(val_recent)//2)
+            val_improvement = (val_first_half - val_second_half) / max(val_first_half, 1e-6)
+
+            # Overfit if train improving but val getting worse
+            if improvement > 0.02 and val_improvement < -0.02:
+                result["overfit_detected"] = True
+
+            result["train_val_gap"] = val_recent[-1] - recent[-1] if val_recent else 0.0
+
+        return result
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get comprehensive metrics from all components."""

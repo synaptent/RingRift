@@ -18,7 +18,6 @@ Designed to be run via cron every 30-60 minutes.
 
 import argparse
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -29,6 +28,9 @@ from typing import Dict, List, Optional, Tuple
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 LOG_DIR = AI_SERVICE_ROOT / "logs"
 LOG_FILE = LOG_DIR / "vast_lifecycle.log"
+
+if str(AI_SERVICE_ROOT) not in sys.path:
+    sys.path.insert(0, str(AI_SERVICE_ROOT))
 
 # Lambda target for data sync - prefer Tailscale IP for reliability
 # Public IP (150.136.65.197) gets connection resets under load
@@ -158,20 +160,10 @@ def _get_fallback_instances() -> List[Dict]:
         {"host": "ssh5.vast.ai", "port": 18168, "name": "vast-5090x8", "gpu": "8x RTX 5090", "board_type": "hexagonal"},
     ]
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("vast_lifecycle", log_file=LOG_FILE)
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.FileHandler(LOG_FILE),
-            logging.StreamHandler(),
-        ],
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_logging, get_logger
+
+setup_logging(level="INFO", log_file=LOG_FILE)
+logger = get_logger("vast_lifecycle")
 
 
 def run_ssh_command(

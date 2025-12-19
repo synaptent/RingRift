@@ -29,6 +29,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from app.utils.paths import AI_SERVICE_ROOT
+
 logger = logging.getLogger(__name__)
 
 
@@ -254,7 +256,6 @@ def get_config_export_settings(
 
     # Use default DB paths if not provided
     if db_paths is None:
-        AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
         default_db = AI_SERVICE_ROOT / "data" / "games" / f"consolidated_{board_type}_{num_players}p.db"
         if default_db.exists():
             db_paths = [str(default_db)]

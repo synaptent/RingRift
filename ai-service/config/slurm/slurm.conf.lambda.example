@@ -1,0 +1,60 @@
+# slurm.conf (Lambda example)
+# Generated from config/distributed_hosts.yaml
+# NOTE: Update SlurmctldHost, NodeAddr, CPUs, RealMemory if they change.
+
+ClusterName=ringrift
+SlurmctldHost=100.78.101.123
+SlurmctldPort=6817
+SlurmdPort=6818
+AuthType=auth/munge
+SlurmUser=slurm
+SlurmdUser=root
+StateSaveLocation=/var/spool/slurmctld
+SlurmdSpoolDir=/var/spool/slurmd
+SwitchType=switch/none
+MpiDefault=none
+ProctrackType=proctrack/cgroup
+TaskPlugin=task/cgroup,task/affinity
+SchedulerType=sched/backfill
+SelectType=select/cons_tres
+SelectTypeParameters=CR_Core
+GresTypes=gpu
+ReturnToService=2
+SlurmctldTimeout=300
+SlurmdTimeout=300
+InactiveLimit=0
+KillWait=30
+MinJobAge=300
+
+# Logging
+SlurmctldLogFile=/var/log/slurm/slurmctld.log
+SlurmdLogFile=/var/log/slurm/slurmd.log
+
+# Node definitions
+NodeName=DEFAULT Sockets=1 CoresPerSocket=1 ThreadsPerCore=2 State=UNKNOWN
+
+NodeName=lambda-2xh100 NodeAddr=100.97.104.89 CPUs=30 RealMemory=262144 Gres=gpu:h100:2 Feature=h100
+NodeName=lambda-a10 NodeAddr=100.91.25.13 CPUs=30 RealMemory=227328 Gres=gpu:a10:1 Feature=a10
+NodeName=lambda-a10-b NodeAddr=129.153.159.191 CPUs=30 RealMemory=227328 Gres=gpu:a10:1 Feature=a10
+NodeName=lambda-a10-c NodeAddr=150.136.56.240 CPUs=30 RealMemory=227328 Gres=gpu:a10:1 Feature=a10
+NodeName=lambda-gh200-a NodeAddr=100.123.183.70 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-b NodeAddr=192.222.51.161 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-c NodeAddr=100.88.35.19 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-d NodeAddr=100.75.84.47 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-e NodeAddr=100.88.176.74 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-f NodeAddr=100.104.165.116 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-g NodeAddr=100.104.126.58 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-h NodeAddr=100.65.88.62 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-i NodeAddr=100.99.27.56 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-k NodeAddr=100.96.142.42 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-l NodeAddr=100.76.145.60 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-m NodeAddr=192.222.50.219 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-n NodeAddr=192.222.51.204 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-o NodeAddr=192.222.51.92 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-gh200-p NodeAddr=192.222.51.215 CPUs=72 RealMemory=491520 Gres=gpu:gh200:1 Feature=gh200
+NodeName=lambda-h100 NodeAddr=100.78.101.123 CPUs=26 RealMemory=262144 Gres=gpu:h100:1 Feature=h100
+
+# Partitions
+PartitionName=gpu-train Nodes=lambda-2xh100,lambda-gh200-a,lambda-gh200-b,lambda-gh200-c,lambda-gh200-d,lambda-gh200-e,lambda-gh200-f,lambda-gh200-g,lambda-gh200-h,lambda-gh200-i,lambda-gh200-k,lambda-gh200-l,lambda-gh200-m,lambda-gh200-n,lambda-gh200-o,lambda-gh200-p,lambda-h100 Default=NO MaxTime=INFINITE State=UP
+PartitionName=gpu-selfplay Nodes=lambda-2xh100,lambda-a10,lambda-a10-b,lambda-a10-c,lambda-gh200-a,lambda-gh200-b,lambda-gh200-c,lambda-gh200-d,lambda-gh200-e,lambda-gh200-f,lambda-gh200-g,lambda-gh200-h,lambda-gh200-i,lambda-gh200-k,lambda-gh200-l,lambda-gh200-m,lambda-gh200-n,lambda-gh200-o,lambda-gh200-p,lambda-h100 Default=YES MaxTime=INFINITE State=UP
+PartitionName=cpu-eval Nodes=lambda-a10,lambda-a10-b,lambda-a10-c Default=NO MaxTime=INFINITE State=UP

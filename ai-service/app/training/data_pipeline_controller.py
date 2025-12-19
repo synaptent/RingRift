@@ -1,5 +1,27 @@
 """Unified Data Pipeline Controller for RingRift AI.
 
+.. deprecated:: 2025-12
+    For new code, prefer :class:`TrainingDataCoordinator` from
+    ``app.training.data_coordinator`` which provides quality-aware
+    data selection and better integration with cluster sync.
+
+    This module is retained for batch/streaming data loading operations.
+    TrainingDataCoordinator wraps these capabilities with quality scoring.
+
+    Migration::
+
+        # Old:
+        from app.training.data_pipeline_controller import DataPipelineController
+        controller = DataPipelineController(db_paths=[...])
+        for batch in controller.get_training_batches():
+            ...
+
+        # New (recommended):
+        from app.training.data_coordinator import get_data_coordinator
+        coordinator = get_data_coordinator()
+        for batch in coordinator.get_quality_batches():
+            ...
+
 Provides a single entry point for all data operations, consolidating:
 - Real-time streaming from SQLite databases (streaming_pipeline.py)
 - Batch loading from NPZ/HDF5 files (data_loader.py)
@@ -8,7 +30,7 @@ Provides a single entry point for all data operations, consolidating:
 This controller exposes a clean API for the unified AI loop to consume,
 handling data preparation, loading, and streaming in a consistent manner.
 
-Usage:
+Usage (legacy):
     from app.training.data_pipeline_controller import DataPipelineController
 
     # Initialize controller
@@ -33,6 +55,16 @@ import logging
 import os
 import threading
 import time
+import warnings
+
+# Emit deprecation warning on import (December 2025)
+warnings.warn(
+    "data_pipeline_controller is deprecated since 2025-12. "
+    "Use app.training.data_coordinator.TrainingDataCoordinator instead. "
+    "This module will be removed in 2025-Q2.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum

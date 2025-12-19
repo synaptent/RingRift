@@ -54,7 +54,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 # Emit deprecation warning on module import
 warnings.warn(
     "app.distributed.data_sync_robust is deprecated since 2025-12-18. "
-    "Use app.distributed.sync_coordinator.SyncCoordinator for a unified sync interface, "
+    "Use app.distributed.sync_orchestrator.SyncOrchestrator for a unified sync interface, "
     "or app.distributed.unified_data_sync.UnifiedDataSyncService for low-level sync. "
     "This module will be removed in a future release.",
     DeprecationWarning,

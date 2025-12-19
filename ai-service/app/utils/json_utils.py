@@ -196,3 +196,68 @@ def json_default(obj: Any) -> Any:
         return obj.dict()
 
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+def load_json(path: Union[str, Path], default: Any = None) -> Any:
+    """Load JSON from a file path.
+
+    Args:
+        path: Path to the JSON file
+        default: Value to return if file doesn't exist or is invalid
+
+    Returns:
+        Parsed JSON data, or default if file not found/invalid
+    """
+    path = Path(path)
+    if not path.exists():
+        return default
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return default
+
+
+def save_json(
+    path: Union[str, Path],
+    data: Any,
+    *,
+    indent: int = 2,
+    atomic: bool = True,
+    **kwargs: Any,
+) -> None:
+    """Save data as JSON to a file path.
+
+    Args:
+        path: Path to write the JSON file
+        data: Data to serialize
+        indent: Indentation level for pretty-printing (default 2)
+        atomic: If True, write to temp file first then rename (safer)
+        **kwargs: Additional arguments passed to dump()
+    """
+    import tempfile
+    import os
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if atomic:
+        # Write to temp file first, then rename (atomic on POSIX)
+        fd, tmp_path = tempfile.mkstemp(
+            suffix=".json.tmp",
+            dir=path.parent,
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                dump(data, f, indent=indent, **kwargs)
+            os.replace(tmp_path, path)
+        except Exception:
+            # Clean up temp file on error
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+    else:
+        with path.open("w", encoding="utf-8") as f:
+            dump(data, f, indent=indent, **kwargs)

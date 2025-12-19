@@ -58,26 +58,13 @@ DIVERSE_ENGINE_PROFILES = [
     {"engine_mode": "policy-only", "board_type": "square8", "num_players": 4, "weight": 0.05},
 ]
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("node_resilience", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-        ],
-    )
-    logger = logging.getLogger(__name__)
+# Add project root to path for scripts.lib imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-_log_file = (os.environ.get("RINGRIFT_NODE_RESILIENCE_LOG_FILE") or "").strip()
-if _log_file:
-    try:
-        logger.addHandler(logging.FileHandler(_log_file))
-    except Exception as e:
-        logger.warning(f"Failed to add file logger { _log_file }: {e}")
+from scripts.lib.logging_config import setup_script_logging
+
+_log_file = (os.environ.get("RINGRIFT_NODE_RESILIENCE_LOG_FILE") or "").strip() or None
+logger = setup_script_logging("node_resilience", log_file=_log_file)
 
 # If a node reports hundreds/thousands of selfplay processes, it almost always
 # indicates job tracking was lost and stale processes are accumulating.

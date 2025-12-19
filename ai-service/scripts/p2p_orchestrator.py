@@ -33,7 +33,6 @@ import gzip
 import hashlib
 import ipaddress
 import json
-import logging
 import os
 import secrets
 import shutil
@@ -116,13 +115,12 @@ def get_tier_calibrator():
             _tier_calibrator = None
     return _tier_calibrator
 
-# Configure logging for the orchestrator
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger('p2p_orchestrator')
+# Add project root to path for scripts.lib imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("p2p_orchestrator")
 
 
 @contextlib.contextmanager

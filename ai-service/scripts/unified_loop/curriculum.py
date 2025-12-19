@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from .config import CurriculumConfig, DataEvent, DataEventType
+from app.utils.paths import AI_SERVICE_ROOT
 
 # Path for curriculum weights shared with P2P orchestrator (Phase 3.1)
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 CURRICULUM_WEIGHTS_PATH = AI_SERVICE_ROOT / "data" / "curriculum_weights.json"
 
 if TYPE_CHECKING:

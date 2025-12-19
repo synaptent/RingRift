@@ -76,16 +76,9 @@ except ImportError:
     check_memory = None
     RESOURCE_LIMITS = None
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("cluster_worker", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("cluster_worker")
 
 
 # ---------------------------------------------------------------------------

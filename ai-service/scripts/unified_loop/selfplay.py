@@ -22,8 +22,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 if TYPE_CHECKING:
     from scripts.unified_ai_loop import EventBus, UnifiedLoopState
 
-# Path constants
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+from app.utils.paths import AI_SERVICE_ROOT
 
 # Import centralized Elo constants
 from .config import INITIAL_ELO_RATING

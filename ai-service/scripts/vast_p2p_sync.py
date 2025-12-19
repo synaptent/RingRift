@@ -42,20 +42,11 @@ CONFIG_FILE = AI_SERVICE_ROOT / "config" / "distributed_hosts.yaml"
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("vast_p2p_sync", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [VastP2PSync] %(levelname)s: %(message)s",
-        handlers=[
-            logging.FileHandler(LOG_FILE),
-            logging.StreamHandler(),
-        ],
-    )
-    logger = logging.getLogger(__name__)
+sys.path.insert(0, str(AI_SERVICE_ROOT))
+
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("vast_p2p_sync", log_file=str(LOG_FILE))
 
 
 def _load_p2p_leader_from_config() -> str:

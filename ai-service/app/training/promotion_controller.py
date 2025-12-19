@@ -604,6 +604,49 @@ class PromotionController:
         except Exception as e:
             logger.debug(f"Event bus notification failed: {e}")
 
+        # Also emit PROMOTION_COMPLETE StageEvent (December 2025)
+        self._emit_stage_event(payload)
+
+    def _emit_stage_event(self, payload: Dict[str, Any]) -> None:
+        """Emit PROMOTION_COMPLETE StageEvent for coordination integration.
+
+        This connects promotion events to the stage event bus, enabling
+        downstream consumers like TrainingDataCoordinator to react.
+        """
+        try:
+            from app.coordination.stage_events import (
+                StageEvent,
+                StageCompletionResult,
+                get_event_bus as get_stage_bus,
+            )
+            from datetime import datetime
+
+            result = StageCompletionResult(
+                event=StageEvent.PROMOTION_COMPLETE,
+                success=True,
+                iteration=0,
+                timestamp=datetime.now().isoformat(),
+                model_id=payload.get("model_id"),
+                model_path=payload.get("model_path"),
+                elo_delta=payload.get("elo_improvement"),
+                metadata=payload,
+            )
+
+            bus = get_stage_bus()
+
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(bus.emit(result))
+            except RuntimeError:
+                asyncio.run(bus.emit(result))
+
+            logger.debug(f"Emitted PROMOTION_COMPLETE StageEvent")
+        except ImportError:
+            logger.debug("Stage event bus not available")
+        except Exception as e:
+            logger.debug(f"Stage event emission failed: {e}")
+
     def _notify_p2p_orchestrator(self, payload: Dict[str, Any]) -> None:
         """Notify P2P orchestrator about the promotion."""
         try:

@@ -55,16 +55,9 @@ from urllib.request import urlopen
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("aria2_data_sync", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("aria2_data_sync")
 
 
 # ============================================

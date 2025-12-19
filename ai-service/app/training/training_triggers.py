@@ -27,15 +27,11 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .unified_signals import (
     get_signal_computer,
     TrainingUrgency,
-    TrainingSignals,
-    UnifiedSignalComputer,
 )
 
 # Import event system for quality-aware triggering
@@ -73,8 +69,6 @@ except ImportError:
     DEFAULT_MIN_WIN_RATE = 0.45
     DEFAULT_MIN_INTERVAL_MINUTES = 20
     DEFAULT_BOOTSTRAP_THRESHOLD = 50
-
-from app.utils.paths import AI_SERVICE_ROOT
 
 
 @dataclass

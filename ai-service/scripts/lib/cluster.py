@@ -194,14 +194,9 @@ class ClusterNode:
                 command=command,
             )
 
-            if check and not cmd_result.success:
-                raise CommandError(cmd_result)
-
-            return cmd_result
-
         except subprocess.TimeoutExpired:
             duration = time.time() - start_time
-            return CommandResult(
+            cmd_result = CommandResult(
                 success=False,
                 stdout="",
                 stderr=f"Command timed out after {timeout}s",
@@ -212,7 +207,7 @@ class ClusterNode:
             )
         except Exception as e:
             duration = time.time() - start_time
-            return CommandResult(
+            cmd_result = CommandResult(
                 success=False,
                 stdout="",
                 stderr=str(e),
@@ -221,6 +216,11 @@ class ClusterNode:
                 node=self.name,
                 command=command,
             )
+
+        if check and not cmd_result.success:
+            raise CommandError(cmd_result)
+
+        return cmd_result
 
     def run_python(
         self,
@@ -623,3 +623,289 @@ class ClusterManager:
 def get_cluster() -> ClusterManager:
     """Get a default cluster manager instance."""
     return ClusterManager()
+
+
+# =============================================================================
+# Multi-Provider Cluster Automation
+# =============================================================================
+
+
+class VastNodeManager:
+    """Manages Vast.ai nodes for automated provisioning and lifecycle."""
+
+    def __init__(self):
+        self.ssh_key = os.path.expanduser("~/.ssh/id_cluster")
+
+    def list_instances(self) -> List[Dict[str, Any]]:
+        """List all Vast.ai instances."""
+        try:
+            result = subprocess.run(
+                ["vastai", "show", "instances", "--raw"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                return json.loads(result.stdout)
+            logger.warning(f"vastai failed: {result.stderr}")
+        except Exception as e:
+            logger.warning(f"Failed to list Vast.ai instances: {e}")
+        return []
+
+    def get_instance_ssh(self, instance_id: int) -> Optional[Tuple[str, int]]:
+        """Get SSH host and port for a Vast.ai instance."""
+        for inst in self.list_instances():
+            if inst.get("id") == instance_id:
+                return (inst.get("ssh_host", ""), inst.get("ssh_port", 22))
+        return None
+
+    def setup_tailscale(self, ssh_host: str, ssh_port: int, auth_key: str) -> bool:
+        """Setup Tailscale on a Vast.ai instance."""
+        install_cmd = """
+        if ! command -v tailscale &> /dev/null; then
+            curl -fsSL https://tailscale.com/install.sh | sh
+        fi
+        sudo tailscale up --authkey {auth_key} --ssh
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "ssh", "-o", "ConnectTimeout=30", "-o", "BatchMode=yes",
+                    "-i", self.ssh_key, "-p", str(ssh_port),
+                    f"root@{ssh_host}",
+                    install_cmd.format(auth_key=auth_key),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            return result.returncode == 0
+        except Exception as e:
+            logger.error(f"Failed to setup Tailscale: {e}")
+            return False
+
+    def start_p2p_orchestrator(
+        self,
+        ssh_host: str,
+        ssh_port: int,
+        node_id: str,
+        peers: List[str],
+    ) -> bool:
+        """Start P2P orchestrator on a Vast.ai instance."""
+        peers_str = ",".join(peers)
+        cmd = f"""
+        cd ~/ringrift/ai-service &&
+        pkill -f p2p_orchestrator || true &&
+        mkdir -p logs &&
+        PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py \\
+            --node-id {node_id} --port 8770 \\
+            --peers {peers_str} \\
+            --ringrift-path ~/ringrift \\
+            > logs/p2p_orchestrator.log 2>&1 &
+        sleep 2 && pgrep -f p2p_orchestrator
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "ssh", "-o", "ConnectTimeout=15", "-o", "BatchMode=yes",
+                    "-i", self.ssh_key, "-p", str(ssh_port),
+                    f"root@{ssh_host}", cmd,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            return result.returncode == 0
+        except Exception as e:
+            logger.error(f"Failed to start P2P orchestrator: {e}")
+            return False
+
+
+class ClusterAutomation:
+    """Automated cluster management across multiple providers."""
+
+    DEFAULT_PEERS = [
+        "http://100.78.101.123:8770",  # lambda-h100
+        "http://100.123.183.70:8770",  # lambda-gh200-a
+    ]
+
+    def __init__(self):
+        self.cluster = ClusterManager()
+        self.vast = VastNodeManager()
+
+    def discover_all_nodes(self) -> Dict[str, Dict[str, Any]]:
+        """Discover all nodes across all providers.
+
+        Returns:
+            Dict mapping node_id to node info including:
+            - provider: "lambda" | "vast" | "aws" | "hetzner"
+            - tailscale_ip: str or None
+            - p2p_status: "running" | "stopped" | "unknown"
+            - gpu_name: str
+        """
+        nodes = {}
+
+        # Get Tailscale nodes
+        try:
+            result = subprocess.run(
+                ["tailscale", "status", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                ts_data = json.loads(result.stdout)
+                for peer in ts_data.get("Peer", {}).values():
+                    name = peer.get("HostName", "")
+                    ip = peer.get("TailscaleIPs", [""])[0] if peer.get("TailscaleIPs") else ""
+                    online = peer.get("Online", False)
+
+                    # Determine provider from name
+                    provider = "unknown"
+                    if "lambda" in name.lower() or "gh200" in name.lower():
+                        provider = "lambda"
+                    elif "vast" in name.lower():
+                        provider = "vast"
+                    elif "aws" in name.lower() or name.startswith("ip-"):
+                        provider = "aws"
+
+                    nodes[name] = {
+                        "provider": provider,
+                        "tailscale_ip": ip,
+                        "online": online,
+                        "p2p_status": "unknown",
+                    }
+        except Exception as e:
+            logger.warning(f"Failed to get Tailscale status: {e}")
+
+        # Add Vast.ai instances
+        for inst in self.vast.list_instances():
+            node_id = f"vast-{inst.get('id')}"
+            if node_id not in nodes:
+                nodes[node_id] = {
+                    "provider": "vast",
+                    "tailscale_ip": None,
+                    "ssh_host": inst.get("ssh_host"),
+                    "ssh_port": inst.get("ssh_port"),
+                    "gpu_name": inst.get("gpu_name"),
+                    "online": inst.get("actual_status") == "running",
+                    "p2p_status": "unknown",
+                }
+
+        return nodes
+
+    def check_p2p_status(self, tailscale_ip: str) -> str:
+        """Check if P2P orchestrator is running on a node."""
+        try:
+            import urllib.request
+            with urllib.request.urlopen(
+                f"http://{tailscale_ip}:8770/status",
+                timeout=5,
+            ) as resp:
+                if resp.status == 200:
+                    return "running"
+        except Exception:
+            pass
+        return "stopped"
+
+    def ensure_all_orchestrators_running(
+        self,
+        peers: Optional[List[str]] = None,
+    ) -> Dict[str, bool]:
+        """Ensure P2P orchestrators are running on all nodes.
+
+        Returns:
+            Dict mapping node_id to whether orchestrator was started/verified.
+        """
+        peers = peers or self.DEFAULT_PEERS
+        results = {}
+
+        nodes = self.discover_all_nodes()
+
+        for node_id, info in nodes.items():
+            if not info.get("online"):
+                results[node_id] = False
+                continue
+
+            ip = info.get("tailscale_ip")
+            if ip:
+                status = self.check_p2p_status(ip)
+                if status == "running":
+                    results[node_id] = True
+                    logger.info(f"{node_id}: P2P already running")
+                    continue
+
+            # Try to start orchestrator
+            if info.get("provider") == "vast" and info.get("ssh_host"):
+                success = self.vast.start_p2p_orchestrator(
+                    info["ssh_host"],
+                    info["ssh_port"],
+                    node_id,
+                    peers,
+                )
+                results[node_id] = success
+                if success:
+                    logger.info(f"{node_id}: Started P2P orchestrator")
+                else:
+                    logger.warning(f"{node_id}: Failed to start P2P")
+            elif ip and node_id in self.cluster.nodes:
+                # Use cluster node SSH
+                node = self.cluster.nodes[node_id]
+                result = node.run(f"""
+                    pgrep -f p2p_orchestrator || (
+                        cd ~/ringrift/ai-service &&
+                        source venv/bin/activate &&
+                        mkdir -p logs &&
+                        PYTHONPATH=. nohup python scripts/p2p_orchestrator.py \\
+                            --node-id {node_id} --port 8770 \\
+                            --peers {','.join(peers)} \\
+                            > logs/p2p_orchestrator.log 2>&1 &
+                    )
+                """, timeout=30)
+                results[node_id] = result.success
+            else:
+                results[node_id] = False
+                logger.warning(f"{node_id}: Cannot start orchestrator (no SSH access)")
+
+        return results
+
+    def get_cluster_summary(self) -> Dict[str, Any]:
+        """Get summary of entire cluster status."""
+        nodes = self.discover_all_nodes()
+
+        summary = {
+            "total_nodes": len(nodes),
+            "online_nodes": 0,
+            "p2p_running": 0,
+            "by_provider": {},
+            "nodes": {},
+        }
+
+        for node_id, info in nodes.items():
+            provider = info.get("provider", "unknown")
+
+            if provider not in summary["by_provider"]:
+                summary["by_provider"][provider] = {"total": 0, "online": 0}
+
+            summary["by_provider"][provider]["total"] += 1
+
+            if info.get("online"):
+                summary["online_nodes"] += 1
+                summary["by_provider"][provider]["online"] += 1
+
+                # Check P2P status
+                ip = info.get("tailscale_ip")
+                if ip:
+                    status = self.check_p2p_status(ip)
+                    info["p2p_status"] = status
+                    if status == "running":
+                        summary["p2p_running"] += 1
+
+            summary["nodes"][node_id] = info
+
+        return summary
+
+
+def get_automation() -> ClusterAutomation:
+    """Get a cluster automation instance."""
+    return ClusterAutomation()

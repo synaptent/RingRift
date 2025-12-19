@@ -106,6 +106,10 @@ class DataEventType(Enum):
     HIGH_QUALITY_DATA_AVAILABLE = "high_quality_data_available"  # Ready for training
     LOW_QUALITY_DATA_WARNING = "low_quality_data_warning"  # Below threshold
 
+    # Registry & metrics events
+    REGISTRY_UPDATED = "registry_updated"
+    METRICS_UPDATED = "metrics_updated"
+
     # Regression detection events (from unified RegressionDetector)
     REGRESSION_DETECTED = "regression_detected"  # Any regression
     REGRESSION_MINOR = "regression_minor"  # Severity: minor
@@ -127,6 +131,55 @@ class DataEventType(Enum):
     HOST_ONLINE = "host_online"
     HOST_OFFLINE = "host_offline"
     ERROR = "error"
+
+    # Health & Recovery events (Phase 10 consolidation)
+    HEALTH_CHECK_PASSED = "health_check_passed"
+    HEALTH_CHECK_FAILED = "health_check_failed"
+    HEALTH_ALERT = "health_alert"  # General health warning
+    RESOURCE_CONSTRAINT = "resource_constraint"  # CPU/GPU/Memory/Disk pressure
+    RECOVERY_INITIATED = "recovery_initiated"  # Auto-recovery started
+    RECOVERY_COMPLETED = "recovery_completed"  # Auto-recovery finished
+    RECOVERY_FAILED = "recovery_failed"  # Auto-recovery failed
+
+    # Cluster status events
+    CLUSTER_STATUS_CHANGED = "cluster_status_changed"
+    NODE_UNHEALTHY = "node_unhealthy"
+    NODE_RECOVERED = "node_recovered"
+
+    # Lock/Synchronization events (December 2025)
+    LOCK_ACQUIRED = "lock_acquired"
+    LOCK_RELEASED = "lock_released"
+    LOCK_TIMEOUT = "lock_timeout"
+    DEADLOCK_DETECTED = "deadlock_detected"
+
+    # Checkpoint events (December 2025)
+    CHECKPOINT_SAVED = "checkpoint_saved"
+    CHECKPOINT_LOADED = "checkpoint_loaded"
+
+    # Task lifecycle events (December 2025)
+    TASK_SPAWNED = "task_spawned"
+    TASK_HEARTBEAT = "task_heartbeat"
+    TASK_COMPLETED = "task_completed"
+    TASK_FAILED = "task_failed"
+    TASK_ORPHANED = "task_orphaned"
+    TASK_CANCELLED = "task_cancelled"
+
+    # Capacity/Resource events (December 2025)
+    CLUSTER_CAPACITY_CHANGED = "cluster_capacity_changed"
+    NODE_CAPACITY_UPDATED = "node_capacity_updated"
+    BACKPRESSURE_ACTIVATED = "backpressure_activated"
+    BACKPRESSURE_RELEASED = "backpressure_released"
+
+    # Promotion lifecycle events (December 2025)
+    PROMOTION_ROLLED_BACK = "promotion_rolled_back"
+
+    # Quality feedback events (December 2025)
+    PARITY_FAILURE_RATE_CHANGED = "parity_failure_rate_changed"
+
+    # Leader election events (December 2025)
+    LEADER_ELECTED = "leader_elected"
+    LEADER_LOST = "leader_lost"
+    LEADER_STEPDOWN = "leader_stepdown"
 
 
 @dataclass
@@ -384,6 +437,7 @@ def reset_event_bus() -> None:
 CROSS_PROCESS_EVENT_TYPES = {
     # Success events - coordination across processes
     DataEventType.MODEL_PROMOTED,
+    DataEventType.TIER_PROMOTION,  # Difficulty ladder progression
     DataEventType.TRAINING_STARTED,
     DataEventType.TRAINING_COMPLETED,
     DataEventType.EVALUATION_COMPLETED,
@@ -591,6 +645,40 @@ async def emit_elo_updated(
         ))
 
 
+async def emit_quality_score_updated(
+    game_id: str,
+    quality_score: float,
+    quality_category: str,
+    training_weight: float,
+    game_length: int = 0,
+    is_decisive: bool = False,
+    source: str = "",
+) -> None:
+    """Emit a QUALITY_SCORE_UPDATED event.
+
+    Args:
+        game_id: Unique game identifier
+        quality_score: Computed quality score (0-1)
+        quality_category: Category (excellent/good/adequate/poor/unusable)
+        training_weight: Weight for training sample selection
+        game_length: Number of moves in the game
+        is_decisive: Whether game had a clear winner
+        source: Component that computed the quality
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.QUALITY_SCORE_UPDATED,
+        payload={
+            "game_id": game_id,
+            "quality_score": quality_score,
+            "quality_category": quality_category,
+            "training_weight": training_weight,
+            "game_length": game_length,
+            "is_decisive": is_decisive,
+        },
+        source=source,
+    ))
+
+
 async def emit_curriculum_rebalanced(
     config: str,
     old_weights: Dict[str, float],
@@ -760,8 +848,11 @@ async def emit_data_sync_completed(
     duration: float,
     bytes_transferred: int = 0,
     source: str = "",
+    avg_quality_score: float = 0.0,
+    high_quality_count: int = 0,
+    config: str = "",
 ) -> None:
-    """Emit a DATA_SYNC_COMPLETED event.
+    """Emit a DATA_SYNC_COMPLETED event with quality metrics.
 
     Args:
         host: Host that was synced
@@ -769,6 +860,9 @@ async def emit_data_sync_completed(
         duration: Sync duration in seconds
         bytes_transferred: Bytes transferred (if known)
         source: Component that performed the sync
+        avg_quality_score: Average quality score of synced games (0-1)
+        high_quality_count: Number of games with quality >= 0.7
+        config: Configuration key (e.g., "square8_2p")
     """
     await get_event_bus().publish(DataEvent(
         event_type=DataEventType.DATA_SYNC_COMPLETED,
@@ -777,6 +871,9 @@ async def emit_data_sync_completed(
             "games_synced": games_synced,
             "duration": duration,
             "bytes_transferred": bytes_transferred,
+            "avg_quality_score": avg_quality_score,
+            "high_quality_count": high_quality_count,
+            "config": config,
         },
         source=source,
     ))
@@ -1091,6 +1188,355 @@ async def emit_promotion_rejected(
             "model_id": model_id,
             "reason": reason,
             "elo_improvement": elo_improvement,
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
+# Tier Promotion Events
+# =============================================================================
+
+async def emit_tier_promotion(
+    config: str,
+    old_tier: str,
+    new_tier: str,
+    model_id: str = "",
+    win_rate: float = 0.0,
+    elo: float = 0.0,
+    games_played: int = 0,
+    source: str = "",
+) -> None:
+    """Emit a TIER_PROMOTION event for difficulty ladder progression.
+
+    Args:
+        config: Board configuration (e.g., "square8_2p")
+        old_tier: Previous tier (e.g., "D4")
+        new_tier: New tier after promotion (e.g., "D5")
+        model_id: ID of the model being promoted
+        win_rate: Win rate that triggered promotion
+        elo: Current Elo rating
+        games_played: Number of games played at current tier
+        source: Component that triggered the promotion
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.TIER_PROMOTION,
+        payload={
+            "config": config,
+            "old_tier": old_tier,
+            "new_tier": new_tier,
+            "model_id": model_id,
+            "win_rate": win_rate,
+            "elo": elo,
+            "games_played": games_played,
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
+# Lock/Synchronization Events (December 2025)
+# =============================================================================
+
+async def emit_lock_acquired(
+    resource_id: str,
+    holder: str,
+    lock_type: str = "exclusive",
+    timeout_seconds: float = 0.0,
+    source: str = "",
+) -> None:
+    """Emit a LOCK_ACQUIRED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.LOCK_ACQUIRED,
+        payload={
+            "resource_id": resource_id,
+            "holder": holder,
+            "lock_type": lock_type,
+            "timeout_seconds": timeout_seconds,
+        },
+        source=source,
+    ))
+
+
+async def emit_lock_released(
+    resource_id: str,
+    holder: str,
+    held_duration_seconds: float = 0.0,
+    source: str = "",
+) -> None:
+    """Emit a LOCK_RELEASED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.LOCK_RELEASED,
+        payload={
+            "resource_id": resource_id,
+            "holder": holder,
+            "held_duration_seconds": held_duration_seconds,
+        },
+        source=source,
+    ))
+
+
+async def emit_deadlock_detected(
+    resources: List[str],
+    holders: List[str],
+    source: str = "",
+) -> None:
+    """Emit a DEADLOCK_DETECTED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.DEADLOCK_DETECTED,
+        payload={
+            "resources": resources,
+            "holders": holders,
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
+# Checkpoint Events (December 2025)
+# =============================================================================
+
+async def emit_checkpoint_saved(
+    config: str,
+    checkpoint_path: str,
+    epoch: int = 0,
+    step: int = 0,
+    metrics: Optional[Dict[str, float]] = None,
+    source: str = "",
+) -> None:
+    """Emit a CHECKPOINT_SAVED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.CHECKPOINT_SAVED,
+        payload={
+            "config": config,
+            "checkpoint_path": checkpoint_path,
+            "epoch": epoch,
+            "step": step,
+            "metrics": metrics or {},
+        },
+        source=source,
+    ))
+
+
+async def emit_checkpoint_loaded(
+    config: str,
+    checkpoint_path: str,
+    epoch: int = 0,
+    step: int = 0,
+    source: str = "",
+) -> None:
+    """Emit a CHECKPOINT_LOADED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.CHECKPOINT_LOADED,
+        payload={
+            "config": config,
+            "checkpoint_path": checkpoint_path,
+            "epoch": epoch,
+            "step": step,
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
+# Task Lifecycle Events (December 2025)
+# =============================================================================
+
+async def emit_task_spawned(
+    task_id: str,
+    task_type: str,
+    node_id: str,
+    config: str = "",
+    priority: int = 0,
+    source: str = "",
+) -> None:
+    """Emit a TASK_SPAWNED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.TASK_SPAWNED,
+        payload={
+            "task_id": task_id,
+            "task_type": task_type,
+            "node_id": node_id,
+            "config": config,
+            "priority": priority,
+        },
+        source=source,
+    ))
+
+
+async def emit_task_heartbeat(
+    task_id: str,
+    node_id: str,
+    progress: float = 0.0,
+    status: str = "running",
+    source: str = "",
+) -> None:
+    """Emit a TASK_HEARTBEAT event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.TASK_HEARTBEAT,
+        payload={
+            "task_id": task_id,
+            "node_id": node_id,
+            "progress": progress,
+            "status": status,
+        },
+        source=source,
+    ))
+
+
+async def emit_task_completed(
+    task_id: str,
+    task_type: str,
+    node_id: str,
+    duration_seconds: float = 0.0,
+    result: Optional[Dict[str, Any]] = None,
+    source: str = "",
+) -> None:
+    """Emit a TASK_COMPLETED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.TASK_COMPLETED,
+        payload={
+            "task_id": task_id,
+            "task_type": task_type,
+            "node_id": node_id,
+            "duration_seconds": duration_seconds,
+            "result": result or {},
+        },
+        source=source,
+    ))
+
+
+async def emit_task_failed(
+    task_id: str,
+    task_type: str,
+    node_id: str,
+    error: str,
+    duration_seconds: float = 0.0,
+    source: str = "",
+) -> None:
+    """Emit a TASK_FAILED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.TASK_FAILED,
+        payload={
+            "task_id": task_id,
+            "task_type": task_type,
+            "node_id": node_id,
+            "error": error,
+            "duration_seconds": duration_seconds,
+        },
+        source=source,
+    ))
+
+
+async def emit_task_orphaned(
+    task_id: str,
+    task_type: str,
+    node_id: str,
+    last_heartbeat_seconds_ago: float = 0.0,
+    source: str = "",
+) -> None:
+    """Emit a TASK_ORPHANED event for tasks that stopped sending heartbeats."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.TASK_ORPHANED,
+        payload={
+            "task_id": task_id,
+            "task_type": task_type,
+            "node_id": node_id,
+            "last_heartbeat_seconds_ago": last_heartbeat_seconds_ago,
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
+# Capacity/Backpressure Events (December 2025)
+# =============================================================================
+
+async def emit_cluster_capacity_changed(
+    total_gpus: int,
+    available_gpus: int,
+    total_nodes: int,
+    healthy_nodes: int,
+    source: str = "",
+) -> None:
+    """Emit a CLUSTER_CAPACITY_CHANGED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.CLUSTER_CAPACITY_CHANGED,
+        payload={
+            "total_gpus": total_gpus,
+            "available_gpus": available_gpus,
+            "total_nodes": total_nodes,
+            "healthy_nodes": healthy_nodes,
+        },
+        source=source,
+    ))
+
+
+async def emit_backpressure_activated(
+    reason: str,
+    queue_depth: int = 0,
+    utilization_percent: float = 0.0,
+    source: str = "",
+) -> None:
+    """Emit a BACKPRESSURE_ACTIVATED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.BACKPRESSURE_ACTIVATED,
+        payload={
+            "reason": reason,
+            "queue_depth": queue_depth,
+            "utilization_percent": utilization_percent,
+        },
+        source=source,
+    ))
+
+
+async def emit_backpressure_released(
+    reason: str,
+    duration_seconds: float = 0.0,
+    source: str = "",
+) -> None:
+    """Emit a BACKPRESSURE_RELEASED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.BACKPRESSURE_RELEASED,
+        payload={
+            "reason": reason,
+            "duration_seconds": duration_seconds,
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
+# Leader Election Events (December 2025)
+# =============================================================================
+
+async def emit_leader_elected(
+    leader_id: str,
+    term: int = 0,
+    source: str = "",
+) -> None:
+    """Emit a LEADER_ELECTED event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.LEADER_ELECTED,
+        payload={
+            "leader_id": leader_id,
+            "term": term,
+        },
+        source=source,
+    ))
+
+
+async def emit_leader_lost(
+    old_leader_id: str,
+    reason: str = "",
+    source: str = "",
+) -> None:
+    """Emit a LEADER_LOST event."""
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.LEADER_LOST,
+        payload={
+            "old_leader_id": old_leader_id,
+            "reason": reason,
         },
         source=source,
     ))

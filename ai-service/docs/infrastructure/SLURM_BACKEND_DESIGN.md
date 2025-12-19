@@ -108,6 +108,21 @@ slurm:
   shared_root: '/shared/ringrift'
 ```
 
+Example config:
+
+- `config/unified_loop.slurm.example.yaml`
+- `config/slurm/slurm.conf.lambda.example`
+- `config/slurm/gres.conf.lambda.example`
+
+Preflight and smoke test helpers:
+
+- `scripts/slurm_preflight_check.py`
+- `scripts/slurm_smoke_test.py`
+
+Lambda cluster playbook:
+
+- `docs/infrastructure/LAMBDA_SLURM_SETUP.md`
+
 ### Job Wrapper Template (Draft)
 
 Each Slurm job runs a minimal wrapper that:

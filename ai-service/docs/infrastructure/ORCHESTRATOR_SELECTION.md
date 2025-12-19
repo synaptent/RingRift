@@ -2,14 +2,15 @@
 
 ## Quick Reference
 
-| Use Case              | Script                          | When to Use                                       |
-| --------------------- | ------------------------------- | ------------------------------------------------- |
-| **Full AI Loop**      | `unified_ai_loop.py`            | Production deployment, continuous improvement     |
-| **P2P Cluster**       | `p2p_orchestrator.py`           | Multi-node P2P coordination, distributed selfplay |
-| **Slurm HPC**         | `unified_ai_loop.py`            | Stable Slurm cluster with shared filesystem       |
-| **Multi-Board Train** | `multi_config_training_loop.py` | Train across hex8/square8/square19 configs        |
-| **Elo Tournament**    | `auto_elo_tournament.py`        | Automated Elo evaluation with Slack alerts        |
-| **Model Promotion**   | `model_promotion_manager.py`    | Manual promotion, Elo testing, rollback           |
+| Use Case              | Script                                 | When to Use                                          |
+| --------------------- | -------------------------------------- | ---------------------------------------------------- |
+| **Full AI Loop**      | `unified_ai_loop.py`                   | Production deployment, continuous improvement        |
+| **P2P Cluster**       | `p2p_orchestrator.py`                  | Multi-node P2P coordination, distributed selfplay    |
+| **Slurm HPC**         | `unified_ai_loop.py`                   | Stable Slurm cluster with shared filesystem          |
+| **Sync Operations**   | `app/distributed/sync_orchestrator.py` | Unified entry point for data/model/elo/registry sync |
+| **Multi-Board Train** | `multi_config_training_loop.py`        | Train across hex8/square8/square19 configs           |
+| **Elo Tournament**    | `auto_elo_tournament.py`               | Automated Elo evaluation with Slack alerts           |
+| **Model Promotion**   | `model_promotion_manager.py`           | Manual promotion, Elo testing, rollback              |
 
 ---
 
@@ -99,6 +100,27 @@ curl http://localhost:8770/status
 
 - Use `unified_ai_loop.py` with `execution_backend: "slurm"` (or `auto` + `slurm.enabled: true`).
 - See `docs/infrastructure/SLURM_BACKEND_DESIGN.md` for details.
+
+---
+
+### Sync Orchestrator (Module)
+
+**Purpose**: Unified entry point for data, model, Elo, and registry sync operations.
+
+**When to use**:
+
+- You need one place to coordinate sync scheduling across components.
+- You want quality-driven sync triggers wired to the event bus.
+
+**Usage**:
+
+```python
+from app.distributed.sync_orchestrator import get_sync_orchestrator
+
+orchestrator = get_sync_orchestrator()
+await orchestrator.initialize()
+result = await orchestrator.sync_all()
+```
 
 ---
 

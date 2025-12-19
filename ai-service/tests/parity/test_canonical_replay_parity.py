@@ -24,9 +24,7 @@ import pytest
 from scripts.check_ts_python_replay_parity import (  # type: ignore[import]
     check_game_parity,
 )
-
-
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+from app.utils.paths import AI_SERVICE_ROOT
 PARITY_FIXTURES_DIR = AI_SERVICE_ROOT / "parity_fixtures"
 
 

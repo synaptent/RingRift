@@ -32,15 +32,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-    ]
-)
-logger = logging.getLogger('continuous_training')
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("continuous_training")
 
 
 class ContinuousTrainingPipeline:

@@ -163,6 +163,87 @@ class BackgroundEvaluator:
         with self._lock:
             self.current_step = step
 
+    def subscribe_to_training_events(self) -> bool:
+        """Subscribe to training events for event-driven evaluation.
+
+        Instead of polling every 5 seconds, this method subscribes to
+        TRAINING_COMPLETE and EPOCH_COMPLETE events to trigger evaluation.
+
+        Returns:
+            True if successfully subscribed
+        """
+        try:
+            from app.coordination.stage_events import (
+                StageEvent,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+
+            async def on_training_progress(result):
+                """Handle training progress events."""
+                step = result.metadata.get("step", 0)
+                if step > 0:
+                    self.update_step(step)
+
+                # Check if evaluation is due
+                with self._lock:
+                    should_eval = (step - self.last_eval_step) >= self.config.eval_interval_steps
+
+                if should_eval:
+                    try:
+                        eval_result = self._run_evaluation(step)
+                        self._process_result(eval_result)
+                    except Exception as e:
+                        logger.error(f"[BackgroundEval] Event-triggered evaluation failed: {e}")
+
+            async def on_training_complete(result):
+                """Handle training completion - run final evaluation."""
+                if result.success:
+                    logger.info("[BackgroundEval] Training complete, running final evaluation")
+                    with self._lock:
+                        step = self.current_step
+                    try:
+                        eval_result = self._run_evaluation(step)
+                        self._process_result(eval_result)
+                    except Exception as e:
+                        logger.error(f"[BackgroundEval] Final evaluation failed: {e}")
+
+            # Subscribe to relevant events
+            bus.subscribe(StageEvent.TRAINING_COMPLETE, on_training_complete)
+
+            # Also try to subscribe to epoch/step events if they exist
+            if hasattr(StageEvent, 'EPOCH_COMPLETE'):
+                bus.subscribe(StageEvent.EPOCH_COMPLETE, on_training_progress)
+
+            logger.info("[BackgroundEval] Subscribed to training events")
+            return True
+
+        except ImportError:
+            logger.debug("[BackgroundEval] Stage event bus not available")
+            return False
+        except Exception as e:
+            logger.warning(f"[BackgroundEval] Failed to subscribe to events: {e}")
+            return False
+
+    def start_event_driven(self) -> bool:
+        """Start event-driven evaluation mode.
+
+        This is the preferred mode as it doesn't poll. Falls back to
+        polling mode if event subscription fails.
+
+        Returns:
+            True if event-driven mode started, False if using polling fallback
+        """
+        if self.subscribe_to_training_events():
+            logger.info("[BackgroundEval] Started in event-driven mode")
+            self._running = True
+            return True
+        else:
+            logger.info("[BackgroundEval] Falling back to polling mode")
+            self.start()
+            return False
+
     def _eval_loop(self):
         """Background evaluation loop."""
         while self._running:

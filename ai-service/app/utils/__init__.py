@@ -30,6 +30,8 @@ from .json_utils import (
     dump as json_dump,
     pretty_dumps,
     json_default,
+    load_json,
+    save_json,
 )
 from .progress_reporter import (
     OptimizationProgressReporter,
@@ -128,6 +130,59 @@ from .optional_imports import (
     require_module,
     get_availability_summary,
 )
+from .env_config import (
+    env,
+    EnvConfig,
+    get_str as env_get_str,
+    get_int as env_get_int,
+    get_float as env_get_float,
+    get_bool as env_get_bool,
+    get_list as env_get_list,
+)
+from .debug_utils import (
+    timed,
+    timed_async,
+    log_call,
+    debug_context,
+    Timer,
+    get_call_stack,
+    format_exception_chain,
+    memory_usage_mb,
+    dump_state,
+    DEBUG_ENABLED,
+    PROFILE_ENABLED,
+)
+from .logging_utils import (
+    PrefixedLogger,
+    get_logger,
+    LogContext,
+    log_duration,
+    log_duration_async,
+    configure_logging,
+    silence_logger,
+)
+from .result import (
+    Result,
+    Ok,
+    Err,
+    ResultError,
+    result_from_exception,
+    collect_results,
+    partition_results,
+    OperationResult,
+)
+from .file_utils import (
+    atomic_write,
+    write_atomic,
+    read_safe,
+    read_bytes_safe,
+    file_exists,
+    ensure_file_dir,
+    backup_file,
+    remove_safe,
+    get_file_size,
+    get_file_mtime,
+)
 
 __all__ = [
     # Paths
@@ -158,6 +213,8 @@ __all__ = [
     "json_dump",
     "pretty_dumps",
     "json_default",
+    "load_json",
+    "save_json",
     # Memory
     "MemoryConfig",
     "OptimizationProgressReporter",
@@ -247,4 +304,52 @@ __all__ = [
     "get_module",
     "require_module",
     "get_availability_summary",
+    # Environment configuration
+    "env",
+    "EnvConfig",
+    "env_get_str",
+    "env_get_int",
+    "env_get_float",
+    "env_get_bool",
+    "env_get_list",
+    # Debug utilities
+    "timed",
+    "timed_async",
+    "log_call",
+    "debug_context",
+    "Timer",
+    "get_call_stack",
+    "format_exception_chain",
+    "memory_usage_mb",
+    "dump_state",
+    "DEBUG_ENABLED",
+    "PROFILE_ENABLED",
+    # Logging utilities
+    "PrefixedLogger",
+    "get_logger",
+    "LogContext",
+    "log_duration",
+    "log_duration_async",
+    "configure_logging",
+    "silence_logger",
+    # Result pattern
+    "Result",
+    "Ok",
+    "Err",
+    "ResultError",
+    "result_from_exception",
+    "collect_results",
+    "partition_results",
+    "OperationResult",
+    # File utilities
+    "atomic_write",
+    "write_atomic",
+    "read_safe",
+    "read_bytes_safe",
+    "file_exists",
+    "ensure_file_dir",
+    "backup_file",
+    "remove_safe",
+    "get_file_size",
+    "get_file_mtime",
 ]

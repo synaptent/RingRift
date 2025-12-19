@@ -36,18 +36,19 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.utils.yaml_utils import safe_load_yaml
 
-logger = logging.getLogger(__name__)
+from app.utils.paths import AI_SERVICE_ROOT
 
-# Config paths
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+from app.utils.env_config import env
+
+logger = logging.getLogger(__name__)
 DISTRIBUTED_HOSTS_PATH = AI_SERVICE_ROOT / "config" / "distributed_hosts.yaml"
 CLUSTER_NODES_PATH = AI_SERVICE_ROOT / "config" / "cluster_nodes.env"
 
-# Discovery configuration
-DISCOVERY_INTERVAL = int(os.environ.get("RINGRIFT_DISCOVERY_INTERVAL", "60"))
-IDLE_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_IDLE_CHECK_INTERVAL", "30"))
-IDLE_GPU_THRESHOLD = int(os.environ.get("RINGRIFT_IDLE_GPU_THRESHOLD", "10"))
-AUTO_ASSIGN_ENABLED = os.environ.get("RINGRIFT_AUTO_ASSIGN_ENABLED", "true").lower() in ("true", "1", "yes")
+# Discovery configuration (from centralized env_config)
+DISCOVERY_INTERVAL = env.discovery_interval
+IDLE_CHECK_INTERVAL = env.idle_check_interval
+IDLE_GPU_THRESHOLD = env.idle_gpu_threshold
+AUTO_ASSIGN_ENABLED = env.auto_assign_enabled
 
 # Tailscale CGNAT range
 TAILSCALE_CGNAT_PREFIX = "100."

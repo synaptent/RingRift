@@ -1708,6 +1708,14 @@ class SmartCheckpointManager:
     """
     Intelligent checkpoint management with minimal I/O overhead.
 
+    .. deprecated:: 2025-12
+        For new code, prefer :class:`UnifiedCheckpointManager` from
+        ``app.training.checkpoint_unified`` which provides:
+        - All features of SmartCheckpointManager
+        - Integration with cluster sync
+        - Automatic cleanup policies
+        - Better async support
+
     Features:
     - Adaptive checkpointing frequency based on loss improvement
     - Keep only top-k best checkpoints

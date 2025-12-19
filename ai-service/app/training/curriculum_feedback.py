@@ -432,8 +432,10 @@ class EloToCurriculumWatcher:
         """
         payload = event.payload if hasattr(event, 'payload') else {}
 
-        config_key = payload.get("config_key", "")
-        new_elo = payload.get("new_elo") or payload.get("elo")
+        config_key = payload.get("config_key") or payload.get("config", "")
+        new_elo = payload.get("new_elo")
+        if new_elo is None:
+            new_elo = payload.get("elo")
         old_elo = payload.get("old_elo")
 
         if not config_key or new_elo is None:
@@ -867,3 +869,328 @@ def wire_plateau_to_curriculum(
 def get_plateau_curriculum_watcher() -> Optional[PlateauToCurriculumWatcher]:
     """Get the global plateau-to-curriculum watcher if configured."""
     return _plateau_watcher
+
+
+# =============================================================================
+# Tournament Results → Curriculum Feedback Integration (December 2025)
+# =============================================================================
+
+class TournamentToCurriculumWatcher:
+    """Watches for tournament/evaluation results and adjusts curriculum weights.
+
+    Subscribes to EVALUATION_COMPLETED events and uses tournament results
+    (win rates, Elo gains) to influence curriculum weight adjustments:
+    - High-performing configs may get reduced weight (less training needed)
+    - Low-performing configs get increased weight (more training needed)
+
+    Usage:
+        from app.training.curriculum_feedback import wire_tournament_to_curriculum
+
+        # Wire tournament events to curriculum
+        watcher = wire_tournament_to_curriculum()
+    """
+
+    def __init__(
+        self,
+        feedback: Optional[CurriculumFeedback] = None,
+        rebalance_cooldown_seconds: float = 300.0,
+        auto_export: bool = True,
+        export_path: str = "data/curriculum_weights.json",
+        win_rate_threshold_low: float = 0.45,
+        win_rate_threshold_high: float = 0.65,
+        weight_adjustment: float = 0.15,
+    ):
+        """Initialize the tournament-to-curriculum watcher.
+
+        Args:
+            feedback: CurriculumFeedback instance (uses singleton if None)
+            rebalance_cooldown_seconds: Minimum time between rebalances
+            auto_export: Whether to auto-export weights after rebalance
+            export_path: Path to export weights JSON
+            win_rate_threshold_low: Below this, boost weight
+            win_rate_threshold_high: Above this, reduce weight
+            weight_adjustment: Amount to adjust weight by
+        """
+        self.feedback = feedback or get_curriculum_feedback()
+        self.rebalance_cooldown_seconds = rebalance_cooldown_seconds
+        self.auto_export = auto_export
+        self.export_path = export_path
+        self.win_rate_threshold_low = win_rate_threshold_low
+        self.win_rate_threshold_high = win_rate_threshold_high
+        self.weight_adjustment = weight_adjustment
+
+        self._last_rebalance_time: float = 0.0
+        self._tournament_results: Dict[str, List[Dict]] = defaultdict(list)
+        self._subscribed = False
+        self._adjustment_count = 0
+
+    def subscribe_to_tournament_events(self) -> bool:
+        """Subscribe to tournament/evaluation events from the event bus.
+
+        Returns:
+            True if successfully subscribed
+        """
+        try:
+            from app.distributed.data_events import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+            bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
+            self._subscribed = True
+            logger.info("[TournamentToCurriculumWatcher] Subscribed to EVALUATION_COMPLETED events")
+            return True
+        except Exception as e:
+            logger.warning(f"[TournamentToCurriculumWatcher] Failed to subscribe: {e}")
+            return False
+
+    def unsubscribe(self) -> None:
+        """Unsubscribe from tournament events."""
+        if not self._subscribed:
+            return
+
+        try:
+            from app.distributed.data_events import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+            bus.unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
+            self._subscribed = False
+        except Exception:
+            pass
+
+    def _on_evaluation_completed(self, event: Any) -> None:
+        """Handle EVALUATION_COMPLETED event.
+
+        Records tournament results and potentially triggers curriculum rebalance.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        config = payload.get("config", "")
+        elo = payload.get("elo", 0)
+        games_played = payload.get("games_played", 0)
+        win_rate = payload.get("win_rate", 0.5)
+
+        if not config or games_played < 5:
+            return  # Need meaningful sample
+
+        logger.debug(
+            f"[TournamentToCurriculumWatcher] Evaluation completed for {config}: "
+            f"elo={elo:.0f}, win_rate={win_rate:.2%}, games={games_played}"
+        )
+
+        # Track result
+        result = {
+            "elo": elo,
+            "games": games_played,
+            "win_rate": win_rate,
+            "timestamp": time.time(),
+        }
+        self._tournament_results[config].append(result)
+
+        # Keep only recent results
+        if len(self._tournament_results[config]) > 10:
+            self._tournament_results[config] = self._tournament_results[config][-10:]
+
+        # Record game results in feedback
+        wins = int(games_played * win_rate)
+        losses = games_played - wins
+        for _ in range(wins):
+            self.feedback.record_game(config, winner=1, model_elo=elo, opponent_type="tournament")
+        for _ in range(losses):
+            self.feedback.record_game(config, winner=-1, model_elo=elo, opponent_type="tournament")
+
+        # Check if curriculum adjustment needed
+        self._maybe_adjust_curriculum(config, win_rate, elo)
+
+    def _maybe_adjust_curriculum(
+        self,
+        config_key: str,
+        win_rate: float,
+        elo: float,
+    ) -> bool:
+        """Potentially adjust curriculum weights based on tournament results.
+
+        Returns:
+            True if adjustment was made
+        """
+        now = time.time()
+
+        # Check cooldown
+        if now - self._last_rebalance_time < self.rebalance_cooldown_seconds:
+            return False
+
+        adjustment = 0.0
+
+        # Low win rate = boost training for this config
+        if win_rate < self.win_rate_threshold_low:
+            adjustment = self.weight_adjustment
+            reason = f"low_win_rate_{win_rate:.2%}"
+        # High win rate = reduce training (already performing well)
+        elif win_rate > self.win_rate_threshold_high:
+            adjustment = -self.weight_adjustment
+            reason = f"high_win_rate_{win_rate:.2%}"
+        else:
+            return False  # No adjustment needed
+
+        # Update metrics
+        metrics = self.feedback.get_config_metrics(config_key)
+        metrics.avg_elo = elo
+        metrics.win_rate = win_rate
+
+        # Get and adjust weights
+        weights = self.feedback.get_curriculum_weights()
+
+        if config_key in weights:
+            new_weight = weights[config_key] + adjustment
+            new_weight = max(self.feedback.weight_min, min(self.feedback.weight_max, new_weight))
+            weights[config_key] = round(new_weight, 3)
+
+            logger.info(
+                f"[TournamentToCurriculumWatcher] Adjusted curriculum weight for {config_key}: "
+                f"{adjustment:+.2f} → {new_weight:.2f} (reason: {reason})"
+            )
+
+        self._last_rebalance_time = now
+        self._adjustment_count += 1
+
+        # Auto-export if enabled
+        if self.auto_export:
+            try:
+                self.feedback.export_weights_json(self.export_path)
+            except Exception as e:
+                logger.warning(f"Failed to export weights: {e}")
+
+        # Publish rebalance event
+        self._publish_rebalance_event(weights, config_key, win_rate, reason)
+
+        return True
+
+    def _publish_rebalance_event(
+        self,
+        weights: Dict[str, float],
+        trigger_config: str,
+        win_rate: float,
+        reason: str,
+    ) -> None:
+        """Publish curriculum rebalance event."""
+        try:
+            from app.distributed.data_events import (
+                DataEvent,
+                DataEventType,
+                get_event_bus,
+            )
+
+            event = DataEvent(
+                event_type=DataEventType.CURRICULUM_REBALANCED,
+                payload={
+                    "weights": weights,
+                    "trigger_config": trigger_config,
+                    "trigger_reason": f"tournament_{reason}",
+                    "trigger_win_rate": win_rate,
+                    "timestamp": time.time(),
+                },
+                source="curriculum_feedback_tournament",
+            )
+
+            bus = get_event_bus()
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(bus.publish(event))
+            except RuntimeError:
+                if hasattr(bus, 'publish_sync'):
+                    bus.publish_sync(event)
+
+        except Exception as e:
+            logger.debug(f"Failed to publish rebalance event: {e}")
+
+    def get_tournament_summary(self, config_key: str) -> Dict[str, Any]:
+        """Get tournament results summary for a config.
+
+        Returns:
+            Dict with tournament statistics
+        """
+        results = self._tournament_results.get(config_key, [])
+        if not results:
+            return {"config": config_key, "tournaments": 0}
+
+        return {
+            "config": config_key,
+            "tournaments": len(results),
+            "avg_win_rate": sum(r["win_rate"] for r in results) / len(results),
+            "avg_elo": sum(r["elo"] for r in results) / len(results),
+            "total_games": sum(r["games"] for r in results),
+            "last_tournament": results[-1] if results else None,
+        }
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get watcher statistics.
+
+        Returns:
+            Dict with statistics
+        """
+        return {
+            "subscribed": self._subscribed,
+            "adjustment_count": self._adjustment_count,
+            "configs_tracked": len(self._tournament_results),
+            "thresholds": {
+                "low_win_rate": self.win_rate_threshold_low,
+                "high_win_rate": self.win_rate_threshold_high,
+                "weight_adjustment": self.weight_adjustment,
+            },
+        }
+
+
+# Singleton tournament watcher
+_tournament_watcher: Optional[TournamentToCurriculumWatcher] = None
+
+
+def wire_tournament_to_curriculum(
+    rebalance_cooldown_seconds: float = 300.0,
+    auto_export: bool = True,
+    win_rate_threshold_low: float = 0.45,
+    win_rate_threshold_high: float = 0.65,
+    weight_adjustment: float = 0.15,
+) -> TournamentToCurriculumWatcher:
+    """Wire tournament/evaluation results to curriculum weight adjustments.
+
+    This connects tournament results to automatic curriculum rebalancing:
+    - Configs with low win rates get boosted training priority
+    - Configs with high win rates get reduced training priority
+
+    Args:
+        rebalance_cooldown_seconds: Minimum time between rebalances
+        auto_export: Whether to auto-export weights after rebalance
+        win_rate_threshold_low: Below this win rate, boost weight
+        win_rate_threshold_high: Above this win rate, reduce weight
+        weight_adjustment: Amount to adjust weight by
+
+    Returns:
+        TournamentToCurriculumWatcher instance
+    """
+    global _tournament_watcher
+
+    _tournament_watcher = TournamentToCurriculumWatcher(
+        rebalance_cooldown_seconds=rebalance_cooldown_seconds,
+        auto_export=auto_export,
+        win_rate_threshold_low=win_rate_threshold_low,
+        win_rate_threshold_high=win_rate_threshold_high,
+        weight_adjustment=weight_adjustment,
+    )
+    _tournament_watcher.subscribe_to_tournament_events()
+
+    logger.info(
+        f"[wire_tournament_to_curriculum] EVALUATION_COMPLETED events wired to curriculum "
+        f"(low={win_rate_threshold_low}, high={win_rate_threshold_high})"
+    )
+
+    return _tournament_watcher
+
+
+def get_tournament_curriculum_watcher() -> Optional[TournamentToCurriculumWatcher]:
+    """Get the global tournament-to-curriculum watcher if configured."""
+    return _tournament_watcher

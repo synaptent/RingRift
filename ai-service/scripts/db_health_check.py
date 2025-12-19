@@ -42,17 +42,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.utils.paths import AI_SERVICE_ROOT, DATA_DIR, QUARANTINE_DIR
 
-# Unified logging setup
-try:
-    from app.core.logging_config import setup_logging
-    logger = setup_logging("db_health_check", log_dir="logs")
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [DBHealth] %(levelname)s: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-    )
-    logger = logging.getLogger(__name__)
+from scripts.lib.logging_config import setup_script_logging
+
+logger = setup_script_logging("db_health_check")
 
 # Required tables for training databases
 REQUIRED_TABLES = {

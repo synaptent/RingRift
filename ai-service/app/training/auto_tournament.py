@@ -28,10 +28,15 @@ from app.training.tournament import Tournament, VICTORY_REASONS
 
 # Import canonical thresholds
 try:
-    from app.config.thresholds import INITIAL_ELO_RATING, ELO_K_FACTOR
+    from app.config.thresholds import (
+        INITIAL_ELO_RATING,
+        ELO_K_FACTOR,
+        PROMOTION_WIN_RATE_THRESHOLD,
+    )
 except ImportError:
     INITIAL_ELO_RATING = 1500.0
     ELO_K_FACTOR = 32
+    PROMOTION_WIN_RATE_THRESHOLD = 0.55
 
 logger = logging.getLogger(__name__)
 
@@ -281,10 +286,9 @@ class AutoTournamentPipeline:
         report = pipeline.generate_report()
     """
 
-    # Promotion thresholds
-    PROMOTION_WIN_RATE_THRESHOLD = 0.55  # 55% win rate required
+    # Promotion thresholds - use canonical values from app.config.thresholds
+    WIN_RATE_THRESHOLD = float(PROMOTION_WIN_RATE_THRESHOLD)
     PROMOTION_SIGNIFICANCE_LEVEL = 0.05  # p-value threshold
-    # Use canonical values from app.config.thresholds
     DEFAULT_ELO = float(INITIAL_ELO_RATING)
     ELO_K = float(ELO_K_FACTOR)  # Renamed to avoid shadowing import
 
@@ -787,7 +791,7 @@ class AutoTournamentPipeline:
             True if challenger should be promoted.
         """
         return (
-            challenger_win_rate >= self.PROMOTION_WIN_RATE_THRESHOLD
+            challenger_win_rate >= self.WIN_RATE_THRESHOLD
             and is_significant
             and challenger_elo > champion_elo
         )

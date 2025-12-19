@@ -135,6 +135,10 @@ class TrainingDataCoordinator:
         self._initialized = False
         self._last_preparation_time = 0.0
 
+        # Event callbacks (December 2025)
+        self._promotion_callbacks: List = []
+        self._event_bus_subscription = None
+
         logger.info(
             f"TrainingDataCoordinator initialized: "
             f"quality_scoring={self._config.enable_quality_scoring}, "
@@ -522,6 +526,110 @@ class TrainingDataCoordinator:
             logger.warning(f"Failed to collect metrics: {e}")
             return False
 
+    # =========================================================================
+    # Promotion Event Integration (December 2025)
+    # =========================================================================
+
+    def on_promotion(self, callback) -> None:
+        """Register a callback for promotion events.
+
+        The callback receives a dict with promotion details:
+        - model_id: ID of promoted model
+        - promotion_type: Type of promotion
+        - current_elo: Current Elo rating
+        - board_type: Board type
+        - num_players: Number of players
+
+        Args:
+            callback: Callable[[Dict[str, Any]], None]
+        """
+        self._promotion_callbacks.append(callback)
+
+    def off_promotion(self, callback) -> None:
+        """Unregister a promotion callback."""
+        if callback in self._promotion_callbacks:
+            self._promotion_callbacks.remove(callback)
+
+    async def handle_promotion_event(self, event_data: Dict[str, Any]) -> None:
+        """Handle a model promotion event.
+
+        Called when a model is promoted. This can trigger:
+        - Hot buffer refresh with new model's data
+        - Quality score recalculation
+        - Sync priority adjustment
+
+        Args:
+            event_data: Promotion event data from PromotionController
+        """
+        model_id = event_data.get("model_id", "unknown")
+        promotion_type = event_data.get("promotion_type", "unknown")
+
+        logger.info(f"Handling promotion event: {model_id} ({promotion_type})")
+
+        # Notify registered callbacks
+        for callback in self._promotion_callbacks:
+            try:
+                callback(event_data)
+            except Exception as e:
+                logger.warning(f"Promotion callback error: {e}")
+
+        # Refresh quality data if model was promoted to production
+        if promotion_type in ("production", "champion"):
+            board_type = event_data.get("board_type", "square8")
+            num_players = event_data.get("num_players", 2)
+
+            # Update quality thresholds based on new production model
+            if self._quality_bridge:
+                try:
+                    self._quality_bridge.invalidate_cache()
+                    logger.debug("Quality cache invalidated after promotion")
+                except Exception as e:
+                    logger.warning(f"Failed to invalidate quality cache: {e}")
+
+            # Optionally refresh hot buffer
+            if self._hot_buffer:
+                try:
+                    await self.refresh_hot_buffer(board_type, num_players)
+                    logger.debug("Hot buffer refreshed after promotion")
+                except Exception as e:
+                    logger.warning(f"Failed to refresh hot buffer: {e}")
+
+    def subscribe_to_promotion_events(self) -> bool:
+        """Subscribe to StageEvent.PROMOTION_COMPLETE events.
+
+        This integrates with the stage event bus to automatically
+        receive promotion notifications.
+
+        Returns:
+            True if subscription was successful
+        """
+        if self._event_bus_subscription:
+            return True
+
+        try:
+            from app.coordination.stage_events import (
+                StageEvent,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+
+            async def on_promotion_complete(result):
+                if result.success:
+                    await self.handle_promotion_event(result.metadata or {})
+
+            bus.subscribe(StageEvent.PROMOTION_COMPLETE, on_promotion_complete)
+            self._event_bus_subscription = on_promotion_complete
+            logger.info("Subscribed to PROMOTION_COMPLETE events")
+            return True
+
+        except ImportError:
+            logger.debug("Stage event bus not available")
+            return False
+        except Exception as e:
+            logger.warning(f"Failed to subscribe to promotion events: {e}")
+            return False
+
 
 # =============================================================================
 # Module-level convenience functions
@@ -557,6 +665,29 @@ def get_high_quality_games(
     return coordinator.get_high_quality_game_ids(min_quality=min_quality, limit=limit)
 
 
+def wire_promotion_events(coordinator: Optional[TrainingDataCoordinator] = None) -> bool:
+    """Wire promotion events to the data coordinator.
+
+    This function connects the TrainingDataCoordinator to receive
+    PROMOTION_COMPLETE events from the stage event bus, enabling
+    automatic cache invalidation and data refresh on model promotion.
+
+    Args:
+        coordinator: Optional coordinator instance (uses singleton if None)
+
+    Returns:
+        True if successfully wired
+
+    Usage:
+        from app.training.data_coordinator import wire_promotion_events
+
+        # At startup (e.g., in unified_ai_loop.py)
+        wire_promotion_events()
+    """
+    coordinator = coordinator or get_data_coordinator()
+    return coordinator.subscribe_to_promotion_events()
+
+
 __all__ = [
     "TrainingDataCoordinator",
     "CoordinatorConfig",
@@ -564,4 +695,5 @@ __all__ = [
     "get_data_coordinator",
     "prepare_training_data",
     "get_high_quality_games",
+    "wire_promotion_events",
 ]

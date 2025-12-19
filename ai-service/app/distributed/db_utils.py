@@ -22,68 +22,16 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import tempfile
 import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Generator, Optional, Union
 
+from app.utils.file_utils import atomic_write
+
 
 # Thread-local storage for database connections
 _local = threading.local()
-
-
-@contextmanager
-def atomic_write(
-    path: Union[str, Path],
-    mode: str = "w",
-    encoding: str = "utf-8",
-) -> Generator:
-    """Write to a file atomically using a temporary file and rename.
-
-    This ensures that the file is either fully written or not modified at all,
-    preventing partial writes on crash or interrupt.
-
-    Args:
-        path: Target file path
-        mode: File mode ("w" for text, "wb" for binary)
-        encoding: Text encoding (ignored for binary mode)
-
-    Yields:
-        File object for writing
-
-    Example:
-        with atomic_write("config.json") as f:
-            json.dump(data, f, indent=2)
-    """
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Create temp file in same directory to ensure same filesystem
-    fd, tmp_path = tempfile.mkstemp(
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp"
-    )
-
-    try:
-        if "b" in mode:
-            with os.fdopen(fd, mode) as f:
-                yield f
-        else:
-            with os.fdopen(fd, mode, encoding=encoding) as f:
-                yield f
-
-        # Atomic rename (same filesystem guaranteed)
-        os.replace(tmp_path, path)
-
-    except Exception:
-        # Clean up temp file on error
-        try:
-            os.unlink(tmp_path)
-        except FileNotFoundError:
-            pass
-        raise
 
 
 @contextmanager

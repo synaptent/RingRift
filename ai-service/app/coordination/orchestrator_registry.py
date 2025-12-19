@@ -1124,6 +1124,99 @@ def check_cluster_health() -> Dict[str, Any]:
 
 
 # ============================================
+# Auto-discovery of Known Orchestrators (December 2025)
+# ============================================
+
+def discover_and_register_orchestrators() -> Dict[str, Any]:
+    """Discover and register known orchestrators.
+
+    Attempts to import and reference all known orchestrators, adding them
+    to the registry's health monitoring. This enables centralized visibility
+    into all orchestration components.
+
+    Returns:
+        Dict mapping orchestrator names to discovery status
+    """
+    results = {}
+
+    # Known orchestrator modules and their metadata
+    known_orchestrators = [
+        {
+            "name": "unified_training",
+            "module": "app.training.unified_orchestrator",
+            "class_or_getter": "UnifiedTrainingOrchestrator",
+            "role": OrchestratorRole.UNIFIED_LOOP,
+        },
+        {
+            "name": "sync_orchestrator",
+            "module": "app.distributed.sync_orchestrator",
+            "class_or_getter": "get_sync_orchestrator",
+            "role": OrchestratorRole.DATA_SYNC,
+        },
+        {
+            "name": "event_coordinator",
+            "module": "app.coordination.unified_event_coordinator",
+            "class_or_getter": "get_event_coordinator",
+            "role": None,  # Not a role-based orchestrator
+        },
+        {
+            "name": "tournament_orchestrator",
+            "module": "app.tournament.orchestrator",
+            "class_or_getter": "TournamentOrchestrator",
+            "role": OrchestratorRole.TOURNAMENT_RUNNER,
+        },
+    ]
+
+    for orch_def in known_orchestrators:
+        name = orch_def["name"]
+        try:
+            # Dynamic import
+            module_parts = orch_def["module"].rsplit(".", 1)
+            package = __import__(module_parts[0], fromlist=[module_parts[1]])
+            module = getattr(package, module_parts[1])
+
+            # Get class or getter function
+            target = getattr(module, orch_def["class_or_getter"])
+
+            # Record discovery (don't instantiate unless needed)
+            results[name] = {
+                "success": True,
+                "module": orch_def["module"],
+                "class": orch_def["class_or_getter"],
+                "role": orch_def["role"].value if orch_def["role"] else None,
+            }
+            logger.debug(f"Discovered orchestrator: {name}")
+
+        except ImportError as e:
+            results[name] = {"success": False, "error": f"Import error: {e}"}
+        except AttributeError as e:
+            results[name] = {"success": False, "error": f"Attribute error: {e}"}
+        except Exception as e:
+            results[name] = {"success": False, "error": str(e)}
+
+    discovered = sum(1 for r in results.values() if r.get("success"))
+    logger.info(f"Discovered {discovered}/{len(known_orchestrators)} orchestrators")
+    return results
+
+
+def get_orchestrator_inventory() -> Dict[str, Any]:
+    """Get inventory of all known orchestrators and their status.
+
+    Returns:
+        Dict with discovery results and active orchestrators
+    """
+    registry = get_registry()
+
+    return {
+        "discovered": discover_and_register_orchestrators(),
+        "active": [o.to_dict() for o in registry.get_active_orchestrators()],
+        "roles_held": {o.role: o.hostname for o in registry.get_active_orchestrators()},
+        "health": check_cluster_health(),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+# ============================================
 # CLI for Debugging
 # ============================================
 

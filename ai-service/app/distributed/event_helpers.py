@@ -567,6 +567,50 @@ async def emit_low_quality_data_warning_safe(
 
 
 # =============================================================================
+# Tier promotion event helpers (December 2025)
+# =============================================================================
+
+async def emit_tier_promotion_safe(
+    config: str,
+    old_tier: str,
+    new_tier: str,
+    model_id: str = "",
+    win_rate: float = 0.0,
+    elo: float = 0.0,
+    games_played: int = 0,
+    source: str = ""
+) -> bool:
+    """Safely emit TIER_PROMOTION event for difficulty ladder progression.
+
+    Args:
+        config: Board configuration (e.g., "square8_2p")
+        old_tier: Previous tier (e.g., "D4")
+        new_tier: New tier after promotion (e.g., "D5")
+        model_id: ID of the model being promoted
+        win_rate: Win rate that triggered promotion
+        elo: Current Elo rating
+        games_played: Number of games played at current tier
+        source: Source component name
+
+    Returns:
+        True if emitted successfully, False otherwise.
+    """
+    return await emit_event_safe(
+        "TIER_PROMOTION",
+        {
+            "config": config,
+            "old_tier": old_tier,
+            "new_tier": new_tier,
+            "model_id": model_id,
+            "win_rate": win_rate,
+            "elo": elo,
+            "games_played": games_played,
+        },
+        source
+    )
+
+
+# =============================================================================
 # Sync wrappers (for non-async contexts)
 # =============================================================================
 
