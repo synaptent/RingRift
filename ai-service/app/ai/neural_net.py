@@ -898,6 +898,26 @@ def _decode_move_square8(idx: int) -> Optional[DecodedPolicyIndex]:
             x=x, y=y, size_bucket=size_bucket, player_idx=player_idx
         )
 
+    if (
+        SQUARE8_EXTRA_SPECIAL_BASE
+        <= idx
+        < SQUARE8_EXTRA_SPECIAL_BASE + SQUARE8_EXTRA_SPECIAL_SPAN
+    ):
+        offset = idx - SQUARE8_EXTRA_SPECIAL_BASE
+        action_types = (
+            "no_placement_action",
+            "no_movement_action",
+            "skip_capture",
+            "no_line_action",
+            "no_territory_action",
+            "skip_territory_processing",
+            "forced_elimination",
+        )
+        if 0 <= offset < len(action_types):
+            return DecodedPolicyIndex(
+                action_type=action_types[offset], board_size=N, is_special=True
+            )
+
     return None
 
 
@@ -982,6 +1002,26 @@ def _decode_move_square19(idx: int) -> Optional[DecodedPolicyIndex]:
             action_type="territory_choice", board_size=N,
             x=x, y=y, size_bucket=size_bucket, player_idx=player_idx
         )
+
+    if (
+        SQUARE19_EXTRA_SPECIAL_BASE
+        <= idx
+        < SQUARE19_EXTRA_SPECIAL_BASE + SQUARE19_EXTRA_SPECIAL_SPAN
+    ):
+        offset = idx - SQUARE19_EXTRA_SPECIAL_BASE
+        action_types = (
+            "no_placement_action",
+            "no_movement_action",
+            "skip_capture",
+            "no_line_action",
+            "no_territory_action",
+            "skip_territory_processing",
+            "forced_elimination",
+        )
+        if 0 <= offset < len(action_types):
+            return DecodedPolicyIndex(
+                action_type=action_types[offset], board_size=N, is_special=True
+            )
 
     return None
 
@@ -1838,11 +1878,15 @@ class RingRiftCNN_v3(nn.Module):
             self.swap_sides_idx = SQUARE8_SWAP_SIDES_IDX
             self.skip_recovery_idx = SQUARE8_SKIP_RECOVERY_IDX
             self.line_choice_base = SQUARE8_LINE_CHOICE_BASE
+            self.extra_special_base = SQUARE8_EXTRA_SPECIAL_BASE
+            self.extra_special_span = SQUARE8_EXTRA_SPECIAL_SPAN
         else:
             self.skip_placement_idx = SQUARE19_SKIP_PLACEMENT_IDX
             self.swap_sides_idx = SQUARE19_SWAP_SIDES_IDX
             self.skip_recovery_idx = SQUARE19_SKIP_RECOVERY_IDX
             self.line_choice_base = SQUARE19_LINE_CHOICE_BASE
+            self.extra_special_base = SQUARE19_EXTRA_SPECIAL_BASE
+            self.extra_special_span = SQUARE19_EXTRA_SPECIAL_SPAN
 
     def _scatter_policy_logits(
         self,
@@ -1905,6 +1949,12 @@ class RingRiftCNN_v3(nn.Module):
         policy[:, self.swap_sides_idx] = special_logits[:, 1]
         policy[:, self.skip_recovery_idx] = special_logits[:, 2]  # RR-CANON-R112
         policy[:, self.line_choice_base : self.line_choice_base + 4] = special_logits[:, 3:7]
+        # Map canonical no/skip/forced actions to the skip_placement logit by default.
+        if self.extra_special_span > 0:
+            policy[
+                :,
+                self.extra_special_base : self.extra_special_base + self.extra_special_span,
+            ] = special_logits[:, 0:1]
 
         return policy
 
@@ -2182,11 +2232,15 @@ class RingRiftCNN_v3_Lite(nn.Module):
             self.swap_sides_idx = SQUARE8_SWAP_SIDES_IDX
             self.skip_recovery_idx = SQUARE8_SKIP_RECOVERY_IDX
             self.line_choice_base = SQUARE8_LINE_CHOICE_BASE
+            self.extra_special_base = SQUARE8_EXTRA_SPECIAL_BASE
+            self.extra_special_span = SQUARE8_EXTRA_SPECIAL_SPAN
         else:
             self.skip_placement_idx = SQUARE19_SKIP_PLACEMENT_IDX
             self.swap_sides_idx = SQUARE19_SWAP_SIDES_IDX
             self.skip_recovery_idx = SQUARE19_SKIP_RECOVERY_IDX
             self.line_choice_base = SQUARE19_LINE_CHOICE_BASE
+            self.extra_special_base = SQUARE19_EXTRA_SPECIAL_BASE
+            self.extra_special_span = SQUARE19_EXTRA_SPECIAL_SPAN
 
     def _scatter_policy_logits(
         self,
@@ -2231,6 +2285,11 @@ class RingRiftCNN_v3_Lite(nn.Module):
         policy[:, self.swap_sides_idx] = special_logits[:, 1]
         policy[:, self.skip_recovery_idx] = special_logits[:, 2]  # RR-CANON-R112
         policy[:, self.line_choice_base : self.line_choice_base + 4] = special_logits[:, 3:7]
+        if self.extra_special_span > 0:
+            policy[
+                :,
+                self.extra_special_base : self.extra_special_base + self.extra_special_span,
+            ] = special_logits[:, 0:1]
 
         return policy
 
@@ -2622,11 +2681,15 @@ class RingRiftCNN_v4(nn.Module):
             self.swap_sides_idx = SQUARE8_SWAP_SIDES_IDX
             self.skip_recovery_idx = SQUARE8_SKIP_RECOVERY_IDX
             self.line_choice_base = SQUARE8_LINE_CHOICE_BASE
+            self.extra_special_base = SQUARE8_EXTRA_SPECIAL_BASE
+            self.extra_special_span = SQUARE8_EXTRA_SPECIAL_SPAN
         else:
             self.skip_placement_idx = SQUARE19_SKIP_PLACEMENT_IDX
             self.swap_sides_idx = SQUARE19_SWAP_SIDES_IDX
             self.skip_recovery_idx = SQUARE19_SKIP_RECOVERY_IDX
             self.line_choice_base = SQUARE19_LINE_CHOICE_BASE
+            self.extra_special_base = SQUARE19_EXTRA_SPECIAL_BASE
+            self.extra_special_span = SQUARE19_EXTRA_SPECIAL_SPAN
 
     def _scatter_policy_logits(
         self,
@@ -2668,6 +2731,11 @@ class RingRiftCNN_v4(nn.Module):
         policy[:, self.swap_sides_idx] = special_logits[:, 1]
         policy[:, self.skip_recovery_idx] = special_logits[:, 2]
         policy[:, self.line_choice_base : self.line_choice_base + 4] = special_logits[:, 3:7]
+        if self.extra_special_span > 0:
+            policy[
+                :,
+                self.extra_special_base : self.extra_special_base + self.extra_special_span,
+            ] = special_logits[:, 0:1]
 
         return policy
 
@@ -5309,10 +5377,6 @@ class NeuralNetAI(BaseAI):
         skip_index = territory_base + MAX_N * MAX_N  # 54872
         swap_sides_index = skip_index + 1  # 54873
         move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
-        territory_choice_span = MAX_N * MAX_N * TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS
-        extra_special_base = territory_choice_base = (skip_index + 3) + 4
-        extra_special_base += territory_choice_span
-        extra_special_span = 7
         effective_policy_size = model_policy_size or board_policy_size or 0
 
         # Placement: 0..1082 (3 * 19 * 19)
@@ -5504,6 +5568,8 @@ class NeuralNetAI(BaseAI):
                 + player_idx
             )
 
+        territory_choice_span = MAX_N * MAX_N * TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS
+        extra_special_base = territory_choice_base + territory_choice_span
         extra_special_indices = {
             "no_placement_action": extra_special_base,
             "no_movement_action": extra_special_base + 1,
@@ -5776,6 +5842,30 @@ class NeuralNetAI(BaseAI):
             }
             return Move(**move_data)
 
+        extra_special_base = territory_choice_base + territory_choice_span
+        extra_special_span = 7
+        if extra_special_base <= index < extra_special_base + extra_special_span:
+            action_types = (
+                "no_placement_action",
+                "no_movement_action",
+                "skip_capture",
+                "no_line_action",
+                "no_territory_action",
+                "skip_territory_processing",
+                "forced_elimination",
+            )
+            offset = index - extra_special_base
+            if 0 <= offset < len(action_types):
+                move_data = {
+                    "id": "decoded",
+                    "type": action_types[offset],
+                    "player": game_state.current_player,
+                    "timestamp": datetime.now(),
+                    "thinkTime": 0,
+                    "moveNumber": 0,
+                }
+                return Move(**move_data)
+
         return None
 
     def _extract_features(
@@ -5991,7 +6081,8 @@ class NeuralNetAI(BaseAI):
             features[12, :, :] = 1.0
 
         # --- Global features: 20 dims ---
-        # Phase (5), Rings in hand (2), Eliminated rings (2), Turn (1), Reserved (10)
+        # Phase (5), Rings in hand (2), Eliminated rings (2), Turn (1),
+        # Extras (2: chain_capture, forced_elimination), Reserved (8)
         # Hex network model was trained with global_features=20 (value_fc1 expects 1+20=21 inputs)
         globals = np.zeros(20, dtype=np.float32)
 
@@ -6008,6 +6099,9 @@ class NeuralNetAI(BaseAI):
             globals[phase_idx] = 1.0
         except ValueError:
             pass
+        # Extra phase flags (reserved slots) for chain capture / forced elimination.
+        globals[10] = 1.0 if game_state.current_phase == GamePhase.CHAIN_CAPTURE else 0.0
+        globals[11] = 1.0 if game_state.current_phase == GamePhase.FORCED_ELIMINATION else 0.0
 
         # Rings info (current-player perspective, plus a single "threat opponent"
         # for multi-player Paranoid reductions).
@@ -6298,7 +6392,16 @@ class ActionEncoderHex:
             return self.movement_base + from_idx * (NUM_HEX_DIRS * self.max_dist) + dir_idx * self.max_dist + (dist - 1)
 
         # --- Special ---
-        if move.type == MoveType.SKIP_PLACEMENT:
+        if move.type in (
+            MoveType.SKIP_PLACEMENT,
+            MoveType.NO_PLACEMENT_ACTION,
+            MoveType.NO_MOVEMENT_ACTION,
+            MoveType.SKIP_CAPTURE,
+            MoveType.NO_LINE_ACTION,
+            MoveType.NO_TERRITORY_ACTION,
+            MoveType.SKIP_TERRITORY_PROCESSING,
+            MoveType.FORCED_ELIMINATION,
+        ):
             return self.special_base
 
         return INVALID_MOVE_INDEX

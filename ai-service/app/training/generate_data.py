@@ -727,6 +727,8 @@ def generate_dataset(
         Optional random seed for reproducibility.
     max_moves:
         Maximum moves per game before forcing termination.
+    history_length:
+        Number of previous feature frames to stack (default: 3).
     batch_size:
         Optional batch size for buffer flushing (currently unused,
         reserved for future streaming implementation).
@@ -932,9 +934,9 @@ def generate_dataset(
         initial_state = state.model_copy(deep=True)
         moves_for_db: List = []
 
-    # History buffer for this game
-    # List of feature planes (10, 8, 8)
-    state_history = []
+        # History buffer for this game
+        # List of feature planes (10, 8, 8)
+        state_history = []
 
         # --- Engine mixing: select/create AI players for this game ---
         player_engines: dict = {}  # Maps player_num -> engine_type string
@@ -1655,6 +1657,8 @@ def generate_dataset_gpu_parallel(
         Maximum moves per game before forcing termination.
     num_players:
         Number of players in each game (2, 3, or 4).
+    history_length:
+        Number of previous feature frames to stack (default: 3).
     gpu_batch_size:
         Number of games to run in parallel on GPU. Higher values use more
         GPU memory but provide better throughput. Recommended: 10-50.
@@ -2001,6 +2005,12 @@ def _parse_args() -> argparse.Namespace:
         help="Maximum moves per game before forcing termination (default: 2000).",
     )
     parser.add_argument(
+        "--history-length",
+        type=int,
+        default=3,
+        help="Number of previous feature frames to stack (default: 3).",
+    )
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=None,
@@ -2294,6 +2304,7 @@ def main() -> None:
                 seed=args.seed,
                 max_moves=args.max_moves,
                 num_players=args.num_players,
+                history_length=args.history_length,
                 engine=args.engine,
                 nn_model_id=args.nn_model_id,
                 multi_player_values=args.multi_player_values,
@@ -2311,6 +2322,7 @@ def main() -> None:
             board_type=board_type,
             seed=args.seed,
             max_moves=args.max_moves,
+            history_length=args.history_length,
             batch_size=args.batch_size,
             replay_db=replay_db,
             num_players=args.num_players,

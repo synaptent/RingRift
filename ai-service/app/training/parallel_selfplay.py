@@ -380,6 +380,7 @@ def generate_dataset_parallel(
     seed: Optional[int] = None,
     max_moves: int = 10000,
     num_players: int = 2,
+    history_length: int = 3,
     engine: str = "descent",
     nn_model_id: Optional[str] = None,
     multi_player_values: bool = False,
@@ -412,6 +413,7 @@ def generate_dataset_parallel(
         max_moves: Max moves per game
         num_players: Number of players
         engine: AI engine type ("descent", "mcts", or "gumbel")
+        history_length: Number of history frames to stack in features
         nn_model_id: Neural network model ID for AI
         multi_player_values: Include multi-player value vectors
         max_players: Max players for multi-player values
@@ -442,6 +444,7 @@ def generate_dataset_parallel(
         multi_player_values=multi_player_values,
         max_players=max_players,
         graded_outcomes=graded_outcomes,
+        history_length=history_length,
         gumbel_simulations=gumbel_simulations,
         gumbel_top_k=gumbel_top_k,
         gumbel_c_visit=gumbel_c_visit,
@@ -580,6 +583,8 @@ def generate_dataset_parallel(
         'values': all_values,
         'pol_indices': np.array(all_pol_indices, dtype=object),
         'pol_values': np.array(all_pol_values, dtype=object),
+        'policy_encoding': np.asarray("board_aware"),
+        'history_length': np.asarray(int(config.history_length)),
         # Per-sample effective temperature (for temperature-aware training)
         'effective_temps': all_effective_temps,
         # Temperature config metadata (for reproducibility/analysis)

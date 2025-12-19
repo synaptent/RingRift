@@ -717,6 +717,7 @@ def export_replay_dataset_multi(
         "policy_values": policy_values_arr,
         "board_type": np.asarray(board_type.value),
         "board_size": np.asarray(int(features_arr.shape[-1])),
+        "history_length": np.asarray(int(history_length)),
         "policy_encoding": np.asarray("board_aware" if use_board_aware_encoding else "legacy_max_n"),
         "move_numbers": move_numbers_arr,
         "total_game_moves": total_game_moves_arr,

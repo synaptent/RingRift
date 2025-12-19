@@ -41,12 +41,22 @@ import shutil
 import subprocess
 import tempfile
 import time
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 import yaml
+
+# Emit deprecation warning on module import
+warnings.warn(
+    "app.distributed.data_sync is deprecated since 2025-12-18. "
+    "Use app.distributed.unified_data_sync.UnifiedDataSyncService instead. "
+    "This module will be removed in a future release.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 logger = logging.getLogger(__name__)
 

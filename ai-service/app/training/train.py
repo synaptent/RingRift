@@ -807,8 +807,8 @@ class RingRiftDataset(Dataset):
                     )
                 )
 
-        # Reconstruct dense policy vector on-the-fly
-        # Since we filter for non-empty policies, this should always have data
+        # Reconstruct dense policy vector on-the-fly.
+        # When empty policies are allowed, the vector may remain all zeros.
         if self.policy_size <= 0:
             # Defensive fallback; should not normally happen
             self.policy_size = get_policy_size_for_board(self.board_type)
@@ -4072,6 +4072,8 @@ def main():
         config.weight_decay = args.weight_decay
     if hasattr(args, 'label_smoothing') and args.label_smoothing > 0:
         config.policy_label_smoothing = args.label_smoothing
+    if args.filter_empty_policies:
+        config.allow_empty_policies = False
     if args.board_type is not None:
         board_type_map = {
             'square8': BoardType.SQUARE8,

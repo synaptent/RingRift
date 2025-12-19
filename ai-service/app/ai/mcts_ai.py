@@ -1312,17 +1312,35 @@ class MCTSAI(HeuristicAI):
             root = MCTSNode(game_state)
             root.untried_moves = list(valid_moves)
         else:
-            # CRITICAL: When reusing a subtree, the untried_moves may be stale.
-            # Player resources (rings_in_hand) may have changed since the tree
-            # was built. Filter untried_moves to only include moves that are
-            # still valid in the current state. This prevents returning illegal
-            # moves like place_ring when the player has 0 rings.
-            valid_moves_set = {_move_key(m) for m in valid_moves}
+            # CRITICAL: When reusing a subtree, the cached children/untried moves
+            # may be stale. Filter both lists against the current valid moves to
+            # prevent illegal actions from surviving a phase transition.
+            valid_move_keys = {_move_key(m) for m in valid_moves}
+            valid_move_strings = {str(m) for m in valid_moves}
+
+            root.children = [
+                child
+                for child in root.children
+                if child.move is not None
+                and _move_key(child.move) in valid_move_keys
+            ]
             root.untried_moves = [
                 m
                 for m in root.untried_moves
-                if _move_key(m) in valid_moves_set
+                if _move_key(m) in valid_move_keys
             ]
+            if root.policy_map:
+                root.policy_map = {
+                    k: v for k, v in root.policy_map.items()
+                    if k in valid_move_strings
+                }
+
+            if not root.children and not root.untried_moves:
+                root = None
+
+        if root is None:
+            root = MCTSNode(game_state)
+            root.untried_moves = list(valid_moves)
 
         # Progressive widening on large boards benefits from NN priors at the root.
         # Seed them once up-front so early expansions focus on top-prior moves.
@@ -2298,17 +2316,34 @@ class MCTSAI(HeuristicAI):
             root = MCTSNodeLite()
             root.untried_moves = list(valid_moves)
         else:
-            # CRITICAL: When reusing a subtree, the untried_moves may be stale.
-            # Player resources (rings_in_hand) may have changed since the tree
-            # was built. Filter untried_moves to only include moves that are
-            # still valid in the current state. This prevents returning illegal
-            # moves like place_ring when the player has 0 rings.
-            valid_moves_set = {_move_key(m) for m in valid_moves}
+            # CRITICAL: When reusing a subtree, prune stale children and untried
+            # moves against the current valid move set.
+            valid_move_keys = {_move_key(m) for m in valid_moves}
+            valid_move_strings = {str(m) for m in valid_moves}
+
+            root.children = [
+                child
+                for child in root.children
+                if child.move is not None
+                and _move_key(child.move) in valid_move_keys
+            ]
             root.untried_moves = [
                 m
                 for m in root.untried_moves
-                if _move_key(m) in valid_moves_set
+                if _move_key(m) in valid_move_keys
             ]
+            if root.policy_map:
+                root.policy_map = {
+                    k: v for k, v in root.policy_map.items()
+                    if k in valid_move_strings
+                }
+
+            if not root.children and not root.untried_moves:
+                root = None
+
+        if root is None:
+            root = MCTSNodeLite()
+            root.untried_moves = list(valid_moves)
 
         # Seed NN priors at root for large boards to align with progressive widening.
         self._maybe_seed_root_priors(root, game_state)
