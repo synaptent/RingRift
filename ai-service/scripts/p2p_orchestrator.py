@@ -6284,6 +6284,51 @@ class P2POrchestrator:
             logger.error(f"Error getting work for node: {e}")
             return web.json_response({'error': str(e)}, status=500)
 
+    async def handle_work_cancel(self, request: web.Request) -> web.Response:
+        """Cancel a pending or claimed work item."""
+        try:
+            if not self.is_leader:
+                return web.json_response({'error': 'not_leader', 'leader_id': self.leader_id}, status=403)
+
+            wq = get_work_queue()
+            if wq is None:
+                return web.json_response({'error': 'work_queue_not_available'}, status=503)
+
+            data = await request.json()
+            work_id = data.get('work_id', '')
+            if not work_id:
+                return web.json_response({'error': 'work_id_required'}, status=400)
+
+            success = wq.cancel_work(work_id)
+            return web.json_response({
+                'status': 'cancelled' if success else 'failed',
+                'work_id': work_id,
+            })
+        except Exception as e:
+            logger.error(f"Error cancelling work: {e}")
+            return web.json_response({'error': str(e)}, status=500)
+
+    async def handle_work_history(self, request: web.Request) -> web.Response:
+        """Get work history from the database."""
+        try:
+            wq = get_work_queue()
+            if wq is None:
+                return web.json_response({'error': 'work_queue_not_available'}, status=503)
+
+            limit = int(request.query.get('limit', '50'))
+            status_filter = request.query.get('status', None)
+
+            history = wq.get_history(limit=limit, status_filter=status_filter)
+            return web.json_response({
+                'history': history,
+                'count': len(history),
+                'limit': limit,
+                'status_filter': status_filter,
+            })
+        except Exception as e:
+            logger.error(f"Error getting work history: {e}")
+            return web.json_response({'error': str(e)}, status=500)
+
     async def handle_election(self, request: web.Request) -> web.Response:
         """Handle election message from another node."""
         try:
@@ -25977,6 +26022,8 @@ print(json.dumps({{
         app.router.add_post('/work/fail', self.handle_work_fail)
         app.router.add_get('/work/status', self.handle_work_status)
         app.router.add_get('/work/node/{node_id}', self.handle_work_for_node)
+        app.router.add_post('/work/cancel', self.handle_work_cancel)
+        app.router.add_get('/work/history', self.handle_work_history)
 
         app.router.add_post('/election', self.handle_election)
         app.router.add_post('/election/lease', self.handle_lease_request)

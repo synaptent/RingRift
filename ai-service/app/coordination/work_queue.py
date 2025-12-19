@@ -21,15 +21,22 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import sqlite3
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field, asdict
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
+
+# Default path for work queue database
+DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "work_queue.db"
 
 
 class WorkType(str, Enum):
@@ -119,11 +126,13 @@ class WorkQueue:
     - Policy enforcement
     - Timeout handling
     - Retry logic
+    - SQLite persistence for durability across leader changes
     """
 
-    def __init__(self, policy_manager=None):
+    def __init__(self, policy_manager=None, db_path: Optional[Path] = None):
         self.items: Dict[str, WorkItem] = {}  # work_id -> WorkItem
         self.lock = threading.RLock()
+        self.db_path = db_path or DEFAULT_DB_PATH
 
         # Try to get policy manager
         try:
@@ -143,11 +152,178 @@ class WorkQueue:
             "total_timeout": 0,
         }
 
+        # Initialize SQLite database and load existing items
+        self._init_db()
+        self._load_items()
+
+    def _init_db(self) -> None:
+        """Initialize SQLite database for work queue persistence."""
+        try:
+            os.makedirs(self.db_path.parent, exist_ok=True)
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+
+            # Work items table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS work_items (
+                    work_id TEXT PRIMARY KEY,
+                    work_type TEXT NOT NULL,
+                    priority INTEGER NOT NULL DEFAULT 50,
+                    config TEXT NOT NULL DEFAULT '{}',
+                    created_at REAL NOT NULL,
+                    claimed_at REAL NOT NULL DEFAULT 0.0,
+                    started_at REAL NOT NULL DEFAULT 0.0,
+                    completed_at REAL NOT NULL DEFAULT 0.0,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    claimed_by TEXT NOT NULL DEFAULT '',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    max_attempts INTEGER NOT NULL DEFAULT 3,
+                    timeout_seconds REAL NOT NULL DEFAULT 3600.0,
+                    result TEXT NOT NULL DEFAULT '{}',
+                    error TEXT NOT NULL DEFAULT ''
+                )
+            """)
+
+            # Stats table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS work_stats (
+                    key TEXT PRIMARY KEY,
+                    value INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+
+            # Initialize stats if not present
+            for key in ["total_added", "total_completed", "total_failed", "total_timeout"]:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO work_stats (key, value) VALUES (?, 0)",
+                    (key,)
+                )
+
+            # Create indexes for common queries
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_status ON work_items(status)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_priority ON work_items(priority DESC)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_claimed_by ON work_items(claimed_by)")
+
+            conn.commit()
+            conn.close()
+            logger.info(f"Work queue database initialized at {self.db_path}")
+        except Exception as e:
+            logger.error(f"Failed to initialize work queue database: {e}")
+
+    def _load_items(self) -> None:
+        """Load work items from database on startup."""
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Load all non-terminal work items (pending, claimed, running)
+            cursor.execute("""
+                SELECT * FROM work_items
+                WHERE status IN ('pending', 'claimed', 'running')
+            """)
+
+            for row in cursor.fetchall():
+                item = WorkItem(
+                    work_id=row["work_id"],
+                    work_type=WorkType(row["work_type"]),
+                    priority=row["priority"],
+                    config=json.loads(row["config"]),
+                    created_at=row["created_at"],
+                    claimed_at=row["claimed_at"],
+                    started_at=row["started_at"],
+                    completed_at=row["completed_at"],
+                    status=WorkStatus(row["status"]),
+                    claimed_by=row["claimed_by"],
+                    attempts=row["attempts"],
+                    max_attempts=row["max_attempts"],
+                    timeout_seconds=row["timeout_seconds"],
+                    result=json.loads(row["result"]),
+                    error=row["error"],
+                )
+                self.items[item.work_id] = item
+
+            # Load stats
+            cursor.execute("SELECT key, value FROM work_stats")
+            for row in cursor.fetchall():
+                if row["key"] in self.stats:
+                    self.stats[row["key"]] = row["value"]
+
+            conn.close()
+            logger.info(f"Loaded {len(self.items)} work items from database")
+        except Exception as e:
+            logger.error(f"Failed to load work items from database: {e}")
+
+    def _save_item(self, item: WorkItem) -> None:
+        """Save a work item to the database."""
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                INSERT OR REPLACE INTO work_items
+                (work_id, work_type, priority, config, created_at, claimed_at,
+                 started_at, completed_at, status, claimed_by, attempts,
+                 max_attempts, timeout_seconds, result, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                item.work_id,
+                item.work_type.value,
+                item.priority,
+                json.dumps(item.config),
+                item.created_at,
+                item.claimed_at,
+                item.started_at,
+                item.completed_at,
+                item.status.value,
+                item.claimed_by,
+                item.attempts,
+                item.max_attempts,
+                item.timeout_seconds,
+                json.dumps(item.result),
+                item.error,
+            ))
+
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to save work item {item.work_id}: {e}")
+
+    def _save_stats(self) -> None:
+        """Save stats to the database."""
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+
+            for key, value in self.stats.items():
+                cursor.execute(
+                    "INSERT OR REPLACE INTO work_stats (key, value) VALUES (?, ?)",
+                    (key, value)
+                )
+
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to save work stats: {e}")
+
+    def _delete_item(self, work_id: str) -> None:
+        """Delete a work item from the database."""
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM work_items WHERE work_id = ?", (work_id,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to delete work item {work_id}: {e}")
+
     def add_work(self, item: WorkItem) -> str:
         """Add work to the queue. Returns work_id."""
         with self.lock:
             self.items[item.work_id] = item
             self.stats["total_added"] += 1
+            self._save_item(item)
+            self._save_stats()
             logger.info(f"Added work {item.work_id}: {item.work_type.value} (priority: {item.priority})")
         return item.work_id
 
@@ -223,6 +399,7 @@ class WorkQueue:
                 item.claimed_by = node_id
                 item.claimed_at = time.time()
                 item.attempts += 1
+                self._save_item(item)
 
                 logger.info(f"Work {item.work_id} claimed by {node_id}: {work_type}")
                 return item
@@ -238,6 +415,7 @@ class WorkQueue:
 
             item.status = WorkStatus.RUNNING
             item.started_at = time.time()
+            self._save_item(item)
             return True
 
     def complete_work(self, work_id: str, result: Optional[Dict[str, Any]] = None) -> bool:
@@ -251,6 +429,8 @@ class WorkQueue:
             item.completed_at = time.time()
             item.result = result or {}
             self.stats["total_completed"] += 1
+            self._save_item(item)
+            self._save_stats()
 
             logger.info(f"Work {work_id} completed by {item.claimed_by}")
             return True
@@ -268,6 +448,7 @@ class WorkQueue:
                 item.claimed_by = ""
                 item.claimed_at = 0.0
                 item.error = error
+                self._save_item(item)
                 logger.warning(f"Work {work_id} failed (attempt {item.attempts}), will retry: {error}")
             else:
                 # Permanently failed
@@ -275,6 +456,8 @@ class WorkQueue:
                 item.completed_at = time.time()
                 item.error = error
                 self.stats["total_failed"] += 1
+                self._save_item(item)
+                self._save_stats()
                 logger.error(f"Work {work_id} permanently failed: {error}")
 
             return True
@@ -288,6 +471,7 @@ class WorkQueue:
 
             item.status = WorkStatus.CANCELLED
             item.completed_at = time.time()
+            self._save_item(item)
             logger.info(f"Work {work_id} cancelled")
             return True
 
@@ -303,11 +487,14 @@ class WorkQueue:
                         item.claimed_by = ""
                         item.claimed_at = 0.0
                         item.error = "timeout"
+                        self._save_item(item)
                         logger.warning(f"Work {item.work_id} timed out, will retry")
                     else:
                         item.status = WorkStatus.TIMEOUT
                         item.completed_at = time.time()
                         self.stats["total_timeout"] += 1
+                        self._save_item(item)
+                        self._save_stats()
                         logger.error(f"Work {item.work_id} timed out permanently")
 
         return timed_out
@@ -364,11 +551,64 @@ class WorkQueue:
             ]
             for work_id in to_remove:
                 del self.items[work_id]
+                self._delete_item(work_id)
                 removed += 1
 
         if removed:
             logger.info(f"Cleaned up {removed} old work items")
         return removed
+
+    def get_history(self, limit: int = 50, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get work history from the database.
+
+        Args:
+            limit: Maximum number of items to return
+            status_filter: Optional status to filter by (e.g., "completed", "failed")
+
+        Returns:
+            List of work items as dicts, most recent first
+        """
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            if status_filter:
+                cursor.execute("""
+                    SELECT * FROM work_items
+                    WHERE status = ?
+                    ORDER BY completed_at DESC, created_at DESC
+                    LIMIT ?
+                """, (status_filter, limit))
+            else:
+                cursor.execute("""
+                    SELECT * FROM work_items
+                    ORDER BY completed_at DESC, created_at DESC
+                    LIMIT ?
+                """, (limit,))
+
+            items = []
+            for row in cursor.fetchall():
+                items.append({
+                    "work_id": row["work_id"],
+                    "work_type": row["work_type"],
+                    "priority": row["priority"],
+                    "config": json.loads(row["config"]),
+                    "created_at": row["created_at"],
+                    "claimed_at": row["claimed_at"],
+                    "started_at": row["started_at"],
+                    "completed_at": row["completed_at"],
+                    "status": row["status"],
+                    "claimed_by": row["claimed_by"],
+                    "attempts": row["attempts"],
+                    "error": row["error"],
+                })
+
+            conn.close()
+            return items
+        except Exception as e:
+            logger.error(f"Failed to get work history: {e}")
+            return []
 
 
 # Singleton instance (created on demand by leader)
