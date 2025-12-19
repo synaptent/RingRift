@@ -1,5 +1,21 @@
 """Training Data Validation Module.
 
+.. deprecated::
+    For new code, prefer importing from unified_data_validator:
+
+        from app.training.unified_data_validator import (
+            get_validator,
+            validate_training_data,
+            UnifiedDataValidator,
+            # Original exports also available for compatibility:
+            DataValidator,
+            DataValidatorConfig,
+            validate_npz_file,
+        )
+
+    The unified validator provides a consistent interface across all
+    validation types (training data, NNUE, database, etc.).
+
 Validates self-play training data before it's used for training.
 Catches corrupt data, policy/value issues, and feature anomalies.
 

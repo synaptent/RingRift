@@ -46,6 +46,17 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
+# Import centralized defaults (December 2025)
+try:
+    from app.config.coordination_defaults import ResourceMonitoringDefaults
+    _DEFAULT_GPU_THRESHOLD = ResourceMonitoringDefaults.BACKPRESSURE_GPU_THRESHOLD
+    _DEFAULT_MEMORY_THRESHOLD = ResourceMonitoringDefaults.BACKPRESSURE_MEMORY_THRESHOLD
+    _DEFAULT_DISK_THRESHOLD = ResourceMonitoringDefaults.BACKPRESSURE_DISK_THRESHOLD
+except ImportError:
+    _DEFAULT_GPU_THRESHOLD = 90.0
+    _DEFAULT_MEMORY_THRESHOLD = 85.0
+    _DEFAULT_DISK_THRESHOLD = 90.0
+
 
 class ResourceType(Enum):
     """Types of resources being monitored."""
@@ -138,9 +149,9 @@ class ResourceMonitoringCoordinator:
 
     def __init__(
         self,
-        backpressure_gpu_threshold: float = 90.0,
-        backpressure_memory_threshold: float = 85.0,
-        backpressure_disk_threshold: float = 90.0,
+        backpressure_gpu_threshold: float = _DEFAULT_GPU_THRESHOLD,
+        backpressure_memory_threshold: float = _DEFAULT_MEMORY_THRESHOLD,
+        backpressure_disk_threshold: float = _DEFAULT_DISK_THRESHOLD,
         max_backpressure_history: int = 200,
     ):
         """Initialize ResourceMonitoringCoordinator.
