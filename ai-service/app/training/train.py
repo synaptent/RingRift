@@ -3014,6 +3014,40 @@ def train_model(
                 if batch_num_players is not None and batch_num_players.device != device:
                     batch_num_players = batch_num_players.to(device, non_blocking=True)
 
+                # Hot data buffer mixing: replace portion of batch with hot buffer samples (2025-12)
+                if hot_buffer is not None and hot_buffer.total_samples >= config.batch_size:
+                    try:
+                        # Compute how many samples to replace
+                        n_hot = int(features.size(0) * hot_buffer_mix_ratio)
+                        if n_hot > 0:
+                            # Get samples from hot buffer
+                            hot_board, hot_global, hot_policy, hot_value = hot_buffer.get_training_batch(
+                                batch_size=n_hot, shuffle=True
+                            )
+                            if len(hot_board) > 0:
+                                # Convert to tensors and transfer to device
+                                hot_board_t = torch.from_numpy(hot_board).to(device, non_blocking=True)
+                                hot_global_t = torch.from_numpy(hot_global).to(device, non_blocking=True)
+                                hot_policy_t = torch.from_numpy(hot_policy).to(device, non_blocking=True)
+                                hot_value_t = torch.from_numpy(hot_value).to(device, non_blocking=True)
+
+                                # Replace last n_hot samples in the batch with hot buffer samples
+                                actual_n_hot = min(n_hot, len(hot_board_t), features.size(0))
+                                if actual_n_hot > 0:
+                                    features[-actual_n_hot:] = hot_board_t[:actual_n_hot]
+                                    globals_vec[-actual_n_hot:] = hot_global_t[:actual_n_hot]
+                                    policy_targets[-actual_n_hot:] = hot_policy_t[:actual_n_hot]
+                                    # Handle scalar vs vector value targets
+                                    if value_targets.dim() == 1:
+                                        value_targets[-actual_n_hot:] = hot_value_t[:actual_n_hot]
+                                    else:
+                                        # Vector values - broadcast hot buffer scalar to first element
+                                        value_targets[-actual_n_hot:, 0] = hot_value_t[:actual_n_hot]
+                    except Exception as e:
+                        # Don't fail training on hot buffer errors
+                        if i % 100 == 0:
+                            logger.debug(f"Hot buffer mixing skipped: {e}")
+
                 # Pad policy targets if smaller than model policy_size (e.g., dataset
                 # was generated with a smaller policy space than the model supports)
                 if hasattr(model, 'policy_size') and policy_targets.size(1) < model.policy_size:
@@ -3443,26 +3477,35 @@ def train_model(
                 logger.info(f"  Current LR: {current_lr:.6f}")
 
             if not distributed or is_main_process():
-                logger.info(
+                # Log epoch statistics with hot buffer info
+                epoch_log = (
                     f"Epoch [{epoch+1}/{config.epochs_per_iter}], "
                     f"Train Loss: {avg_train_loss:.4f}, "
                     f"Val Loss: {avg_val_loss:.4f}"
                 )
+                if hot_buffer is not None:
+                    hot_stats = hot_buffer.get_statistics()
+                    epoch_log += f", Hot Buffer: {hot_stats['game_count']}/{hot_stats['max_size']} games"
+                logger.info(epoch_log)
 
                 # Publish training progress event to EventBus (2025-12)
                 if HAS_EVENT_BUS and get_event_bus is not None:
                     try:
                         event_bus = get_event_bus()
+                        event_payload = {
+                            "epoch": epoch + 1,
+                            "total_epochs": config.epochs_per_iter,
+                            "train_loss": float(avg_train_loss),
+                            "val_loss": float(avg_val_loss),
+                            "lr": float(optimizer.param_groups[0]['lr']),
+                            "config": f"{config.board_type.value}_{num_players}p",
+                        }
+                        # Add hot buffer stats if available
+                        if hot_buffer is not None:
+                            event_payload["hot_buffer"] = hot_buffer.get_statistics()
                         event_bus.publish_sync(DataEvent(
                             event_type=DataEventType.TRAINING_PROGRESS,
-                            payload={
-                                "epoch": epoch + 1,
-                                "total_epochs": config.epochs_per_iter,
-                                "train_loss": float(avg_train_loss),
-                                "val_loss": float(avg_val_loss),
-                                "lr": float(optimizer.param_groups[0]['lr']),
-                                "config": f"{config.board_type.value}_{num_players}p",
-                            },
+                            payload=event_payload,
                             source="train",
                         ))
                     except Exception as e:
