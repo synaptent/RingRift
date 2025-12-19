@@ -3443,6 +3443,7 @@ class NeuralNetAI(BaseAI):
         # updated at runtime.
         self.board_size = 8
         self.history_length = 3
+        self.feature_version = int(getattr(config, "feature_version", 1) or 1)
         # Dict[str, List[np.ndarray]] - Keyed by game_id
         self.game_history = {}
 
@@ -3856,6 +3857,14 @@ class NeuralNetAI(BaseAI):
                     self.history_length = int(cached_history_length)
                 except Exception:
                     pass
+            cached_feature_version = getattr(self.model, "_ringrift_feature_version", None)
+            if cached_feature_version is None:
+                cached_feature_version = getattr(self.model, "feature_version", None)
+            if cached_feature_version is not None:
+                try:
+                    self.feature_version = int(cached_feature_version)
+                except Exception:
+                    pass
             self._initialized_board_type = board_type
 
             # Initialize hex encoder for hex boards (must also do this for cached models)
@@ -3913,6 +3922,7 @@ class NeuralNetAI(BaseAI):
         model_class_name: Optional[str] = None
         memory_tier_override: Optional[str] = None
         history_length_override = self.history_length
+        feature_version_override: Optional[int] = None
 
         if chosen_path is not None:
             try:
@@ -3940,6 +3950,8 @@ class NeuralNetAI(BaseAI):
                             num_players_override = int(cfg.get("num_players") or num_players_override)
                             if cfg.get("history_length") is not None:
                                 history_length_override = int(cfg.get("history_length"))
+                            if cfg.get("feature_version") is not None:
+                                feature_version_override = int(cfg.get("feature_version"))
                             policy_size_override = (
                                 int(cfg.get("policy_size"))
                                 if cfg.get("policy_size") is not None
@@ -4154,6 +4166,9 @@ class NeuralNetAI(BaseAI):
                     chosen_path,
                     e,
                 )
+
+        if feature_version_override is not None:
+            self.feature_version = feature_version_override
 
         # Create new model. When metadata specifies a square-board model class,
         # instantiate it directly so we can respect a fixed policy_size from the

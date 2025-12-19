@@ -342,6 +342,15 @@ def get_model_config(model: nn.Module) -> Dict[str, Any]:
             if hasattr(model, attr):
                 config[attr] = getattr(model, attr)
 
+    feature_version = getattr(model, "feature_version", None)
+    if feature_version is None:
+        feature_version = getattr(model, "_ringrift_feature_version", None)
+    if feature_version is not None:
+        try:
+            config["feature_version"] = int(feature_version)
+        except (TypeError, ValueError):
+            config["feature_version"] = feature_version
+
     return config
 
 
