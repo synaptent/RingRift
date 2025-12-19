@@ -17043,13 +17043,13 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             # Diverse profile configurations for high-quality training data
             # Each profile targets different aspects of game understanding
             DIVERSE_PROFILES = [
-                # High-quality neural-guided profiles (60% of games)
+                # High-quality neural-guided profiles (50% of games)
                 {
                     "engine_mode": "gumbel-mcts",
                     "board_type": "hex",
                     "num_players": 2,
                     "profile": "balanced",
-                    "weight": 0.20,
+                    "weight": 0.18,
                     "description": "Gumbel MCTS 2P hex - highest quality",
                 },
                 {
@@ -17057,7 +17057,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "board_type": "hex",
                     "num_players": 2,
                     "profile": "balanced",
-                    "weight": 0.15,
+                    "weight": 0.12,
                     "description": "Policy-only 2P hex - fast NN inference",
                 },
                 {
@@ -17065,7 +17065,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "board_type": "square8",
                     "num_players": 2,
                     "profile": "aggressive",
-                    "weight": 0.10,
+                    "weight": 0.08,
                     "description": "NNUE-guided 2P square - aggressive style",
                 },
                 {
@@ -17073,7 +17073,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "board_type": "square8",
                     "num_players": 3,
                     "profile": "balanced",
-                    "weight": 0.08,
+                    "weight": 0.06,
                     "description": "Gumbel MCTS 3P square - multiplayer strategy",
                 },
                 {
@@ -17081,16 +17081,50 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "board_type": "hex",
                     "num_players": 2,
                     "profile": "territorial",
-                    "weight": 0.07,
+                    "weight": 0.06,
                     "description": "MCTS 2P hex - territorial focus",
                 },
-                # GPU-accelerated throughput profiles (30% of games)
+                # MaxN/BRS multiplayer profiles (15% of games)
+                # Benchmarks show: MaxN >> Descent in 3P/4P, MaxN ≈ BRS
+                {
+                    "engine_mode": "maxn",
+                    "board_type": "hex",
+                    "num_players": 3,
+                    "profile": "balanced",
+                    "weight": 0.05,
+                    "description": "MaxN 3P hex - optimal multiplayer search",
+                },
+                {
+                    "engine_mode": "maxn",
+                    "board_type": "square8",
+                    "num_players": 4,
+                    "profile": "balanced",
+                    "weight": 0.04,
+                    "description": "MaxN 4P square - best for 4-player",
+                },
+                {
+                    "engine_mode": "brs",
+                    "board_type": "hex",
+                    "num_players": 3,
+                    "profile": "aggressive",
+                    "weight": 0.03,
+                    "description": "BRS 3P hex - fast multiplayer search",
+                },
+                {
+                    "engine_mode": "brs",
+                    "board_type": "square8",
+                    "num_players": 4,
+                    "profile": "territorial",
+                    "weight": 0.03,
+                    "description": "BRS 4P square - territorial multiplayer",
+                },
+                # GPU-accelerated throughput profiles (25% of games)
                 {
                     "engine_mode": "heuristic-only",
                     "board_type": "hex",
                     "num_players": 2,
                     "profile": "balanced",
-                    "weight": 0.12,
+                    "weight": 0.10,
                     "description": "GPU heuristic 2P hex - fast throughput",
                 },
                 {
@@ -17098,7 +17132,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "board_type": "square8",
                     "num_players": 2,
                     "profile": "defensive",
-                    "weight": 0.08,
+                    "weight": 0.07,
                     "description": "GPU heuristic 2P square - defensive style",
                 },
                 {
@@ -17115,7 +17149,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "board_type": "square19",
                     "num_players": 2,
                     "profile": "balanced",
-                    "weight": 0.05,
+                    "weight": 0.04,
                     "description": "Mixed 2P large board - strategic depth",
                 },
                 {
@@ -17123,7 +17157,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "board_type": "hex",
                     "num_players": 3,
                     "profile": "aggressive",
-                    "weight": 0.05,
+                    "weight": 0.04,
                     "description": "NNUE 3P hex - aggressive multiplayer",
                 },
                 {
@@ -17538,6 +17572,82 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             except Exception as e:
                 logger.error(f"Validation loop error: {e}")
                 await asyncio.sleep(VALIDATION_INTERVAL)
+
+    async def _queue_populator_loop(self):
+        """Background loop to maintain minimum work queue depth.
+
+        Ensures there are always at least 50 work items in the queue until
+        all board/player configurations reach 2000 Elo. Only runs on leader.
+        """
+        POPULATOR_INTERVAL = 60  # 1 minute
+        await asyncio.sleep(30)  # Initial delay
+
+        logger.info("Queue populator loop started")
+
+        # Initialize populator
+        try:
+            from app.coordination.queue_populator import QueuePopulator, load_populator_config_from_yaml
+            import yaml
+
+            # Load config from YAML
+            config_path = Path(__file__).parent.parent / "config" / "unified_loop.yaml"
+            if config_path.exists():
+                with open(config_path) as f:
+                    yaml_config = yaml.safe_load(f)
+                populator_config = load_populator_config_from_yaml(yaml_config)
+            else:
+                populator_config = None
+
+            populator = QueuePopulator(config=populator_config)
+            populator.set_work_queue(get_work_queue())
+        except Exception as e:
+            logger.error(f"Failed to initialize queue populator: {e}")
+            return
+
+        while self.running:
+            try:
+                # Only leader populates work queue
+                if self.role != NodeRole.LEADER:
+                    await asyncio.sleep(POPULATOR_INTERVAL)
+                    continue
+
+                # Check if populator is enabled
+                if not populator.config.enabled:
+                    await asyncio.sleep(POPULATOR_INTERVAL)
+                    continue
+
+                # Check if all targets are met
+                if populator.all_targets_met():
+                    logger.info("All Elo targets met (2000+), queue population paused")
+                    await asyncio.sleep(POPULATOR_INTERVAL * 5)  # Check less often
+                    continue
+
+                # Populate the queue
+                items_added = populator.populate()
+                if items_added > 0:
+                    status = populator.get_status()
+                    logger.info(
+                        f"Queue populated: +{items_added} items, "
+                        f"depth={status['current_queue_depth']}, "
+                        f"unmet={status['configs_unmet']}/{status['total_configs']}"
+                    )
+
+                    # Notify if significant change
+                    if items_added >= 10:
+                        await self.notifier.send(
+                            f"📋 Queue populated: +{items_added} work items",
+                            severity="info",
+                            context={
+                                "queue_depth": status['current_queue_depth'],
+                                "configs_unmet": status['configs_unmet'],
+                            }
+                        )
+
+                await asyncio.sleep(POPULATOR_INTERVAL)
+
+            except Exception as e:
+                logger.error(f"Queue populator loop error: {e}")
+                await asyncio.sleep(POPULATOR_INTERVAL)
 
     async def handle_games_analytics(self, request: web.Request) -> web.Response:
         """GET /games/analytics - Game statistics for dashboards.
@@ -27334,6 +27444,9 @@ print(json.dumps({{
 
         # Validation loop: auto-queue validation for newly trained models
         tasks.append(asyncio.create_task(self._validation_loop()))
+
+        # Queue populator loop: maintain 50+ work items until 2000 Elo target met
+        tasks.append(asyncio.create_task(self._queue_populator_loop()))
 
         # Best-effort bootstrap from seed peers before running elections. This
         # helps newly started cloud nodes quickly learn about the full cluster.

@@ -585,6 +585,40 @@ def run_hybrid_selfplay(
             logger.warning(f"Gumbel MCTS AI not available: {e}. Falling back to heuristic.")
             gumbel_mcts_ai = None
 
+    # Initialize MaxN AI for multi-player search
+    maxn_ai = None
+    if "maxn" in all_engine_modes:
+        try:
+            from app.ai.maxn_ai import MaxNAI
+            from app.models.core import AIConfig, AIType
+            maxn_config = AIConfig(
+                ai_type=AIType.MAXN,
+                difficulty=7,
+                think_time=2000,
+            )
+            maxn_ai = MaxNAI(player_number=1, config=maxn_config)
+            logger.info("MaxN AI initialized (multi-player minimax)")
+        except ImportError as e:
+            logger.warning(f"MaxN AI not available: {e}. Falling back to heuristic.")
+            maxn_ai = None
+
+    # Initialize BRS AI for best reply search
+    brs_ai = None
+    if "brs" in all_engine_modes:
+        try:
+            from app.ai.maxn_ai import BRSAI
+            from app.models.core import AIConfig, AIType
+            brs_config = AIConfig(
+                ai_type=AIType.BRS,
+                difficulty=7,
+                think_time=2000,
+            )
+            brs_ai = BRSAI(player_number=1, config=brs_config)
+            logger.info("BRS AI initialized (best reply search)")
+        except ImportError as e:
+            logger.warning(f"BRS AI not available: {e}. Falling back to heuristic.")
+            brs_ai = None
+
     # Build per-player engine mode mapping for asymmetric matches
     player_engine_modes = {
         1: engine_mode,
@@ -861,6 +895,46 @@ def run_hybrid_selfplay(
                                             mcts_policy_dist[move_to_idx[m]] = p
                         except Exception as e:
                             logger.debug(f"Gumbel MCTS error: {e}, falling back to random")
+                            best_move = valid_moves[np.random.randint(len(valid_moves))]
+                    elif current_engine == "maxn" and maxn_ai is not None:
+                        # MaxN mode: Multi-player minimax search
+                        try:
+                            # Update AI's player number for current player
+                            maxn_ai.player_number = current_player
+                            best_move = maxn_ai.select_move(game_state)
+                            if best_move is None or best_move not in valid_moves:
+                                # Fallback to heuristic if maxn fails
+                                move_scores = evaluator.evaluate_moves(
+                                    game_state, valid_moves, current_player, GameEngine
+                                )
+                                if move_scores:
+                                    best_score = max(s for _, s in move_scores)
+                                    best_moves = [m for m, s in move_scores if s == best_score]
+                                    best_move = np.random.choice(best_moves) if len(best_moves) > 1 else best_moves[0]
+                                else:
+                                    best_move = valid_moves[0]
+                        except Exception as e:
+                            logger.debug(f"MaxN error: {e}, falling back to heuristic")
+                            best_move = valid_moves[np.random.randint(len(valid_moves))]
+                    elif current_engine == "brs" and brs_ai is not None:
+                        # BRS mode: Best Reply Search (faster alternative to MaxN)
+                        try:
+                            # Update AI's player number for current player
+                            brs_ai.player_number = current_player
+                            best_move = brs_ai.select_move(game_state)
+                            if best_move is None or best_move not in valid_moves:
+                                # Fallback to heuristic if BRS fails
+                                move_scores = evaluator.evaluate_moves(
+                                    game_state, valid_moves, current_player, GameEngine
+                                )
+                                if move_scores:
+                                    best_score = max(s for _, s in move_scores)
+                                    best_moves = [m for m, s in move_scores if s == best_score]
+                                    best_move = np.random.choice(best_moves) if len(best_moves) > 1 else best_moves[0]
+                                else:
+                                    best_move = valid_moves[0]
+                        except Exception as e:
+                            logger.debug(f"BRS error: {e}, falling back to heuristic")
                             best_move = valid_moves[np.random.randint(len(valid_moves))]
                     else:
                         # heuristic-only (default): Evaluate moves (hybrid CPU/GPU)
@@ -1272,28 +1346,28 @@ def main():
         "--engine-mode",
         type=str,
         default="heuristic-only",
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts"],
-        help="Engine mode for P1: random-only, heuristic-only, mixed, nnue-guided, mcts, nn-minimax, nn-descent, policy-only (fast NN, no search), or gumbel-mcts (efficient search)",
+        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts", "maxn", "brs"],
+        help="Engine mode for P1: random-only, heuristic-only, mixed, nnue-guided, mcts, nn-minimax, nn-descent, policy-only, gumbel-mcts, maxn (multi-player minimax), or brs (best reply search)",
     )
     parser.add_argument(
         "--p2-engine-mode",
         type=str,
         default=None,
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts"],
+        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts", "maxn", "brs"],
         help="Engine mode for Player 2 (if different from P1 for asymmetric matches)",
     )
     parser.add_argument(
         "--p3-engine-mode",
         type=str,
         default=None,
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts"],
+        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts", "maxn", "brs"],
         help="Engine mode for Player 3 (for 3-4 player games)",
     )
     parser.add_argument(
         "--p4-engine-mode",
         type=str,
         default=None,
-        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts"],
+        choices=["random-only", "random", "heuristic-only", "mixed", "nnue-guided", "mcts", "nn-minimax", "nn-descent", "policy-only", "gumbel-mcts", "maxn", "brs"],
         help="Engine mode for Player 4 (for 4 player games)",
     )
     parser.add_argument(
