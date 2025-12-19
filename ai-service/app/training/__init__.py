@@ -46,6 +46,7 @@ Architecture Overview (December 2025)
    - checkpointing.py: save_checkpoint, load_checkpoint, AsyncCheckpointer
    - schedulers.py: LR scheduler creation (warmup, cosine, step decay)
    - selfplay_config.py: Unified selfplay configuration
+   - datasets.py: RingRiftDataset, WeightedRingRiftDataset
 
 Quick Start
 -----------
@@ -414,4 +415,22 @@ if HAS_SELFPLAY_CONFIG:
         "create_argument_parser",
         "get_default_config",
         "get_production_config",
+    ])
+
+# Import dataset classes (December 2025)
+try:
+    from app.training.datasets import (
+        RingRiftDataset,
+        WeightedRingRiftDataset,
+    )
+    HAS_DATASETS = True
+except ImportError:
+    HAS_DATASETS = False
+
+__all__.append("HAS_DATASETS")
+
+if HAS_DATASETS:
+    __all__.extend([
+        "RingRiftDataset",
+        "WeightedRingRiftDataset",
     ])

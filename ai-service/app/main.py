@@ -43,6 +43,21 @@ from .config.ladder_config import (
     list_ladder_tiers,
 )
 
+# Resource cleanup imports
+try:
+    from .distributed.db_utils import close_all_connections as _close_db_connections
+    HAS_DB_UTILS = True
+except ImportError:  # pragma: no cover
+    HAS_DB_UTILS = False
+    _close_db_connections = None  # type: ignore
+
+try:
+    from .ai.model_cache import clear_model_cache as _clear_model_cache
+    HAS_MODEL_CACHE = True
+except ImportError:  # pragma: no cover
+    HAS_MODEL_CACHE = False
+    _clear_model_cache = None  # type: ignore
+
 from .ai.random_ai import RandomAI
 from .ai.heuristic_ai import HeuristicAI
 from .ai.heuristic_weights import HEURISTIC_WEIGHT_PROFILES, load_trained_profiles_if_available
@@ -142,6 +157,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("RingRift AI Service shutting down")
+
+    # 1. Shutdown coordinators first (most complex resources)
     if HAS_COORDINATOR_REGISTRY:
         try:
             results = await shutdown_all_coordinators(timeout=30.0)
@@ -150,6 +167,22 @@ async def lifespan(app: FastAPI):
                 logger.info(f"Coordinator shutdown: {succeeded}/{len(results)} succeeded")
         except Exception as e:
             logger.error(f"Error during coordinator shutdown: {e}")
+
+    # 2. Clear model cache to release GPU/MPS memory
+    if HAS_MODEL_CACHE:
+        try:
+            _clear_model_cache()
+            logger.info("Model cache cleared")
+        except Exception as e:
+            logger.warning(f"Error clearing model cache: {e}")
+
+    # 3. Close all database connections (after coordinators to avoid connection errors)
+    if HAS_DB_UTILS:
+        try:
+            _close_db_connections()
+            logger.info("Database connections closed")
+        except Exception as e:
+            logger.warning(f"Error closing database connections: {e}")
 
     logger.info("RingRift AI Service shutdown complete")
 
