@@ -2536,6 +2536,7 @@ class EnhancedEarlyStopping:
         self.best_state: Optional[Dict[str, torch.Tensor]] = None
         self.best_epoch = 0
         self._stopped = False
+        self._call_epoch = 0  # Epoch counter for __call__ legacy interface
 
     def should_stop(
         self,
@@ -2556,11 +2557,6 @@ class EnhancedEarlyStopping:
         Returns:
             True if training should stop
         """
-        # Don't allow early stopping before min_epochs
-        if epoch < self.min_epochs:
-            self._stopped = False
-            return False
-
         improved = False
 
         # Check loss improvement
@@ -2581,10 +2577,16 @@ class EnhancedEarlyStopping:
             else:
                 self.elo_counter += 1
 
-        # Save best model state
+        # Save best model state (always track, even during min_epochs)
         if improved and model is not None:
             self.best_state = copy.deepcopy(model.state_dict())
             self.best_epoch = epoch
+
+        # Don't allow early stopping before min_epochs
+        # (but we still track improvements above)
+        if epoch < self.min_epochs:
+            self._stopped = False
+            return False
 
         # Check if should stop
         loss_stop = val_loss is not None and self.loss_counter >= self.patience
@@ -2634,6 +2636,7 @@ class EnhancedEarlyStopping:
         self.best_state = None
         self.best_epoch = 0
         self._stopped = False
+        self._call_epoch = 0  # Reset epoch counter for legacy interface
 
     # =========================================================================
     # Backwards Compatibility Methods (for drop-in replacement of basic EarlyStopping)
@@ -2653,7 +2656,10 @@ class EnhancedEarlyStopping:
         Returns:
             True if training should stop, False otherwise
         """
-        return self.should_stop(val_loss=val_loss, model=model)
+        # Track epoch internally for legacy interface
+        result = self.should_stop(val_loss=val_loss, model=model, epoch=self._call_epoch)
+        self._call_epoch += 1
+        return result
 
     def restore_best_weights(self, model: nn.Module) -> None:
         """
