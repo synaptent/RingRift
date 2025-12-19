@@ -2592,9 +2592,10 @@ def train_model(
                     # For DDP, forward through the wrapped model
                     out = model(features, globals_vec)
                     if isinstance(out, tuple) and len(out) == 3:
-                        value_pred, policy_pred, _rank_dist_pred = out
+                        value_pred, policy_pred, rank_dist_pred = out
                     else:
                         value_pred, policy_pred = out
+                        rank_dist_pred = None
 
                     policy_log_probs = torch.log_softmax(policy_pred, dim=1)
 
@@ -2620,6 +2621,26 @@ def train_model(
                         policy_log_probs, policy_targets
                     )
                     loss = v_loss + (config.policy_weight * p_loss)
+
+                    # Rank distribution loss (V3+ multi-player head)
+                    if (
+                        rank_dist_pred is not None
+                        and use_multi_player_loss
+                        and value_targets.ndim == 2
+                    ):
+                        rank_targets, rank_mask = build_rank_targets(
+                            value_targets,
+                            effective_val_num_players,
+                        )
+                        rank_log_probs = torch.log(
+                            rank_dist_pred.clamp_min(1e-8)
+                        )
+                        per_player_loss = -(
+                            rank_targets * rank_log_probs
+                        ).sum(dim=-1)
+                        if torch.any(rank_mask):
+                            rank_loss = per_player_loss[rank_mask].mean()
+                            loss = loss + (config.rank_dist_weight * rank_loss)
                     # Accumulate on GPU without .item() sync
                     val_loss += loss.detach()
                     val_batches += 1
