@@ -158,11 +158,17 @@ except ImportError:
 # Circuit breaker for training fault tolerance (2025-12)
 try:
     from app.distributed.circuit_breaker import get_training_breaker, CircuitState
+    from app.distributed.data_events import get_event_bus, DataEvent, DataEventType
     HAS_CIRCUIT_BREAKER = True
+    HAS_EVENT_BUS = True
 except ImportError:
     get_training_breaker = None
     CircuitState = None
+    get_event_bus = None
+    DataEvent = None
+    DataEventType = None
     HAS_CIRCUIT_BREAKER = False
+    HAS_EVENT_BUS = False
 
 # Training anomaly detection and enhancements (2025-12)
 try:
@@ -2798,6 +2804,23 @@ def train_model(
     _circuit_breaker_rollbacks: int = 0
     _max_circuit_breaker_rollbacks: int = 3  # Max rollbacks before giving up
 
+    # Publish training started event (2025-12)
+    if HAS_EVENT_BUS and get_event_bus is not None and (not distributed or is_main_process()):
+        try:
+            event_bus = get_event_bus()
+            event_bus.publish_sync(DataEvent(
+                event_type=DataEventType.TRAINING_STARTED,
+                payload={
+                    "total_epochs": config.epochs_per_iter,
+                    "start_epoch": start_epoch,
+                    "config": f"{config.board_type.value}_{num_players}p",
+                    "model_path": str(config.model_dir / f"model_{num_players}p.pth"),
+                },
+                source="train",
+            ))
+        except Exception as e:
+            logger.debug(f"Failed to publish training started event: {e}")
+
     try:
         for epoch in range(start_epoch, config.epochs_per_iter):
             # Circuit breaker check - skip training if circuit is open (2025-12)
@@ -3365,6 +3388,25 @@ def train_model(
                     f"Val Loss: {avg_val_loss:.4f}"
                 )
 
+                # Publish training progress event to EventBus (2025-12)
+                if HAS_EVENT_BUS and get_event_bus is not None:
+                    try:
+                        event_bus = get_event_bus()
+                        event_bus.publish_sync(DataEvent(
+                            event_type=DataEventType.TRAINING_PROGRESS,
+                            payload={
+                                "epoch": epoch + 1,
+                                "total_epochs": config.epochs_per_iter,
+                                "train_loss": float(avg_train_loss),
+                                "val_loss": float(avg_val_loss),
+                                "lr": float(optimizer.param_groups[0]['lr']),
+                                "config": f"{config.board_type.value}_{num_players}p",
+                            },
+                            source="train",
+                        ))
+                    except Exception as e:
+                        logger.debug(f"Failed to publish training progress event: {e}")
+
             # Overfitting detection: warn if validation diverges significantly from train
             if avg_train_loss > 0 and epoch >= 3:
                 overfitting_ratio = (avg_val_loss - avg_train_loss) / avg_train_loss
@@ -3627,6 +3669,25 @@ def train_model(
                         early_stopping=early_stopper,
                     )
                 logger.info("Training completed. Final checkpoint saved.")
+
+                # Publish training completed event (2025-12)
+                if HAS_EVENT_BUS and get_event_bus is not None:
+                    try:
+                        event_bus = get_event_bus()
+                        event_bus.publish_sync(DataEvent(
+                            event_type=DataEventType.TRAINING_COMPLETED,
+                            payload={
+                                "epochs_completed": epochs_completed,
+                                "best_val_loss": float(best_val_loss),
+                                "final_train_loss": float(avg_train_loss),
+                                "final_val_loss": float(avg_val_loss),
+                                "config": f"{config.board_type.value}_{num_players}p",
+                                "checkpoint_path": str(final_checkpoint_path),
+                            },
+                            source="train",
+                        ))
+                    except Exception as e:
+                        logger.debug(f"Failed to publish training completed event: {e}")
     finally:
         # Shutdown async checkpointer and wait for pending saves
         if async_checkpointer is not None:
