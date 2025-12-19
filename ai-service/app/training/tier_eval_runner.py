@@ -541,6 +541,18 @@ def run_tier_evaluation(
     else:
         criteria["no_major_regression_vs_previous_tier"] = None
 
+    # Enforce minimum win rate vs previous tier (must be stronger than predecessor)
+    if (
+        tier_config.min_win_rate_vs_previous_tier is not None
+        and win_rate_vs_prev is not None
+        and prev_games > 0
+    ):
+        criteria["min_win_rate_vs_previous_tier"] = (
+            win_rate_vs_prev >= tier_config.min_win_rate_vs_previous_tier
+        )
+    else:
+        criteria["min_win_rate_vs_previous_tier"] = None
+
     overall_pass = True
     for value in criteria.values():
         if value is False:

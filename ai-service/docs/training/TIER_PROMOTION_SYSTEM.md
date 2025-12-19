@@ -310,15 +310,18 @@ Models are tested against two baseline opponents using the `game_gauntlet` modul
 
 ### Tier-Specific Thresholds
 
-Minimum win rates required against baselines (calibrated empirically):
+Minimum win rates required against baselines (from `tier_eval_config.py`):
 
-| Tier  | vs Random | vs Heuristic | Notes                           |
-| ----- | --------- | ------------ | ------------------------------- |
-| D1-D7 | 80%       | N/A          | Basic competence                |
-| D8    | 80%       | 70%          | Adds heuristic requirement      |
-| D9    | 75%       | 70%          | Calibrated from production data |
-| D10   | 75%       | 70%          | Calibrated from production data |
-| D11   | 80%       | 75%          | Highest tier requirements       |
+| Tier | vs Baseline | Baselines Tested       | vs Previous Tier | Notes              |
+| ---- | ----------- | ---------------------- | ---------------- | ------------------ |
+| D2   | 60%         | Random only            | N/A              | Entry tier         |
+| D4   | 70%         | Random                 | >50%             | vs D2              |
+| D6   | 75%         | Random + Heuristic(D2) | >50%             | vs D4              |
+| D8   | 80%         | Random + Heuristic(D5) | >50%             | vs D6              |
+| D9   | 75%         | Random + Heuristic(D6) | >50%             | vs D8 (calibrated) |
+| D10  | 75%         | Random + Heuristic(D7) | >50%             | vs D9 (calibrated) |
+
+**Note:** D9/D10 baseline thresholds were reduced from 80%+ to 75% based on empirical data showing neural models achieve ~70-76% vs random due to selfplay optimization bias.
 
 ### Configuration
 
@@ -365,9 +368,11 @@ print(f"Failed baselines: {result.failed_baselines}")
 
 **Calibration notes:**
 
-- Production models typically achieve 65-75% vs random (not 90%+)
-- D9/D10 thresholds were reduced from 85%/90% to 75% based on empirical data
+- Production neural models typically achieve 65-75% vs random (not 90%+)
+- D9/D10 baseline thresholds were reduced to 75% based on empirical data
 - The S-invariant guarantees no position repetition (draw-by-repetition disabled)
+- All tiers (except D2) require >50% win rate vs the previous tier
+- The `min_win_rate_vs_previous_tier` field (default 0.50) enforces this gate
 
 ## Related Documentation
 

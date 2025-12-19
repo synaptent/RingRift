@@ -46,6 +46,7 @@ class TierEvaluationConfig:
     time_budget_ms: Optional[int]
     opponents: List[TierOpponentConfig] = field(default_factory=list)
     min_win_rate_vs_baseline: Optional[float] = None
+    min_win_rate_vs_previous_tier: float = 0.50
     max_regression_vs_previous_tier: Optional[float] = None
     # Confidence level used for Wilson lower-bound gating against baseline.
     # When set, min_win_rate_vs_baseline is applied to the lower bound of the

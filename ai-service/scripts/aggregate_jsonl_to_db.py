@@ -76,7 +76,10 @@ def open_jsonl_file(filepath: Path):
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.models import BoardType, GamePhase, GameState, GameStatus, Move, MoveType, Position
+from app.models import (
+    BoardType, BoardState, GamePhase, GameState, GameStatus,
+    Move, MoveType, Position, Player, TimeControl
+)
 
 # Unified logging setup
 try:
@@ -372,40 +375,69 @@ def _create_placeholder_state(
     seed: Optional[int],
 ) -> GameState:
     """Create a minimal placeholder initial state."""
-    from app.models import Board, PlayerState
-
-    # Map board type string to enum
+    # Map board type string to enum and size
     board_type_map = {
-        "square8": BoardType.SQUARE8,
-        "square19": BoardType.SQUARE19,
-        "hexagonal": BoardType.HEXAGONAL,
-        "hex": BoardType.HEXAGONAL,
+        "square8": (BoardType.SQUARE8, 8),
+        "square19": (BoardType.SQUARE19, 19),
+        "hexagonal": (BoardType.HEXAGONAL, 4),  # radius 4
+        "hex": (BoardType.HEXAGONAL, 4),
+        "hex8": (BoardType.HEX8, 4),
     }
-    bt = board_type_map.get(board_type, BoardType.SQUARE8)
+    bt, board_size = board_type_map.get(board_type, (BoardType.SQUARE8, 8))
+
+    # Create board state with required fields
+    board = BoardState(
+        type=bt,
+        size=board_size,
+        stacks={},
+        markers={},
+        collapsed_spaces={},
+        eliminated_rings={},
+    )
 
     # Create minimal player states
+    game_id = str(uuid.uuid4())
+    now = datetime.now()
     players = [
-        PlayerState(
-            player_number=i + 1,
+        Player(
+            id=f"player-{i+1}",
+            username=f"AI-{i+1}",
             type="ai",
+            player_number=i + 1,
+            is_ready=True,
+            time_remaining=300000,  # 5 minutes in ms
+            rings_in_hand=15,  # Standard starting rings
             eliminated_rings=0,
             territory_spaces=0,
-            rings_in_hand=15,  # Standard starting rings
         )
         for i in range(num_players)
     ]
 
+    # Default time control
+    time_control = TimeControl(
+        initial_time=300000,  # 5 minutes
+        increment=0,
+        type="untimed",
+    )
+
     return GameState(
-        game_id=str(uuid.uuid4()),
+        id=game_id,
         board_type=bt,
-        board=Board(stacks={}, markers={}, collapsed_spaces={}, eliminated_rings={}),
-        players=players,
-        current_player=1,
-        current_phase=GamePhase.RING_PLACEMENT,
-        game_status=GameStatus.ACTIVE,
         rng_seed=seed or 0,
-        created_at=datetime.now(),
-        turn_number=0,
+        board=board,
+        players=players,
+        current_phase=GamePhase.RING_PLACEMENT,
+        current_player=1,
+        time_control=time_control,
+        game_status=GameStatus.ACTIVE,
+        created_at=now,
+        last_move_at=now,
+        is_rated=False,
+        max_players=num_players,
+        total_rings_in_play=0,
+        total_rings_eliminated=0,
+        victory_threshold=3,
+        territory_victory_threshold=50,
     )
 
 
