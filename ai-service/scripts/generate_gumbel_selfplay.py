@@ -4,14 +4,15 @@
 This script generates games using Gumbel MCTS which produces visit distribution
 soft targets suitable for KL divergence loss training.
 
+Uses unified SelfplayConfig for configuration (December 2025).
+
 Usage:
     python scripts/generate_gumbel_selfplay.py \
         --num-games 500 \
-        --board-type square8 \
+        --board square8 \
         --output data/gumbel_selfplay/sq8_gumbel.jsonl
 """
 
-import argparse
 import json
 import logging
 import os
@@ -26,6 +27,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser, EngineMode
 
 from app.models import BoardType, AIConfig
 from app.training.env import RingRiftEnv
@@ -194,14 +197,37 @@ def generate_game(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate Gumbel MCTS selfplay games")
-    parser.add_argument("--num-games", type=int, default=100, help="Number of games to generate")
-    parser.add_argument("--board-type", type=str, default="square8", help="Board type (square8, square19, hexagonal)")
-    parser.add_argument("--num-players", type=int, default=2, help="Number of players")
+    # Use unified argument parser from SelfplayConfig
+    parser = create_argument_parser(
+        description="Generate Gumbel MCTS selfplay games",
+        include_gpu=False,  # Gumbel MCTS runs on CPU
+        include_ramdrive=False,
+    )
+    # Add script-specific arguments
     parser.add_argument("--output", "-o", type=str, required=True, help="Output JSONL file")
     parser.add_argument("--gumbel-sims", type=int, default=64, help="Gumbel MCTS simulations")
     parser.add_argument("--max-moves", type=int, default=500, help="Max moves per game")
-    args = parser.parse_args()
+    parsed = parser.parse_args()
+
+    # Create config from parsed args
+    config = SelfplayConfig(
+        board_type=parsed.board,
+        num_players=parsed.num_players,
+        num_games=parsed.num_games,
+        mcts_simulations=parsed.gumbel_sims,
+        engine_mode=EngineMode.GUMBEL_MCTS,
+        source='generate_gumbel_selfplay.py',
+    )
+
+    # Build args for backwards compatibility
+    args = type('Args', (), {
+        'num_games': config.num_games,
+        'board_type': config.board_type,
+        'num_players': config.num_players,
+        'output': parsed.output,
+        'gumbel_sims': parsed.gumbel_sims,
+        'max_moves': parsed.max_moves,
+    })()
 
     # Setup
     board_type = parse_board_type(args.board_type)

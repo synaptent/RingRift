@@ -4,10 +4,12 @@
 This script generates games using pure MCTS (no heuristic biases) to produce
 balanced training data that reflects true game balance rather than AI biases.
 
+Uses unified SelfplayConfig for configuration (December 2025).
+
 Usage:
     python scripts/run_mcts_balanced_selfplay.py \
         --num-games 100 \
-        --board-type square8 \
+        --board square8 \
         --num-players 2 \
         --output-dir data/games/mcts_balanced
 
@@ -18,7 +20,6 @@ Usage:
         --output-dir data/games/mcts_balanced
 """
 
-import argparse
 import json
 import logging
 import os
@@ -30,6 +31,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Add the app directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser, EngineMode
 
 from app.ai.mcts_ai import MCTSAI
 from app.models import AIConfig, BoardType, GameStatus
@@ -271,23 +274,42 @@ def run_selfplay(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run balanced MCTS self-play")
-    parser.add_argument("--num-games", type=int, default=100, help="Games per config")
-    parser.add_argument("--board-type", type=str, choices=["square8", "square19", "hexagonal"],
-                        help="Board type (if not --all-boards)")
-    parser.add_argument("--num-players", type=int, default=2, choices=[2, 3, 4],
-                        help="Number of players")
+    # Use unified argument parser from SelfplayConfig
+    parser = create_argument_parser(
+        description="Run balanced MCTS self-play",
+        include_gpu=False,  # MCTS runs on CPU
+        include_ramdrive=False,
+    )
+    # Add script-specific arguments
     parser.add_argument("--all-boards", action="store_true",
                         help="Run on all board types")
-    parser.add_argument("--mcts-iterations", type=int, default=400,
-                        help="MCTS iterations per move")
     parser.add_argument("--randomness", type=float, default=0.15,
                         help="Randomness factor for move diversity (0.0-1.0, default 0.15)")
-    parser.add_argument("--output-dir", type=Path, default=Path("data/games/mcts_balanced"),
-                        help="Output directory")
-    parser.add_argument("--seed", type=int, default=42, help="Base random seed")
+    parsed = parser.parse_args()
 
-    args = parser.parse_args()
+    # Create config from parsed args
+    config = SelfplayConfig(
+        board_type=parsed.board,
+        num_players=parsed.num_players,
+        num_games=parsed.num_games,
+        mcts_simulations=parsed.mcts_simulations,
+        output_dir=parsed.output_dir or "data/games/mcts_balanced",
+        seed=parsed.seed or 42,
+        engine_mode=EngineMode.MCTS,
+        source='run_mcts_balanced_selfplay.py',
+    )
+
+    # Build args for backwards compatibility
+    args = type('Args', (), {
+        'num_games': config.num_games,
+        'board_type': config.board_type,
+        'num_players': config.num_players,
+        'mcts_iterations': config.mcts_simulations,
+        'output_dir': Path(config.output_dir),
+        'seed': config.seed,
+        'all_boards': parsed.all_boards,
+        'randomness': parsed.randomness,
+    })()
 
     configs = []
     if args.all_boards:
