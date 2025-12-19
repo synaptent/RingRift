@@ -5,6 +5,8 @@ Launches multiple selfplay workers across available GPUs for maximum throughput.
 Each GPU runs an independent selfplay process, with results aggregated into
 a shared database.
 
+Uses unified SelfplayConfig for configuration (December 2025).
+
 Usage:
     # Auto-detect GPUs and distribute work
     python scripts/run_multi_gpu_selfplay.py --num-games 10000 --board square8
@@ -22,7 +24,6 @@ Output:
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import multiprocessing as mp
@@ -35,6 +36,8 @@ from typing import Any, Dict, List, Optional
 
 # Add app/ to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser, EngineMode
 
 import torch
 
@@ -161,30 +164,12 @@ def merge_results(output_dir: Path, gpu_ids: List[int]) -> Dict[str, Any]:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Multi-GPU parallel self-play coordinator"
+    # Use unified argument parser from SelfplayConfig
+    parser = create_argument_parser(
+        description="Multi-GPU parallel self-play coordinator",
+        include_ramdrive=False,  # Multi-GPU manages its own output
     )
-
-    parser.add_argument(
-        "--num-games",
-        type=int,
-        default=1000,
-        help="Total number of games to generate (distributed across GPUs)",
-    )
-    parser.add_argument(
-        "--board",
-        type=str,
-        default="square8",
-        choices=["square8", "square19", "hexagonal"],
-        help="Board type",
-    )
-    parser.add_argument(
-        "--num-players",
-        type=int,
-        default=2,
-        choices=[2, 3, 4],
-        help="Number of players",
-    )
+    # Add script-specific arguments for multi-GPU coordination
     parser.add_argument(
         "--gpus",
         type=str,
@@ -195,27 +180,30 @@ def main():
         action="store_true",
         help="Use all available GPUs",
     )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=32,
-        help="GPU batch size per worker",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default=str(AI_SERVICE_ROOT / "data" / "selfplay" / "multi_gpu"),
-        help="Output directory",
-    )
-    parser.add_argument(
-        "--engine-mode",
-        type=str,
-        default="heuristic-only",
-        choices=["random-only", "heuristic-only", "nnue-guided"],
-        help="Engine mode for selfplay",
+    parsed = parser.parse_args()
+
+    # Create config from parsed args (uses canonical board type normalization)
+    config = SelfplayConfig(
+        board_type=parsed.board,
+        num_players=parsed.num_players,
+        num_games=parsed.num_games,
+        engine_mode=parsed.engine_mode,
+        batch_size=parsed.batch_size,
+        output_dir=parsed.output_dir or str(AI_SERVICE_ROOT / "data" / "selfplay" / "multi_gpu"),
+        source='run_multi_gpu_selfplay.py',
     )
 
-    args = parser.parse_args()
+    # Build args object for backwards compatibility with rest of script
+    args = type('Args', (), {
+        'num_games': config.num_games,
+        'board': config.board_type,
+        'num_players': config.num_players,
+        'batch_size': config.batch_size,
+        'output_dir': config.output_dir,
+        'engine_mode': config.engine_mode.value if isinstance(config.engine_mode, EngineMode) else config.engine_mode,
+        'gpus': parsed.gpus,
+        'all_gpus': parsed.all_gpus,
+    })()
 
     # Determine GPUs to use
     available_gpus = get_available_gpus()

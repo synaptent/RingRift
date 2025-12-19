@@ -2,9 +2,10 @@
 """
 Run selfplay games using purely random AI (uniform random move selection).
 This explores the game tree more uniformly and may hit rare scenarios like recovery.
+
+Uses unified SelfplayConfig for configuration (December 2025).
 """
 
-import argparse
 import fcntl
 import json
 import logging
@@ -24,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 # Add app/ to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser
 
 from app.models import GameState, Move, MoveType, GamePhase, GameStatus
 from app.game_engine import GameEngine
@@ -154,14 +157,35 @@ def play_random_game(
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Run random AI selfplay games')
-    parser.add_argument('--num-games', type=int, default=100, help='Number of games')
-    parser.add_argument('--board-type', default='square8', help='Board type')
-    parser.add_argument('--num-players', type=int, default=2, help='Number of players')
-    parser.add_argument('--output-dir', default='data/selfplay/random_ai', help='Output directory')
-    parser.add_argument('--seed', type=int, default=None, help='Random seed')
+    # Use unified argument parser from SelfplayConfig
+    parser = create_argument_parser(
+        description='Run random AI selfplay games',
+        include_gpu=False,  # Random selfplay doesn't use GPU
+        include_ramdrive=False,
+    )
+    # Add script-specific arguments
     parser.add_argument('--max-moves', type=int, default=500, help='Max moves per game')
-    args = parser.parse_args()
+    parsed = parser.parse_args()
+
+    # Create config from parsed args (uses canonical board type normalization)
+    config = SelfplayConfig(
+        board_type=parsed.board,
+        num_players=parsed.num_players,
+        num_games=parsed.num_games,
+        output_dir=parsed.output_dir or 'data/selfplay/random_ai',
+        seed=parsed.seed,
+        source='run_random_selfplay.py',
+    )
+
+    # Use config values (provides validation and normalization)
+    args = type('Args', (), {
+        'num_games': config.num_games,
+        'board_type': config.board_type,
+        'num_players': config.num_players,
+        'output_dir': config.output_dir,
+        'seed': config.seed,
+        'max_moves': parsed.max_moves,
+    })()
 
     # Check coordination before spawning
     task_id = None

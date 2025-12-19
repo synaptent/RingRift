@@ -4,9 +4,11 @@
 Aggressive disk cleanup for space-constrained nodes (especially Vast.ai).
 Runs as a cron job or standalone to prevent disk full scenarios.
 
+Uses centralized THRESHOLDS from app.monitoring.thresholds (December 2025).
+
 Usage:
-    # Check disk and clean if needed (70% limit enforced 2025-12-15)
-    python scripts/disk_monitor.py --threshold 70
+    # Check disk and clean if needed (uses centralized threshold)
+    python scripts/disk_monitor.py
 
     # Force cleanup even if below threshold
     python scripts/disk_monitor.py --force
@@ -26,6 +28,22 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Tuple
+
+# Add app/ to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Unified thresholds from monitoring module (December 2025)
+try:
+    from app.monitoring.thresholds import THRESHOLDS, get_threshold
+    DISK_WARNING = get_threshold("disk", "warning", 70)
+    DISK_CRITICAL = get_threshold("disk", "critical", 85)
+    DISK_FATAL = get_threshold("disk", "fatal", 95)
+    HAS_THRESHOLDS = True
+except ImportError:
+    HAS_THRESHOLDS = False
+    DISK_WARNING = 70
+    DISK_CRITICAL = 85
+    DISK_FATAL = 95
 
 # Unified resource guard - 80% utilization limits (enforced 2025-12-16)
 try:
@@ -563,9 +581,19 @@ def cleanup_deprecated_data(ringrift_path: str, dry_run: bool = False) -> List[C
     return results
 
 
-def run_cleanup(ringrift_path: str, threshold: int = 70, force: bool = False,
+def run_cleanup(ringrift_path: str, threshold: int = None, force: bool = False,
                 dry_run: bool = False, aggressive: bool = False) -> dict:
-    """Run full disk cleanup if needed."""
+    """Run full disk cleanup if needed.
+
+    Uses centralized thresholds from app.monitoring.thresholds:
+    - DISK_WARNING (70%): Normal cleanup threshold
+    - DISK_CRITICAL (85%): Aggressive cleanup threshold
+    - DISK_FATAL (95%): Emergency cleanup threshold
+    """
+    # Use centralized threshold if not specified
+    if threshold is None:
+        threshold = DISK_WARNING
+
     # Always measure disk usage on the volume that actually contains the RingRift
     # checkout/data. On macOS (APFS split volumes) and some container overlays,
     # checking "/" can under-report the real pressure where RingRift lives.
@@ -573,6 +601,7 @@ def run_cleanup(ringrift_path: str, threshold: int = 70, force: bool = False,
     free_gb = (total - used) / (1024 ** 3) if total > 0 else 0.0
 
     print(f"Disk usage: {format_size(used)} / {format_size(total)} ({percent:.1f}%)")
+    print(f"Thresholds: warning={DISK_WARNING}%, critical={DISK_CRITICAL}%, fatal={DISK_FATAL}%")
 
     if percent < threshold and not force:
         print(f"Disk usage {percent:.1f}% is below threshold {threshold}%, skipping cleanup")
@@ -588,25 +617,26 @@ def run_cleanup(ringrift_path: str, threshold: int = 70, force: bool = False,
     all_results.extend(cleanup_deprecated_data(ringrift_path, dry_run=dry_run))
     all_results.extend(cleanup_venv_cache(ringrift_path, dry_run=dry_run))
 
-    if aggressive or percent > 90:
+    # Use centralized thresholds for aggressive cleanup triggers
+    if aggressive or percent > DISK_CRITICAL:
         print("Running aggressive cleanup (selfplay data)...")
         all_results.extend(cleanup_selfplay_data(
             ringrift_path,
-            max_age_days=3 if percent > 95 else 7,
-            keep_min_gb=0.5 if percent > 95 else 1.0,
+            max_age_days=3 if percent > DISK_FATAL else 7,
+            keep_min_gb=0.5 if percent > DISK_FATAL else 1.0,
             dry_run=dry_run
         ))
         # Prune large derived sync bundles that frequently dominate disk usage.
         all_results.extend(
             cleanup_old_synced_game_bundles(
                 ringrift_path,
-                keep_latest=2 if percent < 95 else 1,
+                keep_latest=2 if percent < DISK_FATAL else 1,
                 dry_run=dry_run,
             )
         )
         # Last-resort protection for tiny disks: delete multi-GB non-canonical DBs
         # that can brick nodes (e.g. ai-service/data/games/selfplay.db).
-        if force or percent > 95 or free_gb < 2.0:
+        if force or percent > DISK_FATAL or free_gb < 2.0:
             all_results.extend(
                 cleanup_large_noncanonical_game_dbs(
                     ringrift_path,
@@ -638,20 +668,26 @@ def run_cleanup(ringrift_path: str, threshold: int = 70, force: bool = False,
 
 def main():
     parser = argparse.ArgumentParser(description="Disk monitoring and cleanup")
-    parser.add_argument("--threshold", type=int, default=70,
-                        help="Disk usage percent threshold to trigger cleanup (70% enforced 2025-12-15)")
+    parser.add_argument("--threshold", type=int, default=None,
+                        help=f"Disk usage percent threshold to trigger cleanup (default: {DISK_WARNING}%% from THRESHOLDS)")
     parser.add_argument("--force", action="store_true",
                         help="Force cleanup even if below threshold")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show what would be cleaned without deleting")
     parser.add_argument("--aggressive", action="store_true",
-                        help="Use aggressive cleanup (removes more selfplay data)")
+                        help=f"Use aggressive cleanup (triggers at {DISK_CRITICAL}%% without this flag)")
     parser.add_argument("--ringrift-path",
                         default=os.environ.get("RINGRIFT_DIR",
                                               os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
                         help="Path to RingRift directory")
 
     args = parser.parse_args()
+
+    # Log threshold source for debugging
+    if HAS_THRESHOLDS:
+        print(f"Using centralized thresholds from app.monitoring.thresholds")
+    else:
+        print(f"Using fallback thresholds (app.monitoring.thresholds not available)")
 
     result = run_cleanup(
         ringrift_path=args.ringrift_path,
