@@ -38,6 +38,19 @@ except ImportError:
     HAS_YAML = False
     print("Warning: PyYAML not installed. Using fallback config.")
 
+# Try to use unified modules
+try:
+    from scripts.lib.hosts import get_hosts, get_active_hosts, get_hosts_by_group, HostConfig
+    USE_UNIFIED_HOSTS = True
+except ImportError:
+    USE_UNIFIED_HOSTS = False
+
+try:
+    from scripts.monitor.alerting import send_alert as unified_send_alert, AlertSeverity
+    USE_UNIFIED_ALERTING = True
+except ImportError:
+    USE_UNIFIED_ALERTING = False
+
 # ============================================================================
 # Configuration
 # ============================================================================
@@ -91,9 +104,39 @@ class ClusterConfig:
         self.nodes: Dict[str, NodeConfig] = {}
         self.groups: Dict[str, List[str]] = {}
         self.alerts = {}
-        self._load_default_nodes()
-        if HAS_YAML and config_path.exists():
-            self._load_yaml()
+
+        # Prefer unified hosts module if available
+        if USE_UNIFIED_HOSTS:
+            self._load_from_unified_hosts()
+        else:
+            self._load_default_nodes()
+            if HAS_YAML and config_path.exists():
+                self._load_yaml()
+
+    def _load_from_unified_hosts(self):
+        """Load nodes from unified hosts module."""
+        for host in get_hosts():
+            self.nodes[host.name] = NodeConfig(
+                host=host.effective_ssh_host,
+                ssh_user=host.ssh_user,
+                gpu_type=getattr(host, 'gpu_type', 'unknown'),
+                gpu_count=getattr(host, 'gpu_count', 1),
+                vram_gb=getattr(host, 'vram_gb', 0),
+                batch_multiplier=getattr(host, 'batch_multiplier', 8),
+                priority=getattr(host, 'priority', 3),
+                roles=list(host.all_roles),
+                status=host.status or 'unknown',
+                tailscale_ip=host.tailscale_ip or '',
+                notes=getattr(host, 'notes', ''),
+            )
+        # Load groups from hosts module
+        for group_name in ['primary_training', 'selfplay_pool', 'gauntlet_pool']:
+            group_hosts = get_hosts_by_group(group_name)
+            if group_hosts:
+                self.groups[group_name] = [h.name for h in group_hosts]
+        # Fallback group definitions
+        if 'selfplay_pool' not in self.groups:
+            self.groups['selfplay_pool'] = list(self.nodes.keys())
 
     def _load_default_nodes(self):
         """Fallback node configuration."""
@@ -177,12 +220,20 @@ class AlertManager:
                 return
 
         self.alert_history[alert_key] = datetime.now()
-        colors = {"info": "#36a64f", "warning": "#ffcc00", "critical": "#ff0000"}
-        color = colors.get(severity, "#808080")
 
         severity_label = {"info": "INFO", "warning": "WARN", "critical": "CRIT"}.get(severity, "INFO")
         print(f"\n[{severity_label}] ALERT: {title}")
         print(f"   {message}\n")
+
+        # Use unified alerting module if available
+        if USE_UNIFIED_ALERTING:
+            level_map = {"info": AlertSeverity.INFO, "warning": AlertSeverity.WARNING, "critical": AlertSeverity.CRITICAL}
+            unified_send_alert(title=title, message=message, level=level_map.get(severity, AlertSeverity.WARNING))
+            return
+
+        # Fallback to local implementation
+        colors = {"info": "#36a64f", "warning": "#ffcc00", "critical": "#ff0000"}
+        color = colors.get(severity, "#808080")
 
         if self.slack_webhook:
             self._send_slack(title, message, color)

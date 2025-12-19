@@ -44,6 +44,8 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
+from scripts.lib.paths import AI_SERVICE_ROOT, CONFIG_DIR
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -130,22 +132,9 @@ class NodeState:
 # Configuration Loading
 # =============================================================================
 
-def get_ai_service_root() -> Path:
-    """Get AI service root directory."""
-    candidates = [
-        Path(__file__).parent.parent,
-        Path.home() / "ringrift" / "ai-service",
-        Path("/workspace/ringrift/ai-service"),
-    ]
-    for path in candidates:
-        if path.exists() and (path / "scripts").exists():
-            return path
-    return Path(__file__).parent.parent
-
-
 def load_cluster_config() -> Dict[str, List[NodeConfig]]:
     """Load cluster configuration from YAML."""
-    config_path = get_ai_service_root() / "config" / "cluster_nodes.yaml"
+    config_path = CONFIG_DIR / "cluster_nodes.yaml"
 
     if not config_path.exists():
         logger.warning(f"Cluster config not found: {config_path}")

@@ -33,21 +33,13 @@ except ImportError:
     print("Error: PyYAML not installed. Run: pip install pyyaml", file=sys.stderr)
     sys.exit(1)
 
-
-def get_script_dir() -> Path:
-    """Get the directory containing this script."""
-    return Path(__file__).resolve().parent
-
-
-def get_ai_service_root() -> Path:
-    """Get the ai-service root directory."""
-    return get_script_dir().parent
+from scripts.lib.paths import AI_SERVICE_ROOT, CONFIG_DIR
 
 
 def load_distributed_hosts(config_path: Optional[Path] = None) -> Dict:
     """Load distributed_hosts.yaml."""
     if config_path is None:
-        config_path = get_ai_service_root() / "config" / "distributed_hosts.yaml"
+        config_path = CONFIG_DIR / "distributed_hosts.yaml"
 
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")

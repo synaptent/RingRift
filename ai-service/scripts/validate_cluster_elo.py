@@ -26,7 +26,14 @@ import urllib.error
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
-# Import shared cluster host utilities
+# Import unified hosts module
+try:
+    from scripts.lib.hosts import get_active_hosts, HostConfig
+    USE_LIB_HOSTS = True
+except ImportError:
+    USE_LIB_HOSTS = False
+
+# Fallback to app.sync module
 try:
     from app.sync.cluster_hosts import (
         get_active_nodes,
@@ -41,8 +48,33 @@ except ImportError:
 LOCAL_ELO_DB = AI_SERVICE_ROOT / "data" / "unified_elo.db"
 
 
-def _load_hosts_from_config() -> List[Tuple[str, str]]:
-    """Load cluster nodes from config file."""
+def get_cluster_nodes_for_validation() -> List[Tuple[str, str]]:
+    """Get cluster nodes for validation.
+
+    Uses scripts.lib.hosts module (preferred), falls back to app.sync,
+    then to direct YAML loading.
+    """
+    # Preferred: Use unified hosts module
+    if USE_LIB_HOSTS:
+        hosts = get_active_hosts()
+        nodes = []
+        for h in hosts:
+            ip = h.tailscale_ip or h.ssh_host
+            if ip and ip.startswith("100."):
+                nodes.append((h.name, ip))
+        return nodes
+
+    # Fallback: Use app.sync module
+    if USE_SHARED_CONFIG:
+        nodes = get_active_nodes()
+        return [(n.name, n.best_ip) for n in nodes if n.best_ip]
+
+    # Last resort: Load YAML directly
+    return _load_hosts_from_yaml()
+
+
+def _load_hosts_from_yaml() -> List[Tuple[str, str]]:
+    """Load cluster nodes directly from YAML (legacy fallback)."""
     config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"
     if not config_path.exists():
         print("[Validation] Warning: No config found at", config_path)
@@ -66,16 +98,6 @@ def _load_hosts_from_config() -> List[Tuple[str, str]]:
     except Exception as e:
         print(f"[Validation] Error loading config: {e}")
         return []
-
-
-def get_cluster_nodes_for_validation() -> List[Tuple[str, str]]:
-    """Get cluster nodes from shared config or fallback to config file."""
-    if USE_SHARED_CONFIG:
-        nodes = get_active_nodes()
-        return [(n.name, n.best_ip) for n in nodes if n.best_ip]
-
-    # Load from config file
-    return _load_hosts_from_config()
 
 
 def get_coordinator_ip() -> str:

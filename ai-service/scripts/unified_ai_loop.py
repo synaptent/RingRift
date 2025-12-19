@@ -884,6 +884,14 @@ except ImportError:
     HAS_REGISTRY_SYNC = False
     RegistrySyncManager = None
 
+# Training lifecycle integration for coordinated service startup
+try:
+    from app.training.lifecycle_integration import TrainingLifecycleManager
+    HAS_LIFECYCLE_MANAGER = True
+except ImportError:
+    HAS_LIFECYCLE_MANAGER = False
+    TrainingLifecycleManager = None
+
 # Cluster deployment for promoted models
 try:
     from scripts.auto_deploy_models import deploy_to_cluster, get_cluster_hosts
@@ -2915,6 +2923,15 @@ class UnifiedAILoop:
                 print(f"[UnifiedLoop] Promotion controller initialized (min_elo={criteria.min_elo_improvement})")
             except Exception as e:
                 print(f"[UnifiedLoop] Warning: Failed to initialize promotion controller: {e}")
+
+        # Training lifecycle manager - coordinates service startup/shutdown/health
+        self.lifecycle_manager: Optional[TrainingLifecycleManager] = None
+        if HAS_LIFECYCLE_MANAGER:
+            try:
+                self.lifecycle_manager = TrainingLifecycleManager()
+                print("[UnifiedLoop] Training lifecycle manager initialized")
+            except Exception as e:
+                print(f"[UnifiedLoop] Warning: Failed to initialize lifecycle manager: {e}")
 
         # State management
         self._state_path = AI_SERVICE_ROOT / config.log_dir / "unified_loop_state.json"
@@ -6253,6 +6270,19 @@ class UnifiedAILoop:
                 if summary.warnings:
                     for warning in summary.warnings:
                         print(f"[HealthCheck] Warning: {warning}")
+
+                # Check lifecycle-managed services health
+                if self.lifecycle_manager is not None:
+                    try:
+                        lifecycle_health = await self.lifecycle_manager.get_health_summary()
+                        if lifecycle_health and not lifecycle_health.get("healthy", True):
+                            print("[HealthCheck] Lifecycle services UNHEALTHY:")
+                            for svc, status in lifecycle_health.get("services", {}).items():
+                                if not status.get("healthy", True):
+                                    print(f"  - {svc}: {status.get('status', 'unknown')}")
+                    except Exception as e:
+                        if self.config.verbose:
+                            print(f"[HealthCheck] Lifecycle health check error: {e}")
 
                 # Periodic database integrity check (every 6th health check = ~30 min)
                 if hasattr(self, "_db_integrity_check_counter"):
