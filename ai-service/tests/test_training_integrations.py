@@ -4,6 +4,8 @@ Tests for training loop integrations (2025-12):
 - Circuit breaker integration for fault tolerance
 - TrainingAnomalyDetector for NaN/Inf detection
 - AdaptiveGradientClipper for dynamic gradient clipping
+- IntegratedTrainingManager augment_batch_dense
+- GameGauntlet module for baseline testing
 """
 
 import os
@@ -1196,6 +1198,179 @@ class TestCircuitBreakerExponentialBackoff(unittest.TestCase):
         # Also test to_dict includes it
         status_dict = status.to_dict()
         self.assertIn('consecutive_opens', status_dict)
+
+
+class TestAugmentBatchDense(unittest.TestCase):
+    """Tests for IntegratedTrainingManager.augment_batch_dense()."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Check if integrated enhancements are available."""
+        try:
+            from app.training.integrated_enhancements import (
+                IntegratedTrainingManager,
+                IntegratedEnhancementsConfig,
+            )
+            cls.has_enhancements = True
+            cls.IntegratedTrainingManager = IntegratedTrainingManager
+            cls.IntegratedEnhancementsConfig = IntegratedEnhancementsConfig
+        except ImportError:
+            cls.has_enhancements = False
+
+    def test_augment_batch_dense_shapes_preserved(self) -> None:
+        """Test that augment_batch_dense preserves tensor shapes."""
+        if not self.has_enhancements:
+            self.skipTest("IntegratedEnhancements not available")
+
+        config = self.IntegratedEnhancementsConfig(augmentation_enabled=True)
+        manager = self.IntegratedTrainingManager(
+            config=config, model=None, board_type="square8"
+        )
+        manager.initialize_all()
+
+        # Create test data
+        features = torch.randn(4, 19, 8, 8)
+        policy = torch.softmax(torch.randn(4, 4160), dim=1)
+
+        aug_features, aug_policy = manager.augment_batch_dense(features, policy)
+
+        self.assertEqual(aug_features.shape, features.shape)
+        self.assertEqual(aug_policy.shape, policy.shape)
+
+    def test_augment_batch_dense_no_augmentor(self) -> None:
+        """Test that augment_batch_dense returns input unchanged when disabled."""
+        if not self.has_enhancements:
+            self.skipTest("IntegratedEnhancements not available")
+
+        config = self.IntegratedEnhancementsConfig(augmentation_enabled=False)
+        manager = self.IntegratedTrainingManager(
+            config=config, model=None, board_type="square8"
+        )
+        manager.initialize_all()
+
+        features = torch.randn(2, 19, 8, 8)
+        policy = torch.softmax(torch.randn(2, 4160), dim=1)
+
+        aug_features, aug_policy = manager.augment_batch_dense(features, policy)
+
+        # Should return same tensors
+        self.assertTrue(torch.equal(aug_features, features))
+        self.assertTrue(torch.equal(aug_policy, policy))
+
+    def test_augment_batch_dense_policy_still_valid(self) -> None:
+        """Test that augmented policy is still a valid probability distribution."""
+        if not self.has_enhancements:
+            self.skipTest("IntegratedEnhancements not available")
+
+        config = self.IntegratedEnhancementsConfig(augmentation_enabled=True)
+        manager = self.IntegratedTrainingManager(
+            config=config, model=None, board_type="square8"
+        )
+        manager.initialize_all()
+
+        features = torch.randn(2, 19, 8, 8)
+        policy = torch.softmax(torch.randn(2, 4160), dim=1)
+
+        _, aug_policy = manager.augment_batch_dense(features, policy)
+
+        # Check that policy sums to ~1 (allowing for floating point error)
+        sums = aug_policy.sum(dim=1)
+        self.assertTrue(torch.allclose(sums, torch.ones_like(sums), atol=1e-5))
+
+
+class TestGameGauntlet(unittest.TestCase):
+    """Tests for game_gauntlet module."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Check if game_gauntlet is available."""
+        try:
+            from app.training.game_gauntlet import (
+                BaselineOpponent,
+                GauntletResult,
+                BASELINE_ELOS,
+            )
+            cls.has_gauntlet = True
+            cls.BaselineOpponent = BaselineOpponent
+            cls.GauntletResult = GauntletResult
+            cls.BASELINE_ELOS = BASELINE_ELOS
+        except ImportError:
+            cls.has_gauntlet = False
+
+    def test_baseline_opponent_enum(self) -> None:
+        """Test that BaselineOpponent enum has expected values."""
+        if not self.has_gauntlet:
+            self.skipTest("game_gauntlet not available")
+
+        self.assertEqual(self.BaselineOpponent.RANDOM.value, "random")
+        self.assertEqual(self.BaselineOpponent.HEURISTIC.value, "heuristic")
+
+    def test_baseline_elos_defined(self) -> None:
+        """Test that BASELINE_ELOS has entries for all opponents."""
+        if not self.has_gauntlet:
+            self.skipTest("game_gauntlet not available")
+
+        self.assertIn(self.BaselineOpponent.RANDOM, self.BASELINE_ELOS)
+        self.assertIn(self.BaselineOpponent.HEURISTIC, self.BASELINE_ELOS)
+        self.assertEqual(self.BASELINE_ELOS[self.BaselineOpponent.RANDOM], 400)
+        self.assertEqual(self.BASELINE_ELOS[self.BaselineOpponent.HEURISTIC], 1200)
+
+    def test_gauntlet_result_dataclass(self) -> None:
+        """Test that GauntletResult has expected fields."""
+        if not self.has_gauntlet:
+            self.skipTest("game_gauntlet not available")
+
+        result = self.GauntletResult(
+            total_games=20,
+            total_wins=15,
+            total_losses=5,
+            total_draws=0,
+            win_rate=0.75,
+            opponent_results={"random": {"wins": 15, "games": 20}},
+            passes_baseline_gating=True,
+            failed_baselines=[],
+            estimated_elo=1400,
+        )
+
+        self.assertEqual(result.total_games, 20)
+        self.assertEqual(result.win_rate, 0.75)
+        self.assertTrue(result.passes_baseline_gating)
+        self.assertEqual(result.estimated_elo, 1400)
+
+
+class TestBaselineGatingStatus(unittest.TestCase):
+    """Tests for baseline gating status in IntegratedTrainingManager."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Check if integrated enhancements are available."""
+        try:
+            from app.training.integrated_enhancements import (
+                IntegratedTrainingManager,
+                IntegratedEnhancementsConfig,
+            )
+            cls.has_enhancements = True
+            cls.IntegratedTrainingManager = IntegratedTrainingManager
+            cls.IntegratedEnhancementsConfig = IntegratedEnhancementsConfig
+        except ImportError:
+            cls.has_enhancements = False
+
+    def test_get_baseline_gating_status_default(self) -> None:
+        """Test default baseline gating status (passes when no evaluator)."""
+        if not self.has_enhancements:
+            self.skipTest("IntegratedEnhancements not available")
+
+        config = self.IntegratedEnhancementsConfig(background_eval_enabled=False)
+        manager = self.IntegratedTrainingManager(
+            config=config, model=None, board_type="square8"
+        )
+
+        passes, failed, consecutive = manager.get_baseline_gating_status()
+
+        # Default should pass (no evaluator means no failures)
+        self.assertTrue(passes)
+        self.assertEqual(len(failed), 0)
+        self.assertEqual(consecutive, 0)
 
 
 if __name__ == "__main__":
