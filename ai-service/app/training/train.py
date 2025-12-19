@@ -93,6 +93,7 @@ from app.training.config import TrainConfig
 from app.models import BoardType
 from app.utils.resource_guard import check_disk_space, get_disk_usage, LIMITS
 from app.training.hex_augmentation import HexSymmetryTransform
+from app.training.datasets import RingRiftDataset, WeightedRingRiftDataset
 from app.training.distributed import (  # noqa: E402
     setup_distributed,
     cleanup_distributed,
@@ -508,8 +509,14 @@ from app.training.checkpointing import (
 # LR scheduler utilities extracted to dedicated module (2025-12)
 from app.training.schedulers import get_warmup_scheduler, create_lr_scheduler
 
+# Dataset classes extracted to dedicated module (2025-12)
+# RingRiftDataset and WeightedRingRiftDataset are imported from app.training.datasets
 
-class RingRiftDataset(Dataset):
+
+_DATASET_CLASSES_REMOVED = True  # Classes now in app.training.datasets
+
+
+class _RingRiftDataset_REMOVED(Dataset):
     """
     Dataset of self-play positions for a single board geometry.
 
@@ -523,9 +530,9 @@ class RingRiftDataset(Dataset):
       - introduce a higher-level sampler/collate_fn that groups samples by
         geometry before feeding them to the network.
 
-    Note: Terminal states (samples with empty policy arrays) are automatically
-    filtered out during loading to prevent NaN losses when using KLDivLoss.
-    Empty policy targets would otherwise cause the loss to become undefined.
+    Note: Terminal states (samples with empty policy arrays) can either be
+    filtered out during loading or retained with masked policy loss,
+    depending on the training configuration.
 
     Args:
         data_path: Path to the .npz training data file
@@ -568,7 +575,7 @@ class RingRiftDataset(Dataset):
         self.spatial_shape = None  # (H, W) of feature maps, if known
         self.board_type_meta = None
         self.board_size_meta = None
-        # List of valid sample indices (those with non-empty policies)
+        # List of valid sample indices (filtered when empty-policy filtering is enabled)
         self.valid_indices = None
         # Multi-player value support metadata
         self.has_multi_player_values = False
@@ -642,6 +649,14 @@ class RingRiftDataset(Dataset):
                             self.data["num_players"],
                             dtype=np.int32,
                         )
+                    elif self.return_num_players:
+                        # Dataset doesn't include num_players metadata; disable
+                        # return to avoid incompatible batching in multi-player loss.
+                        logger.info(
+                            "num_players metadata missing in %s; disabling return_num_players",
+                            data_path,
+                        )
+                        self.return_num_players = False
 
                     # Infer the canonical spatial shape (H, W) once so that
                     # callers can route samples into same-board batches if
@@ -1319,14 +1334,13 @@ def train_model(
     elif use_integrated_enhancements and not HAS_INTEGRATED_ENHANCEMENTS:
         logger.warning("Integrated enhancements requested but not available (import failed)")
 
-    # Mixed precision setup
-    use_amp = mixed_precision and device.type in ('cuda', 'mps')
-    scaler = None
-    if use_amp:
-        from torch.cuda.amp import GradScaler
-        scaler = GradScaler()
-        dtype_map = {'float16': torch.float16, 'bfloat16': torch.bfloat16}
-        amp_torch_dtype = dtype_map.get(amp_dtype, torch.bfloat16)
+    # Mixed precision setup (CUDA-only for now)
+    amp_enabled = bool(mixed_precision and device.type == 'cuda')
+    dtype_map = {'float16': torch.float16, 'bfloat16': torch.bfloat16}
+    amp_torch_dtype = dtype_map.get(amp_dtype, torch.bfloat16)
+    use_grad_scaler = bool(amp_enabled and amp_torch_dtype == torch.float16)
+    scaler = torch.amp.GradScaler('cuda', enabled=use_grad_scaler)
+    if amp_enabled:
         logger.info(f"Mixed precision training enabled with {amp_dtype}")
 
     # Determine canonical spatial board_size for the CNN from config.
@@ -1844,11 +1858,7 @@ def train_model(
         if not distributed or is_main_process():
             logger.info("Value calibration tracking enabled")
 
-    # Mixed precision scaler
-    # Note: GradScaler is primarily for CUDA.
-    # For MPS, mixed precision support is evolving.
-    # We'll enable it only for CUDA for now to be safe.
-    scaler = torch.amp.GradScaler('cuda', enabled=(device.type == 'cuda'))
+    # Mixed precision scaler configured above (GradScaler only for float16)
 
     train_streaming_loader: Optional[StreamingDataLoader] = None
     val_streaming_loader: Optional[StreamingDataLoader] = None
@@ -2616,13 +2626,8 @@ def train_model(
                 if i % accumulation_steps == 0:
                     optimizer.zero_grad()
 
-                # Autocast for mixed precision (CUDA only usually).
-                # For MPS, we might need to check torch.amp.autocast with
-                # device_type="mps", but it is safer to stick to float32
-                # on MPS if unsure.
-                use_amp = device.type == 'cuda'
-
-                with torch.amp.autocast('cuda', enabled=use_amp):
+                # Autocast for mixed precision (CUDA only for now).
+                with torch.amp.autocast('cuda', enabled=amp_enabled, dtype=amp_torch_dtype):
                     # Check if auxiliary tasks are enabled and model supports return_features
                     use_aux_tasks = (
                         enhancements_manager is not None
@@ -2710,7 +2715,10 @@ def train_model(
                 # Circuit breaker protection for backward pass (2025-12)
                 # Catches CUDA errors, OOM, and other runtime exceptions
                 try:
-                    scaler.scale(loss).backward()
+                    if use_grad_scaler:
+                        scaler.scale(loss).backward()
+                    else:
+                        loss.backward()
                 except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
                     error_msg = str(e).lower()
                     is_cuda_error = (
@@ -2732,7 +2740,8 @@ def train_model(
                 # Only step optimizer after accumulating gradients
                 if (i + 1) % accumulation_steps == 0 or (i + 1) == len(train_data_iter):
                     # Gradient clipping (adaptive or fixed) (2025-12)
-                    scaler.unscale_(optimizer)
+                    if use_grad_scaler:
+                        scaler.unscale_(optimizer)
                     if adaptive_clipper is not None:
                         grad_norm = adaptive_clipper.update_and_clip(model.parameters())
                     else:
@@ -2743,8 +2752,11 @@ def train_model(
 
                     # Circuit breaker protection for optimizer step (2025-12)
                     try:
-                        scaler.step(optimizer)
-                        scaler.update()
+                        if use_grad_scaler:
+                            scaler.step(optimizer)
+                            scaler.update()
+                        else:
+                            optimizer.step()
                         # Record successful batch processing
                         if training_breaker:
                             training_breaker.record_success("batch_processing")

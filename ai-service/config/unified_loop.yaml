@@ -593,9 +593,9 @@ queue_populator:
   check_interval_seconds: 60 # Check queue depth every minute
 
   # Work distribution (must sum to 1.0)
-  selfplay_ratio: 0.55 # 55% selfplay for data generation
-  training_ratio: 0.30 # 30% training for model improvement
-  tournament_ratio: 0.15 # 15% tournament for faster Elo feedback
+  selfplay_ratio: 0.50 # 50% selfplay for data generation
+  training_ratio: 0.25 # 25% training for model improvement
+  tournament_ratio: 0.25 # 25% tournament for faster Elo feedback (increased from 15%)
 
   # Board types and player counts to train
   board_types:

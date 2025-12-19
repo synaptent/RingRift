@@ -5293,7 +5293,7 @@ class NeuralNetAI(BaseAI):
         history_length: int = 3,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Returns (stacked_features[C,H,W], globals[10]) compatible with
+        Returns (stacked_features[C,H,W], globals[20]) compatible with
         RingRiftCNN.
         history_frames: most recent feature frames for this game_id,
         newest last.
@@ -5354,6 +5354,8 @@ class NeuralNetAI(BaseAI):
 
         # If we have an initialized model and a concrete board, prefer the
         # board-specific encoder when the checkpoint's policy head matches.
+        model_policy_size = 0
+        board_policy_size = 0
         if board is not None and self.model is not None:
             try:
                 model_policy_size = int(getattr(self.model, "policy_size"))
@@ -6227,7 +6229,7 @@ class NeuralNetAI(BaseAI):
         """
         V3 state encoding with spatial phase and chain-capture planes.
 
-        Returns (stacked_features[64, H, W], globals[10]) for V3 models.
+        Returns (stacked_features[64, H, W], globals[20]) for V3 models.
 
         Channel layout (64 total):
             0-9:   Current frame base features (10 channels)
