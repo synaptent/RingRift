@@ -11,6 +11,12 @@ Central orchestration module that integrates ALL training components:
 This provides a single entry point for advanced training with all features
 properly integrated and coordinated.
 
+Related Modules:
+    - orchestrated_training.py: High-level manager coordination (rollback,
+      promotion, curriculum). Use when you need service orchestration.
+    - This module (unified_orchestrator.py): Low-level training execution
+      (GPU training, data loading, distributed). Use for actual training runs.
+
 Usage:
     from app.training.unified_orchestrator import (
         UnifiedTrainingOrchestrator,

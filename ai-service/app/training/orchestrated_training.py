@@ -14,6 +14,12 @@ Managers wrapped:
 - EloService: Elo rating updates
 - CurriculumFeedback: Curriculum weight adjustments
 
+Related Modules:
+    - unified_orchestrator.py: Low-level training execution (GPU training,
+      data loading, distributed). Use for actual training runs.
+    - This module (orchestrated_training.py): High-level manager coordination
+      (rollback, promotion, curriculum). Use for service orchestration.
+
 Usage:
     from app.training.orchestrated_training import (
         TrainingOrchestrator,

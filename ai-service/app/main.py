@@ -134,13 +134,27 @@ except ImportError:  # pragma: no cover
     get_coordinator_registry = None  # type: ignore
     shutdown_all_coordinators = None  # type: ignore
 
+# Import DaemonManager for unified background service management
+try:
+    from app.coordination.daemon_manager import (
+        DaemonManager,
+        get_daemon_manager,
+        DaemonType,
+    )
+    HAS_DAEMON_MANAGER = True
+except ImportError:  # pragma: no cover
+    HAS_DAEMON_MANAGER = False
+    DaemonManager = None  # type: ignore
+    get_daemon_manager = None  # type: ignore
+    DaemonType = None  # type: ignore
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup/shutdown.
 
-    - On startup: Install signal handlers for graceful coordinator shutdown
-    - On shutdown: Gracefully shutdown all registered coordinators
+    - On startup: Install signal handlers, start daemon manager
+    - On shutdown: Gracefully shutdown daemons, then coordinators
     """
     # Startup
     if HAS_COORDINATOR_REGISTRY:
@@ -152,6 +166,24 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Could not install signal handlers: {e}")
 
+    # Start daemon manager (optional - daemons can be started on demand)
+    if HAS_DAEMON_MANAGER and os.environ.get("RINGRIFT_START_DAEMONS", "0") == "1":
+        try:
+            daemon_manager = get_daemon_manager()
+            # Start core daemons only (not all daemons)
+            core_daemons = [
+                DaemonType.HEALTH_CHECK,
+                DaemonType.QUEUE_MONITOR,
+            ]
+            for daemon_type in core_daemons:
+                try:
+                    await daemon_manager.start(daemon_type)
+                except Exception as e:
+                    logger.warning(f"Failed to start {daemon_type.value}: {e}")
+            logger.info("Daemon manager started core daemons")
+        except Exception as e:
+            logger.warning(f"Could not start daemon manager: {e}")
+
     logger.info("RingRift AI Service started")
 
     yield  # App runs here
@@ -159,7 +191,16 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("RingRift AI Service shutting down")
 
-    # 1. Shutdown coordinators first (most complex resources)
+    # 0. Shutdown daemon manager first (background tasks)
+    if HAS_DAEMON_MANAGER:
+        try:
+            daemon_manager = get_daemon_manager()
+            await daemon_manager.shutdown()
+            logger.info("Daemon manager shutdown complete")
+        except Exception as e:
+            logger.warning(f"Error during daemon manager shutdown: {e}")
+
+    # 1. Shutdown coordinators (most complex resources)
     if HAS_COORDINATOR_REGISTRY:
         try:
             results = await shutdown_all_coordinators(timeout=30.0)

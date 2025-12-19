@@ -92,3 +92,39 @@ if HAS_UNIFIED_CONFIG:
         "DataLoadingConfig",
         "QualityConfig",
     ])
+
+# Re-export key threshold constants for convenience
+from app.config.thresholds import (
+    # Training thresholds
+    TRAINING_TRIGGER_GAMES,
+    TRAINING_MIN_INTERVAL_SECONDS,
+    TRAINING_STALENESS_HOURS,
+    TRAINING_MAX_CONCURRENT,
+    # Rollback thresholds
+    ELO_DROP_ROLLBACK,
+    WIN_RATE_DROP_ROLLBACK,
+    MIN_GAMES_REGRESSION,
+    # Promotion thresholds
+    ELO_IMPROVEMENT_PROMOTE,
+    MIN_GAMES_PROMOTE,
+    # Elo system
+    INITIAL_ELO_RATING,
+    ELO_K_FACTOR,
+    MIN_GAMES_FOR_ELO,
+)
+
+__all__.extend([
+    # Threshold constants
+    "TRAINING_TRIGGER_GAMES",
+    "TRAINING_MIN_INTERVAL_SECONDS",
+    "TRAINING_STALENESS_HOURS",
+    "TRAINING_MAX_CONCURRENT",
+    "ELO_DROP_ROLLBACK",
+    "WIN_RATE_DROP_ROLLBACK",
+    "MIN_GAMES_REGRESSION",
+    "ELO_IMPROVEMENT_PROMOTE",
+    "MIN_GAMES_PROMOTE",
+    "INITIAL_ELO_RATING",
+    "ELO_K_FACTOR",
+    "MIN_GAMES_FOR_ELO",
+])

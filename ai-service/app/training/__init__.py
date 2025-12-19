@@ -543,3 +543,35 @@ if HAS_ELO_WEIGHTING:
         "EloWeightedSampler",
         "compute_elo_weights",
     ])
+
+# =============================================================================
+# Unified Model Store (December 2025)
+# =============================================================================
+try:
+    from app.training.unified_model_store import (
+        UnifiedModelStore,
+        ModelInfo,
+        ModelStoreStage,
+        ModelStoreType,
+        get_model_store,
+        register_model,
+        get_production_model,
+        promote_model,
+    )
+    HAS_UNIFIED_MODEL_STORE = True
+except ImportError:
+    HAS_UNIFIED_MODEL_STORE = False
+
+__all__.append("HAS_UNIFIED_MODEL_STORE")
+
+if HAS_UNIFIED_MODEL_STORE:
+    __all__.extend([
+        "UnifiedModelStore",
+        "ModelInfo",
+        "ModelStoreStage",
+        "ModelStoreType",
+        "get_model_store",
+        "register_model",
+        "get_production_model",
+        "promote_model",
+    ])

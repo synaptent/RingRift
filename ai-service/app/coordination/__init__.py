@@ -532,6 +532,20 @@ from app.coordination.async_bridge_manager import (
     run_in_bridge_pool,
 )
 
+# Model Lifecycle Coordinator (December 2025)
+from app.coordination.model_lifecycle_coordinator import (
+    ModelLifecycleCoordinator,
+    ModelState,
+    ModelRecord,
+    CheckpointInfo,
+    CacheEntry,
+    ModelLifecycleStats,
+    get_model_coordinator,
+    wire_model_events,
+    get_production_model_id,
+    get_production_elo,
+)
+
 # Task Decorators (December 2025 - lifecycle management)
 from app.coordination.task_decorators import (
     TaskContext,
