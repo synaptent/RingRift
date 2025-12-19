@@ -556,3 +556,247 @@ def is_coordinator(obj: Any) -> bool:
         True if obj is a coordinator
     """
     return isinstance(obj, CoordinatorProtocol)
+
+
+class CoordinatorRegistry:
+    """Registry for managing multiple coordinators and orchestrating shutdown.
+
+    This singleton registry tracks all active coordinators and provides:
+    - Centralized coordinator registration
+    - Graceful shutdown orchestration
+    - Signal handler integration for SIGTERM/SIGINT
+
+    Usage:
+        from app.coordination.coordinator_base import CoordinatorRegistry
+
+        # Get the singleton registry
+        registry = CoordinatorRegistry.get_instance()
+
+        # Register coordinators
+        registry.register(my_coordinator)
+
+        # Install signal handlers for graceful shutdown
+        registry.install_signal_handlers()
+
+        # Or manually trigger shutdown
+        await registry.shutdown_all(timeout=30.0)
+    """
+
+    _instance: Optional["CoordinatorRegistry"] = None
+    _lock = threading.Lock()
+
+    def __init__(self):
+        """Initialize the registry. Use get_instance() instead."""
+        self._coordinators: Dict[str, CoordinatorBase] = {}
+        self._shutdown_order: List[str] = []
+        self._shutting_down = False
+        self._shutdown_complete = asyncio.Event()
+
+    @classmethod
+    def get_instance(cls) -> "CoordinatorRegistry":
+        """Get the singleton registry instance."""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    def reset_instance(cls) -> None:
+        """Reset the singleton instance (for testing)."""
+        with cls._lock:
+            cls._instance = None
+
+    def register(
+        self,
+        coordinator: CoordinatorBase,
+        shutdown_priority: int = 0,
+    ) -> None:
+        """Register a coordinator with the registry.
+
+        Args:
+            coordinator: The coordinator to register
+            shutdown_priority: Lower values shut down first (default 0)
+        """
+        name = coordinator.name
+        if name in self._coordinators:
+            logger.warning(f"Coordinator {name} already registered, replacing")
+
+        self._coordinators[name] = coordinator
+        self._update_shutdown_order()
+        logger.debug(f"Registered coordinator: {name}")
+
+    def unregister(self, name: str) -> Optional[CoordinatorBase]:
+        """Unregister a coordinator by name.
+
+        Args:
+            name: Name of the coordinator to remove
+
+        Returns:
+            The removed coordinator or None
+        """
+        coord = self._coordinators.pop(name, None)
+        if coord:
+            self._update_shutdown_order()
+            logger.debug(f"Unregistered coordinator: {name}")
+        return coord
+
+    def get(self, name: str) -> Optional[CoordinatorBase]:
+        """Get a coordinator by name."""
+        return self._coordinators.get(name)
+
+    def list_coordinators(self) -> List[str]:
+        """List all registered coordinator names."""
+        return list(self._coordinators.keys())
+
+    def _update_shutdown_order(self) -> None:
+        """Update the shutdown order based on registration order."""
+        # For now, use reverse registration order (last registered shuts down first)
+        # This can be enhanced with explicit priorities
+        self._shutdown_order = list(reversed(self._coordinators.keys()))
+
+    async def shutdown_all(
+        self,
+        timeout: float = 30.0,
+        force_after_timeout: bool = True,
+    ) -> Dict[str, bool]:
+        """Gracefully shutdown all registered coordinators.
+
+        Args:
+            timeout: Maximum seconds to wait for each coordinator
+            force_after_timeout: If True, continue even if a coordinator times out
+
+        Returns:
+            Dict mapping coordinator names to success status
+        """
+        if self._shutting_down:
+            logger.warning("Shutdown already in progress")
+            await self._shutdown_complete.wait()
+            return {}
+
+        self._shutting_down = True
+        results: Dict[str, bool] = {}
+
+        logger.info(f"Starting graceful shutdown of {len(self._coordinators)} coordinators")
+
+        for name in self._shutdown_order:
+            coord = self._coordinators.get(name)
+            if not coord:
+                continue
+
+            try:
+                logger.info(f"Shutting down coordinator: {name}")
+                await asyncio.wait_for(coord.shutdown(), timeout=timeout)
+                results[name] = True
+                logger.info(f"Coordinator {name} shutdown complete")
+            except asyncio.TimeoutError:
+                logger.error(f"Coordinator {name} shutdown timed out after {timeout}s")
+                results[name] = False
+                if not force_after_timeout:
+                    break
+            except Exception as e:
+                logger.error(f"Coordinator {name} shutdown failed: {e}")
+                results[name] = False
+
+        self._shutdown_complete.set()
+        logger.info(f"Graceful shutdown complete: {sum(results.values())}/{len(results)} succeeded")
+        return results
+
+    async def drain_all(self, timeout: float = 60.0) -> None:
+        """Put all coordinators into draining mode.
+
+        This allows coordinators to finish in-progress work before shutdown.
+
+        Args:
+            timeout: Maximum seconds to wait for draining
+        """
+        logger.info(f"Draining {len(self._coordinators)} coordinators")
+
+        async def drain_one(coord: CoordinatorBase) -> None:
+            try:
+                await coord.stop()
+            except Exception as e:
+                logger.warning(f"Error draining {coord.name}: {e}")
+
+        tasks = [drain_one(c) for c in self._coordinators.values() if c.is_running]
+        if tasks:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=timeout,
+            )
+
+    def install_signal_handlers(self, loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
+        """Install signal handlers for graceful shutdown.
+
+        Handles SIGTERM and SIGINT to trigger graceful shutdown.
+
+        Args:
+            loop: Event loop to use (defaults to running loop)
+        """
+        import signal
+
+        def shutdown_handler(signum: int, frame: Any) -> None:
+            sig_name = signal.Signals(signum).name
+            logger.info(f"Received {sig_name}, initiating graceful shutdown")
+
+            # Schedule the async shutdown
+            try:
+                event_loop = loop or asyncio.get_running_loop()
+                event_loop.create_task(self.shutdown_all())
+            except RuntimeError:
+                # No running loop, try to run synchronously
+                logger.warning("No event loop running, attempting sync shutdown")
+                try:
+                    asyncio.run(self.shutdown_all(timeout=10.0))
+                except Exception as e:
+                    logger.error(f"Sync shutdown failed: {e}")
+
+        # Install handlers for common termination signals
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                signal.signal(sig, shutdown_handler)
+                logger.debug(f"Installed shutdown handler for {sig.name}")
+            except (ValueError, OSError) as e:
+                logger.warning(f"Could not install handler for {sig.name}: {e}")
+
+    def get_health_summary(self) -> Dict[str, Any]:
+        """Get health summary of all registered coordinators.
+
+        Returns:
+            Dict with overall health and per-coordinator status
+        """
+        statuses = {}
+        all_healthy = True
+
+        for name, coord in self._coordinators.items():
+            status = coord.status.value
+            is_healthy = coord.status in (CoordinatorStatus.READY, CoordinatorStatus.RUNNING)
+            if not is_healthy and coord.is_running:
+                all_healthy = False
+
+            statuses[name] = {
+                "status": status,
+                "healthy": is_healthy,
+                "uptime_seconds": coord.uptime_seconds,
+            }
+
+        return {
+            "healthy": all_healthy,
+            "coordinator_count": len(self._coordinators),
+            "shutting_down": self._shutting_down,
+            "coordinators": statuses,
+        }
+
+
+# Module-level convenience functions
+def get_coordinator_registry() -> CoordinatorRegistry:
+    """Get the global coordinator registry."""
+    return CoordinatorRegistry.get_instance()
+
+
+async def shutdown_all_coordinators(timeout: float = 30.0) -> Dict[str, bool]:
+    """Shutdown all registered coordinators.
+
+    Convenience function for shutdown_all on the global registry.
+    """
+    return await get_coordinator_registry().shutdown_all(timeout=timeout)

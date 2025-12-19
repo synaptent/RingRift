@@ -12,12 +12,15 @@ import pytest
 from app.coordination.coordinator_base import (
     CoordinatorBase,
     CoordinatorProtocol,
+    CoordinatorRegistry,
     CoordinatorStatus,
     CoordinatorStats,
     SQLitePersistenceMixin,
     SingletonMixin,
     CallbackMixin,
     is_coordinator,
+    get_coordinator_registry,
+    shutdown_all_coordinators,
 )
 
 
@@ -672,3 +675,137 @@ class TestCallbackMixinEdgeCases:
         # Should not raise
         coord.unregister_callback("event", lambda: None)
         coord.unregister_callback("nonexistent", lambda: None)
+
+
+# =============================================================================
+# Coordinator Registry Tests
+# =============================================================================
+
+class TestCoordinatorRegistry:
+    """Tests for CoordinatorRegistry."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        CoordinatorRegistry.reset_instance()
+
+    def teardown_method(self):
+        """Clean up after each test."""
+        CoordinatorRegistry.reset_instance()
+
+    def test_singleton_pattern(self):
+        """Test that registry is a singleton."""
+        reg1 = CoordinatorRegistry.get_instance()
+        reg2 = CoordinatorRegistry.get_instance()
+        assert reg1 is reg2
+
+    def test_register_coordinator(self):
+        """Test registering a coordinator."""
+        registry = CoordinatorRegistry.get_instance()
+        coord = SimpleCoordinator("test_coord")
+
+        registry.register(coord)
+
+        assert "test_coord" in registry.list_coordinators()
+        assert registry.get("test_coord") is coord
+
+    def test_unregister_coordinator(self):
+        """Test unregistering a coordinator."""
+        registry = CoordinatorRegistry.get_instance()
+        coord = SimpleCoordinator("test_coord")
+        registry.register(coord)
+
+        removed = registry.unregister("test_coord")
+
+        assert removed is coord
+        assert "test_coord" not in registry.list_coordinators()
+
+    def test_unregister_nonexistent(self):
+        """Test unregistering a non-existent coordinator."""
+        registry = CoordinatorRegistry.get_instance()
+        removed = registry.unregister("nonexistent")
+        assert removed is None
+
+    @pytest.mark.asyncio
+    async def test_shutdown_all(self):
+        """Test graceful shutdown of all coordinators."""
+        registry = CoordinatorRegistry.get_instance()
+
+        coord1 = SimpleCoordinator("coord1")
+        coord2 = SimpleCoordinator("coord2")
+
+        await coord1.start()
+        await coord2.start()
+
+        registry.register(coord1)
+        registry.register(coord2)
+
+        results = await registry.shutdown_all(timeout=5.0)
+
+        assert results["coord1"] is True
+        assert results["coord2"] is True
+        assert coord1.status == CoordinatorStatus.STOPPED
+        assert coord2.status == CoordinatorStatus.STOPPED
+
+    @pytest.mark.asyncio
+    async def test_shutdown_with_timeout(self):
+        """Test shutdown timeout handling."""
+
+        class SlowCoordinator(CoordinatorBase):
+            async def _do_stop(self) -> None:
+                await asyncio.sleep(10)  # Slow shutdown
+
+            async def get_stats(self) -> Dict[str, Any]:
+                return {}
+
+        registry = CoordinatorRegistry.get_instance()
+        slow = SlowCoordinator("slow")
+        await slow.start()
+        registry.register(slow)
+
+        results = await registry.shutdown_all(timeout=0.1)
+
+        assert results["slow"] is False  # Timed out
+
+    def test_get_health_summary(self):
+        """Test health summary generation."""
+        registry = CoordinatorRegistry.get_instance()
+
+        coord = SimpleCoordinator("health_test")
+        registry.register(coord)
+
+        summary = registry.get_health_summary()
+
+        assert summary["coordinator_count"] == 1
+        assert "health_test" in summary["coordinators"]
+        assert summary["coordinators"]["health_test"]["status"] == "initializing"
+
+    @pytest.mark.asyncio
+    async def test_drain_all(self):
+        """Test draining all coordinators."""
+        registry = CoordinatorRegistry.get_instance()
+
+        coord1 = SimpleCoordinator("drain1")
+        coord2 = SimpleCoordinator("drain2")
+
+        await coord1.start()
+        await coord2.start()
+
+        registry.register(coord1)
+        registry.register(coord2)
+
+        await registry.drain_all(timeout=5.0)
+
+        assert coord1.status == CoordinatorStatus.STOPPED
+        assert coord2.status == CoordinatorStatus.STOPPED
+
+    def test_convenience_functions(self):
+        """Test module-level convenience functions."""
+        registry = get_coordinator_registry()
+        assert isinstance(registry, CoordinatorRegistry)
+
+    @pytest.mark.asyncio
+    async def test_shutdown_all_convenience(self):
+        """Test shutdown_all_coordinators convenience function."""
+        # Should work even with no coordinators
+        results = await shutdown_all_coordinators(timeout=1.0)
+        assert results == {}
