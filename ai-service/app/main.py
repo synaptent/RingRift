@@ -149,17 +149,8 @@ async def verify_admin_api_key(x_admin_key: str = Header(None, alias="X-Admin-Ke
 # Error sanitization for production - prevent stack trace leakage
 IS_PRODUCTION = os.getenv("RINGRIFT_ENV", "development").lower() == "production"
 
-
-def sanitize_error_detail(error: Exception, fallback: str = "Internal server error") -> str:
-    """Return sanitized error message for HTTP responses.
-
-    In production, returns a generic message to prevent information leakage.
-    In development, returns the actual error message for debugging.
-    """
-    if IS_PRODUCTION:
-        return fallback
-    return str(error)
-
+# Import sanitize_error_detail from utils to avoid circular import
+from app.utils.error_utils import sanitize_error_detail  # noqa: E402
 
 # AI operation timeout (seconds) - prevents hanging requests
 AI_OPERATION_TIMEOUT = float(os.getenv("RINGRIFT_AI_TIMEOUT", "30.0"))

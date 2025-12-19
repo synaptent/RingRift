@@ -1299,9 +1299,12 @@ class BatchGameState:
 
             # Copy game state
             batch.current_player[g] = game_state.current_player
-            batch.move_count[g] = game_state.move_count
+            batch.move_count[g] = len(game_state.move_history)  # GameState uses move_history list
             batch.current_phase[g] = phase_map.get(game_state.current_phase, 0)
-            batch.active[g] = game_state.game_status != "completed"
+            # Map CPU GameStatus to GPU enum (0=in_progress, 1=completed, etc.)
+            batch.game_status[g] = 1 if game_state.game_status == "completed" else 0
+            if game_state.winner is not None:
+                batch.winner[g] = game_state.winner
 
         return batch
 

@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.db.game_replay import GameReplayDB
-from app.main import sanitize_error_detail  # Consolidated error utility
+from app.utils.error_utils import sanitize_error_detail
 
 logger = logging.getLogger(__name__)
 
