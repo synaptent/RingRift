@@ -1233,6 +1233,11 @@ class P2POrchestrator:
             return False
         return True
 
+    @property
+    def is_leader(self) -> bool:
+        """Property wrapper for _is_leader() method."""
+        return self._is_leader()
+
 
     # =========================================================================
     # SAFEGUARDS - Load, rate limiting, and coordinator integration
