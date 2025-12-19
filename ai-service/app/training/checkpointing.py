@@ -1,5 +1,17 @@
 """Checkpointing utilities for training.
 
+.. deprecated:: December 2025
+    For new code, prefer importing from :mod:`app.training.checkpoint_unified`
+    which provides a unified checkpoint manager with additional features::
+
+        from app.training.checkpoint_unified import (
+            UnifiedCheckpointManager,
+            get_checkpoint_manager,
+        )
+
+    This module remains available for backward compatibility and provides
+    lower-level checkpoint operations.
+
 This module provides checkpoint save/load functionality with:
 - Atomic saves (temp file + rename) to prevent corruption
 - Version-aware loading with backwards compatibility

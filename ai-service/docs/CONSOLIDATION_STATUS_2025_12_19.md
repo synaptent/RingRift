@@ -1,7 +1,7 @@
 # RingRift AI-Service Consolidation Status
 
 **Date:** December 19, 2025
-**Status:** Phase 1 Complete (consolidation + cleanup)
+**Status:** Phase 3 Complete (All priority consolidation done)
 
 ---
 
@@ -72,90 +72,96 @@
 
 ---
 
+## Phase 2 Consolidation Work (December 19, 2025)
+
+### 9. Model Registry Consolidation ✓
+
+- Added deprecation notice to `app/training/model_registry.py`
+- Added `get_model_registry()` singleton function
+- Added backward-compatible re-exports to `unified_model_store.py`:
+  - `ModelRegistry`, `RegistryDatabase`, `ModelStage`, `ModelType`
+  - `ModelMetrics`, `TrainingConfig`, `ModelVersion`, `ValidationStatus`
+  - `AutoPromoter`, `get_model_registry`
+
+### 10. Sync Coordinator Clarification ✓
+
+- `app/coordination/sync_coordinator.py` already uses `SyncScheduler` as canonical name
+- `SyncCoordinator` is a backward-compatible alias
+- Added deprecation notice to `reset_sync_coordinator()`
+
+### 11. Centralized Timeout Constants ✓
+
+- Added cluster transport timeouts to `app/config/thresholds.py`:
+  - `CLUSTER_CONNECT_TIMEOUT`, `CLUSTER_OPERATION_TIMEOUT`, `P2P_HTTP_TIMEOUT`
+- Updated `distributed_lock.py` to import from `thresholds.py`
+- Updated `cluster_transport.py` to import from `thresholds.py`
+- `orchestrator_registry.py` already imports from `thresholds.py`
+
+### 12. Data Validator Integration ✓
+
+- Added `validate_game_parity()` method to `UnifiedDataValidator`
+- Added `GAME_PARITY` validation type
+- Added re-exports from `territory_dataset_validation.py`:
+  - `validate_territory_example`, `validate_territory_dataset_file`, `iter_territory_dataset_errors`
+- Added re-exports from `db/parity_validator.py`:
+  - `validate_parity`, `validate_after_recording`, `ParityValidationError`
+  - `ParityDivergence`, `ParityMode`, `is_parity_validation_enabled`
+
+### 13. Deprecation Notices ✓
+
+- Added deprecation notice to `app/training/checkpointing.py` pointing to `checkpoint_unified.py`
+
+---
+
+## Phase 3 Consolidation Work (December 19, 2025)
+
+### 14. Standardized Package Imports ✓
+
+- Added to `app/training/__init__.py`:
+  - `TrainingEnvConfig`, `make_env` from `env.py`
+  - `seed_all` from `seed_utils.py`
+  - `infer_victory_reason` from `tournament.py`
+
+### 15. Orchestrator Registry Cleanup ✓
+
+- Added `get_all_coordinators()` helper function to `coordinator_base.py`
+- Added `get_coordinator_statuses()` helper function
+- Updated `__all__` exports
+
+### 16. Clean Deprecation Warnings ✓
+
+- Updated `app/distributed/__init__.py` `__getattr__` to emit `DeprecationWarning`
+- Warnings now point to replacement modules:
+  - `ClusterCoordinator` -> `TaskCoordinator`
+  - `TaskRole` -> `OrchestratorRole`
+  - `TaskInfo` -> `OrchestratorInfo`
+
+### 17. AI Module Organization ✓
+
+- Expanded `app/ai/__init__.py` with:
+  - `BaseAI` base class import
+  - `AIType` enum
+  - Lazy-loaded AI implementation classes:
+    - `HeuristicAI`, `MCTSAI`, `DescentAI`, `GumbelMCTSAI`
+    - `MaxNAI`, `MinimaxAI`, `RandomAI`, `PolicyOnlyAI`
+    - `GMOAI`, `EBMOAI`
+- Updated module docstring with architecture overview
+
+---
+
 ## Recommended Next Steps (Priority Order)
 
-### Priority 1: Critical Consolidation
+### Priority 1: Integration Verification
 
-#### 1.1 Sync Coordinator Naming Clarification
-
-**Files:**
-
-- `app/coordination/sync_coordinator.py` (SCHEDULING)
-- `app/distributed/sync_coordinator.py` (EXECUTION)
-
-**Action:** Finalize `SyncScheduler` as canonical name for scheduling layer.
-
-#### 1.2 Model Registry Consolidation
-
-**Files to consolidate:**
-
-- `app/training/model_registry.py` -> deprecate
-- `app/training/unified_model_store.py` -> canonical
-- `app/training/training_registry.py` -> rename to `TrainingJobRegistry`
-
-**Action:** Make `unified_model_store.UnifiedModelStore` the canonical model lifecycle tracker.
-
-#### 1.3 Complete Data Validation Unification
-
-**Action:** Integrate remaining validators into `unified_data_validator.py`:
-
-- `territory_dataset_validation.py`
-- `db/parity_validator.py`
-
-### Priority 2: High-Value Consolidation
-
-#### 2.1 Centralize Hardcoded Constants
-
-Create new config files:
-
-- `app/config/timeout_defaults.py`
-- `app/config/threshold_defaults.py`
-
-Replace hardcoded values across:
-
-- `orchestrator_registry.py` (HEARTBEAT_TIMEOUT_SECONDS)
-- `distributed_lock.py` (DEFAULT_LOCK_TIMEOUT)
-- `cluster_transport.py` (DEFAULT_CONNECT_TIMEOUT)
-- `sync_mutex.py` (LOCK_TIMEOUT_SECONDS)
-
-#### 2.2 Standardize Package Imports
-
-Add missing exports to `app/training/__init__.py`:
-
-- `TrainingEnvConfig`, `make_env` from `env.py`
-- `seed_all` from `seed_utils.py`
-- `infer_victory_reason` from `tournament.py`
-
-#### 2.3 Orchestrator Registry Cleanup
-
-- Verify all orchestrators extend `CoordinatorBase`
-- Standardize `.get_status()` method signature
-- Add `get_all_orchestrators()` helper function
-
-### Priority 3: Medium-Value Cleanup
-
-#### 3.1 Clean Deprecation Warnings
-
-Update lazy loading to explicit deprecation warnings:
-
-- `app/distributed/__init__.py` (cluster_coordinator symbols)
-- `app/distributed/ingestion_wal.py`
-
-#### 3.2 AI Module Organization
-
-Expand `app/ai/__init__.py` to centralize AI class exports.
-
-### Priority 4: Integration Verification
-
-#### 4.1 Verify Unified Module Usage
+#### 1.1 Verify Unified Module Usage
 
 Check that new unified modules are used instead of old:
 
 - `unified_orchestrator.py` vs `train_loop.py`
-- `checkpoint_unified.py` vs `checkpointing.py`
+- `checkpoint_unified.py` vs `checkpointing.py` ✓ (deprecation notice added)
 - `distributed_unified.py` vs `distributed.py`
 
-#### 4.2 Event System Unification
+#### 1.2 Event System Unification
 
 Verify all event emission uses unified router:
 

@@ -56,6 +56,7 @@ class ValidationType(Enum):
     TERRITORY_DATASET = "territory_dataset"  # Territory JSONL
     DATABASE = "database"  # SQLite game database
     CONFIG = "config"  # Configuration validation
+    GAME_PARITY = "game_parity"  # TS/Python parity validation
 
 
 class ValidationSeverity(Enum):
@@ -460,6 +461,84 @@ class UnifiedDataValidator:
         self._record_validation(result)
         return result
 
+    def validate_game_parity(
+        self,
+        db_path: Union[str, Path],
+        game_id: str,
+        mode: Optional[str] = None,
+        **kwargs,
+    ) -> UnifiedValidationResult:
+        """Validate game recording against TS canonical engine.
+
+        This validates that Python and TypeScript game engines produce
+        identical results when replaying recorded moves.
+
+        Args:
+            db_path: Path to the game replay database
+            game_id: ID of the game to validate
+            mode: Parity mode ("off", "warn", "strict")
+
+        Returns:
+            UnifiedValidationResult with parity validation results
+        """
+        start = time.time()
+        db_path = Path(db_path)
+
+        result = UnifiedValidationResult(
+            is_valid=True,
+            validation_type=ValidationType.GAME_PARITY,
+            source_path=str(db_path),
+            total_items=1,
+        )
+
+        try:
+            from app.db.parity_validator import validate_game_parity as _validate_parity
+
+            divergence = _validate_parity(str(db_path), game_id, mode=mode)
+
+            if divergence is not None:
+                result.is_valid = False
+                result.items_with_issues = 1
+                result.add_issue(
+                    "parity_divergence",
+                    f"Divergence at step {divergence.diverged_at}: {divergence.mismatch_kinds}",
+                    severity=ValidationSeverity.CRITICAL,
+                    details={
+                        "game_id": game_id,
+                        "diverged_at": divergence.diverged_at,
+                        "mismatch_kinds": divergence.mismatch_kinds,
+                        "mismatch_context": divergence.mismatch_context,
+                    },
+                )
+                result.metadata["divergence"] = divergence.to_dict()
+
+        except ImportError:
+            result.add_issue(
+                "validator_unavailable",
+                "Parity validator not available",
+                severity=ValidationSeverity.WARNING,
+            )
+        except Exception as e:
+            # Check if it's a ParityValidationError
+            if "ParityValidationError" in type(e).__name__:
+                result.is_valid = False
+                result.items_with_issues = 1
+                result.add_issue(
+                    "parity_error",
+                    str(e),
+                    severity=ValidationSeverity.CRITICAL,
+                )
+            else:
+                result.add_issue(
+                    "validation_error",
+                    f"Parity validation failed: {e}",
+                    severity=ValidationSeverity.CRITICAL,
+                )
+
+        result.duration_seconds = time.time() - start
+        self._record_validation(result)
+        return result
+
     def validate(
         self,
         path: Union[str, Path],
@@ -618,6 +697,31 @@ try:
 except ImportError:
     _legacy_exports_available = False
 
+# Re-exports from territory_dataset_validation (December 2025)
+try:
+    from app.training.territory_dataset_validation import (
+        validate_territory_example,
+        validate_territory_dataset_file,
+        iter_territory_dataset_errors,
+    )
+    _territory_exports_available = True
+except ImportError:
+    _territory_exports_available = False
+
+# Re-exports from parity_validator (December 2025)
+try:
+    from app.db.parity_validator import (
+        validate_game_parity as validate_parity,
+        validate_after_recording,
+        ParityValidationError,
+        ParityDivergence,
+        ParityMode,
+        is_parity_validation_enabled,
+    )
+    _parity_exports_available = True
+except ImportError:
+    _parity_exports_available = False
+
 
 __all__ = [
     # Unified API (preferred)
@@ -630,7 +734,7 @@ __all__ = [
     "validate_training_data",
     "validate_database",
     "validate_any",
-    # Legacy re-exports (for backward compatibility)
+    # Legacy re-exports from data_validation
     "DataValidator",
     "DataValidatorConfig",
     "GameDeduplicator",
@@ -640,4 +744,15 @@ __all__ = [
     "validate_npz_file",
     "record_validation_metrics",
     "record_deduplication_metrics",
+    # Territory validation re-exports
+    "validate_territory_example",
+    "validate_territory_dataset_file",
+    "iter_territory_dataset_errors",
+    # Parity validation re-exports
+    "validate_parity",
+    "validate_after_recording",
+    "ParityValidationError",
+    "ParityDivergence",
+    "ParityMode",
+    "is_parity_validation_enabled",
 ]

@@ -328,6 +328,19 @@ LOCK_POLL_INTERVAL = 0.5
 CRASH_DETECTION_THRESHOLD = 60
 
 # =============================================================================
+# Cluster Transport Timeouts (December 2025)
+# =============================================================================
+
+# TCP connection timeout (seconds) - longer for VAST.ai
+CLUSTER_CONNECT_TIMEOUT = 30
+
+# Operation timeout for cluster commands (seconds)
+CLUSTER_OPERATION_TIMEOUT = 180
+
+# P2P HTTP request timeout (seconds)
+P2P_HTTP_TIMEOUT = 30
+
+# =============================================================================
 # Circuit Breaker & Retry
 # =============================================================================
 

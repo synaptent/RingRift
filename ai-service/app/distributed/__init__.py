@@ -384,7 +384,19 @@ def __getattr__(name: str):
     This avoids triggering deprecation warnings on every import of app.distributed.
     The warning only fires when someone actually accesses these deprecated symbols.
     """
+    import warnings
+
     if name in _CLUSTER_COORDINATOR_SYMBOLS:
+        warnings.warn(
+            f"'{name}' is deprecated. Use the following instead:\n"
+            "  - ClusterCoordinator -> app.coordination.task_coordinator.TaskCoordinator\n"
+            "  - TaskRole -> app.coordination.orchestrator_registry.OrchestratorRole\n"
+            "  - TaskInfo -> app.coordination.orchestrator_registry.OrchestratorInfo\n"
+            "  - check_and_abort_if_role_held -> OrchestratorRegistry.acquire_role()\n"
+            "See docs/CONSOLIDATION_STATUS_2025_12_19.md for migration guide.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         from .cluster_coordinator import (
             ClusterCoordinator,
             TaskRole,

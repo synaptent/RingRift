@@ -575,3 +575,57 @@ if HAS_UNIFIED_MODEL_STORE:
         "get_production_model",
         "promote_model",
     ])
+
+# =============================================================================
+# Environment & Seed Utilities (December 2025)
+# =============================================================================
+
+# Import training environment configuration
+try:
+    from app.training.env import (
+        TrainingEnvConfig,
+        make_env,
+    )
+    HAS_TRAINING_ENV = True
+except ImportError:
+    HAS_TRAINING_ENV = False
+
+__all__.append("HAS_TRAINING_ENV")
+
+if HAS_TRAINING_ENV:
+    __all__.extend([
+        "TrainingEnvConfig",
+        "make_env",
+    ])
+
+# Import seed utilities for reproducibility
+try:
+    from app.training.seed_utils import (
+        seed_all,
+    )
+    HAS_SEED_UTILS = True
+except ImportError:
+    HAS_SEED_UTILS = False
+
+__all__.append("HAS_SEED_UTILS")
+
+if HAS_SEED_UTILS:
+    __all__.extend([
+        "seed_all",
+    ])
+
+# Import tournament utilities
+try:
+    from app.training.tournament import (
+        infer_victory_reason,
+    )
+    HAS_TOURNAMENT_UTILS = True
+except ImportError:
+    HAS_TOURNAMENT_UTILS = False
+
+__all__.append("HAS_TOURNAMENT_UTILS")
+
+if HAS_TOURNAMENT_UTILS:
+    __all__.extend([
+        "infer_victory_reason",
+    ])
