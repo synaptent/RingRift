@@ -313,6 +313,13 @@ from scripts.p2p.constants import (
     P2P_TRAINING_DB_SYNC_MAX,
     P2P_SYNC_BACKOFF_FACTOR,
     P2P_SYNC_SPEEDUP_FACTOR,
+    # Unified inventory / Idle detection
+    UNIFIED_DISCOVERY_INTERVAL,
+    IDLE_CHECK_INTERVAL,
+    IDLE_GPU_THRESHOLD,
+    AUTO_ASSIGN_ENABLED,
+    IDLE_GRACE_PERIOD,
+    AUTO_WORK_BATCH_SIZE,
     # State directory
     STATE_DIR,
 )
@@ -401,6 +408,15 @@ try:
 except ImportError:
     HAS_CURRICULUM_WEIGHTS = False
     load_curriculum_weights = None
+
+# Unified node inventory for multi-CLI discovery (Vast, Tailscale, Lambda, Hetzner)
+try:
+    from app.coordination.unified_inventory import UnifiedInventory, get_inventory
+    HAS_UNIFIED_INVENTORY = True
+except ImportError:
+    HAS_UNIFIED_INVENTORY = False
+    UnifiedInventory = None
+    get_inventory = None
 
 # HTTP server imports
 try:
@@ -13465,6 +13481,89 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             except Exception:
                 pass
 
+            # Work Queue Metrics (leader only)
+            if self.is_leader and hasattr(self, 'work_queue') and self.work_queue:
+                wq = self.work_queue
+                lines.append("# HELP ringrift_work_queue_pending Work items pending in queue")
+                lines.append("# TYPE ringrift_work_queue_pending gauge")
+                lines.append("# HELP ringrift_work_queue_running Work items currently running")
+                lines.append("# TYPE ringrift_work_queue_running gauge")
+                lines.append("# HELP ringrift_work_queue_total Total work items by status")
+                lines.append("# TYPE ringrift_work_queue_total gauge")
+                lines.append("# HELP ringrift_work_queue_by_type Work items by type and status")
+                lines.append("# TYPE ringrift_work_queue_by_type gauge")
+                lines.append("# HELP ringrift_work_queue_completed_total Total completed work items")
+                lines.append("# TYPE ringrift_work_queue_completed_total counter")
+                lines.append("# HELP ringrift_work_queue_failed_total Total failed work items")
+                lines.append("# TYPE ringrift_work_queue_failed_total counter")
+                lines.append("# HELP ringrift_work_queue_timeout_total Total timed out work items")
+                lines.append("# TYPE ringrift_work_queue_timeout_total counter")
+                lines.append("# HELP ringrift_work_queue_cancelled_total Total cancelled work items")
+                lines.append("# TYPE ringrift_work_queue_cancelled_total counter")
+                lines.append("# HELP ringrift_work_queue_avg_wait_seconds Average wait time in queue")
+                lines.append("# TYPE ringrift_work_queue_avg_wait_seconds gauge")
+                lines.append("# HELP ringrift_work_queue_avg_run_seconds Average run time for work items")
+                lines.append("# TYPE ringrift_work_queue_avg_run_seconds gauge")
+
+                try:
+                    status = wq.get_queue_status()
+
+                    # Basic queue counts
+                    pending = status.get("pending", 0)
+                    running = status.get("running", 0)
+                    lines.append(f"ringrift_work_queue_pending {pending}")
+                    lines.append(f"ringrift_work_queue_running {running}")
+                    lines.append(f'ringrift_work_queue_total{{status="pending"}} {pending}')
+                    lines.append(f'ringrift_work_queue_total{{status="running"}} {running}')
+
+                    # Count by work type from queue
+                    type_counts = {"pending": {}, "running": {}}
+                    for item in status.get("queue", []):
+                        wtype = item.get("work_type", "unknown")
+                        type_counts["pending"][wtype] = type_counts["pending"].get(wtype, 0) + 1
+                    for item in status.get("claimed", []):
+                        wtype = item.get("work_type", "unknown")
+                        type_counts["running"][wtype] = type_counts["running"].get(wtype, 0) + 1
+
+                    for wtype, count in type_counts["pending"].items():
+                        lines.append(f'ringrift_work_queue_by_type{{work_type="{wtype}",status="pending"}} {count}')
+                    for wtype, count in type_counts["running"].items():
+                        lines.append(f'ringrift_work_queue_by_type{{work_type="{wtype}",status="running"}} {count}')
+
+                    # Historical counts from database
+                    history = wq.get_history(limit=1000)
+                    completed_count = sum(1 for h in history if h.get("status") == "completed")
+                    failed_count = sum(1 for h in history if h.get("status") == "failed")
+                    timeout_count = sum(1 for h in history if h.get("status") == "timeout")
+                    cancelled_count = sum(1 for h in history if h.get("status") == "cancelled")
+
+                    lines.append(f"ringrift_work_queue_completed_total {completed_count}")
+                    lines.append(f"ringrift_work_queue_failed_total {failed_count}")
+                    lines.append(f"ringrift_work_queue_timeout_total {timeout_count}")
+                    lines.append(f"ringrift_work_queue_cancelled_total {cancelled_count}")
+
+                    # Calculate average wait and run times from completed items
+                    wait_times = []
+                    run_times = []
+                    for h in history:
+                        if h.get("status") == "completed":
+                            created = h.get("created_at", 0)
+                            claimed = h.get("claimed_at", 0)
+                            completed = h.get("completed_at", 0)
+                            if claimed and created:
+                                wait_times.append(claimed - created)
+                            if completed and claimed:
+                                run_times.append(completed - claimed)
+
+                    avg_wait = sum(wait_times) / len(wait_times) if wait_times else 0
+                    avg_run = sum(run_times) / len(run_times) if run_times else 0
+                    lines.append(f"ringrift_work_queue_avg_wait_seconds {avg_wait:.2f}")
+                    lines.append(f"ringrift_work_queue_avg_run_seconds {avg_run:.2f}")
+
+                except Exception:
+                    # If work queue metrics fail, just skip them
+                    pass
+
             # Uptime metric
             if hasattr(self, 'start_time'):
                 uptime = now - self.start_time
@@ -16527,6 +16626,145 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             except Exception as e:
                 logger.error(f"Work queue maintenance error: {e}")
                 await asyncio.sleep(MAINTENANCE_INTERVAL)
+
+    async def _idle_detection_loop(self):
+        """Background loop for leader to detect idle nodes and auto-assign work.
+
+        Uses the unified inventory to discover ALL nodes (Vast, Tailscale, Lambda, Hetzner)
+        and automatically assigns work to nodes that have been idle for too long.
+
+        This ensures GPUs never sit idle waiting for manual intervention.
+        """
+        await asyncio.sleep(30)  # Initial delay to let cluster stabilize
+
+        logger.info(f"Idle detection loop started (interval={IDLE_CHECK_INTERVAL}s, threshold={IDLE_GPU_THRESHOLD}%)")
+
+        # Track how long each node has been idle (for grace period)
+        idle_since: Dict[str, float] = {}
+
+        while self.running:
+            try:
+                # Only leader performs idle detection
+                if self.role != NodeRole.LEADER or not AUTO_ASSIGN_ENABLED:
+                    await asyncio.sleep(IDLE_CHECK_INTERVAL)
+                    continue
+
+                # Run unified discovery periodically
+                if HAS_UNIFIED_INVENTORY and get_inventory:
+                    inventory = get_inventory()
+                    try:
+                        await inventory.discover_all()
+                    except Exception as e:
+                        logger.debug(f"Unified discovery error: {e}")
+
+                # Get idle nodes from P2P peers (our authoritative source)
+                idle_nodes = []
+                now = time.time()
+
+                with self.peers_lock:
+                    for peer in self.peers.values():
+                        if not peer.is_alive() or peer.retired:
+                            # Remove from idle tracking if no longer active
+                            idle_since.pop(peer.node_id, None)
+                            continue
+
+                        # Check if node is idle: low GPU and no jobs running
+                        gpu_pct = float(getattr(peer, "gpu_percent", 0) or 0)
+                        selfplay_jobs = int(getattr(peer, "selfplay_jobs", 0) or 0)
+                        training_jobs = int(getattr(peer, "training_jobs", 0) or 0)
+                        has_external = getattr(peer, "has_external_work", lambda: False)()
+
+                        is_idle = (
+                            gpu_pct < IDLE_GPU_THRESHOLD
+                            and selfplay_jobs == 0
+                            and training_jobs == 0
+                            and not has_external
+                        )
+
+                        if is_idle:
+                            # Track when this node became idle
+                            if peer.node_id not in idle_since:
+                                idle_since[peer.node_id] = now
+                                logger.debug(f"Node {peer.node_id} became idle (GPU={gpu_pct:.0f}%)")
+
+                            # Check if idle long enough (grace period)
+                            idle_duration = now - idle_since[peer.node_id]
+                            if idle_duration >= IDLE_GRACE_PERIOD:
+                                idle_nodes.append((peer, idle_duration))
+                        else:
+                            # Node is no longer idle
+                            if peer.node_id in idle_since:
+                                logger.debug(f"Node {peer.node_id} no longer idle (GPU={gpu_pct:.0f}%)")
+                            idle_since.pop(peer.node_id, None)
+
+                # Auto-assign work to idle nodes
+                if idle_nodes:
+                    logger.info(f"Found {len(idle_nodes)} idle node(s), auto-assigning work")
+
+                    wq = get_work_queue()
+                    if wq is not None:
+                        # Ensure queue has enough work
+                        wq.ensure_work_available(len(idle_nodes), max_batch=AUTO_WORK_BATCH_SIZE)
+
+                        # Try to start selfplay on each idle node
+                        for peer, idle_duration in idle_nodes:
+                            try:
+                                await self._auto_start_selfplay(peer, idle_duration)
+                            except Exception as e:
+                                logger.warning(f"Failed to auto-start work on {peer.node_id}: {e}")
+
+                await asyncio.sleep(IDLE_CHECK_INTERVAL)
+
+            except Exception as e:
+                logger.error(f"Idle detection error: {e}")
+                await asyncio.sleep(IDLE_CHECK_INTERVAL)
+
+    async def _auto_start_selfplay(self, peer: "NodeInfo", idle_duration: float):
+        """Auto-start selfplay on an idle node.
+
+        Uses the node's GPU capabilities to determine appropriate batch size.
+        """
+        # Don't auto-start on nodes that aren't GPU nodes
+        if not getattr(peer, "has_gpu", False) or not getattr(peer, "is_gpu_node", lambda: False)():
+            return
+
+        gpu_name = getattr(peer, "gpu_name", "") or ""
+
+        # Determine selfplay count based on GPU type
+        if "GH200" in gpu_name.upper():
+            num_selfplay = 40
+        elif "H100" in gpu_name.upper() or "H200" in gpu_name.upper():
+            num_selfplay = 30
+        elif "A100" in gpu_name.upper():
+            num_selfplay = 20
+        elif "4090" in gpu_name.upper() or "5090" in gpu_name.upper():
+            num_selfplay = 15
+        else:
+            num_selfplay = 10  # Conservative default
+
+        logger.info(f"Auto-starting {num_selfplay} selfplay on idle node {peer.node_id} "
+                   f"(GPU={gpu_name}, idle for {idle_duration:.0f}s)")
+
+        # Send start job command to the idle node
+        try:
+            url = self._url_for_peer(peer, "/start_job")
+            timeout = ClientTimeout(total=30)
+
+            async with get_client_session(timeout) as session:
+                payload = {
+                    "job_type": "selfplay",
+                    "count": num_selfplay,
+                    "auto_assigned": True,
+                    "reason": f"auto_idle_{int(idle_duration)}s",
+                }
+                async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
+                    if resp.status == 200:
+                        logger.info(f"Auto-started selfplay on {peer.node_id}")
+                    else:
+                        body = await resp.text()
+                        logger.warning(f"Failed to auto-start on {peer.node_id}: {resp.status} {body[:100]}")
+        except Exception as e:
+            logger.warning(f"Auto-start request failed for {peer.node_id}: {e}")
 
     async def handle_games_analytics(self, request: web.Request) -> web.Response:
         """GET /games/analytics - Game statistics for dashboards.
@@ -26294,6 +26532,9 @@ print(json.dumps({{
 
         # Add work queue maintenance loop (leader cleans up timeouts and old items)
         tasks.append(asyncio.create_task(self._work_queue_maintenance_loop()))
+
+        # Add idle detection loop (leader auto-assigns work to idle nodes)
+        tasks.append(asyncio.create_task(self._idle_detection_loop()))
 
         # Best-effort bootstrap from seed peers before running elections. This
         # helps newly started cloud nodes quickly learn about the full cluster.
