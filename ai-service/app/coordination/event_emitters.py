@@ -71,6 +71,24 @@ except ImportError:
     def get_data_bus():
         return None
 
+# Unified event router (preferred for cross-system routing)
+try:
+    from app.coordination.event_router import (
+        get_router as get_event_router,
+        EventSource,
+    )
+    HAS_EVENT_ROUTER = True
+except ImportError:
+    HAS_EVENT_ROUTER = False
+
+    def get_event_router():
+        return None
+
+
+# Configuration: whether to use unified router or direct bus access
+# Set to True to route all events through the unified router
+USE_UNIFIED_ROUTER = True
+
 
 # =============================================================================
 # Helper Functions
@@ -79,6 +97,78 @@ except ImportError:
 def _get_timestamp() -> str:
     """Get current timestamp in ISO format."""
     return datetime.now().isoformat()
+
+
+async def _emit_via_router(
+    event_type: str,
+    payload: Dict[str, Any],
+    source: str = "event_emitters",
+) -> bool:
+    """Emit an event via the unified event router.
+
+    Args:
+        event_type: Event type string (or DataEventType value)
+        payload: Event payload data
+        source: Source component name
+
+    Returns:
+        True if emitted successfully
+    """
+    if not HAS_EVENT_ROUTER or not USE_UNIFIED_ROUTER:
+        return False
+
+    try:
+        router = get_event_router()
+        if router is None:
+            return False
+
+        await router.publish(
+            event_type=event_type,
+            payload=payload,
+            source=source,
+        )
+        logger.debug(f"Emitted {event_type} via unified router")
+        return True
+
+    except Exception as e:
+        logger.debug(f"Failed to emit {event_type} via router: {e}")
+        return False
+
+
+def _emit_via_router_sync(
+    event_type: str,
+    payload: Dict[str, Any],
+    source: str = "event_emitters",
+) -> bool:
+    """Emit an event synchronously via the unified router.
+
+    Args:
+        event_type: Event type string
+        payload: Event payload data
+        source: Source component name
+
+    Returns:
+        True if emitted successfully
+    """
+    if not HAS_EVENT_ROUTER or not USE_UNIFIED_ROUTER:
+        return False
+
+    try:
+        router = get_event_router()
+        if router is None:
+            return False
+
+        router.publish_sync(
+            event_type=event_type,
+            payload=payload,
+            source=source,
+        )
+        logger.debug(f"Emitted {event_type} sync via unified router")
+        return True
+
+    except Exception as e:
+        logger.debug(f"Failed to emit {event_type} sync via router: {e}")
+        return False
 
 
 async def _emit_stage_event(
@@ -94,6 +184,18 @@ async def _emit_stage_event(
     Returns:
         True if emitted successfully
     """
+    # Try unified router first if enabled
+    if USE_UNIFIED_ROUTER and HAS_EVENT_ROUTER:
+        payload = {
+            "event": event.value if hasattr(event, 'value') else str(event),
+            "success": result.success if hasattr(result, 'success') else True,
+            "config": result.config if hasattr(result, 'config') else "",
+            "metrics": result.metrics if hasattr(result, 'metrics') else {},
+        }
+        if await _emit_via_router(event.value if hasattr(event, 'value') else str(event), payload, "stage_event"):
+            return True
+
+    # Fallback to direct stage bus
     if not HAS_STAGE_EVENTS:
         logger.debug(f"Stage events not available, skipping {event}")
         return False
@@ -125,6 +227,18 @@ def _emit_stage_event_sync(
     Returns:
         True if emitted successfully
     """
+    # Try unified router first if enabled
+    if USE_UNIFIED_ROUTER and HAS_EVENT_ROUTER:
+        payload = {
+            "event": event.value if hasattr(event, 'value') else str(event),
+            "success": result.success if hasattr(result, 'success') else True,
+            "config": result.config if hasattr(result, 'config') else "",
+            "metrics": result.metrics if hasattr(result, 'metrics') else {},
+        }
+        if _emit_via_router_sync(event.value if hasattr(event, 'value') else str(event), payload, "stage_event"):
+            return True
+
+    # Fallback to direct stage bus
     if not HAS_STAGE_EVENTS:
         return False
 

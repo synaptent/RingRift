@@ -600,7 +600,27 @@ def validate_any(path: Union[str, Path], **kwargs) -> UnifiedValidationResult:
     return get_validator().validate(path, **kwargs)
 
 
+# Backward-compatible re-exports from data_validation
+# Allows importing legacy classes from unified module
+try:
+    from app.training.data_validation import (
+        DataValidator,
+        DataValidatorConfig,
+        GameDeduplicator,
+        ValidationIssue,
+        ValidationIssueType,
+        ValidationResult,
+        validate_npz_file,
+        record_validation_metrics,
+        record_deduplication_metrics,
+    )
+    _legacy_exports_available = True
+except ImportError:
+    _legacy_exports_available = False
+
+
 __all__ = [
+    # Unified API (preferred)
     "UnifiedDataValidator",
     "UnifiedValidationResult",
     "UnifiedValidationIssue",
@@ -610,4 +630,14 @@ __all__ = [
     "validate_training_data",
     "validate_database",
     "validate_any",
+    # Legacy re-exports (for backward compatibility)
+    "DataValidator",
+    "DataValidatorConfig",
+    "GameDeduplicator",
+    "ValidationIssue",
+    "ValidationIssueType",
+    "ValidationResult",
+    "validate_npz_file",
+    "record_validation_metrics",
+    "record_deduplication_metrics",
 ]

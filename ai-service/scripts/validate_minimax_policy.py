@@ -9,8 +9,6 @@ Tests that:
 
 import sys
 import time
-import uuid
-from datetime import datetime
 from pathlib import Path
 
 # Add ai-service to path
@@ -18,71 +16,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.ai.minimax_ai import MinimaxAI
 from app.game_engine import GameEngine
-from app.models import (
-    AIConfig,
-    BoardState,
-    BoardType,
-    GamePhase,
-    GameState,
-    GameStatus,
-    Player,
-    TimeControl,
-)
-
-
-def create_game_state(board_type: BoardType = BoardType.SQUARE8, num_players: int = 2) -> GameState:
-    """Create a fresh game state."""
-    size = 8 if board_type == BoardType.SQUARE8 else 19
-    if board_type == BoardType.HEXAGONAL:
-        size = 5
-
-    board = BoardState(
-        type=board_type,
-        size=size,
-        stacks={},
-        markers={},
-        collapsedSpaces={},
-        eliminatedRings={},
-    )
-
-    rings_per_player = 20 if num_players == 2 else (14 if num_players == 3 else 10)
-    players = []
-    for i in range(num_players):
-        players.append(
-            Player(
-                id=f"p{i+1}",
-                username=f"AI{i+1}",
-                type="ai",
-                playerNumber=i + 1,
-                isReady=True,
-                timeRemaining=600000,
-                aiDifficulty=4,
-                ringsInHand=rings_per_player,
-                eliminatedRings=0,
-                territorySpaces=0,
-            )
-        )
-
-    return GameState(
-        id=str(uuid.uuid4()),
-        board_type=board_type,
-        board=board,
-        players=players,
-        current_phase=GamePhase.RING_PLACEMENT,
-        current_player=1,
-        move_history=[],
-        time_control=TimeControl(initial_time=600, increment=5, type="standard"),
-        game_status=GameStatus.ACTIVE,
-        created_at=datetime.now(),
-        last_move_at=datetime.now(),
-        is_rated=False,
-        max_players=num_players,
-        total_rings_in_play=0,
-        total_rings_eliminated=0,
-        victory_threshold=3,
-        territory_victory_threshold=10,
-        chain_capture_state=None,
-    )
+from app.models import AIConfig
+from app.training.initial_state import create_initial_state
 
 
 def validate_policy_ordering():
@@ -103,7 +38,7 @@ def validate_policy_ordering():
     # Create game engine and initial state
     print("Creating game engine and initial state...")
     engine = GameEngine()
-    game_state = create_game_state()
+    game_state = create_initial_state()
 
     # Create MinimaxAI with policy ordering enabled
     print("Creating MinimaxAI with policy ordering enabled...")
@@ -173,7 +108,7 @@ def validate_policy_vs_no_policy():
 
     # Create game engine and advance to mid-game
     engine = GameEngine()
-    game_state = create_game_state()
+    game_state = create_initial_state()
 
     # Place rings to get to movement phase
     moves_made = 0

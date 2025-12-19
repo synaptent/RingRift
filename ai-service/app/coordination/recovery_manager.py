@@ -585,3 +585,99 @@ def load_recovery_config_from_yaml(yaml_config: Dict[str, Any]) -> RecoveryConfi
         node_unhealthy_after_failures=self_healing.get("node_unhealthy_after_failures", 3),
         node_recovery_timeout=self_healing.get("node_recovery_timeout", 120),
     )
+
+
+# =============================================================================
+# Singleton and Event Wiring (December 2025)
+# =============================================================================
+
+_recovery_manager: Optional[RecoveryManager] = None
+
+
+def get_recovery_manager() -> RecoveryManager:
+    """Get the global RecoveryManager singleton."""
+    global _recovery_manager
+    if _recovery_manager is None:
+        _recovery_manager = RecoveryManager()
+    return _recovery_manager
+
+
+def wire_recovery_events() -> RecoveryManager:
+    """Wire recovery events to the manager.
+
+    Subscribes to:
+    - TASK_FAILED: Track failed tasks for recovery
+    - HOST_OFFLINE: Track offline hosts for recovery
+    - ERROR: Track errors for recovery decisions
+    - NODE_RECOVERED: Update recovery state
+
+    Returns:
+        The configured RecoveryManager
+    """
+    manager = get_recovery_manager()
+
+    try:
+        from app.distributed.data_events import DataEventType, get_event_bus
+
+        bus = get_event_bus()
+
+        async def _on_task_failed(event):
+            """Handle TASK_FAILED event."""
+            payload = event.payload
+            work_id = payload.get("work_id") or payload.get("task_id", "")
+            if work_id:
+                state = manager._get_job_state(work_id)
+                state.recovery_attempts += 1
+                state.last_attempt_time = time.time()
+                logger.debug(f"[RecoveryManager] Tracked failed task: {work_id}")
+
+        async def _on_host_offline(event):
+            """Handle HOST_OFFLINE event."""
+            payload = event.payload
+            node_id = payload.get("node_id") or payload.get("host_id", "")
+            if node_id:
+                state = manager._get_node_state(node_id)
+                state.consecutive_failures += 1
+                state.last_failure_time = time.time()
+                logger.debug(f"[RecoveryManager] Tracked offline host: {node_id}")
+
+        async def _on_node_recovered(event):
+            """Handle NODE_RECOVERED event."""
+            payload = event.payload
+            node_id = payload.get("node_id") or payload.get("host_id", "")
+            if node_id and node_id in manager._node_states:
+                state = manager._node_states[node_id]
+                state.consecutive_failures = 0
+                state.is_unhealthy = False
+                logger.debug(f"[RecoveryManager] Node recovered: {node_id}")
+
+        bus.subscribe(DataEventType.TASK_FAILED, _on_task_failed)
+        bus.subscribe(DataEventType.HOST_OFFLINE, _on_host_offline)
+        bus.subscribe(DataEventType.NODE_RECOVERED, _on_node_recovered)
+
+        logger.info("[RecoveryManager] Subscribed to recovery events")
+
+    except ImportError:
+        logger.warning("[RecoveryManager] data_events not available")
+    except Exception as e:
+        logger.error(f"[RecoveryManager] Failed to subscribe to events: {e}")
+
+    return manager
+
+
+__all__ = [
+    # Enums
+    "RecoveryAction",
+    "RecoveryResult",
+    # Data classes
+    "RecoveryConfig",
+    "RecoveryEvent",
+    "NodeRecoveryState",
+    "JobRecoveryState",
+    # Main class
+    "RecoveryManager",
+    # Functions
+    "load_recovery_config_from_yaml",
+    "get_recovery_manager",
+    "wire_recovery_events",
+]

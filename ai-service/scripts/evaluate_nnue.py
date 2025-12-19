@@ -23,10 +23,8 @@ import json
 import os
 import sys
 import time
-import uuid
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
 
 # Add the parent directory to sys.path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,17 +34,9 @@ if PROJECT_ROOT not in sys.path:
 
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.minimax_ai import MinimaxAI
-from app.models import (
-    AIConfig,
-    BoardState,
-    BoardType,
-    GamePhase,
-    GameState,
-    GameStatus,
-    Player,
-    TimeControl,
-)
+from app.models import AIConfig, BoardType
 from app.rules.default_engine import DefaultRulesEngine
+from app.training.initial_state import create_initial_state
 
 
 @dataclass
@@ -77,69 +67,6 @@ class TournamentResult:
         return self.p1_wins / decisive if decisive > 0 else 0.5
 
 
-def create_game_state(board_type: BoardType = BoardType.SQUARE8, num_players: int = 2) -> GameState:
-    """Create a fresh game state.
-
-    Args:
-        board_type: Board type for the game
-        num_players: Number of players (2, 3, or 4)
-    """
-    size = 8 if board_type == BoardType.SQUARE8 else 19
-    if board_type == BoardType.HEXAGONAL:
-        size = 5
-
-    board = BoardState(
-        type=board_type,
-        size=size,
-        stacks={},
-        markers={},
-        collapsedSpaces={},
-        eliminatedRings={},
-    )
-
-    # Create players based on num_players
-    rings_per_player = 20 if num_players == 2 else (14 if num_players == 3 else 10)
-    players = []
-    for i in range(num_players):
-        players.append(
-            Player(
-                id=f"p{i+1}",
-                username=f"AI{i+1}",
-                type="ai",
-                playerNumber=i + 1,
-                isReady=True,
-                timeRemaining=600000,
-                aiDifficulty=4,
-                ringsInHand=rings_per_player,
-                eliminatedRings=0,
-                territorySpaces=0,
-            )
-        )
-
-    return GameState(
-        id=str(uuid.uuid4()),
-        boardType=board_type,
-        board=board,
-        players=players,
-        currentPhase=GamePhase.RING_PLACEMENT,
-        currentPlayer=1,
-        moveHistory=[],
-        timeControl=TimeControl(initialTime=600, increment=5, type="standard"),
-        gameStatus=GameStatus.ACTIVE,
-        createdAt=datetime.now(),
-        lastMoveAt=datetime.now(),
-        isRated=False,
-        maxPlayers=num_players,
-        totalRingsInPlay=0,
-        totalRingsEliminated=0,
-        victoryThreshold=3,
-        territoryVictoryThreshold=10,
-        chainCaptureState=None,
-        mustMoveFromStackKey=None,
-        zobristHash=None,
-    )
-
-
 def run_game(
     ai1,
     ai2,
@@ -168,7 +95,7 @@ def run_game(
     Returns:
         MatchResult with winner (1=ai1 won, 2=ai2 won, None=draw)
     """
-    game = create_game_state(board_type, num_players)
+    game = create_initial_state(board_type, num_players)
     engine = DefaultRulesEngine()
 
     start_time = time.time()
