@@ -16486,6 +16486,48 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         except Exception as e:
             logger.debug(f"Failed to report work result: {e}")
 
+    async def _work_queue_maintenance_loop(self):
+        """Background loop for leader to maintain the work queue.
+
+        Runs periodically to:
+        - Check for timed out work items
+        - Clean up old completed items from the database
+        """
+        MAINTENANCE_INTERVAL = 300  # Every 5 minutes
+        CLEANUP_AGE = 86400.0  # Clean up items older than 24 hours
+
+        await asyncio.sleep(60)  # Initial delay
+
+        logger.info("Work queue maintenance loop started")
+
+        while self.running:
+            try:
+                # Only leader performs maintenance
+                if self.role != NodeRole.LEADER:
+                    await asyncio.sleep(MAINTENANCE_INTERVAL)
+                    continue
+
+                wq = get_work_queue()
+                if wq is None:
+                    await asyncio.sleep(MAINTENANCE_INTERVAL)
+                    continue
+
+                # Check for timeouts
+                timed_out = wq.check_timeouts()
+                if timed_out:
+                    logger.info(f"Work queue maintenance: {len(timed_out)} items timed out")
+
+                # Cleanup old items
+                removed = wq.cleanup_old_items(max_age_seconds=CLEANUP_AGE)
+                if removed:
+                    logger.info(f"Work queue maintenance: cleaned up {removed} old items")
+
+                await asyncio.sleep(MAINTENANCE_INTERVAL)
+
+            except Exception as e:
+                logger.error(f"Work queue maintenance error: {e}")
+                await asyncio.sleep(MAINTENANCE_INTERVAL)
+
     async def handle_games_analytics(self, request: web.Request) -> web.Response:
         """GET /games/analytics - Game statistics for dashboards.
 
@@ -26249,6 +26291,9 @@ print(json.dumps({{
 
         # Add worker pull loop (workers poll leader for work)
         tasks.append(asyncio.create_task(self._worker_pull_loop()))
+
+        # Add work queue maintenance loop (leader cleans up timeouts and old items)
+        tasks.append(asyncio.create_task(self._work_queue_maintenance_loop()))
 
         # Best-effort bootstrap from seed peers before running elections. This
         # helps newly started cloud nodes quickly learn about the full cluster.
