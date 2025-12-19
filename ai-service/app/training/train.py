@@ -1605,6 +1605,8 @@ def train_model(
     enable_augmentation: bool = False,
     enable_elo_weighting: bool = False,
     enable_auxiliary_tasks: bool = False,
+    enable_batch_scheduling: bool = False,
+    enable_background_eval: bool = False,
     # Policy label smoothing (2025-12)
     policy_label_smoothing: float = 0.0,
     # Data validation (2025-12)
@@ -1642,6 +1644,15 @@ def train_model(
         data_dir: Directory containing multiple .npz files (for streaming)
         sampling_weights: Position sampling strategy for non-streaming data:
             'uniform', 'late_game', 'phase_emphasis', or 'combined'
+        use_integrated_enhancements: Enable IntegratedTrainingManager for advanced features
+        enable_curriculum: Enable curriculum learning (difficulty progression)
+        enable_augmentation: Enable data augmentation (symmetry transforms)
+        enable_elo_weighting: Enable Elo-based sample weighting
+        enable_auxiliary_tasks: Enable auxiliary prediction tasks (outcome classification)
+            Requires model support for return_features=True
+        enable_batch_scheduling: Enable dynamic batch size scheduling (linear ramp-up)
+        enable_background_eval: Enable background Elo evaluation during training
+            Provides early stopping based on Elo tracking
     """
     # Set up distributed training if enabled
     if distributed:
@@ -1778,6 +1789,8 @@ def train_model(
             augmentation_enabled=enable_augmentation,
             elo_weighting_enabled=enable_elo_weighting,
             auxiliary_tasks_enabled=enable_auxiliary_tasks,
+            batch_scheduling_enabled=enable_batch_scheduling,
+            background_eval_enabled=enable_background_eval,
         )
         enhancements_manager = IntegratedTrainingManager(
             config=enh_config,
@@ -1787,7 +1800,8 @@ def train_model(
         logger.info(
             f"Integrated enhancements enabled: "
             f"curriculum={enable_curriculum}, augmentation={enable_augmentation}, "
-            f"elo_weighting={enable_elo_weighting}, auxiliary_tasks={enable_auxiliary_tasks}"
+            f"elo_weighting={enable_elo_weighting}, auxiliary_tasks={enable_auxiliary_tasks}, "
+            f"batch_scheduling={enable_batch_scheduling}, background_eval={enable_background_eval}"
         )
     elif use_integrated_enhancements and not HAS_INTEGRATED_ENHANCEMENTS:
         logger.warning("Integrated enhancements requested but not available (import failed)")
@@ -2777,6 +2791,12 @@ def train_model(
                 except ImportError:
                     pass  # resource_guard not available
 
+            # Log scheduled batch size if batch scheduling is enabled
+            if enhancements_manager is not None and enhancements_manager._batch_scheduler is not None:
+                scheduled_batch = enhancements_manager.get_batch_size()
+                if not distributed or is_main_process():
+                    logger.info(f"Epoch {epoch+1}: scheduled batch size = {scheduled_batch}")
+
             # Set epoch for distributed sampler or streaming loader
             if distributed and train_sampler is not None:
                 train_sampler.set_epoch(epoch)
@@ -3656,6 +3676,18 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         '--enable-elo-weighting', action='store_true',
         help='Enable ELO-based sample weighting'
     )
+    parser.add_argument(
+        '--enable-auxiliary-tasks', action='store_true',
+        help='Enable auxiliary prediction tasks (outcome classification)'
+    )
+    parser.add_argument(
+        '--enable-batch-scheduling', action='store_true',
+        help='Enable dynamic batch size scheduling (linear ramp-up)'
+    )
+    parser.add_argument(
+        '--enable-background-eval', action='store_true',
+        help='Enable background Elo evaluation during training'
+    )
 
     parser.add_argument(
         '--learning-rate', type=float, default=None,
@@ -4148,6 +4180,9 @@ def main():
         enable_curriculum=getattr(args, 'enable_curriculum', False),
         enable_augmentation=getattr(args, 'enable_augmentation', False),
         enable_elo_weighting=getattr(args, 'enable_elo_weighting', False),
+        enable_auxiliary_tasks=getattr(args, 'enable_auxiliary_tasks', False),
+        enable_batch_scheduling=getattr(args, 'enable_batch_scheduling', False),
+        enable_background_eval=getattr(args, 'enable_background_eval', False),
     )
 
 

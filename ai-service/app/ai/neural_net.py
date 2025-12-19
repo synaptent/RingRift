@@ -1812,13 +1812,19 @@ class RingRiftCNN_v3(nn.Module):
 
         return policy
 
-    def forward(self, x: torch.Tensor, globals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        x: torch.Tensor,
+        globals: torch.Tensor,
+        return_features: bool = False,
+    ) -> Union[Tuple[torch.Tensor, torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]:
         """
         Forward pass with spatial policy heads and rank distribution output.
 
         Args:
             x: Input features [B, in_channels, H, W]
             globals: Global features [B, global_features]
+            return_features: If True, also return backbone features for auxiliary tasks
 
         Returns:
             value: [B, num_players] per-player expected outcome (legacy, tanh in [-1, 1])
@@ -1826,6 +1832,7 @@ class RingRiftCNN_v3(nn.Module):
             rank_dist: [B, num_players, num_players] rank probability distribution
                        where rank_dist[b, p, r] = P(player p finishes at rank r)
                        Softmax applied over ranks (dim=-1), so each player's probs sum to 1
+            features: (optional) [B, num_filters + global_features] backbone features for aux tasks
         """
         # Backbone with SE blocks
         out = self.relu(self.bn1(self.conv1(x)))
@@ -1867,6 +1874,11 @@ class RingRiftCNN_v3(nn.Module):
             territory_choice_logits,
             special_logits,
         )
+
+        if return_features:
+            # Return backbone features for auxiliary tasks
+            # v_cat contains pooled spatial features + global features
+            return v_out, policy_logits, rank_dist, v_cat
 
         return v_out, policy_logits, rank_dist
 
@@ -2126,14 +2138,25 @@ class RingRiftCNN_v3_Lite(nn.Module):
 
         return policy
 
-    def forward(self, x: torch.Tensor, globals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        x: torch.Tensor,
+        globals: torch.Tensor,
+        return_features: bool = False,
+    ) -> Union[Tuple[torch.Tensor, torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]:
         """
         Forward pass with spatial policy heads and rank distribution output.
+
+        Args:
+            x: Input features [B, in_channels, H, W]
+            globals: Global features [B, global_features]
+            return_features: If True, also return backbone features for auxiliary tasks
 
         Returns:
             value: [B, num_players] per-player expected outcome (legacy)
             policy: [B, policy_size] flat policy logits
             rank_dist: [B, num_players, num_players] rank probability distribution
+            features: (optional) [B, num_filters + global_features] backbone features for aux tasks
         """
         out = self.relu(self.bn1(self.conv1(x)))
         for block in self.res_blocks:
@@ -2171,6 +2194,9 @@ class RingRiftCNN_v3_Lite(nn.Module):
             territory_choice_logits,
             special_logits,
         )
+
+        if return_features:
+            return v_out, policy_logits, rank_dist, v_cat
 
         return v_out, policy_logits, rank_dist
 
@@ -2549,18 +2575,25 @@ class RingRiftCNN_v4(nn.Module):
 
         return policy
 
-    def forward(self, x: torch.Tensor, globals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        x: torch.Tensor,
+        globals: torch.Tensor,
+        return_features: bool = False,
+    ) -> Union[Tuple[torch.Tensor, torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]:
         """
         Forward pass with attention backbone and spatial policy heads.
 
         Args:
             x: Input features [B, in_channels, H, W]
             globals: Global features [B, global_features]
+            return_features: If True, also return backbone features for auxiliary tasks
 
         Returns:
             value: [B, num_players] per-player expected outcome
             policy: [B, policy_size] flat policy logits
             rank_dist: [B, num_players, num_players] rank probability distribution
+            features: (optional) [B, num_filters + global_features] backbone features for aux tasks
         """
         # Backbone with attention blocks
         out = self.relu(self.bn1(self.conv1(x)))
@@ -2603,6 +2636,9 @@ class RingRiftCNN_v4(nn.Module):
             territory_choice_logits,
             special_logits,
         )
+
+        if return_features:
+            return v_out, policy_logits, rank_dist, v_cat
 
         return v_out, policy_logits, rank_dist
 
