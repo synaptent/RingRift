@@ -49,23 +49,25 @@ disallow_untyped_defs = false
 
 # Suppress most error categories for initial integration
 # These will be enabled incrementally as type coverage improves
+# Last updated: 2025-12-19 (79 base errors after fixing exit-return and MarkerInfo)
 disable_error_code = [
     "import-untyped",  # Missing type stubs
-    "arg-type",        # 236 errors - enable after type annotations added
-    "call-arg",        # 119 errors - enable after type annotations added
-    "assignment",      # 57 errors - enable after type annotations added
-    "union-attr",      # 42 errors - enable after Optional handling improved
-    "attr-defined",    # 21 errors - enable after type stubs added
-    "dict-item",       # 12 errors - enable later
-    "valid-type",      # 10 errors - enable later
-    "no-redef",        # 10 errors - enable later
-    "list-item",       # 6 errors - enable later
-    "index",           # 6 errors - enable later
-    "var-annotated",   # 5 errors - enable later
-    "operator",        # 5 errors - enable later
-    "misc",            # 4 errors - enable later
-    "return-value",    # 3 errors - enable later
-    "type-var",        # 1 error - numpy shape inference issue
+    "arg-type",        # Enable after type annotations added
+    "call-arg",        # Enable after type annotations added
+    "assignment",      # Enable after type annotations added
+    "union-attr",      # Enable after Optional handling improved
+    "attr-defined",    # Enable after type stubs added
+    "dict-item",       # Enable later
+    "valid-type",      # Enable later
+    "no-redef",        # Enable later
+    "list-item",       # Enable later
+    "index",           # Enable later
+    "type-var",        # numpy shape inference issue
+    "misc",            # 262 errors - decorators/generics issues
+    "operator",        # 28 errors - numeric type issues
+    "var-annotated",   # Enable later
+    "return-value",    # 75 errors - Optional/type mismatches
+    # Fixed 2025-12-19: exit-return errors (bool->None), MarkerInfo import
 ]
 
 # Per-module overrides - stricter checking on critical parity modules

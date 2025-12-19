@@ -1,0 +1,214 @@
+{
+  "timestamp": "2025-12-19T17:01:06.509061",
+  "games_per_ablation": 12,
+  "results": [
+    {
+      "ablation": "full",
+      "description": "Full GMO (baseline)",
+      "config": {
+        "optim_steps": 10,
+        "beta": 0.3,
+        "gamma": 0.1,
+        "top_k": 5,
+        "mc_samples": 10,
+        "use_gradient_optim": true
+      },
+      "vs_random_winrate": 83.33333333333334,
+      "vs_heuristic_winrate": 16.666666666666664,
+      "vs_random": {
+        "wins": 5,
+        "losses": 1,
+        "draws": 0
+      },
+      "vs_heuristic": {
+        "wins": 1,
+        "losses": 5,
+        "draws": 0
+      },
+      "avg_game_length": 118.66666666666667,
+      "elapsed_sec": 141.16019082069397
+    },
+    {
+      "ablation": "no_gradient",
+      "description": "No gradient optimization - just initial ranking",
+      "config": {
+        "optim_steps": 0,
+        "beta": 0.3,
+        "gamma": 0.1,
+        "top_k": 5,
+        "mc_samples": 10,
+        "use_gradient_optim": false
+      },
+      "vs_random_winrate": 66.66666666666666,
+      "vs_heuristic_winrate": 33.33333333333333,
+      "vs_random": {
+        "wins": 4,
+        "losses": 2,
+        "draws": 0
+      },
+      "vs_heuristic": {
+        "wins": 2,
+        "losses": 4,
+        "draws": 0
+      },
+      "avg_game_length": 117.25,
+      "elapsed_sec": 62.61035895347595
+    },
+    {
+      "ablation": "no_uncertainty",
+      "description": "No uncertainty bonus (beta=0)",
+      "config": {
+        "optim_steps": 10,
+        "beta": 0.0,
+        "gamma": 0.1,
+        "top_k": 5,
+        "mc_samples": 10,
+        "use_gradient_optim": true
+      },
+      "vs_random_winrate": 50.0,
+      "vs_heuristic_winrate": 33.33333333333333,
+      "vs_random": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0
+      },
+      "vs_heuristic": {
+        "wins": 2,
+        "losses": 4,
+        "draws": 0
+      },
+      "avg_game_length": 130.58333333333334,
+      "elapsed_sec": 170.2090151309967
+    },
+    {
+      "ablation": "no_novelty",
+      "description": "No novelty bonus (gamma=0)",
+      "config": {
+        "optim_steps": 10,
+        "beta": 0.3,
+        "gamma": 0.0,
+        "top_k": 5,
+        "mc_samples": 10,
+        "use_gradient_optim": true
+      },
+      "vs_random_winrate": 83.33333333333334,
+      "vs_heuristic_winrate": 16.666666666666664,
+      "vs_random": {
+        "wins": 5,
+        "losses": 1,
+        "draws": 0
+      },
+      "vs_heuristic": {
+        "wins": 1,
+        "losses": 5,
+        "draws": 0
+      },
+      "avg_game_length": 125.58333333333333,
+      "elapsed_sec": 136.06664490699768
+    },
+    {
+      "ablation": "single_forward",
+      "description": "Single forward pass (no MC Dropout)",
+      "config": {
+        "optim_steps": 10,
+        "beta": 0.3,
+        "gamma": 0.1,
+        "top_k": 5,
+        "mc_samples": 1,
+        "use_gradient_optim": true
+      },
+      "vs_random_winrate": 0.0,
+      "vs_heuristic_winrate": 0.0,
+      "vs_random": {
+        "wins": 0,
+        "losses": 0,
+        "draws": 6
+      },
+      "vs_heuristic": {
+        "wins": 0,
+        "losses": 0,
+        "draws": 6
+      },
+      "avg_game_length": 3.0,
+      "elapsed_sec": 4.07169508934021
+    },
+    {
+      "ablation": "fewer_steps",
+      "description": "Fewer optimization steps (1 vs 10)",
+      "config": {
+        "optim_steps": 1,
+        "beta": 0.3,
+        "gamma": 0.1,
+        "top_k": 5,
+        "mc_samples": 10,
+        "use_gradient_optim": true
+      },
+      "vs_random_winrate": 83.33333333333334,
+      "vs_heuristic_winrate": 50.0,
+      "vs_random": {
+        "wins": 5,
+        "losses": 1,
+        "draws": 0
+      },
+      "vs_heuristic": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0
+      },
+      "avg_game_length": 131.91666666666666,
+      "elapsed_sec": 87.08922696113586
+    },
+    {
+      "ablation": "single_candidate",
+      "description": "Single candidate (top_k=1)",
+      "config": {
+        "optim_steps": 10,
+        "beta": 0.3,
+        "gamma": 0.1,
+        "top_k": 1,
+        "mc_samples": 10,
+        "use_gradient_optim": true
+      },
+      "vs_random_winrate": 100.0,
+      "vs_heuristic_winrate": 16.666666666666664,
+      "vs_random": {
+        "wins": 6,
+        "losses": 0,
+        "draws": 0
+      },
+      "vs_heuristic": {
+        "wins": 1,
+        "losses": 5,
+        "draws": 0
+      },
+      "avg_game_length": 122.16666666666667,
+      "elapsed_sec": 78.62368822097778
+    },
+    {
+      "ablation": "no_exploration",
+      "description": "No exploration (beta=0, gamma=0)",
+      "config": {
+        "optim_steps": 10,
+        "beta": 0.0,
+        "gamma": 0.0,
+        "top_k": 5,
+        "mc_samples": 10,
+        "use_gradient_optim": true
+      },
+      "vs_random_winrate": 83.33333333333334,
+      "vs_heuristic_winrate": 50.0,
+      "vs_random": {
+        "wins": 5,
+        "losses": 1,
+        "draws": 0
+      },
+      "vs_heuristic": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0
+      },
+      "avg_game_length": 129.83333333333334,
+      "elapsed_sec": 126.99397706985474
+    }
+  ]
+}

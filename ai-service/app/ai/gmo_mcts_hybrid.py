@@ -15,14 +15,14 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import torch
 
 from ..models import AIConfig, GameState, Move
 from .base import BaseAI
-from .gmo_ai import GMOAI, GMOConfig
+from .gmo_ai import GMOAI, GMOConfig, estimate_uncertainty
 
 logger = logging.getLogger(__name__)
 
@@ -132,13 +132,18 @@ class GMOMCTSHybrid(BaseAI):
         # Get GMO scores for all moves
         scores = []
         with torch.no_grad():
-            state_embed = self.gmo.state_encoder(state).to(self.device)
+            state_embed = self.gmo.state_encoder.encode_state(state)
 
             for move in legal_moves:
-                move_embed = self.gmo.move_encoder(move).to(self.device)
+                move_embed = self.gmo.move_encoder.encode_move(move)
 
                 # Get value + uncertainty score
-                mean_val, _, var = self.gmo._estimate_uncertainty(state_embed, move_embed)
+                mean_val, _, var = estimate_uncertainty(
+                    state_embed,
+                    move_embed,
+                    self.gmo.value_net,
+                    self.gmo.gmo_config.mc_samples,
+                )
                 novelty = self.gmo.novelty_tracker.compute_novelty(move_embed)
 
                 score = (
@@ -162,7 +167,9 @@ class GMOMCTSHybrid(BaseAI):
 
     def _move_key(self, move: Move) -> str:
         """Create unique string key for a move."""
-        return f"{move.type.value}_{move.from_pos}_{move.to_pos}"
+        from_key = move.from_pos.to_key() if move.from_pos else "none"
+        to_key = move.to.to_key() if move.to else "none"
+        return f"{move.type.value}_{from_key}_{to_key}"
 
     def _select_child(self, node: MCTSNode) -> MCTSNode:
         """Select child with highest UCB score."""

@@ -3400,13 +3400,32 @@ class GameEngine:
 
         player_stacks = BoardManager.get_player_stacks(board, player_number)
 
-        for stack in player_stacks:
-            if stack.position.to_key() not in region_keys:
-                # RR-CANON-R082/R145: All controlled stacks are eligible
-                # (including height-1 standalone rings)
-                return True
+        # Collect stacks outside the region
+        stacks_outside = [
+            stack for stack in player_stacks
+            if stack.position.to_key() not in region_keys
+        ]
 
-        return False
+        if len(stacks_outside) == 0:
+            # No stacks outside region - cannot process
+            return False
+
+        if len(stacks_outside) > 1:
+            # Multiple stacks outside - player will have stacks remaining after
+            # eliminating from one (RR-CANON-R143)
+            return True
+
+        # Exactly one stack outside - check if the stack is a "singleton" (height-1).
+        # Per RR-CANON-R143 and observed TS parity: a player cannot process a
+        # disconnected region if their only eligible stack is a single-ring stack
+        # (stackHeight=1), as self-elimination would leave them with no stacks.
+        # However, if the only stack has stackHeight >= 2, processing IS allowed
+        # even if self-elimination would eliminate the entire stack.
+        only_stack = stacks_outside[0]
+        stack_height = only_stack.stack_height or 0
+
+        # Singleton stacks (stackHeight=1) cannot be the only elimination target
+        return stack_height >= 2
 
     @staticmethod
     def _get_movement_moves(

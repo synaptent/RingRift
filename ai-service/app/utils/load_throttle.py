@@ -252,8 +252,8 @@ class LoadThrottler:
                 raise RuntimeError("System overloaded - cannot proceed")
         return self
 
-    def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: object) -> bool:
-        return False
+    def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: object) -> None:
+        pass
 
     async def __aenter__(self) -> "LoadThrottler":
         if is_system_overloaded(verbose=self.verbose):
@@ -267,5 +267,5 @@ class LoadThrottler:
                 raise RuntimeError("System overloaded - cannot proceed")
         return self
 
-    async def __aexit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: object) -> bool:
-        return False
+    async def __aexit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: object) -> None:
+        pass

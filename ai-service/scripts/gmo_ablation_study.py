@@ -148,9 +148,9 @@ class AblatedGMOAI(GMOAI):
 
         import torch
 
-        # Encode state
+        # Encode state using the proper method
         with torch.no_grad():
-            state_embed = self.state_encoder(game_state).to(self.device)
+            state_embed = self.state_encoder.encode_state(game_state)
 
         # Score all moves
         best_move = None
@@ -158,7 +158,7 @@ class AblatedGMOAI(GMOAI):
 
         for move in legal_moves:
             with torch.no_grad():
-                move_embed = self.move_encoder(move).to(self.device)
+                move_embed = self.move_encoder.encode_move(move)
                 value, log_var = self.value_net(state_embed, move_embed)
 
             score = value.item()
@@ -187,7 +187,7 @@ def create_ablated_gmo(
         device=device,
     )
     if GMO_CHECKPOINT.exists():
-        ai.load_checkpoint(str(GMO_CHECKPOINT))
+        ai.load_checkpoint(GMO_CHECKPOINT)
     return ai
 
 

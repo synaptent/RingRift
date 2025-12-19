@@ -854,7 +854,7 @@ def generate_dataset(
             # Try to load trained checkpoint
             gmo_checkpoint = Path("models/gmo/gmo_best.pt")
             if gmo_checkpoint.exists():
-                ai.load_checkpoint(str(gmo_checkpoint))
+                ai.load_checkpoint(gmo_checkpoint)
         else:
             ai = MCTSAI(
                 player_number=player_num,

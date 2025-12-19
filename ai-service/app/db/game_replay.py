@@ -1297,6 +1297,113 @@ class GameReplayDB:
 
             return [_deserialize_move(row["move_json"]) for row in rows]
 
+    def get_initial_states_batch(
+        self,
+        game_ids: List[str],
+    ) -> Dict[str, Optional[GameState]]:
+        """Get initial states for multiple games in a single query.
+
+        This is more efficient than calling get_initial_state() for each game
+        when processing many games (avoids N+1 query pattern).
+
+        Args:
+            game_ids: List of game identifiers
+
+        Returns:
+            Dict mapping game_id to GameState (or None if not found)
+        """
+        if not game_ids:
+            return {}
+
+        results: Dict[str, Optional[GameState]] = {gid: None for gid in game_ids}
+
+        with self._get_conn() as conn:
+            # Check if game_initial_state table exists
+            has_table = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='game_initial_state'"
+            ).fetchone() is not None
+
+            if has_table:
+                # Batch query for initial states
+                placeholders = ",".join("?" * len(game_ids))
+                rows = conn.execute(
+                    f"""
+                    SELECT game_id, initial_state_json, compressed
+                    FROM game_initial_state
+                    WHERE game_id IN ({placeholders})
+                    """,
+                    game_ids,
+                ).fetchall()
+
+                for row in rows:
+                    json_str = row["initial_state_json"]
+                    if row["compressed"]:
+                        json_str = _decompress_json(json_str)
+                    results[row["game_id"]] = _deserialize_state(json_str)
+
+            # For games without stored initial state, generate from metadata
+            missing = [gid for gid, state in results.items() if state is None]
+            if missing:
+                placeholders = ",".join("?" * len(missing))
+                meta_rows = conn.execute(
+                    f"""
+                    SELECT game_id, board_type, num_players
+                    FROM games
+                    WHERE game_id IN ({placeholders})
+                    """,
+                    missing,
+                ).fetchall()
+
+                from app.training.generate_data import create_initial_state
+
+                for row in meta_rows:
+                    board_type_str = row["board_type"]
+                    board_type = BoardType(board_type_str) if board_type_str else BoardType.SQUARE8
+                    results[row["game_id"]] = create_initial_state(
+                        board_type=board_type,
+                        num_players=row["num_players"],
+                    )
+
+        return results
+
+    def get_moves_batch(
+        self,
+        game_ids: List[str],
+    ) -> Dict[str, List[Move]]:
+        """Get moves for multiple games in a single query.
+
+        This is more efficient than calling get_moves() for each game
+        when processing many games (avoids N+1 query pattern).
+
+        Args:
+            game_ids: List of game identifiers
+
+        Returns:
+            Dict mapping game_id to list of Move objects
+        """
+        if not game_ids:
+            return {}
+
+        results: Dict[str, List[Move]] = {gid: [] for gid in game_ids}
+
+        with self._get_conn() as conn:
+            placeholders = ",".join("?" * len(game_ids))
+            rows = conn.execute(
+                f"""
+                SELECT game_id, move_json
+                FROM game_moves
+                WHERE game_id IN ({placeholders})
+                ORDER BY game_id, move_number
+                """,
+                game_ids,
+            ).fetchall()
+
+            for row in rows:
+                move = _deserialize_move(row["move_json"])
+                results[row["game_id"]].append(move)
+
+        return results
+
     def get_move_records(
         self,
         game_id: str,
@@ -2001,24 +2108,42 @@ class GameReplayDB:
 
     def iterate_games(
         self,
+        batch_size: int = 100,
         **filters,
     ) -> Iterator[Tuple[dict, GameState, List[Move]]]:
         """Iterate over games matching filters.
 
-        Yields (metadata, initial_state, moves) tuples for each game.
+        Uses batch loading to avoid N+1 query pattern. Games are loaded
+        in batches of `batch_size` for efficient database access.
+
+        Args:
+            batch_size: Number of games to load per batch (default 100)
+            **filters: Query filters (board_type, num_players, etc.)
+
+        Yields:
+            (metadata, initial_state, moves) tuples for each game.
         """
         # Remove limit from filters if present, use default of 10000
         filters_copy = dict(filters)
         limit = filters_copy.pop("limit", 10000)
         games = self.query_games(**filters_copy, limit=limit)
 
-        for game_meta in games:
-            game_id = game_meta["game_id"]
-            initial_state = self.get_initial_state(game_id)
-            if initial_state is None:
-                continue
-            moves = self.get_moves(game_id)
-            yield game_meta, initial_state, moves
+        # Process games in batches to avoid N+1 queries
+        for i in range(0, len(games), batch_size):
+            batch = games[i:i + batch_size]
+            game_ids = [g["game_id"] for g in batch]
+
+            # Batch load initial states and moves (3 queries per batch instead of 2N)
+            initial_states = self.get_initial_states_batch(game_ids)
+            moves_map = self.get_moves_batch(game_ids)
+
+            for game_meta in batch:
+                game_id = game_meta["game_id"]
+                initial_state = initial_states.get(game_id)
+                if initial_state is None:
+                    continue
+                moves = moves_map.get(game_id, [])
+                yield game_meta, initial_state, moves
 
     def get_game_count(
         self,

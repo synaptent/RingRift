@@ -135,7 +135,7 @@ class TestHexStateEncoder:
         assert encoder.radius == 12
         assert encoder.POLICY_SIZE == P_HEX
         assert encoder.NUM_CHANNELS == 10
-        assert encoder.NUM_GLOBAL_FEATURES == 10
+        assert encoder.NUM_GLOBAL_FEATURES == 20
 
     def test_valid_mask_shape(self, encoder):
         """Test valid mask has correct shape."""
@@ -194,7 +194,7 @@ class TestHexStateEncoder:
 
         # Check shapes
         assert features.shape == (10, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
-        assert globals_vec.shape == (10,)
+        assert globals_vec.shape == (20,)
 
         # All features should be zero for empty board
         assert np.allclose(features, 0.0)
@@ -448,7 +448,7 @@ class TestHexNeuralNet_v2:
         """Create a HexNeuralNet_v2 instance."""
         return HexNeuralNet_v2(
             in_channels=40,  # 10 * (3 history + 1 current)
-            global_features=10,
+            global_features=20,
             num_res_blocks=2,  # Smaller for testing
             num_filters=32,  # Smaller for testing
         )
@@ -462,7 +462,7 @@ class TestHexNeuralNet_v2:
         """Test forward pass produces correct output shapes."""
         batch_size = 4
         x = torch.randn(batch_size, 40, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
-        globals_vec = torch.randn(batch_size, 10)
+        globals_vec = torch.randn(batch_size, 20)
 
         value, policy = model(x, globals_vec)
 
@@ -474,7 +474,7 @@ class TestHexNeuralNet_v2:
         """Test forward pass with hex mask."""
         batch_size = 2
         x = torch.randn(batch_size, 40, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
-        globals_vec = torch.randn(batch_size, 10)
+        globals_vec = torch.randn(batch_size, 20)
 
         # Create valid hex mask
         encoder = HexStateEncoder()
@@ -491,7 +491,7 @@ class TestHexNeuralNet_v2:
     def test_value_in_range(self, model):
         """Test value output is in [-1, 1] range."""
         x = torch.randn(4, 40, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
-        globals_vec = torch.randn(4, 10)
+        globals_vec = torch.randn(4, 20)
 
         value, _ = model(x, globals_vec)
 
@@ -504,7 +504,7 @@ class TestHexNeuralNet_v2:
 
         batch_size = 4
         x = torch.randn(batch_size, 40, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
-        globals_vec = torch.randn(batch_size, 10)
+        globals_vec = torch.randn(batch_size, 20)
 
         # Targets - V2 models use multi-player value head [B, 4]
         value_target = torch.randn(batch_size, 4)
@@ -536,7 +536,7 @@ class TestHexNeuralNet_v2:
         x = torch.randn(
             2, 40, HEX_BOARD_SIZE, HEX_BOARD_SIZE, requires_grad=True
         )
-        globals_vec = torch.randn(2, 10, requires_grad=True)
+        globals_vec = torch.randn(2, 20, requires_grad=True)
 
         value, policy = model(x, globals_vec)
 
@@ -667,7 +667,7 @@ class TestHexNeuralNet_v2_Lite:
         """Test that v2_Lite has fewer parameters than v2."""
         v2_model = HexNeuralNet_v2(
             in_channels=40,
-            global_features=10,
+            global_features=20,
             num_res_blocks=2,
             num_filters=32,
         )
@@ -694,7 +694,7 @@ class TestHexDataAugmentation:
         """Create sample training data."""
         features = np.random.rand(10, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
         features = features.astype(np.float32)
-        globals_vec = np.random.rand(10).astype(np.float32)
+        globals_vec = np.random.rand(20).astype(np.float32)
         policy_indices = np.array([0, 100, 500], dtype=np.int32)
         policy_values = np.array([0.3, 0.5, 0.2], dtype=np.float32)
         return features, globals_vec, policy_indices, policy_values
@@ -845,7 +845,7 @@ class TestHexTrainingIntegration:
         # Create model
         model = HexNeuralNet_v2(
             in_channels=10,  # Single frame
-            global_features=10,
+            global_features=20,
             num_res_blocks=1,
             num_filters=16,
         )

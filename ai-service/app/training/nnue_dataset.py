@@ -644,20 +644,34 @@ class NNUESQLiteDataset(Dataset):
             conn.close()
             return samples
 
+        # Batch load all snapshots to avoid N+1 query pattern (December 2025)
+        game_ids = [g['game_id'] for g in games]
+        snapshots_by_game: Dict[str, List[Any]] = {gid: [] for gid in game_ids}
+
+        if game_ids:
+            # Single query for all snapshots instead of one per game
+            placeholders = ",".join("?" * len(game_ids))
+            snapshot_query = f"""
+                SELECT game_id, move_number, state_json, compressed
+                FROM game_state_snapshots
+                WHERE game_id IN ({placeholders})
+                ORDER BY game_id, move_number
+            """
+            cursor.execute(snapshot_query, game_ids)
+            all_snapshots = cursor.fetchall()
+
+            for snap in all_snapshots:
+                gid = snap['game_id']
+                if gid in snapshots_by_game:
+                    snapshots_by_game[gid].append(snap)
+
         for game_row in games:
             game_id = game_row['game_id']
             winner = game_row['winner']
             total_moves = game_row['total_moves']
 
-            # Get state snapshots for this game
-            snapshot_query = """
-                SELECT move_number, state_json, compressed
-                FROM game_state_snapshots
-                WHERE game_id = ?
-                ORDER BY move_number
-            """
-            cursor.execute(snapshot_query, (game_id,))
-            snapshots = cursor.fetchall()
+            # Use batch-loaded snapshots
+            snapshots = snapshots_by_game.get(game_id, [])
 
             # Determine expected positions based on sampling rate
             # Use snapshots if we have at least 1 - faster than full replay

@@ -15,7 +15,7 @@ import os
 from typing import List, Optional, Tuple
 from .models import (
     BoardState, Position, RingStack, BoardType, LineInfo, Territory,
-    ProgressSnapshot, GameState
+    ProgressSnapshot, GameState, MarkerInfo
 )
 
 __all__ = ["BoardManager"]

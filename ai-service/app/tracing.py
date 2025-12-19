@@ -35,6 +35,12 @@ Environment Variables:
     OTEL_JAEGER_AGENT_PORT: Jaeger agent port (default: 6831)
     OTEL_EXPORTER_OTLP_ENDPOINT: OTLP endpoint URL
     OTEL_TRACING_ENABLED: Enable/disable tracing (default: true)
+
+Note:
+    The Jaeger Thrift exporter is deprecated. For new deployments, use OTLP
+    exporter with Jaeger's native OTLP endpoint (port 4317):
+        OTEL_EXPORTER=otlp
+        OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
 """
 
 from __future__ import annotations

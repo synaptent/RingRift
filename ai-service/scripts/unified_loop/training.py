@@ -300,15 +300,11 @@ except ImportError:
 
 # Enhanced fault tolerance with retry policies and circuit breakers (2025-12)
 try:
-    from app.training.fault_tolerance import (
-        RetryPolicy,
-        async_retry_with_backoff,
-    )
+    from app.training.fault_tolerance import RetryPolicy
     HAS_RETRY_POLICY = True
 except ImportError:
     HAS_RETRY_POLICY = False
     RetryPolicy = None
-    async_retry_with_backoff = None
 
 # Circuit breaker for training operations (2025-12)
 try:

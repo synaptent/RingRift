@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -531,9 +532,11 @@ class EBMO_AI(BaseAI):
         Args:
             seed_value: Random seed value
         """
-        self.rng = np.random.RandomState(seed_value)
+        self.rng_seed = int(seed_value)
+        self.rng = random.Random(self.rng_seed)
+        np.random.seed(self.rng_seed)
         # Also seed torch for any stochastic operations
-        torch.manual_seed(seed_value)
+        torch.manual_seed(self.rng_seed)
 
     def get_policy_distribution(self, game_state: GameState) -> Dict[int, float]:
         """Get policy distribution over moves for training.

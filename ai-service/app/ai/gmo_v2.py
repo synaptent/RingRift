@@ -15,16 +15,16 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..models import AIConfig, BoardType, GameState, Move, MoveType, Position
+from ..models import AIConfig, GameState, Move, MoveType
 from .base import BaseAI
 from .gmo_ai import MoveEncoder, NoveltyTracker
 
@@ -135,15 +135,26 @@ class AttentionStateEncoder(nn.Module):
         Returns tensor of shape (num_positions, feature_channels).
         """
         board = state.board
-        features = torch.zeros(self.num_positions, self.feature_channels)
+        device = next(self.parameters()).device
+        features = torch.zeros(
+            self.num_positions,
+            self.feature_channels,
+            dtype=torch.float32,
+            device=device,
+        )
+
+        territory_positions = set()
+        for territory in board.territories.values():
+            for space in territory.spaces:
+                territory_positions.add(space.to_key())
 
         for idx in range(self.num_positions):
             row = idx // self.board_size
             col = idx % self.board_size
-            pos = Position(row=row, col=col)
+            pos_key = f"{col},{row}"
 
             # Get stack at position
-            stack = board.stacks.get(pos)
+            stack = board.stacks.get(pos_key)
 
             if stack and stack.stack_height > 0:
                 # Stack height (normalized)
@@ -151,21 +162,22 @@ class AttentionStateEncoder(nn.Module):
 
                 # Top ring owner
                 if stack.rings:
-                    top_owner = stack.rings[-1].owner
-                    features[idx, 1 + top_owner] = 1.0
+                    top_owner = stack.rings[-1]
+                    if 1 <= top_owner <= 4:
+                        features[idx, top_owner] = 1.0
 
                 # Stack control
-                if stack.controller:
-                    features[idx, 5 + stack.controller] = 1.0
+                if 1 <= stack.controlling_player <= 4:
+                    features[idx, 4 + stack.controlling_player] = 1.0
 
             # Marker presence
-            marker = board.markers.get(pos)
+            marker = board.markers.get(pos_key)
             if marker:
                 features[idx, 9] = 1.0
-                features[idx, 10] = marker.owner / 4.0
+                features[idx, 10] = marker.player / 4.0
 
             # Territory info
-            if hasattr(board, 'territories') and pos in board.territories:
+            if pos_key in territory_positions:
                 features[idx, 11] = 1.0
 
         return features
@@ -180,7 +192,7 @@ class AttentionStateEncoder(nn.Module):
         x = self.input_proj(features)  # (1, num_positions, embed_dim)
 
         # Add position embeddings
-        positions = torch.arange(self.num_positions)
+        positions = torch.arange(self.num_positions, device=features.device)
         pos_embed = self.position_embed(positions).unsqueeze(0)
         x = x + pos_embed
 
@@ -215,7 +227,7 @@ class MoveEncoderV2(nn.Module):
         self.num_positions = board_size * board_size
 
         # Embedding tables (larger)
-        self.move_type_embed = nn.Embedding(8, embed_dim // 4)  # 8 move types
+        self.move_type_embed = nn.Embedding(len(MoveType), embed_dim // 4)
         self.from_pos_embed = nn.Embedding(self.num_positions + 1, embed_dim // 4)
         self.to_pos_embed = nn.Embedding(self.num_positions + 1, embed_dim // 4)
         self.count_embed = nn.Embedding(6, embed_dim // 4)  # 0-5 rings
@@ -231,25 +243,26 @@ class MoveEncoderV2(nn.Module):
         """Encode a move to embedding vector."""
         # Move type
         move_type_idx = list(MoveType).index(move.type) if move.type in MoveType else 0
-        type_embed = self.move_type_embed(torch.tensor(move_type_idx))
+        device = next(self.parameters()).device
+        type_embed = self.move_type_embed(torch.tensor(move_type_idx, device=device))
 
         # From position
         if move.from_pos:
-            from_idx = move.from_pos.row * self.board_size + move.from_pos.col
+            from_idx = move.from_pos.y * self.board_size + move.from_pos.x
         else:
             from_idx = self.num_positions  # Null position
-        from_embed = self.from_pos_embed(torch.tensor(from_idx))
+        from_embed = self.from_pos_embed(torch.tensor(from_idx, device=device))
 
         # To position
-        if move.to_pos:
-            to_idx = move.to_pos.row * self.board_size + move.to_pos.col
+        if move.to:
+            to_idx = move.to.y * self.board_size + move.to.x
         else:
             to_idx = self.num_positions
-        to_embed = self.to_pos_embed(torch.tensor(to_idx))
+        to_embed = self.to_pos_embed(torch.tensor(to_idx, device=device))
 
         # Placement count
         count = min(getattr(move, 'placement_count', 0) or 0, 5)
-        count_embed = self.count_embed(torch.tensor(count))
+        count_embed = self.count_embed(torch.tensor(count, device=device))
 
         # Concatenate and project
         combined = torch.cat([type_embed, from_embed, to_embed, count_embed])

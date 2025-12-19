@@ -124,7 +124,7 @@ def create_gmo_from_config(
     ai = GMOAI(player_number=player_number, config=ai_config, gmo_config=gmo_config)
 
     if checkpoint_path and checkpoint_path.exists():
-        ai.load_checkpoint(str(checkpoint_path))
+        ai.load_checkpoint(checkpoint_path)
 
     return ai
 
@@ -152,10 +152,20 @@ def play_game(
 
         legal_moves = GameEngine.get_valid_moves(state, current_player)
         if not legal_moves:
-            break
+            # Check for phase requirements (no-action moves)
+            phase_req = GameEngine.get_phase_requirement(state, current_player)
+            if phase_req:
+                bookkeeping_move = GameEngine.synthesize_bookkeeping_move(phase_req, state)
+                state = GameEngine.apply_move(state, bookkeeping_move)
+                num_moves += 1
+                continue
+            else:
+                break
 
         start = time.time()
         move = current_ai.select_move(state)
+        if move is None:
+            break
         total_time += time.time() - start
 
         state = GameEngine.apply_move(state, move)
@@ -185,7 +195,7 @@ def evaluate_config(
     total_move_time = 0.0
 
     baselines = {
-        "vs_random": lambda p: RandomAI(player_number=p),
+        "vs_random": lambda p: RandomAI(player_number=p, config=AIConfig(difficulty=1)),
         "vs_heuristic": lambda p: HeuristicAI(player_number=p, config=AIConfig()),
     }
 

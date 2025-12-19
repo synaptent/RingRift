@@ -26,7 +26,6 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from enum import IntEnum
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 
 import numpy as np
@@ -34,6 +33,17 @@ import torch
 import torch.nn.functional as F
 
 from .gpu_batch import get_device, clear_gpu_memory
+from .gpu_game_types import (
+    get_int_dtype,
+    GameStatus,
+    MoveType,
+    GamePhase,
+    DetectedLine,
+    get_required_line_length,
+    MAX_STACK_HEIGHT,
+    SQUARE_DIRECTIONS,
+    LINE_DIRECTIONS,
+)
 from .shadow_validation import (
     ShadowValidator, create_shadow_validator,
     AsyncShadowValidator, create_async_shadow_validator,
@@ -45,22 +55,6 @@ if TYPE_CHECKING:
     from app.ai.nnue_policy import RingRiftNNUEWithPolicy
 
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# MPS Compatibility Helpers
-# =============================================================================
-
-
-def get_int_dtype(device: torch.device) -> torch.dtype:
-    """Get appropriate integer dtype for device.
-
-    MPS (Apple Silicon) doesn't support int16 with index_put_(accumulate=True),
-    so we use int32 on MPS and int16 elsewhere for memory efficiency.
-    """
-    if device.type == "mps":
-        return torch.int32
-    return torch.int16
 
 
 # =============================================================================
@@ -840,43 +834,6 @@ def apply_no_action_moves_batch(
         state.move_history[hist_games, hist_move_idx, 5] = -1
 
     state.move_count[game_indices] += 1
-
-
-# =============================================================================
-# Constants
-# =============================================================================
-
-class GameStatus(IntEnum):
-    """Game status codes for batch tracking."""
-    ACTIVE = 0
-    COMPLETED = 1
-    DRAW = 2
-    MAX_MOVES = 3
-
-
-class MoveType(IntEnum):
-    """Move type codes for batch move representation."""
-    PLACEMENT = 0
-    MOVEMENT = 1
-    CAPTURE = 2
-    LINE_FORMATION = 3
-    TERRITORY_CLAIM = 4
-    SKIP = 5
-    NO_ACTION = 6  # For phases with no available action
-    RECOVERY_SLIDE = 7  # Recovery move for players without turn material
-
-
-class GamePhase(IntEnum):
-    """Game phase codes for turn FSM.
-
-    Per RR-CANON, each turn flows through phases:
-    RING_PLACEMENT -> MOVEMENT -> LINE_PROCESSING -> TERRITORY_PROCESSING -> END_TURN
-    """
-    RING_PLACEMENT = 0      # Place ring from hand (if available)
-    MOVEMENT = 1            # Move stack (movement/capture/recovery)
-    LINE_PROCESSING = 2     # Check and convert lines to territory
-    TERRITORY_PROCESSING = 3  # Calculate enclosed territory
-    END_TURN = 4            # Advance to next player
 
 
 # =============================================================================
@@ -4135,31 +4092,6 @@ def apply_capture_moves_batch(
 # =============================================================================
 # Line Detection and Processing (RR-CANON-R120-R122)
 # =============================================================================
-
-
-@dataclass
-class DetectedLine:
-    """A detected marker line with metadata for processing."""
-    positions: List[Tuple[int, int]]  # All marker positions in the line
-    length: int                        # Total length of line
-    is_overlength: bool               # True if len > required_length
-    direction: Tuple[int, int]        # Direction vector (dy, dx)
-
-
-def get_required_line_length(board_size: int, num_players: int) -> int:
-    """Get required line length per RR-CANON-R120.
-
-    Args:
-        board_size: Board dimension
-        num_players: Number of players
-
-    Returns:
-        Required line length (3 or 4)
-    """
-    # square8 (8x8) with 3-4 players uses line length 3, all others use 4
-    if board_size == 8 and num_players >= 3:
-        return 3
-    return 4
 
 
 def detect_lines_vectorized(

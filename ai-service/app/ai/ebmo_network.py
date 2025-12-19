@@ -77,11 +77,11 @@ class EBMOConfig:
     action_feature_dim: int = 14  # Raw action features before embedding
     action_hidden_dim: int = 64
 
-    # Inference-time optimization
-    optim_steps: int = 50
+    # Inference-time optimization (increased for better convergence)
+    optim_steps: int = 100  # Doubled from 50
     optim_lr: float = 0.1
-    num_restarts: int = 5
-    projection_temperature: float = 0.5
+    num_restarts: int = 8  # Increased from 5
+    projection_temperature: float = 0.3  # Lower for sharper projection
     project_every_n_steps: int = 10
 
     # Training
@@ -778,6 +778,78 @@ def outcome_weighted_energy_loss(
     return F.mse_loss(energies, target_energies)
 
 
+def margin_ranking_loss(
+    energies_positive: torch.Tensor,
+    energies_negative: torch.Tensor,
+    margin: float = 1.0,
+) -> torch.Tensor:
+    """Margin-based ranking loss for energy separation.
+
+    Ensures positive moves have lower energy than negatives by at least margin.
+    More effective than contrastive for learning energy differences.
+
+    Args:
+        energies_positive: (B,) energies for positive (good) moves
+        energies_negative: (B, N) energies for N negative moves per sample
+        margin: Minimum energy gap required
+
+    Returns:
+        Scalar loss value
+    """
+    batch_size, num_neg = energies_negative.shape
+
+    # Expand positive energies to match negative shape
+    pos_expanded = energies_positive.unsqueeze(1).expand(-1, num_neg)
+
+    # Margin loss: max(0, pos_energy - neg_energy + margin)
+    # We want pos_energy < neg_energy - margin
+    losses = F.relu(pos_expanded - energies_negative + margin)
+
+    return losses.mean()
+
+
+def hard_negative_contrastive_loss(
+    energies_positive: torch.Tensor,
+    energies_hard_negative: torch.Tensor,
+    energies_random_negative: torch.Tensor,
+    temperature: float = 0.1,
+    hard_weight: float = 0.7,
+) -> torch.Tensor:
+    """Contrastive loss with weighted hard and random negatives.
+
+    Hard negatives (moves from losing games or near-misses) are weighted
+    more heavily than random negatives.
+
+    Args:
+        energies_positive: (B,) energies for positive moves
+        energies_hard_negative: (B, H) energies for hard negative moves
+        energies_random_negative: (B, R) energies for random negative moves
+        temperature: Softmax temperature
+        hard_weight: Weight for hard negatives vs random
+
+    Returns:
+        Scalar loss value
+    """
+    batch_size = energies_positive.shape[0]
+
+    # Combine all negatives
+    all_negatives = torch.cat([energies_hard_negative, energies_random_negative], dim=1)
+
+    # Concatenate: positive first, then all negatives
+    all_energies = torch.cat([
+        energies_positive.unsqueeze(1),
+        all_negatives,
+    ], dim=1)
+
+    # Convert to logits (lower energy = higher logit)
+    logits = -all_energies / temperature
+
+    # Target: first element (positive) should have highest probability
+    targets = torch.zeros(batch_size, dtype=torch.long, device=logits.device)
+
+    return F.cross_entropy(logits, targets)
+
+
 def combined_ebmo_loss(
     energies_positive: torch.Tensor,
     energies_negative: torch.Tensor,
@@ -894,6 +966,8 @@ __all__ = [
     "extract_state_features",
     "contrastive_energy_loss",
     "outcome_weighted_energy_loss",
+    "margin_ranking_loss",
+    "hard_negative_contrastive_loss",
     "combined_ebmo_loss",
     "save_ebmo_model",
     "load_ebmo_model",

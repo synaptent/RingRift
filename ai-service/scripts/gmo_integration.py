@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -136,7 +137,7 @@ def create_gmo_ai(
     ai = GMOAI(player_number=player_number, config=ai_config, gmo_config=gmo_config)
 
     if checkpoint_path and checkpoint_path.exists():
-        ai.load_checkpoint(str(checkpoint_path))
+        ai.load_checkpoint(checkpoint_path)
         logger.info(f"Loaded GMO checkpoint: {checkpoint_path}")
 
     return ai
@@ -148,6 +149,7 @@ def play_game(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
     max_moves: int = 500,
+    initial_state: Optional[GameState] = None,
 ) -> Tuple[Optional[int], List[Dict], int]:
     """Play a single game between two AIs.
 
@@ -155,7 +157,10 @@ def play_game(
         Tuple of (winner, game_history, num_moves)
         winner is None for draw, 1 for ai1, 2 for ai2
     """
-    state = create_initial_state(board_type=board_type, num_players=num_players)
+    state = initial_state or create_initial_state(
+        board_type=board_type,
+        num_players=num_players,
+    )
 
     history = []
     ais = {1: ai1, 2: ai2}
@@ -167,19 +172,24 @@ def play_game(
         current_player = state.current_player
         current_ai = ais[current_player]
 
-        # Get legal moves using static method
-        legal_moves = GameEngine.get_valid_moves(state, current_player)
-        if not legal_moves:
-            break
-
         # Select move
         move = current_ai.select_move(state)
+        if move is None:
+            phase_req = GameEngine.get_phase_requirement(state, current_player)
+            if phase_req is None:
+                break
+            move = GameEngine.synthesize_bookkeeping_move(phase_req, state)
+
+        if hasattr(move, "model_dump"):
+            move_payload = move.model_dump(mode="json", by_alias=True)
+        else:
+            move_payload = str(move)
 
         # Record history
         history.append({
             "move_num": move_num,
             "player": current_player,
-            "move": move.to_dict() if hasattr(move, "to_dict") else str(move),
+            "move": move_payload,
             "state_hash": state.zobrist_hash if hasattr(state, "zobrist_hash") else None,
         })
 
@@ -202,7 +212,11 @@ def run_selfplay(
     board_type: BoardType = BoardType.SQUARE8,
     num_players: int = 2,
 ) -> Dict:
-    """Run GMO self-play games to generate training data."""
+    """Run GMO self-play games to generate training data.
+
+    Emits JSONL records compatible with app.training.train_gmo
+    (initial_state + moves per game).
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -226,9 +240,23 @@ def run_selfplay(
             ai1 = create_gmo_ai(1, checkpoint_path, device)
             ai2 = create_gmo_ai(2, checkpoint_path, device)
 
-            winner, history, num_moves = play_game(
-                ai1, ai2, board_type, num_players
+            initial_state = create_initial_state(
+                board_type=board_type,
+                num_players=num_players,
             )
+            winner, history, num_moves = play_game(
+                ai1,
+                ai2,
+                board_type,
+                num_players,
+                initial_state=initial_state,
+            )
+
+            moves_for_training = [
+                entry["move"]
+                for entry in history
+                if isinstance(entry.get("move"), dict)
+            ]
 
             # Update stats
             results["total_moves"] += num_moves
@@ -251,6 +279,11 @@ def run_selfplay(
                 "num_moves": num_moves,
                 "winner": winner,
                 "outcome": outcome,
+                "initial_state": initial_state.model_dump(
+                    mode="json",
+                    by_alias=True,
+                ),
+                "moves": moves_for_training,
                 "history": history,
             }
             f.write(json.dumps(game_record) + "\n")
@@ -280,55 +313,86 @@ def train_on_selfplay(
     checkpoint_path: Path = GMO_CHECKPOINT,
     device: str = "cpu",
 ) -> Dict:
-    """Train GMO on self-play data."""
-    from app.training.train_gmo import (
-        GMOTrainer,
-        load_training_data,
-    )
+    """Train GMO on self-play data.
+
+    Filters to records that include initial_state + moves for train_gmo.
+    """
+    from app.training.train_gmo import train_gmo
 
     logger.info(f"Training GMO on self-play data from {data_dir}")
 
-    # Find all selfplay data files
-    data_files = list(data_dir.glob("gmo_selfplay_*.jsonl"))
+    data_files = sorted(data_dir.glob("gmo_selfplay_*.jsonl"))
     if not data_files:
         logger.warning(f"No self-play data found in {data_dir}")
         return {"error": "No training data"}
 
     logger.info(f"Found {len(data_files)} self-play data files")
 
-    # Load and combine data
-    all_samples = []
+    records = []
     for data_file in data_files:
         try:
-            samples = load_training_data(str(data_file))
-            all_samples.extend(samples)
-        except Exception as e:
-            logger.warning(f"Failed to load {data_file}: {e}")
+            with open(data_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    record = json.loads(line)
+                    initial_state = record.get("initial_state")
+                    moves = record.get("moves")
+                    if initial_state and moves:
+                        records.append(record)
+                        continue
+                    if initial_state and record.get("history"):
+                        moves = [
+                            entry.get("move")
+                            for entry in record["history"]
+                            if isinstance(entry.get("move"), dict)
+                        ]
+                        if moves:
+                            record["moves"] = moves
+                            records.append(record)
+        except Exception as exc:
+            logger.warning(f"Failed to load {data_file}: {exc}")
 
-    if not all_samples:
-        logger.warning("No valid training samples found")
-        return {"error": "No valid samples"}
+    if not records:
+        logger.warning("No valid training records found")
+        return {"error": "No valid records"}
 
-    logger.info(f"Loaded {len(all_samples)} training samples")
+    output_dir = checkpoint_path.parent
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".jsonl",
+            delete=False,
+            dir=data_dir,
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            for record in records:
+                tmp.write(json.dumps(record) + "\n")
 
-    # Initialize trainer
-    config = GMOConfig(device=device)
-    trainer = GMOTrainer(config)
+        train_gmo(
+            data_path=tmp_path,
+            output_dir=output_dir,
+            num_epochs=epochs,
+            batch_size=batch_size,
+            learning_rate=lr,
+            device_str=device,
+        )
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
-    # Load existing checkpoint if available
-    if checkpoint_path.exists():
-        trainer.load_checkpoint(str(checkpoint_path))
-        logger.info(f"Resuming from checkpoint: {checkpoint_path}")
-
-    # Train
-    results = trainer.train(
-        train_samples=all_samples,
-        epochs=epochs,
-        batch_size=batch_size,
-        lr=lr,
-        save_dir=str(GMO_MODEL_DIR),
-    )
-
+    results = {
+        "trained": True,
+        "records": len(records),
+        "source_files": len(data_files),
+        "output_dir": str(output_dir),
+        "checkpoint": str(output_dir / "gmo_best.pt"),
+    }
     logger.info(f"Training complete: {results}")
     return results
 
@@ -342,7 +406,7 @@ def evaluate_against_baselines(
 ) -> Dict:
     """Evaluate GMO against baseline AIs."""
     baselines = {
-        "random": lambda p: RandomAI(player_number=p),
+        "random": lambda p: RandomAI(player_number=p, config=AIConfig(difficulty=1)),
         "heuristic": lambda p: HeuristicAI(player_number=p, config=AIConfig()),
     }
 

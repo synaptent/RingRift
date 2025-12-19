@@ -47,10 +47,6 @@ torchvision==0.21.0
 tensorboard==2.18.0
 tensorboardX==2.6.2.2
 
-# Reinforcement Learning environment
-# gymnasium - Modern RL environment interface (successor to OpenAI Gym)
-gymnasium==1.0.0
-
 # CMA-ES for heuristic weight optimization
 cma>=3.3.0
 
@@ -77,16 +73,18 @@ lz4==4.4.5
 # Progress bars and monitoring
 tqdm==4.67.1
 
-# Additional utilities
-python-dateutil==2.9.0
-pytz==2025.1
-
 # System monitoring
 psutil==6.1.1
+
+# Distributed training (cluster worker discovery)
+zeroconf>=0.100.0
 
 # OpenTelemetry for distributed tracing (per Section 4.3)
 opentelemetry-api==1.29.0
 opentelemetry-sdk==1.29.0
 opentelemetry-exporter-otlp==1.29.0
+# Note: Jaeger Thrift exporter is deprecated (1.21.0 is final version).
+# Use OTLP exporter with Jaeger's native OTLP endpoint instead.
+# Kept for backward compatibility; set OTEL_EXPORTER=otlp for new deployments.
 opentelemetry-exporter-jaeger==1.21.0
 opentelemetry-instrumentation-fastapi==0.50b0
