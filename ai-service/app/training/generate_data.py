@@ -694,6 +694,7 @@ def generate_dataset(
     board_type: BoardType = BoardType.SQUARE8,
     seed: Optional[int] = None,
     max_moves: int = 10000,
+    history_length: int = 3,
     batch_size: Optional[int] = None,
     replay_db: Optional[GameReplayDB] = None,
     num_players: int = 2,
@@ -931,10 +932,9 @@ def generate_dataset(
         initial_state = state.model_copy(deep=True)
         moves_for_db: List = []
 
-        # History buffer for this game
-        # List of feature planes (10, 8, 8)
-        state_history = []
-        history_length = 3
+    # History buffer for this game
+    # List of feature planes (10, 8, 8)
+    state_history = []
 
         # --- Engine mixing: select/create AI players for this game ---
         player_engines: dict = {}  # Maps player_num -> engine_type string
@@ -1588,6 +1588,8 @@ def generate_dataset(
         "values": new_values,
         "policy_indices": new_policy_indices,
         "policy_values": new_policy_values,
+        "policy_encoding": np.asarray("board_aware"),
+        "history_length": np.asarray(int(history_length)),
     }
     if write_metadata:
         save_kwargs.update(
@@ -1626,6 +1628,7 @@ def generate_dataset_gpu_parallel(
     seed: Optional[int] = None,
     max_moves: int = 10000,
     num_players: int = 2,
+    history_length: int = 3,
     gpu_batch_size: int = 20,
     heuristic_weights: Optional[dict] = None,
 ) -> None:
@@ -1786,7 +1789,6 @@ def generate_dataset_gpu_parallel(
 
             game_samples = []
             history_buffer = []
-            history_length = 3
 
             for move_idx, move_dict in enumerate(move_history):
                 current_player = state.current_player
@@ -1953,6 +1955,8 @@ def generate_dataset_gpu_parallel(
         values=np.array(all_values, dtype=np.float32),
         policy_indices=np.array(all_policy_indices, dtype=object),
         policy_values=np.array(all_policy_values, dtype=object),
+        policy_encoding=np.asarray("board_aware"),
+        history_length=np.asarray(int(history_length)),
     )
     print(f"Saved to {output_path}")
 

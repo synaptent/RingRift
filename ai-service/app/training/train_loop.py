@@ -81,6 +81,7 @@ def run_training_loop(config: Optional[TrainConfig] = None):
                 seed=config.seed + i,  # Vary seed per iteration
                 max_moves=config.max_moves_per_game,
                 num_players=2,
+                history_length=config.history_length,
                 gpu_batch_size=config.gpu_batch_size,
             )
         else:
@@ -119,6 +120,7 @@ def run_training_loop(config: Optional[TrainConfig] = None):
                 ai2=ai2,
                 board_type=config.board_type,
                 seed=config.seed,
+                history_length=config.history_length,
             )
 
         # 2. Train Neural Net

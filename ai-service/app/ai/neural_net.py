@@ -340,7 +340,8 @@ TERRITORY_MAX_PLAYERS = 4
 #   Swap Sides:      [4097]         = 1
 #   Line Choice:     [4098, 4101]   = 4
 #   Territory Choice:[4102, 6149]   = 64 * 8 * 4 = 2,048
-#   Total: 6,150 (POLICY_SIZE_8x8 = 7000 with padding)
+#   Extra Special:   [6150, 6156]   = canonical no/skip/forced actions
+#   Total: 6,157 (POLICY_SIZE_8x8 = 7000 with padding)
 
 SQUARE8_PLACEMENT_SPAN = 3 * 8 * 8  # 192
 SQUARE8_MOVEMENT_BASE = SQUARE8_PLACEMENT_SPAN
@@ -357,6 +358,17 @@ SQUARE8_LINE_CHOICE_BASE = SQUARE8_SPECIAL_BASE + 3  # 4099
 SQUARE8_LINE_CHOICE_SPAN = 4
 SQUARE8_TERRITORY_CHOICE_BASE = SQUARE8_LINE_CHOICE_BASE + SQUARE8_LINE_CHOICE_SPAN
 SQUARE8_TERRITORY_CHOICE_SPAN = 8 * 8 * TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS  # 2,048
+SQUARE8_EXTRA_SPECIAL_BASE = (
+    SQUARE8_TERRITORY_CHOICE_BASE + SQUARE8_TERRITORY_CHOICE_SPAN
+)
+SQUARE8_NO_PLACEMENT_ACTION_IDX = SQUARE8_EXTRA_SPECIAL_BASE
+SQUARE8_NO_MOVEMENT_ACTION_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 1
+SQUARE8_SKIP_CAPTURE_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 2
+SQUARE8_NO_LINE_ACTION_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 3
+SQUARE8_NO_TERRITORY_ACTION_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 4
+SQUARE8_SKIP_TERRITORY_PROCESSING_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 5
+SQUARE8_FORCED_ELIMINATION_IDX = SQUARE8_EXTRA_SPECIAL_BASE + 6
+SQUARE8_EXTRA_SPECIAL_SPAN = 7
 
 # Square19 Policy Layout (V3):
 #   Placement:       [0, 1082]      = 3 * 19 * 19 = 1,083
@@ -368,7 +380,8 @@ SQUARE8_TERRITORY_CHOICE_SPAN = 8 * 8 * TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_P
 #   Skip Recovery:   [54874]        = 1 (RR-CANON-R112)
 #   Line Choice:     [54875, 54878] = 4
 #   Territory Choice:[54879, 66430] = 361 * 8 * 4 = 11,552
-#   Total: 66,431 (POLICY_SIZE_19x19 = 67000 with padding)
+#   Extra Special:   [66431, 66437] = canonical no/skip/forced actions
+#   Total: 66,438 (POLICY_SIZE_19x19 = 67000 with padding)
 
 SQUARE19_PLACEMENT_SPAN = 3 * 19 * 19  # 1,083
 SQUARE19_MOVEMENT_BASE = SQUARE19_PLACEMENT_SPAN
@@ -385,6 +398,17 @@ SQUARE19_LINE_CHOICE_BASE = SQUARE19_SPECIAL_BASE + 3  # 54875
 SQUARE19_LINE_CHOICE_SPAN = 4
 SQUARE19_TERRITORY_CHOICE_BASE = SQUARE19_LINE_CHOICE_BASE + SQUARE19_LINE_CHOICE_SPAN
 SQUARE19_TERRITORY_CHOICE_SPAN = 19 * 19 * TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS  # 11,552
+SQUARE19_EXTRA_SPECIAL_BASE = (
+    SQUARE19_TERRITORY_CHOICE_BASE + SQUARE19_TERRITORY_CHOICE_SPAN
+)
+SQUARE19_NO_PLACEMENT_ACTION_IDX = SQUARE19_EXTRA_SPECIAL_BASE
+SQUARE19_NO_MOVEMENT_ACTION_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 1
+SQUARE19_SKIP_CAPTURE_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 2
+SQUARE19_NO_LINE_ACTION_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 3
+SQUARE19_NO_TERRITORY_ACTION_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 4
+SQUARE19_SKIP_TERRITORY_PROCESSING_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 5
+SQUARE19_FORCED_ELIMINATION_IDX = SQUARE19_EXTRA_SPECIAL_BASE + 6
+SQUARE19_EXTRA_SPECIAL_SPAN = 7
 
 
 def encode_move_for_board(
@@ -438,13 +462,28 @@ def encode_move_for_board(
         return INVALID_MOVE_INDEX
 
 
+def _line_anchor_position(move: "Move") -> Optional[Position]:
+    """Best-effort anchor for line-processing style moves."""
+    if move.to is not None:
+        return move.to
+    if move.formed_lines:
+        try:
+            line = move.formed_lines[0]
+            if hasattr(line, "positions") and line.positions:
+                return line.positions[0]
+        except Exception:
+            return None
+    return None
+
+
 def _encode_move_square8(move: "Move", board: "BoardState") -> int:
     """Encode move for square8 board using compact 8x8 policy layout (max ~7000)."""
     N = 8  # Board size
     MAX_DIST = MAX_DIST_SQUARE8  # 7
+    move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
 
     # Placement: 0..191 (3 * 8 * 8)
-    if move.type == "place_ring":
+    if move_type == "place_ring":
         cx, cy = move.to.x, move.to.y
         if not (0 <= cx < N and 0 <= cy < N):
             return INVALID_MOVE_INDEX
@@ -453,7 +492,7 @@ def _encode_move_square8(move: "Move", board: "BoardState") -> int:
         return pos_idx * 3 + count_idx
 
     # Movement: 192..3775 (8 * 8 * 8 * 7)
-    if move.type in [
+    if move_type in [
         "move_stack", "move_ring", "overtaking_capture",
         "chain_capture", "continue_capture_segment", "recovery_slide",
     ]:
@@ -483,15 +522,20 @@ def _encode_move_square8(move: "Move", board: "BoardState") -> int:
         return SQUARE8_MOVEMENT_BASE + from_idx * (8 * MAX_DIST) + dir_idx * MAX_DIST + (dist - 1)
 
     # Line formation: 3776..4031
-    if move.type == "line_formation":
-        cx, cy = move.to.x, move.to.y
+    if move_type in ("line_formation", "process_line"):
+        line_pos = _line_anchor_position(move)
+        if line_pos is None:
+            return INVALID_MOVE_INDEX
+        cx, cy = line_pos.x, line_pos.y
         if not (0 <= cx < N and 0 <= cy < N):
             return INVALID_MOVE_INDEX
         pos_idx = cy * N + cx
         return SQUARE8_LINE_FORM_BASE + pos_idx * 4  # 4 directions
 
     # Territory claim: 4032..4095
-    if move.type == "territory_claim":
+    if move_type in ("territory_claim", "eliminate_rings_from_stack"):
+        if move.to is None:
+            return INVALID_MOVE_INDEX
         cx, cy = move.to.x, move.to.y
         if not (0 <= cx < N and 0 <= cy < N):
             return INVALID_MOVE_INDEX
@@ -499,23 +543,44 @@ def _encode_move_square8(move: "Move", board: "BoardState") -> int:
         return SQUARE8_TERRITORY_CLAIM_BASE + pos_idx
 
     # Special actions
-    if move.type == "skip_placement":
+    if move_type == "skip_placement":
         return SQUARE8_SKIP_PLACEMENT_IDX
 
-    if move.type == "swap_sides":
+    if move_type == "swap_sides":
         return SQUARE8_SWAP_SIDES_IDX
 
-    if move.type == "skip_recovery":
+    if move_type == "skip_recovery":
         return SQUARE8_SKIP_RECOVERY_IDX
 
+    if move_type == "no_placement_action":
+        return SQUARE8_NO_PLACEMENT_ACTION_IDX
+
+    if move_type == "no_movement_action":
+        return SQUARE8_NO_MOVEMENT_ACTION_IDX
+
+    if move_type == "skip_capture":
+        return SQUARE8_SKIP_CAPTURE_IDX
+
+    if move_type == "no_line_action":
+        return SQUARE8_NO_LINE_ACTION_IDX
+
+    if move_type == "no_territory_action":
+        return SQUARE8_NO_TERRITORY_ACTION_IDX
+
+    if move_type == "skip_territory_processing":
+        return SQUARE8_SKIP_TERRITORY_PROCESSING_IDX
+
+    if move_type == "forced_elimination":
+        return SQUARE8_FORCED_ELIMINATION_IDX
+
     # Line choice: 4099..4102
-    if move.type in ("choose_line_reward", "choose_line_option"):
+    if move_type in ("choose_line_reward", "choose_line_option"):
         option = (move.placement_count or 1) - 1
         option = max(0, min(3, option))
         return SQUARE8_LINE_CHOICE_BASE + option
 
     # Territory choice: 4103..6150
-    if move.type == "choose_territory_option":
+    if move_type in ("choose_territory_option", "process_territory_region"):
         canonical_pos = move.to
         region_size = 1
         controlling_player = move.player
@@ -531,6 +596,8 @@ def _encode_move_square8(move: "Move", board: "BoardState") -> int:
                 if hasattr(region, "controlling_player"):
                     controlling_player = region.controlling_player
 
+        if canonical_pos is None:
+            return INVALID_MOVE_INDEX
         cx, cy = canonical_pos.x, canonical_pos.y
         if not (0 <= cx < N and 0 <= cy < N):
             return INVALID_MOVE_INDEX
@@ -553,9 +620,10 @@ def _encode_move_square19(move: "Move", board: "BoardState") -> int:
     """Encode move for square19 board using 19x19 policy layout (max ~67000)."""
     N = 19  # Board size
     MAX_DIST = MAX_DIST_SQUARE19  # 18
+    move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
 
     # Placement: 0..1082 (3 * 19 * 19)
-    if move.type == "place_ring":
+    if move_type == "place_ring":
         cx, cy = move.to.x, move.to.y
         if not (0 <= cx < N and 0 <= cy < N):
             return INVALID_MOVE_INDEX
@@ -564,7 +632,7 @@ def _encode_move_square19(move: "Move", board: "BoardState") -> int:
         return pos_idx * 3 + count_idx
 
     # Movement: 1083..53066
-    if move.type in [
+    if move_type in [
         "move_stack", "move_ring", "overtaking_capture",
         "chain_capture", "continue_capture_segment", "recovery_slide",
     ]:
@@ -594,15 +662,20 @@ def _encode_move_square19(move: "Move", board: "BoardState") -> int:
         return SQUARE19_MOVEMENT_BASE + from_idx * (8 * MAX_DIST) + dir_idx * MAX_DIST + (dist - 1)
 
     # Line formation: 53067..54510
-    if move.type == "line_formation":
-        cx, cy = move.to.x, move.to.y
+    if move_type in ("line_formation", "process_line"):
+        line_pos = _line_anchor_position(move)
+        if line_pos is None:
+            return INVALID_MOVE_INDEX
+        cx, cy = line_pos.x, line_pos.y
         if not (0 <= cx < N and 0 <= cy < N):
             return INVALID_MOVE_INDEX
         pos_idx = cy * N + cx
         return SQUARE19_LINE_FORM_BASE + pos_idx * 4
 
     # Territory claim: 54511..54871
-    if move.type == "territory_claim":
+    if move_type in ("territory_claim", "eliminate_rings_from_stack"):
+        if move.to is None:
+            return INVALID_MOVE_INDEX
         cx, cy = move.to.x, move.to.y
         if not (0 <= cx < N and 0 <= cy < N):
             return INVALID_MOVE_INDEX
@@ -610,23 +683,44 @@ def _encode_move_square19(move: "Move", board: "BoardState") -> int:
         return SQUARE19_TERRITORY_CLAIM_BASE + pos_idx
 
     # Special actions
-    if move.type == "skip_placement":
+    if move_type == "skip_placement":
         return SQUARE19_SKIP_PLACEMENT_IDX
 
-    if move.type == "swap_sides":
+    if move_type == "swap_sides":
         return SQUARE19_SWAP_SIDES_IDX
 
-    if move.type == "skip_recovery":
+    if move_type == "skip_recovery":
         return SQUARE19_SKIP_RECOVERY_IDX
 
+    if move_type == "no_placement_action":
+        return SQUARE19_NO_PLACEMENT_ACTION_IDX
+
+    if move_type == "no_movement_action":
+        return SQUARE19_NO_MOVEMENT_ACTION_IDX
+
+    if move_type == "skip_capture":
+        return SQUARE19_SKIP_CAPTURE_IDX
+
+    if move_type == "no_line_action":
+        return SQUARE19_NO_LINE_ACTION_IDX
+
+    if move_type == "no_territory_action":
+        return SQUARE19_NO_TERRITORY_ACTION_IDX
+
+    if move_type == "skip_territory_processing":
+        return SQUARE19_SKIP_TERRITORY_PROCESSING_IDX
+
+    if move_type == "forced_elimination":
+        return SQUARE19_FORCED_ELIMINATION_IDX
+
     # Line choice: 54875..54878
-    if move.type in ("choose_line_reward", "choose_line_option"):
+    if move_type in ("choose_line_reward", "choose_line_option"):
         option = (move.placement_count or 1) - 1
         option = max(0, min(3, option))
         return SQUARE19_LINE_CHOICE_BASE + option
 
     # Territory choice: 54879..66430
-    if move.type == "choose_territory_option":
+    if move_type in ("choose_territory_option", "process_territory_region"):
         canonical_pos = move.to
         region_size = 1
         controlling_player = move.player
@@ -642,6 +736,8 @@ def _encode_move_square19(move: "Move", board: "BoardState") -> int:
                 if hasattr(region, "controlling_player"):
                     controlling_player = region.controlling_player
 
+        if canonical_pos is None:
+            return INVALID_MOVE_INDEX
         cx, cy = canonical_pos.x, canonical_pos.y
         if not (0 <= cx < N and 0 <= cy < N):
             return INVALID_MOVE_INDEX
@@ -5212,9 +5308,15 @@ class NeuralNetAI(BaseAI):
         territory_base = line_base + line_span  # 54511
         skip_index = territory_base + MAX_N * MAX_N  # 54872
         swap_sides_index = skip_index + 1  # 54873
+        move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
+        territory_choice_span = MAX_N * MAX_N * TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS
+        extra_special_base = territory_choice_base = (skip_index + 3) + 4
+        extra_special_base += territory_choice_span
+        extra_special_span = 7
+        effective_policy_size = model_policy_size or board_policy_size or 0
 
         # Placement: 0..1082 (3 * 19 * 19)
-        if move.type == "place_ring":
+        if move_type == "place_ring":
             if board is not None:
                 cx, cy = _to_canonical_xy(board, move.to)
             else:
@@ -5232,7 +5334,7 @@ class NeuralNetAI(BaseAI):
 
         # Movement: 1083..53066
         # Recovery_slide is encoded as movement since it has from/to positions
-        if move.type in [
+        if move_type in [
             "move_stack",
             "move_ring",
             "overtaking_capture",
@@ -5295,11 +5397,14 @@ class NeuralNetAI(BaseAI):
             return movement_base + from_idx * (8 * max_dist) + dir_idx * max_dist + (dist - 1)
 
         # Line: 53067..54510
-        if move.type == "line_formation":
+        if move_type in ("line_formation", "process_line"):
+            line_pos = _line_anchor_position(move)
+            if line_pos is None:
+                return INVALID_MOVE_INDEX
             if board is not None:
-                cx, cy = _to_canonical_xy(board, move.to)
+                cx, cy = _to_canonical_xy(board, line_pos)
             else:
-                cx, cy = move.to.x, move.to.y
+                cx, cy = line_pos.x, line_pos.y
             if not (0 <= cx < MAX_N and 0 <= cy < MAX_N):
                 return INVALID_MOVE_INDEX
             pos_idx = cy * MAX_N + cx
@@ -5308,7 +5413,9 @@ class NeuralNetAI(BaseAI):
             return line_base + pos_idx * 4
 
         # Territory: 54511..54871
-        if move.type == "territory_claim":
+        if move_type in ("territory_claim", "eliminate_rings_from_stack"):
+            if move.to is None:
+                return INVALID_MOVE_INDEX
             if board is not None:
                 cx, cy = _to_canonical_xy(board, move.to)
             else:
@@ -5319,7 +5426,7 @@ class NeuralNetAI(BaseAI):
             return territory_base + pos_idx
 
         # Skip placement: single terminal index
-        if move.type == "skip_placement":
+        if move_type == "skip_placement":
             return skip_index
 
         # Swap-sides (pie rule) decision. The decode_move implementation
@@ -5327,19 +5434,19 @@ class NeuralNetAI(BaseAI):
         # SWAP_SIDES action; wiring encode_move to emit the same index ensures
         # that recorded swap_sides moves are represented in the policy head
         # and can be learned from training data.
-        if move.type == "swap_sides":
+        if move_type == "swap_sides":
             return swap_sides_index
 
         # Skip recovery (RR-CANON-R112): player elects not to perform recovery action
         skip_recovery_index = swap_sides_index + 1  # 54874 (sq19) / 4098 (sq8)
-        if move.type == "skip_recovery":
+        if move_type == "skip_recovery":
             return skip_recovery_index
 
         # Choice moves: line and territory decision options
         # Line choices: 4 slots (options 0-3, typically option 1 = partial, 2 = full)
         line_choice_base = skip_recovery_index + 1  # 54875 (sq19) / 4099 (sq8)
 
-        if move.type in ("choose_line_reward", "choose_line_option"):
+        if move_type in ("choose_line_reward", "choose_line_option"):
             # Line choice uses placement_count to indicate option (1-based)
             option = (move.placement_count or 1) - 1  # Convert to 0-indexed
             option = max(0, min(3, option))  # Clamp to valid range
@@ -5355,7 +5462,7 @@ class NeuralNetAI(BaseAI):
         TERRITORY_SIZE_BUCKETS = 8
         TERRITORY_MAX_PLAYERS = 4
 
-        if move.type == "choose_territory_option":
+        if move_type in ("choose_territory_option", "process_territory_region"):
             # Extract region information from the move
             canonical_pos = move.to  # Default to move.to
             region_size = 1
@@ -5376,6 +5483,8 @@ class NeuralNetAI(BaseAI):
                         controlling_player = region.controlling_player
 
             # Convert position to canonical coordinates
+            if canonical_pos is None:
+                return INVALID_MOVE_INDEX
             if board is not None:
                 cx, cy = _to_canonical_xy(board, canonical_pos)
             else:
@@ -5394,6 +5503,21 @@ class NeuralNetAI(BaseAI):
                 + size_bucket * TERRITORY_MAX_PLAYERS
                 + player_idx
             )
+
+        extra_special_indices = {
+            "no_placement_action": extra_special_base,
+            "no_movement_action": extra_special_base + 1,
+            "skip_capture": extra_special_base + 2,
+            "no_line_action": extra_special_base + 3,
+            "no_territory_action": extra_special_base + 4,
+            "skip_territory_processing": extra_special_base + 5,
+            "forced_elimination": extra_special_base + 6,
+        }
+        extra_idx = extra_special_indices.get(move_type)
+        if extra_idx is not None:
+            if effective_policy_size and extra_idx < effective_policy_size:
+                return extra_idx
+            return INVALID_MOVE_INDEX
 
         return INVALID_MOVE_INDEX
 

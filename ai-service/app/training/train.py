@@ -539,6 +539,8 @@ class RingRiftDataset(Dataset):
         board_type: BoardType = BoardType.SQUARE8,
         augment_hex: bool = False,
         use_multi_player_values: bool = False,
+        filter_empty_policies: bool = True,
+        return_num_players: bool = False,
     ):
         self.data_path = data_path
         self.board_type = board_type
@@ -547,6 +549,8 @@ class RingRiftDataset(Dataset):
         # 'num_players', __getitem__ will surface vector value targets
         # suitable for multi-player value heads.
         self.use_multi_player_values = use_multi_player_values
+        self.filter_empty_policies = filter_empty_policies
+        self.return_num_players = return_num_players
         self.hex_transform: Optional[HexSymmetryTransform] = None
 
         # Initialize hex transform if augmentation enabled
@@ -586,21 +590,25 @@ class RingRiftDataset(Dataset):
                 if 'features' in self.data:
                     total_samples = len(self.data['values'])
 
-                    # Filter out samples with empty policies (terminal states)
-                    # These would cause NaN when computing KLDivLoss
+                    # Optionally filter out samples with empty policies
+                    # (terminal states). When disabled, training will
+                    # mask policy loss for those samples instead.
                     policy_indices_arr = self.data['policy_indices']
-                    self.valid_indices = [
-                        i for i in range(total_samples)
-                        if len(policy_indices_arr[i]) > 0
-                    ]
+                    if self.filter_empty_policies:
+                        self.valid_indices = [
+                            i for i in range(total_samples)
+                            if len(policy_indices_arr[i]) > 0
+                        ]
 
-                    filtered_count = total_samples - len(self.valid_indices)
-                    if filtered_count > 0:
-                        logger.info(
-                            f"Filtered {filtered_count} terminal states "
-                            f"with empty policies out of {total_samples} "
-                            f"total samples"
-                        )
+                        filtered_count = total_samples - len(self.valid_indices)
+                        if filtered_count > 0:
+                            logger.info(
+                                f"Filtered {filtered_count} terminal states "
+                                f"with empty policies out of {total_samples} "
+                                f"total samples"
+                            )
+                    else:
+                        self.valid_indices = list(range(total_samples))
 
                     self.length = len(self.valid_indices)
 
@@ -828,6 +836,21 @@ class RingRiftDataset(Dataset):
                 dtype=torch.float32,
             )
 
+        if self.return_num_players:
+            num_players_val = 0
+            if self.num_players_arr is not None:
+                try:
+                    num_players_val = int(self.num_players_arr[actual_idx])
+                except Exception:
+                    num_players_val = 0
+            return (
+                torch.from_numpy(features),
+                torch.from_numpy(globals_vec),
+                value_tensor,
+                policy_vector,
+                torch.tensor(num_players_val, dtype=torch.int64),
+            )
+
         return (
             torch.from_numpy(features),
             torch.from_numpy(globals_vec),
@@ -892,12 +915,16 @@ class WeightedRingRiftDataset(RingRiftDataset):
         augment_hex: bool = False,
         weighting: str = 'late_game',
         use_multi_player_values: bool = False,
+        filter_empty_policies: bool = True,
+        return_num_players: bool = False,
     ):
         super().__init__(
             data_path,
             board_type,
             augment_hex,
             use_multi_player_values=use_multi_player_values,
+            filter_empty_policies=filter_empty_policies,
+            return_num_players=return_num_players,
         )
 
         self.weighting = weighting
@@ -1724,6 +1751,26 @@ def train_model(
     # HexNeuralNet_v2 supports multi-player outputs, so enable multi-player loss for all boards
     use_multi_player_loss = multi_player
 
+    def masked_policy_kl(
+        policy_log_probs: torch.Tensor,
+        policy_targets: torch.Tensor,
+    ) -> torch.Tensor:
+        """Compute KL loss while ignoring samples with empty policy targets."""
+        target_sums = policy_targets.sum(dim=1)
+        valid_mask = target_sums > 0
+        if not torch.any(valid_mask):
+            return torch.tensor(0.0, device=policy_log_probs.device)
+
+        targets = policy_targets[valid_mask]
+        log_probs = policy_log_probs[valid_mask]
+        log_targets = torch.log(targets.clamp_min(1e-12))
+        loss_terms = torch.where(
+            targets > 0,
+            targets * (log_targets - log_probs),
+            torch.zeros_like(targets),
+        )
+        return loss_terms.sum(dim=1).mean()
+
     optimizer = optim.Adam(
         model.parameters(),
         lr=config.learning_rate,
@@ -1809,6 +1856,8 @@ def train_model(
     val_loader: Optional[DataLoader] = None
     train_sampler = None
     val_sampler = None
+    allow_empty_policies = bool(getattr(config, "allow_empty_policies", False))
+    filter_empty_policies = not allow_empty_policies
 
     # Auto-detect large datasets and switch to streaming mode to prevent OOM
     if not use_streaming:
@@ -1908,6 +1957,7 @@ def train_model(
                 policy_size=policy_size,
                 rank=stream_rank,
                 world_size=stream_world_size,
+                filter_empty_policies=filter_empty_policies,
                 sampling_weights=sampling_weights,
             )
             if not distributed or is_main_process():
@@ -1925,6 +1975,7 @@ def train_model(
                 policy_size=policy_size,
                 rank=stream_rank,
                 world_size=stream_world_size,
+                filter_empty_policies=filter_empty_policies,
             )
 
         # For validation, always use uniform sampling
@@ -1937,6 +1988,7 @@ def train_model(
             policy_size=policy_size,
             rank=stream_rank,
             world_size=stream_world_size,
+            filter_empty_policies=filter_empty_policies,
         )
 
         # Auto-detect multi-player values from streaming data
@@ -1980,6 +2032,8 @@ def train_model(
                 board_type=config.board_type,
                 augment_hex=augment_hex_symmetry,
                 use_multi_player_values=multi_player,
+                filter_empty_policies=filter_empty_policies,
+                return_num_players=multi_player,
             )
             use_weighted_sampling = False
         else:
@@ -1989,6 +2043,8 @@ def train_model(
                 augment_hex=augment_hex_symmetry,
                 weighting=sampling_weights,
                 use_multi_player_values=multi_player,
+                filter_empty_policies=filter_empty_policies,
+                return_num_players=multi_player,
             )
             use_weighted_sampling = True
 
@@ -2428,12 +2484,21 @@ def train_model(
                             (value_targets, policy_targets),
                         ) = batch_data
                 else:
-                    (
-                        features,
-                        globals_vec,
-                        value_targets,
-                        policy_targets,
-                    ) = batch_data
+                    if isinstance(batch_data, (list, tuple)) and len(batch_data) == 5:
+                        (
+                            features,
+                            globals_vec,
+                            value_targets,
+                            policy_targets,
+                            batch_num_players,
+                        ) = batch_data
+                    else:
+                        (
+                            features,
+                            globals_vec,
+                            value_targets,
+                            policy_targets,
+                        ) = batch_data
 
                 # Data quality metrics (every 500 batches to minimize GPU sync overhead)
                 if i % 500 == 0 and i > 0:
@@ -2449,12 +2514,15 @@ def train_model(
                             )
                     # Policy entropy: measure diversity of targets
                     # Low entropy indicates concentrated/biased policy targets
-                    policy_probs = policy_targets + 1e-8  # Avoid log(0)
-                    policy_entropy = -(policy_probs * policy_probs.log()).sum(dim=1).mean().item()
-                    if policy_entropy < 1.0:  # Very low entropy indicates potential issue
-                        logger.debug(
-                            f"Data quality: low policy entropy={policy_entropy:.3f} (batch {i})"
-                        )
+                    policy_sums = policy_targets.sum(dim=1)
+                    valid_policy = policy_sums > 0
+                    if torch.any(valid_policy):
+                        policy_probs = policy_targets[valid_policy] + 1e-8  # Avoid log(0)
+                        policy_entropy = -(policy_probs * policy_probs.log()).sum(dim=1).mean().item()
+                        if policy_entropy < 1.0:  # Very low entropy indicates potential issue
+                            logger.debug(
+                                f"Data quality: low policy entropy={policy_entropy:.3f} (batch {i})"
+                            )
 
                 # Transfer to device if not already there (prefetch may have done this)
                 if features.device != device:
@@ -2518,13 +2586,19 @@ def train_model(
                         policy_targets, (0, pad_size), value=0.0
                     )
 
+                policy_valid_mask = policy_targets.sum(dim=1) > 0
+
                 # Apply label smoothing to policy targets if configured
                 # smoothed = (1 - eps) * target + eps * uniform
-                if config.policy_label_smoothing > 0:
+                if config.policy_label_smoothing > 0 and torch.any(policy_valid_mask):
                     eps = config.policy_label_smoothing
                     policy_size = policy_targets.size(1)
                     uniform = 1.0 / policy_size
-                    policy_targets = (1 - eps) * policy_targets + eps * uniform
+                    policy_targets = policy_targets.clone()
+                    policy_targets[policy_valid_mask] = (
+                        (1 - eps) * policy_targets[policy_valid_mask]
+                        + eps * uniform
+                    )
 
                 # Gradient accumulation: only zero grad at start of accumulation window
                 # Dynamic batch scheduling: calculate accumulation steps from batch scheduler
@@ -2603,7 +2677,7 @@ def train_model(
                             value_targets.reshape(-1),
                         )
 
-                    policy_loss = policy_criterion(
+                    policy_loss = masked_policy_kl(
                         policy_log_probs,
                         policy_targets,
                     )
@@ -2835,12 +2909,21 @@ def train_model(
                                 (value_targets, policy_targets),
                             ) = val_batch
                     else:
-                        (
-                            features,
-                            globals_vec,
-                            value_targets,
-                            policy_targets,
-                        ) = val_batch
+                        if isinstance(val_batch, (list, tuple)) and len(val_batch) == 5:
+                            (
+                                features,
+                                globals_vec,
+                                value_targets,
+                                policy_targets,
+                                val_batch_num_players,
+                            ) = val_batch
+                        else:
+                            (
+                                features,
+                                globals_vec,
+                                value_targets,
+                                policy_targets,
+                            ) = val_batch
 
                     # Transfer to device if not already there (prefetch may have done this)
                     if features.device != device:
@@ -2885,7 +2968,7 @@ def train_model(
                             value_pred_scalar.reshape(-1),
                             value_targets.reshape(-1),
                         )
-                    p_loss = policy_criterion(
+                    p_loss = masked_policy_kl(
                         policy_log_probs, policy_targets
                     )
                     loss = v_loss + (config.policy_weight * p_loss)
@@ -3633,6 +3716,13 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         '--policy-label-smoothing', type=float, default=0.0,
         help='Policy label smoothing factor (0=disabled, typical: 0.05-0.1). '
              'Mixes target with uniform distribution for regularization.'
+    )
+    parser.add_argument(
+        '--filter-empty-policies', action='store_true',
+        help=(
+            'Filter out samples with empty policy targets instead of masking '
+            'policy loss (default: keep and mask value-only samples).'
+        ),
     )
 
     # Distributed training arguments

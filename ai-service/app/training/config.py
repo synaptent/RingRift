@@ -370,6 +370,10 @@ class TrainConfig:
     # smoothed = (1 - eps) * target + eps * uniform
     # Helps prevent overconfident predictions and improves generalization
     policy_label_smoothing: float = 0.0  # 0 = disabled, typical values: 0.05-0.1
+    # Allow samples with empty policy targets (value-only supervision).
+    # When enabled, training will mask policy loss for those samples instead
+    # of filtering them out.
+    allow_empty_policies: bool = True
 
     # Model identity used to derive checkpoint filenames. This is kept in sync
     # with NeuralNetAI, which expects checkpoints under
