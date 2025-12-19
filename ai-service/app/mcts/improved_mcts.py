@@ -12,13 +12,14 @@ Provides advanced MCTS features including:
 import math
 import time
 import logging
-import hashlib
 import threading
 from typing import Dict, List, Optional, Tuple, Any, Callable
 from dataclasses import dataclass, field
 from collections import defaultdict
 from abc import ABC, abstractmethod
 import random
+
+from app.utils.checksum_utils import compute_string_checksum
 
 
 logger = logging.getLogger(__name__)
@@ -705,7 +706,7 @@ def main():
             return self._player
 
         def hash(self) -> str:
-            return hashlib.md5(str(self.board).encode()).hexdigest()
+            return compute_string_checksum(str(self.board), algorithm="md5")
 
     class DummyNetwork(NeuralNetworkInterface):
         def evaluate(self, state: GameState) -> Tuple[List[float], float]:

@@ -43,12 +43,13 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import sqlite3
 import threading
 import time
+
+from app.utils.checksum_utils import compute_string_checksum
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
@@ -401,7 +402,7 @@ class UnifiedWAL:
 
     def _compute_hash(self, content: str) -> str:
         """Compute hash for deduplication."""
-        return hashlib.sha256(content.encode()).hexdigest()[:32]
+        return compute_string_checksum(content, truncate=32)
 
     # =========================================================================
     # Sync Entry Operations (from data_sync_robust.WriteAheadLog)

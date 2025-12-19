@@ -11,7 +11,8 @@ import json
 import os
 from collections import OrderedDict
 from typing import Dict, List, Optional, TYPE_CHECKING
-import hashlib
+
+from app.utils.checksum_utils import compute_string_checksum
 
 if TYPE_CHECKING:
     from ..models import GameState, Move
@@ -205,7 +206,7 @@ class MoveCache:
                 f"{p.player_number}:{p.rings_in_hand}:{p.eliminated_rings}:{p.territory_spaces}"
                 for p in players
             )
-            players_digest = hashlib.md5("|".join(players_meta).encode()).hexdigest()
+            players_digest = compute_string_checksum("|".join(players_meta), algorithm="md5")
 
         max_players = getattr(state, "max_players", None)
         if max_players is None:
@@ -225,7 +226,7 @@ class MoveCache:
                 separators=(",", ":"),
                 default=str,
             )
-            rules_digest = hashlib.md5(rules_str.encode()).hexdigest()
+            rules_digest = compute_string_checksum(rules_str, algorithm="md5")
         else:
             rules_digest = ""
 
@@ -340,7 +341,7 @@ class MoveCache:
 
         # Compute hash
         key_str = "|".join(parts)
-        return hashlib.md5(key_str.encode()).hexdigest()
+        return compute_string_checksum(key_str, algorithm="md5")
 
 
 # Global move cache instance

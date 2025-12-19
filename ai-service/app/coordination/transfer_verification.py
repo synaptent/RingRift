@@ -33,7 +33,6 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -46,15 +45,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.utils.paths import AI_SERVICE_ROOT, DATA_DIR
+from app.utils.checksum_utils import (
+    compute_file_checksum as _compute_file_checksum,
+    compute_bytes_checksum as _compute_bytes_checksum,
+    LARGE_CHUNK_SIZE,
+)
+
 logger = logging.getLogger(__name__)
 
 # Default paths
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_VERIFIER_DB = AI_SERVICE_ROOT / "data" / "coordination" / "transfer_verification.db"
-QUARANTINE_DIR = AI_SERVICE_ROOT / "data" / "quarantine"
+DEFAULT_VERIFIER_DB = DATA_DIR / "coordination" / "transfer_verification.db"
+QUARANTINE_DIR = DATA_DIR / "quarantine"
 
-# Configuration
-CHUNK_SIZE = 65536  # 64KB chunks for checksum computation
+# Configuration (use centralized chunk size)
+CHUNK_SIZE = LARGE_CHUNK_SIZE  # 64KB chunks for checksum computation
 MAX_QUARANTINE_AGE_DAYS = 30  # Auto-cleanup quarantine after 30 days
 
 
@@ -220,18 +225,11 @@ class TransferVerifier:
 
     def compute_checksum(self, path: Path) -> str:
         """Compute SHA256 checksum of a file."""
-        if not path.exists():
-            return ""
-
-        sha256 = hashlib.sha256()
-        with open(path, 'rb') as f:
-            for chunk in iter(lambda: f.read(CHUNK_SIZE), b''):
-                sha256.update(chunk)
-        return sha256.hexdigest()
+        return _compute_file_checksum(path, chunk_size=CHUNK_SIZE)
 
     def compute_checksum_from_bytes(self, data: bytes) -> str:
         """Compute SHA256 checksum of bytes."""
-        return hashlib.sha256(data).hexdigest()
+        return _compute_bytes_checksum(data)
 
     def compute_batch_checksum(
         self,

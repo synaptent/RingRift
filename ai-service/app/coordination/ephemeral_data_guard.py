@@ -30,7 +30,6 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -46,8 +45,8 @@ from typing import Any, Dict, List, Optional, Set
 logger = logging.getLogger(__name__)
 
 # Default paths
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_GUARD_DB = AI_SERVICE_ROOT / "data" / "coordination" / "ephemeral_guard.db"
+from app.utils.paths import DATA_DIR
+DEFAULT_GUARD_DB = DATA_DIR / "coordination" / "ephemeral_guard.db"
 
 # Thresholds
 CHECKPOINT_INTERVAL = 60  # Checkpoint every 60 seconds

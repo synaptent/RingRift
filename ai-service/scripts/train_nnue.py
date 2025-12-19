@@ -111,6 +111,41 @@ except ImportError:
     OperationPriority = type('OperationPriority', (), {'HIGH': 3})()
     get_resource_status = lambda: {'can_proceed': True}
 
+# Training Coordination - cluster-wide training lock
+try:
+    from app.coordination.training_coordinator import (
+        get_training_coordinator,
+        can_train,
+        request_training_slot,
+        release_training_slot,
+        update_training_progress,
+    )
+    HAS_TRAINING_COORDINATOR = True
+except ImportError:
+    HAS_TRAINING_COORDINATOR = False
+    can_train = lambda *args: True
+    request_training_slot = lambda *args, **kwargs: "local_training"
+    release_training_slot = lambda *args, **kwargs: True
+    update_training_progress = lambda *args, **kwargs: True
+    get_training_coordinator = lambda: None
+
+# Global training job ID for cleanup on unexpected exit
+_active_training_job_id: Optional[str] = None
+
+def _cleanup_training_slot():
+    """Release training slot on unexpected exit."""
+    global _active_training_job_id
+    if _active_training_job_id and HAS_TRAINING_COORDINATOR:
+        try:
+            release_training_slot(_active_training_job_id, status="failed")
+            logging.warning(f"Released training slot on exit: {_active_training_job_id}")
+        except Exception:
+            pass
+        _active_training_job_id = None
+
+import atexit
+atexit.register(_cleanup_training_slot)
+
 # Unified logging setup
 try:
     from app.core.logging_config import setup_logging
@@ -4985,6 +5020,7 @@ def train_nnue(
 
 def main(argv: Optional[List[str]] = None) -> int:
     """Main entry point."""
+    global _active_training_job_id  # For atexit cleanup
     args = parse_args(argv)
 
     # Resource guard: Training is HIGH priority (3)
@@ -5137,6 +5173,42 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         sample_counts = count_available_samples(db_paths, config)
         logger.info(f"Available samples: {sample_counts.get('total', 0)}")
+
+    # Training Coordination - acquire cluster-wide training slot
+    # Skip coordination for demo mode or when explicitly disabled
+    skip_coordination = args.demo or os.environ.get("RINGRIFT_SKIP_TRAINING_COORD", "").lower() in ("1", "true", "yes")
+    training_job_id = None
+
+    if HAS_TRAINING_COORDINATOR and not skip_coordination:
+        board_type_str = board_type.value if hasattr(board_type, 'value') else str(board_type)
+
+        # Check if training slot is available
+        if not can_train(board_type_str, args.num_players):
+            logger.error(f"Training slot not available for {board_type_str}_{args.num_players}p")
+            logger.info("Another training job is running for this configuration.")
+            logger.info("Use RINGRIFT_SKIP_TRAINING_COORD=1 to bypass coordination.")
+            return 1
+
+        # Request training slot
+        model_version = f"v{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        training_job_id = request_training_slot(
+            board_type=board_type_str,
+            num_players=args.num_players,
+            model_version=model_version,
+            metadata={
+                "epochs": args.epochs,
+                "hidden_dim": args.hidden_dim,
+                "db_paths": db_paths[:5] if db_paths else [],  # Limit for metadata size
+            }
+        )
+
+        if not training_job_id:
+            logger.error(f"Could not acquire training slot for {board_type_str}_{args.num_players}p")
+            return 1
+
+        # Set global for atexit cleanup
+        _active_training_job_id = training_job_id
+        logger.info(f"Acquired training slot: {training_job_id}")
 
     # Train
     logger.info(f"Starting NNUE training with {args.lr_schedule} LR schedule...")
@@ -5321,6 +5393,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     final_acc = report.get('final_val_accuracy')
     logger.info(f"  Best validation loss: {best_val:.4f}" if isinstance(best_val, (int, float)) else f"  Best validation loss: {best_val}")
     logger.info(f"  Final validation accuracy: {final_acc:.4f}" if isinstance(final_acc, (int, float)) else f"  Final validation accuracy: {final_acc}")
+
+    # Release training slot
+    if training_job_id:
+        release_training_slot(
+            training_job_id,
+            status="completed",
+            final_val_loss=best_val if isinstance(best_val, (int, float)) else None,
+        )
+        _active_training_job_id = None  # Clear global so atexit doesn't double-release
+        logger.info(f"Released training slot: {training_job_id}")
 
     return 0
 

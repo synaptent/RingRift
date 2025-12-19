@@ -22,7 +22,6 @@ Integrates with:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
@@ -36,6 +35,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Any, Callable
+
+from app.utils.checksum_utils import compute_string_checksum
 
 # Optional async libraries (may not be available on all nodes)
 try:
@@ -226,9 +227,9 @@ class EloSyncManager:
             # Calculate hash for change detection
             cursor.execute("SELECT COUNT(*), MAX(timestamp) FROM match_history")
             count, max_ts = cursor.fetchone()
-            self.state.last_sync_hash = hashlib.md5(
-                f"{count}:{max_ts}".encode()
-            ).hexdigest()
+            self.state.last_sync_hash = compute_string_checksum(
+                f"{count}:{max_ts}", algorithm="md5"
+            )
 
             conn.close()
         except Exception as e:

@@ -1472,3 +1472,259 @@ def get_quality_lookup() -> Dict[str, float]:
 def get_elo_lookup() -> Dict[str, float]:
     """Get Elo lookup dictionary for training integration."""
     return SyncCoordinator.get_instance().get_elo_lookup()
+
+
+# =============================================================================
+# HIGH_QUALITY_DATA_AVAILABLE → Priority Sync Integration (December 2025)
+# =============================================================================
+
+class HighQualityDataSyncWatcher:
+    """Watches for high-quality data events and triggers priority sync.
+
+    Subscribes to HIGH_QUALITY_DATA_AVAILABLE events from the event bus and
+    triggers immediate priority sync of high-quality games for training.
+
+    Usage:
+        from app.distributed.sync_coordinator import wire_high_quality_to_sync
+
+        # Wire high-quality data events to priority sync
+        watcher = wire_high_quality_to_sync()
+    """
+
+    def __init__(
+        self,
+        sync_cooldown_seconds: float = 60.0,
+        min_quality_score: float = 0.7,
+        max_games_per_sync: int = 500,
+    ):
+        """Initialize the high-quality data sync watcher.
+
+        Args:
+            sync_cooldown_seconds: Minimum time between syncs
+            min_quality_score: Minimum quality score to consider "high quality"
+            max_games_per_sync: Maximum games to sync per trigger
+        """
+        self.sync_cooldown_seconds = sync_cooldown_seconds
+        self.min_quality_score = min_quality_score
+        self.max_games_per_sync = max_games_per_sync
+
+        self._last_sync_time: float = 0.0
+        self._pending_hosts: Set[str] = set()
+        self._subscribed = False
+        self._sync_in_progress = False
+
+    def subscribe_to_high_quality_events(self) -> bool:
+        """Subscribe to HIGH_QUALITY_DATA_AVAILABLE events from the event bus.
+
+        Returns:
+            True if successfully subscribed
+        """
+        try:
+            from app.distributed.data_events import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+            bus.subscribe(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._on_high_quality_data)
+            self._subscribed = True
+            logger.info("[HighQualityDataSyncWatcher] Subscribed to HIGH_QUALITY_DATA_AVAILABLE events")
+            return True
+        except Exception as e:
+            logger.warning(f"[HighQualityDataSyncWatcher] Failed to subscribe: {e}")
+            return False
+
+    def unsubscribe(self) -> None:
+        """Unsubscribe from high-quality data events."""
+        if not self._subscribed:
+            return
+
+        try:
+            from app.distributed.data_events import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+            bus.unsubscribe(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._on_high_quality_data)
+            self._subscribed = False
+        except Exception:
+            pass
+
+    def _on_high_quality_data(self, event) -> None:
+        """Handle HIGH_QUALITY_DATA_AVAILABLE event.
+
+        Triggers priority sync of high-quality games from the source host.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        source_host = payload.get("host", payload.get("source_host", ""))
+        game_count = payload.get("game_count", payload.get("games", 0))
+        avg_quality = payload.get("avg_quality", payload.get("quality_score", 0.7))
+
+        logger.info(
+            f"[HighQualityDataSyncWatcher] High-quality data available from {source_host}: "
+            f"{game_count} games (avg quality: {avg_quality:.2f})"
+        )
+
+        # Track pending host
+        if source_host:
+            self._pending_hosts.add(source_host)
+
+        # Try to trigger sync
+        self._maybe_trigger_sync()
+
+    def _maybe_trigger_sync(self) -> bool:
+        """Potentially trigger priority sync.
+
+        Returns:
+            True if sync was triggered
+        """
+        now = time.time()
+
+        # Check cooldown
+        if now - self._last_sync_time < self.sync_cooldown_seconds:
+            logger.debug("[HighQualityDataSyncWatcher] Sync cooldown active, queuing")
+            return False
+
+        # Check if sync already in progress
+        if self._sync_in_progress:
+            logger.debug("[HighQualityDataSyncWatcher] Sync already in progress")
+            return False
+
+        # Trigger async sync
+        self._sync_in_progress = True
+        self._last_sync_time = now
+
+        # Get pending hosts and clear
+        hosts = list(self._pending_hosts)
+        self._pending_hosts.clear()
+
+        # Schedule the sync (fire-and-forget, with error handling)
+        try:
+            asyncio.create_task(self._execute_priority_sync(hosts))
+        except RuntimeError:
+            # No running event loop - try to run synchronously
+            try:
+                asyncio.run(self._execute_priority_sync(hosts))
+            except Exception as e:
+                logger.warning(f"[HighQualityDataSyncWatcher] Failed to execute sync: {e}")
+                self._sync_in_progress = False
+                return False
+
+        return True
+
+    async def _execute_priority_sync(self, source_hosts: List[str]) -> None:
+        """Execute priority sync of high-quality games.
+
+        Args:
+            source_hosts: Hosts to prioritize for sync
+        """
+        try:
+            coordinator = SyncCoordinator.get_instance()
+
+            logger.info(
+                f"[HighQualityDataSyncWatcher] Starting priority sync "
+                f"(quality>={self.min_quality_score}, max={self.max_games_per_sync} games)"
+            )
+
+            stats = await coordinator.sync_high_quality_games(
+                min_quality_score=self.min_quality_score,
+                limit=self.max_games_per_sync,
+            )
+
+            logger.info(
+                f"[HighQualityDataSyncWatcher] Priority sync complete: "
+                f"{stats.high_quality_games_synced} high-quality games synced "
+                f"(avg quality: {stats.avg_quality_score:.2f})"
+            )
+
+            # Emit sync completed event
+            self._emit_sync_completed(stats, source_hosts)
+
+        except Exception as e:
+            logger.error(f"[HighQualityDataSyncWatcher] Priority sync failed: {e}")
+        finally:
+            self._sync_in_progress = False
+
+    def _emit_sync_completed(self, stats: SyncStats, source_hosts: List[str]) -> None:
+        """Emit sync completed event."""
+        try:
+            from app.distributed.data_events import (
+                DataEvent,
+                DataEventType,
+                get_event_bus,
+            )
+
+            event = DataEvent(
+                event_type=DataEventType.DATA_SYNC_COMPLETED,
+                payload={
+                    "sync_type": "high_quality_priority",
+                    "games_synced": stats.high_quality_games_synced,
+                    "files_synced": stats.files_synced,
+                    "bytes_transferred": stats.bytes_transferred,
+                    "avg_quality_score": stats.avg_quality_score,
+                    "source_hosts": source_hosts,
+                    "duration_seconds": stats.duration_seconds,
+                },
+                source="high_quality_sync_watcher",
+            )
+
+            bus = get_event_bus()
+            asyncio.create_task(bus.publish(event))
+
+        except Exception as e:
+            logger.debug(f"Failed to emit sync completed event: {e}")
+
+    def force_sync(self) -> bool:
+        """Force an immediate priority sync.
+
+        Returns:
+            True if sync was triggered
+        """
+        self._last_sync_time = 0  # Reset cooldown
+        return self._maybe_trigger_sync()
+
+
+# Singleton high-quality sync watcher
+_hq_sync_watcher: Optional[HighQualityDataSyncWatcher] = None
+
+
+def wire_high_quality_to_sync(
+    sync_cooldown_seconds: float = 60.0,
+    min_quality_score: float = 0.7,
+    max_games_per_sync: int = 500,
+) -> HighQualityDataSyncWatcher:
+    """Wire HIGH_QUALITY_DATA_AVAILABLE events to priority sync.
+
+    This connects high-quality data detection to immediate priority sync,
+    ensuring that valuable training data is synced as soon as it's available.
+
+    Args:
+        sync_cooldown_seconds: Minimum time between syncs
+        min_quality_score: Minimum quality score to consider "high quality"
+        max_games_per_sync: Maximum games to sync per trigger
+
+    Returns:
+        HighQualityDataSyncWatcher instance
+    """
+    global _hq_sync_watcher
+
+    _hq_sync_watcher = HighQualityDataSyncWatcher(
+        sync_cooldown_seconds=sync_cooldown_seconds,
+        min_quality_score=min_quality_score,
+        max_games_per_sync=max_games_per_sync,
+    )
+    _hq_sync_watcher.subscribe_to_high_quality_events()
+
+    logger.info(
+        f"[wire_high_quality_to_sync] HIGH_QUALITY_DATA_AVAILABLE events wired to priority sync "
+        f"(cooldown={sync_cooldown_seconds}s, min_quality={min_quality_score})"
+    )
+
+    return _hq_sync_watcher
+
+
+def get_high_quality_sync_watcher() -> Optional[HighQualityDataSyncWatcher]:
+    """Get the global high-quality sync watcher if configured."""
+    return _hq_sync_watcher

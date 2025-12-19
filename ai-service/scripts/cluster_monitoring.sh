@@ -1,4 +1,10 @@
 #!/bin/bash
+# DEPRECATED: Use cluster_monitor_unified.sh instead (December 2025)
+# Migration: ./scripts/cluster_monitor_unified.sh --p2p-api http://localhost:8770
+echo "WARNING: This script is deprecated. Use cluster_monitor_unified.sh instead."
+echo "For equivalent functionality: ./scripts/cluster_monitor_unified.sh"
+echo ""
+
 # Cluster Monitoring Script - Run every 2 minutes for 10 hours
 # Monitors: P2P cluster health, work queue, node utilization, training progress
 

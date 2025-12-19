@@ -61,6 +61,12 @@ except ImportError:
     def get_data_catalog():
         return None
 
+# Import centralized quality thresholds
+try:
+    from app.quality.thresholds import MIN_QUALITY_FOR_TRAINING
+except ImportError:
+    MIN_QUALITY_FOR_TRAINING = 0.3
+
 
 # ============================================
 # Configuration
@@ -733,7 +739,7 @@ class OrchestratorRegistry:
         self,
         config_key: str = "",
         min_games: int = 500,
-        min_quality: float = 0.3,
+        min_quality: float = MIN_QUALITY_FOR_TRAINING,
     ) -> Dict[str, Any]:
         """Check training readiness including data availability.
 
@@ -743,7 +749,7 @@ class OrchestratorRegistry:
         Args:
             config_key: Configuration key (e.g., "square8_2p")
             min_games: Minimum games required for training
-            min_quality: Minimum average quality threshold
+            min_quality: Minimum average quality threshold (default from quality.thresholds)
 
         Returns:
             Dict with training readiness assessment
@@ -831,6 +837,279 @@ def orchestrator_role(role: OrchestratorRole, **kwargs):
         yield registry
     finally:
         registry.release_role()
+
+
+# ============================================
+# Cross-Coordinator Health Protocol (December 2025)
+# ============================================
+
+@dataclass
+class CoordinatorHealth:
+    """Health status of a coordinator."""
+    coordinator_id: str
+    role: str
+    is_healthy: bool
+    last_seen: str
+    response_time_ms: Optional[float] = None
+    error: Optional[str] = None
+    metadata: Dict[str, Any] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "coordinator_id": self.coordinator_id,
+            "role": self.role,
+            "is_healthy": self.is_healthy,
+            "last_seen": self.last_seen,
+            "response_time_ms": self.response_time_ms,
+            "error": self.error,
+            "metadata": self.metadata,
+        }
+
+
+class CrossCoordinatorHealthProtocol:
+    """Protocol for cross-coordinator health checks.
+
+    Allows coordinators to monitor each other's health and detect failures.
+    Uses the OrchestratorRegistry as the source of truth for liveness.
+
+    Usage:
+        from app.coordination.orchestrator_registry import (
+            get_cross_coordinator_health,
+            CrossCoordinatorHealthProtocol,
+        )
+
+        health_protocol = get_cross_coordinator_health()
+
+        # Check health of all coordinators
+        health_report = health_protocol.check_all_coordinators()
+
+        # Check specific coordinator
+        is_healthy = health_protocol.is_coordinator_healthy(
+            OrchestratorRole.CLUSTER_ORCHESTRATOR
+        )
+
+        # Get unhealthy coordinators
+        unhealthy = health_protocol.get_unhealthy_coordinators()
+    """
+
+    def __init__(
+        self,
+        registry: Optional[OrchestratorRegistry] = None,
+        health_check_timeout_ms: float = 5000.0,
+    ):
+        """Initialize cross-coordinator health protocol.
+
+        Args:
+            registry: OrchestratorRegistry instance (uses singleton if None)
+            health_check_timeout_ms: Timeout for health checks in milliseconds
+        """
+        self._registry = registry
+        self._health_check_timeout_ms = health_check_timeout_ms
+        self._health_cache: Dict[str, CoordinatorHealth] = {}
+        self._last_check_time: float = 0.0
+        self._check_cooldown_seconds: float = 10.0
+
+    @property
+    def registry(self) -> OrchestratorRegistry:
+        """Get registry, initializing if needed."""
+        if self._registry is None:
+            self._registry = get_registry()
+        return self._registry
+
+    def check_all_coordinators(self) -> Dict[str, CoordinatorHealth]:
+        """Check health of all registered coordinators.
+
+        Returns:
+            Dict mapping coordinator_id to CoordinatorHealth
+        """
+        now = time.time()
+
+        # Use cache if recent
+        if now - self._last_check_time < self._check_cooldown_seconds:
+            return self._health_cache
+
+        orchestrators = self.registry.get_active_orchestrators()
+        health_report: Dict[str, CoordinatorHealth] = {}
+
+        for orch in orchestrators:
+            start_time = time.time()
+            is_healthy = orch.is_alive()
+            response_time_ms = (time.time() - start_time) * 1000
+
+            health = CoordinatorHealth(
+                coordinator_id=orch.id,
+                role=orch.role,
+                is_healthy=is_healthy,
+                last_seen=orch.last_heartbeat,
+                response_time_ms=response_time_ms,
+                error=None if is_healthy else "Heartbeat timeout",
+                metadata=orch.metadata,
+            )
+            health_report[orch.id] = health
+
+        self._health_cache = health_report
+        self._last_check_time = now
+
+        return health_report
+
+    def is_coordinator_healthy(self, role: OrchestratorRole) -> bool:
+        """Check if a specific coordinator role is healthy.
+
+        Args:
+            role: The orchestrator role to check
+
+        Returns:
+            True if healthy coordinator exists for this role
+        """
+        orchestrators = self.registry.get_active_orchestrators()
+        for orch in orchestrators:
+            if orch.role == role.value and orch.is_alive():
+                return True
+        return False
+
+    def get_healthy_coordinators(self) -> List[CoordinatorHealth]:
+        """Get list of all healthy coordinators."""
+        health_report = self.check_all_coordinators()
+        return [h for h in health_report.values() if h.is_healthy]
+
+    def get_unhealthy_coordinators(self) -> List[CoordinatorHealth]:
+        """Get list of all unhealthy coordinators."""
+        health_report = self.check_all_coordinators()
+        return [h for h in health_report.values() if not h.is_healthy]
+
+    def get_role_health(self, role: OrchestratorRole) -> Optional[CoordinatorHealth]:
+        """Get health status for a specific role.
+
+        Args:
+            role: The orchestrator role to check
+
+        Returns:
+            CoordinatorHealth if role is registered, None otherwise
+        """
+        orchestrators = self.registry.get_active_orchestrators()
+        for orch in orchestrators:
+            if orch.role == role.value:
+                start_time = time.time()
+                is_healthy = orch.is_alive()
+                response_time_ms = (time.time() - start_time) * 1000
+
+                return CoordinatorHealth(
+                    coordinator_id=orch.id,
+                    role=orch.role,
+                    is_healthy=is_healthy,
+                    last_seen=orch.last_heartbeat,
+                    response_time_ms=response_time_ms,
+                    error=None if is_healthy else "Heartbeat timeout",
+                    metadata=orch.metadata,
+                )
+        return None
+
+    def get_cluster_health_summary(self) -> Dict[str, Any]:
+        """Get overall cluster health summary.
+
+        Returns:
+            Dict with cluster-wide health metrics
+        """
+        health_report = self.check_all_coordinators()
+
+        total = len(health_report)
+        healthy = sum(1 for h in health_report.values() if h.is_healthy)
+        unhealthy = total - healthy
+
+        # Group by role
+        by_role: Dict[str, Dict[str, Any]] = {}
+        for health in health_report.values():
+            role = health.role
+            if role not in by_role:
+                by_role[role] = {"healthy": 0, "unhealthy": 0}
+            if health.is_healthy:
+                by_role[role]["healthy"] += 1
+            else:
+                by_role[role]["unhealthy"] += 1
+
+        # Identify critical roles that are down
+        critical_roles = {
+            OrchestratorRole.CLUSTER_ORCHESTRATOR.value,
+            OrchestratorRole.UNIFIED_LOOP.value,
+        }
+        critical_down = [
+            role for role in critical_roles
+            if role in by_role and by_role[role]["healthy"] == 0
+        ]
+
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "total_coordinators": total,
+            "healthy_count": healthy,
+            "unhealthy_count": unhealthy,
+            "health_percentage": (healthy / total * 100) if total > 0 else 0,
+            "by_role": by_role,
+            "critical_roles_down": critical_down,
+            "cluster_healthy": len(critical_down) == 0 and healthy > 0,
+        }
+
+    def on_coordinator_failure(
+        self,
+        callback: Any,  # Callable[[CoordinatorHealth], None]
+    ) -> None:
+        """Register a callback for coordinator failures.
+
+        The callback will be called whenever an unhealthy coordinator is detected.
+        """
+        # Store callback for future use
+        if not hasattr(self, '_failure_callbacks'):
+            self._failure_callbacks = []
+        self._failure_callbacks.append(callback)
+
+    def emit_health_event(self, health: CoordinatorHealth) -> None:
+        """Emit a health event to the event bus."""
+        try:
+            from app.distributed.data_events import (
+                DataEvent,
+                DataEventType,
+                get_event_bus,
+            )
+
+            event_type = (
+                DataEventType.COORDINATOR_HEALTHY
+                if health.is_healthy
+                else DataEventType.COORDINATOR_UNHEALTHY
+            )
+
+            event = DataEvent(
+                event_type=event_type,
+                payload=health.to_dict(),
+                source="cross_coordinator_health",
+            )
+
+            bus = get_event_bus()
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(bus.publish(event))
+            except RuntimeError:
+                if hasattr(bus, 'publish_sync'):
+                    bus.publish_sync(event)
+
+        except Exception as e:
+            logger.debug(f"Failed to emit health event: {e}")
+
+
+# Singleton health protocol
+_health_protocol: Optional[CrossCoordinatorHealthProtocol] = None
+
+
+def get_cross_coordinator_health() -> CrossCoordinatorHealthProtocol:
+    """Get the global cross-coordinator health protocol instance."""
+    global _health_protocol
+    if _health_protocol is None:
+        _health_protocol = CrossCoordinatorHealthProtocol()
+    return _health_protocol
+
+
+def check_cluster_health() -> Dict[str, Any]:
+    """Convenience function to check cluster health."""
+    return get_cross_coordinator_health().get_cluster_health_summary()
 
 
 # ============================================

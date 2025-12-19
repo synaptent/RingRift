@@ -33,10 +33,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.utils.paths import DATA_DIR
+
 logger = logging.getLogger(__name__)
 
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-ROLLBACK_HISTORY_PATH = AI_SERVICE_ROOT / "data" / "rollback_history.json"
+ROLLBACK_HISTORY_PATH = DATA_DIR / "rollback_history.json"
 
 
 @dataclass
@@ -471,3 +472,340 @@ groups:
           summary: "Production model Elo degradation"
           description: "Production model {{ $labels.model_id }} Elo has dropped by more than 50 points from baseline"
 """
+
+
+# =============================================================================
+# Auto-Rollback Handler (December 2025)
+# Wires RegressionDetector events to RollbackManager actions
+# =============================================================================
+
+class AutoRollbackHandler:
+    """Automatic rollback handler that responds to regression events.
+
+    Implements the RegressionListener protocol from regression_detector.py.
+    Automatically triggers rollbacks for SEVERE and CRITICAL regressions.
+
+    Usage:
+        from app.training.rollback_manager import AutoRollbackHandler, RollbackManager
+        from app.training.regression_detector import get_regression_detector
+
+        rollback_mgr = RollbackManager(registry)
+        auto_handler = AutoRollbackHandler(rollback_mgr)
+
+        detector = get_regression_detector()
+        detector.add_listener(auto_handler)
+
+        # Or use the convenience function:
+        from app.training.rollback_manager import wire_regression_to_rollback
+        wire_regression_to_rollback(registry)
+    """
+
+    def __init__(
+        self,
+        rollback_manager: RollbackManager,
+        auto_rollback_enabled: bool = True,
+        require_approval_for_severe: bool = True,
+    ):
+        """Initialize the auto-rollback handler.
+
+        Args:
+            rollback_manager: RollbackManager instance to use for rollbacks
+            auto_rollback_enabled: If True, automatically trigger rollbacks
+            require_approval_for_severe: If True, only auto-rollback CRITICAL,
+                log warning for SEVERE (default True for safety)
+        """
+        self.rollback_manager = rollback_manager
+        self.auto_rollback_enabled = auto_rollback_enabled
+        self.require_approval_for_severe = require_approval_for_severe
+        self._pending_rollbacks: Dict[str, Dict[str, Any]] = {}
+
+    def on_regression(self, event: "RegressionEvent") -> None:
+        """Handle regression event from RegressionDetector.
+
+        Implements the RegressionListener protocol.
+        """
+        from app.training.regression_detector import RegressionSeverity
+
+        model_id = event.model_id
+        severity = event.severity
+
+        logger.warning(
+            f"[AutoRollbackHandler] Received {severity.name} regression for {model_id}: "
+            f"{event.reason}"
+        )
+
+        if not self.auto_rollback_enabled:
+            logger.info(f"[AutoRollbackHandler] Auto-rollback disabled, logging only")
+            return
+
+        if severity == RegressionSeverity.CRITICAL:
+            # CRITICAL: Immediate auto-rollback
+            logger.warning(
+                f"[AutoRollbackHandler] CRITICAL regression - triggering auto-rollback for {model_id}"
+            )
+            self._execute_rollback(
+                model_id,
+                reason=f"Auto-rollback: CRITICAL regression - {event.reason}",
+                triggered_by="auto_regression_critical",
+            )
+
+        elif severity == RegressionSeverity.SEVERE:
+            if self.require_approval_for_severe:
+                # Log pending rollback for manual approval
+                logger.warning(
+                    f"[AutoRollbackHandler] SEVERE regression detected for {model_id}. "
+                    f"Manual approval required. Use pending_rollback({model_id!r}) to execute."
+                )
+                self._pending_rollbacks[model_id] = {
+                    "event": event.to_dict(),
+                    "timestamp": event.timestamp,
+                    "reason": event.reason,
+                }
+            else:
+                # Auto-rollback SEVERE if approval not required
+                logger.warning(
+                    f"[AutoRollbackHandler] SEVERE regression - triggering auto-rollback for {model_id}"
+                )
+                self._execute_rollback(
+                    model_id,
+                    reason=f"Auto-rollback: SEVERE regression - {event.reason}",
+                    triggered_by="auto_regression_severe",
+                )
+
+        elif severity == RegressionSeverity.MODERATE:
+            logger.info(
+                f"[AutoRollbackHandler] MODERATE regression for {model_id} - monitoring"
+            )
+            # Track but don't act
+
+        # MINOR regressions are logged by the detector but not acted upon here
+
+    # =========================================================================
+    # Event Bus Subscription (December 2025)
+    # =========================================================================
+
+    def subscribe_to_regression_events(self) -> bool:
+        """Subscribe to REGRESSION_DETECTED events from the event bus.
+
+        This allows the handler to receive regression events directly from
+        the event bus in addition to the listener pattern.
+
+        Returns:
+            True if successfully subscribed
+        """
+        try:
+            from app.distributed.data_events import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+            bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_event)
+            bus.subscribe(DataEventType.REGRESSION_SEVERE, self._on_regression_event)
+            bus.subscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_event)
+            self._event_subscribed = True
+            logger.info("[AutoRollbackHandler] Subscribed to REGRESSION_DETECTED events")
+            return True
+        except Exception as e:
+            logger.warning(f"[AutoRollbackHandler] Failed to subscribe to events: {e}")
+            return False
+
+    def unsubscribe_from_regression_events(self) -> None:
+        """Unsubscribe from regression events."""
+        if not getattr(self, '_event_subscribed', False):
+            return
+
+        try:
+            from app.distributed.data_events import (
+                DataEventType,
+                get_event_bus,
+            )
+
+            bus = get_event_bus()
+            bus.unsubscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_event)
+            bus.unsubscribe(DataEventType.REGRESSION_SEVERE, self._on_regression_event)
+            bus.unsubscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_event)
+            self._event_subscribed = False
+        except Exception:
+            pass
+
+    def _on_regression_event(self, event) -> None:
+        """Handle REGRESSION_DETECTED event from event bus.
+
+        Converts the event bus event to the RegressionEvent format and
+        delegates to on_regression().
+        """
+        from app.training.regression_detector import RegressionSeverity
+
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        model_id = payload.get("model_id", "")
+        if not model_id:
+            return
+
+        # Determine severity from event type or payload
+        event_type = event.event_type.value if hasattr(event, 'event_type') else ""
+        severity_str = payload.get("severity", "moderate")
+
+        if "critical" in event_type.lower() or severity_str.lower() == "critical":
+            severity = RegressionSeverity.CRITICAL
+        elif "severe" in event_type.lower() or severity_str.lower() == "severe":
+            severity = RegressionSeverity.SEVERE
+        elif severity_str.lower() == "moderate":
+            severity = RegressionSeverity.MODERATE
+        else:
+            severity = RegressionSeverity.MINOR
+
+        # Build a pseudo RegressionEvent for on_regression
+        class EventBusRegressionEvent:
+            def __init__(self, model_id, severity, reason, timestamp, payload):
+                self.model_id = model_id
+                self.severity = severity
+                self.reason = reason
+                self.timestamp = timestamp
+                self._payload = payload
+
+            def to_dict(self):
+                return self._payload
+
+        reason = payload.get("reason", payload.get("message", "Regression detected via event bus"))
+        timestamp = payload.get("timestamp", event.timestamp if hasattr(event, 'timestamp') else 0)
+
+        pseudo_event = EventBusRegressionEvent(
+            model_id=model_id,
+            severity=severity,
+            reason=reason,
+            timestamp=timestamp,
+            payload=payload,
+        )
+
+        self.on_regression(pseudo_event)
+
+    def _execute_rollback(self, model_id: str, reason: str, triggered_by: str) -> bool:
+        """Execute a rollback via the RollbackManager."""
+        try:
+            result = self.rollback_manager.rollback_model(
+                model_id=model_id,
+                reason=reason,
+                triggered_by=triggered_by,
+            )
+
+            if result.get("success"):
+                logger.info(
+                    f"[AutoRollbackHandler] Rollback successful for {model_id}: "
+                    f"v{result.get('from_version')} -> v{result.get('to_version')}"
+                )
+                # Clear any pending rollback for this model
+                self._pending_rollbacks.pop(model_id, None)
+                return True
+            else:
+                logger.error(
+                    f"[AutoRollbackHandler] Rollback failed for {model_id}: {result.get('error')}"
+                )
+                return False
+
+        except Exception as e:
+            logger.error(f"[AutoRollbackHandler] Rollback exception for {model_id}: {e}")
+            return False
+
+    def approve_pending_rollback(self, model_id: str) -> Dict[str, Any]:
+        """Approve and execute a pending rollback.
+
+        Args:
+            model_id: Model ID to rollback
+
+        Returns:
+            Rollback result dict
+        """
+        if model_id not in self._pending_rollbacks:
+            return {"success": False, "error": f"No pending rollback for {model_id}"}
+
+        pending = self._pending_rollbacks[model_id]
+        reason = pending.get("reason", "SEVERE regression - manual approval")
+
+        result = self.rollback_manager.rollback_model(
+            model_id=model_id,
+            reason=f"Approved rollback: {reason}",
+            triggered_by="auto_regression_approved",
+        )
+
+        if result.get("success"):
+            self._pending_rollbacks.pop(model_id, None)
+
+        return result
+
+    def get_pending_rollbacks(self) -> Dict[str, Dict[str, Any]]:
+        """Get all pending rollbacks awaiting approval."""
+        return self._pending_rollbacks.copy()
+
+    def clear_pending_rollback(self, model_id: str) -> bool:
+        """Clear a pending rollback without executing it."""
+        if model_id in self._pending_rollbacks:
+            del self._pending_rollbacks[model_id]
+            logger.info(f"[AutoRollbackHandler] Cleared pending rollback for {model_id}")
+            return True
+        return False
+
+
+# Singleton and wiring functions
+_auto_handler: Optional[AutoRollbackHandler] = None
+
+
+def wire_regression_to_rollback(
+    registry,
+    auto_rollback_enabled: bool = True,
+    require_approval_for_severe: bool = True,
+    subscribe_to_events: bool = True,
+) -> AutoRollbackHandler:
+    """Wire RegressionDetector to RollbackManager for automatic rollbacks.
+
+    This is the main entry point for connecting regression detection to
+    automatic rollback execution. Supports both the listener pattern (direct
+    callback) and event bus subscription.
+
+    Args:
+        registry: ModelRegistry instance
+        auto_rollback_enabled: Enable automatic rollbacks
+        require_approval_for_severe: Require manual approval for SEVERE regressions
+        subscribe_to_events: Also subscribe to REGRESSION_DETECTED events (default True)
+
+    Returns:
+        AutoRollbackHandler instance
+    """
+    global _auto_handler
+
+    try:
+        from app.training.regression_detector import get_regression_detector
+
+        # Create managers
+        rollback_mgr = RollbackManager(registry)
+        _auto_handler = AutoRollbackHandler(
+            rollback_mgr,
+            auto_rollback_enabled=auto_rollback_enabled,
+            require_approval_for_severe=require_approval_for_severe,
+        )
+
+        # Wire to regression detector (listener pattern)
+        detector = get_regression_detector()
+        detector.add_listener(_auto_handler)
+
+        # Also subscribe to event bus events (December 2025)
+        if subscribe_to_events:
+            _auto_handler.subscribe_to_regression_events()
+
+        logger.info(
+            f"[wire_regression_to_rollback] Regression detector wired to rollback manager "
+            f"(auto_enabled={auto_rollback_enabled}, require_approval_severe={require_approval_for_severe}, "
+            f"event_bus={subscribe_to_events})"
+        )
+
+        return _auto_handler
+
+    except Exception as e:
+        logger.error(f"[wire_regression_to_rollback] Failed to wire: {e}")
+        raise
+
+
+def get_auto_rollback_handler() -> Optional[AutoRollbackHandler]:
+    """Get the global auto-rollback handler if configured."""
+    return _auto_handler

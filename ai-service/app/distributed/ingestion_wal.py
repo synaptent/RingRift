@@ -60,7 +60,6 @@ except ImportError:
     UnifiedIngestionWAL = None
 
 # For backward compatibility, also import legacy dependencies
-import hashlib
 import json
 import os
 import sqlite3
@@ -68,6 +67,8 @@ import struct
 import threading
 import time
 from dataclasses import dataclass, field
+
+from app.utils.checksum_utils import compute_string_checksum
 
 
 # =============================================================================
@@ -175,7 +176,7 @@ class _LegacyIngestionWAL:
     def _compute_checksum(self, game_id: str, data: Dict[str, Any]) -> str:
         """Compute checksum for entry validation."""
         content = f"{game_id}:{json.dumps(data, sort_keys=True)}"
-        return hashlib.sha256(content.encode()).hexdigest()[:32]
+        return compute_string_checksum(content, truncate=32)
 
     def append(
         self,

@@ -21,19 +21,19 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import sqlite3
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
+
+from app.utils.checksum_utils import compute_string_checksum
 from typing import Any, Dict, List, Optional
 
 # Cache directory
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-EXPORT_CACHE_DIR = AI_SERVICE_ROOT / "data" / "export_cache"
-EXPORT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+from app.utils.paths import DATA_DIR, ensure_dir
+EXPORT_CACHE_DIR = ensure_dir(DATA_DIR / "export_cache")
 
 
 @dataclass
@@ -104,7 +104,7 @@ def _get_cache_key(
     if policy_encoding:
         key_parts.append(str(policy_encoding))
     key_str = "_".join(key_parts)
-    return hashlib.md5(key_str.encode()).hexdigest()[:16]
+    return compute_string_checksum(key_str, algorithm="md5", truncate=16)
 
 
 def _get_cache_file(cache_key: str) -> Path:

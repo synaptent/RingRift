@@ -74,6 +74,28 @@ from .yaml_utils import (
     validate_yaml_schema,
     YAMLLoadError,
 )
+from .checksum_utils import (
+    compute_file_checksum,
+    compute_bytes_checksum,
+    compute_string_checksum,
+    verify_file_checksum,
+    compute_content_id,
+    DEFAULT_CHUNK_SIZE,
+    LARGE_CHUNK_SIZE,
+)
+from .datetime_utils import (
+    utc_now,
+    utc_timestamp,
+    iso_now,
+    iso_now_ms,
+    to_iso,
+    parse_iso,
+    time_ago,
+    format_duration,
+    format_age,
+    date_str,
+    timestamp_str,
+)
 
 __all__ = [
     # Paths
@@ -143,4 +165,24 @@ __all__ = [
     "load_config_yaml",
     "validate_yaml_schema",
     "YAMLLoadError",
+    # Checksum utilities
+    "compute_file_checksum",
+    "compute_bytes_checksum",
+    "compute_string_checksum",
+    "verify_file_checksum",
+    "compute_content_id",
+    "DEFAULT_CHUNK_SIZE",
+    "LARGE_CHUNK_SIZE",
+    # Datetime utilities
+    "utc_now",
+    "utc_timestamp",
+    "iso_now",
+    "iso_now_ms",
+    "to_iso",
+    "parse_iso",
+    "time_ago",
+    "format_duration",
+    "format_age",
+    "date_str",
+    "timestamp_str",
 ]

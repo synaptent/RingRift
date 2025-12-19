@@ -2,6 +2,20 @@
 
 Weights training samples by opponent strength - games against stronger
 opponents get higher weight, avoiding overfitting on weak-opponent games.
+
+Architecture Note:
+    The core Elo sigmoid logic is defined in app.quality.unified_quality.
+    This module provides numpy-vectorized implementations for training
+    performance. Both modules use the same sigmoid formula:
+
+        sigmoid = 1 / (1 + exp(-elo_diff / scale))
+        weight = min_weight + sigmoid * (max_weight - min_weight)
+
+    For single-sample computation, use:
+        from app.quality.unified_quality import compute_elo_weights_batch
+
+    For training loops with numpy arrays, use this module's functions
+    for better vectorization performance.
 """
 
 from __future__ import annotations
@@ -13,6 +27,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Import unified Elo computation for reference
+try:
+    from app.quality.unified_quality import compute_elo_weights_batch as _unified_elo_weights
+    HAS_UNIFIED_QUALITY = True
+except ImportError:
+    HAS_UNIFIED_QUALITY = False
+    _unified_elo_weights = None
 
 try:
     import torch
@@ -116,18 +138,26 @@ def compute_elo_weights(
     opponent_elos: np.ndarray,
     model_elo: float = 1500.0,
     elo_scale: float = 400.0,
+    min_weight: float = 0.2,
+    max_weight: float = 3.0,
 ) -> np.ndarray:
     """Compute sample weights from opponent Elo ratings.
 
+    This is a numpy-optimized version of the canonical implementation in
+    app.quality.unified_quality.compute_elo_weights_batch(). Both use
+    the same sigmoid formula for consistency.
+
     Args:
-        opponent_elos: Opponent Elo for each sample
+        opponent_elos: Opponent Elo for each sample (numpy array)
         model_elo: Current model Elo
         elo_scale: Scaling factor for Elo difference
+        min_weight: Minimum sample weight
+        max_weight: Maximum sample weight
 
     Returns:
-        Normalized sample weights
+        Normalized sample weights (numpy array)
     """
     elo_diff = opponent_elos - model_elo
     raw_weights = 1.0 / (1.0 + np.exp(-elo_diff / elo_scale))
-    weights = 0.2 + raw_weights * 2.8  # [0.2, 3.0]
+    weights = min_weight + raw_weights * (max_weight - min_weight)
     return weights / weights.mean()

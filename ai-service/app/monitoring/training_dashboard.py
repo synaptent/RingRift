@@ -41,6 +41,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.utils.datetime_utils import iso_now, time_ago, utc_now
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -609,7 +611,7 @@ class MetricsCollector:
     ):
         """Record a training step."""
         metrics = TrainingMetrics(
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=iso_now(),
             epoch=epoch,
             step=step,
             loss=loss,
@@ -647,7 +649,7 @@ class MetricsCollector:
     ):
         """Record Elo snapshot."""
         snapshot = EloSnapshot(
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=iso_now(),
             model_id=model_id,
             elo=elo,
             games_played=games_played,
@@ -692,7 +694,7 @@ class MetricsCollector:
     ):
         """Record cluster metrics."""
         metrics = ClusterMetrics(
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=iso_now(),
             host_name=host_name,
             cpu_percent=cpu_percent,
             memory_percent=memory_percent,
@@ -727,7 +729,7 @@ class MetricsCollector:
     ):
         """Record self-play statistics."""
         metrics = SelfPlayMetrics(
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=iso_now(),
             board_type=board_type,
             num_players=num_players,
             games_completed=games_completed,
@@ -765,7 +767,7 @@ class MetricsCollector:
             holdout_loss: Optional holdout evaluation loss
             overfit_gap: Optional overfitting gap (holdout_loss - train_loss)
         """
-        now = datetime.utcnow().isoformat() + "Z"
+        now = iso_now()
 
         # Store in SQLite for historical tracking
         try:
@@ -890,7 +892,7 @@ class MetricsCollector:
     ):
         """Create and store an alert."""
         alert = Alert(
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=iso_now(),
             severity=severity,
             category=category,
             message=message,
@@ -901,8 +903,8 @@ class MetricsCollector:
 
     def get_summary(self) -> Dict[str, Any]:
         """Get summary of current metrics."""
-        now = datetime.utcnow()
-        one_hour_ago = now - timedelta(hours=1)
+        now = utc_now()
+        one_hour_ago = time_ago(hours=1)
 
         # Recent training metrics
         training_metrics = self.db.get_training_metrics(since=one_hour_ago, limit=100)
@@ -967,7 +969,7 @@ class DashboardServer:
         summary = self.collector.get_summary()
 
         # Get historical data for charts
-        one_day_ago = datetime.utcnow() - timedelta(days=1)
+        one_day_ago = time_ago(days=1)
         training_history = self.collector.db.get_training_metrics(since=one_day_ago, limit=500)
         elo_history = self.collector.db.get_elo_history(since=one_day_ago, limit=200)
 
@@ -1145,13 +1147,13 @@ class DashboardServer:
 
     def _handle_api_training(self, hours: int = 24) -> List[Dict[str, Any]]:
         """Handle API training metrics request."""
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = time_ago(hours=hours)
         metrics = self.collector.db.get_training_metrics(since=since, limit=1000)
         return [asdict(m) for m in metrics]
 
     def _handle_api_elo(self, hours: int = 168) -> List[Dict[str, Any]]:
         """Handle API Elo history request."""
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = time_ago(hours=hours)
         snapshots = self.collector.db.get_elo_history(since=since, limit=500)
         return [asdict(s) for s in snapshots]
 

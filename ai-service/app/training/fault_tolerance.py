@@ -17,8 +17,9 @@ from typing import Dict, List, Optional, Any, Callable, TypeVar
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from contextlib import contextmanager
-import hashlib
 import shutil
+
+from app.utils.checksum_utils import compute_file_checksum
 
 
 logger = logging.getLogger(__name__)
@@ -665,11 +666,7 @@ class _LegacyCheckpointManager:
 
     def _compute_hash(self, file_path: Path) -> str:
         """Compute SHA256 hash of checkpoint file."""
-        sha256 = hashlib.sha256()
-        with open(file_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(8192), b''):
-                sha256.update(chunk)
-        return sha256.hexdigest()[:16]
+        return compute_file_checksum(file_path, truncate=16)
 
     def _generate_checkpoint_id(self, epoch: int, step: int, checkpoint_type: CheckpointType) -> str:
         """Generate unique checkpoint ID."""

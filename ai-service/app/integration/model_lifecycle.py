@@ -454,10 +454,110 @@ class TrainingTrigger:
         if self._signal_computer:
             self._signal_computer.record_training_started(games_count, config_key)
 
-    def record_training_completed(self, new_elo: Optional[float] = None, config_key: str = "") -> None:
-        """Record that training has completed."""
+    def record_training_completed(
+        self,
+        new_elo: Optional[float] = None,
+        config_key: str = "",
+        model_id: Optional[str] = None,
+        auto_trigger_evaluation: bool = True,
+    ) -> None:
+        """Record that training has completed and optionally trigger evaluation.
+
+        Args:
+            new_elo: New Elo rating after training
+            config_key: Configuration key (e.g., "square8_2p")
+            model_id: ID of the newly trained model
+            auto_trigger_evaluation: If True, automatically trigger evaluation (Dec 2025)
+        """
         if self._signal_computer:
             self._signal_computer.record_training_completed(new_elo, config_key)
+
+        # Auto-trigger evaluation for the new model (December 2025)
+        if auto_trigger_evaluation and model_id:
+            self._trigger_evaluation_for_model(model_id, config_key)
+
+    def _trigger_evaluation_for_model(self, model_id: str, config_key: str = "") -> bool:
+        """Trigger evaluation for a newly trained model.
+
+        Adds evaluation work to the work queue so that the new model
+        gets evaluated against baselines automatically.
+
+        Args:
+            model_id: ID of the model to evaluate
+            config_key: Configuration key for context
+
+        Returns:
+            True if evaluation was triggered successfully
+        """
+        try:
+            # Try work queue approach first
+            from app.coordination.work_queue import get_work_queue, WorkItem, WorkType
+            queue = get_work_queue()
+
+            # Parse board type from model_id or config_key
+            board_type = "square8"
+            num_players = 2
+            if config_key:
+                parts = config_key.replace("_", " ").replace("p", "").split()
+                if len(parts) >= 1:
+                    board_type = parts[0]
+                if len(parts) >= 2 and parts[1].isdigit():
+                    num_players = int(parts[1])
+
+            # Create evaluation work item with high priority
+            work = WorkItem(
+                work_type=WorkType.VALIDATION,
+                priority=85,  # High priority for new models
+                config={
+                    "model_id": model_id,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "games_per_opponent": 100,
+                    "auto_triggered": True,
+                },
+                timeout_seconds=3600.0,  # 1 hour for evaluation
+            )
+            queue.add_work(work)
+            logger.info(f"Auto-triggered evaluation for model {model_id}")
+            return True
+
+        except ImportError:
+            logger.debug("WorkQueue not available, trying event bus")
+
+        try:
+            # Fallback to event bus
+            from app.distributed.data_events import (
+                DataEvent,
+                DataEventType,
+                get_event_bus,
+            )
+
+            event = DataEvent(
+                event_type=DataEventType.EVALUATION_STARTED,
+                payload={
+                    "model_id": model_id,
+                    "config_key": config_key,
+                    "auto_triggered": True,
+                    "source": "training_complete",
+                },
+                source="model_lifecycle",
+            )
+
+            bus = get_event_bus()
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(bus.publish(event))
+            except RuntimeError:
+                if hasattr(bus, 'publish_sync'):
+                    bus.publish_sync(event)
+
+            logger.info(f"Published evaluation event for model {model_id}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to trigger evaluation for {model_id}: {e}")
+            return False
 
     def get_unified_urgency(self, config_key: str, current_games: int, current_elo: float) -> Optional["TrainingUrgency"]:
         """Get unified training urgency."""

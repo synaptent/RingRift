@@ -43,6 +43,17 @@ from app.monitoring.thresholds import (
     should_alert,
 )
 
+# Event emission for cluster health changes
+try:
+    import asyncio
+    from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
+    HAS_CLUSTER_EVENTS = True
+except ImportError:
+    HAS_CLUSTER_EVENTS = False
+    DataEvent = None
+    DataEventType = None
+    get_event_bus = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -396,13 +407,15 @@ class ClusterHealthMonitor(CompositeMonitor):
     """Monitor health of the entire cluster.
 
     Combines node-level monitors and checks cluster-wide thresholds
-    like minimum nodes online.
+    like minimum nodes online. Emits P2P_CLUSTER_HEALTHY/UNHEALTHY events
+    when health status changes.
     """
 
     def __init__(self, min_nodes: Optional[int] = None):
         super().__init__("ClusterHealthMonitor")
         self.min_nodes = min_nodes or get_threshold("cluster", "min_nodes_online", 5)
         self.node_timeout_seconds = get_threshold("cluster", "node_timeout_seconds", 30)
+        self._previous_status: Optional[HealthStatus] = None
 
     def add_node(
         self,
@@ -443,7 +456,61 @@ class ClusterHealthMonitor(CompositeMonitor):
             ))
             result.status = HealthStatus.DEGRADED
 
+        # Emit events on status change for event-driven coordination
+        self._emit_health_event(result)
+
         return result
+
+    def _emit_health_event(self, result: MonitoringResult) -> None:
+        """Emit cluster health events when status changes.
+
+        This enables other components (training, promotion, selfplay) to
+        react to cluster health changes via the EventBus.
+        """
+        if not HAS_CLUSTER_EVENTS:
+            return
+
+        current_status = result.status
+        previous_status = self._previous_status
+
+        # Only emit on status change (or first check)
+        if current_status == previous_status:
+            return
+
+        self._previous_status = current_status
+
+        try:
+            # Determine event type based on health transition
+            is_healthy = current_status == HealthStatus.HEALTHY
+            event_type = (
+                DataEventType.P2P_CLUSTER_HEALTHY if is_healthy
+                else DataEventType.P2P_CLUSTER_UNHEALTHY
+            )
+
+            payload = {
+                "status": current_status.value if hasattr(current_status, 'value') else str(current_status),
+                "previous_status": previous_status.value if previous_status and hasattr(previous_status, 'value') else str(previous_status),
+                "nodes_online": result.metrics.get("nodes_online", 0),
+                "min_nodes_required": result.metrics.get("min_nodes_required", self.min_nodes),
+                "alerts": [str(a) for a in result.alerts[:5]],  # First 5 alerts
+            }
+
+            # Schedule event emission
+            try:
+                loop = asyncio.get_running_loop()
+                event_bus = get_event_bus()
+                asyncio.ensure_future(event_bus.publish(DataEvent(
+                    event_type=event_type,
+                    payload=payload,
+                    source="cluster_monitor",
+                )))
+                logger.info(f"Emitted {event_type.value}: cluster is now {current_status}")
+            except RuntimeError:
+                # No running loop - skip event emission in sync context
+                logger.debug("No event loop available for cluster health event")
+
+        except Exception as e:
+            logger.warning(f"Failed to emit cluster health event: {e}")
 
 
 def create_cluster_monitor(

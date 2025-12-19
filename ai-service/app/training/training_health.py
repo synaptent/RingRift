@@ -60,8 +60,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Constants
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-HEALTH_DB_PATH = AI_SERVICE_ROOT / "data" / "training" / "health_state.json"
+from app.utils.paths import DATA_DIR
+HEALTH_DB_PATH = DATA_DIR / "training" / "health_state.json"
 
 # Thresholds
 MAX_TRAINING_HOURS = 4  # Alert if training runs longer than this

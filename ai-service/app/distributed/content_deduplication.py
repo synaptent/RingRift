@@ -20,11 +20,12 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import sqlite3
 import time
+
+from app.utils.checksum_utils import compute_string_checksum
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -190,7 +191,7 @@ class ContentDeduplicator:
         """Compute SHA256 hash of normalized game content."""
         normalized = self._normalize_game_data(game_data)
         content_str = json.dumps(normalized, sort_keys=True, separators=(',', ':'))
-        return hashlib.sha256(content_str.encode()).hexdigest()
+        return compute_string_checksum(content_str)
 
     def _compute_move_sequence_hash(self, game_data: Dict[str, Any]) -> str:
         """Compute hash of move sequence only.
@@ -209,7 +210,7 @@ class ContentDeduplicator:
                 move_strs.append(str(move))
 
         sequence = "|".join(move_strs)
-        return hashlib.sha256(sequence.encode()).hexdigest()
+        return compute_string_checksum(sequence)
 
     def _compute_outcome_hash(self, game_data: Dict[str, Any]) -> str:
         """Compute hash of game outcome."""
@@ -218,7 +219,7 @@ class ContentDeduplicator:
             outcome_str = json.dumps(dict(sorted(outcome.items())), sort_keys=True)
         else:
             outcome_str = str(outcome)
-        return hashlib.sha256(outcome_str.encode()).hexdigest()
+        return compute_string_checksum(outcome_str)
 
     def compute_fingerprint(
         self,

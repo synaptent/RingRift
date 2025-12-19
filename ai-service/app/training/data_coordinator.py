@@ -40,6 +40,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Import centralized quality thresholds
+try:
+    from app.quality.thresholds import (
+        MIN_QUALITY_FOR_PRIORITY_SYNC,
+        HIGH_QUALITY_THRESHOLD,
+    )
+except ImportError:
+    MIN_QUALITY_FOR_PRIORITY_SYNC = 0.5
+    HIGH_QUALITY_THRESHOLD = 0.7
+
 # Default paths
 DEFAULT_DATA_DIR = Path(__file__).parent.parent.parent / "data"
 DEFAULT_SELFPLAY_DIR = DEFAULT_DATA_DIR / "games"
@@ -62,7 +72,7 @@ class CoordinatorConfig:
     """
     enable_quality_scoring: bool = True
     enable_sync: bool = True
-    min_quality_threshold: float = 0.5
+    min_quality_threshold: float = MIN_QUALITY_FOR_PRIORITY_SYNC
     min_elo_threshold: float = 1400.0
     sync_high_quality_first: bool = True
     hot_buffer_size: int = 1000
@@ -378,7 +388,7 @@ class TrainingDataCoordinator:
         db_path: Path,
         board_type: str = "square8",
         num_players: int = 2,
-        min_quality: float = 0.7,
+        min_quality: float = HIGH_QUALITY_THRESHOLD,
         limit: int = 1000,
     ) -> int:
         """Load high-quality games from a specific database.
@@ -387,7 +397,7 @@ class TrainingDataCoordinator:
             db_path: Path to the SQLite database
             board_type: Board type to filter
             num_players: Number of players to filter
-            min_quality: Minimum quality score
+            min_quality: Minimum quality score (default from quality.thresholds)
             limit: Maximum games to load
 
         Returns:
@@ -407,7 +417,7 @@ class TrainingDataCoordinator:
         )
 
         self._stats.total_games_loaded += loaded
-        if min_quality >= 0.7:
+        if min_quality >= HIGH_QUALITY_THRESHOLD:
             self._stats.high_quality_games_loaded += loaded
 
         return loaded
@@ -539,7 +549,7 @@ async def prepare_training_data(
 
 
 def get_high_quality_games(
-    min_quality: float = 0.7,
+    min_quality: float = HIGH_QUALITY_THRESHOLD,
     limit: int = 10000,
 ) -> List[str]:
     """Convenience function to get high-quality game IDs."""

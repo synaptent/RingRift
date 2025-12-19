@@ -493,6 +493,47 @@ class UnifiedQualityScorer:
 
         return weight
 
+    def compute_elo_weights_batch(
+        self,
+        opponent_elos: List[float],
+        model_elo: float,
+        elo_scale: float = 400.0,
+        min_weight: float = 0.2,
+        max_weight: float = 3.0,
+        normalize: bool = True,
+    ) -> List[float]:
+        """Compute Elo-based sample weights for a batch of samples.
+
+        This is the canonical implementation used by EloWeightedSampler.
+
+        Args:
+            opponent_elos: List of opponent Elo ratings
+            model_elo: Current model's Elo rating
+            elo_scale: Scaling factor for Elo difference (default: 400)
+            min_weight: Minimum sample weight (default: 0.2)
+            max_weight: Maximum sample weight (default: 3.0)
+            normalize: Normalize weights to mean=1 (default: True)
+
+        Returns:
+            List of sample weights
+        """
+        if not opponent_elos:
+            return []
+
+        weights = []
+        for opp_elo in opponent_elos:
+            elo_diff = opp_elo - model_elo
+            sigmoid = 1.0 / (1.0 + math.exp(-elo_diff / elo_scale))
+            weight = min_weight + sigmoid * (max_weight - min_weight)
+            weights.append(weight)
+
+        if normalize and weights:
+            mean_weight = sum(weights) / len(weights)
+            if mean_weight > 0:
+                weights = [w / mean_weight for w in weights]
+
+        return weights
+
     def is_high_quality(self, quality: GameQuality) -> bool:
         """Check if a game is high quality."""
         return quality.quality_score >= self.weights.high_quality_threshold
@@ -582,3 +623,32 @@ def compute_game_quality_from_params(
         "source": source,
     }
     return compute_game_quality(game_data)
+
+
+def compute_elo_weights_batch(
+    opponent_elos: List[float],
+    model_elo: float,
+    elo_scale: float = 400.0,
+    min_weight: float = 0.2,
+    max_weight: float = 3.0,
+    normalize: bool = True,
+) -> List[float]:
+    """Compute Elo-based sample weights for a batch (convenience function).
+
+    This is the canonical Elo weight computation used across the codebase.
+
+    Args:
+        opponent_elos: List of opponent Elo ratings
+        model_elo: Current model's Elo rating
+        elo_scale: Scaling factor for Elo difference (default: 400)
+        min_weight: Minimum sample weight (default: 0.2)
+        max_weight: Maximum sample weight (default: 3.0)
+        normalize: Normalize weights to mean=1 (default: True)
+
+    Returns:
+        List of sample weights
+    """
+    scorer = get_quality_scorer()
+    return scorer.compute_elo_weights_batch(
+        opponent_elos, model_elo, elo_scale, min_weight, max_weight, normalize
+    )

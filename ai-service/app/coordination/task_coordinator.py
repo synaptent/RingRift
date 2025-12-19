@@ -43,6 +43,22 @@ from typing import Dict, List, Optional, Any, Set, Callable
 
 logger = logging.getLogger(__name__)
 
+# Import queue monitor for backpressure checks
+try:
+    from app.coordination.queue_monitor import (
+        get_queue_monitor,
+        QueueType,
+        BackpressureLevel,
+        should_throttle_production,
+        should_stop_production,
+        get_throttle_factor,
+    )
+    HAS_QUEUE_MONITOR = True
+except ImportError:
+    HAS_QUEUE_MONITOR = False
+    QueueType = None
+    BackpressureLevel = None
+
 
 # ============================================
 # Atomic File Operations (merged from cluster_lock.py)
@@ -197,6 +213,30 @@ def is_cpu_task(task_type: TaskType) -> bool:
     """
     resource = get_task_resource_type(task_type)
     return resource in (ResourceType.CPU, ResourceType.HYBRID)
+
+
+# Map task types to relevant queue types for backpressure checks (December 2025)
+# Some tasks produce data for queues, others consume from queues
+# We check producer queues before spawning producer tasks
+TASK_TO_QUEUE_MAP: Dict = {}
+if HAS_QUEUE_MONITOR:
+    TASK_TO_QUEUE_MAP = {
+        TaskType.SELFPLAY: QueueType.TRAINING_DATA,      # Produces training data
+        TaskType.GPU_SELFPLAY: QueueType.TRAINING_DATA,  # Produces training data
+        TaskType.HYBRID_SELFPLAY: QueueType.TRAINING_DATA,
+        TaskType.TRAINING: QueueType.EVALUATION_QUEUE,   # Produces models for eval
+        TaskType.EVALUATION: QueueType.PROMOTION_QUEUE,  # Produces promotion candidates
+        TaskType.SYNC: QueueType.SYNC_QUEUE,             # Sync queue itself
+        TaskType.EXPORT: QueueType.EXPORT_QUEUE,         # Export queue itself
+    }
+
+
+def get_queue_for_task(task_type: TaskType) -> Optional["QueueType"]:
+    """Get the queue that a task produces to.
+
+    Returns None if the task doesn't have a relevant queue for backpressure.
+    """
+    return TASK_TO_QUEUE_MAP.get(task_type)
 
 
 @dataclass
@@ -843,10 +883,17 @@ class TaskCoordinator:
         self,
         task_type: TaskType,
         node_id: str,
-        check_resources: bool = True
+        check_resources: bool = True,
+        check_backpressure: bool = True,
     ) -> tuple:
         """
         Check if a task can be spawned.
+
+        Args:
+            task_type: Type of task to spawn
+            node_id: Node where task will run
+            check_resources: Whether to check CPU/memory/disk resources
+            check_backpressure: Whether to check queue backpressure (December 2025)
 
         Returns: (allowed: bool, reason: str)
         """
@@ -881,6 +928,12 @@ class TaskCoordinator:
         # Check resources
         if check_resources:
             denied, reason = self._check_resources(node_id)
+            if denied:
+                return (False, reason)
+
+        # Check queue backpressure (December 2025)
+        if check_backpressure:
+            denied, reason = self._check_backpressure(task_type)
             if denied:
                 return (False, reason)
 
@@ -963,6 +1016,81 @@ class TaskCoordinator:
             return (True, f"CPU usage critical ({resources['cpu_percent']:.0f}%)")
 
         return (False, "")
+
+    def _check_backpressure(self, task_type: TaskType) -> tuple:
+        """Check if queue backpressure should block spawning (December 2025).
+
+        Prevents spawning tasks when their downstream queues are overloaded.
+
+        Returns: (denied: bool, reason: str)
+        """
+        if not HAS_QUEUE_MONITOR:
+            return (False, "")
+
+        queue_type = get_queue_for_task(task_type)
+        if queue_type is None:
+            return (False, "")  # No queue to check
+
+        try:
+            monitor = get_queue_monitor()
+            level = monitor.check_backpressure(queue_type)
+
+            if level == BackpressureLevel.STOP:
+                return (True, f"Queue {queue_type.value} at STOP backpressure")
+            elif level == BackpressureLevel.HARD:
+                # For hard backpressure, deny 90% of spawns
+                if hash(time.time()) % 10 != 0:
+                    return (True, f"Queue {queue_type.value} at HARD backpressure")
+            elif level == BackpressureLevel.SOFT:
+                # For soft backpressure, deny 50% of spawns
+                if hash(time.time()) % 2 != 0:
+                    return (True, f"Queue {queue_type.value} at SOFT backpressure")
+
+            return (False, "")
+        except Exception as e:
+            logger.debug(f"Backpressure check failed: {e}")
+            return (False, "")  # Fail open if check fails
+
+    def get_queue_backpressure(self, task_type: TaskType) -> Optional[str]:
+        """Get current backpressure level for a task's queue.
+
+        Args:
+            task_type: Type of task to check
+
+        Returns:
+            Backpressure level string ("none", "soft", "hard", "stop"),
+            or None if no queue is associated
+        """
+        if not HAS_QUEUE_MONITOR:
+            return None
+
+        queue_type = get_queue_for_task(task_type)
+        if queue_type is None:
+            return None
+
+        try:
+            monitor = get_queue_monitor()
+            level = monitor.check_backpressure(queue_type)
+            return level.value
+        except Exception:
+            return None
+
+    def get_throttle_factor_for_task(self, task_type: TaskType) -> float:
+        """Get throttle factor for a task based on queue backpressure.
+
+        Returns a value between 0.0 (stop) and 1.0 (full speed).
+        """
+        if not HAS_QUEUE_MONITOR:
+            return 1.0
+
+        queue_type = get_queue_for_task(task_type)
+        if queue_type is None:
+            return 1.0
+
+        try:
+            return get_throttle_factor(queue_type)
+        except Exception:
+            return 1.0
 
     def _fire_limit_reached(self, limit_name: str, current: int, max_val: int) -> None:
         """Fire callbacks when limit is reached."""
@@ -1066,15 +1194,25 @@ class TaskCoordinator:
             by_type[task.task_type.value] = by_type.get(task.task_type.value, 0) + 1
             by_node[task.node_id] = by_node.get(task.node_id, 0) + 1
 
-        return {
+        stats = {
             "state": self.state.value,
             "total_tasks": len(tasks),
             "by_type": by_type,
             "by_node": by_node,
             "spawns_last_minute": self.registry.get_spawn_count(1),
             "limits": asdict(self.limits),
-            "rate_limiter_tokens": self._spawn_limiter.tokens_available()
+            "rate_limiter_tokens": self._spawn_limiter.tokens_available(),
         }
+
+        # Add backpressure info (December 2025)
+        if HAS_QUEUE_MONITOR:
+            try:
+                from app.coordination.queue_monitor import get_queue_stats
+                stats["queue_backpressure"] = get_queue_stats()
+            except Exception:
+                pass
+
+        return stats
 
     def get_tasks(
         self,

@@ -39,7 +39,6 @@ This module ensures no data silos - all nodes have access to:
 """
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
@@ -52,6 +51,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
+
+from app.utils.checksum_utils import compute_file_checksum
 
 import yaml
 
@@ -243,13 +244,7 @@ class DataSyncManager:
 
     def compute_checksum(self, path: Path) -> str:
         """Compute SHA256 checksum of a file."""
-        if not path.exists():
-            return ""
-        sha256 = hashlib.sha256()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(8192), b""):
-                sha256.update(chunk)
-        return sha256.hexdigest()[:16]
+        return compute_file_checksum(path, truncate=16)
 
     async def sync_via_tailscale(
         self,

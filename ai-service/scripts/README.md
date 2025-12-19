@@ -29,6 +29,22 @@ Features:
 - Value calibration analysis
 - Temperature scheduling for exploration control
 
+**`cli.py`** - Unified training CLI for common operations (harvest, monitor, compare, health, periodic).
+
+```bash
+# Harvest training data
+python scripts/cli.py harvest --output data/harvested/local.jsonl
+
+# Monitor Elo and training activity
+python scripts/cli.py monitor
+
+# Compare two models head-to-head
+python scripts/cli.py compare --model-a models/new.pt --model-b models/best.pt --quick
+
+# Check cluster health
+python scripts/cli.py health
+```
+
 ## Key Categories
 
 ### P2P Cluster Orchestration
@@ -52,10 +68,15 @@ Features:
   - Status: `python scripts/vast_keepalive.py --status`
   - Full cycle: `python scripts/vast_keepalive.py --auto`
   - Install cron: `python scripts/vast_keepalive.py --install-cron`
-- `cluster_monitoring.sh` - **Comprehensive cluster health monitoring** (14KB)
+- `cluster_monitor_unified.sh` - **Unified cluster health monitoring**
+  - Consolidates `cluster_monitoring.sh`, `cluster_monitor.sh`,
+    `cluster_monitor_daemon.sh`, and `cluster_health_monitor.sh`
   - Tailscale mesh status, Vast.ai CLI monitoring, Lambda node health
   - P2P orchestrator status, selfplay/gauntlet monitoring
-  - Continuous mode: `./scripts/cluster_monitoring.sh --continuous --interval 60`
+  - Start: `./scripts/cluster_monitor_unified.sh --duration 10`
+- `cluster_monitoring.sh`, `cluster_monitor.sh`,
+  `cluster_monitor_daemon.sh`, `cluster_health_monitor.sh`
+  - **Deprecated** wrappers that print migration hints
 - `node_resilience.py` - **Node resilience daemon** (53KB)
   - P2P orchestrator monitoring with local selfplay fallback
   - Auto-reconnect on network changes, IP change detection
@@ -194,6 +215,10 @@ Features:
 - `auto_export_training_data.py` - **Automated training data export**
   - Exports data for underrepresented board/player configs
   - Start: `python scripts/auto_export_training_data.py --dry-run`
+- `periodic_harvest.py` - **Automated periodic data harvest**
+  - Harvests new high-quality games and optionally triggers training
+  - Start: `python scripts/periodic_harvest.py`
+  - CLI: `python scripts/cli.py periodic --task harvest`
 - `export_replay_dataset.py` - **Export training samples from replays** (41KB)
   - Rank-aware value encoding for multiplayer
   - Quality filtering (completed games, move count ranges)
@@ -336,6 +361,113 @@ Features:
 - `benchmark_gpu_cpu.py` - GPU vs CPU performance comparison
 - `benchmark_policy.py` - Policy head performance benchmarking
 - `benchmark_ai_memory.py` - AI memory usage benchmarking
+
+## Shared Library (`scripts/lib/`)
+
+The `scripts/lib/` package provides shared utilities for all training scripts:
+
+### Configuration (`scripts.lib.config`)
+
+```python
+from scripts.lib.config import (
+    TrainingConfig,    # Training hyperparameters
+    ModelConfig,       # Model architecture config
+    BoardConfig,       # Board type configuration
+    ConfigManager,     # Configuration management
+    get_config,        # Get config for a board/player combo
+    get_board_config,  # Parse board config from key
+)
+
+# Get config for square8 2-player
+config = get_config("square8_2p")
+print(f"LR: {config.learning_rate}, Batch: {config.batch_size}")
+
+# Override specific values
+config = get_config("hex8_3p", override={"learning_rate": 0.001})
+
+# Environment variable overrides (RINGRIFT_LEARNING_RATE, etc.)
+# are automatically applied
+```
+
+### Logging (`scripts.lib.logging_config`)
+
+```python
+from scripts.lib.logging_config import (
+    setup_logging,         # Configure root logger
+    setup_script_logging,  # Script-specific logging with file output
+    get_logger,            # Get a named logger
+    get_metrics_logger,    # Get a metrics logger for tracking
+    JsonFormatter,         # JSON log formatting
+    MetricsLogger,         # Prometheus-style metrics tracking
+)
+
+# Basic script logging
+logger = setup_script_logging("my_script")
+logger.info("Starting training", extra={"batch_size": 256})
+
+# Metrics tracking
+metrics = get_metrics_logger("training")
+metrics.set("epoch", 5)
+metrics.increment("games_processed", 100)
+with metrics.time("forward_pass"):
+    model(batch)
+```
+
+### Validation (`scripts.lib.validation`)
+
+```python
+from scripts.lib.validation import (
+    ValidationResult,        # Validation result container
+    validate_npz_file,       # Validate NPZ training data
+    validate_jsonl_file,     # Validate JSONL game data
+    validate_model_file,     # Validate model checkpoint
+    validate_training_config,# Validate training configuration
+    DataValidator,           # Comprehensive data validation
+)
+
+# Validate NPZ file
+result = validate_npz_file(Path("data/training.npz"))
+if not result.is_valid:
+    print(f"Errors: {result.errors}")
+
+# Comprehensive pre-training validation
+validator = DataValidator()
+report = validator.validate_training_setup("square8_2p")
+```
+
+### Cluster Operations (`scripts.lib.cluster`)
+
+```python
+from scripts.lib.cluster import (
+    ClusterManager,   # Manage cluster nodes
+    ClusterNode,      # Single node operations
+    NodeHealth,       # Node health status
+    CommandResult,    # Command execution result
+    get_cluster,      # Get default cluster manager
+)
+
+# Run command on all nodes
+cluster = get_cluster()
+results = cluster.run_on_all("nvidia-smi -q -d MEMORY")
+
+# Check specific node
+node = cluster.get_node("lambda-gh200-e")
+health = node.check_health()
+print(f"GPUs: {len(health.gpus)}, Status: {health.status}")
+```
+
+### Data Quality (`scripts.lib.data_quality`)
+
+```python
+from scripts.lib.data_quality import (
+    QualityMetrics,      # Quality metrics container
+    DataQualityAnalyzer, # Analyze training data quality
+)
+
+analyzer = DataQualityAnalyzer()
+metrics = analyzer.analyze_npz("data/training.npz")
+print(f"Samples: {metrics.total_samples}, Quality: {metrics.quality_score}")
+```
 
 ## Module Dependencies
 

@@ -10,7 +10,6 @@ Key features:
 - Isolation between concurrent merge operations
 """
 
-import hashlib
 import json
 import logging
 import os
@@ -24,6 +23,8 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+from app.utils.checksum_utils import compute_file_checksum
 
 logger = logging.getLogger(__name__)
 
@@ -697,11 +698,7 @@ class TransactionIsolation:
 
     def _compute_checksum(self, path: str) -> str:
         """Compute SHA256 checksum of a file."""
-        sha256 = hashlib.sha256()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(8192), b""):
-                sha256.update(chunk)
-        return sha256.hexdigest()
+        return compute_file_checksum(path, return_empty_for_missing=False)
 
     def _append_to_wal(self, transaction_id: int, operation: Dict[str, Any]) -> None:
         """Append operation to write-ahead log."""

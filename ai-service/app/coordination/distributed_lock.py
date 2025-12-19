@@ -41,11 +41,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
+from app.utils.paths import DATA_DIR
+
 logger = logging.getLogger(__name__)
 
 # Constants
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-LOCK_DIR = AI_SERVICE_ROOT / "data" / "locks"
+LOCK_DIR = DATA_DIR / "locks"
 DEFAULT_LOCK_TIMEOUT = 3600  # 1 hour max lock time
 DEFAULT_ACQUIRE_TIMEOUT = 60  # 60 seconds to acquire
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

@@ -14,7 +14,9 @@ AI Types:
 - heuristic-only: Fast baseline (avoid for training variety)
 - nnue-guided: NNUE evaluation with search
 - nn-minimax: Neural network with minimax search
-- nn-mcts: Neural network with MCTS
+- mcts: MCTS (neural net backed)
+- gumbel-mcts: Gumbel AlphaZero-style MCTS
+- policy-only: Direct policy network (no search)
 - nn-descent: Neural network with gradient descent search
 - random: Pure random moves (weak opponent for diversity)
 
@@ -68,13 +70,15 @@ except ImportError:
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
-# AI engine modes available
+# AI engine modes available (must match EngineMode enum in selfplay_config.py)
 ENGINE_MODES = [
     "nnue-guided",      # Primary: NNUE evaluation
     "nn-minimax",       # Neural net + minimax search
-    "nn-mcts",          # Neural net + MCTS
+    "mcts",             # MCTS (neural net backed)
     "nn-descent",       # Neural net + descent search
-    "heuristic-only",   # Baseline heuristic (use sparingly)
+    "gumbel-mcts",      # Gumbel MCTS (AlphaZero style)
+    "policy-only",      # Direct NN policy without search
+    "heuristic-only",   # Baseline heuristic
 ]
 
 # Weak opponents for asymmetric training
@@ -83,12 +87,14 @@ WEAK_OPPONENTS = [
     "heuristic-only",   # Basic heuristic
 ]
 
-# Strong opponents
+# Strong opponents (all NN-backed algorithms)
 STRONG_OPPONENTS = [
     "nnue-guided",
     "nn-minimax",
-    "nn-mcts",
+    "mcts",
     "nn-descent",
+    "gumbel-mcts",
+    "policy-only",
 ]
 
 
@@ -132,12 +138,13 @@ class DiverseSelfplayConfig:
 
     # Matchup distribution weights
     # Higher weight = more games of this type
+    # Robust training: increase strong_vs_weak for better value semantics learning
     matchup_weights: Dict[str, float] = field(default_factory=lambda: {
-        "nnue_vs_nnue": 0.15,        # NNUE self-play
-        "nn_vs_nn": 0.25,            # NN-based AI battles
-        "nnue_vs_nn": 0.20,          # Cross NN/NNUE matches
-        "strong_vs_weak": 0.25,       # Asymmetric for learning
-        "heuristic_diverse": 0.15,    # Varied heuristic opponents
+        "nnue_vs_nnue": 0.10,        # NNUE self-play (reduced)
+        "nn_vs_nn": 0.20,            # NN-based AI battles
+        "nnue_vs_nn": 0.15,          # Cross NN/NNUE matches
+        "strong_vs_weak": 0.35,       # Asymmetric for learning (INCREASED)
+        "heuristic_diverse": 0.20,    # Varied heuristic opponents (INCREASED)
     })
 
 
@@ -157,14 +164,14 @@ def get_diverse_matchups(config: DiverseSelfplayConfig) -> List[MatchupConfig]:
             weight=nnue_games
         ))
 
-    # 2. NN-based AI battles (Minimax, MCTS, Descent)
+    # 2. NN-based AI battles (Minimax, MCTS, Descent, Gumbel)
     # NOTE: Minimax is too slow for large boards (sq19, hex) - takes minutes per move.
     # Use only MCTS and Descent for those boards.
     nn_games = int(total_games * config.matchup_weights.get("nn_vs_nn", 0.25))
     if config.board_type.lower() in ("square19", "hexagonal"):
-        nn_modes = ["nn-mcts", "nn-descent"]  # Skip minimax for large boards
+        nn_modes = ["mcts", "nn-descent", "gumbel-mcts"]  # Skip minimax for large boards
     else:
-        nn_modes = ["nn-minimax", "nn-mcts", "nn-descent"]
+        nn_modes = ["nn-minimax", "mcts", "nn-descent", "gumbel-mcts"]
     games_per_nn_pair = nn_games // (len(nn_modes) * len(nn_modes))
     for mode1 in nn_modes:
         for mode2 in nn_modes:
@@ -218,16 +225,11 @@ def get_diverse_matchups(config: DiverseSelfplayConfig) -> List[MatchupConfig]:
                     weight=games_per_asym
                 ))
 
-    # 5. Heuristic diversity (for coverage)
-    heur_games = int(total_games * config.matchup_weights.get("heuristic_diverse", 0.15))
-    games_per_heur = heur_games // 3
+    # 5. Heuristic and random vs NN diversity (for robust value learning)
+    heur_games = int(total_games * config.matchup_weights.get("heuristic_diverse", 0.20))
+    games_per_heur = heur_games // 8  # More matchup types now
     if games_per_heur > 0:
-        matchups.append(MatchupConfig(
-            player1_mode="heuristic-only",
-            player2_mode="random",
-            description="Heuristic vs Random",
-            weight=games_per_heur
-        ))
+        # Heuristic vs various NN types
         matchups.append(MatchupConfig(
             player1_mode="heuristic-only",
             player2_mode="nnue-guided",
@@ -236,8 +238,45 @@ def get_diverse_matchups(config: DiverseSelfplayConfig) -> List[MatchupConfig]:
         ))
         matchups.append(MatchupConfig(
             player1_mode="heuristic-only",
-            player2_mode="nn-mcts",
-            description="Heuristic vs NN-MCTS",
+            player2_mode="mcts",
+            description="Heuristic vs MCTS",
+            weight=games_per_heur
+        ))
+        matchups.append(MatchupConfig(
+            player1_mode="heuristic-only",
+            player2_mode="gumbel-mcts",
+            description="Heuristic vs Gumbel-MCTS",
+            weight=games_per_heur
+        ))
+        matchups.append(MatchupConfig(
+            player1_mode="heuristic-only",
+            player2_mode="nn-descent",
+            description="Heuristic vs NN-Descent",
+            weight=games_per_heur
+        ))
+        # Random vs various NN types (clear value signal)
+        matchups.append(MatchupConfig(
+            player1_mode="random",
+            player2_mode="nnue-guided",
+            description="Random vs NNUE",
+            weight=games_per_heur
+        ))
+        matchups.append(MatchupConfig(
+            player1_mode="random",
+            player2_mode="mcts",
+            description="Random vs MCTS",
+            weight=games_per_heur
+        ))
+        matchups.append(MatchupConfig(
+            player1_mode="random",
+            player2_mode="gumbel-mcts",
+            description="Random vs Gumbel-MCTS",
+            weight=games_per_heur
+        ))
+        matchups.append(MatchupConfig(
+            player1_mode="random",
+            player2_mode="nn-descent",
+            description="Random vs NN-Descent",
             weight=games_per_heur
         ))
 

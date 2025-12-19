@@ -110,6 +110,17 @@ except ImportError:
     HAS_LIFECYCLE_MANAGER = False
     ModelLifecycleManager = None
 
+# Optional ClusterHealthMonitor for checking cluster state before promotion
+try:
+    from app.monitoring.cluster_monitor import ClusterHealthMonitor, check_local_health
+    from app.monitoring.base import HealthStatus
+    HAS_CLUSTER_MONITOR = True
+except ImportError:
+    HAS_CLUSTER_MONITOR = False
+    ClusterHealthMonitor = None
+    check_local_health = None
+    HealthStatus = None
+
 
 class ModelPromoter:
     """Handles automatic model promotion based on Elo.
@@ -250,12 +261,33 @@ class ModelPromoter:
             return []
 
     async def execute_promotion(self, candidate: Dict[str, Any]) -> bool:
-        """Execute a model promotion with holdout validation gate."""
+        """Execute a model promotion with holdout validation gate and cluster health check."""
         try:
             await self.event_bus.publish(DataEvent(
                 event_type=DataEventType.PROMOTION_CANDIDATE,
                 payload=candidate
             ))
+
+            # Cluster health gate - defer promotion if cluster is unhealthy
+            # This prevents deploying to a degraded cluster
+            if HAS_CLUSTER_MONITOR and check_local_health is not None:
+                try:
+                    health_result = check_local_health()
+                    if health_result.status != HealthStatus.HEALTHY:
+                        print(f"[ModelPromoter] DEFERRING promotion of {candidate['model_id']}: "
+                              f"cluster health is {health_result.status}")
+                        await self.event_bus.publish(DataEvent(
+                            event_type=DataEventType.PROMOTION_REJECTED,
+                            payload={
+                                **candidate,
+                                "reason": f"cluster_unhealthy: {health_result.status}",
+                                "alerts": [str(a) for a in health_result.alerts[:3]],
+                            }
+                        ))
+                        return False
+                except Exception as e:
+                    # Don't block promotion on health check failure
+                    print(f"[ModelPromoter] Warning: Cluster health check failed: {e}")
 
             # Holdout validation gate - check for overfitting before promotion
             if HAS_HOLDOUT_VALIDATION and evaluate_model_on_holdout is not None:

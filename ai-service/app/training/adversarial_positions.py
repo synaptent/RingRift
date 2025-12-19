@@ -24,14 +24,15 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import random
 import sqlite3
 import time
+
+from app.utils.checksum_utils import compute_bytes_checksum
+from app.utils.datetime_utils import iso_now
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
@@ -272,7 +273,7 @@ class AdversarialGenerator:
 
     def _hash_position(self, board_state: np.ndarray) -> str:
         """Generate hash for position deduplication."""
-        return hashlib.md5(board_state.tobytes()).hexdigest()[:16]
+        return compute_bytes_checksum(board_state.tobytes(), algorithm="md5", truncate=16)
 
     def generate(
         self,
@@ -392,7 +393,7 @@ class AdversarialGenerator:
                     difficulty_score=uncertainty,
                     uncertainty_score=uncertainty,
                     disagreement_score=0.0,
-                    created_at=datetime.utcnow().isoformat() + "Z",
+                    created_at=iso_now(),
                 )
                 positions.append(position)
 
@@ -439,7 +440,7 @@ class AdversarialGenerator:
                     difficulty_score=disagreement,
                     uncertainty_score=uncertainty,
                     disagreement_score=disagreement,
-                    created_at=datetime.utcnow().isoformat() + "Z",
+                    created_at=iso_now(),
                 )
                 positions.append(position)
 
@@ -521,7 +522,7 @@ class AdversarialGenerator:
                         uncertainty_score=uncertainty,
                         disagreement_score=0.0,
                         metadata={"source_game": game_id, "move_idx": idx},
-                        created_at=datetime.utcnow().isoformat() + "Z",
+                        created_at=iso_now(),
                     )
                     positions.append(position)
 
@@ -573,7 +574,7 @@ class AdversarialGenerator:
                     uncertainty_score=uncertainty,
                     disagreement_score=0.0,
                     metadata={"base_position": base.position_id},
-                    created_at=datetime.utcnow().isoformat() + "Z",
+                    created_at=iso_now(),
                 )
                 positions.append(position)
 
@@ -630,7 +631,7 @@ class AdversarialGenerator:
                     uncertainty_score=best_uncertainty,
                     disagreement_score=0.0,
                     metadata={"search_depth": self.config.search_depth},
-                    created_at=datetime.utcnow().isoformat() + "Z",
+                    created_at=iso_now(),
                 )
                 positions.append(position)
 
@@ -676,7 +677,7 @@ class AdversarialGenerator:
                     uncertainty_score=uncertainty,
                     disagreement_score=0.0,
                     metadata={"value": value, "boundary_distance": boundary_distance},
-                    created_at=datetime.utcnow().isoformat() + "Z",
+                    created_at=iso_now(),
                 )
                 positions.append(position)
 

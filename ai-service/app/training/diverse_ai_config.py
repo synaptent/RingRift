@@ -135,6 +135,23 @@ TOURNAMENT_WEIGHTS: Dict[str, float] = {
     "neural_demo": 0.02,
 }
 
+# Robust training weights - emphasizes asymmetric matchups with random/heuristic
+# This helps models learn correct value semantics by training against weak opponents
+# where the value signal is clearer (NN should always beat random/heuristic)
+ROBUST_TRAINING_WEIGHTS: Dict[str, float] = {
+    "gumbel_mcts": 0.18,    # 18% - High quality NN search
+    "mcts": 0.12,           # 12% - MCTS exploration
+    "descent": 0.12,        # 12% - Gradient search
+    "policy_only": 0.10,    # 10% - Fast NN policy
+    "minimax": 0.08,        # 8% - Classic search
+    "maxn": 0.06,           # 6% - Multi-player search
+    "gpu_minimax": 0.06,    # 6% - GPU batched search
+    "brs": 0.05,            # 5% - Best-reply search
+    "heuristic": 0.12,      # 12% - Baseline for asymmetric
+    "random": 0.10,         # 10% - Weak baseline for asymmetric
+    "neural_demo": 0.01,    # 1% - Experimental
+}
+
 # Supported board types including hex8
 BOARD_TYPES = [
     "square8",

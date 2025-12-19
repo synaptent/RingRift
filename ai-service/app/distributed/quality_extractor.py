@@ -4,6 +4,14 @@ This module provides functions to extract quality scores from game databases
 during sync operations. Quality scores are used to prioritize high-quality
 training data across the cluster.
 
+Note (December 2025):
+    For quality computation logic, prefer using app.quality.unified_quality:
+
+        from app.quality.unified_quality import compute_game_quality
+
+    This module (quality_extractor) focuses on database extraction during sync,
+    while unified_quality provides the canonical quality computation formulas.
+
 Usage:
     from app.distributed.quality_extractor import (
         extract_game_quality,

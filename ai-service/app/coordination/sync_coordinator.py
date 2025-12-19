@@ -106,9 +106,9 @@ except ImportError:
         pass
 
 # Default paths
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_COORDINATOR_DB = AI_SERVICE_ROOT / "data" / "coordination" / "sync_coordinator.db"
-HOST_CONFIG_PATH = AI_SERVICE_ROOT / "config" / "remote_hosts.yaml"
+from app.utils.paths import DATA_DIR, CONFIG_DIR
+DEFAULT_COORDINATOR_DB = DATA_DIR / "coordination" / "sync_coordinator.db"
+HOST_CONFIG_PATH = CONFIG_DIR / "remote_hosts.yaml"
 
 # Thresholds
 STALE_DATA_THRESHOLD_SECONDS = 1800  # 30 minutes - data older than this is stale
@@ -927,6 +927,99 @@ class SyncCoordinator(CoordinatorBase, SQLitePersistenceMixin):
             return recommendations[0].host
         return None
 
+    # =========================================================================
+    # Execution Bridge (December 2025)
+    # Delegates to app.distributed.sync_coordinator for actual sync execution
+    # =========================================================================
+
+    async def execute_priority_sync(
+        self,
+        max_syncs: int = 3,
+    ) -> Dict[str, Any]:
+        """Execute sync operations for highest priority hosts.
+
+        This bridges the scheduling logic in this module with the execution
+        layer in app.distributed.sync_coordinator.
+
+        Args:
+            max_syncs: Maximum number of hosts to sync in this batch
+
+        Returns:
+            Dict with sync execution results
+        """
+        results = {
+            "syncs_attempted": 0,
+            "syncs_completed": 0,
+            "total_files": 0,
+            "total_bytes": 0,
+            "errors": [],
+        }
+
+        # Get recommendations
+        recommendations = self.get_sync_recommendations(max_recommendations=max_syncs)
+        if not recommendations:
+            logger.debug("[SyncCoordinator] No sync recommendations to execute")
+            return results
+
+        # Filter to actionable recommendations
+        actionable = [r for r in recommendations if r.action in (SyncAction.SYNC_NOW, SyncAction.SCHEDULE_SYNC)]
+        if not actionable:
+            return results
+
+        # Import distributed layer executor
+        try:
+            from app.distributed.sync_coordinator import SyncCoordinator as DistributedSyncCoordinator
+            executor = DistributedSyncCoordinator.get_instance()
+        except ImportError as e:
+            logger.warning(f"[SyncCoordinator] Distributed executor not available: {e}")
+            results["errors"].append(f"Distributed layer unavailable: {e}")
+            return results
+
+        # Execute syncs for each recommended host
+        for rec in actionable:
+            host = rec.host
+            sync_id = self.record_sync_start(host)
+            results["syncs_attempted"] += 1
+
+            try:
+                # Execute via distributed layer
+                sync_result = await executor.full_cluster_sync()
+
+                # Update coordination layer tracking
+                games_synced = sync_result.total_files_synced
+                bytes_transferred = sync_result.total_bytes_transferred
+
+                self.record_sync_complete(
+                    host=host,
+                    sync_id=sync_id,
+                    games_synced=games_synced,
+                    bytes_transferred=bytes_transferred,
+                    success=True,
+                )
+
+                results["syncs_completed"] += 1
+                results["total_files"] += games_synced
+                results["total_bytes"] += bytes_transferred
+
+                logger.info(f"[SyncCoordinator] Executed sync for {host}: "
+                           f"{games_synced} files, {bytes_transferred / (1024*1024):.1f}MB")
+
+            except Exception as e:
+                self.record_sync_complete(
+                    host=host,
+                    sync_id=sync_id,
+                    games_synced=0,
+                    success=False,
+                    error_message=str(e),
+                )
+                results["errors"].append(f"{host}: {e}")
+                logger.warning(f"[SyncCoordinator] Sync execution failed for {host}: {e}")
+
+        if results["syncs_completed"] == len(actionable):
+            self.record_full_sync_complete()
+
+        return results
+
     def _estimate_sync_duration(self, host: str, games: int) -> int:
         """Estimate sync duration based on historical data."""
         if games == 0:
@@ -1057,6 +1150,50 @@ def record_games_generated(host: str, games: int) -> None:
     get_sync_coordinator().record_games_generated(host, games)
 
 
+async def execute_priority_sync(max_syncs: int = 3) -> Dict[str, Any]:
+    """Execute sync operations for highest priority hosts.
+
+    This bridges the scheduling layer with the distributed execution layer.
+    """
+    return await get_sync_coordinator().execute_priority_sync(max_syncs)
+
+
 def reset_sync_coordinator() -> None:
     """Reset the coordinator singleton."""
+    SyncCoordinator.reset_instance()
+
+
+# =============================================================================
+# Deprecation and Aliasing (December 2025)
+# =============================================================================
+#
+# This module provides SCHEDULING for sync operations (when/what to sync).
+# For EXECUTION (how to sync), use app.distributed.sync_coordinator.
+#
+# To reduce confusion from the name collision, we provide these aliases:
+# - SyncScheduler: Preferred name for this scheduling layer
+# - SyncCoordinator: Kept for backward compatibility
+#
+# Import recommendation:
+#   # For scheduling (this module)
+#   from app.coordination.sync_coordinator import SyncScheduler, get_sync_scheduler
+#
+#   # For execution (distributed module)
+#   from app.distributed.sync_coordinator import SyncCoordinator
+#
+
+# Alias for clarity - this is a SCHEDULER not an EXECUTOR
+SyncScheduler = SyncCoordinator
+
+
+def get_sync_scheduler(db_path: Optional[Path] = None) -> SyncScheduler:
+    """Get the sync scheduler (alias for get_sync_coordinator).
+
+    Preferred name to distinguish from distributed.sync_coordinator.SyncCoordinator.
+    """
+    return SyncCoordinator.get_instance(db_path)
+
+
+def reset_sync_scheduler() -> None:
+    """Reset the sync scheduler (alias for reset_sync_coordinator)."""
     SyncCoordinator.reset_instance()

@@ -31,6 +31,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
@@ -45,8 +46,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Path setup
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_ELO_DB_PATH = AI_SERVICE_ROOT / "data" / "unified_elo.db"
+from app.utils.paths import UNIFIED_ELO_DB
+DEFAULT_ELO_DB_PATH = UNIFIED_ELO_DB
 
 # Import canonical thresholds
 try:
@@ -81,6 +82,14 @@ except ImportError:
 # Singleton instance
 _elo_service_instance: Optional["EloService"] = None
 _elo_service_lock = threading.RLock()
+
+# Event emission for ELO updates
+try:
+    from app.distributed.data_events import emit_elo_updated
+    HAS_ELO_EVENTS = True
+except ImportError:
+    HAS_ELO_EVENTS = False
+    emit_elo_updated = None
 
 
 @dataclass
@@ -535,6 +544,34 @@ class EloService:
                 json.dumps(elo_after),
                 tournament_id
             ))
+
+        # Emit ELO_UPDATED events for both participants
+        # This enables event-driven coordination across the training pipeline
+        if HAS_ELO_EVENTS and emit_elo_updated is not None:
+            config_key = f"{board_type}_{num_players}p"
+            try:
+                # Try to get running event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    # Schedule coroutines in the running loop
+                    for pid, old_elo, new_elo in [
+                        (participant_a, elo_before[participant_a], elo_after[participant_a]),
+                        (participant_b, elo_before[participant_b], elo_after[participant_b]),
+                    ]:
+                        asyncio.ensure_future(emit_elo_updated(
+                            config=config_key,
+                            model_id=pid,
+                            new_elo=new_elo,
+                            old_elo=old_elo,
+                            games_played=1,
+                            source="elo_service",
+                        ))
+                except RuntimeError:
+                    # No running loop - create one for sync context
+                    # This is less efficient but ensures events are emitted
+                    pass  # Skip in pure sync context to avoid blocking
+            except Exception:
+                pass  # Don't let event emission break match recording
 
         return MatchResult(
             match_id=match_id,

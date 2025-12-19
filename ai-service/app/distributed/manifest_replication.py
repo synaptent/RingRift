@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.utils.yaml_utils import safe_load_yaml
+from app.utils.checksum_utils import compute_file_checksum, LARGE_CHUNK_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -106,13 +107,7 @@ class ManifestReplicator:
 
     def _compute_checksum(self, path: Path) -> str:
         """Compute SHA256 checksum of a file."""
-        if not path.exists():
-            return ""
-        sha256 = hashlib.sha256()
-        with open(path, 'rb') as f:
-            for chunk in iter(lambda: f.read(65536), b''):
-                sha256.update(chunk)
-        return sha256.hexdigest()
+        return compute_file_checksum(path, chunk_size=LARGE_CHUNK_SIZE)
 
     def _get_local_manifest_info(self) -> Tuple[str, float, int]:
         """Get local manifest checksum, mtime, and size."""

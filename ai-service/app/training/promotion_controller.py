@@ -541,7 +541,170 @@ class PromotionController:
             success = False
 
         self._emit_execution_metrics(decision, success=success, dry_run=False)
+
+        # Notify multiple systems on successful promotion (December 2025)
+        if success:
+            self._notify_promotion(decision)
+
         return success
+
+    def _notify_promotion(self, decision: PromotionDecision) -> None:
+        """Notify multiple systems about a successful promotion.
+
+        Broadcasts promotion events to:
+        1. Event bus (for cross-process coordination)
+        2. P2P orchestrator (for cluster sync)
+        3. Slack/webhook (for team notifications)
+        4. Model sync coordinator (for model distribution)
+
+        Args:
+            decision: The executed promotion decision
+        """
+        payload = decision.to_dict()
+
+        # 1. Publish to event bus for cross-process coordination
+        self._notify_event_bus(payload)
+
+        # 2. Notify P2P orchestrator for cluster-wide awareness
+        self._notify_p2p_orchestrator(payload)
+
+        # 3. Send Slack notification for visibility
+        self._notify_slack(decision)
+
+        # 4. Trigger model sync across cluster
+        self._notify_model_sync(decision)
+
+        logger.info(f"Multi-system notifications sent for {decision.model_id} promotion")
+
+    def _notify_event_bus(self, payload: Dict[str, Any]) -> None:
+        """Publish promotion event to the data event bus."""
+        try:
+            from app.distributed.data_events import (
+                DataEvent,
+                DataEventType,
+                get_event_bus,
+            )
+
+            event = DataEvent(
+                event_type=DataEventType.MODEL_PROMOTED,
+                payload=payload,
+                source="promotion_controller",
+            )
+
+            bus = get_event_bus()
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(bus.publish(event))
+            except RuntimeError:
+                if hasattr(bus, 'publish_sync'):
+                    bus.publish_sync(event)
+
+            logger.debug(f"Published MODEL_PROMOTED event to event bus")
+        except Exception as e:
+            logger.debug(f"Event bus notification failed: {e}")
+
+    def _notify_p2p_orchestrator(self, payload: Dict[str, Any]) -> None:
+        """Notify P2P orchestrator about the promotion."""
+        try:
+            import urllib.request
+            import json
+            import os
+
+            p2p_url = os.environ.get("P2P_ORCHESTRATOR_URL", "http://localhost:8770")
+            url = f"{p2p_url}/api/model/promoted"
+
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+
+            try:
+                urllib.request.urlopen(req, timeout=5)
+                logger.debug(f"Notified P2P orchestrator about promotion")
+            except urllib.error.URLError:
+                pass  # P2P might not be running
+        except Exception as e:
+            logger.debug(f"P2P notification failed: {e}")
+
+    def _notify_slack(self, decision: PromotionDecision) -> None:
+        """Send Slack notification for the promotion."""
+        try:
+            import os
+            import json
+            import urllib.request
+
+            webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
+            if not webhook_url:
+                return
+
+            # Build message based on promotion type
+            emoji = {
+                PromotionType.PRODUCTION: ":rocket:",
+                PromotionType.STAGING: ":test_tube:",
+                PromotionType.TIER: ":trophy:",
+                PromotionType.CHAMPION: ":crown:",
+                PromotionType.ROLLBACK: ":rewind:",
+            }.get(decision.promotion_type, ":arrow_up:")
+
+            color = "#36a64f" if decision.promotion_type != PromotionType.ROLLBACK else "#f2c744"
+
+            text = (
+                f"{emoji} *Model {decision.promotion_type.value.upper()}*\n"
+                f"Model: `{decision.model_id}`\n"
+                f"Elo: {decision.current_elo or 'N/A'}"
+            )
+            if decision.elo_improvement:
+                text += f" (+{decision.elo_improvement:.1f})"
+            text += f"\nReason: {decision.reason}"
+
+            payload = json.dumps({
+                "attachments": [{
+                    "color": color,
+                    "text": text,
+                    "footer": "RingRift Promotion Controller",
+                }]
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                webhook_url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=10)
+            logger.debug(f"Sent Slack notification for promotion")
+        except Exception as e:
+            logger.debug(f"Slack notification failed: {e}")
+
+    def _notify_model_sync(self, decision: PromotionDecision) -> None:
+        """Trigger model sync to distribute promoted model across cluster."""
+        try:
+            # Only sync for production/champion promotions
+            if decision.promotion_type not in (PromotionType.PRODUCTION, PromotionType.CHAMPION):
+                return
+
+            from app.coordination.work_queue import get_work_queue, WorkItem, WorkType
+
+            queue = get_work_queue()
+
+            # Add high-priority sync work
+            work = WorkItem(
+                work_type=WorkType.DATA_SYNC,
+                priority=90,  # High priority for production model sync
+                config={
+                    "model_id": decision.model_id,
+                    "promotion_type": decision.promotion_type.value,
+                    "sync_type": "model_distribution",
+                },
+                timeout_seconds=1800.0,  # 30 min for model sync
+            )
+            queue.add_work(work)
+            logger.debug(f"Queued model sync work for {decision.model_id}")
+        except Exception as e:
+            logger.debug(f"Model sync notification failed: {e}")
 
     def _emit_execution_metrics(
         self,

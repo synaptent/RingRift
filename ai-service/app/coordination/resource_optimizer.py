@@ -84,8 +84,8 @@ UTILIZATION_UPDATE_INTERVAL = 10  # seconds
 OPTIMIZATION_INTERVAL = 30  # seconds
 
 # Database path
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-COORDINATION_DB_PATH = AI_SERVICE_ROOT / "data" / "coordination" / "resource_state.db"
+from app.utils.paths import DATA_DIR
+COORDINATION_DB_PATH = DATA_DIR / "coordination" / "resource_state.db"
 
 
 class ResourceType(str, Enum):

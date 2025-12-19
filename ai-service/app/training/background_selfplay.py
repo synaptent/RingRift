@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # Get AI_SERVICE_ROOT
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+from app.utils.paths import AI_SERVICE_ROOT
 
 # Import coordination for task limits
 try:

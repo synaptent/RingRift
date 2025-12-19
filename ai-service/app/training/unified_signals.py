@@ -63,6 +63,16 @@ except ImportError:
     HAS_QUALITY_CONFIG = False
     QualityConfig = None
 
+# Import centralized quality thresholds
+try:
+    from app.quality.thresholds import (
+        MIN_QUALITY_FOR_TRAINING,
+        HIGH_QUALITY_THRESHOLD,
+    )
+except ImportError:
+    MIN_QUALITY_FOR_TRAINING = 0.3
+    HIGH_QUALITY_THRESHOLD = 0.7
+
 # Import data manifest for quality scores
 try:
     from app.distributed.unified_manifest import DataManifest
@@ -272,7 +282,12 @@ class UnifiedSignalComputer:
         board_type: Optional[str] = None,
         num_players: Optional[int] = None,
     ) -> float:
-        """Get average quality score from manifest.
+        """Get average quality score, preferring event-driven cache.
+
+        Priority order:
+        1. Cached quality from quality events (if fresh)
+        2. Quality from data manifest
+        3. Default 1.0
 
         Args:
             config_key: Optional config key (e.g., "square8_2p")
@@ -282,6 +297,13 @@ class UnifiedSignalComputer:
         Returns:
             Average quality score (0-1), or 1.0 if unavailable
         """
+        # First check event-driven cache (fresher, more responsive)
+        if config_key:
+            cached = self.get_cached_quality(config_key)
+            if cached is not None:
+                return cached
+
+        # Fall back to manifest
         manifest = self._get_manifest()
         if not manifest:
             return 1.0  # Default to 1.0 (no quality filtering)
@@ -551,13 +573,9 @@ class UnifiedSignalComputer:
         - Low quality data (< min_quality_for_training) defers urgency
         - High quality data (> high_quality_threshold) accelerates urgency
         """
-        # Get quality thresholds
-        quality_config = self._get_quality_config()
-        min_quality = 0.3  # Default
-        high_quality = 0.7  # Default
-        if quality_config:
-            min_quality = getattr(quality_config, 'min_quality_for_training', 0.3)
-            high_quality = getattr(quality_config, 'high_quality_threshold', 0.7)
+        # Get quality thresholds from centralized module
+        min_quality = MIN_QUALITY_FOR_TRAINING
+        high_quality = HIGH_QUALITY_THRESHOLD
 
         # Check if data quality is too low - defer training
         if signals.data_quality_score < min_quality and not signals.elo_regression_detected:
@@ -664,13 +682,9 @@ class UnifiedSignalComputer:
         if signals.win_rate_regression:
             priority += (self.min_win_rate - signals.win_rate) * 50.0
 
-        # Quality modifiers (December 2025)
-        quality_config = self._get_quality_config()
-        high_quality = 0.7
-        min_quality = 0.3
-        if quality_config:
-            high_quality = getattr(quality_config, 'high_quality_threshold', 0.7)
-            min_quality = getattr(quality_config, 'min_quality_for_training', 0.3)
+        # Quality modifiers - use centralized thresholds
+        high_quality = HIGH_QUALITY_THRESHOLD
+        min_quality = MIN_QUALITY_FOR_TRAINING
 
         # High quality data gets priority boost
         if signals.data_quality_score >= high_quality:
@@ -766,6 +780,51 @@ class UnifiedSignalComputer:
             if win_rate is not None:
                 state.win_rate = win_rate
                 state.win_rate_history.append((now, win_rate))
+
+    def update_data_quality(self, config_key: str, quality_score: float) -> None:
+        """Update data quality score for a config from quality events.
+
+        This method is called by TrainingTriggers when it receives quality
+        events (HIGH_QUALITY_DATA_AVAILABLE, LOW_QUALITY_DATA_WARNING, etc.).
+        The score is cached for use in subsequent compute_signals() calls.
+
+        Args:
+            config_key: Config identifier
+            quality_score: Quality score from 0.0 to 1.0
+        """
+        with self._lock:
+            # Store in per-config quality cache
+            if not hasattr(self, '_quality_cache'):
+                self._quality_cache: Dict[str, Tuple[float, datetime]] = {}
+
+            self._quality_cache[config_key] = (quality_score, datetime.now())
+            logger.debug(
+                f"Updated quality score for {config_key}: {quality_score:.3f}"
+            )
+
+    def get_cached_quality(self, config_key: str, max_age_seconds: float = 300.0) -> Optional[float]:
+        """Get cached quality score if available and fresh.
+
+        Args:
+            config_key: Config identifier
+            max_age_seconds: Maximum age for cache validity (default 5 min)
+
+        Returns:
+            Cached quality score, or None if not available or stale
+        """
+        if not hasattr(self, '_quality_cache'):
+            return None
+
+        if config_key not in self._quality_cache:
+            return None
+
+        score, cached_at = self._quality_cache[config_key]
+        age = (datetime.now() - cached_at).total_seconds()
+
+        if age > max_age_seconds:
+            return None
+
+        return score
 
     def get_all_config_signals(
         self,

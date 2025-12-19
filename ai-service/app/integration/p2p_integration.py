@@ -824,6 +824,91 @@ class P2PIntegrationManager:
             "total_nodes": len(healthy_nodes)
         }
 
+    async def schedule_evaluation(
+        self,
+        model_id: str,
+        version: int,
+        priority: str = "normal",
+        reason: str = "manual"
+    ) -> Dict[str, Any]:
+        """
+        Schedule an evaluation tournament for a model.
+
+        This queues the model for Elo evaluation against reference models.
+
+        Args:
+            model_id: Model identifier
+            version: Model version number
+            priority: Priority level (low, normal, high)
+            reason: Reason for evaluation (staging_promotion, manual, etc.)
+
+        Returns:
+            Dict with evaluation job ID and status
+        """
+        full_model_id = f"{model_id}_v{version}"
+        logger.info(f"Scheduling evaluation for {full_model_id} (priority={priority}, reason={reason})")
+
+        # Fire event for any listeners
+        await self._fire_callbacks(
+            "evaluation_scheduled",
+            model_id=model_id,
+            version=version,
+            priority=priority,
+            reason=reason
+        )
+
+        # Queue evaluation via the evaluation coordinator
+        if self.evaluation:
+            try:
+                # Run tournament against top models
+                leaderboard = await self.evaluation.get_leaderboard()
+                if leaderboard:
+                    top_models = [m["model_id"] for m in leaderboard[:5]]
+                    # Don't add ourselves if we're already in the list
+                    if full_model_id not in top_models:
+                        top_models.append(full_model_id)
+
+                    result = await self.evaluation.run_tournament(top_models)
+
+                    # Fire completion event
+                    if result and "ratings" in result:
+                        model_rating = result["ratings"].get(full_model_id, {})
+                        await self._fire_callbacks(
+                            "evaluation_complete",
+                            model_id=model_id,
+                            version=version,
+                            elo_rating=model_rating.get("elo"),
+                            win_rate=model_rating.get("win_rate"),
+                            games_played=model_rating.get("games", 0)
+                        )
+
+                    return {
+                        "status": "completed",
+                        "model_id": full_model_id,
+                        "result": result
+                    }
+                else:
+                    logger.warning("No reference models available for evaluation")
+                    return {
+                        "status": "skipped",
+                        "model_id": full_model_id,
+                        "reason": "no_reference_models"
+                    }
+            except Exception as e:
+                logger.error(f"Evaluation failed for {full_model_id}: {e}")
+                return {
+                    "status": "failed",
+                    "model_id": full_model_id,
+                    "error": str(e)
+                }
+        else:
+            logger.warning("Evaluation coordinator not available")
+            return {
+                "status": "skipped",
+                "model_id": full_model_id,
+                "reason": "no_evaluation_coordinator"
+            }
+
     # ==========================================
     # Background Loops
     # ==========================================
@@ -1083,23 +1168,102 @@ def integrate_lifecycle_with_p2p(
     Integrate model lifecycle manager with P2P cluster.
 
     Sets up callbacks for automatic model sync and evaluation.
+    This enables the full automation loop:
+    - Model promoted to staging → trigger evaluation tournament
+    - Model promoted to production → sync to all cluster nodes
+    - Training triggered → coordinate via P2P orchestrator
     """
     # Sync new production models to cluster
     async def on_model_promoted(**kwargs):
-        if kwargs.get("stage") == "production":
-            model_id = kwargs.get("model_id")
-            version = kwargs.get("version")
-            logger.info(f"Syncing promoted model {model_id}:v{version} to cluster")
-            # Would trigger model sync here
+        stage = kwargs.get("stage")
+        model_id = kwargs.get("model_id")
+        version = kwargs.get("version")
+        model_path = kwargs.get("model_path")
+
+        if stage == "production":
+            logger.info(f"[P2P Integration] Syncing production model {model_id}:v{version} to cluster")
+            try:
+                # Sync model file to all healthy cluster nodes
+                if model_path:
+                    result = await p2p_manager.sync_model_to_cluster(
+                        model_id=f"{model_id}_v{version}",
+                        model_path=Path(model_path)
+                    )
+                    logger.info(
+                        f"[P2P Integration] Model sync complete: "
+                        f"{result.get('synced_nodes', 0)}/{result.get('total_nodes', 0)} nodes"
+                    )
+
+                # Notify cluster of new production model
+                await p2p_manager._fire_callbacks(
+                    "production_model_available",
+                    model_id=model_id,
+                    version=version,
+                    model_path=str(model_path) if model_path else None
+                )
+            except Exception as e:
+                logger.error(f"[P2P Integration] Failed to sync model to cluster: {e}")
+
+        elif stage == "staging":
+            logger.info(f"[P2P Integration] Model {model_id}:v{version} promoted to staging, triggering evaluation")
+            try:
+                # Automatically queue evaluation tournament for staging models
+                await p2p_manager.schedule_evaluation(
+                    model_id=model_id,
+                    version=version,
+                    priority="high",
+                    reason="staging_promotion"
+                )
+            except Exception as e:
+                logger.error(f"[P2P Integration] Failed to schedule evaluation: {e}")
 
     lifecycle_manager.register_callback("model_promoted", on_model_promoted)
 
     # Trigger training via P2P when conditions are met
     async def on_training_triggered(**kwargs):
-        logger.info(f"Training triggered: {kwargs.get('reason')}")
-        await p2p_manager.trigger_training()
+        reason = kwargs.get('reason', 'unknown')
+        board_type = kwargs.get('board_type')
+        num_players = kwargs.get('num_players')
+        logger.info(f"[P2P Integration] Training triggered: {reason}")
+        try:
+            await p2p_manager.trigger_training(
+                board_type=board_type,
+                num_players=num_players,
+                reason=reason
+            )
+        except Exception as e:
+            logger.error(f"[P2P Integration] Failed to trigger training: {e}")
 
     lifecycle_manager.register_callback("training_triggered", on_training_triggered)
+
+    # Handle evaluation completion to check for promotion
+    async def on_evaluation_complete(**kwargs):
+        model_id = kwargs.get("model_id")
+        version = kwargs.get("version")
+        elo_rating = kwargs.get("elo_rating")
+        win_rate = kwargs.get("win_rate")
+
+        logger.info(
+            f"[P2P Integration] Evaluation complete for {model_id}:v{version}: "
+            f"Elo={elo_rating}, WinRate={win_rate}"
+        )
+
+        # Submit evaluation results to lifecycle manager for promotion decision
+        if hasattr(lifecycle_manager, 'submit_evaluation'):
+            try:
+                await lifecycle_manager.submit_evaluation(
+                    model_id=model_id,
+                    version=version,
+                    elo_rating=elo_rating,
+                    win_rate=win_rate
+                )
+            except Exception as e:
+                logger.error(f"[P2P Integration] Failed to submit evaluation: {e}")
+
+    # Register for evaluation events from P2P manager
+    p2p_manager.register_callback("evaluation_complete", on_evaluation_complete)
+
+    logger.info("[P2P Integration] Lifecycle ↔ P2P integration established")
 
 
 def integrate_pipeline_with_p2p(

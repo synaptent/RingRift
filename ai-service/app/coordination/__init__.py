@@ -202,16 +202,26 @@ from app.coordination.resource_optimizer import (
     # but we prefer the resource_targets versions for per-host decisions
 )
 
-# Sync coordinator exports (unified cluster-wide data sync management)
+# Sync SCHEDULER exports (unified cluster-wide data sync SCHEDULING)
+# Note: This is the SCHEDULING layer - decides WHEN/WHAT to sync.
+# For EXECUTION (HOW to sync), use app.distributed.sync_coordinator.SyncCoordinator
 from app.coordination.sync_coordinator import (
-    SyncCoordinator,
+    # Preferred names (December 2025)
+    SyncScheduler,
+    get_sync_scheduler,
+    reset_sync_scheduler,
+    # Backward-compatible names (use SyncScheduler for new code)
+    SyncCoordinator as CoordinationSyncCoordinator,  # Alias to avoid collision
+    get_sync_coordinator,
+    reset_sync_coordinator,
+    # Data types
     HostDataState,
     HostType,
     SyncPriority,
     SyncAction,
     SyncRecommendation,
     ClusterDataStatus,
-    get_sync_coordinator,
+    # Functions
     get_cluster_data_status,
     get_sync_recommendations,
     get_next_sync_target,
@@ -220,8 +230,28 @@ from app.coordination.sync_coordinator import (
     record_sync_start,
     record_sync_complete,
     record_games_generated,
-    reset_sync_coordinator,
+    execute_priority_sync,  # Bridge to distributed layer execution
 )
+
+# Re-export distributed layer sync execution for convenience
+# These provide the actual sync transport (aria2, SSH, P2P)
+try:
+    from app.distributed.sync_coordinator import (
+        SyncCoordinator as DistributedSyncCoordinator,
+        SyncStats,
+        ClusterSyncStats,
+        SyncCategory,
+        sync_training_data,
+        sync_models,
+        sync_games,
+        sync_high_quality_games,
+        full_cluster_sync,
+        get_quality_lookup,
+        get_elo_lookup,
+    )
+except ImportError:
+    # Distributed layer may not be available in all environments
+    pass
 
 # Cluster transport layer (unified multi-transport communication)
 from app.coordination.cluster_transport import (
@@ -396,6 +426,19 @@ from app.coordination.distributed_lock import (
     training_lock,
 )
 
+# Training Coordination (cluster-wide training management)
+from app.coordination.training_coordinator import (
+    TrainingCoordinator,
+    TrainingJob,
+    get_training_coordinator,
+    request_training_slot,
+    release_training_slot,
+    update_training_progress,
+    can_train,
+    get_training_status,
+    training_slot,
+)
+
 # Coordinator Base (common patterns for coordinators/managers)
 from app.coordination.coordinator_base import (
     CoordinatorBase,
@@ -416,6 +459,34 @@ from app.coordination.unified_event_coordinator import (
     start_coordinator as start_event_coordinator,
     stop_coordinator as stop_event_coordinator,
     get_coordinator_stats as get_event_coordinator_stats,
+)
+
+# Distributed Tracing (December 2025)
+from app.coordination.tracing import (
+    TraceContext,
+    TraceSpan,
+    TraceCollector,
+    get_trace_id,
+    set_trace_id,
+    get_trace_context,
+    new_trace,
+    with_trace,
+    span,
+    traced,
+    inject_trace_into_event,
+    extract_trace_from_event,
+    inject_trace_into_headers,
+    extract_trace_from_headers,
+    get_trace_collector,
+    collect_trace,
+)
+
+# Cross-Coordinator Health Protocol (December 2025)
+from app.coordination.orchestrator_registry import (
+    CoordinatorHealth,
+    CrossCoordinatorHealthProtocol,
+    get_cross_coordinator_health,
+    check_cluster_health,
 )
 
 __all__ = [
@@ -543,15 +614,23 @@ __all__ = [
     "get_resource_optimizer",
     "get_optimal_concurrency",
     "get_cluster_utilization",
-    # Sync Coordinator (unified data sync management)
-    "SyncCoordinator",
+    # Sync SCHEDULER (unified data sync SCHEDULING - December 2025)
+    # Preferred names (avoids collision with distributed.sync_coordinator.SyncCoordinator)
+    "SyncScheduler",
+    "get_sync_scheduler",
+    "reset_sync_scheduler",
+    # Backward-compatible names
+    "CoordinationSyncCoordinator",  # Renamed to avoid collision
+    "get_sync_coordinator",
+    "reset_sync_coordinator",
+    # Data types
     "HostDataState",
     "HostType",
     "SyncPriority",
     "SyncAction",
     "SyncRecommendation",
     "ClusterDataStatus",
-    "get_sync_coordinator",
+    # Functions
     "get_cluster_data_status",
     "get_sync_recommendations",
     "get_next_sync_target",
@@ -560,7 +639,7 @@ __all__ = [
     "record_sync_start",
     "record_sync_complete",
     "record_games_generated",
-    "reset_sync_coordinator",
+    "execute_priority_sync",
     # Ephemeral Data Guard (data insurance for ephemeral hosts)
     "EphemeralDataGuard",
     "HostCheckpoint",
@@ -712,4 +791,26 @@ __all__ = [
     "start_event_coordinator",
     "stop_event_coordinator",
     "get_event_coordinator_stats",
+    # Distributed Tracing (December 2025)
+    "TraceContext",
+    "TraceSpan",
+    "TraceCollector",
+    "get_trace_id",
+    "set_trace_id",
+    "get_trace_context",
+    "new_trace",
+    "with_trace",
+    "span",
+    "traced",
+    "inject_trace_into_event",
+    "extract_trace_from_event",
+    "inject_trace_into_headers",
+    "extract_trace_from_headers",
+    "get_trace_collector",
+    "collect_trace",
+    # Cross-Coordinator Health Protocol (December 2025)
+    "CoordinatorHealth",
+    "CrossCoordinatorHealthProtocol",
+    "get_cross_coordinator_health",
+    "check_cluster_health",
 ]

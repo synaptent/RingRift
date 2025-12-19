@@ -477,6 +477,10 @@ class WorkQueue:
     def claim_work(self, node_id: str, capabilities: Optional[List[str]] = None) -> Optional[WorkItem]:
         """Claim work for a node based on capabilities, policies, and dependencies.
 
+        Uses atomic database operations to prevent TOCTOU race conditions where
+        multiple workers could claim the same work item. The claim is performed
+        via a conditional UPDATE that only succeeds if the item is still PENDING.
+
         Args:
             node_id: The node claiming work
             capabilities: Work types this node can handle (if None, check all)
@@ -517,17 +521,86 @@ class WorkQueue:
                         logger.debug(f"Policy denies {work_type} on {node_id}")
                         continue
 
-                # Claim it
-                item.status = WorkStatus.CLAIMED
-                item.claimed_by = node_id
-                item.claimed_at = time.time()
-                item.attempts += 1
-                self._save_item(item)
-
-                logger.info(f"Work {item.work_id} claimed by {node_id}: {work_type}")
-                return item
+                # Attempt atomic claim via database (December 2025 - TOCTOU fix)
+                claimed_at = time.time()
+                if self._atomic_claim(item.work_id, node_id, claimed_at):
+                    # Update in-memory state
+                    item.status = WorkStatus.CLAIMED
+                    item.claimed_by = node_id
+                    item.claimed_at = claimed_at
+                    item.attempts += 1
+                    logger.info(f"Work {item.work_id} claimed by {node_id}: {work_type}")
+                    return item
+                else:
+                    # Another worker claimed it first, skip to next
+                    logger.debug(f"Work {item.work_id} already claimed, skipping")
+                    continue
 
             return None
+
+    def _atomic_claim(self, work_id: str, node_id: str, claimed_at: float) -> bool:
+        """Atomically claim a work item in the database.
+
+        Uses a conditional UPDATE with WHERE status='pending' to ensure
+        only one worker can claim the item. This prevents TOCTOU race conditions.
+
+        Args:
+            work_id: ID of work item to claim
+            node_id: Node claiming the work
+            claimed_at: Timestamp of claim
+
+        Returns:
+            True if claim succeeded, False if item was already claimed
+        """
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+
+            # Use BEGIN IMMEDIATE for write intent, preventing concurrent claims
+            cursor.execute("BEGIN IMMEDIATE")
+
+            # Get current attempts count first
+            cursor.execute(
+                "SELECT attempts FROM work_items WHERE work_id = ?",
+                (work_id,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                conn.rollback()
+                conn.close()
+                return False
+
+            current_attempts = row[0]
+
+            # Atomic conditional update - only succeeds if still PENDING
+            cursor.execute("""
+                UPDATE work_items
+                SET status = 'claimed',
+                    claimed_by = ?,
+                    claimed_at = ?,
+                    attempts = ?
+                WHERE work_id = ? AND status = 'pending'
+            """, (node_id, claimed_at, current_attempts + 1, work_id))
+
+            # Check if update affected exactly one row
+            if cursor.rowcount == 1:
+                conn.commit()
+                conn.close()
+                return True
+            else:
+                # Item was already claimed by another worker
+                conn.rollback()
+                conn.close()
+                return False
+
+        except Exception as e:
+            logger.error(f"Atomic claim failed for {work_id}: {e}")
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
+            return False
 
     def start_work(self, work_id: str) -> bool:
         """Mark work as started (running)."""

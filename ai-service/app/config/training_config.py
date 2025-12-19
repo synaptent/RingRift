@@ -24,10 +24,11 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from dataclasses import asdict, dataclass, field
+
+from app.utils.checksum_utils import compute_string_checksum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -135,7 +136,7 @@ class CMAESConfig:
     def config_hash(self) -> str:
         """Generate a hash of the config for cache invalidation."""
         config_str = json.dumps(self.to_dict(), sort_keys=True)
-        return hashlib.sha256(config_str.encode()).hexdigest()[:16]
+        return compute_string_checksum(config_str, truncate=16)
 
 
 @dataclass

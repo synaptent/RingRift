@@ -1,4 +1,10 @@
 #!/bin/bash
+# DEPRECATED: Use cluster_monitor_unified.sh instead (December 2025)
+# Migration: ./scripts/cluster_monitor_unified.sh --local-only
+echo "WARNING: This script is deprecated. Use cluster_monitor_unified.sh instead."
+echo "For equivalent functionality: ./scripts/cluster_monitor_unified.sh --local-only"
+echo ""
+
 # Cluster Health Monitor - logs status every 2 minutes
 # Run with: nohup ./scripts/cluster_health_monitor.sh &
 

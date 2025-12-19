@@ -55,6 +55,16 @@ except ImportError:
     DataManifest = None
     GameQualityMetadata = None
 
+# Import centralized quality thresholds
+try:
+    from app.quality.thresholds import (
+        MIN_QUALITY_FOR_PRIORITY_SYNC,
+        HIGH_QUALITY_THRESHOLD,
+    )
+except ImportError:
+    MIN_QUALITY_FOR_PRIORITY_SYNC = 0.5
+    HIGH_QUALITY_THRESHOLD = 0.7
+
 
 class DataSourceType(Enum):
     """Types of data sources supported by the pipeline."""
@@ -161,7 +171,7 @@ class PipelineConfig:
 
     # Quality-based data selection
     enable_quality_filtering: bool = True  # Use manifest quality scores for selection
-    min_quality_score: float = 0.5  # Minimum quality score for training data
+    min_quality_score: float = MIN_QUALITY_FOR_PRIORITY_SYNC  # Minimum quality score for training data
     quality_weighted_sampling: bool = True  # Weight samples by quality score
     prefer_high_elo_games: bool = True  # Prioritize high-Elo games
     min_elo_threshold: float = 1400.0  # Minimum average Elo for games

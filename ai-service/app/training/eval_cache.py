@@ -14,7 +14,6 @@ Cache entries expire after a configurable TTL (default: 7 days) to handle
 model file updates.
 """
 
-import hashlib
 import json
 import logging
 import os
@@ -22,6 +21,8 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+
+from app.utils.checksum_utils import compute_bytes_checksum
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ def _compute_file_hash(path: Path) -> str:
         with open(path, 'rb') as f:
             head = f.read(1024)
 
-        content_hash = hashlib.md5(head).hexdigest()[:8]
+        content_hash = compute_bytes_checksum(head, algorithm="md5", truncate=8)
         return f"{mtime}_{size}_{content_hash}"
     except OSError as e:
         logger.debug(f"Failed to hash file {path}: {e}")

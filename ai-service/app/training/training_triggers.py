@@ -29,7 +29,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .unified_signals import (
     get_signal_computer,
@@ -37,6 +37,17 @@ from .unified_signals import (
     TrainingSignals,
     UnifiedSignalComputer,
 )
+
+# Import event system for quality-aware triggering
+try:
+    from app.distributed.data_events import (
+        DataEvent,
+        DataEventType,
+        get_event_bus,
+    )
+    HAS_EVENT_BUS = True
+except ImportError:
+    HAS_EVENT_BUS = False
 
 logger = logging.getLogger(__name__)
 
@@ -128,11 +139,32 @@ class ConfigState:
     win_rate_trend: float = 0.0
 
 
+@dataclass
+class QualityState:
+    """Quality state for a configuration.
+
+    Tracks quality information received via events to influence training priority.
+    """
+    config_key: str
+    high_quality_available: bool = False
+    high_quality_count: int = 0
+    avg_quality_score: float = 0.5
+    low_quality_warning: bool = False
+    last_quality_update: float = 0.0
+    # Priority boost when high quality data is available
+    quality_priority_boost: float = 0.0
+
+
 class TrainingTriggers:
     """Simplified training trigger system with 3 core signals.
 
     Delegates actual computation to UnifiedSignalComputer for consistency
     across all training decision systems.
+
+    Quality-Aware Features (December 2025):
+    - Subscribes to HIGH_QUALITY_DATA_AVAILABLE events
+    - Boosts training priority when quality data is ready
+    - Tracks quality distribution changes
     """
 
     def __init__(self, config: Optional[TriggerConfig] = None):
@@ -141,6 +173,10 @@ class TrainingTriggers:
         self._last_training_times: Dict[str, float] = {}
         # Delegate to unified signal computer
         self._signal_computer = get_signal_computer()
+        # Quality state tracking (December 2025)
+        self._quality_states: Dict[str, QualityState] = {}
+        self._event_subscribed = False
+        self._quality_callbacks: List[Callable[[str, QualityState], None]] = []
 
     def get_config_state(self, config_key: str) -> ConfigState:
         """Get or create state for a config."""
@@ -214,6 +250,10 @@ class TrainingTriggers:
         2. Model Staleness: Has it been too long since training?
         3. Performance Regression: Is the model underperforming?
 
+        Quality-aware features (December 2025):
+        - Priority is boosted when HIGH_QUALITY_DATA_AVAILABLE is received
+        - Priority is reduced when LOW_QUALITY_DATA_WARNING is received
+
         Returns a TriggerDecision with the result and reasoning.
         """
         if state is None:
@@ -242,12 +282,21 @@ class TrainingTriggers:
         if signals.is_bootstrap:
             signal_scores["bootstrap"] = 1.0
 
+        # Apply quality-aware priority adjustment (December 2025)
+        quality_state = self.get_quality_state(config_key)
+        adjusted_priority = signals.priority + quality_state.quality_priority_boost
+
+        # Add quality signal score
+        signal_scores["quality"] = quality_state.avg_quality_score
+        if quality_state.high_quality_available:
+            signal_scores["high_quality_boost"] = quality_state.quality_priority_boost
+
         return TriggerDecision(
             should_train=signals.should_train,
             reason=signals.reason,
             signal_scores=signal_scores,
             config_key=config_key,
-            priority=signals.priority,
+            priority=adjusted_priority,
         )
 
     def get_training_queue(self) -> List[TriggerDecision]:
@@ -302,6 +351,9 @@ class TrainingTriggers:
             model_count=state.model_count,
         )
 
+        # Include quality state
+        quality_state = self.get_quality_state(config_key)
+
         return {
             "should_train": signals.should_train,
             "urgency": signals.urgency.value,
@@ -317,19 +369,222 @@ class TrainingTriggers:
             "elo_regression_detected": signals.elo_regression_detected,
             "priority": signals.priority,
             "is_bootstrap": signals.is_bootstrap,
+            # Quality-aware fields (December 2025)
+            "high_quality_available": quality_state.high_quality_available,
+            "high_quality_count": quality_state.high_quality_count,
+            "avg_quality_score": quality_state.avg_quality_score,
+            "quality_priority_boost": quality_state.quality_priority_boost,
         }
+
+    # =========================================================================
+    # Quality-Aware Triggering (December 2025)
+    # =========================================================================
+
+    def get_quality_state(self, config_key: str) -> QualityState:
+        """Get or create quality state for a config."""
+        if config_key not in self._quality_states:
+            self._quality_states[config_key] = QualityState(config_key=config_key)
+        return self._quality_states[config_key]
+
+    def subscribe_to_quality_events(self) -> bool:
+        """Subscribe to quality events from the data event bus.
+
+        Returns True if successfully subscribed.
+        """
+        if not HAS_EVENT_BUS:
+            logger.warning("Event bus not available, quality events disabled")
+            return False
+
+        if self._event_subscribed:
+            return True
+
+        bus = get_event_bus()
+
+        # Subscribe to quality events
+        bus.subscribe(
+            DataEventType.HIGH_QUALITY_DATA_AVAILABLE,
+            self._handle_high_quality_event,
+        )
+        bus.subscribe(
+            DataEventType.LOW_QUALITY_DATA_WARNING,
+            self._handle_low_quality_event,
+        )
+        bus.subscribe(
+            DataEventType.QUALITY_DISTRIBUTION_CHANGED,
+            self._handle_quality_distribution_event,
+        )
+
+        self._event_subscribed = True
+        logger.info("TrainingTriggers subscribed to quality events")
+        return True
+
+    def unsubscribe_from_quality_events(self) -> None:
+        """Unsubscribe from quality events."""
+        if not HAS_EVENT_BUS or not self._event_subscribed:
+            return
+
+        bus = get_event_bus()
+        bus.unsubscribe(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._handle_high_quality_event)
+        bus.unsubscribe(DataEventType.LOW_QUALITY_DATA_WARNING, self._handle_low_quality_event)
+        bus.unsubscribe(DataEventType.QUALITY_DISTRIBUTION_CHANGED, self._handle_quality_distribution_event)
+        self._event_subscribed = False
+
+    def _handle_high_quality_event(self, event: "DataEvent") -> None:
+        """Handle HIGH_QUALITY_DATA_AVAILABLE event.
+
+        Boosts training priority when high-quality data becomes available.
+        """
+        config_key = event.payload.get("config", "")
+        if not config_key:
+            return
+
+        quality_state = self.get_quality_state(config_key)
+        quality_state.high_quality_available = True
+        quality_state.high_quality_count = event.payload.get("high_quality_count", 0)
+        quality_state.avg_quality_score = event.payload.get("avg_quality", 0.7)
+        quality_state.last_quality_update = time.time()
+        quality_state.low_quality_warning = False
+
+        # Calculate priority boost based on quality and count
+        # More high-quality data = higher boost (capped at 0.3)
+        count_factor = min(quality_state.high_quality_count / 1000.0, 1.0)
+        quality_factor = quality_state.avg_quality_score
+        quality_state.quality_priority_boost = 0.3 * count_factor * quality_factor
+
+        logger.info(
+            f"Quality event: {config_key} has {quality_state.high_quality_count} "
+            f"high-quality games (boost: {quality_state.quality_priority_boost:.3f})"
+        )
+
+        # Also update the signal computer's quality score
+        self._signal_computer.update_data_quality(config_key, quality_state.avg_quality_score)
+
+        # Notify any registered callbacks
+        for callback in self._quality_callbacks:
+            try:
+                callback(config_key, quality_state)
+            except Exception as e:
+                logger.warning(f"Quality callback error: {e}")
+
+    def _handle_low_quality_event(self, event: "DataEvent") -> None:
+        """Handle LOW_QUALITY_DATA_WARNING event.
+
+        Reduces training priority when data quality is poor.
+        """
+        config_key = event.payload.get("config", "")
+        if not config_key:
+            return
+
+        quality_state = self.get_quality_state(config_key)
+        quality_state.low_quality_warning = True
+        quality_state.high_quality_available = False
+        quality_state.avg_quality_score = event.payload.get("avg_quality", 0.3)
+        quality_state.last_quality_update = time.time()
+        # Negative boost when quality is low
+        quality_state.quality_priority_boost = -0.1
+
+        logger.warning(
+            f"Low quality warning: {config_key} avg_quality={quality_state.avg_quality_score:.3f}"
+        )
+
+        self._signal_computer.update_data_quality(config_key, quality_state.avg_quality_score)
+
+    def _handle_quality_distribution_event(self, event: "DataEvent") -> None:
+        """Handle QUALITY_DISTRIBUTION_CHANGED event.
+
+        Updates quality state when distribution shifts significantly.
+        """
+        config_key = event.payload.get("config", "")
+        if not config_key:
+            return
+
+        quality_state = self.get_quality_state(config_key)
+        quality_state.avg_quality_score = event.payload.get("avg_quality", 0.5)
+        quality_state.high_quality_count = event.payload.get("high_quality_count", 0)
+        quality_state.last_quality_update = time.time()
+
+        # Recalculate boost based on new distribution
+        if quality_state.avg_quality_score >= 0.6:
+            count_factor = min(quality_state.high_quality_count / 1000.0, 1.0)
+            quality_state.quality_priority_boost = 0.2 * count_factor * quality_state.avg_quality_score
+            quality_state.high_quality_available = True
+            quality_state.low_quality_warning = False
+        elif quality_state.avg_quality_score < 0.4:
+            quality_state.quality_priority_boost = -0.1
+            quality_state.high_quality_available = False
+            quality_state.low_quality_warning = True
+        else:
+            quality_state.quality_priority_boost = 0.0
+            quality_state.high_quality_available = False
+            quality_state.low_quality_warning = False
+
+        self._signal_computer.update_data_quality(config_key, quality_state.avg_quality_score)
+
+    def add_quality_callback(self, callback: Callable[[str, "QualityState"], None]) -> None:
+        """Add a callback to be notified when quality state changes.
+
+        Args:
+            callback: Function(config_key, quality_state) called on quality updates
+        """
+        self._quality_callbacks.append(callback)
+
+    def remove_quality_callback(self, callback: Callable[[str, "QualityState"], None]) -> bool:
+        """Remove a quality callback.
+
+        Returns True if callback was found and removed.
+        """
+        if callback in self._quality_callbacks:
+            self._quality_callbacks.remove(callback)
+            return True
+        return False
+
+    def get_quality_adjusted_priority(self, config_key: str, base_priority: float) -> float:
+        """Get priority adjusted for data quality.
+
+        Args:
+            config_key: Configuration identifier
+            base_priority: Base priority from signal computation
+
+        Returns:
+            Adjusted priority including quality boost
+        """
+        quality_state = self.get_quality_state(config_key)
+        return base_priority + quality_state.quality_priority_boost
 
 
 # Convenience singleton
 _default_triggers: Optional[TrainingTriggers] = None
 
 
-def get_training_triggers(config: Optional[TriggerConfig] = None) -> TrainingTriggers:
-    """Get the default training triggers instance."""
+def get_training_triggers(
+    config: Optional[TriggerConfig] = None,
+    subscribe_quality_events: bool = True,
+) -> TrainingTriggers:
+    """Get the default training triggers instance.
+
+    Args:
+        config: Optional trigger configuration
+        subscribe_quality_events: If True (default), auto-subscribe to quality events
+            for priority boosting when high-quality data becomes available.
+
+    Returns:
+        TrainingTriggers singleton instance
+    """
     global _default_triggers
     if _default_triggers is None:
         _default_triggers = TrainingTriggers(config)
+        # Auto-subscribe to quality events (December 2025)
+        if subscribe_quality_events and HAS_EVENT_BUS:
+            _default_triggers.subscribe_to_quality_events()
     return _default_triggers
+
+
+def reset_training_triggers() -> None:
+    """Reset the singleton for testing purposes."""
+    global _default_triggers
+    if _default_triggers is not None:
+        _default_triggers.unsubscribe_from_quality_events()
+    _default_triggers = None
 
 
 def should_train(config_key: str, games_since_training: int, **kwargs) -> TriggerDecision:

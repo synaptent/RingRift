@@ -43,6 +43,28 @@ if TYPE_CHECKING:
     from app.training.hot_data_buffer import HotDataBuffer
     from app.training.data_pipeline_controller import DataPipelineController
 
+# Import centralized quality thresholds
+try:
+    from app.quality.thresholds import (
+        MIN_QUALITY_FOR_TRAINING,
+        HIGH_QUALITY_THRESHOLD,
+    )
+except ImportError:
+    MIN_QUALITY_FOR_TRAINING = 0.3
+    HIGH_QUALITY_THRESHOLD = 0.7
+
+# Import metrics functions for Prometheus reporting
+try:
+    from app.metrics.orchestrator import (
+        update_quality_bridge_status,
+        record_training_data_quality,
+    )
+    HAS_QUALITY_METRICS = True
+except ImportError:
+    HAS_QUALITY_METRICS = False
+    update_quality_bridge_status = None
+    record_training_data_quality = None
+
 logger = logging.getLogger(__name__)
 
 # Default paths
@@ -63,7 +85,7 @@ class QualityBridgeConfig:
         prefer_sync_coordinator: Use SyncCoordinator's lookup if available
     """
     enable_quality_scoring: bool = True
-    min_quality_threshold: float = 0.3
+    min_quality_threshold: float = MIN_QUALITY_FOR_TRAINING
     min_elo_threshold: float = 1400.0
     quality_weight_in_sampling: float = 0.4
     refresh_interval_seconds: float = 300.0
@@ -245,19 +267,45 @@ class QualityBridge:
         return len(self._quality_lookup)
 
     def _update_stats(self) -> None:
-        """Update quality statistics."""
+        """Update quality statistics and Prometheus metrics."""
         self._stats.quality_lookup_size = len(self._quality_lookup)
         self._stats.elo_lookup_size = len(self._elo_lookup)
         self._stats.last_refresh_time = self._last_refresh
 
+        min_quality = 0.0
+        max_quality = 0.0
         if self._quality_lookup:
             scores = list(self._quality_lookup.values())
             self._stats.avg_quality_score = sum(scores) / len(scores)
-            self._stats.high_quality_count = sum(1 for s in scores if s > 0.7)
+            self._stats.high_quality_count = sum(1 for s in scores if s >= HIGH_QUALITY_THRESHOLD)
+            min_quality = min(scores) if scores else 0.0
+            max_quality = max(scores) if scores else 0.0
 
         if self._elo_lookup:
             elos = list(self._elo_lookup.values())
             self._stats.avg_elo = sum(elos) / len(elos)
+
+        # Record Prometheus metrics
+        if HAS_QUALITY_METRICS:
+            try:
+                refresh_age = time.time() - self._last_refresh
+                update_quality_bridge_status(
+                    quality_lookup_size=self._stats.quality_lookup_size,
+                    elo_lookup_size=self._stats.elo_lookup_size,
+                    refresh_age_seconds=refresh_age,
+                    avg_quality=self._stats.avg_quality_score,
+                )
+                record_training_data_quality(
+                    board_type="all",
+                    num_players=0,  # 0 = aggregated
+                    avg_quality=self._stats.avg_quality_score,
+                    min_quality=min_quality,
+                    max_quality=max_quality,
+                    high_quality_count=self._stats.high_quality_count,
+                    total_games=self._stats.quality_lookup_size,
+                )
+            except Exception as e:
+                logger.debug(f"Failed to record quality metrics: {e}")
 
     def get_quality_lookup(self, auto_refresh: bool = True) -> Dict[str, float]:
         """Get quality score lookup dictionary.
@@ -427,6 +475,78 @@ class QualityBridge:
             logger.warning(f"Failed to configure HotDataBuffer: {e}")
             return 0
 
+    def auto_calibrate_hot_buffer(
+        self,
+        buffer: "HotDataBuffer",
+        min_quality_percentile: float = 0.1,
+        evict_below_percentile: bool = True,
+        recompute_quality: bool = False,
+    ) -> Dict[str, Any]:
+        """Auto-calibrate a HotDataBuffer's quality thresholds.
+
+        This method:
+        1. Configures the buffer with quality lookups
+        2. Optionally recomputes quality scores using UnifiedQualityScorer
+        3. Calibrates thresholds based on the quality distribution
+        4. Optionally evicts low-quality games
+
+        Args:
+            buffer: HotDataBuffer instance to calibrate
+            min_quality_percentile: Percentile below which games are low-quality
+            evict_below_percentile: Whether to remove low-quality games
+            recompute_quality: Whether to recompute quality with UnifiedQualityScorer
+
+        Returns:
+            Dict with calibration results:
+            - configured: Number of games configured with lookups
+            - recomputed: Number of games with recomputed quality (if enabled)
+            - distribution: Quality distribution stats
+            - calibration: Calibrated threshold values
+            - evicted: Number of low-quality games evicted
+        """
+        result: Dict[str, Any] = {
+            "configured": 0,
+            "recomputed": 0,
+            "distribution": {},
+            "calibration": {},
+            "evicted": 0,
+        }
+
+        # First configure with quality lookups
+        result["configured"] = self.configure_hot_data_buffer(buffer)
+
+        # Optionally recompute quality using UnifiedQualityScorer
+        if recompute_quality:
+            try:
+                if hasattr(buffer, "recompute_quality_with_scorer"):
+                    result["recomputed"] = buffer.recompute_quality_with_scorer()
+                    logger.info(f"Recomputed quality for {result['recomputed']} games")
+            except Exception as e:
+                logger.warning(f"Failed to recompute quality: {e}")
+
+        # Auto-calibrate and optionally filter
+        try:
+            if hasattr(buffer, "auto_calibrate_and_filter"):
+                calibration_result = buffer.auto_calibrate_and_filter(
+                    min_quality_percentile=min_quality_percentile,
+                    evict_below_percentile=evict_below_percentile,
+                )
+                result["distribution"] = calibration_result.get("distribution", {})
+                result["calibration"] = calibration_result.get("calibration", {})
+                result["evicted"] = calibration_result.get("evicted", 0)
+                if result['calibration'].get('calibrated'):
+                    low_thresh = result['calibration'].get('low_threshold', 0.0)
+                    logger.info(
+                        f"Auto-calibrated buffer: evicted={result['evicted']}, "
+                        f"low_threshold={low_thresh:.2f}"
+                    )
+                else:
+                    logger.info("Auto-calibration skipped (insufficient data)")
+        except Exception as e:
+            logger.warning(f"Failed to auto-calibrate buffer: {e}")
+
+        return result
+
     def configure_data_pipeline_controller(
         self,
         controller: "DataPipelineController",
@@ -517,9 +637,27 @@ def get_game_quality(game_id: str) -> Optional[float]:
     return get_quality_bridge().get_game_quality(game_id)
 
 
-def is_high_quality_game(game_id: str, threshold: float = 0.7) -> bool:
+def is_high_quality_game(game_id: str, threshold: float = HIGH_QUALITY_THRESHOLD) -> bool:
     """Check if a game meets the quality threshold."""
     return get_quality_bridge().is_high_quality(game_id, threshold)
+
+
+def auto_calibrate_buffer(
+    buffer: "HotDataBuffer",
+    min_quality_percentile: float = 0.1,
+    evict_below_percentile: bool = True,
+    recompute_quality: bool = False,
+) -> Dict[str, Any]:
+    """Auto-calibrate a HotDataBuffer's quality thresholds (convenience function).
+
+    See QualityBridge.auto_calibrate_hot_buffer for full documentation.
+    """
+    return get_quality_bridge().auto_calibrate_hot_buffer(
+        buffer,
+        min_quality_percentile=min_quality_percentile,
+        evict_below_percentile=evict_below_percentile,
+        recompute_quality=recompute_quality,
+    )
 
 
 __all__ = [
@@ -531,4 +669,5 @@ __all__ = [
     "get_elo_lookup",
     "get_game_quality",
     "is_high_quality_game",
+    "auto_calibrate_buffer",
 ]

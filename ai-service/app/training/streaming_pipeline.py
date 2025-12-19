@@ -25,7 +25,6 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import sqlite3
@@ -37,6 +36,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, Iterator, List, Optional, Set, Tuple
+
+from app.utils.checksum_utils import compute_string_checksum
 
 import numpy as np
 
@@ -292,9 +293,11 @@ def extract_samples_from_game(game: Dict[str, Any]) -> List[GameSample]:
             value_target = 0.0  # Loss
 
         # Create state hash for deduplication
-        state_hash = hashlib.md5(
-            f"{game_id}:{move_idx}".encode()
-        ).hexdigest()[:16]
+        state_hash = compute_string_checksum(
+            f"{game_id}:{move_idx}",
+            algorithm="md5",
+            truncate=16,
+        )
 
         sample = GameSample(
             game_id=game_id,

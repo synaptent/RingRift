@@ -221,10 +221,10 @@ class LogContext:
         self.new_level = level
         self.original_level = logger.level
 
-    def __enter__(self):
+    def __enter__(self) -> logging.Logger:
         self.logger.setLevel(self.new_level)
         return self.logger
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: object) -> bool:
         self.logger.setLevel(self.original_level)
         return False

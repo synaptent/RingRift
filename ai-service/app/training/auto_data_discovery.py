@@ -59,6 +59,16 @@ except ImportError:
     DataManifest = None
     GameQualityMetadata = None
 
+# Import centralized quality thresholds
+try:
+    from app.quality.thresholds import (
+        MIN_QUALITY_FOR_TRAINING,
+        MIN_QUALITY_FOR_PRIORITY_SYNC,
+    )
+except ImportError:
+    MIN_QUALITY_FOR_TRAINING = 0.3
+    MIN_QUALITY_FOR_PRIORITY_SYNC = 0.5
+
 try:
     from app.distributed.storage_provider import get_storage_provider, is_nfs_available
     HAS_STORAGE_PROVIDER = True
@@ -243,7 +253,7 @@ def discover_training_data(
 
 
 def get_high_quality_game_ids(
-    min_quality: float = 0.5,
+    min_quality: float = MIN_QUALITY_FOR_PRIORITY_SYNC,
     limit: int = 10000,
     board_type: Optional[str] = None,
     num_players: Optional[int] = None,
@@ -251,7 +261,7 @@ def get_high_quality_game_ids(
     """Get game IDs of high-quality games for training.
 
     Args:
-        min_quality: Minimum quality score
+        min_quality: Minimum quality score (default from quality.thresholds)
         limit: Maximum number of game IDs to return
         board_type: Filter by board type
         num_players: Filter by player count
@@ -355,8 +365,8 @@ def setup_auto_discovery_for_training(
         if discovery.success:
             result["additional_data_paths"] = [str(p) for p in discovery.data_paths]
             # Set minimum quality based on distribution
-            if discovery.avg_quality_score > 0.5:
-                result["min_quality_score"] = max(0.3, discovery.avg_quality_score - 0.2)
+            if discovery.avg_quality_score > MIN_QUALITY_FOR_PRIORITY_SYNC:
+                result["min_quality_score"] = max(MIN_QUALITY_FOR_TRAINING, discovery.avg_quality_score - 0.2)
 
         return result
 

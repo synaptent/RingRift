@@ -7,32 +7,42 @@ Used to validate training improvements.
 
 Usage:
     # Compare new model vs current best
-    python scripts/compare_models_elo.py \
-        --model-a models/nnue/new_model.pt \
-        --model-b models/nnue/square8_2p_best.pt \
-        --games 100 \
+    python scripts/compare_models_elo.py \\
+        --model-a models/nnue/new_model.pt \\
+        --model-b models/nnue/square8_2p_best.pt \\
+        --games 100 \\
         --board-type square8 --num-players 2
 
     # Quick comparison (fewer games)
     python scripts/compare_models_elo.py --model-a new.pt --model-b best.pt --games 20 --quick
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import math
-import os
 import sys
 import time
-from dataclasses import dataclass
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Any, Dict, List, Optional, Tuple
 
 # Add project root
-sys.path.insert(0, str(Path(__file__).parent.parent))
+SCRIPT_DIR = Path(__file__).parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.models import BoardType, GameStatus
+from scripts.lib.logging_config import (
+    setup_script_logging,
+    get_logger,
+    get_metrics_logger,
+)
+from scripts.lib.config import BoardConfig
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -44,12 +54,17 @@ class MatchResult:
     time_seconds: float
     model_a_color: int  # Which player model_a was (1 or 2)
 
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
 
 @dataclass
 class ComparisonResult:
     """Result of full comparison."""
     model_a_path: str
     model_b_path: str
+    board_type: str
+    num_players: int
     total_games: int
     model_a_wins: int
     model_b_wins: int
@@ -60,34 +75,55 @@ class ComparisonResult:
     avg_game_length: float
     total_time: float
 
+    def to_dict(self) -> Dict[str, Any]:
+        result = asdict(self)
+        result["confidence_interval"] = list(self.confidence_interval)
+        return result
 
-def expected_score(rating_a: float, rating_b: float) -> float:
-    """Calculate expected score for player A against player B."""
-    return 1.0 / (1.0 + 10.0 ** ((rating_b - rating_a) / 400.0))
+    def is_significant_improvement(self, threshold: float = 50.0) -> bool:
+        """Check if model A is significantly better."""
+        return self.elo_difference > threshold
+
+    def is_regression(self, threshold: float = -20.0) -> bool:
+        """Check if model A is significantly worse."""
+        return self.elo_difference < threshold
 
 
-def elo_diff_from_win_rate(win_rate: float) -> float:
-    """Calculate Elo difference from win rate."""
-    if win_rate <= 0:
-        return -400
-    if win_rate >= 1:
-        return 400
-    return -400 * math.log10(1.0 / win_rate - 1.0)
+class EloCalculator:
+    """Elo rating calculations."""
 
+    @staticmethod
+    def expected_score(rating_a: float, rating_b: float) -> float:
+        """Calculate expected score for player A against player B."""
+        return 1.0 / (1.0 + 10.0 ** ((rating_b - rating_a) / 400.0))
 
-def wilson_confidence_interval(wins: int, total: int, confidence: float = 0.95) -> Tuple[float, float]:
-    """Calculate Wilson score confidence interval for win rate."""
-    if total == 0:
-        return (0.0, 1.0)
+    @staticmethod
+    def elo_diff_from_win_rate(win_rate: float) -> float:
+        """Calculate Elo difference from win rate."""
+        if win_rate <= 0:
+            return -400
+        if win_rate >= 1:
+            return 400
+        return -400 * math.log10(1.0 / win_rate - 1.0)
 
-    z = 1.96 if confidence == 0.95 else 1.645  # 95% or 90%
-    p = wins / total
+    @staticmethod
+    def wilson_confidence_interval(
+        wins: int,
+        total: int,
+        confidence: float = 0.95,
+    ) -> Tuple[float, float]:
+        """Calculate Wilson score confidence interval for win rate."""
+        if total == 0:
+            return (0.0, 1.0)
 
-    denominator = 1 + z**2 / total
-    center = (p + z**2 / (2 * total)) / denominator
-    spread = z * math.sqrt((p * (1 - p) + z**2 / (4 * total)) / total) / denominator
+        z = 1.96 if confidence == 0.95 else 1.645  # 95% or 90%
+        p = wins / total
 
-    return (max(0, center - spread), min(1, center + spread))
+        denominator = 1 + z**2 / total
+        center = (p + z**2 / (2 * total)) / denominator
+        spread = z * math.sqrt((p * (1 - p) + z**2 / (4 * total)) / total) / denominator
+
+        return (max(0, center - spread), min(1, center + spread))
 
 
 def play_single_game(
@@ -96,15 +132,28 @@ def play_single_game(
     board_type: str,
     num_players: int,
     game_id: int,
-    model_a_player: int,  # Which player (1 or 2) is model_a
+    model_a_player: int,
     mcts_simulations: int = 100,
 ) -> MatchResult:
-    """Play a single game between two models."""
+    """Play a single game between two models.
+
+    Args:
+        model_a_path: Path to model A
+        model_b_path: Path to model B
+        board_type: Type of board
+        num_players: Number of players
+        game_id: Game identifier
+        model_a_player: Which player (1 or 2) model_a plays as
+        mcts_simulations: Number of MCTS simulations per move
+
+    Returns:
+        MatchResult with game outcome
+    """
     from app.game_engine import GameEngine
     from app.ai.nnue import NNUEEvaluator
     from app.ai.mcts_ai import MCTSAI
     from app.training.generate_data import create_initial_state
-    from app.models import AIConfig
+    from app.models import AIConfig, BoardType, GameStatus
 
     start_time = time.time()
 
@@ -143,7 +192,8 @@ def play_single_game(
     # Determine winner relative to model_a
     winner = None
     if state.winner is not None:
-        if (state.winner == 1 and model_a_player == 1) or (state.winner == 2 and model_a_player == 2):
+        if (state.winner == 1 and model_a_player == 1) or \
+           (state.winner == 2 and model_a_player == 2):
             winner = 1  # model_a won
         else:
             winner = 2  # model_b won
@@ -159,44 +209,93 @@ def play_single_game(
     )
 
 
-def run_comparison(
-    model_a_path: str,
-    model_b_path: str,
-    board_type: str,
-    num_players: int,
-    num_games: int,
-    mcts_simulations: int = 100,
-    parallel: int = 4,
-) -> ComparisonResult:
-    """Run full comparison between two models."""
-    print(f"\n{'='*60}")
-    print(f"  MODEL COMPARISON")
-    print(f"{'='*60}")
-    print(f"  Model A: {model_a_path}")
-    print(f"  Model B: {model_b_path}")
-    print(f"  Games: {num_games} ({board_type}_{num_players}p)")
-    print(f"  MCTS sims: {mcts_simulations}")
-    print(f"{'='*60}\n")
+class ModelComparator:
+    """Compares two models via head-to-head games."""
 
-    start_time = time.time()
-    results: List[MatchResult] = []
+    def __init__(
+        self,
+        model_a_path: str,
+        model_b_path: str,
+        board_type: str = "square8",
+        num_players: int = 2,
+        mcts_simulations: int = 100,
+        parallel_games: int = 4,
+    ):
+        """Initialize the comparator.
 
-    # Alternate colors for fairness
-    game_configs = []
-    for i in range(num_games):
-        model_a_player = 1 if i % 2 == 0 else 2
-        game_configs.append((i, model_a_player))
+        Args:
+            model_a_path: Path to first model
+            model_b_path: Path to second model (baseline)
+            board_type: Board type for games
+            num_players: Number of players
+            mcts_simulations: MCTS simulations per move
+            parallel_games: Number of games to run in parallel
+        """
+        self.model_a_path = model_a_path
+        self.model_b_path = model_b_path
+        self.board_type = board_type
+        self.num_players = num_players
+        self.mcts_simulations = mcts_simulations
+        self.parallel_games = parallel_games
+        self.metrics = get_metrics_logger("model_comparison", log_interval=60)
+        self.calculator = EloCalculator()
 
-    # Run games
-    if parallel > 1:
-        with ProcessPoolExecutor(max_workers=parallel) as executor:
+    def run(self, num_games: int) -> ComparisonResult:
+        """Run the full comparison.
+
+        Args:
+            num_games: Number of games to play
+
+        Returns:
+            ComparisonResult with statistics
+        """
+        config_key = f"{self.board_type}_{self.num_players}p"
+
+        logger.info(f"Starting model comparison")
+        logger.info(f"  Model A: {self.model_a_path}")
+        logger.info(f"  Model B: {self.model_b_path}")
+        logger.info(f"  Config: {config_key}")
+        logger.info(f"  Games: {num_games}")
+        logger.info(f"  MCTS simulations: {self.mcts_simulations}")
+
+        start_time = time.time()
+        results: List[MatchResult] = []
+
+        # Alternate colors for fairness
+        game_configs = [
+            (i, 1 if i % 2 == 0 else 2)
+            for i in range(num_games)
+        ]
+
+        # Run games
+        if self.parallel_games > 1:
+            results = self._run_parallel(game_configs)
+        else:
+            results = self._run_sequential(game_configs)
+
+        total_time = time.time() - start_time
+
+        # Calculate statistics
+        return self._compute_statistics(results, total_time)
+
+    def _run_parallel(
+        self,
+        game_configs: List[Tuple[int, int]],
+    ) -> List[MatchResult]:
+        """Run games in parallel."""
+        results: List[MatchResult] = []
+
+        with ProcessPoolExecutor(max_workers=self.parallel_games) as executor:
             futures = {
                 executor.submit(
                     play_single_game,
-                    model_a_path, model_b_path,
-                    board_type, num_players,
-                    game_id, model_a_player,
-                    mcts_simulations
+                    self.model_a_path,
+                    self.model_b_path,
+                    self.board_type,
+                    self.num_players,
+                    game_id,
+                    model_a_player,
+                    self.mcts_simulations,
                 ): game_id
                 for game_id, model_a_player in game_configs
             }
@@ -210,153 +309,306 @@ def run_comparison(
                     a_wins = sum(1 for r in results if r.winner == 1)
                     b_wins = sum(1 for r in results if r.winner == 2)
                     draws = sum(1 for r in results if r.winner is None)
-                    print(f"  Game {len(results)}/{num_games}: A={a_wins} B={b_wins} D={draws}", end="\r")
+
+                    self.metrics.set("games_completed", len(results))
+                    self.metrics.set("model_a_wins", a_wins)
+                    self.metrics.set("model_b_wins", b_wins)
+
+                    logger.debug(
+                        f"Game {len(results)}/{len(game_configs)}: "
+                        f"A={a_wins} B={b_wins} D={draws}"
+                    )
 
                 except Exception as e:
-                    print(f"  Game failed: {e}")
-    else:
+                    logger.error(f"Game failed: {e}")
+
+        return results
+
+    def _run_sequential(
+        self,
+        game_configs: List[Tuple[int, int]],
+    ) -> List[MatchResult]:
+        """Run games sequentially."""
+        results: List[MatchResult] = []
+
         for game_id, model_a_player in game_configs:
             try:
                 result = play_single_game(
-                    model_a_path, model_b_path,
-                    board_type, num_players,
-                    game_id, model_a_player,
-                    mcts_simulations
+                    self.model_a_path,
+                    self.model_b_path,
+                    self.board_type,
+                    self.num_players,
+                    game_id,
+                    model_a_player,
+                    self.mcts_simulations,
                 )
                 results.append(result)
 
                 a_wins = sum(1 for r in results if r.winner == 1)
                 b_wins = sum(1 for r in results if r.winner == 2)
                 draws = sum(1 for r in results if r.winner is None)
-                print(f"  Game {len(results)}/{num_games}: A={a_wins} B={b_wins} D={draws}", end="\r")
+
+                self.metrics.set("games_completed", len(results))
+                logger.debug(
+                    f"Game {len(results)}/{len(game_configs)}: "
+                    f"A={a_wins} B={b_wins} D={draws}"
+                )
 
             except Exception as e:
-                print(f"  Game {game_id} failed: {e}")
+                logger.error(f"Game {game_id} failed: {e}")
 
-    print()  # New line after progress
+        return results
 
-    # Calculate statistics
-    a_wins = sum(1 for r in results if r.winner == 1)
-    b_wins = sum(1 for r in results if r.winner == 2)
-    draws = sum(1 for r in results if r.winner is None)
-    total = len(results)
+    def _compute_statistics(
+        self,
+        results: List[MatchResult],
+        total_time: float,
+    ) -> ComparisonResult:
+        """Compute final statistics from game results."""
+        a_wins = sum(1 for r in results if r.winner == 1)
+        b_wins = sum(1 for r in results if r.winner == 2)
+        draws = sum(1 for r in results if r.winner is None)
+        total = len(results)
 
-    # Win rate (counting draws as 0.5)
-    a_score = a_wins + 0.5 * draws
-    win_rate = a_score / total if total > 0 else 0.5
+        # Win rate (counting draws as 0.5)
+        a_score = a_wins + 0.5 * draws
+        win_rate = a_score / total if total > 0 else 0.5
 
-    # Elo difference
-    elo_diff = elo_diff_from_win_rate(win_rate)
+        # Elo difference
+        elo_diff = self.calculator.elo_diff_from_win_rate(win_rate)
 
-    # Confidence interval
-    ci_low, ci_high = wilson_confidence_interval(a_wins, total - draws)
-    elo_ci_low = elo_diff_from_win_rate(ci_low) if ci_low > 0 else -400
-    elo_ci_high = elo_diff_from_win_rate(ci_high) if ci_high < 1 else 400
+        # Confidence interval
+        ci_low, ci_high = self.calculator.wilson_confidence_interval(
+            a_wins,
+            total - draws,
+        )
+        elo_ci_low = (
+            self.calculator.elo_diff_from_win_rate(ci_low)
+            if ci_low > 0 else -400
+        )
+        elo_ci_high = (
+            self.calculator.elo_diff_from_win_rate(ci_high)
+            if ci_high < 1 else 400
+        )
 
-    # Average game length
-    avg_moves = sum(r.moves for r in results) / len(results) if results else 0
+        # Average game length
+        avg_moves = sum(r.moves for r in results) / len(results) if results else 0
 
-    total_time = time.time() - start_time
+        return ComparisonResult(
+            model_a_path=self.model_a_path,
+            model_b_path=self.model_b_path,
+            board_type=self.board_type,
+            num_players=self.num_players,
+            total_games=total,
+            model_a_wins=a_wins,
+            model_b_wins=b_wins,
+            draws=draws,
+            model_a_win_rate=win_rate,
+            elo_difference=elo_diff,
+            confidence_interval=(elo_ci_low, elo_ci_high),
+            avg_game_length=avg_moves,
+            total_time=total_time,
+        )
 
-    comparison = ComparisonResult(
-        model_a_path=model_a_path,
-        model_b_path=model_b_path,
-        total_games=total,
-        model_a_wins=a_wins,
-        model_b_wins=b_wins,
-        draws=draws,
-        model_a_win_rate=win_rate,
-        elo_difference=elo_diff,
-        confidence_interval=(elo_ci_low, elo_ci_high),
-        avg_game_length=avg_moves,
-        total_time=total_time,
+
+class ComparisonReporter:
+    """Formats and outputs comparison reports."""
+
+    def print_report(self, result: ComparisonResult) -> None:
+        """Print a formatted comparison report."""
+        total = result.total_games
+
+        print(f"\n{'=' * 60}")
+        print(f"  MODEL COMPARISON RESULTS")
+        print(f"{'=' * 60}")
+        print(f"  Model A: {result.model_a_path}")
+        print(f"  Model B: {result.model_b_path}")
+        print(f"  Config:  {result.board_type}_{result.num_players}p")
+        print(f"{'=' * 60}")
+        print(f"")
+        print(f"  Model A wins: {result.model_a_wins:>4} ({result.model_a_wins/total*100:.1f}%)")
+        print(f"  Model B wins: {result.model_b_wins:>4} ({result.model_b_wins/total*100:.1f}%)")
+        print(f"  Draws:        {result.draws:>4} ({result.draws/total*100:.1f}%)")
+        print(f"")
+        print(f"  Model A win rate: {result.model_a_win_rate:.1%}")
+        print(f"  Elo difference:   {result.elo_difference:+.0f} (A vs B)")
+        print(f"  95% CI:           [{result.confidence_interval[0]:+.0f}, {result.confidence_interval[1]:+.0f}]")
+        print(f"")
+        print(f"  Avg game length:  {result.avg_game_length:.1f} moves")
+        print(f"  Total time:       {result.total_time:.1f}s ({result.total_time/total:.1f}s/game)")
+        print(f"{'=' * 60}")
+
+        # Interpretation
+        self._print_interpretation(result)
+
+    def _print_interpretation(self, result: ComparisonResult) -> None:
+        """Print interpretation of results."""
+        elo_diff = result.elo_difference
+
+        if elo_diff > 50:
+            print(f"\n  Model A is SIGNIFICANTLY STRONGER (+{elo_diff:.0f} Elo)")
+        elif elo_diff > 20:
+            print(f"\n  Model A is moderately stronger (+{elo_diff:.0f} Elo)")
+        elif elo_diff > -20:
+            print(f"\n  Models are roughly equal ({elo_diff:+.0f} Elo)")
+        elif elo_diff > -50:
+            print(f"\n  Model B is moderately stronger ({elo_diff:+.0f} Elo)")
+        else:
+            print(f"\n  Model B is SIGNIFICANTLY STRONGER ({elo_diff:+.0f} Elo)")
+
+    def save_result(self, result: ComparisonResult, output_path: Path) -> None:
+        """Save comparison result to JSON."""
+        data = result.to_dict()
+        data["timestamp"] = datetime.now().isoformat()
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output_path, "w") as f:
+            json.dump(data, f, indent=2)
+
+        logger.info(f"Result saved to: {output_path}")
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Compare two models via Elo",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --model-a new.pt --model-b best.pt --games 100
+  %(prog)s --model-a new.pt --model-b best.pt --quick
+  %(prog)s --model-a new.pt --model-b best.pt --board-type hex8 --num-players 3
+        """,
     )
 
-    # Print results
-    print(f"\n{'='*60}")
-    print(f"  RESULTS")
-    print(f"{'='*60}")
-    print(f"  Model A wins: {a_wins:>4} ({a_wins/total*100:.1f}%)")
-    print(f"  Model B wins: {b_wins:>4} ({b_wins/total*100:.1f}%)")
-    print(f"  Draws:        {draws:>4} ({draws/total*100:.1f}%)")
-    print(f"")
-    print(f"  Model A win rate: {win_rate:.1%}")
-    print(f"  Elo difference:   {elo_diff:+.0f} (A vs B)")
-    print(f"  95% CI:           [{elo_ci_low:+.0f}, {elo_ci_high:+.0f}]")
-    print(f"")
-    print(f"  Avg game length:  {avg_moves:.1f} moves")
-    print(f"  Total time:       {total_time:.1f}s ({total_time/total:.1f}s/game)")
-    print(f"{'='*60}")
+    parser.add_argument(
+        "--model-a",
+        required=True,
+        help="Path to model A",
+    )
+    parser.add_argument(
+        "--model-b",
+        required=True,
+        help="Path to model B (baseline)",
+    )
+    parser.add_argument(
+        "--board-type",
+        default="square8",
+        help="Board type (default: square8)",
+    )
+    parser.add_argument(
+        "--num-players",
+        type=int,
+        default=2,
+        help="Number of players (default: 2)",
+    )
+    parser.add_argument(
+        "--games",
+        type=int,
+        default=100,
+        help="Number of games (default: 100)",
+    )
+    parser.add_argument(
+        "--mcts-sims",
+        type=int,
+        default=100,
+        help="MCTS simulations per move (default: 100)",
+    )
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        default=4,
+        help="Parallel games (default: 4)",
+    )
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Quick mode (fewer sims and games)",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        help="Output JSON file",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose logging",
+    )
+    parser.add_argument(
+        "--json-logs",
+        action="store_true",
+        help="Use JSON format for log files",
+    )
 
-    # Interpretation
-    if elo_diff > 50:
-        print(f"\n  ✅ Model A is SIGNIFICANTLY STRONGER (+{elo_diff:.0f} Elo)")
-    elif elo_diff > 20:
-        print(f"\n  📈 Model A is moderately stronger (+{elo_diff:.0f} Elo)")
-    elif elo_diff > -20:
-        print(f"\n  🔄 Models are roughly equal ({elo_diff:+.0f} Elo)")
-    elif elo_diff > -50:
-        print(f"\n  📉 Model B is moderately stronger ({elo_diff:+.0f} Elo)")
-    else:
-        print(f"\n  ❌ Model B is SIGNIFICANTLY STRONGER ({elo_diff:+.0f} Elo)")
-
-    return comparison
+    return parser.parse_args()
 
 
-def save_comparison_result(result: ComparisonResult, output_path: Path):
-    """Save comparison result to JSON."""
-    data = {
-        "model_a": result.model_a_path,
-        "model_b": result.model_b_path,
-        "total_games": result.total_games,
-        "model_a_wins": result.model_a_wins,
-        "model_b_wins": result.model_b_wins,
-        "draws": result.draws,
-        "model_a_win_rate": result.model_a_win_rate,
-        "elo_difference": result.elo_difference,
-        "confidence_interval": result.confidence_interval,
-        "avg_game_length": result.avg_game_length,
-        "total_time_seconds": result.total_time,
-        "timestamp": datetime.now().isoformat(),
-    }
+def main() -> int:
+    """Main entry point."""
+    args = parse_args()
 
-    with open(output_path, "w") as f:
-        json.dump(data, f, indent=2)
+    # Setup logging
+    log_level = "DEBUG" if args.verbose else "INFO"
+    setup_script_logging(
+        script_name="compare_models",
+        level=log_level,
+        json_logs=args.json_logs,
+    )
 
-    print(f"\nResult saved to: {output_path}")
+    # Validate model paths
+    model_a = Path(args.model_a)
+    model_b = Path(args.model_b)
 
+    if not model_a.exists():
+        logger.error(f"Model A not found: {model_a}")
+        return 1
 
-def main():
-    parser = argparse.ArgumentParser(description="Compare two models via Elo")
-    parser.add_argument("--model-a", required=True, help="Path to model A")
-    parser.add_argument("--model-b", required=True, help="Path to model B (baseline)")
-    parser.add_argument("--board-type", default="square8", help="Board type")
-    parser.add_argument("--num-players", type=int, default=2, help="Number of players")
-    parser.add_argument("--games", type=int, default=100, help="Number of games")
-    parser.add_argument("--mcts-sims", type=int, default=100, help="MCTS simulations per move")
-    parser.add_argument("--parallel", type=int, default=4, help="Parallel games")
-    parser.add_argument("--quick", action="store_true", help="Quick mode (fewer sims)")
-    parser.add_argument("--output", type=str, help="Output JSON file")
+    if not model_b.exists():
+        logger.error(f"Model B not found: {model_b}")
+        return 1
 
-    args = parser.parse_args()
+    # Quick mode adjustments
+    mcts_sims = args.mcts_sims
+    num_games = args.games
 
     if args.quick:
-        args.mcts_sims = 50
-        args.games = min(args.games, 20)
+        mcts_sims = 50
+        num_games = min(num_games, 20)
+        logger.info("Quick mode enabled: 50 sims, max 20 games")
 
-    result = run_comparison(
-        model_a_path=args.model_a,
-        model_b_path=args.model_b,
+    # Run comparison
+    comparator = ModelComparator(
+        model_a_path=str(model_a),
+        model_b_path=str(model_b),
         board_type=args.board_type,
         num_players=args.num_players,
-        num_games=args.games,
-        mcts_simulations=args.mcts_sims,
-        parallel=args.parallel,
+        mcts_simulations=mcts_sims,
+        parallel_games=args.parallel,
     )
 
+    try:
+        result = comparator.run(num_games)
+    except Exception as e:
+        logger.exception(f"Comparison failed: {e}")
+        return 1
+
+    # Output results
+    reporter = ComparisonReporter()
+    reporter.print_report(result)
+
     if args.output:
-        save_comparison_result(result, Path(args.output))
+        reporter.save_result(result, Path(args.output))
+
+    # Log summary
+    logger.info(
+        f"Comparison complete: {result.total_games} games, "
+        f"Elo diff: {result.elo_difference:+.0f}"
+    )
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

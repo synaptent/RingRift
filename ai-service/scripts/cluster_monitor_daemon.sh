@@ -1,4 +1,10 @@
 #!/bin/bash
+# DEPRECATED: Use cluster_monitor_unified.sh instead (December 2025)
+# Migration: ./scripts/cluster_monitor_unified.sh --duration 10
+echo "WARNING: This script is deprecated. Use cluster_monitor_unified.sh instead."
+echo "For equivalent functionality: ./scripts/cluster_monitor_unified.sh --duration 10"
+echo ""
+
 #
 # Cluster Monitor Daemon
 # Monitors cluster health every 2 minutes for 10 hours

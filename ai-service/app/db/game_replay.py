@@ -2647,8 +2647,11 @@ class GameReplayDB:
         quality_score = None
         quality_category = None
         try:
-            from app.training.game_quality_scorer import compute_game_quality
-            quality = compute_game_quality(
+            from app.quality.unified_quality import (
+                compute_game_quality_from_params,
+                get_quality_category,
+            )
+            quality = compute_game_quality_from_params(
                 game_id=game_id,
                 game_status=final_state.game_status.value,
                 winner=final_state.winner,
@@ -2657,8 +2660,8 @@ class GameReplayDB:
                 board_type=initial_state.board_type.value,
                 source=metadata.get("source"),
             )
-            quality_score = quality.score
-            quality_category = quality.category.value
+            quality_score = quality.quality_score
+            quality_category = get_quality_category(quality.quality_score).value
         except ImportError:
             pass  # Quality scorer not available
         except Exception as e:

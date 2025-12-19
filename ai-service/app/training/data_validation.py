@@ -33,11 +33,12 @@ See docs/COMPREHENSIVE_ACTION_PLAN_2025_12_17.md Section 4.4 for context.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+
+from app.utils.checksum_utils import compute_string_checksum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
@@ -427,8 +428,7 @@ class GameDeduplicator:
     def _compute_game_hash(self, moves: List[Any]) -> str:
         """Compute hash of move sequence."""
         moves_str = "|".join(str(m) for m in moves)
-        full_hash = hashlib.sha256(moves_str.encode()).hexdigest()
-        return full_hash[:self.hash_prefix_length]
+        return compute_string_checksum(moves_str, truncate=self.hash_prefix_length)
 
     def reset(self) -> None:
         """Clear seen hashes and reset statistics."""

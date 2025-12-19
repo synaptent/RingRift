@@ -27,7 +27,6 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -39,9 +38,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from app.utils.paths import AI_SERVICE_ROOT
+from app.utils.checksum_utils import compute_file_checksum
 
-AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+logger = logging.getLogger(__name__)
 DEFAULT_BACKUP_DIR = AI_SERVICE_ROOT / "data" / "registry_backups"
 
 
@@ -121,11 +121,7 @@ class RegistryBackupManager:
 
     def _compute_hash(self, file_path: Path) -> str:
         """Compute SHA256 hash of a file."""
-        sha256 = hashlib.sha256()
-        with open(file_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(8192), b''):
-                sha256.update(chunk)
-        return sha256.hexdigest()
+        return compute_file_checksum(file_path, return_empty_for_missing=False)
 
     def _get_registry_stats(self) -> Dict[str, int]:
         """Get model and version counts from registry."""
