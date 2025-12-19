@@ -76,6 +76,9 @@ from scripts.unified_loop.config import (
 # Import canonical EventBus (consolidated 2025-12-18)
 from app.distributed.data_events import EventBus as CanonicalEventBus, get_event_bus
 
+# DataEvent/DataEventType are imported from scripts.unified_loop.config above
+HAS_DATA_EVENTS = True
+
 # Import refactored service classes (Phase 2 refactoring)
 from scripts.unified_loop.evaluation import ModelPruningService
 from scripts.unified_loop.curriculum import AdaptiveCurriculum
@@ -203,6 +206,16 @@ def clear_emergency_halt() -> bool:
         EMERGENCY_HALT_FILE.unlink()
         return True
     return False
+
+
+def set_emergency_halt(reason: str = "") -> None:
+    """Set the emergency halt flag to pause all loop activities.
+
+    Args:
+        reason: Optional reason for the halt (written to the file).
+    """
+    EMERGENCY_HALT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    EMERGENCY_HALT_FILE.write_text(reason or "Emergency halt triggered")
 
 # Import health checks for component monitoring
 try:

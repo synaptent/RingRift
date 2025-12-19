@@ -22,23 +22,14 @@ from typing import Any, Dict, List, Optional
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.models import (
-    AIConfig,
-    BoardState,
-    BoardType,
-    GamePhase,
-    GameState,
-    GameStatus,
-    Move,
-    Player,
-    TimeControl,
-)
+from app.models import AIConfig, BoardType, GameState, Move
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.heuristic_weights import BASE_V1_BALANCED_WEIGHTS, HEURISTIC_WEIGHT_KEYS
-from app.rules.core import BOARD_CONFIGS
 from app.rules.default_engine import DefaultRulesEngine
 from app.db import GameReplayDB, get_or_create_db, record_completed_game_with_parity_check, ParityValidationError
 from app.training.env import get_theoretical_max_moves
+from app.training.initial_state import create_initial_state
+from scripts.lib.cli import BOARD_TYPE_MAP
 
 
 @dataclass
@@ -70,79 +61,6 @@ def create_single_weight_profile(weight_key: str, value: float) -> Dict[str, flo
 def create_zero_profile() -> Dict[str, float]:
     """Create a profile with all weights set to zero."""
     return {k: 0.0 for k in HEURISTIC_WEIGHT_KEYS}
-
-
-BOARD_TYPE_MAP = {
-    "square8": BoardType.SQUARE8,
-    "square19": BoardType.SQUARE19,
-    "hex": BoardType.HEXAGONAL,
-}
-
-
-def create_game_state(board_type_str: str) -> GameState:
-    """Create initial game state for a board type."""
-    board_type = BOARD_TYPE_MAP.get(board_type_str, BoardType.SQUARE8)
-
-    config = BOARD_CONFIGS.get(board_type, BOARD_CONFIGS[BoardType.SQUARE8])
-    size = config.size
-    rings_per_player = config.rings_per_player
-
-    board = BoardState(
-        type=board_type,
-        size=size,
-        stacks={},
-        markers={},
-        collapsedSpaces={},
-        eliminatedRings={},
-    )
-
-    players = [
-        Player(
-            id=f"player{i}",
-            username=f"AI {i}",
-            type="ai",
-            playerNumber=i,
-            isReady=True,
-            timeRemaining=600000,
-            aiDifficulty=5,
-            ringsInHand=rings_per_player,
-            eliminatedRings=0,
-            territorySpaces=0,
-        )
-        for i in (1, 2)
-    ]
-
-    now = datetime.now()
-    time_control = TimeControl(initialTime=600000, increment=0, type="standard")
-
-    return GameState(
-        id="sensitivity-test",
-        boardType=board_type,
-        rngSeed=42,
-        board=board,
-        players=players,
-        currentPhase=GamePhase.RING_PLACEMENT,
-        currentPlayer=1,
-        moveHistory=[],
-        timeControl=time_control,
-        spectators=[],
-        gameStatus=GameStatus.ACTIVE,
-        winner=None,
-        createdAt=now,
-        lastMoveAt=now,
-        isRated=False,
-        maxPlayers=2,
-        totalRingsInPlay=rings_per_player * 2,
-        totalRingsEliminated=0,
-        victoryThreshold=5,
-        territoryVictoryThreshold=15,
-        chainCaptureState=None,
-        mustMoveFromStackKey=None,
-        zobristHash=None,
-        lpsRoundIndex=0,
-        lpsCurrentRoundActorMask={},
-        lpsExclusivePlayerForCompletedRound=None,
-    )
 
 
 @dataclass
@@ -179,7 +97,8 @@ def play_game(
     import random as stdlib_random
 
     rules = DefaultRulesEngine()
-    state = create_game_state(board_type)
+    board_type_enum = BOARD_TYPE_MAP.get(board_type, BoardType.SQUARE8)
+    state = create_initial_state(board_type_enum, num_players=2)
     initial_state = state.model_copy(deep=True) if collect_moves else None
 
     # Create AIs with the weight profiles

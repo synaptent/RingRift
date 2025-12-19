@@ -27,91 +27,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.lib.metrics import TimingStats
 
-from datetime import datetime
-
-from app.models import (
-    AIConfig,
-    BoardState,
-    BoardType,
-    GamePhase,
-    GameState,
-    GameStatus,
-    Player,
-    TimeControl,
-)
+from app.models import AIConfig, BoardType
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.heuristic_weights import BASE_V1_BALANCED_WEIGHTS
-from app.rules.core import (
-    BOARD_CONFIGS,
-    get_victory_threshold,
-    get_territory_victory_threshold,
-)
 from app.rules.default_engine import DefaultRulesEngine
-
-
-def create_game_state(
-    board_type: BoardType = BoardType.SQUARE8,
-    num_players: int = 2,
-) -> GameState:
-    """Create an initial game state for profiling."""
-    config = BOARD_CONFIGS.get(board_type, BOARD_CONFIGS[BoardType.SQUARE8])
-    size = config.size
-    rings_per_player = config.rings_per_player
-    victory_threshold = get_victory_threshold(board_type, num_players)
-    territory_threshold = get_territory_victory_threshold(board_type)
-
-    now = datetime.now()
-
-    board = BoardState(
-        type=board_type,
-        size=size,
-        stacks={},
-        markers={},
-        collapsedSpaces={},
-        eliminatedRings={},
-    )
-
-    players = [
-        Player(
-            id=f"player{i}",
-            username=f"AI {i}",
-            type="ai",
-            playerNumber=i,
-            isReady=True,
-            timeRemaining=600000,
-            aiDifficulty=5,
-            ringsInHand=rings_per_player,
-            eliminatedRings=0,
-            territorySpaces=0,
-        )
-        for i in range(1, num_players + 1)
-    ]
-
-    return GameState(
-        id="profiling-game",
-        boardType=board_type,
-        rngSeed=None,
-        board=board,
-        players=players,
-        currentPhase=GamePhase.RING_PLACEMENT,
-        currentPlayer=1,
-        moveHistory=[],
-        timeControl=TimeControl(initialTime=600, increment=5, type="standard"),
-        gameStatus=GameStatus.ACTIVE,
-        createdAt=now,
-        lastMoveAt=now,
-        isRated=False,
-        maxPlayers=num_players,
-        totalRingsInPlay=0,
-        totalRingsEliminated=0,
-        victoryThreshold=victory_threshold,
-        territoryVictoryThreshold=territory_threshold,
-        chainCaptureState=None,
-        mustMoveFromStackKey=None,
-        zobristHash=None,
-        lpsRoundIndex=0,
-        lpsExclusivePlayerForCompletedRound=None,
-    )
+from app.training.initial_state import create_initial_state
 
 
 class SelfPlayProfiler:
@@ -139,7 +59,7 @@ class SelfPlayProfiler:
 
         # Create initial state
         with self.time_section("state_creation"):
-            state = create_game_state(board_type, num_players)
+            state = create_initial_state(board_type, num_players)
 
         # Create AIs (HeuristicAI takes player_number and AIConfig)
         ais = []
@@ -252,7 +172,7 @@ def run_cprofile_analysis(board_type: BoardType, num_players: int, num_games: in
 
     def play_games():
         for _ in range(num_games):
-            state = create_game_state(board_type, num_players)
+            state = create_initial_state(board_type, num_players)
             ais = []
             for i in range(num_players):
                 player_number = i + 1

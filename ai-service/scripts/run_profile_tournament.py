@@ -12,18 +12,16 @@ import sys
 import os
 import json
 import argparse
-import uuid
-from datetime import datetime
 from itertools import permutations, combinations
 from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.models import GameState, BoardType, GamePhase, GameStatus, Player, TimeControl, BoardState, AIConfig
+from app.models import BoardType, AIConfig
 from app.ai.heuristic_ai import HeuristicAI
 from app.rules.default_engine import DefaultRulesEngine
-
-BOARD_TYPES = {"square8": BoardType.SQUARE8, "square19": BoardType.SQUARE19, "hex": BoardType.HEXAGONAL}
+from app.training.initial_state import create_initial_state
+from scripts.lib.cli import BOARD_TYPE_MAP
 
 
 def load_weight_profile(path: str) -> Dict[str, float]:
@@ -57,57 +55,6 @@ def create_ai_with_weights(
     return ai
 
 
-def create_game_state(board_type: BoardType, num_players: int) -> GameState:
-    """Create a fresh game state for the specified board and player count."""
-    size = 8
-    if board_type == BoardType.SQUARE19:
-        size = 19
-    elif board_type == BoardType.HEXAGONAL:
-        size = 5
-
-    board = BoardState(type=board_type, size=size, stacks={}, markers={}, collapsedSpaces={}, eliminatedRings={})
-
-    players = []
-    for i in range(num_players):
-        players.append(
-            Player(
-                id=f"player{i+1}",
-                username=f"AI_{i+1}",
-                type="ai",
-                playerNumber=i + 1,
-                isReady=True,
-                timeRemaining=600000,
-                aiDifficulty=10,
-                ringsInHand=20,
-                eliminatedRings=0,
-                territorySpaces=0,
-            )
-        )
-
-    return GameState(
-        id=str(uuid.uuid4()),
-        boardType=board_type,
-        board=board,
-        players=players,
-        currentPhase=GamePhase.RING_PLACEMENT,
-        currentPlayer=1,
-        moveHistory=[],
-        timeControl=TimeControl(initialTime=600, increment=5, type="standard"),
-        gameStatus=GameStatus.ACTIVE,
-        createdAt=datetime.now(),
-        lastMoveAt=datetime.now(),
-        isRated=False,
-        maxPlayers=num_players,
-        totalRingsInPlay=0,
-        totalRingsEliminated=0,
-        victoryThreshold=3,
-        territoryVictoryThreshold=10,
-        chainCaptureState=None,
-        mustMoveFromStackKey=None,
-        zobristHash=None,
-    )
-
-
 def run_game(
     ais: list, board_type: BoardType, num_players: int, max_moves: int = 300, verbose: bool = False
 ) -> Tuple[Optional[int], Dict]:
@@ -115,7 +62,7 @@ def run_game(
     Run a single game.
     Returns (winner player number (1-indexed) or None for draw, game_info dict).
     """
-    game_state = create_game_state(board_type, num_players)
+    game_state = create_initial_state(board_type, num_players)
     rules_engine = DefaultRulesEngine()
     move_count = 0
     move_types = []
@@ -275,7 +222,7 @@ def main():
     parser.add_argument("--profile-b", type=str, required=True, help="Path to second weight profile JSON")
     parser.add_argument("--name-a", type=str, default="Profile_A", help="Display name for profile A")
     parser.add_argument("--name-b", type=str, default="Profile_B", help="Display name for profile B")
-    parser.add_argument("--board", type=str, default="square8", choices=BOARD_TYPES.keys(), help="Board type")
+    parser.add_argument("--board", type=str, default="square8", choices=list(BOARD_TYPE_MAP.keys()), help="Board type")
     parser.add_argument("--num-players", type=int, default=3, help="Number of players (2-4)")
     parser.add_argument("--games-per-config", type=int, default=10, help="Number of games to play per configuration")
     parser.add_argument("--max-moves", type=int, default=10000, help="Maximum moves per game")
@@ -288,7 +235,7 @@ def main():
     weights_a = load_weight_profile(args.profile_a)
     weights_b = load_weight_profile(args.profile_b)
 
-    board_type = BOARD_TYPES[args.board]
+    board_type = BOARD_TYPE_MAP[args.board]
     num_players = args.num_players
 
     # Generate all configurations

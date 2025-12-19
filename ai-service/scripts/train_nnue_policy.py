@@ -912,7 +912,7 @@ def train_nnue_policy(
         logger.info(f"Suggested learning rate: {suggested_lr:.2e}")
 
         # Save LR finder plot
-        lr_plot_path = os.path.join(run_dir, "lr_finder.png")
+        lr_plot_path = os.path.join(os.path.dirname(save_path), "lr_finder.png")
         lr_finder.plot(lr_plot_path)
         logger.info(f"LR finder plot saved to: {lr_plot_path}")
 

@@ -33,7 +33,10 @@ import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from app.ai.base import BaseAI
 
 # Add ai-service to path
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]

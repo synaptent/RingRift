@@ -40,7 +40,6 @@ from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import uuid
 
 import numpy as np
 
@@ -51,17 +50,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.ai.mcts_ai import MCTSAI
-from app.models import (
-    AIConfig,
-    BoardState,
-    BoardType,
-    GamePhase,
-    GameState,
-    GameStatus,
-    Player,
-    TimeControl,
-)
+from app.models import AIConfig, BoardType, GameStatus
 from app.game_engine import GameEngine
+from app.training.initial_state import create_initial_state
 
 # Unified logging setup
 from scripts.lib.logging_config import setup_script_logging
@@ -163,64 +154,6 @@ class ABTestResults:
                 self.significant_at_95 = self.p_value < 0.05
 
 
-def create_game_state(
-    board_type: BoardType = BoardType.SQUARE8,
-    num_players: int = 2,
-) -> GameState:
-    """Create a fresh game state."""
-    size = 8 if board_type == BoardType.SQUARE8 else 19
-    if board_type == BoardType.HEXAGONAL:
-        size = 5
-
-    board = BoardState(
-        type=board_type,
-        size=size,
-        stacks={},
-        markers={},
-        collapsed_spaces={},
-        eliminated_rings={},
-    )
-
-    rings_per_player = 20 if num_players == 2 else (14 if num_players == 3 else 10)
-    players = []
-    for i in range(num_players):
-        players.append(
-            Player(
-                id=f"p{i+1}",
-                username=f"AI{i+1}",
-                type="ai",
-                player_number=i + 1,
-                is_ready=True,
-                time_remaining=600000,
-                ai_difficulty=4,
-                rings_in_hand=rings_per_player,
-                eliminated_rings=0,
-                territory_spaces=0,
-            )
-        )
-
-    return GameState(
-        id=str(uuid.uuid4()),
-        board_type=board_type,
-        board=board,
-        players=players,
-        current_phase=GamePhase.RING_PLACEMENT,
-        current_player=1,
-        move_history=[],
-        time_control=TimeControl(initial_time=600, increment=5, type="standard"),
-        game_status=GameStatus.ACTIVE,
-        created_at=datetime.now(),
-        last_move_at=datetime.now(),
-        is_rated=False,
-        max_players=num_players,
-        total_rings_in_play=0,
-        total_rings_eliminated=0,
-        victory_threshold=3,
-        territory_victory_threshold=10,
-        chain_capture_state=None,
-    )
-
-
 def create_mcts_ai(
     player_number: int,
     policy_model_path: Optional[str],
@@ -306,7 +239,7 @@ def play_match(
     num_players: int = 2,
 ) -> MatchResult:
     """Play a single match between two AIs."""
-    game_state = create_game_state(board_type, num_players)
+    game_state = create_initial_state(board_type, num_players)
     game_id = game_state.id
 
     model_a_think_time = 0.0

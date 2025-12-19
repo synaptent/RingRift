@@ -32,7 +32,10 @@ import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from app.ai.base import BaseAI
 
 # Disable torch dynamo to avoid triton compilation issues on some systems
 os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
