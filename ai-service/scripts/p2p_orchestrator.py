@@ -6854,45 +6854,44 @@ class P2POrchestrator:
     async def _run_gpu_selfplay_job(
         self, job_id: str, board_type: str, num_players: int, num_games: int, engine_mode: str
     ):
-        """Run GPU selfplay job using run_hybrid_selfplay.py."""
+        """Run GPU selfplay job using run_gpu_selfplay.py (true GPU acceleration)."""
         import sys
         from pathlib import Path
 
-        script_path = os.path.join(self.ringrift_path, "ai-service", "scripts", "run_hybrid_selfplay.py")
+        # Use run_gpu_selfplay.py for actual GPU acceleration (not run_hybrid_selfplay.py which is CPU-bound)
+        script_path = os.path.join(self.ringrift_path, "ai-service", "scripts", "run_gpu_selfplay.py")
         if not os.path.exists(script_path):
-            logger.info(f"Selfplay script not found: {script_path}")
+            logger.warning(f"GPU selfplay script not found: {script_path}")
             return
 
         # Set up output directory with database recording
         board_norm = board_type.replace("hexagonal", "hex")
-        output_dir = Path(self.ringrift_path) / "ai-service" / "data" / "selfplay" / "p2p_hybrid" / f"{board_norm}_{num_players}p" / job_id
+        output_dir = Path(self.ringrift_path) / "ai-service" / "data" / "selfplay" / "p2p_gpu" / f"{board_norm}_{num_players}p" / job_id
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Map engine modes: run_gpu_selfplay.py uses different mode names
+        # Options: random-only, heuristic-only, nnue-guided
+        mode_map = {
+            "mixed": "heuristic-only",
+            "gpu": "heuristic-only",
+            "descent-only": "heuristic-only",
+            "heuristic-only": "heuristic-only",
+            "nnue-guided": "nnue-guided",
+            "random-only": "random-only",
+        }
+        gpu_engine_mode = mode_map.get(engine_mode or "heuristic-only", "heuristic-only")
 
         cmd = [
             sys.executable,
             script_path,
-            "--board-type", board_type,
+            "--board", board_norm,  # Note: --board not --board-type
             "--num-players", str(num_players),
             "--num-games", str(num_games),
             "--output-dir", str(output_dir),
-            "--record-db", str(output_dir / "games.db"),
-            "--lean-db",
-            "--engine-mode", engine_mode or "mixed",
+            "--output-db", str(output_dir / "games.db"),
+            "--engine-mode", gpu_engine_mode,
             "--seed", str(int(time.time() * 1000) % 2**31),
         ]
-
-        # For gumbel-mcts mode, auto-detect best model for soft policy targets
-        if engine_mode == "gumbel-mcts":
-            models_dir = Path(self.ringrift_path) / "ai-service" / "models"
-            # Find best model for this board type
-            board_norm = board_type.replace("hexagonal", "hex")
-            pattern = f"ringrift_{board_norm}_{num_players}p_*.pth"
-            model_files = list(models_dir.glob(pattern))
-            if model_files:
-                # Use most recent model
-                best_model = max(model_files, key=lambda p: p.stat().st_mtime)
-                model_id = best_model.stem  # e.g., ringrift_hex8_2p_v3_retrained
-                cmd.extend(["--nn-model-id", model_id])
 
         env = os.environ.copy()
         env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
@@ -16714,20 +16713,49 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     await asyncio.sleep(IDLE_CHECK_INTERVAL)
                     continue
 
-                # Run unified discovery periodically
+                # Run unified discovery and use it as primary source for idle nodes
+                inventory_idle_nodes = []
                 if HAS_UNIFIED_INVENTORY and get_inventory:
                     inventory = get_inventory()
                     try:
                         await inventory.discover_all()
+                        # Get idle nodes from unified inventory (includes Vast, Tailscale, Lambda, Hetzner)
+                        inventory_idle_nodes = inventory.get_idle_nodes(IDLE_GPU_THRESHOLD)
+                        if inventory_idle_nodes:
+                            logger.debug(f"Unified inventory found {len(inventory_idle_nodes)} idle nodes")
                     except Exception as e:
                         logger.debug(f"Unified discovery error: {e}")
 
-                # Get idle nodes from P2P peers (our authoritative source)
+                # Get idle nodes from P2P peers (as additional source)
                 idle_nodes = []
                 now = time.time()
+                seen_node_ids = set()
 
+                # First, process inventory idle nodes (fresher data from CLI discovery)
+                for node in inventory_idle_nodes:
+                    node_id = getattr(node, "node_id", "") or ""
+                    if not node_id:
+                        continue
+                    seen_node_ids.add(node_id)
+
+                    # Track when this node became idle
+                    if node_id not in idle_since:
+                        idle_since[node_id] = now
+                        gpu_pct = float(getattr(node, "gpu_percent", 0) or 0)
+                        logger.debug(f"Node {node_id} became idle (GPU={gpu_pct:.0f}%, source=inventory)")
+
+                    # Check if idle long enough (grace period)
+                    idle_duration = now - idle_since[node_id]
+                    if idle_duration >= IDLE_GRACE_PERIOD:
+                        idle_nodes.append((node, idle_duration))
+
+                # Then, process P2P peers (for nodes not in inventory)
                 with self.peers_lock:
                     for peer in self.peers.values():
+                        # Skip nodes already processed from inventory
+                        if peer.node_id in seen_node_ids:
+                            continue
+
                         if not peer.is_alive() or peer.retired:
                             # Remove from idle tracking if no longer active
                             idle_since.pop(peer.node_id, None)
@@ -16750,7 +16778,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             # Track when this node became idle
                             if peer.node_id not in idle_since:
                                 idle_since[peer.node_id] = now
-                                logger.debug(f"Node {peer.node_id} became idle (GPU={gpu_pct:.0f}%)")
+                                logger.debug(f"Node {peer.node_id} became idle (GPU={gpu_pct:.0f}%, source=p2p)")
 
                             # Check if idle long enough (grace period)
                             idle_duration = now - idle_since[peer.node_id]
@@ -16784,50 +16812,72 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 logger.error(f"Idle detection error: {e}")
                 await asyncio.sleep(IDLE_CHECK_INTERVAL)
 
-    async def _auto_start_selfplay(self, peer: "NodeInfo", idle_duration: float):
-        """Auto-start selfplay on an idle node.
+    async def _auto_start_selfplay(self, peer, idle_duration: float):
+        """Auto-start GPU selfplay on an idle node.
 
-        Uses the node's GPU capabilities to determine appropriate batch size.
+        Works with both NodeInfo (P2P peers) and DiscoveredNode (unified inventory).
+        Uses GPU batch processing - starts 2-4 parallel processes with large game counts.
+        This is more efficient than many small processes competing for GPU memory.
         """
-        # Don't auto-start on nodes that aren't GPU nodes
-        if not getattr(peer, "has_gpu", False) or not getattr(peer, "is_gpu_node", lambda: False)():
-            return
-
+        # Check for GPU - works with both NodeInfo and DiscoveredNode
         gpu_name = getattr(peer, "gpu_name", "") or ""
 
-        # Determine selfplay count based on GPU type
+        # Don't auto-start on nodes that aren't GPU nodes
+        has_gpu = bool(gpu_name) or getattr(peer, "has_gpu", False)
+        is_gpu_node = getattr(peer, "is_gpu_node", lambda: has_gpu)()
+        if not has_gpu and not is_gpu_node:
+            return
+
+        # GPU selfplay uses batch processing - start 2-4 processes with large game counts
+        # This is more efficient than 40 small processes competing for GPU memory
         if "GH200" in gpu_name.upper():
-            num_selfplay = 40
+            num_processes = 4
+            games_per_process = 10000
         elif "H100" in gpu_name.upper() or "H200" in gpu_name.upper():
-            num_selfplay = 30
+            num_processes = 4
+            games_per_process = 10000
         elif "A100" in gpu_name.upper():
-            num_selfplay = 20
+            num_processes = 2
+            games_per_process = 5000
         elif "4090" in gpu_name.upper() or "5090" in gpu_name.upper():
-            num_selfplay = 15
+            num_processes = 2
+            games_per_process = 5000
         else:
-            num_selfplay = 10  # Conservative default
+            num_processes = 2
+            games_per_process = 2500
 
-        logger.info(f"Auto-starting {num_selfplay} selfplay on idle node {peer.node_id} "
-                   f"(GPU={gpu_name}, idle for {idle_duration:.0f}s)")
+        logger.info(f"Auto-starting {num_processes} GPU selfplay processes on idle node {peer.node_id} "
+                   f"(GPU={gpu_name}, {games_per_process} games each, idle for {idle_duration:.0f}s)")
 
-        # Send start job command to the idle node
+        # Send parallel requests to /selfplay/start endpoint
         try:
-            url = self._url_for_peer(peer, "/start_job")
+            url = self._url_for_peer(peer, "/selfplay/start")
             timeout = ClientTimeout(total=30)
 
-            async with get_client_session(timeout) as session:
+            async def send_selfplay_request(session, i):
+                """Send a single selfplay start request."""
                 payload = {
-                    "job_type": "selfplay",
-                    "count": num_selfplay,
+                    "board_type": "hex",  # Default to hex (good GPU utilization)
+                    "num_players": 2,
+                    "num_games": games_per_process,
+                    "engine_mode": "heuristic-only",  # GPU-accelerated heuristic
                     "auto_assigned": True,
-                    "reason": f"auto_idle_{int(idle_duration)}s",
+                    "reason": f"auto_idle_{int(idle_duration)}s_proc{i}",
                 }
                 async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
                     if resp.status == 200:
-                        logger.info(f"Auto-started selfplay on {peer.node_id}")
+                        return True
                     else:
                         body = await resp.text()
-                        logger.warning(f"Failed to auto-start on {peer.node_id}: {resp.status} {body[:100]}")
+                        logger.warning(f"Failed selfplay request {i} on {peer.node_id}: {resp.status} {body[:100]}")
+                        return False
+
+            async with get_client_session(timeout) as session:
+                tasks = [send_selfplay_request(session, i) for i in range(num_processes)]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                started = sum(1 for r in results if r is True)
+                logger.info(f"Auto-started {started}/{num_processes} GPU selfplay processes on {peer.node_id}")
+
         except Exception as e:
             logger.warning(f"Auto-start request failed for {peer.node_id}: {e}")
 
