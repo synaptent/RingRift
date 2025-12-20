@@ -407,13 +407,19 @@ class GameWriter:
             self._turn_count += 1
             self._current_player = move.player
 
-        # Phase derivation: Use move-type-derived canonical phase rather than
-        # game state's current_phase. The game state's phase (e.g., RING_PLACEMENT)
-        # is the high-level game phase, but individual moves have their own
-        # canonical phases (movement, capture, etc.) within a turn. The canonical
-        # phase is derived from the move type by the DB writer via history_contract.
-        # Passing None allows validate_canonical_move to derive the correct phase.
+        # Phase derivation: prefer the actual phase-at-move-time when available.
+        # This preserves phase/move mismatches in recordings for canonical
+        # validation, while still allowing legacy derivation from move type.
         phase_hint: str | None = None
+        phase_source = state_before if state_before is not None else self._prev_state
+        if phase_source is not None:
+            current_phase = getattr(phase_source, "current_phase", None)
+            if current_phase is not None:
+                phase_hint = (
+                    current_phase.value
+                    if hasattr(current_phase, "value")
+                    else str(current_phase)
+                )
 
         self._db._store_move(
             game_id=self._game_id,
@@ -465,6 +471,9 @@ class GameWriter:
                 # Update tracked state for next move
                 self._prev_state = state_after
                 self._prev_state_hash = after_hash
+        elif state_after is not None:
+            # Keep phase tracking up to date even when history entries are skipped.
+            self._prev_state = state_after
 
         self._move_count += 1
 
@@ -1085,10 +1094,16 @@ class GameReplayDB:
                     turn_number += 1
                     current_player = move.player
 
-                # Phase derivation: Use move-type-derived canonical phase rather than
-                # game state's current_phase. The canonical phase is derived from
-                # the move type by the DB writer via history_contract.
+                # Phase derivation: record the actual phase-at-move-time.
+                # This lets canonical history checks detect phase/move mismatches.
                 phase_hint: str | None = None
+                current_phase = getattr(prev_state, "current_phase", None)
+                if current_phase is not None:
+                    phase_hint = (
+                        current_phase.value
+                        if hasattr(current_phase, "value")
+                        else str(current_phase)
+                    )
 
                 self._store_move_conn(
                     conn,

@@ -581,6 +581,7 @@ The AI Training Pipeline Remediation is complete when:
 | 1.3     | 2025-12-20 | Aligned Python territory eligibility with canonical elimination rules (height-1 ok)  |
 | 1.4     | 2025-12-20 | Disabled fast territory detection for large-board canonical selfplay gates           |
 | 1.5     | 2025-12-20 | Forced phase/move invariant checks on canonical selfplay runs                        |
+| 1.6     | 2025-12-20 | Record actual phase-at-move-time in GameReplayDB for canonical validation            |
 
 ---
 
@@ -628,6 +629,21 @@ The AI Training Pipeline Remediation is complete when:
 **Files Modified:**
 
 - `ai-service/scripts/run_canonical_selfplay_parity_gate.py`
+
+### AI-02: Record actual phase-at-move-time in GameReplayDB (2025-12-20)
+
+**Status:** ✅ CODE FIXED (awaiting regeneration + gate re-run)
+
+**Context:** `game_moves.phase` was derived from move types, masking phase/move mismatches in recordings. Storing the actual phase before each move makes canonical history validation more informative.
+
+**Actions Completed:**
+
+1. ✅ Pass `state_before.current_phase` into move recording for incremental and one-shot writes.
+2. ✅ Keep phase tracking updated even when history entries are disabled.
+
+**Files Modified:**
+
+- `ai-service/app/db/game_replay.py`
 
 ### AI-02: Regenerate canonical_hexagonal.db (2025-12-20)
 
