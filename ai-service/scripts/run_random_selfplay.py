@@ -14,7 +14,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 # Add app/ to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -119,6 +119,9 @@ def play_random_game(
                 if move.capture_target.z is not None:
                     pos_dict['z'] = move.capture_target.z
                 move_dict['capture_target'] = pos_dict
+            # Record placement_count for place_ring moves (determines how many rings to place)
+            if hasattr(move, 'placement_count') and move.placement_count is not None:
+                move_dict['placement_count'] = move.placement_count
             moves_played.append(move_dict)
 
         # Apply move

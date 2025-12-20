@@ -43,7 +43,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 import numpy as np
 
@@ -60,6 +60,14 @@ from app.ai.gpu_canonical_export import (
     gpu_phase_to_canonical,
     validate_canonical_move_sequence,
 )
+
+# Track canonical validation stats
+_canonical_validation_stats = {
+    "games_validated": 0,
+    "games_valid": 0,
+    "games_invalid": 0,
+    "total_errors": 0,
+}
 from app.ai.gpu_parallel_games import (
     ParallelGameRunner,
     benchmark_parallel_games,
@@ -807,12 +815,12 @@ class GPUSelfPlayGenerator:
                             "GAME_OVER": "game_over",
                         }
                         for raw_move in raw_moves:
-                            move_type_str = raw_move.get("move_type", "PLACEMENT")
-                            phase_str = raw_move.get("phase", "RING_PLACEMENT")
+                            move_type_str = raw_move.get("move_type") or "PLACEMENT"
+                            phase_str = raw_move.get("phase") or "RING_PLACEMENT"
                             canonical_move = {
-                                "type": gpu_type_map.get(move_type_str, move_type_str.lower()),
+                                "type": gpu_type_map.get(move_type_str, move_type_str.lower() if move_type_str else "unknown"),
                                 "player": raw_move.get("player", 1),
-                                "phase": gpu_phase_map.get(phase_str, phase_str.lower()),
+                                "phase": gpu_phase_map.get(phase_str, phase_str.lower() if phase_str else "ring_placement"),
                             }
                             # Add position fields if present (convert tuples to dicts)
                             from_pos = raw_move.get("from_pos")
@@ -823,6 +831,18 @@ class GPUSelfPlayGenerator:
                                 canonical_move["to"] = {"x": to_pos[1], "y": to_pos[0]}
                             canonical_moves.append(canonical_move)
                         moves_for_record = canonical_moves
+
+                        # Validate canonical move sequence (sample 5% for performance)
+                        if game_idx % 20 == 0:  # Sample every 20th game
+                            is_valid, errors = validate_canonical_move_sequence(
+                                canonical_moves, self.num_players
+                            )
+                            _canonical_validation_stats["games_validated"] += 1
+                            if is_valid:
+                                _canonical_validation_stats["games_valid"] += 1
+                            else:
+                                _canonical_validation_stats["games_invalid"] += 1
+                                _canonical_validation_stats["total_errors"] += len(errors)
                     else:
                         moves_for_record = raw_moves
 
@@ -919,7 +939,23 @@ class GPUSelfPlayGenerator:
             "weights": self.weights,
             "min_game_length": self.min_game_length,
             "filtered_short_games": self.filtered_short_games,
+            "canonical_export": self.canonical_export,
         }
+
+        # Add canonical validation stats if enabled
+        if self.canonical_export and _canonical_validation_stats["games_validated"] > 0:
+            valid_rate = _canonical_validation_stats["games_valid"] / _canonical_validation_stats["games_validated"]
+            stats["canonical_validation"] = {
+                "games_validated": _canonical_validation_stats["games_validated"],
+                "games_valid": _canonical_validation_stats["games_valid"],
+                "games_invalid": _canonical_validation_stats["games_invalid"],
+                "valid_rate": valid_rate,
+                "total_errors": _canonical_validation_stats["total_errors"],
+            }
+            if valid_rate < 1.0:
+                logger.warning(f"Canonical validation: {valid_rate:.1%} valid ({_canonical_validation_stats['games_invalid']} invalid)")
+            else:
+                logger.info(f"Canonical validation: 100% valid ({_canonical_validation_stats['games_validated']} sampled)")
 
         # Add win rates by player
         for p in range(1, self.num_players + 1):

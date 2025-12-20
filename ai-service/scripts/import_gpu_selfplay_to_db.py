@@ -18,7 +18,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -189,6 +189,9 @@ def parse_move(
         else None
     )
 
+    # Parse placement_count for place_ring moves
+    placement_count = move_dict.get("placement_count")
+
     return Move(
         id=f"move-{move_number}",
         type=move_type,
@@ -196,6 +199,7 @@ def parse_move(
         from_pos=from_pos,
         to=to_pos,
         capture_target=capture_target,
+        placement_count=placement_count,
         timestamp=timestamp,
         thinkTime=move_dict.get("think_time_ms", 0),
         moveNumber=move_number,

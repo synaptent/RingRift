@@ -46,6 +46,7 @@ start_selfplay() {
     echo "=========================================="
 
     # Self-play command - priority on hex and square19 (we need more data)
+    # Uses --canonical-export for canonical format output (December 2025)
     SELFPLAY_CMD='cd ~/ringrift/ai-service && source venv/bin/activate && \
         export OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 && \
         mkdir -p data/games logs && \
@@ -55,14 +56,16 @@ start_selfplay() {
             board=$(echo $config | cut -d: -f1); \
             players=$(echo $config | cut -d: -f2); \
             nohup python3 scripts/run_gpu_selfplay.py \
-                --board-type $board \
+                --board $board \
                 --num-players $players \
                 --num-games 500 \
+                --canonical-export \
+                --skip-resource-check \
                 --output-dir data/games/selfplay_${board}_${players}p \
                 > logs/selfplay_${board}_${players}p.log 2>&1 & \
             sleep 1; \
         done; \
-        echo "Started 5 selfplay jobs"'
+        echo "Started 5 selfplay jobs with canonical export"'
 
     for host in "${GH200_HOSTS[@]}"; do
         (
