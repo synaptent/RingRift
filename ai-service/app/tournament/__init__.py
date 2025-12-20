@@ -63,6 +63,39 @@ from .unified_elo_db import (
     reset_elo_database,
 )
 
+# Composite ELO System (Sprint 1-5)
+from .composite_gauntlet import (
+    CompositeGauntlet,
+    CompositeGauntletConfig,
+    run_two_phase_gauntlet,
+    run_algorithm_tournament,
+    run_nn_tournament,
+)
+from .composite_tournament import (
+    AlgorithmTournament,
+    NNTournament,
+    CombinedTournament,
+    TournamentScheduleManager,
+    TournamentType,
+)
+from .composite_culling import (
+    HierarchicalCullingController,
+    CullingReport,
+    run_hierarchical_culling,
+    check_culling_needed,
+)
+from .gauntlet_aggregation import (
+    aggregate_by_nn,
+    aggregate_by_algorithm,
+    check_nn_ranking_consistency,
+    print_aggregation_report,
+)
+from .consistency_monitor import (
+    ConsistencyMonitor,
+    ConsistencyReport,
+    run_consistency_checks,
+)
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -103,6 +136,28 @@ __all__ = [
     "run_quick_evaluation",
     # High-level API
     "run_quick_tournament",
+    # Composite ELO System
+    "CompositeGauntlet",
+    "CompositeGauntletConfig",
+    "run_two_phase_gauntlet",
+    "run_algorithm_tournament",
+    "run_nn_tournament",
+    "AlgorithmTournament",
+    "NNTournament",
+    "CombinedTournament",
+    "TournamentScheduleManager",
+    "TournamentType",
+    "HierarchicalCullingController",
+    "CullingReport",
+    "run_hierarchical_culling",
+    "check_culling_needed",
+    "aggregate_by_nn",
+    "aggregate_by_algorithm",
+    "check_nn_ranking_consistency",
+    "print_aggregation_report",
+    "ConsistencyMonitor",
+    "ConsistencyReport",
+    "run_consistency_checks",
 ]
 
 

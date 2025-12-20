@@ -67,6 +67,7 @@ from .gpu_move_generation import (
 )
 from .gpu_selection import select_moves_heuristic, select_moves_vectorized
 from .gpu_territory import compute_territory_batch
+from .gpu_heuristic import evaluate_positions_batch
 from .shadow_validation import (
     AsyncShadowValidator,
     ShadowValidator,
@@ -2107,6 +2108,7 @@ class ParallelGameRunner:
         move_type = moves.move_type[move_idx].item()
 
         # Record move in history
+        # 9 columns: move_type, player, from_y, from_x, to_y, to_x, phase, capture_target_y, capture_target_x
         move_count = state.move_count[g].item()
         if move_count < state.max_history_moves:
             state.move_history[g, move_count, 0] = move_type
@@ -2118,6 +2120,10 @@ class ParallelGameRunner:
             # Record phase (CAPTURE for first capture, CHAIN_CAPTURE for chain)
             is_chain = state.in_capture_chain[g].item()
             state.move_history[g, move_count, 6] = GamePhase.CHAIN_CAPTURE if is_chain else GamePhase.CAPTURE
+            # December 2025: Record capture target for canonical export
+            # Note: This function uses to_y/to_x as target directly (not landing)
+            state.move_history[g, move_count, 7] = to_y
+            state.move_history[g, move_count, 8] = to_x
 
         # Get moving stack info
         attacker_height = state.stack_height[g, from_y, from_x].item()

@@ -1432,6 +1432,15 @@ def _apply_capture_moves_batch_legacy(
         player = state.current_player[g].item()
         move_type = moves.move_type[global_idx].item()
 
+        attacker_height = state.stack_height[g, from_y, from_x].item()
+        attacker_cap_height = state.cap_height[g, from_y, from_x].item()
+
+        # Note: Legacy capture uses to_y/to_x as target, not landing
+        defender_owner = state.stack_owner[g, to_y, to_x].item()
+        defender_height = state.stack_height[g, to_y, to_x].item()
+
+        # Record in history (9 columns: move_type, player, from_y, from_x, to_y, to_x, phase, capture_target_y, capture_target_x)
+        # December 2025: Added capture target columns for canonical export
         move_idx = state.move_count[g].item()
         if move_idx < state.max_history_moves:
             state.move_history[g, move_idx, 0] = move_type
@@ -1441,12 +1450,9 @@ def _apply_capture_moves_batch_legacy(
             state.move_history[g, move_idx, 4] = to_y
             state.move_history[g, move_idx, 5] = to_x
             state.move_history[g, move_idx, 6] = int(state.current_phase[g].item())
-
-        attacker_height = state.stack_height[g, from_y, from_x].item()
-        attacker_cap_height = state.cap_height[g, from_y, from_x].item()
-
-        defender_owner = state.stack_owner[g, to_y, to_x].item()
-        defender_height = state.stack_height[g, to_y, to_x].item()
+            # Legacy capture: to_y/to_x IS the target (not landing)
+            state.move_history[g, move_idx, 7] = to_y
+            state.move_history[g, move_idx, 8] = to_x
 
         dy = 0 if to_y == from_y else (1 if to_y > from_y else -1)
         dx = 0 if to_x == from_x else (1 if to_x > from_x else -1)

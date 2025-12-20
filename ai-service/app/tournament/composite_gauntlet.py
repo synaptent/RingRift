@@ -49,6 +49,14 @@ from app.training.composite_participant import (
 )
 from app.training.elo_service import get_elo_service
 
+# Event emission for gauntlet completion (Sprint 5)
+try:
+    from app.training.event_integration import publish_composite_gauntlet_completed
+    HAS_EVENTS = True
+except ImportError:
+    HAS_EVENTS = False
+    publish_composite_gauntlet_completed = None
+
 logger = logging.getLogger(__name__)
 
 # Default algorithms for Phase 2 testing
@@ -240,6 +248,37 @@ class CompositeGauntlet:
             f"Gauntlet {run_id} completed: {result.total_games} games, "
             f"duration: {result.completed_at - result.started_at:.1f}s"
         )
+
+        # Emit gauntlet completed event (Sprint 5)
+        if HAS_EVENTS and publish_composite_gauntlet_completed is not None:
+            try:
+                phase1_count = len(nn_ids)
+                phase1_passed = len(result.phase1_result.passed_nn_ids) if result.phase1_result else 0
+                phase2_participants = (
+                    len(result.phase2_result.ratings) if result.phase2_result else 0
+                )
+                top_nn_ids = [
+                    r.get("nn_id", "") for r in result.final_rankings[:3]
+                    if isinstance(r, dict)
+                ]
+                top_algo = ""
+                if result.final_rankings and isinstance(result.final_rankings[0], dict):
+                    top_algo = result.final_rankings[0].get("ai_type", "")
+
+                # Use asyncio to run the async publisher
+                asyncio.create_task(publish_composite_gauntlet_completed(
+                    board_type=self.board_type,
+                    num_players=self.num_players,
+                    phase1_nn_count=phase1_count,
+                    phase1_passed_count=phase1_passed,
+                    phase2_participants=phase2_participants,
+                    total_games_played=result.total_games,
+                    duration_seconds=result.completed_at - result.started_at,
+                    top_nn_ids=top_nn_ids,
+                    top_algorithm=top_algo,
+                ))
+            except Exception as e:
+                logger.debug(f"Failed to emit gauntlet event: {e}")
 
         return result
 

@@ -542,3 +542,34 @@ try:
     HAS_TOURNAMENT_UTILS = True
 except ImportError:
     HAS_TOURNAMENT_UTILS = False
+
+# =============================================================================
+# Composite ELO System (December 2025)
+# =============================================================================
+# Provides composite participant management for (NN, Algorithm) combinations
+
+try:
+    from app.training.composite_participant import (
+        make_composite_participant_id,
+        parse_composite_participant_id,
+        get_standard_config,
+        is_composite_id,
+        get_participant_category,
+        extract_nn_id,
+        extract_ai_type,
+        STANDARD_ALGORITHM_CONFIGS,
+        ParticipantCategory,
+    )
+    HAS_COMPOSITE_PARTICIPANT = True
+except ImportError:
+    HAS_COMPOSITE_PARTICIPANT = False
+
+try:
+    from app.training.composite_elo_migration import (
+        run_migrations as run_composite_elo_migrations,
+        migrate_legacy_participants,
+        update_nn_performance_summaries,
+    )
+    HAS_COMPOSITE_ELO_MIGRATION = True
+except ImportError:
+    HAS_COMPOSITE_ELO_MIGRATION = False

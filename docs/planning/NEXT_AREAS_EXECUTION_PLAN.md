@@ -186,7 +186,7 @@ This plan assumes the working tree is unstable due to other agents. Each lane is
 - [x] Repro: square19/hex soaks terminate with returncode -15 and 0 games recorded using default heuristic evaluation path.
 - [x] Mitigation: `RINGRIFT_USE_MAKE_UNMAKE=true` enables square19 canonical soak; 1-game run passed parity/history (light band).
 - [x] Found crash in make/unmake path (`NoneType.to_key` for non-spatial moves); fixed in `ai-service/app/ai/heuristic_ai.py` to skip `move.to` for no-op/decision moves.
-- [x] Generated low-volume canonical DBs via direct soak + gate-only runs: square19 (3 games) and hexagonal (1 game) now `canonical_ok=true` with `db_health.canonical_*.json`.
+- [x] Generated low-volume canonical DBs via direct soak + gate-only runs: square19 (3 games) and hexagonal (1 game) now `canonical_ok=true` with `data/games/db_health.canonical_*.json`.
 - [ ] Default large-board parity gates to `RINGRIFT_USE_MAKE_UNMAKE=true` (unless explicitly overridden) and document the rationale.
 - [ ] Scale square19/hex to volume targets and stabilize `generate_canonical_selfplay.py` for >1 game on large boards (make/unmake + on-the-fly parity settings).
 - [ ] Update `ai-service/TRAINING_DATA_REGISTRY.md` with canonical_square8 details and add square19/hex once gates pass.

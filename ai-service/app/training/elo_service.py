@@ -93,6 +93,20 @@ except ImportError:
     HAS_ELO_EVENTS = False
     emit_elo_updated = None
 
+# Composite event emission (Sprint 5)
+try:
+    from app.training.event_integration import publish_composite_elo_updated_sync
+    from app.training.composite_participant import (
+        is_composite_id,
+        parse_composite_participant_id,
+    )
+    HAS_COMPOSITE_EVENTS = True
+except ImportError:
+    HAS_COMPOSITE_EVENTS = False
+    publish_composite_elo_updated_sync = None
+    is_composite_id = None
+    parse_composite_participant_id = None
+
 
 @dataclass
 class EloRating:
@@ -574,6 +588,31 @@ class EloService:
                     pass  # Skip in pure sync context to avoid blocking
             except Exception:
                 pass  # Don't let event emission break match recording
+
+        # Emit composite ELO events for composite participants (Sprint 5)
+        if HAS_COMPOSITE_EVENTS and publish_composite_elo_updated_sync is not None:
+            for pid, old_elo, new_elo in [
+                (participant_a, elo_before[participant_a], elo_after[participant_a]),
+                (participant_b, elo_before[participant_b], elo_after[participant_b]),
+            ]:
+                if is_composite_id and is_composite_id(pid):
+                    try:
+                        parsed = parse_composite_participant_id(pid)
+                        if parsed:
+                            nn_id, ai_type, config_hash = parsed
+                            publish_composite_elo_updated_sync(
+                                nn_id=nn_id,
+                                ai_type=ai_type,
+                                config_hash=config_hash,
+                                participant_id=pid,
+                                old_elo=old_elo,
+                                new_elo=new_elo,
+                                games_played=1,
+                                board_type=board_type,
+                                num_players=num_players,
+                            )
+                    except Exception:
+                        pass  # Don't let event emission break match recording
 
         return MatchResult(
             match_id=match_id,

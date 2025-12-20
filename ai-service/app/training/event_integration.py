@@ -86,6 +86,22 @@ __all__ = [
     "subscribe_to_evaluation_events",
     # Subscriptions
     "subscribe_to_training_events",
+    # Composite ELO Events (Sprint 5)
+    "CompositeAlgorithmRankingEvent",
+    "CompositeConsistencyCheckEvent",
+    "CompositeEloEvent",
+    "CompositeEloUpdatedEvent",
+    "CompositeGauntletCompletedEvent",
+    "CompositeNNCulledEvent",
+    # Composite ELO Publishers
+    "publish_composite_algorithm_ranking",
+    "publish_composite_consistency_check",
+    "publish_composite_elo_updated",
+    "publish_composite_elo_updated_sync",
+    "publish_composite_gauntlet_completed",
+    "publish_composite_nn_culled",
+    # Composite subscriptions
+    "subscribe_to_composite_events",
 ]
 
 
@@ -122,12 +138,20 @@ class TrainingTopics:
     SELFPLAY_COMPLETED = "training.selfplay.completed"
     SELFPLAY_FAILED = "training.selfplay.failed"
 
+    # Composite ELO System (Sprint 5)
+    COMPOSITE_ELO_UPDATED = "training.composite.elo_updated"
+    COMPOSITE_GAUNTLET_COMPLETED = "training.composite.gauntlet_completed"
+    COMPOSITE_NN_CULLED = "training.composite.nn_culled"
+    COMPOSITE_ALGORITHM_RANKING = "training.composite.algorithm_ranking"
+    COMPOSITE_CONSISTENCY_CHECK = "training.composite.consistency_check"
+
     # Patterns for subscription
     ALL_TRAINING = "training.*"
     ALL_EVAL = "training.eval.*"
     ALL_CHECKPOINT = "training.checkpoint.*"
     ALL_MODEL = "training.model.*"
     ALL_SELFPLAY = "training.selfplay.*"
+    ALL_COMPOSITE = "training.composite.*"
 
 
 # =============================================================================
@@ -261,6 +285,79 @@ class SelfplayCompletedEvent(SelfplayEvent):
     success: bool = True
     output_path: str = ""
     duration_seconds: float = 0.0
+
+
+# =============================================================================
+# Composite ELO Events (Sprint 5)
+# =============================================================================
+
+@dataclass
+class CompositeEloEvent(Event):
+    """Base event for composite ELO system events."""
+    board_type: str = ""
+    num_players: int = 2
+
+
+@dataclass
+class CompositeEloUpdatedEvent(CompositeEloEvent):
+    """Published when a composite participant's Elo rating changes.
+
+    Tracks (NN, Algorithm) combination rating updates.
+    """
+    nn_id: str = ""
+    ai_type: str = ""
+    config_hash: str = ""
+    participant_id: str = ""
+    old_elo: float = 0.0
+    new_elo: float = 0.0
+    elo_delta: float = 0.0
+    games_played: int = 0
+    is_improvement: bool = False
+
+
+@dataclass
+class CompositeGauntletCompletedEvent(CompositeEloEvent):
+    """Published when a two-phase gauntlet completes."""
+    phase1_nn_count: int = 0
+    phase1_passed_count: int = 0
+    phase2_participants: int = 0
+    total_games_played: int = 0
+    duration_seconds: float = 0.0
+    top_nn_ids: list[str] = field(default_factory=list)
+    top_algorithm: str = ""
+
+
+@dataclass
+class CompositeNNCulledEvent(CompositeEloEvent):
+    """Published when an NN is culled from the system."""
+    nn_id: str = ""
+    reason: str = ""  # "underperforming", "redundant", "age_limit"
+    final_elo: float = 0.0
+    games_played: int = 0
+    algorithms_tested: list[str] = field(default_factory=list)
+    cull_level: int = 1  # 1=NN cull, 2=Combo cull, 3=Standard cull
+
+
+@dataclass
+class CompositeAlgorithmRankingEvent(CompositeEloEvent):
+    """Published when algorithm rankings are updated."""
+    rankings: list[dict] = field(default_factory=list)
+    # Each entry: {"algorithm": str, "avg_elo": float, "games": int, "rank": int}
+    expected_order_violations: int = 0
+    top_algorithm: str = ""
+    nn_count_evaluated: int = 0
+
+
+@dataclass
+class CompositeConsistencyCheckEvent(CompositeEloEvent):
+    """Published after consistency checks run."""
+    overall_healthy: bool = True
+    checks_passed: int = 0
+    checks_failed: int = 0
+    warnings_count: int = 0
+    errors_count: int = 0
+    check_results: dict[str, bool] = field(default_factory=dict)
+    # Key checks: nn_consistency, algorithm_stability, transitivity, baseline_anchoring
 
 
 # =============================================================================
@@ -522,6 +619,175 @@ async def publish_selfplay_completed(
 
 
 # =============================================================================
+# Composite ELO Publishers (Sprint 5)
+# =============================================================================
+
+async def publish_composite_elo_updated(
+    nn_id: str,
+    ai_type: str,
+    config_hash: str,
+    participant_id: str,
+    old_elo: float,
+    new_elo: float,
+    games_played: int,
+    board_type: str = "square8",
+    num_players: int = 2,
+) -> int:
+    """Publish composite Elo updated event."""
+    elo_delta = new_elo - old_elo
+    event = CompositeEloUpdatedEvent(
+        topic=TrainingTopics.COMPOSITE_ELO_UPDATED,
+        board_type=board_type,
+        num_players=num_players,
+        nn_id=nn_id,
+        ai_type=ai_type,
+        config_hash=config_hash,
+        participant_id=participant_id,
+        old_elo=old_elo,
+        new_elo=new_elo,
+        elo_delta=elo_delta,
+        games_played=games_played,
+        is_improvement=elo_delta > 0,
+        source="composite_elo",
+    )
+    return await publish(event)
+
+
+async def publish_composite_gauntlet_completed(
+    board_type: str,
+    num_players: int,
+    phase1_nn_count: int,
+    phase1_passed_count: int,
+    phase2_participants: int,
+    total_games_played: int,
+    duration_seconds: float,
+    top_nn_ids: list[str] | None = None,
+    top_algorithm: str = "",
+) -> int:
+    """Publish composite gauntlet completed event."""
+    event = CompositeGauntletCompletedEvent(
+        topic=TrainingTopics.COMPOSITE_GAUNTLET_COMPLETED,
+        board_type=board_type,
+        num_players=num_players,
+        phase1_nn_count=phase1_nn_count,
+        phase1_passed_count=phase1_passed_count,
+        phase2_participants=phase2_participants,
+        total_games_played=total_games_played,
+        duration_seconds=duration_seconds,
+        top_nn_ids=top_nn_ids or [],
+        top_algorithm=top_algorithm,
+        source="composite_gauntlet",
+    )
+    return await publish(event)
+
+
+async def publish_composite_nn_culled(
+    nn_id: str,
+    reason: str,
+    final_elo: float,
+    games_played: int,
+    cull_level: int = 1,
+    algorithms_tested: list[str] | None = None,
+    board_type: str = "square8",
+    num_players: int = 2,
+) -> int:
+    """Publish composite NN culled event."""
+    event = CompositeNNCulledEvent(
+        topic=TrainingTopics.COMPOSITE_NN_CULLED,
+        board_type=board_type,
+        num_players=num_players,
+        nn_id=nn_id,
+        reason=reason,
+        final_elo=final_elo,
+        games_played=games_played,
+        cull_level=cull_level,
+        algorithms_tested=algorithms_tested or [],
+        source="composite_culling",
+    )
+    return await publish(event)
+
+
+async def publish_composite_algorithm_ranking(
+    rankings: list[dict],
+    expected_order_violations: int,
+    top_algorithm: str,
+    nn_count_evaluated: int,
+    board_type: str = "square8",
+    num_players: int = 2,
+) -> int:
+    """Publish algorithm ranking update event."""
+    event = CompositeAlgorithmRankingEvent(
+        topic=TrainingTopics.COMPOSITE_ALGORITHM_RANKING,
+        board_type=board_type,
+        num_players=num_players,
+        rankings=rankings,
+        expected_order_violations=expected_order_violations,
+        top_algorithm=top_algorithm,
+        nn_count_evaluated=nn_count_evaluated,
+        source="composite_ranking",
+    )
+    return await publish(event)
+
+
+async def publish_composite_consistency_check(
+    overall_healthy: bool,
+    checks_passed: int,
+    checks_failed: int,
+    warnings_count: int,
+    errors_count: int,
+    check_results: dict[str, bool] | None = None,
+    board_type: str = "square8",
+    num_players: int = 2,
+) -> int:
+    """Publish consistency check result event."""
+    event = CompositeConsistencyCheckEvent(
+        topic=TrainingTopics.COMPOSITE_CONSISTENCY_CHECK,
+        board_type=board_type,
+        num_players=num_players,
+        overall_healthy=overall_healthy,
+        checks_passed=checks_passed,
+        checks_failed=checks_failed,
+        warnings_count=warnings_count,
+        errors_count=errors_count,
+        check_results=check_results or {},
+        source="composite_consistency",
+    )
+    return await publish(event)
+
+
+# Synchronous versions for non-async contexts
+def publish_composite_elo_updated_sync(
+    nn_id: str,
+    ai_type: str,
+    config_hash: str,
+    participant_id: str,
+    old_elo: float,
+    new_elo: float,
+    games_played: int,
+    board_type: str = "square8",
+    num_players: int = 2,
+) -> int:
+    """Synchronously publish composite Elo updated event."""
+    elo_delta = new_elo - old_elo
+    event = CompositeEloUpdatedEvent(
+        topic=TrainingTopics.COMPOSITE_ELO_UPDATED,
+        board_type=board_type,
+        num_players=num_players,
+        nn_id=nn_id,
+        ai_type=ai_type,
+        config_hash=config_hash,
+        participant_id=participant_id,
+        old_elo=old_elo,
+        new_elo=new_elo,
+        elo_delta=elo_delta,
+        games_played=games_played,
+        is_improvement=elo_delta > 0,
+        source="composite_elo",
+    )
+    return get_event_bus().publish_sync(event)
+
+
+# =============================================================================
 # Synchronous Publishers (for non-async contexts)
 # =============================================================================
 
@@ -624,6 +890,26 @@ def subscribe_to_evaluation_events(
             print(f"Eval event: {event.topic}, elo={event.elo}")
     """
     pattern = TrainingTopics.ALL_EVAL.replace(".", r"\.").replace("*", ".*")
+    event_filter = EventFilter(topic_pattern=pattern)
+    return subscribe(event_filter, priority=priority)
+
+
+def subscribe_to_composite_events(
+    priority: int = 0,
+) -> Callable[[EventHandler], EventHandler]:
+    """Decorator to subscribe to all composite ELO events.
+
+    Example:
+        @subscribe_to_composite_events()
+        async def on_composite_event(event: CompositeEloEvent):
+            print(f"Composite event: {event.topic}, board={event.board_type}")
+
+        @subscribe_to_composite_events(priority=10)
+        async def high_priority_handler(event: CompositeEloEvent):
+            # Handle with high priority
+            pass
+    """
+    pattern = TrainingTopics.ALL_COMPOSITE.replace(".", r"\.").replace("*", ".*")
     event_filter = EventFilter(topic_pattern=pattern)
     return subscribe(event_filter, priority=priority)
 
