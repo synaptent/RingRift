@@ -210,6 +210,18 @@ def test_territory_processing_q23_region_property(
     assert delta_elim_p1 == expected_internal
     assert delta_total == expected_internal
 
+
+def test_territory_processing_allows_height_1_outside_stack() -> None:
+    """Height-1 outside stacks are valid territory self-elimination targets."""
+    state, _, _ = _build_q23_region_state([1, 1, 1, 1], outside_height=1)
+
+    terr_moves = GameEngine._get_territory_processing_moves(state, 1)
+    option_moves = [
+        m for m in terr_moves
+        if m.type in (MoveType.CHOOSE_TERRITORY_OPTION, MoveType.PROCESS_TERRITORY_REGION)
+    ]
+    assert option_moves, "expected territory option moves with height-1 outside stack"
+
     # Collapsed spaces are monotone.
     assert len(board_after.collapsed_spaces) >= initial_collapsed
 
