@@ -674,12 +674,17 @@ class UnifiedScheduler:
             for job_id, job in slurm_jobs.items()
         }
         updates = 0
+        terminal_states = {
+            JobState.COMPLETED,
+            JobState.FAILED,
+            JobState.CANCELLED,
+        }
 
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
-                SELECT unified_id, backend_job_id, state, created_at
+                SELECT unified_id, backend_job_id, state, created_at, started_at, finished_at
                 FROM jobs
                 WHERE backend = ?
                   AND backend_job_id IS NOT NULL
@@ -696,14 +701,33 @@ class UnifiedScheduler:
             for row in rows:
                 backend_id = row["backend_job_id"]
                 current_state = row["state"]
+                started_at = row["started_at"]
+                finished_at = row["finished_at"]
                 desired_state = slurm_state_map.get(str(backend_id))
 
-                if desired_state and desired_state.value != current_state:
-                    conn.execute(
-                        "UPDATE jobs SET state = ? WHERE unified_id = ?",
-                        (desired_state.value, row["unified_id"]),
-                    )
-                    updates += 1
+                if desired_state:
+                    update_fields = []
+                    params = []
+
+                    if desired_state.value != current_state:
+                        update_fields.append("state = ?")
+                        params.append(desired_state.value)
+
+                    if desired_state == JobState.RUNNING and not started_at:
+                        update_fields.append("started_at = ?")
+                        params.append(now)
+
+                    if desired_state in terminal_states and not finished_at:
+                        update_fields.append("finished_at = ?")
+                        params.append(now)
+
+                    if update_fields:
+                        params.append(row["unified_id"])
+                        conn.execute(
+                            f"UPDATE jobs SET {', '.join(update_fields)} WHERE unified_id = ?",
+                            params,
+                        )
+                        updates += 1
                     continue
 
                 if (
@@ -712,9 +736,17 @@ class UnifiedScheduler:
                     and row["created_at"]
                     and (now - float(row["created_at"])) >= stale_after_seconds
                 ):
+                    update_fields = ["state = ?"]
+                    params = [JobState.UNKNOWN.value]
+
+                    if not finished_at:
+                        update_fields.append("finished_at = ?")
+                        params.append(now)
+
+                    params.append(row["unified_id"])
                     conn.execute(
-                        "UPDATE jobs SET state = ? WHERE unified_id = ?",
-                        (JobState.UNKNOWN.value, row["unified_id"]),
+                        f"UPDATE jobs SET {', '.join(update_fields)} WHERE unified_id = ?",
+                        params,
                     )
                     updates += 1
 
