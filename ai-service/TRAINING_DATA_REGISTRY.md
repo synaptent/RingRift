@@ -16,14 +16,14 @@ This document tracks the provenance and canonical status of all self-play databa
 
 ### Canonical (Parity + Canonical-History Gated)
 
-| Database                  | Board Type | Players | Status           | Gate Summary                                      | Notes                                                                                                                                                                                         |
-| ------------------------- | ---------- | ------- | ---------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canonical_square8_2p.db` | square8    | 2       | **canonical**    | canonical_square8_2p_200games.parity_summary.json | 2025-12-16 Vast.ai regeneration (200 games, 12,642 samples); 100% semantic parity verified; NPZ exported to `data/training/canonical_square8_2p.npz`                                          |
-| `canonical_square8.db`    | square8    | 2       | **canonical**    | db_health.canonical_square8.json                  | 2025-12-12 distributed regeneration (12 games) and re-gate after TS territory-control parity fix; `canonical_ok=true` (only end-of-game-only current_player mismatch).                        |
-| `canonical_square8_3p.db` | square8    | 3       | **canonical**    | db_health.canonical_square8_3p.json               | 2025-12-12 initial 3P canonical DB (2 games) gated successfully (`canonical_ok=true`; parity only end-of-game-only current_player mismatch).                                                  |
-| `canonical_square8_4p.db` | square8    | 4       | **canonical**    | db_health.canonical_square8_4p.json               | 2025-12-12 4P canonical DB (2 games) gated successfully (`canonical_ok=true`). Scale up for training.                                                                                         |
-| `canonical_square19.db`   | square19   | 2       | **canonical**    | db_health.canonical_square19.json                 | 2025-12-20 regenerated (5 games, 2,588+ moves). Parity PASSED with 0 semantic divergences after `no_territory_action` fix (b8175468).                                                         |
-| `canonical_hexagonal.db`  | hexagonal  | 2       | **pending_gate** | db_health.canonical_hexagonal.json                | 2025-12-20 regen with schema-complete DB (1 game recorded). Canonical history + parity gate fail on phase invariant (`forced_elimination` / `no_placement_action` in `territory_processing`). |
+| Database                  | Board Type | Players | Status        | Gate Summary                                      | Notes                                                                                                                                                                                 |
+| ------------------------- | ---------- | ------- | ------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canonical_square8_2p.db` | square8    | 2       | **canonical** | canonical_square8_2p_200games.parity_summary.json | 2025-12-16 Vast.ai regeneration (200 games, 12,642 samples); 100% semantic parity verified; NPZ exported to `data/training/canonical_square8_2p.npz`                                  |
+| `canonical_square8.db`    | square8    | 2       | **canonical** | db_health.canonical_square8.json                  | 2025-12-12 distributed regeneration (12 games) and re-gate after TS territory-control parity fix; `canonical_ok=true` (only end-of-game-only current_player mismatch).                |
+| `canonical_square8_3p.db` | square8    | 3       | **canonical** | db_health.canonical_square8_3p.json               | 2025-12-12 initial 3P canonical DB (2 games) gated successfully (`canonical_ok=true`; parity only end-of-game-only current_player mismatch).                                          |
+| `canonical_square8_4p.db` | square8    | 4       | **canonical** | db_health.canonical_square8_4p.json               | 2025-12-12 4P canonical DB (2 games) gated successfully (`canonical_ok=true`). Scale up for training.                                                                                 |
+| `canonical_square19.db`   | square19   | 2       | **canonical** | db_health.canonical_square19.json                 | 2025-12-20 regenerated via direct soak (3 games, 1,903 moves) with `RINGRIFT_USE_MAKE_UNMAKE=true` (light band). Parity + canonical history gates passed; still below volume targets. |
+| `canonical_hexagonal.db`  | hexagonal  | 2       | **canonical** | db_health.canonical_hexagonal.json                | 2025-12-20 regenerated via direct soak (1 game, 1,113 moves) with `RINGRIFT_USE_MAKE_UNMAKE=true` (light band). Parity + canonical history gates passed; still below volume targets.  |
 
 The `Status` column uses `canonical` only for DBs whose latest gate summary JSON has `canonical_ok == true`. For supported board types (`square8`, `square19`, and `hexagonal`), this also implies `fe_territory_fixtures_ok == true` as well as a passing parity gate and canonical phase history.
 
@@ -38,9 +38,7 @@ These targets define when large-board datasets are considered ready for training
 
 ### Pending Re-Gate / Needs Regeneration
 
-| Database                 | Board Type | Players | Status           | Gate Summary                       | Notes                                                                                                                                       |
-| ------------------------ | ---------- | ------- | ---------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canonical_hexagonal.db` | hexagonal  | 2       | **pending_gate** | db_health.canonical_hexagonal.json | Regenerate with post-fix selfplay. Previous data has phase invariant issues (`forced_elimination` / `no_placement_action` in wrong phases). |
+None at the moment (large-board DBs are canonical but still low-volume).
 
 ### Legacy / Non-Canonical
 
@@ -63,8 +61,8 @@ _None retained._ All legacy/non-canonical DBs were deleted as part of the 2025-1
 - 2025-12-12 distributed regeneration + parity fix: `canonical_square8.db` now passes the canonical gate (`canonical_ok=true`, parity only end-of-game-only mismatches). It is safe for new training.
 - 2025-12-12: `canonical_square8_3p.db` has initial gated games; scale up before training.
 - 2025-12-12: `canonical_square8_4p.db` is now canonical (`canonical_ok=true`); scale up before training.
-- 2025-12-20: `canonical_square19.db` regenerated with schema-complete tables, but parity gate fails due to phase invariant violations (forced elimination recorded during `territory_processing`). Fix self-play phase transitions and regenerate.
-- 2025-12-20: `canonical_hexagonal.db` regenerated with schema-complete tables, but canonical history + parity gate fail due to phase invariant violations (`forced_elimination` / `no_placement_action` in `territory_processing`). Fix self-play phase transitions and regenerate.
+- 2025-12-20: `canonical_square19.db` re-gated with direct soak (light band) and `RINGRIFT_USE_MAKE_UNMAKE=true`; parity + history gates passed (`canonical_ok=true`). Scale volume toward targets.
+- 2025-12-20: `canonical_hexagonal.db` re-gated with direct soak (light band) and `RINGRIFT_USE_MAKE_UNMAKE=true`; parity + history gates passed (`canonical_ok=true`). Scale volume toward targets.
 - Historical: the sandboxed environment can fail OpenMP shared-memory allocation (`OMP: Error #179: Function Can't open SHM2 failed`); run canonical self-play on a host/container with SHM permissions.
 - (Historical) 2025-12-09 re-gate of `canonical_square8.db` found TS replay structural errors; resolved on 2025-12-12 by aligning TS territory-control victory to collapsed-territory counts.
 
