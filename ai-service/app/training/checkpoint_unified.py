@@ -416,11 +416,12 @@ class UnifiedCheckpointManager:
 
                 logger.info(f"Saved checkpoint: {checkpoint_id} (adaptive_interval={self._adaptive_interval})")
 
-                # Emit checkpoint event for observability
+                # Emit checkpoint event for observability (fire-and-forget with error logging)
                 if HAS_CHECKPOINT_EVENTS and emit_checkpoint_saved is not None:
                     try:
                         import asyncio
-                        asyncio.get_event_loop().create_task(emit_checkpoint_saved(
+                        loop = asyncio.get_running_loop()
+                        task = loop.create_task(emit_checkpoint_saved(
                             config=self.config.board_type if hasattr(self.config, 'board_type') else "",
                             checkpoint_path=str(file_path),
                             epoch=progress.epoch,
@@ -428,6 +429,11 @@ class UnifiedCheckpointManager:
                             metrics=metrics,
                             source="checkpoint_unified",
                         ))
+                        # Log errors but don't block on completion
+                        task.add_done_callback(
+                            lambda t: logger.debug(f"Checkpoint saved event error: {t.exception()}")
+                            if t.exception() else None
+                        )
                     except RuntimeError:
                         pass  # No running event loop - skip event emission
 
@@ -588,18 +594,24 @@ class UnifiedCheckpointManager:
                 else:
                     logger.warning(msg)
 
-        # Emit checkpoint loaded event for observability
+        # Emit checkpoint loaded event for observability (fire-and-forget with error logging)
         if HAS_CHECKPOINT_EVENTS and emit_checkpoint_loaded is not None:
             try:
                 import asyncio
+                loop = asyncio.get_running_loop()
                 progress = checkpoint_data.get('progress', {})
-                asyncio.get_event_loop().create_task(emit_checkpoint_loaded(
+                task = loop.create_task(emit_checkpoint_loaded(
                     config=self.config.board_type if hasattr(self.config, 'board_type') else "",
                     checkpoint_path=str(file_path),
                     epoch=progress.get('epoch', 0),
                     step=progress.get('global_step', 0),
                     source="checkpoint_unified",
                 ))
+                # Log errors but don't block on completion
+                task.add_done_callback(
+                    lambda t: logger.debug(f"Checkpoint loaded event error: {t.exception()}")
+                    if t.exception() else None
+                )
             except RuntimeError:
                 pass  # No running event loop - skip event emission
 

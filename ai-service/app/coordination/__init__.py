@@ -1416,19 +1416,14 @@ def is_heartbeat_running() -> bool:
 __all__ = [
     "AdjustmentStrategy",
     "AnalysisResult",
-    # Async Bridge Manager (December 2025)
     "AsyncBridgeManager",
-    # Async Training Bridge (async wrapper + event integration)
     "AsyncTrainingBridge",
     "BackpressureLevel",
     "BandwidthAllocation",
-    # Bandwidth Manager
     "BandwidthManager",
     "BatchChecksum",
-    # Coordination Utilities (December 2025)
     "BoundedHistory",
     "CacheConfig",
-    # CacheCoordinationOrchestrator
     "CacheCoordinationOrchestrator",
     "CacheEntry",
     "CacheStats",
@@ -1442,17 +1437,12 @@ __all__ = [
     "ClusterDataStatus",
     "ClusterHealth",
     "ClusterState",
-    # Distributed layer sync exports (optional)
     "ClusterSyncStats",
-    # Cluster Transport
     "ClusterTransport",
     "CoordinatedTask",
-    # Backward-compatible names
-    "CoordinationSyncCoordinator",  # Renamed to avoid collision
-    # Coordinator Base (common patterns for coordinators/managers)
+    "CoordinationSyncCoordinator",
     "CoordinatorBase",
     "CoordinatorConfig",
-    # Cross-Coordinator Health Protocol (December 2025)
     "CoordinatorHealth",
     "CoordinatorProtocol",
     "CoordinatorState",
@@ -1461,63 +1451,52 @@ __all__ = [
     "CrossCoordinatorHealthProtocol",
     "CrossProcessEvent",
     "CrossProcessEventPoller",
-    # Cross-Process Event Queue
     "CrossProcessEventQueue",
     "DaemonInfo",
-    # DaemonManager (December 2025)
     "DaemonManager",
     "DaemonManagerConfig",
     "DaemonState",
     "DaemonType",
-    # DataPipelineOrchestrator
     "DataPipelineOrchestrator",
-    # Distributed layer sync exports (optional)
-    "DistributedSyncCoordinator",
-    # Distributed Locking
     "DistributedLock",
-    # Duration Scheduler
+    "DistributedSyncCoordinator",
     "DurationScheduler",
-    # Dynamic Threshold Adjustment (December 2025)
     "DynamicThreshold",
-    # Ephemeral Data Guard (data insurance for ephemeral hosts)
+    "ELO_CURRICULUM_ENABLED",
     "EphemeralDataGuard",
     "EventBusConfig",
     "EventCoordinatorStats",
     "EventSource",
+    "HAS_AIOHTTP",
     "HandlerResilienceConfig",
-    # Health Check
     "HealthStatus",
     "HeartbeatConfig",
     "HistoryEntry",
     "HostCheckpoint",
-    # Data types
     "HostDataState",
     "HostTargets",
     "HostTier",
     "HostType",
     "IterationRecord",
     "JobPriority",
+    "MIN_MEMORY_GB_FOR_TASKS",
     "MergeOperation",
     "MergeTransaction",
     "MetricTracker",
     "MetricType",
     "MetricsAccumulator",
-    # MetricsAnalysisOrchestrator
     "MetricsAnalysisOrchestrator",
     "MetricsConfig",
-    # Model Lifecycle Coordinator (December 2025)
     "ModelCacheEntry",
     "ModelLifecycleCoordinator",
     "ModelLifecycleStats",
     "ModelRecord",
     "ModelState",
     "NodeCacheState",
-    # Cluster Transport
     "NodeConfig",
     "NodeResourceState",
     "NodeResources",
     "OptimizationConfig",
-    # OptimizationCoordinator
     "OptimizationCoordinator",
     "OptimizationResult",
     "OptimizationRun",
@@ -1525,21 +1504,19 @@ __all__ = [
     "OptimizationType",
     "OrchestratorInfo",
     "OrchestratorLock",
-    # Orchestrator Registry
     "OrchestratorRegistry",
     "OrchestratorRole",
     "OrchestratorState",
-    # P2P Backend (REST API client for P2P orchestrator)
     "P2PBackend",
     "P2PNodeInfo",
+    "P2P_DEFAULT_PORT",
+    "P2P_HTTP_TIMEOUT",
     "PIDController",
     "PipelineConfig",
     "PipelineStage",
     "PipelineStats",
-    # Job Scheduler (priority-based job scheduling)
     "PriorityJobScheduler",
     "QuarantineRecord",
-    # Queue Monitor
     "QueueMonitor",
     "QueueStatus",
     "QueueType",
@@ -1547,27 +1524,19 @@ __all__ = [
     "ResourceAlert",
     "ResourceConfig",
     "ResourceMonitor",
-    # ResourceMonitoringCoordinator
     "ResourceMonitoringCoordinator",
-    # Resource Optimizer (cluster-wide PID control)
     "ResourceOptimizer",
     "ResourceStats",
-    # Resource Targets
     "ResourceTargetManager",
     "ResourceType",
     "RouterEvent",
     "SQLitePersistenceMixin",
     "SafeguardConfig",
-    # Safeguards
     "Safeguards",
     "ScaleAction",
     "ScheduledJob",
     "ScheduledTask",
     "SelfplayConfig",
-    # ==========================================================================
-    # Orchestrators (December 2025 - event-driven coordination)
-    # ==========================================================================
-    # SelfplayOrchestrator
     "SelfplayOrchestrator",
     "SelfplayStats",
     "SelfplayTaskInfo",
@@ -1578,36 +1547,30 @@ __all__ = [
     "StageCompletionCallback",
     "StageCompletionResult",
     "StageEvent",
-    # Stage Events (event-driven pipeline orchestration)
     "StageEventBus",
     "StageTransition",
     "StatePersistable",
     "StatePersistenceMixin",
-    # Coordinator Persistence Layer (December 2025)
     "StateSerializer",
     "StateSnapshot",
-    # Distributed layer sync exports (optional)
-    "SyncCategory",
     "SyncAction",
+    "SyncCategory",
     "SyncLockInfo",
-    # Sync Mutex
     "SyncMutex",
     "SyncPriority",
     "SyncRecommendation",
-    # Sync SCHEDULER (unified data sync SCHEDULING - December 2025)
-    # Preferred names (avoids collision with distributed.sync_coordinator.SyncCoordinator)
     "SyncScheduler",
-    # Distributed layer sync exports (optional)
     "SyncStats",
-    # Task Decorators (December 2025)
+    "TARGET_CPU_UTILIZATION_MAX",
+    "TARGET_CPU_UTILIZATION_MIN",
+    "TARGET_GPU_UTILIZATION_MAX",
+    "TARGET_GPU_UTILIZATION_MIN",
+    "TASK_RESOURCE_MAP",
     "TaskContext",
-    # Task Coordinator (canonical)
     "TaskCoordinator",
     "TaskDurationRecord",
     "TaskInfo",
-    # Coordinator Configuration (December 2025)
     "TaskLifecycleConfig",
-    # TaskLifecycleCoordinator
     "TaskLifecycleCoordinator",
     "TaskLifecycleStats",
     "TaskLimits",
@@ -1616,28 +1579,20 @@ __all__ = [
     "ThresholdManager",
     "ThresholdObservation",
     "TraceCollector",
-    # Distributed Tracing (December 2025)
     "TraceContext",
     "TraceSpan",
     "TrackedTask",
-    # Training Coordination (cluster-wide training management)
     "TrainingCoordinator",
     "TrainingJob",
     "TrainingProgressEvent",
-    # Transaction Isolation (ACID-like guarantees for merge operations)
     "TransactionIsolation",
     "TransactionState",
     "TransferPriority",
     "TransferRecord",
-    # Cluster Transport
-    "TransportResult",
-    # Transfer Verification (checksum verification for data integrity)
     "TransferVerifier",
-    # Unified Event Coordinator (bridges all event systems)
+    "TransportResult",
     "UnifiedEventCoordinator",
-    # Unified Event Router (December 2025)
     "UnifiedEventRouter",
-    # Unified Registry (December 2025)
     "UnifiedRegistry",
     "UtilizationTargets",
     "WriteThrough",
@@ -1713,6 +1668,7 @@ __all__ = [
     "extract_trace_from_event",
     "extract_trace_from_headers",
     "fail_task_safe",
+    "full_cluster_sync",
     "get_active_task_count",
     "get_all_coordinator_status",
     "get_bandwidth_context",
@@ -1720,17 +1676,16 @@ __all__ = [
     "get_bandwidth_stats",
     "get_bridge_manager",
     "get_cache_orchestrator",
-    # Functions
     "get_cluster_data_status",
     "get_cluster_summary",
     "get_cluster_summary_safe",
+    "get_cluster_transport",
     "get_cluster_utilization",
     "get_config",
     "get_config_game_counts",
     "get_coordinator",
     "get_coordinator_safe",
     "get_cpu_rich_hosts",
-    "get_cluster_transport",
     "get_cross_coordinator_health",
     "get_current_node_id",
     "get_current_pipeline_stage",
