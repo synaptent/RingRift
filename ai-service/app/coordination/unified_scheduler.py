@@ -659,6 +659,31 @@ class UnifiedScheduler:
             return JobState.FAILED
         return JobState.UNKNOWN
 
+    def _parse_vast_instance_id(self, backend_job_id: str | None) -> str | None:
+        if not backend_job_id:
+            return None
+        parts = backend_job_id.split("-")
+        if len(parts) >= 3 and parts[0] == "vast":
+            return parts[1]
+        return None
+
+    def _map_vast_instance_state(self, instance: dict[str, Any]) -> JobState:
+        raw = str(
+            instance.get("cur_state")
+            or instance.get("actual_status")
+            or instance.get("state")
+            or ""
+        ).lower()
+        if raw in {"running", "active"}:
+            return JobState.RUNNING
+        if raw in {"pending", "init", "starting", "booting"}:
+            return JobState.QUEUED
+        if raw in {"failed", "error"}:
+            return JobState.FAILED
+        if raw in {"stopped", "exited", "terminated", "deleted"}:
+            return JobState.UNKNOWN
+        return JobState.UNKNOWN
+
     def _sync_slurm_job_states(
         self,
         slurm_jobs: dict[int, SlurmJobStatus],
@@ -754,17 +779,309 @@ class UnifiedScheduler:
 
         return updates
 
+    def _sync_vast_job_states(
+        self,
+        instances: list[dict[str, Any]],
+        stale_after_seconds: float = 300.0,
+    ) -> int:
+        """Sync Vast.ai job states into the unified jobs table."""
+        if not instances:
+            return 0
+
+        now = time.time()
+        instance_map: dict[str, JobState] = {}
+        for inst in instances:
+            inst_id = inst.get("id")
+            if inst_id is None:
+                inst_id = inst.get("instance_id")
+            if inst_id is None:
+                inst_id = inst.get("machine_id")
+            if inst_id is None:
+                continue
+            instance_map[str(inst_id)] = self._map_vast_instance_state(inst)
+
+        updates = 0
+        terminal_states = {
+            JobState.COMPLETED,
+            JobState.FAILED,
+            JobState.CANCELLED,
+        }
+        missing_instance_ids = 0
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT unified_id, backend_job_id, state, created_at, started_at, finished_at
+                FROM jobs
+                WHERE backend = ?
+                  AND backend_job_id IS NOT NULL
+                  AND state IN (?, ?, ?)
+                """,
+                (
+                    Backend.VAST.value,
+                    JobState.PENDING.value,
+                    JobState.QUEUED.value,
+                    JobState.RUNNING.value,
+                ),
+            ).fetchall()
+
+            for row in rows:
+                current_state = row["state"]
+                started_at = row["started_at"]
+                finished_at = row["finished_at"]
+                instance_id = self._parse_vast_instance_id(row["backend_job_id"])
+                if not instance_id:
+                    missing_instance_ids += 1
+                    continue
+
+                desired_state = instance_map.get(instance_id)
+
+                if desired_state:
+                    update_fields = []
+                    params = []
+
+                    if desired_state.value != current_state:
+                        update_fields.append("state = ?")
+                        params.append(desired_state.value)
+
+                    if desired_state == JobState.RUNNING and not started_at:
+                        update_fields.append("started_at = ?")
+                        params.append(now)
+
+                    if desired_state in terminal_states and not finished_at:
+                        update_fields.append("finished_at = ?")
+                        params.append(now)
+
+                    if update_fields:
+                        params.append(row["unified_id"])
+                        conn.execute(
+                            f"UPDATE jobs SET {', '.join(update_fields)} WHERE unified_id = ?",
+                            params,
+                        )
+                        updates += 1
+                    continue
+
+                if (
+                    current_state != JobState.UNKNOWN.value
+                    and row["created_at"]
+                    and (now - float(row["created_at"])) >= stale_after_seconds
+                ):
+                    update_fields = ["state = ?"]
+                    params = [JobState.UNKNOWN.value]
+
+                    if not finished_at:
+                        update_fields.append("finished_at = ?")
+                        params.append(now)
+
+                    params.append(row["unified_id"])
+                    conn.execute(
+                        f"UPDATE jobs SET {', '.join(update_fields)} WHERE unified_id = ?",
+                        params,
+                    )
+                    updates += 1
+
+            conn.commit()
+
+        if missing_instance_ids:
+            logger.debug(
+                "[Scheduler] Vast jobs missing instance IDs: %s",
+                missing_instance_ids,
+            )
+
+        return updates
+
+    def _map_p2p_job_state(self, raw_state: str | None) -> JobState:
+        state = (raw_state or "").strip().lower()
+        if state in {"running", "in_progress", "active"}:
+            return JobState.RUNNING
+        if state in {"completed", "success", "done"}:
+            return JobState.COMPLETED
+        if state in {"failed", "error"}:
+            return JobState.FAILED
+        if state in {"cancelled", "canceled", "aborted"}:
+            return JobState.CANCELLED
+        if state in {"pending", "queued"}:
+            return JobState.QUEUED
+        return JobState.UNKNOWN
+
+    def _sync_p2p_job_states(
+        self,
+        p2p_status: dict[str, Any] | None,
+        p2p_history: list[dict[str, Any]] | None,
+        stale_after_seconds: float = 300.0,
+    ) -> int:
+        """Best-effort sync for P2P jobs using leader status/history."""
+        if not p2p_status and not p2p_history:
+            return 0
+
+        now = time.time()
+        updates = 0
+        terminal_states = {
+            JobState.COMPLETED,
+            JobState.FAILED,
+            JobState.CANCELLED,
+        }
+
+        job_state_map: dict[str, JobState] = {}
+        if p2p_status:
+            current = p2p_status.get("current_job", {})
+            if isinstance(current, dict):
+                job_id = current.get("job_id") or current.get("id")
+                status = current.get("status") or current.get("state")
+                if job_id:
+                    job_state_map[str(job_id)] = self._map_p2p_job_state(status)
+
+        for entry in p2p_history or []:
+            if not isinstance(entry, dict):
+                continue
+            job_id = entry.get("job_id") or entry.get("id")
+            status = entry.get("status") or entry.get("state")
+            if job_id:
+                job_state_map[str(job_id)] = self._map_p2p_job_state(status)
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT unified_id, backend_job_id, state, created_at, started_at, finished_at
+                FROM jobs
+                WHERE backend = ?
+                  AND backend_job_id IS NOT NULL
+                  AND state IN (?, ?, ?)
+                """,
+                (
+                    Backend.P2P.value,
+                    JobState.PENDING.value,
+                    JobState.QUEUED.value,
+                    JobState.RUNNING.value,
+                ),
+            ).fetchall()
+
+            for row in rows:
+                backend_job_id = row["backend_job_id"]
+                current_state = row["state"]
+                started_at = row["started_at"]
+                finished_at = row["finished_at"]
+                desired_state = job_state_map.get(str(backend_job_id))
+
+                if desired_state:
+                    update_fields = []
+                    params = []
+
+                    if desired_state.value != current_state:
+                        update_fields.append("state = ?")
+                        params.append(desired_state.value)
+
+                    if desired_state == JobState.RUNNING and not started_at:
+                        update_fields.append("started_at = ?")
+                        params.append(now)
+
+                    if desired_state in terminal_states and not finished_at:
+                        update_fields.append("finished_at = ?")
+                        params.append(now)
+
+                    if update_fields:
+                        params.append(row["unified_id"])
+                        conn.execute(
+                            f"UPDATE jobs SET {', '.join(update_fields)} WHERE unified_id = ?",
+                            params,
+                        )
+                        updates += 1
+                    continue
+
+                if (
+                    current_state != JobState.UNKNOWN.value
+                    and row["created_at"]
+                    and (now - float(row["created_at"])) >= stale_after_seconds
+                ):
+                    update_fields = ["state = ?"]
+                    params = [JobState.UNKNOWN.value]
+
+                    if not finished_at:
+                        update_fields.append("finished_at = ?")
+                        params.append(now)
+
+                    params.append(row["unified_id"])
+                    conn.execute(
+                        f"UPDATE jobs SET {', '.join(update_fields)} WHERE unified_id = ?",
+                        params,
+                    )
+                    updates += 1
+
+            conn.commit()
+
+        return updates
+
+    async def _get_p2p_backend(self) -> P2PBackend | None:
+        try:
+            from app.coordination.p2p_backend import (
+                HAS_AIOHTTP,
+                get_p2p_backend_with_registry,
+                get_p2p_leader_from_registry,
+            )
+        except Exception:
+            return None
+
+        if not HAS_AIOHTTP:
+            return None
+
+        leader_url = (
+            os.environ.get("P2P_LEADER")
+            or os.environ.get("RINGRIFT_P2P_LEADER_URL")
+            or get_p2p_leader_from_registry()
+        )
+        seed_env = os.environ.get("RINGRIFT_P2P_SEEDS", "")
+        seed_urls = [s.strip() for s in seed_env.split(",") if s.strip()]
+
+        if not leader_url and not seed_urls:
+            return None
+
+        try:
+            backend = await get_p2p_backend_with_registry(
+                seed_urls=seed_urls or None,
+                leader_url=leader_url,
+                auth_token=os.environ.get("RINGRIFT_CLUSTER_AUTH_TOKEN", ""),
+                use_registry=True,
+            )
+            backend.timeout = 5.0
+            return backend
+        except Exception as exc:
+            logger.debug("[Scheduler] P2P backend unavailable: %s", exc)
+            return None
+
     async def sync_job_states(
         self,
         slurm_jobs: dict[int, SlurmJobStatus] | None = None,
+        vast_instances: list[dict[str, Any]] | None = None,
+        p2p_status: dict[str, Any] | None = None,
+        p2p_history: list[dict[str, Any]] | None = None,
     ) -> dict[str, int]:
         """Sync backend job states into the unified jobs table."""
-        updates = {"slurm": 0}
+        updates = {"slurm": 0, "vast": 0, "p2p": 0}
 
         if self.enable_slurm:
             if slurm_jobs is None:
                 slurm_jobs = await self.slurm.get_jobs(refresh=True)
             updates["slurm"] = self._sync_slurm_job_states(slurm_jobs)
+
+        if self.enable_vast:
+            if vast_instances is None:
+                vast_instances = await self._get_vast_instances()
+            updates["vast"] = self._sync_vast_job_states(vast_instances)
+
+        if self.enable_p2p:
+            if p2p_status is None or p2p_history is None:
+                backend = await self._get_p2p_backend()
+                if backend:
+                    try:
+                        if p2p_status is None:
+                            p2p_status = await backend.get_cluster_status()
+                        if p2p_history is None:
+                            p2p_history = await backend.get_job_history(limit=50)
+                    finally:
+                        await backend.close()
+            updates["p2p"] = self._sync_p2p_job_states(p2p_status, p2p_history)
 
         return updates
 
@@ -797,16 +1114,54 @@ class UnifiedScheduler:
                 status["slurm"]["error"] = str(e)
 
         # Vast status
+        vast_instances = None
         if self.enable_vast:
             try:
                 instances = await self._get_vast_instances()
+                vast_instances = instances
                 status["vast"]["instances"] = len(instances)
-                status["vast"]["running"] = sum(1 for i in instances if i.get("cur_state") == "running")
+                status["vast"]["running"] = sum(
+                    1
+                    for i in instances
+                    if (i.get("cur_state") or i.get("actual_status")) == "running"
+                )
+                status["vast"]["jobs_running"] = status["vast"]["running"]
             except Exception as e:
                 status["vast"]["error"] = str(e)
 
+        # P2P status
+        p2p_status = None
+        p2p_history = None
+        if self.enable_p2p:
+            backend = await self._get_p2p_backend()
+            if backend:
+                try:
+                    p2p_status = await backend.get_cluster_status()
+                    nodes = p2p_status.get("nodes", []) if isinstance(p2p_status, dict) else []
+                    status["p2p"]["nodes"] = len(nodes)
+                    status["p2p"]["selfplay_running"] = sum(
+                        int(n.get("selfplay_jobs", 0) or 0) for n in nodes
+                    )
+                    status["p2p"]["training_running"] = sum(
+                        int(n.get("training_jobs", 0) or 0) for n in nodes
+                    )
+                    status["p2p"]["jobs_running"] = (
+                        status["p2p"]["selfplay_running"]
+                        + status["p2p"]["training_running"]
+                    )
+                    p2p_history = await backend.get_job_history(limit=50)
+                except Exception as e:
+                    status["p2p"]["error"] = str(e)
+                finally:
+                    await backend.close()
+
         # Keep unified job states aligned with backend status.
-        await self.sync_job_states(slurm_jobs=slurm_jobs)
+        await self.sync_job_states(
+            slurm_jobs=slurm_jobs,
+            vast_instances=vast_instances,
+            p2p_status=p2p_status,
+            p2p_history=p2p_history,
+        )
 
         # Job counts from database
         with sqlite3.connect(self.db_path) as conn:
