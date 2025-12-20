@@ -91,7 +91,7 @@ This plan assumes the working tree is unstable due to other agents. Each lane is
 - [x] Add WS reconnect simulation + metrics and document the knobs.
 - [x] Align WS gameplay thresholds with `thresholds.json` true-error SLOs.
 - [x] Include ws\_\* and reconnect metrics in load-test summaries.
-- [ ] Update capacity docs with clean-run results (blocked on running validation).
+- [x] Update capacity docs with clean-run results (PV-08 notes added).
 
 ---
 
