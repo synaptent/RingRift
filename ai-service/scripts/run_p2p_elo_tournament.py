@@ -673,9 +673,78 @@ async def main():
         tournament.print_leaderboard()
 
     elif args.models:
-        # TODO: Implement model discovery and tournament
-        print("[Tournament] Model tournament not yet implemented")
-        print("[Tournament] Use --calibrate-ai-types for AI type calibration")
+        # Discover models matching the board type and player count
+        print(f"[Tournament] Discovering models for {args.board} {args.players}p...")
+        models = discover_models(
+            board_type=args.board,
+            num_players=args.players,
+        )
+
+        if not models:
+            print(f"[Tournament] No models found for {args.board} {args.players}p")
+            print("[Tournament] Check that models exist in the models/ directory")
+            return
+
+        print(f"[Tournament] Found {len(models)} models:")
+        for m in models[:10]:
+            elo_str = f"(Elo: {m.elo:.0f})" if m.elo else ""
+            print(f"  - {m.name} [{m.model_type}] {elo_str}")
+        if len(models) > 10:
+            print(f"  ... and {len(models) - 10} more")
+
+        # Create model configs for tournament
+        # Models are configured as neural net agents with checkpoint paths
+        model_configs: Dict[str, Dict[str, Any]] = {}
+        for m in models:
+            model_configs[m.name] = {
+                "ai_type": "descent",  # Use descent AI for NN models
+                "model_path": m.path,
+                "use_neural_net": True,
+                "difficulty": 7,  # High difficulty for model evaluation
+                "description": f"{m.model_type} model ({m.board_type})",
+            }
+
+        # Create tournament with model configs
+        tournament = P2PEloTournament(
+            board_type=args.board,
+            num_players=args.players,
+            games_per_pairing=args.games,
+            leader_host=args.leader_host,
+            leader_port=args.leader_port,
+            elo_db_path=AI_SERVICE_ROOT / "data" / "elo" / f"model_elo_{args.board}_{args.players}p.db",
+        )
+
+        # Inject model configs into the global config dict for match execution
+        # This allows run_match_locally and run_match_on_node to use model configs
+        AI_TYPE_CONFIGS.update(model_configs)
+
+        agents = list(model_configs.keys())
+        matchups = tournament.generate_round_robin_matchups(agents)
+
+        if args.dry_run:
+            print(f"\n[Tournament] Would play {len(matchups)} matches:")
+            for i, (a, b) in enumerate(matchups[:20]):
+                print(f"  {i+1}. {a} vs {b}")
+            if len(matchups) > 20:
+                print(f"  ... and {len(matchups) - 20} more")
+            return
+
+        state = await tournament.run_tournament(
+            agents=agents,
+            max_parallel=args.max_parallel,
+            use_distributed=not args.local_only,
+        )
+
+        # Print model-specific leaderboard
+        print("\n" + "=" * 70)
+        print("MODEL ELO LEADERBOARD")
+        print("=" * 70)
+        sorted_ratings = sorted(state.ratings.items(), key=lambda x: x[1], reverse=True)
+        print(f"{'Rank':<6} {'Model':<40} {'Elo':<10}")
+        print("-" * 70)
+        for i, (model_name, rating) in enumerate(sorted_ratings, 1):
+            print(f"{i:<6} {model_name[:40]:<40} {rating:>8.1f}")
+        print("=" * 70)
 
     else:
         parser.print_help()

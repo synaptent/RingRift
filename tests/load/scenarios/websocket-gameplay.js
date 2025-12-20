@@ -544,9 +544,9 @@ export default function (data) {
   const res = ws.connect(
     wsEndpoint,
     {
-      headers: {
+      headers: getBypassHeaders({
         'User-Agent': 'k6-websocket-gameplay',
-      },
+      }),
       tags: {
         scenario: 'websocket-gameplay',
         gameId: String(myGameId),
