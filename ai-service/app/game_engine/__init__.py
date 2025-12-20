@@ -11,15 +11,14 @@ For backwards compatibility, all public symbols are re-exported from
 the legacy module.
 """
 
-# Re-export from submodules
-from .phase_requirements import (
-    PhaseRequirementType,
-    PhaseRequirement,
-)
-
 # Re-export from legacy module for backwards compatibility
+# NOTE: PhaseRequirementType and PhaseRequirement must come from the legacy
+# module to match what GameEngine.get_phase_requirement() returns. Using
+# different enum classes causes comparison failures.
 from app._game_engine_legacy import (
     GameEngine,
+    PhaseRequirementType,
+    PhaseRequirement,
     STRICT_NO_MOVE_INVARIANT,
 )
 

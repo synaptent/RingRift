@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 from typing import List, Mapping
 
-from app.game_engine import PhaseRequirementType
+# Import from legacy module directly to avoid circular import
+from app._game_engine_legacy import PhaseRequirementType
 
 from app.models import GameState, GameStatus, GamePhase, Move, MoveType
 
