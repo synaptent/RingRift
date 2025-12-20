@@ -46,24 +46,58 @@ class HexEncoderWrapper:
 
 
 def parse_move(move_dict: dict) -> Move:
-    """Parse a move from JSON dict."""
+    """Parse a move from JSON dict.
+
+    Handles two formats:
+    1. GPU selfplay: {"move_type": "PLACEMENT", "player": 1, "from_pos": [x,y], "to_pos": [x,y]}
+    2. Standard: {"type": "place_ring", "player": 1, "to": {"x": x, "y": y}}
+    """
     from app.models.core import Position
 
-    # Handle nested position dicts
     to_pos = None
     from_pos = None
 
-    if move_dict.get("to"):
-        to_data = move_dict["to"]
-        to_pos = Position(x=to_data["x"], y=to_data["y"], z=to_data.get("z"))
+    # Handle GPU selfplay format: positions as [x, y] arrays
+    if "to_pos" in move_dict:
+        to_data = move_dict["to_pos"]
+        if isinstance(to_data, (list, tuple)):
+            to_pos = Position(x=to_data[0], y=to_data[1])
+        elif isinstance(to_data, dict):
+            to_pos = Position(x=to_data["x"], y=to_data["y"], z=to_data.get("z"))
 
-    if move_dict.get("from") or move_dict.get("from_pos"):
-        from_data = move_dict.get("from") or move_dict.get("from_pos")
-        from_pos = Position(x=from_data["x"], y=from_data["y"], z=from_data.get("z"))
+    if "from_pos" in move_dict:
+        from_data = move_dict["from_pos"]
+        if isinstance(from_data, (list, tuple)):
+            from_pos = Position(x=from_data[0], y=from_data[1])
+        elif isinstance(from_data, dict):
+            from_pos = Position(x=from_data["x"], y=from_data["y"], z=from_data.get("z"))
+
+    # Handle standard format
+    if "to" in move_dict and to_pos is None:
+        to_data = move_dict["to"]
+        if isinstance(to_data, dict):
+            to_pos = Position(x=to_data["x"], y=to_data["y"], z=to_data.get("z"))
+
+    if "from" in move_dict and from_pos is None:
+        from_data = move_dict["from"]
+        if isinstance(from_data, dict):
+            from_pos = Position(x=from_data["x"], y=from_data["y"], z=from_data.get("z"))
+
+    # Parse move type - handle both formats
+    move_type_raw = move_dict.get("move_type") or move_dict.get("type", "place_ring")
+
+    # Map GPU selfplay format to standard types
+    move_type_map = {
+        "PLACEMENT": "place_ring",
+        "MOVEMENT": "move_ring",
+        "CAPTURE": "capture",
+        "RECOVERY_SLIDE": "recovery_slide",
+    }
+    move_type = move_type_map.get(move_type_raw, move_type_raw.lower() if isinstance(move_type_raw, str) else "place_ring")
 
     return Move(
         id=move_dict.get("id", ""),
-        type=move_dict.get("type", "place_ring"),
+        type=move_type,
         player=move_dict.get("player", 1),
         to=to_pos,
         from_pos=from_pos,

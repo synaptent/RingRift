@@ -163,6 +163,30 @@ def create_ai_from_model(
         )
         return MinimaxAI(player_number, config)
 
+    elif ai_type == "gmo" or model_path == "__BASELINE_GMO__":
+        # GMO (Gradient Move Optimization) model
+        from app.ai.gmo_ai import GMOAI, GMOConfig
+        gmo_config = GMOConfig(device="cpu")
+        config = AIConfig(ai_type=AIType.GMO, board_type=board_type, difficulty=5)
+        gmo_ai = GMOAI(player_number, config, gmo_config)
+        # Load checkpoint if specified
+        if model_path and not model_path.startswith("__BASELINE_"):
+            gmo_ai.load_checkpoint(Path(model_path))
+        return gmo_ai
+
+    elif ai_type == "ebmo" or model_path == "__BASELINE_EBMO__":
+        # EBMO (Energy-Based Move Optimization) model
+        from app.ai.ebmo_ai import EBMO_AI
+        from app.ai.ebmo_network import EBMOConfig
+        # Use fast config for tournament (direct eval instead of gradient descent)
+        ebmo_config = EBMOConfig(
+            use_direct_eval=True,  # Skip gradient descent for speed
+            board_size=8 if board_type == BoardType.SQUARE8 else 19,
+        )
+        config = AIConfig(ai_type=AIType.EBMO, board_type=board_type, difficulty=5)
+        ebmo_model_path = model_path if model_path and not model_path.startswith("__BASELINE_") else None
+        return EBMO_AI(player_number, config, ebmo_model_path, ebmo_config)
+
     else:
         # Neural network model - use MCTS with neural net guidance
         # Extract model_id from model_path (strip .pth extension)
@@ -932,6 +956,26 @@ def get_baseline_players(board_type: str, num_players: int) -> list[dict[str, An
             "ai_type": "mcts",
             "mcts_simulations": 500,
         },
+        {
+            "model_id": f"baseline_gmo_{board_type}_{num_players}p",
+            "model_path": "__BASELINE_GMO__",
+            "board_type": board_type,
+            "num_players": num_players,
+            "version": "baseline",
+            "size_mb": 0,
+            "created_at": now,
+            "ai_type": "gmo",
+        },
+        {
+            "model_id": f"baseline_ebmo_{board_type}_{num_players}p",
+            "model_path": "__BASELINE_EBMO__",
+            "board_type": board_type,
+            "num_players": num_players,
+            "version": "baseline",
+            "size_mb": 0,
+            "created_at": now,
+            "ai_type": "ebmo",
+        },
     ]
     return baselines
 
@@ -950,8 +994,14 @@ def register_models(db: EloDatabase, models: list[dict[str, Any]]):
         elif model_path.startswith("__BASELINE_MCTS"):
             ai_type = "mcts"
             participant_type = "baseline"
+        elif model_path.startswith("__BASELINE_GMO__"):
+            ai_type = "gmo"
+            participant_type = "baseline"
+        elif model_path.startswith("__BASELINE_EBMO__"):
+            ai_type = "ebmo"
+            participant_type = "baseline"
         else:
-            ai_type = "neural_net"
+            ai_type = m.get("ai_type", "neural_net")
             participant_type = "model"
 
         db.register_participant(

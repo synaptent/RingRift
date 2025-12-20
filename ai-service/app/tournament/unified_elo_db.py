@@ -892,6 +892,12 @@ class EloDatabase:
                 old_rating = ratings[pid].rating
                 elo_rating = calculator.get_rating(pid)
                 new_rating = elo_rating.rating
+
+                # Check if this is a pinned baseline - override rating if so
+                pinned_elo = self._is_pinned_baseline(pid)
+                if pinned_elo is not None:
+                    new_rating = pinned_elo
+
                 new_ratings[pid] = new_rating
 
                 # Update or insert elo_ratings

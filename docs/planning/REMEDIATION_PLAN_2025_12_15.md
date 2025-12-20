@@ -59,7 +59,7 @@ The canonical selfplay audit revealed that while all 5 canonical DBs exist with 
 | `canonical_square8_3p.db` | 2             | 50+       | ❌ Insufficient |
 | `canonical_square8_4p.db` | 2             | 50+       | ❌ Insufficient |
 | `canonical_square19.db`   | 1             | 25+       | ❌ Insufficient |
-| `canonical_hex.db`        | 1             | 25+       | ❌ Insufficient |
+| `canonical_hexagonal.db`  | 1             | 25+       | ❌ Insufficient |
 | **Total**                 | **18 games**  | **~250+** | ❌ Insufficient |
 
 **Root Cause:**
@@ -81,39 +81,44 @@ source .venv/bin/activate  # or: source venv/bin/activate
 
 # Generate canonical selfplay with parity gate
 # For square8 2-player (primary target: 100+ games)
-python scripts/generate_canonical_selfplay.py \
+PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
   --board square8 \
-  --players 2 \
-  --games 100 \
-  --output data/canonical_square8.db
+  --num-players 2 \
+  --num-games 100 \
+  --db data/games/canonical_square8.db \
+  --summary data/games/db_health.canonical_square8.json
 
 # For square8 3-player (target: 50+ games)
-python scripts/generate_canonical_selfplay.py \
+PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
   --board square8 \
-  --players 3 \
-  --games 50 \
-  --output data/canonical_square8_3p.db
+  --num-players 3 \
+  --num-games 50 \
+  --db data/games/canonical_square8_3p.db \
+  --summary data/games/db_health.canonical_square8_3p.json
 
 # For square8 4-player (target: 50+ games)
-python scripts/generate_canonical_selfplay.py \
+PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
   --board square8 \
-  --players 4 \
-  --games 50 \
-  --output data/canonical_square8_4p.db
+  --num-players 4 \
+  --num-games 50 \
+  --db data/games/canonical_square8_4p.db \
+  --summary data/games/db_health.canonical_square8_4p.json
 
 # For square19 2-player (target: 25+ games, longer runtime)
-python scripts/generate_canonical_selfplay.py \
+PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
   --board square19 \
-  --players 2 \
-  --games 25 \
-  --output data/canonical_square19.db
+  --num-players 2 \
+  --num-games 25 \
+  --db data/games/canonical_square19.db \
+  --summary data/games/db_health.canonical_square19.json
 
-# For hex 2-player (target: 25+ games)
-python scripts/generate_canonical_selfplay.py \
+# For hexagonal 2-player (target: 25+ games)
+PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
   --board hexagonal \
-  --players 2 \
-  --games 25 \
-  --output data/canonical_hex.db
+  --num-players 2 \
+  --num-games 25 \
+  --db data/games/canonical_hexagonal.db \
+  --summary data/games/db_health.canonical_hexagonal.json
 ```
 
 **Estimated Runtimes:**
@@ -127,7 +132,9 @@ python scripts/generate_canonical_selfplay.py \
 
 ```bash
 # Verify all DBs pass canonical gates
-python scripts/run_parity_and_history_gate.py --db data/canonical_square8.db
+PYTHONPATH=. python scripts/run_parity_and_history_gate.py \
+  --db data/games/canonical_square8.db \
+  --summary-json data/games/db_health.canonical_square8.json
 # Repeat for each DB
 ```
 
@@ -302,7 +309,7 @@ See [`docs/ux/FRONTEND_UX_PROGRESS.md`](../ux/FRONTEND_UX_PROGRESS.md) for detai
 - `canonical_square8_3p.db`: Scale from 2 games to 50+ games
 - `canonical_square8_4p.db`: Scale from 2 games to 50+ games
 - `canonical_square19.db`: Scale from 1 game to 25+ games
-- `canonical_hex.db`: Scale from 1 game to 25+ games
+- `canonical_hexagonal.db`: Scale from 1 game to 25+ games
 - Updated gate summaries (`db_health.canonical_*.json`) for all DBs
 
 **Acceptance Criteria:**
@@ -312,7 +319,7 @@ See [`docs/ux/FRONTEND_UX_PROGRESS.md`](../ux/FRONTEND_UX_PROGRESS.md) for detai
 - [ ] `canonical_square8_3p.db` ≥50 completed games
 - [ ] `canonical_square8_4p.db` ≥50 completed games
 - [ ] `canonical_square19.db` ≥25 completed games
-- [ ] `canonical_hex.db` ≥25 completed games
+- [ ] `canonical_hexagonal.db` ≥25 completed games
 - [ ] All DBs pass parity + canonical history + FE/territory fixture gates
 
 **Effort Estimate:** L (Large - compute intensive)  
@@ -380,7 +387,7 @@ See [`docs/ux/FRONTEND_UX_PROGRESS.md`](../ux/FRONTEND_UX_PROGRESS.md) for detai
 
 - `ringrift_v2_square8.pth` trained on `canonical_square8.db`
 - `ringrift_v2_square19.pth` trained on `canonical_square19.db`
-- `ringrift_v2_hex.pth` trained on `canonical_hex.db`
+- `ringrift_v2_hex.pth` trained on `canonical_hexagonal.db`
 - Training logs and checkpoints with versioning metadata
 - Loss curves and training metrics documentation
 

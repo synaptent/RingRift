@@ -181,10 +181,10 @@ To generate a new canonical DB with automatic parity gating:
 ```bash
 cd ai-service
 PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
-  --board-type square8 \
+  --board square8 \
   --num-games 32 \
   --db data/games/canonical_square8.db \
-  --summary db_health.canonical_square8.json
+  --summary data/games/db_health.canonical_square8.json
 ```
 
 A DB is eligible for `canonical` status **only if**:
@@ -725,10 +725,10 @@ PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
 
 ```bash
 PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
-  --board-type square8 \
+  --board square8 \
   --num-games 32 \
   --db data/games/canonical_square8.db \
-  --summary db_health.json
+  --summary data/games/db_health.canonical_square8.json
 ```
 
 ---

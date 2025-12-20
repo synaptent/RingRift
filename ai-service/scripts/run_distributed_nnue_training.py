@@ -83,6 +83,7 @@ from app.distributed import (
     get_high_memory_hosts,
     load_remote_hosts,
 )
+from app.training.canonical_sources import enforce_canonical_sources
 
 # Unified logging setup
 from scripts.lib.logging_config import setup_script_logging
