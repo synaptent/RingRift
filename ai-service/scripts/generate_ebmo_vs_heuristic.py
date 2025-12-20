@@ -30,7 +30,7 @@ logger = logging.getLogger("generate_ebmo_vs_heuristic")
 
 def play_game(
     ai1, ai2,
-    feature_extractor: FeatureExtractor,
+    nn: NeuralNetAI,
     action_extractor: ActionFeatureExtractor,
     max_moves: int = 500,
 ):
@@ -49,17 +49,24 @@ def play_game(
         current_player = state.current_player
         current_ai = ais[current_player]
 
-        # Extract features
-        features = feature_extractor.extract(state, current_player)
-        frame_history.append(features)
-        if len(frame_history) > 4:
-            frame_history.pop(0)
+        # Extract features using NeuralNetAI
+        try:
+            board_feat, _ = nn._extract_features(state)
+            frame_history.append(board_feat)
+            if len(frame_history) > 4:
+                frame_history.pop(0)
+        except Exception:
+            move = current_ai.select_move(state)
+            if move:
+                state = engine.apply_move(state, move)
+            move_count += 1
+            continue
 
         # Stack frames for 56-channel input
         if len(frame_history) >= 4:
             stacked = np.concatenate(frame_history[-4:], axis=0)
         else:
-            padding = [np.zeros_like(features)] * (4 - len(frame_history))
+            padding = [frame_history[0]] * (4 - len(frame_history))
             stacked = np.concatenate(padding + frame_history, axis=0)
 
         # Get move
@@ -96,7 +103,7 @@ def generate_data(
 
     config = AIConfig(difficulty=5)
     action_extractor = ActionFeatureExtractor(8)
-    feature_extractor = FeatureExtractor(board_size=8, history_length=1)
+    nn = NeuralNetAI(1, config)  # For feature extraction
 
     all_boards = []
     all_actions = []
@@ -123,7 +130,7 @@ def generate_data(
             ais = {1: ai2, 2: ai1}
 
         samples, winner = play_game(
-            ais[1], ais[2], feature_extractor, action_extractor
+            ais[1], ais[2], nn, action_extractor
         )
 
         if winner is None:

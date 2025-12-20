@@ -381,13 +381,9 @@ At 300 VUs with 2-5s polling intervals:
 - `contract_failures_total` - 4xx errors (auth mixed with true contract)
 - `capacity_failures_total` - 5xx and rate limits (correct)
 
-**Gap:** 401 (expired token) is counted as both `http_req_failed` and `contract_failures_total`, polluting both metrics.
+**Update (2025-12-19):** `concurrent-games.js` and `websocket-gameplay.js` now emit `auth_token_expired_total`, `rate_limit_hit_total`, and `true_errors_total`, and `verify-slos.js` computes `true_error_rate`. The k6 summary output also includes an auth/rate-limit breakdown.
 
-**Needed:**
-
-- `auth_token_expired_total` - Explicit token expiration counter (exists but not used for SLO filtering)
-- `rate_limit_hit_total{endpoint}` - Per-endpoint rate limit tracking
-- `true_error_rate` - Failures excluding auth/rate-limit
+**Remaining gap:** Ensure every production-validation scenario emits these counters and that SLO thresholds rely on `true_errors_total` rather than raw `http_req_failed`.
 
 ---
 
@@ -437,6 +433,7 @@ At 300 VUs with 2-5s polling intervals:
 | **Task ID**             | PV-04                                                                                                                                                                                                                    |
 | **Title**               | Add explicit auth failure classification in k6 scenarios                                                                                                                                                                 |
 | **Description**         | Modify k6 scenarios to track `auth_token_expired_total` and `rate_limit_hit_total` as distinct counters from `contract_failures_total`. Update SLO verification to compute `true_error_rate` excluding these categories. |
+| **Status**              | Implemented in `concurrent-games.js` and `websocket-gameplay.js`; `verify-slos.js` now computes `true_error_rate`.                                                                                                       |
 | **Acceptance Criteria** | <ul><li>New counters emitted by k6 scenarios</li><li>`verify-slos.js` computes `true_error_rate`</li><li>SLO report shows both raw and filtered error rates</li></ul>                                                    |
 | **Dependencies**        | PV-01                                                                                                                                                                                                                    |
 | **Recommended Mode**    | code                                                                                                                                                                                                                     |
@@ -448,6 +445,7 @@ At 300 VUs with 2-5s polling intervals:
 | **Task ID**             | PV-05                                                                                                                                                                                                                                                                   |
 | **Title**               | Add automated pre-test health checks to runner scripts                                                                                                                                                                                                                  |
 | **Description**         | Extend `run-baseline.sh`, `run-target-scale.sh`, and `run-ai-heavy.sh` to validate all dependencies before starting k6. Check: App `/health`, AI service `/health`, Redis `PING`, Postgres connectivity, Prometheus scraping. Fail fast if any dependency is unhealthy. |
+| **Status**              | Implemented via `tests/load/scripts/preflight-check.js` and the runner-script preflight hooks (skip with `SKIP_PREFLIGHT_CHECKS=true`).                                                                                                                                 |
 | **Acceptance Criteria** | <ul><li>All runner scripts include pre-flight checks</li><li>Clear error messages on dependency failure</li><li>Test does not start if pre-flight fails</li><li>Pre-flight results logged to JSON</li></ul>                                                             |
 | **Dependencies**        | None                                                                                                                                                                                                                                                                    |
 | **Recommended Mode**    | code                                                                                                                                                                                                                                                                    |
