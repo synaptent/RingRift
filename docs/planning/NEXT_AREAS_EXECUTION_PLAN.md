@@ -12,20 +12,20 @@ This plan assumes the working tree is unstable due to other agents. Each lane is
 ## Context Snapshot (Overall Assessment)
 
 - **State:** Stable beta with consolidated orchestrator, strong TS-Python parity, and large test suites (`CURRENT_STATE_ASSESSMENT.md`).
-- **Primary risk:** Production validation lacks a clean signal because auth/rate-limit noise dominated target runs (`WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md`, `BASELINE_CAPACITY.md`).
+- **Primary risk:** Canonical large-board datasets (square19/hex) are still empty because canonical selfplay soaks are exiting with returncode -15 (SIGTERM) before any games complete.
 - **Quality gap:** Line coverage ~69% vs >=80% target and scenario matrix expansion still pending (`CURRENT_STATE_ASSESSMENT.md`, `PROJECT_GOALS.md`, `KNOWN_ISSUES.md`).
 - **UX/test polish:** Client coverage and weird-state UX/telemetry alignment are still P1 (`TODO.md`, `docs/UX_RULES_WEIRD_STATES_SPEC.md`).
-- **Data readiness:** Canonical large-board datasets remain low volume (`ai-service/TRAINING_DATA_REGISTRY.md`).
+- **Data readiness:** Canonical square8 gate now passes; square19/hex still need successful gated runs (`ai-service/TRAINING_DATA_REGISTRY.md`).
 
 ---
 
 ## Priority Order
 
-1. Parity gate documentation hygiene (doc-only, completed).
-2. Clean-scale validation rerun (baseline/target/AI-heavy with auth refresh + WS companion).
-3. Scenario matrix + endgame coverage.
-4. Client UX/test hardening.
-5. Canonical data pipeline scale-up.
+1. Canonical data pipeline scale-up (square19/hex runs + gate summaries).
+2. IG-GMO experimental tier wiring (AI factory + docs).
+3. Clean-scale validation rerun (baseline/target/AI-heavy with auth refresh + WS companion).
+4. Scenario matrix + endgame coverage.
+5. Client UX/test hardening.
 6. WebSocket lifecycle polish.
 
 ---
@@ -181,11 +181,12 @@ This plan assumes the working tree is unstable due to other agents. Each lane is
 **Progress Log:**
 
 - [x] Define volume targets and update registry placeholders.
-- [x] Sample parity/history gate attempts surfaced missing `game_moves` tables (schema not gateable).
-- [x] Ran parity on active P2P square8 DBs; TS replay failed with phase-move invariant errors (place_ring in line_processing), so P2P outputs are non-canonical.
-- [x] Started canonical selfplay gate runs (square8 on lambda-gh200-e, square19 on lambda-gh200-m, hexagonal on lambda-2xh100); parity summaries will be in `data/games/*.parity_gate.json`.
-- [ ] Regenerate canonical DBs with `game_moves` via canonical self-play and rerun gates.
-- [ ] Update registry entries with full gate summaries.
+- [x] Ran canonical parity + history checks on P2P square8 DBs (no semantic divergences; end-of-game-only current_player mismatches in 4/50 games).
+- [x] Canonical square8 gate passed on `lambda-2xh100` (10 games, canonical_ok true; `data/games/canonical_square8.db` + `data/games/db_health.canonical_square8.json`).
+- [x] Started canonical selfplay gate runs for square19/hex; current runs terminate with returncode -15 and 0 games recorded.
+- [ ] Diagnose why square19/hex soaks are getting SIGTERM (job timeout, watchdog, or resource limits).
+- [ ] Re-run square19/hex canonical selfplay on an idle GPU node with guarded settings (lower max moves, reduced sims, explicit timeouts disabled).
+- [ ] Update `ai-service/TRAINING_DATA_REGISTRY.md` with canonical_square8 details and add square19/hex once gates pass.
 
 ---
 
@@ -216,6 +217,36 @@ This plan assumes the working tree is unstable due to other agents. Each lane is
 - [x] Confirmed reconnect window + pending decision coverage in `GameSession.reconnect*` unit suites.
 - [x] Extend WS load tests with optional reconnect simulation + metrics.
 - [x] Extend WS load tests for spectator joins and pending decision timeouts (optional env-driven).
+
+---
+
+## Lane 7: IG-GMO Experimental Tier Wiring
+
+**Goal:** Wire IG-GMO into the AI factory and document it as an experimental tier without changing canonical gameplay rules.
+
+**Scope:**
+
+- `src/server/game/ai/AIEngine.ts` (or AI factory entrypoint)
+- `ai-service/app/main.py` (difficulty ladder exposure)
+- `docs/ai/AI_TRAINING_AND_DATASETS.md`
+- `docs/ai/AI_IMPROVEMENT_PROGRESS.md`
+
+**Plan:**
+
+- Confirm the intended difficulty band name and mapping for IG-GMO.
+- Add the tier to the server-side AI factory + AI service ladder.
+- Mark it as experimental in AI docs and expose any guardrails.
+
+**Definition of Done:**
+
+- IG-GMO is selectable in the AI factory with clear “experimental” docs.
+- No canonical rules or training data expectations are altered.
+
+**Progress Log:**
+
+- [ ] Confirm tier naming and wiring entrypoints.
+- [ ] Implement AI factory + AI service ladder wiring.
+- [ ] Update AI docs to flag IG-GMO as experimental.
 
 ---
 

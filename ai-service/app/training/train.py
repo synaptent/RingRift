@@ -1011,15 +1011,15 @@ def train_model(
                 "Regenerate the dataset with matching --history-length or "
                 "update the training config."
             )
-        elif dataset_history_length is None and config.history_length != 3:
-            if not distributed or is_main_process():
-                logger.warning(
-                    "Dataset %s missing history_length metadata; using "
-                    "config.history_length=%d. Ensure the dataset was built "
-                    "with matching history frames.",
-                    data_path_str,
-                    config.history_length,
-                )
+        elif (dataset_history_length is None and config.history_length != 3
+              and (not distributed or is_main_process())):
+            logger.warning(
+                "Dataset %s missing history_length metadata; using "
+                "config.history_length=%d. Ensure the dataset was built "
+                "with matching history frames.",
+                data_path_str,
+                config.history_length,
+            )
 
         if dataset_feature_version is not None and dataset_feature_version != config_feature_version:
             raise ValueError(
@@ -1209,15 +1209,15 @@ def train_model(
                     "Regenerate the dataset with matching --history-length or "
                     "update the training config."
                 )
-            elif dataset_history_length is None and config.history_length != 3:
-                if not distributed or is_main_process():
-                    logger.warning(
-                        "Dataset %s missing history_length metadata; using "
-                        "config.history_length=%d. Ensure the dataset was built "
-                        "with matching history frames.",
-                        data_path_str,
-                        config.history_length,
-                    )
+            elif (dataset_history_length is None and config.history_length != 3
+                  and (not distributed or is_main_process())):
+                logger.warning(
+                    "Dataset %s missing history_length metadata; using "
+                    "config.history_length=%d. Ensure the dataset was built "
+                    "with matching history frames.",
+                    data_path_str,
+                    config.history_length,
+                )
 
             if dataset_feature_version is not None and dataset_feature_version != config_feature_version:
                 raise ValueError(
@@ -1799,15 +1799,15 @@ def train_model(
                 "Regenerate the dataset with matching --history-length or "
                 "update the training config."
             )
-        elif dataset_history_length is None and config.history_length != 3:
-            if not distributed or is_main_process():
-                logger.warning(
-                    "Dataset %s missing history_length metadata; using "
-                    "config.history_length=%d. Ensure the dataset was built "
-                    "with matching history frames.",
-                    first_path,
-                    config.history_length,
-                )
+        elif (dataset_history_length is None and config.history_length != 3
+              and (not distributed or is_main_process())):
+            logger.warning(
+                "Dataset %s missing history_length metadata; using "
+                "config.history_length=%d. Ensure the dataset was built "
+                "with matching history frames.",
+                first_path,
+                config.history_length,
+            )
 
         if dataset_feature_version is not None and dataset_feature_version != config_feature_version:
             raise ValueError(
@@ -1971,21 +1971,21 @@ def train_model(
         # Auto-detect multi-player values from streaming data
         # If data has multi-player values but --multi-player wasn't specified,
         # log a suggestion to the user
-        if train_streaming_loader.has_multi_player_values and not multi_player:
-            if not distributed or is_main_process():
-                logger.info(
-                    "Dataset contains multi-player value vectors (values_mp). "
-                    "Consider using --multi-player flag for multi-player training."
-                )
+        if (train_streaming_loader.has_multi_player_values and not multi_player
+                and (not distributed or is_main_process())):
+            logger.info(
+                "Dataset contains multi-player value vectors (values_mp). "
+                "Consider using --multi-player flag for multi-player training."
+            )
         # If multi-player training was requested but streaming data does not
         # include vector value targets, fail fast to avoid silent shape issues.
-        if multi_player and not train_streaming_loader.has_multi_player_values:
-            if not distributed or is_main_process():
-                logger.error(
-                    "multi_player=True but streaming dataset does not contain "
-                    "'values_mp' / 'num_players'. Regenerate data with "
-                    "multi-player value targets or disable --multi-player."
-                )
+        if (multi_player and not train_streaming_loader.has_multi_player_values
+                and (not distributed or is_main_process())):
+            logger.error(
+                "multi_player=True but streaming dataset does not contain "
+                "'values_mp' / 'num_players'. Regenerate data with "
+                "multi-player value targets or disable --multi-player."
+            )
             if distributed:
                 cleanup_distributed()
             raise ValueError(
@@ -3085,35 +3085,35 @@ def train_model(
 
             # Regression detection: check if validation loss has regressed (2025-12)
             # Uses unified RegressionDetector for consistent detection across modules
-            if HAS_REGRESSION_DETECTOR and get_regression_detector is not None and epoch >= 2:
-                if not distributed or is_main_process():
-                    try:
-                        regression_detector = get_regression_detector(connect_event_bus=True)
-                        model_id = f"{config.board_type.value}_{num_players}p"
+            if (HAS_REGRESSION_DETECTOR and get_regression_detector is not None
+                    and epoch >= 2 and (not distributed or is_main_process())):
+                try:
+                    regression_detector = get_regression_detector(connect_event_bus=True)
+                    model_id = f"{config.board_type.value}_{num_players}p"
 
-                        # Set baseline on first check
-                        if epoch == 2:
-                            regression_detector.set_baseline(
-                                model_id=model_id,
-                                elo=best_val_loss * -1000,  # Convert loss to pseudo-Elo
-                            )
-
-                        # Check for regression (using inverted loss as pseudo-Elo)
-                        regression_event = regression_detector.check_regression(
+                    # Set baseline on first check
+                    if epoch == 2:
+                        regression_detector.set_baseline(
                             model_id=model_id,
-                            current_elo=avg_val_loss * -1000,
-                            games_played=epoch + 1,
+                            elo=best_val_loss * -1000,  # Convert loss to pseudo-Elo
                         )
 
-                        if regression_event is not None:
-                            logger.warning(
-                                f"[RegressionDetector] {regression_event.severity.value.upper()} regression: "
-                                f"val_loss {avg_val_loss:.4f} vs best {best_val_loss:.4f} "
-                                f"({regression_event.reason})"
-                            )
-                            # Record in epoch record
-                    except Exception as e:
-                        logger.debug(f"Regression detection error: {e}")
+                    # Check for regression (using inverted loss as pseudo-Elo)
+                    regression_event = regression_detector.check_regression(
+                        model_id=model_id,
+                        current_elo=avg_val_loss * -1000,
+                        games_played=epoch + 1,
+                    )
+
+                    if regression_event is not None:
+                        logger.warning(
+                            f"[RegressionDetector] {regression_event.severity.value.upper()} regression: "
+                            f"val_loss {avg_val_loss:.4f} vs best {best_val_loss:.4f} "
+                            f"({regression_event.reason})"
+                        )
+                        # Record in epoch record
+                except Exception as e:
+                    logger.debug(f"Regression detection error: {e}")
 
             # Record per-epoch losses for downstream analysis
             epochs_completed = epoch + 1

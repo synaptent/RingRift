@@ -629,9 +629,9 @@ class HeuristicEvaluator:
                     continue
                 if adj_key in stacks:
                     target = stacks[adj_key]
-                    if target.controlling_player != self.player_number:
-                        if stack.cap_height >= target.cap_height:
-                            valid_moves += 1
+                    if (target.controlling_player != self.player_number
+                            and stack.cap_height >= target.cap_height):
+                        valid_moves += 1
                     continue
                 valid_moves += 1
 
@@ -710,10 +710,10 @@ class HeuristicEvaluator:
 
             visible = self._get_visible_stacks(stack.position, game_state)
             for adj_stack in visible:
-                if adj_stack.controlling_player != self.player_number:
-                    if adj_stack.cap_height > stack.cap_height:
-                        diff = adj_stack.cap_height - stack.cap_height
-                        score -= diff * 1.0
+                if (adj_stack.controlling_player != self.player_number
+                        and adj_stack.cap_height > stack.cap_height):
+                    diff = adj_stack.cap_height - stack.cap_height
+                    score -= diff * 1.0
 
         return score * self.WEIGHT_VULNERABILITY
 
@@ -727,10 +727,10 @@ class HeuristicEvaluator:
 
             visible = self._get_visible_stacks(stack.position, game_state)
             for adj_stack in visible:
-                if adj_stack.controlling_player != self.player_number:
-                    if stack.cap_height > adj_stack.cap_height:
-                        diff = stack.cap_height - adj_stack.cap_height
-                        score += diff * 1.0
+                if (adj_stack.controlling_player != self.player_number
+                        and stack.cap_height > adj_stack.cap_height):
+                    diff = stack.cap_height - adj_stack.cap_height
+                    score += diff * 1.0
 
         return score * self.WEIGHT_OVERTAKE_POTENTIAL
 

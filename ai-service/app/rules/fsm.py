@@ -157,53 +157,50 @@ def validate_move_for_phase(
         )
 
     # Additional guards for specific move types
-    if move.type == MoveType.NO_TERRITORY_ACTION:
-        # NO_TERRITORY_ACTION is only valid when there are no territory regions
-        # This mirrors handleTerritoryProcessing in TurnStateMachine.ts:781-793
-        if game_state is not None:
-            # Check if there are disconnected regions
-            # If regions exist, NO_TERRITORY_ACTION is invalid
-            from app.game_engine import GameEngine
+    # NO_TERRITORY_ACTION is only valid when there are no territory regions
+    # This mirrors handleTerritoryProcessing in TurnStateMachine.ts:781-793
+    if move.type == MoveType.NO_TERRITORY_ACTION and game_state is not None:
+        # Check if there are disconnected regions
+        # If regions exist, NO_TERRITORY_ACTION is invalid
+        from app.game_engine import GameEngine
 
-            territory_moves = GameEngine._get_territory_processing_moves(
+        territory_moves = GameEngine._get_territory_processing_moves(
+            game_state, game_state.current_player
+        )
+        if territory_moves:
+            return FSMValidationResult(
+                ok=False,
+                code="CANNOT_SKIP_TERRITORY_WITH_REGIONS",
+                message="Cannot emit NO_TERRITORY_ACTION when territory regions exist. "
+                f"Found {len(territory_moves)} territory moves available.",
+            )
+
+    # NO_LINE_ACTION is only valid when there are no lines to process
+    if move.type == MoveType.NO_LINE_ACTION and game_state is not None:
+        from app.game_engine import GameEngine
+
+        line_moves = [
+            m
+            for m in GameEngine._get_line_processing_moves(
                 game_state, game_state.current_player
             )
-            if territory_moves:
-                return FSMValidationResult(
-                    ok=False,
-                    code="CANNOT_SKIP_TERRITORY_WITH_REGIONS",
-                    message="Cannot emit NO_TERRITORY_ACTION when territory regions exist. "
-                    f"Found {len(territory_moves)} territory moves available.",
-                )
+            if m.type != MoveType.NO_LINE_ACTION
+        ]
+        if line_moves:
+            return FSMValidationResult(
+                ok=False,
+                code="CANNOT_SKIP_LINE_WITH_LINES",
+                message="Cannot emit NO_LINE_ACTION when lines exist to process. "
+                f"Found {len(line_moves)} line moves available.",
+            )
 
-    if move.type == MoveType.NO_LINE_ACTION:
-        # NO_LINE_ACTION is only valid when there are no lines to process
-        if game_state is not None:
-            from app.game_engine import GameEngine
-
-            line_moves = [
-                m
-                for m in GameEngine._get_line_processing_moves(
-                    game_state, game_state.current_player
-                )
-                if m.type != MoveType.NO_LINE_ACTION
-            ]
-            if line_moves:
-                return FSMValidationResult(
-                    ok=False,
-                    code="CANNOT_SKIP_LINE_WITH_LINES",
-                    message="Cannot emit NO_LINE_ACTION when lines exist to process. "
-                    f"Found {len(line_moves)} line moves available.",
-                )
-
-    if move.type == MoveType.NO_MOVEMENT_ACTION:
-        # NO_MOVEMENT_ACTION is only valid when there are no movement/capture moves
-        # Per RR-CANON-R070 (7-phase model) and TS FSMAdapter.deriveMovementState,
-        # we must use get_valid_moves() to check the phase-local interactive surface,
-        # NOT the global _has_valid_movements/_has_valid_captures helpers (which are
-        # for FE eligibility checks). This ensures the FSM guard aligns with what
-        # moves the env/host would actually surface to the player.
-        if game_state is not None:
+    # NO_MOVEMENT_ACTION is only valid when there are no movement/capture moves
+    # Per RR-CANON-R070 (7-phase model) and TS FSMAdapter.deriveMovementState,
+    # we must use get_valid_moves() to check the phase-local interactive surface,
+    # NOT the global _has_valid_movements/_has_valid_captures helpers (which are
+    # for FE eligibility checks). This ensures the FSM guard aligns with what
+    # moves the env/host would actually surface to the player.
+    if move.type == MoveType.NO_MOVEMENT_ACTION and game_state is not None:
             from app.game_engine import GameEngine
 
             valid_moves = GameEngine.get_valid_moves(

@@ -34,7 +34,7 @@ from app.utils.victory_type import derive_victory_type
 try:
     from app.coordination import (
         TaskType,
-        can_spawn,
+        can_spawn_safe,
         register_running_task,
         record_task_completion,
     )
@@ -42,6 +42,7 @@ try:
 except ImportError:
     HAS_COORDINATION = False
     TaskType = None
+    can_spawn_safe = None
 
 
 def play_random_game(
@@ -190,7 +191,7 @@ def main():
     if HAS_COORDINATION:
         import socket
         node_id = socket.gethostname()
-        allowed, reason = can_spawn(TaskType.SELFPLAY, node_id)
+        allowed, reason = can_spawn_safe(TaskType.SELFPLAY, node_id)
         if not allowed:
             print(f"[Coordination] Warning: {reason}")
             print("[Coordination] Proceeding anyway (coordination is advisory)")

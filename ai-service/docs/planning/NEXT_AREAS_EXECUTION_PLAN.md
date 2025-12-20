@@ -77,9 +77,11 @@ DB path: `data/games/distributed_soak_runs/distributed_soak_square19_3p_20251220
 - [x] Gate it behind experimental flag or difficulty tier
   - Tier 14 (experimental): `app/ai/factory.py:195-203`
   - Environment override pattern available: `RINGRIFT_USE_IG_GMO=1`
-- [ ] Add doc entry under AI difficulty ladder and service endpoints
+- [x] Add doc entry under AI difficulty ladder and service endpoints
+  - Already documented in `docs/EXPERIMENTAL_AI.md` (lines 62-106)
+  - ARCHITECTURE_OVERVIEW.md mentions IG-GMO as experimental tier
 
-**Status:** COMPLETE - IG-GMO already fully wired at tier 14. Only doc update pending.
+**Status:** COMPLETE - IG-GMO fully wired at tier 14 and documented.
 
 ---
 

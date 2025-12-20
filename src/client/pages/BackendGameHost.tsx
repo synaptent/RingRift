@@ -413,7 +413,7 @@ function useBackendDiagnosticsLog(
       const winner = (weird as Extract<typeof weird, { winner?: number }>).winner;
       const label = typeof winner === 'number' ? `P${winner}` : 'A player';
       events.push(
-        `Last Player Standing: ${label} won after two complete rounds where only they had real moves available.`
+        `Last Player Standing: ${label} won after three complete rounds where only they had real moves available.`
       );
     }
 
