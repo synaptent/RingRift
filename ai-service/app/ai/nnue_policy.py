@@ -1858,10 +1858,25 @@ class NNUEPolicyDataset(Dataset):
                 else:
                     state = create_initial_state(self.config.board_type, self.config.num_players)
 
-                # Check if this game has explicit bookkeeping moves (per RR-CANON-R075)
-                # If so, we skip auto-advance and apply moves directly
+                # Check if this game already encodes explicit phase transitions.
+                # If so, we skip auto-advance and apply moves directly.
+                explicit_phase_markers = {
+                    "process_line",
+                    "choose_line_option",
+                    "choose_line_reward",
+                    "process_territory_region",
+                    "choose_territory_option",
+                    "eliminate_rings_from_stack",
+                    "forced_elimination",
+                }
                 has_explicit_bookkeeping = any(
-                    m.get('type', '').startswith('no_') for m in moves
+                    (move_type := str(m.get("type", "") or "").lower())
+                    and (
+                        move_type.startswith("no_")
+                        or move_type.startswith("skip_")
+                        or move_type in explicit_phase_markers
+                    )
+                    for m in moves
                 )
 
                 # Replay game and extract samples
