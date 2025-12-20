@@ -1101,7 +1101,7 @@ def trigger_disk_cleanup(level: int, dry_run: bool = False) -> int:
 
     # Level 3+: Clean old checkpoints
     if level >= DiskPressureLevel.CRITICAL:
-        files, bytes_freed = cleanup_old_checkpoints(keep_per_config=3, dry_run=dry_run)
+        _files, bytes_freed = cleanup_old_checkpoints(keep_per_config=3, dry_run=dry_run)
         freed_mb += bytes_freed / (1024 * 1024)
 
     # Level 4: Emergency cleanup
