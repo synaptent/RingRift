@@ -46,12 +46,13 @@ def advance_cpu_through_phases(state, target_phase_str: str, target_player: int)
         current_phase = state.current_phase.value
         current_player = state.current_player
 
-        # If we're at ring_placement for the right player, that's the start of their turn
-        if current_phase == 'ring_placement' and current_player == target_player:
+        # If we're at the exact target phase/player, we're done
+        if current_phase == target_phase_str and current_player == target_player:
             return state
 
-        # If we're at the target phase, we're done
-        if current_phase == target_phase_str and current_player == target_player:
+        # If target is ring_placement and we're at ring_placement for the target player, we're done
+        # (ring_placement is the start of a turn, so we stop there only if that's the target)
+        if target_phase_str == 'ring_placement' and current_phase == 'ring_placement' and current_player == target_player:
             return state
 
         # Try to advance via bookkeeping

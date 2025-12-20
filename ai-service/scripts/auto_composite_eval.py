@@ -73,14 +73,36 @@ def get_new_models(
 
     cutoff = time.time() - (max_age_hours * 3600)
 
-    # Find recent model files
-    patterns = [f"*{board_type[:3]}*{num_players}p*.pth"]
+    # Board-specific patterns to avoid hex/hex8 confusion
+    # hex8 = 9x9 hexagonal, hexagonal = 25x25 hexagonal
+    board_patterns = {
+        "square8": [f"*sq8*{num_players}p*.pth", f"*square8*{num_players}p*.pth"],
+        "square19": [f"*sq19*{num_players}p*.pth", f"*square19*{num_players}p*.pth"],
+        "hexagonal": [f"hex_{num_players}p*.pth", f"hex*{num_players}p*.pth"],  # hex_2p, not hex8_2p
+        "hex8": [f"*hex8*{num_players}p*.pth"],  # Only hex8
+    }
+
+    # Exclusion patterns (to filter out from results)
+    exclusions = {
+        "hexagonal": ["hex8", "hex_8"],  # Exclude hex8 models from hexagonal
+    }
+
+    patterns = board_patterns.get(board_type, [f"*{board_type[:3]}*{num_players}p*.pth"])
+    exclude_list = exclusions.get(board_type, [])
+
     recent_models = []
 
     for pattern in patterns:
         for model_path in model_dir.glob(pattern):
+            # Check if model should be excluded
+            name_lower = model_path.name.lower()
+            if any(excl in name_lower for excl in exclude_list):
+                continue
             if model_path.stat().st_mtime > cutoff:
                 recent_models.append(model_path)
+
+    # Deduplicate (in case multiple patterns match same file)
+    recent_models = list(set(recent_models))
 
     return sorted(recent_models, key=lambda x: x.stat().st_mtime, reverse=True)
 

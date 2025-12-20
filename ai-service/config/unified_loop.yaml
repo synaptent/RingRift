@@ -23,6 +23,10 @@ data_ingestion:
     - 'data/selfplay/gpu_*/games*.jsonl'
     - 'data/selfplay/p2p_gpu/*/games*.jsonl'
     - 'data/games/gpu_selfplay/*/games*.jsonl'
+    # Tournament game data for training
+    - 'data/tournaments/*.jsonl'
+    - 'data/tournaments/*/*.jsonl'
+    - 'data/holdouts/elo_tournaments/*.jsonl'
   # IMPORTANT: Data sync configuration
   # - sync_disabled: Set to true on orchestrator machines with limited disk space
   #   When disabled, this machine won't run unified_data_sync.py (data stays remote)

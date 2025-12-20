@@ -520,6 +520,13 @@ def main():
         help="Input directory containing aggregated JSONL files",
     )
     parser.add_argument(
+        "--additional-dirs",
+        type=str,
+        nargs="+",
+        default=["data/tournaments", "data/holdouts/elo_tournaments"],
+        help="Additional directories to scan for JSONL files (e.g., tournaments)",
+    )
+    parser.add_argument(
         "--output-db",
         type=str,
         default="ai-service/data/games/training_aggregated.db",
@@ -568,6 +575,8 @@ def main():
     logger.info("=" * 60)
     logger.info(f"Input directory: {input_dir}")
     logger.info(f"Output database: {output_db}")
+    if args.additional_dirs:
+        logger.info(f"Additional directories: {args.additional_dirs}")
     if args.sources:
         logger.info(f"Filtering sources: {args.sources}")
     if args.board_type:
@@ -576,13 +585,31 @@ def main():
         logger.info(f"Filtering player count: {args.num_players}")
     logger.info("")
 
-    # Scan for JSONL files
+    # Scan for JSONL files in primary directory
     jsonl_files = scan_aggregated_directory(
         input_dir,
         sources=args.sources,
         board_type=args.board_type,
         num_players=args.num_players,
     )
+
+    # Also scan additional directories (tournaments, elo games, etc.)
+    if args.additional_dirs:
+        for add_dir in args.additional_dirs:
+            add_path = Path(add_dir)
+            if not add_path.is_absolute():
+                # Resolve relative to ai-service root
+                add_path = Path(__file__).resolve().parents[1] / add_dir
+            if add_path.exists():
+                logger.info(f"Scanning additional directory: {add_path}")
+                additional_files = scan_aggregated_directory(
+                    add_path,
+                    sources=args.sources,
+                    board_type=args.board_type,
+                    num_players=args.num_players,
+                )
+                jsonl_files.extend(additional_files)
+                logger.info(f"  Found {len(additional_files)} files in {add_dir}")
 
     if not jsonl_files:
         logger.error("No JSONL files found matching criteria")
