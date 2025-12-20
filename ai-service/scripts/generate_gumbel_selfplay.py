@@ -171,8 +171,9 @@ def generate_game(
         state, _, done, step_info = env.step(move)
         move_count += 1
 
-        # Record any auto-generated bookkeeping moves per RR-CANON-R075/R076
+        # Record any auto-generated bookkeeping moves per RR-CANON-R075/R076.
         # These include no_line_action, no_territory_action, no_placement_action, etc.
+        # Canonical recordings must include all phase transitions for replay parity.
         auto_moves = step_info.get("auto_generated_moves", [])
         for auto_move in auto_moves:
             moves_data.append(serialize_move(auto_move))

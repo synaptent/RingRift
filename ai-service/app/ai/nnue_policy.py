@@ -1850,17 +1850,38 @@ class NNUEPolicyDataset(Dataset):
                 else:
                     state = create_initial_state(self.config.board_type, self.config.num_players)
 
+                # Check if this game has explicit bookkeeping moves (per RR-CANON-R075)
+                # If so, we skip auto-advance and apply moves directly
+                has_explicit_bookkeeping = any(
+                    m.get('type', '').startswith('no_') for m in moves
+                )
+
                 # Replay game and extract samples
                 for move_idx, move_dict in enumerate(moves):
                     move_number = move_idx + 1
 
-                    # Auto-advance through phase-handling moves for GPU selfplay
+                    # Check if this is a bookkeeping move (no_line_action, no_territory_action, etc.)
+                    move_type_str = move_dict.get('type', '')
+                    is_bookkeeping_move = move_type_str.startswith('no_')
+
+                    # Auto-advance only for GPU selfplay data WITHOUT explicit bookkeeping moves
                     game_status_str = state.game_status.value if hasattr(state.game_status, 'value') else str(state.game_status)
-                    if is_gpu_selfplay and game_status_str == "active":
+                    if is_gpu_selfplay and not has_explicit_bookkeeping and game_status_str == "active":
                         try:
                             state = _auto_advance_phase(state)
                         except Exception:
                             break  # Can't continue if phase advance fails
+
+                    # Skip sampling from bookkeeping moves (not decision points)
+                    if is_bookkeeping_move:
+                        # Still need to apply the move to advance state
+                        try:
+                            move = self._parse_jsonl_move(move_dict, move_idx)
+                            if move is not None:
+                                state = GameEngine.apply_move(state, move)
+                        except Exception:
+                            break
+                        continue
 
                     # Sample every Nth position
                     game_status_str = state.game_status.value if hasattr(state.game_status, 'value') else str(state.game_status)
@@ -1959,9 +1980,9 @@ class NNUEPolicyDataset(Dataset):
                                     )
                             # Use GameEngine for consistent phase handling
                             state = GameEngine.apply_move(state, move)
-                            # Auto-advance through any resulting phase transitions for GPU selfplay
+                            # Auto-advance only for GPU selfplay data WITHOUT explicit bookkeeping moves
                             game_status_str = state.game_status.value if hasattr(state.game_status, 'value') else str(state.game_status)
-                            if is_gpu_selfplay and game_status_str == "active":
+                            if is_gpu_selfplay and not has_explicit_bookkeeping and game_status_str == "active":
                                 state = _auto_advance_phase(state)
                     except Exception:
                         break  # Can't continue if move application fails

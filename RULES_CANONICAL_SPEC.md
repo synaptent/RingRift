@@ -321,6 +321,13 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - a host-level `forced_elimination` action modelled as an explicit move.
     - Replay engines MUST NOT inject extra collapses, region resolutions, or forced eliminations solely as a consequence of "advancing phases" or "resolving ANM" when consuming a canonical recording; if such work is required by the rules, it must appear as explicit moves/choices in the recording itself.
   - Hosts are free to implement richer UX flows (for example, auto-processing a single exact-length line for a human player) **so long as** those flows still emit the corresponding canonical moves into history. Canonical replay and parity tooling must treat the move history as the sole source of truth for state changes.
+  - **Training JSONL requirement:** Self-play generators that emit JSONL files for AI training MUST include all bookkeeping moves (`no_line_action`, `no_territory_action`, `no_placement_action`, etc.) in the move sequence. Training pipelines that consume this data must handle these moves correctly (applying them to advance state but not sampling from them as decision points). There is NO exemption for training data—canonical recording semantics apply uniformly across all formats.
+  - **Phase coercion prohibition:** Any code that "auto-advances" through phases without applying explicit moves, or that silently skips phase transitions based on heuristics, is considered **phase coercion** and is strictly forbidden. Phase coercion:
+    - Violates canonical replay semantics
+    - Breaks TS↔Python parity
+    - Creates training/inference divergence
+    - MUST be removed wherever found, even at the cost of backward compatibility with older non-conformant data
+    - Legacy data generated without proper bookkeeping moves is non-canonical and should be regenerated or filtered out
 
 - **[RR-CANON-R076] Implementation architecture: core rules layer vs host layer.**
   - All implementations of the rules engine MUST separate concerns into two layers:
