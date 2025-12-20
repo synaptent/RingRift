@@ -272,8 +272,8 @@ def play_model_vs_model_game(
     state.id = game_id
     engine = DefaultRulesEngine()
 
-    # Capture initial state for training data
-    initial_state_snapshot = state.dict() if save_game_history else None
+    # Capture initial state for training data (use JSON-safe serialization)
+    initial_state_snapshot = serialize_game_state(state) if save_game_history else None
     move_history = []
 
     # Create AIs for both models
@@ -464,8 +464,8 @@ def play_nn_vs_nn_game(
     game_state.id = str(uuid.uuid4())
 
     # Capture initial state snapshot for NPZ export (required for training data)
-    # Use .dict() for pydantic v1 compatibility
-    initial_state_snapshot = game_state.dict() if save_game_history else None
+    # Use serialize_game_state() for JSON-safe serialization
+    initial_state_snapshot = serialize_game_state(game_state) if save_game_history else None
 
     # Create AI instances - alternate between model A and model B
     # Player 1 -> model_a, Player 2 -> model_b
@@ -802,7 +802,7 @@ def run_model_matchup(
             game_record["game_num"] = game_num
             try:
                 with open(jsonl_path, "a") as f:
-                    f.write(json.dumps(game_record) + "\n")
+                    f.write(json.dumps(game_record, cls=GameRecordEncoder) + "\n")
                     f.flush()
             except Exception as e:
                 print(f"Warning: Failed to save game record: {e}")
@@ -1658,6 +1658,7 @@ def main():
     parser.add_argument("--board", default="square8", help="Board type")
     parser.add_argument("--players", type=int, default=2, help="Number of players")
     parser.add_argument("--games", type=int, default=10, help="Games per matchup")
+    parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers for matchup execution (default: 1 = sequential)")
     parser.add_argument("--top-n", type=int, help="Only include top N models by recency")
     parser.add_argument("--leaderboard-only", action="store_true", help="Just show leaderboard")
     parser.add_argument("--run", action="store_true", help="Actually run games (otherwise just shows plan)")
@@ -1905,17 +1906,19 @@ def main():
     print(f"\n{'='*80}")
     print(f" Running Tournament {tournament_id}")
     print(f"{'='*80}")
+    if args.workers > 1:
+        print(f"Parallel execution with {args.workers} workers")
 
     total_games = len(matchups) * args.games
     games_completed = 0
     start_time = time.time()
 
-    for matchup_idx, (m1, m2) in enumerate(matchups):
-        print(f"\nMatchup {matchup_idx + 1}/{len(matchups)}: {m1['model_id'][:35]} vs {m2['model_id'][:35]}")
-
+    # Helper function for parallel execution
+    def run_single_matchup(matchup_data):
+        matchup_idx, m1, m2 = matchup_data
         try:
             results = run_model_matchup(
-                db=db,
+                db=db,  # EloDatabase uses thread-local connections
                 model_a=m1,
                 model_b=m2,
                 board_type=args.board,
@@ -1925,19 +1928,63 @@ def main():
                 nn_ai_type=args.ai_type,
                 use_both_ai_types=args.both_ai_types,
             )
-
-            games_completed += args.games
-            elapsed = time.time() - start_time
-            rate = games_completed / elapsed if elapsed > 0 else 0
-
-            print(f"  Results: A={results['model_a_wins']} B={results['model_b_wins']} D={results['draws']} E={results['errors']}")
-            print(f"  Progress: {games_completed}/{total_games} games ({rate:.1f} games/sec)")
-
+            return (matchup_idx, m1, m2, results, None)
         except Exception as e:
             import traceback
-            print(f"  Error in matchup: {e}")
-            traceback.print_exc()
-            continue
+            return (matchup_idx, m1, m2, None, str(e))
+
+    if args.workers > 1:
+        # Parallel execution with ThreadPoolExecutor
+        matchup_data = [(i, m1, m2) for i, (m1, m2) in enumerate(matchups)]
+
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            futures = {executor.submit(run_single_matchup, data): data for data in matchup_data}
+
+            for future in as_completed(futures):
+                matchup_idx, m1, m2, results, error = future.result()
+
+                if error:
+                    print(f"\nMatchup {matchup_idx + 1}/{len(matchups)}: {m1['model_id'][:35]} vs {m2['model_id'][:35]}")
+                    print(f"  Error: {error}")
+                    continue
+
+                games_completed += args.games
+                elapsed = time.time() - start_time
+                rate = games_completed / elapsed if elapsed > 0 else 0
+
+                print(f"\nMatchup {matchup_idx + 1}/{len(matchups)}: {m1['model_id'][:35]} vs {m2['model_id'][:35]}")
+                print(f"  Results: A={results['model_a_wins']} B={results['model_b_wins']} D={results['draws']} E={results['errors']}")
+                print(f"  Progress: {games_completed}/{total_games} games ({rate:.1f} games/sec)")
+    else:
+        # Sequential execution (original behavior)
+        for matchup_idx, (m1, m2) in enumerate(matchups):
+            print(f"\nMatchup {matchup_idx + 1}/{len(matchups)}: {m1['model_id'][:35]} vs {m2['model_id'][:35]}")
+
+            try:
+                results = run_model_matchup(
+                    db=db,
+                    model_a=m1,
+                    model_b=m2,
+                    board_type=args.board,
+                    num_players=args.players,
+                    games=args.games,
+                    tournament_id=tournament_id,
+                    nn_ai_type=args.ai_type,
+                    use_both_ai_types=args.both_ai_types,
+                )
+
+                games_completed += args.games
+                elapsed = time.time() - start_time
+                rate = games_completed / elapsed if elapsed > 0 else 0
+
+                print(f"  Results: A={results['model_a_wins']} B={results['model_b_wins']} D={results['draws']} E={results['errors']}")
+                print(f"  Progress: {games_completed}/{total_games} games ({rate:.1f} games/sec)")
+
+            except Exception as e:
+                import traceback
+                print(f"  Error in matchup: {e}")
+                traceback.print_exc()
+                continue
 
     # Show final leaderboard
     final_leaderboard = get_leaderboard(db, args.board, args.players, limit=100)
