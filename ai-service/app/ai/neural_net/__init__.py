@@ -97,6 +97,13 @@ from app.ai.neural_net.hex_architectures import (
     HexNeuralNet_v3_Lite,
 )
 
+# Loss functions - migrated to neural_losses.py (Phase 3)
+from app.ai.neural_losses import (
+    multi_player_value_loss,
+    rank_distribution_loss,
+    ranks_from_game_result,
+)
+
 # Classes and functions still in legacy module (to be migrated in later phases)
 from app.ai._neural_net_legacy import (
     _MODEL_CACHE,
@@ -115,10 +122,6 @@ from app.ai._neural_net_legacy import (
     get_cached_model_count,
     get_memory_tier,
     get_model_config_for_board,
-    # Loss functions (re-exported)
-    multi_player_value_loss,
-    rank_distribution_loss,
-    ranks_from_game_result,
     transform_policy_index_square,
 )
 
