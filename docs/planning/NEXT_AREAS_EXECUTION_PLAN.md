@@ -183,9 +183,10 @@ This plan assumes the working tree is unstable due to other agents. Each lane is
 - [x] Define volume targets and update registry placeholders.
 - [x] Ran canonical parity + history checks on P2P square8 DBs (no semantic divergences; end-of-game-only current_player mismatches in 4/50 games).
 - [x] Canonical square8 gate passed on `lambda-2xh100` (10 games, canonical_ok true; `data/games/canonical_square8.db` + `data/games/db_health.canonical_square8.json`).
-- [x] Started canonical selfplay gate runs for square19/hex; current runs terminate with returncode -15 and 0 games recorded.
-- [ ] Diagnose why square19/hex soaks are getting SIGTERM (job timeout, watchdog, or resource limits).
-- [ ] Re-run square19/hex canonical selfplay on an idle GPU node with guarded settings (lower max moves, reduced sims, explicit timeouts disabled).
+- [x] Repro: square19/hex soaks terminate with returncode -15 and 0 games recorded using default heuristic evaluation path.
+- [x] Mitigation: `RINGRIFT_USE_MAKE_UNMAKE=true` enables square19 canonical soak; 1-game run passed parity/history (light band).
+- [x] Found crash in make/unmake path (`NoneType.to_key` for non-spatial moves); fixed in `ai-service/app/ai/heuristic_ai.py` to skip `move.to` for no-op/decision moves.
+- [ ] Re-run square19/hex canonical selfplay with make/unmake enabled to reach volume targets and confirm parity/history gates.
 - [ ] Update `ai-service/TRAINING_DATA_REGISTRY.md` with canonical_square8 details and add square19/hex once gates pass.
 
 ---

@@ -838,12 +838,16 @@ class HeuristicAI(BaseAI):
         move: Move,
     ) -> MoveUndo:
         """Apply a move to lightweight state and return undo info."""
-        to_key = move.to.to_key()
-
         if move.type == MoveType.PLACE_RING:
+            if move.to is None:
+                return MoveUndo()
+            to_key = move.to.to_key()
             return state.make_place_ring(to_key, move.player)
 
         elif move.type == MoveType.MOVE_STACK:
+            if move.to is None:
+                return MoveUndo()
+            to_key = move.to.to_key()
             from_key = move.from_pos.to_key() if move.from_pos else ""
             return state.make_move_stack(from_key, to_key, move.player)
 
@@ -852,6 +856,9 @@ class HeuristicAI(BaseAI):
             MoveType.CONTINUE_CAPTURE_SEGMENT,
             MoveType.CHAIN_CAPTURE,
         ):
+            if move.to is None:
+                return MoveUndo()
+            to_key = move.to.to_key()
             from_key = move.from_pos.to_key() if move.from_pos else ""
             return state.make_capture(from_key, to_key, move.player)
 
