@@ -103,7 +103,7 @@ from app.utils.progress_reporter import (  # noqa: E402
     OptimizationProgressReporter,
     ProgressReporter,
 )
-from app.db.recording import (  # noqa: E402
+from app.db.unified_recording import (  # noqa: E402
     record_completed_game_with_parity_check,
     get_or_create_db,
     should_record_games,

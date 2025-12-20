@@ -10,7 +10,7 @@ This module provides:
 
 Usage:
     from app.monitoring import HealthMonitor, THRESHOLDS, AlertLevel
-    from app.monitoring.thresholds import get_threshold, should_alert
+    from app.config.thresholds import get_threshold, should_alert
 
     # Check threshold
     if should_alert("disk", 75, "warning"):
@@ -56,7 +56,7 @@ from app.monitoring.cluster_monitor import (
 
 # P2P monitoring
 from app.monitoring.p2p_monitoring import MonitoringManager
-from app.monitoring.thresholds import (
+from app.config.thresholds import (
     THRESHOLDS,
     AlertLevel,
     get_all_thresholds,

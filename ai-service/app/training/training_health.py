@@ -45,7 +45,7 @@ try:
         HealthMonitor as BaseHealthMonitor,
         MonitoringResult,
     )
-    from app.monitoring.thresholds import AlertLevel
+    from app.config.thresholds import AlertLevel
     HAS_MONITORING_FRAMEWORK = True
 except ImportError:
     HAS_MONITORING_FRAMEWORK = False

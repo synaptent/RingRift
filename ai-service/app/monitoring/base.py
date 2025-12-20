@@ -19,7 +19,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from app.monitoring.thresholds import AlertLevel
+from app.config.thresholds import AlertLevel
 
 
 class HealthStatus(str, Enum):

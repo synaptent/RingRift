@@ -34,7 +34,7 @@ from app.monitoring.base import (
     HealthStatus,
     MonitoringResult,
 )
-from app.monitoring.thresholds import (
+from app.config.thresholds import (
     AlertLevel,
     get_threshold,
     should_alert,

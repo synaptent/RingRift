@@ -43,7 +43,7 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.utils.paths import AI_SERVICE_ROOT
-from app.monitoring.thresholds import get_threshold
+from app.config.thresholds import get_threshold
 
 # Use shared logging from scripts/lib
 from scripts.lib.logging_config import setup_script_logging

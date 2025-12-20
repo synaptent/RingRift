@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.monitoring.thresholds import (
+from app.config.thresholds import (
     AlertLevel,
     THRESHOLDS,
     get_threshold,
