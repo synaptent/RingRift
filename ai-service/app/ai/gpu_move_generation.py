@@ -1363,6 +1363,8 @@ def apply_single_chain_capture(
 
     if target_owner != 0 and target_owner != player:
         state.buried_rings[game_idx, target_owner] += 1
+        # December 2025: Track buried ring position for recovery extraction
+        state.buried_at[game_idx, target_owner, to_y, to_x] = True
 
     new_height = attacker_height + 1 - landing_ring_cost
     state.stack_height[game_idx, to_y, to_x] = new_height
@@ -1380,6 +1382,12 @@ def apply_single_chain_capture(
     state.stack_owner[game_idx, from_y, from_x] = 0
     state.cap_height[game_idx, from_y, from_x] = 0
     state.marker_owner[game_idx, from_y, from_x] = player
+
+    # December 2025: Move buried_at tracking from origin to landing
+    for p in range(1, state.num_players + 1):
+        if state.buried_at[game_idx, p, from_y, from_x]:
+            state.buried_at[game_idx, p, to_y, to_x] = True
+            state.buried_at[game_idx, p, from_y, from_x] = False
 
     return to_y, to_x
 
@@ -1502,6 +1510,8 @@ def apply_single_initial_capture(
 
     if target_owner != 0 and target_owner != player:
         state.buried_rings[game_idx, target_owner] += 1
+        # December 2025: Track buried ring position for recovery extraction
+        state.buried_at[game_idx, target_owner, to_y, to_x] = True
 
     # Set up landing stack
     new_height = attacker_height + 1 - landing_ring_cost
@@ -1515,6 +1525,12 @@ def apply_single_initial_capture(
     state.stack_owner[game_idx, from_y, from_x] = 0
     state.cap_height[game_idx, from_y, from_x] = 0
     state.marker_owner[game_idx, from_y, from_x] = player
+
+    # December 2025: Move buried_at tracking from origin to landing
+    for p in range(1, state.num_players + 1):
+        if state.buried_at[game_idx, p, from_y, from_x]:
+            state.buried_at[game_idx, p, to_y, to_x] = True
+            state.buried_at[game_idx, p, from_y, from_x] = False
 
     # Mark as being in a capture chain (for subsequent chain captures)
     # After the initial capture, we transition to CHAIN_CAPTURE phase for any

@@ -8,7 +8,7 @@ This consolidates the canonical training workflow into a single script:
 
 Usage (from ai-service/):
   PYTHONPATH=. python scripts/run_canonical_training.py \
-    --db data/games/canonical_square8.db \
+    --db data/games/canonical_square8_2p.db \
     --board-type square8 \
     --num-players 2 \
     --model-version v3

@@ -21,7 +21,7 @@ Usage examples (from ai-service/):
   # Square-8 2-player canonical dataset (default)
   PYTHONPATH=. python scripts/build_canonical_dataset.py \
     --board-type square8 \
-    --db data/games/canonical_square8.db \
+    --db data/games/canonical_square8_2p.db \
     --output data/training/canonical_square8_2p.npz
 
   # Square-8 4-player dataset
@@ -53,7 +53,10 @@ def _resolve_ai_service_path(raw: str) -> Path:
     return (AI_SERVICE_ROOT / path).resolve()
 
 
-def _default_db_for_board(board_type: str) -> Path:
+def _default_db_for_board(board_type: str, num_players: int) -> Path:
+    candidate = AI_SERVICE_ROOT / "data" / "games" / f"canonical_{board_type}_{num_players}p.db"
+    if candidate.exists():
+        return candidate.resolve()
     return (AI_SERVICE_ROOT / "data" / "games" / f"canonical_{board_type}.db").resolve()
 
 
@@ -167,13 +170,17 @@ def main(argv: list[str] | None = None) -> int:
         "--db",
         type=str,
         default=None,
-        help=("Path to canonical GameReplayDB. Defaults to " "data/games/canonical_<board>.db."),
+        help=(
+            "Path to canonical GameReplayDB. Defaults to "
+            "data/games/canonical_<board>_<num_players>p.db when present, "
+            "otherwise data/games/canonical_<board>.db."
+        ),
     )
     parser.add_argument(
         "--output",
         type=str,
         default=None,
-        help=("Output NPZ path. Defaults to " "data/training/canonical_<board>_<num_players>p.npz."),
+        help="Output NPZ path. Defaults to data/training/canonical_<board>_<num_players>p.npz.",
     )
     parser.add_argument(
         "--registry",
@@ -210,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
 
     board_type: str = args.board_type
     num_players: int = args.num_players
-    db_path = _resolve_ai_service_path(args.db) if args.db else _default_db_for_board(board_type)
+    db_path = _resolve_ai_service_path(args.db) if args.db else _default_db_for_board(board_type, num_players)
     output_path = _resolve_ai_service_path(args.output) if args.output else _default_output_for_board(board_type, num_players)
     registry_path = _resolve_ai_service_path(args.registry)
 

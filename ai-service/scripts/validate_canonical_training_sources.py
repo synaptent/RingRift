@@ -6,7 +6,7 @@ Usage:
     cd ai-service
     python scripts/validate_canonical_training_sources.py \
         --registry TRAINING_DATA_REGISTRY.md \
-        --db data/games/canonical_square8.db
+        --db data/games/canonical_square8_2p.db
 """
 
 from __future__ import annotations
