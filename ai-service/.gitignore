@@ -96,6 +96,9 @@ data/registry_sync_state.json
 data/curriculum_weights.json
 data/models/cull_manifest.json
 
+# Model registry (trained heuristic weights from CMA-ES)
+data/model_registry/
+
 # Distilled policy data (large generated JSONL files)
 data/distilled/*.jsonl
 

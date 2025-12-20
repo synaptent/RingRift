@@ -4,6 +4,23 @@ This module provides shared types and simple utilities for the GPU parallel
 games system. Extracted from gpu_parallel_games.py for better modularity.
 
 December 2025: Extracted as part of R4 refactoring.
+
+MPS (Apple Silicon) Limitations:
+--------------------------------
+1. **index_put_ with accumulate=True**: Only supports float, int32, or bool.
+   Use int32 instead of int8/int16 for tensors that need accumulate operations.
+   Affected tensors: rings_in_hand, buried_rings, eliminated_rings, etc.
+
+2. **Performance**: MPS can be slower than CPU due to:
+   - Excessive .item() calls causing CPU-GPU synchronization (avoid in hot paths)
+   - Small tensor operations where kernel launch overhead dominates
+   - nonzero() operations which are expensive on GPU
+
+   Profiling shows ~100x slowdown on MPS vs CPU for game simulation due to
+   synchronization overhead. For production training, prefer CUDA or CPU batching.
+
+3. **Dtype limitations**: Some operations don't support int16. Use get_int_dtype()
+   to get the appropriate dtype for the current device.
 """
 
 from __future__ import annotations

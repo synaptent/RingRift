@@ -38,6 +38,9 @@ jobs:
           pip install pytest pytest-benchmark
 
       - name: Run benchmarks
+        env:
+          # Skip shadow contract validation for 2-3x speedup in benchmarks
+          RINGRIFT_SKIP_SHADOW_CONTRACTS: 'true'
         run: |
           if [ "${{ inputs.benchmark_type }}" = "all" ]; then
             pytest tests/benchmarks/ -v --benchmark-only --benchmark-autosave
