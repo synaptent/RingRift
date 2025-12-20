@@ -3225,9 +3225,8 @@ class GrokkingDetector:
             result['recommendation'] = "Grokking detected! Consider extending training duration."
 
         # Recommendation for long plateau
-        if self.plateau_start is not None and epoch - self.plateau_start > self.patience:
-            if not self.grokking_detected:
-                result['recommendation'] = "Extended plateau detected. Consider: (1) reducing LR, (2) adding regularization, (3) waiting for potential grokking."
+        if self.plateau_start is not None and epoch - self.plateau_start > self.patience and not self.grokking_detected:
+            result['recommendation'] = "Extended plateau detected. Consider: (1) reducing LR, (2) adding regularization, (3) waiting for potential grokking."
 
         return result
 

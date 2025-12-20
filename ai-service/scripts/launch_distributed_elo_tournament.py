@@ -244,7 +244,7 @@ def discover_tailscale_peers() -> dict[str, dict]:
         peers = status.get("Peer", {})
         self_info = status.get("Self", {})
 
-        for peer_id, peer in peers.items():
+        for _peer_id, peer in peers.items():
             if not peer.get("Online"):
                 continue
 
@@ -904,20 +904,18 @@ def run_distributed_tournament(
                         print(f"  [FAIL] {node.node_id}: {agent_a} vs {agent_b} - {error[:100] if error else 'Unknown'}")
 
                     # Disable node if too many failures
-                    if node_failures[node.node_id] >= max_node_failures:
-                        if node.node_id not in disabled_nodes:
-                            disabled_nodes.add(node.node_id)
-                            print(f"  [!] Node {node.node_id} disabled after {max_node_failures} failures")
+                    if node_failures[node.node_id] >= max_node_failures and node.node_id not in disabled_nodes:
+                        disabled_nodes.add(node.node_id)
+                        print(f"  [!] Node {node.node_id} disabled after {max_node_failures} failures")
             except Exception as e:
                 failed += 1
                 error_counts[f"Exception: {type(e).__name__}"] += 1
                 node_failures[node.node_id] += 1
 
                 # Disable node if too many failures
-                if node_failures[node.node_id] >= max_node_failures:
-                    if node.node_id not in disabled_nodes:
-                        disabled_nodes.add(node.node_id)
-                        print(f"  [!] Node {node.node_id} disabled after {max_node_failures} failures")
+                if node_failures[node.node_id] >= max_node_failures and node.node_id not in disabled_nodes:
+                    disabled_nodes.add(node.node_id)
+                    print(f"  [!] Node {node.node_id} disabled after {max_node_failures} failures")
 
             # Progress update every 10 matches
             if (completed + failed) % 10 == 0:

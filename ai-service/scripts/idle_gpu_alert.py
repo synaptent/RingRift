@@ -266,14 +266,12 @@ def main():
             s = state[node_id]
             idle_minutes = (now - s.first_idle_at) / 60
 
-            if idle_minutes >= args.threshold_minutes:
-                # Check if we already alerted recently (within 2 hours)
-                if now - s.last_check_at > 7200:  # 2 hours
-                    alerts_to_send.append({
-                        "node_id": node_id,
-                        "idle_minutes": idle_minutes,
-                        **node
-                    })
+            if idle_minutes >= args.threshold_minutes and now - s.last_check_at > 7200:  # Check if we should alert (2 hours)
+                alerts_to_send.append({
+                    "node_id": node_id,
+                    "idle_minutes": idle_minutes,
+                    **node
+                })
 
             # Update state
             new_state[node_id] = IdleGPUState(

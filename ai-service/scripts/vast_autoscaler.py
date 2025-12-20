@@ -137,14 +137,12 @@ def _load_p2p_leaders_from_config() -> list[str]:
 
         hosts = config.get("hosts", {})
         # Get hosts with p2p_voter role or primary training nodes
-        for host_id, host_info in hosts.items():
+        for _host_id, host_info in hosts.items():
             if host_info.get("status") != "ready":
                 continue
             tailscale_ip = host_info.get("tailscale_ip")
-            if tailscale_ip and tailscale_ip.startswith("100."):
-                # Prefer p2p_voter nodes or primary training nodes
-                if host_info.get("p2p_voter") or "primary" in host_info.get("role", ""):
-                    leaders.append(f"http://{tailscale_ip}:8770")
+            if tailscale_ip and tailscale_ip.startswith("100.") and host_info.get("p2p_voter") or "primary" in host_info.get("role", ""):
+                leaders.append(f"http://{tailscale_ip}:8770")
 
         return leaders[:5]  # Limit to top 5
     except Exception as e:

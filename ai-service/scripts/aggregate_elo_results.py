@@ -40,7 +40,7 @@ def _load_hosts_from_config():
 
         # Extract hosts with tailscale_ip or ssh_host
         hosts = []
-        for name, host_config in config.get('hosts', {}).items():
+        for _name, host_config in config.get('hosts', {}).items():
             if host_config.get('status') == 'terminated':
                 continue
 

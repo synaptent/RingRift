@@ -516,9 +516,9 @@ def run_axis_aligned_tournament(
     progress_reporter.finish()
 
     # Finalise avg_moves and drop internal total_moves.
-    for board_label, by_player in agg_results.items():
-        for id_i, vs in by_player.items():
-            for id_j, stats in vs.items():
+    for _board_label, by_player in agg_results.items():
+        for _id_i, vs in by_player.items():
+            for _id_j, stats in vs.items():
                 games = stats.get("games", 0)
                 total_moves = stats.pop("total_moves", 0)
                 stats["avg_moves"] = float(total_moves) / games if games > 0 else 0.0

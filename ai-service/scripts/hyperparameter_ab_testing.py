@@ -423,7 +423,7 @@ def get_experiment_recommendations(board_type: str, num_players: int) -> list[di
 
     recommendations = []
 
-    for name, defn in EXPERIMENT_DEFINITIONS.items():
+    for _name, defn in EXPERIMENT_DEFINITIONS.items():
         param = defn["param"]
 
         # Get completed experiments for this param

@@ -412,13 +412,11 @@ class GPUDataGenTester:
                         features, globals_vec, policy, value = sample
 
                         # Convert to tensors for shape check
-                        if hasattr(features, 'shape'):
-                            if len(features.shape) != 3:
-                                issues.append(f"Features should be 3D (C,H,W), got {features.shape}")
+                        if hasattr(features, 'shape') and len(features.shape) != 3:
+                            issues.append(f"Features should be 3D (C,H,W), got {features.shape}")
 
-                        if hasattr(value, 'shape'):
-                            if len(value.shape) != 0:
-                                issues.append(f"Value should be scalar, got shape {value.shape}")
+                        if hasattr(value, 'shape') and len(value.shape) != 0:
+                            issues.append(f"Value should be scalar, got shape {value.shape}")
 
                 passed = len(issues) == 0
                 num_samples = len(dataset)

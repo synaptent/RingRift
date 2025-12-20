@@ -1440,7 +1440,7 @@ def generate_elo_based_matchups(
     used = set()
 
     # Pair adjacent models in Elo ranking (closest ratings play each other)
-    for i, m1 in enumerate(sorted_models):
+    for _i, m1 in enumerate(sorted_models):
         if m1["model_id"] in used:
             continue
 

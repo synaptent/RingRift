@@ -90,7 +90,7 @@ def _load_p2p_leaders_from_config():
         # Extract hosts that are P2P voters or primary training nodes
         leaders = []
         hosts = config.get("hosts", {})
-        for name, info in hosts.items():
+        for _name, info in hosts.items():
             if info.get("status") != "ready":
                 continue
             # Include P2P voters and primary training nodes as potential leaders
@@ -453,16 +453,14 @@ def send_alerts(check: HealthCheck, config: AlertConfig, state: AlertState) -> b
     sent = False
 
     # Slack
-    if config.slack_webhook_url:
-        if send_slack_alert(config.slack_webhook_url, check):
-            logger.info(f"Slack alert sent: {check.name}")
-            sent = True
+    if config.slack_webhook_url and send_slack_alert(config.slack_webhook_url, check):
+        logger.info(f"Slack alert sent: {check.name}")
+        sent = True
 
     # PagerDuty
-    if config.pagerduty_routing_key and check.status == "critical":
-        if send_pagerduty_alert(config.pagerduty_routing_key, check):
-            logger.info(f"PagerDuty alert sent: {check.name}")
-            sent = True
+    if config.pagerduty_routing_key and check.status == "critical" and send_pagerduty_alert(config.pagerduty_routing_key, check):
+        logger.info(f"PagerDuty alert sent: {check.name}")
+        sent = True
 
     if sent:
         state.record_alert(alert_key)
@@ -510,9 +508,8 @@ def cmd_check(config: AlertConfig, send_alerts_flag: bool = True):
         print(f"{check.name:<20} {status_emoji:<10} {check.message}")
 
         # Send alerts for non-ok status
-        if send_alerts_flag and check.status != "ok":
-            if send_alerts(check, config, state):
-                alerts_sent += 1
+        if send_alerts_flag and check.status != "ok" and send_alerts(check, config, state):
+            alerts_sent += 1
 
     save_state(state)
 

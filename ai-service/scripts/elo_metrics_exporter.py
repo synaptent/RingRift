@@ -246,7 +246,7 @@ def count_training_iterations(config: str) -> int:
     players = players.replace('p', '')
 
     pattern = f"{board_type}_{players}p_*.pth"
-    for model_file in MODELS_DIR.glob(pattern):
+    for _model_file in MODELS_DIR.glob(pattern):
         iterations += 1
 
     # Also check for versioned models

@@ -128,9 +128,8 @@ def play_random_game(
 
     # Determine winner
     winner = None
-    if state.game_status == GameStatus.COMPLETED:
-        if hasattr(state, 'winner'):
-            winner = state.winner
+    if state.game_status == GameStatus.COMPLETED and hasattr(state, 'winner'):
+        winner = state.winner
 
     # Derive standardized victory type using shared module
     vtype, stalemate_tb = derive_victory_type(state, max_moves)

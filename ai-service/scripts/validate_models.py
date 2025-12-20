@@ -395,12 +395,11 @@ def validate_model_after_save(model_path: Path, expected_keys: list[str] | None 
             return False
 
         # Check expected keys if provided
-        if expected_keys:
-            if isinstance(checkpoint, dict):
-                for key in expected_keys:
-                    if key not in checkpoint:
-                        logger.warning(f"Missing expected key '{key}' in checkpoint")
-                        return False
+        if expected_keys and isinstance(checkpoint, dict):
+            for key in expected_keys:
+                if key not in checkpoint:
+                    logger.warning(f"Missing expected key '{key}' in checkpoint")
+                    return False
 
         return True
 
@@ -447,12 +446,11 @@ def safe_model_save(
         os.sync()
 
         # Validate if requested
-        if validate:
-            if not validate_model_after_save(temp_path):
-                logger.error(f"Validation failed for {save_path}")
-                if not backup_on_fail:
-                    temp_path.unlink(missing_ok=True)
-                return False
+        if validate and not validate_model_after_save(temp_path):
+            logger.error(f"Validation failed for {save_path}")
+            if not backup_on_fail:
+                temp_path.unlink(missing_ok=True)
+            return False
 
         # Atomic move to final destination
         temp_path.rename(save_path)

@@ -2142,7 +2142,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
             )
 
             # Convert to CMA-ES format (negate for minimization)
-            for idx, fitness in enumerate(fitness_scores):
+            for _idx, fitness in enumerate(fitness_scores):
                 gen_fitnesses.append(fitness)
                 fitnesses.append(-fitness)
                 # For queue mode, we don't have per-board breakdown
@@ -2189,7 +2189,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
             )
 
             # Convert to CMA-ES format (negate for minimization)
-            for idx, fitness in enumerate(fitness_scores):
+            for _idx, fitness in enumerate(fitness_scores):
                 gen_fitnesses.append(fitness)
                 fitnesses.append(-fitness)
                 # For distributed mode, we don't have per-board breakdown

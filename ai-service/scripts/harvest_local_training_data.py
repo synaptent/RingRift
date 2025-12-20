@@ -192,7 +192,7 @@ def harvest_local_data(
 
     start_time = time.time()
 
-    for file_idx, file_path in enumerate(files):
+    for _file_idx, file_path in enumerate(files):
         if len(quality_games) >= max_games:
             logger.info(f"Reached max games limit ({max_games})")
             break
@@ -215,15 +215,14 @@ def harvest_local_data(
             quality_distribution[bucket] += 1
 
             # Filter
-            if quality.total_score >= min_quality:
-                if quality.game_id not in seen_ids:
-                    seen_ids.add(quality.game_id)
-                    quality_games.append((quality, game))
-                    file_games += 1
-                    file_quality += quality.total_score
+            if quality.total_score >= min_quality and quality.game_id not in seen_ids:
+                seen_ids.add(quality.game_id)
+                quality_games.append((quality, game))
+                file_games += 1
+                file_quality += quality.total_score
 
-                    if len(quality_games) >= max_games:
-                        break
+                if len(quality_games) >= max_games:
+                    break
 
             # Progress logging
             if games_checked % 10000 == 0:

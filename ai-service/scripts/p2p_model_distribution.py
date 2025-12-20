@@ -534,7 +534,7 @@ def serve_models(models_dir: Path, port: int):
             if args[1] != '200':
                 super().log_message(format, *args)
 
-    with socketserver.TCPServer(("", port), QuietHandler) as httpd:
+    with http.server.ThreadingHTTPServer(("", port), QuietHandler) as httpd:
         local_ip = get_tailscale_ip() or "localhost"
         models = list_models(models_dir)
         print(f"Serving {len(models)} models from {models_dir}")

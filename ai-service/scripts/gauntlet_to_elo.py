@@ -79,7 +79,7 @@ def calibrate_elo_from_gauntlet(
     weights = []
 
     # Estimate from each baseline
-    for win_rate, baseline, baseline_elo in [
+    for win_rate, _baseline, baseline_elo in [
         (vs_random, "random", BASELINE_ELOS["random"]),
         (vs_heuristic, "heuristic", BASELINE_ELOS["heuristic"]),
         (vs_mcts, "mcts", BASELINE_ELOS["mcts"]),

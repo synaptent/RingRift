@@ -602,12 +602,11 @@ def rebalance_cluster(nodes: list[NodeCapabilities], dry_run: bool = False) -> i
         # Use policy to determine best work type
         best_work = get_best_work_type(node.node_id, ["training", "gpu_cmaes", "tournament"])
 
-        if best_work == "training" and is_work_allowed(node.node_id, "training"):
-            if trigger_training_on_node(node.node_id, board, players):
-                logger.info(f"Started training on {node.node_id} (policy: allowed)")
-                changes += 1
-                time.sleep(1)
-                continue
+        if best_work == "training" and is_work_allowed(node.node_id, "training") and trigger_training_on_node(node.node_id, board, players):
+            logger.info(f"Started training on {node.node_id} (policy: allowed)")
+            changes += 1
+            time.sleep(1)
+            continue
 
         # Priority 2: GPU CMA-ES (10-100x faster than CPU)
         if node.host and is_work_allowed(node.node_id, "gpu_cmaes"):

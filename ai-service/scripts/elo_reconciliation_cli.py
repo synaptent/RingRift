@@ -473,7 +473,7 @@ def cmd_backfill_history(args: argparse.Namespace) -> int:
 
             # Simulate drift over time (comparing to previous day)
             prev_avg = None
-            for timestamp, avg_rating in daily_ratings:
+            for _timestamp, avg_rating in daily_ratings:
                 if prev_avg is not None:
                     drift = avg_rating - prev_avg
                     # Record this as drift

@@ -686,9 +686,8 @@ class WebhookNotifier:
     def _should_throttle(self, alert_key: str) -> bool:
         """Check if this alert should be throttled (duplicate within window)."""
         now = time.time()
-        if alert_key in self._last_alert:
-            if now - self._last_alert[alert_key] < self._throttle_seconds:
-                return True
+        if alert_key in self._last_alert and now - self._last_alert[alert_key] < self._throttle_seconds:
+            return True
         self._last_alert[alert_key] = now
         return False
 
@@ -1369,11 +1368,10 @@ class P2POrchestrator:
                 return False, msg
             elif degradation >= 3:  # HEAVY - only critical ops proceed
                 # Selfplay is NORMAL priority, blocked under heavy pressure
-                if should_proceed_with_priority is not None:
-                    if not should_proceed_with_priority(OperationPriority.NORMAL):
-                        msg = f"Graceful degradation: heavy resource pressure (level {degradation})"
-                        logger.info(f"BLOCKED spawn ({reason}): {msg}")
-                        return False, msg
+                if should_proceed_with_priority is not None and not should_proceed_with_priority(OperationPriority.NORMAL):
+                    msg = f"Graceful degradation: heavy resource pressure (level {degradation})"
+                    logger.info(f"BLOCKED spawn ({reason}): {msg}")
+                    return False, msg
 
         return True, "All safeguards passed"
 
@@ -1728,10 +1726,8 @@ class P2POrchestrator:
             # Must have GPU (CUDA or MPS)
             has_gpu = getattr(peer, "has_gpu", False)
             gpu_name = str(getattr(peer, "gpu_name", "") or "")
-            if not has_gpu and "GH200" not in gpu_name and "H100" not in gpu_name and "A10" not in gpu_name:
-                # Also include high-reliability CPU nodes (AWS staging)
-                if "aws" not in node_id.lower():
-                    continue
+            if not has_gpu and "GH200" not in gpu_name and "H100" not in gpu_name and "A10" not in gpu_name and "aws" not in node_id.lower():
+                continue
 
             # Must have been up for minimum time
             first_seen = getattr(peer, "first_seen", 0) or peer.last_heartbeat
@@ -2198,22 +2194,15 @@ class P2POrchestrator:
         conflict_keys = self._endpoint_conflict_keys([self.self_info] + peers_snapshot)
 
         leader_id = self.leader_id
-        if leader_id:
-            # Only treat persisted leader_id as "effective" when:
-            # - we still consider the lease valid, and
-            # - the peer currently reports itself as a leader (via heartbeats).
-            #
-            # Otherwise, stale leader_ids can cause the cluster to get stuck
-            # leaderless (e.g. after restarts/partitions) and break leader-proxy APIs.
-            if self._is_leader_lease_valid():
-                for peer in peers_snapshot:
-                    if (
-                        peer.node_id == leader_id
-                        and peer.role == NodeRole.LEADER
-                        and peer.is_alive()
-                        and self._is_leader_eligible(peer, conflict_keys)
-                    ):
-                        return peer
+        if leader_id and self._is_leader_lease_valid():
+            for peer in peers_snapshot:
+                if (
+                    peer.node_id == leader_id
+                    and peer.role == NodeRole.LEADER
+                    and peer.is_alive()
+                    and self._is_leader_eligible(peer, conflict_keys)
+                ):
+                    return peer
 
         eligible_leaders = [
             peer for peer in peers_snapshot
@@ -2479,17 +2468,16 @@ class P2POrchestrator:
             # Optional persisted voter configuration (convergence helper). Only
             # apply when voters are not explicitly configured via env/config.
             raw_voters = state_rows.get("voter_node_ids")
-            if raw_voters and not (getattr(self, "voter_node_ids", []) or []):
-                if str(getattr(self, "voter_config_source", "none") or "none") == "none":
-                    voters: list[str] = []
-                    try:
-                        parsed = json.loads(raw_voters)
-                        if isinstance(parsed, list):
-                            voters = [str(v).strip() for v in parsed if str(v).strip()]
-                    except Exception:
-                        voters = [t.strip() for t in str(raw_voters).split(",") if t.strip()]
-                    if voters:
-                        self._maybe_adopt_voter_node_ids(voters, source="state")
+            if raw_voters and not (getattr(self, "voter_node_ids", []) or []) and str(getattr(self, "voter_config_source", "none") or "none") == "none":
+                voters: list[str] = []
+                try:
+                    parsed = json.loads(raw_voters)
+                    if isinstance(parsed, list):
+                        voters = [str(v).strip() for v in parsed if str(v).strip()]
+                except Exception:
+                    voters = [t.strip() for t in str(raw_voters).split(",") if t.strip()]
+                if voters:
+                    self._maybe_adopt_voter_node_ids(voters, source="state")
 
             # Self-heal inconsistent persisted leader state (can happen after
             # abrupt shutdowns or partial writes): never keep role=leader without
@@ -2528,7 +2516,7 @@ class P2POrchestrator:
 
             # Save jobs
             with self.jobs_lock:
-                for job_id, job in self.local_jobs.items():
+                for _job_id, job in self.local_jobs.items():
                     cursor.execute("""
                         INSERT OR REPLACE INTO jobs
                         (job_id, job_type, node_id, board_type, num_players, engine_mode, pid, started_at, status)
@@ -4768,7 +4756,7 @@ class P2POrchestrator:
 
                 # Find compute nodes not in P2P network
                 missing_nodes = []
-                for peer_id, peer_info in ts_data.get("Peer", {}).items():
+                for _peer_id, peer_info in ts_data.get("Peer", {}).items():
                     hostname = peer_info.get("HostName", "").lower()
                     online = peer_info.get("Online", False)
                     ts_ips = peer_info.get("TailscaleIPs", [])
@@ -4903,7 +4891,7 @@ class P2POrchestrator:
 
         # Group files by board type
         board_type_files: dict[str, list[tuple[Path, str]]] = {}
-        for jsonl_file, file_size, file_key in files_this_cycle:
+        for jsonl_file, _file_size, file_key in files_this_cycle:
             path_str = str(jsonl_file).lower()
             if "hex" in path_str:
                 if "4p" in path_str:
@@ -5334,18 +5322,16 @@ class P2POrchestrator:
                 logger.info(f"Training data available: {total_training_mb:.1f}MB")
 
                 # 3. Auto-trigger training if threshold exceeded and GPU available
-                if total_training_mb >= AUTO_TRAINING_THRESHOLD_MB:
-                    # Check if this node has GPU and no training running
-                    if self.self_info.is_gpu_node() and self.self_info.training_jobs == 0:
-                        logger.info(f"Auto-triggering training ({total_training_mb:.1f}MB data available)")
-                        # Find largest training file
-                        largest_npz = max(
-                            training_dir.glob("*.npz"),
-                            key=lambda f: f.stat().st_size,
-                            default=None
-                        )
-                        if largest_npz:
-                            await self._start_auto_training(str(largest_npz))
+                if total_training_mb >= AUTO_TRAINING_THRESHOLD_MB and self.self_info.is_gpu_node() and self.self_info.training_jobs == 0:
+                    logger.info(f"Auto-triggering training ({total_training_mb:.1f}MB data available)")
+                    # Find largest training file
+                    largest_npz = max(
+                        training_dir.glob("*.npz"),
+                        key=lambda f: f.stat().st_size,
+                        default=None
+                    )
+                    if largest_npz:
+                        await self._start_auto_training(str(largest_npz))
 
                 # 4. Request data sync from peers with large databases
                 await self._request_data_from_peers()
@@ -5512,28 +5498,26 @@ class P2POrchestrator:
 
                 if total_lines > 100:  # Only run if there's meaningful data
                     aggregate_script = Path(self.ringrift_path) / "ai-service" / "scripts" / "aggregate_jsonl_to_db.py"
-                    if aggregate_script.exists():
-                        # Check if aggregation already running
-                        if not getattr(self, "_jsonl_aggregation_running", False):
-                            self._jsonl_aggregation_running = True
-                            logger.info(f"JSONL aggregation: ~{total_lines * len(recent_jsonl) // 20} games in {len(recent_jsonl)} files")
-                            cmd = [
-                                sys.executable, str(aggregate_script),
-                                "--input-dir", str(selfplay_dir),
-                                "--output-db", str(jsonl_db_path),
-                            ]
-                            proc = subprocess.Popen(
-                                cmd,
-                                env=env,
-                                stdout=open("/tmp/jsonl_aggregate.log", "w"),
-                                stderr=subprocess.STDOUT,
-                                cwd=str(Path(self.ringrift_path) / "ai-service"),
-                            )
-                            logger.info(f"Started JSONL aggregation (PID: {proc.pid})")
-                            # Reset flag after ~10 minutes
-                            asyncio.get_event_loop().call_later(
-                                600, lambda: setattr(self, "_jsonl_aggregation_running", False)
-                            )
+                    if aggregate_script.exists() and not getattr(self, "_jsonl_aggregation_running", False):
+                        self._jsonl_aggregation_running = True
+                        logger.info(f"JSONL aggregation: ~{total_lines * len(recent_jsonl) // 20} games in {len(recent_jsonl)} files")
+                        cmd = [
+                            sys.executable, str(aggregate_script),
+                            "--input-dir", str(selfplay_dir),
+                            "--output-db", str(jsonl_db_path),
+                        ]
+                        proc = subprocess.Popen(
+                            cmd,
+                            env=env,
+                            stdout=open("/tmp/jsonl_aggregate.log", "w"),
+                            stderr=subprocess.STDOUT,
+                            cwd=str(Path(self.ringrift_path) / "ai-service"),
+                        )
+                        logger.info(f"Started JSONL aggregation (PID: {proc.pid})")
+                        # Reset flag after ~10 minutes
+                        asyncio.get_event_loop().call_later(
+                            600, lambda: setattr(self, "_jsonl_aggregation_running", False)
+                        )
 
             # --- PART 1b: Export NPZ from aggregated DB for training ---
             # Only run if we have a decent sized aggregated DB and not already exporting
@@ -6873,12 +6857,10 @@ class P2POrchestrator:
                     if not self._is_leader_eligible(peer, conflict_keys, require_alive=False):
                         return web.json_response({"accepted": False, "reason": "leader_ineligible"})
 
-            if is_renewal:
-                # Just a lease renewal, update expiry silently
-                if new_leader == self.leader_id:
-                    self.leader_lease_expires = lease_expires
-                    self.leader_lease_id = lease_id
-                    return web.json_response({"accepted": True})
+            if is_renewal and new_leader == self.leader_id:
+                self.leader_lease_expires = lease_expires
+                self.leader_lease_id = lease_id
+                return web.json_response({"accepted": True})
 
             logger.info(f"Accepting leader announcement: {new_leader}")
             self.leader_id = new_leader
@@ -9205,26 +9187,24 @@ print(wins / total)
             logger.info(f"Completed local CMA-ES evaluation: job={job_id}, gen={generation}, idx={individual_idx}, fitness={fitness:.4f}")
 
             # If we're not the coordinator, report result back
-            if self.role != NodeRole.LEADER:
-                # Find the leader and POST result
-                if self.leader_id:
-                    with self.peers_lock:
-                        leader = self.peers.get(self.leader_id)
-                    if leader:
-                        try:
-                            timeout = ClientTimeout(total=30)
-                            async with get_client_session(timeout) as session:
-                                url = self._url_for_peer(leader, "/cmaes/result")
-                                await session.post(url, json={
-                                    "job_id": job_id,
-                                    "generation": generation,
-                                    "individual_idx": individual_idx,
-                                    "fitness": fitness,
-                                    "weights": weights,
-                                    "worker_id": self.node_id,
-                                }, headers=self._auth_headers())
-                        except Exception as e:
-                            logger.error(f"Failed to report CMA-ES result to leader: {e}")
+            if self.role != NodeRole.LEADER and self.leader_id:
+                with self.peers_lock:
+                    leader = self.peers.get(self.leader_id)
+                if leader:
+                    try:
+                        timeout = ClientTimeout(total=30)
+                        async with get_client_session(timeout) as session:
+                            url = self._url_for_peer(leader, "/cmaes/result")
+                            await session.post(url, json={
+                                "job_id": job_id,
+                                "generation": generation,
+                                "individual_idx": individual_idx,
+                                "fitness": fitness,
+                                "weights": weights,
+                                "worker_id": self.node_id,
+                            }, headers=self._auth_headers())
+                    except Exception as e:
+                        logger.error(f"Failed to report CMA-ES result to leader: {e}")
 
         except Exception as e:
             logger.info(f"CMA-ES evaluation error: {e}")
@@ -13074,11 +13054,10 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             # Update cluster data manifest to reflect new games
             config_key = f"{board_type}_{num_players}p"
-            if hasattr(self, 'cluster_data_manifest') and self.cluster_data_manifest:
-                if config_key in self.cluster_data_manifest.by_board_type:
-                    self.cluster_data_manifest.by_board_type[config_key]["total_games"] = (
-                        self.cluster_data_manifest.by_board_type[config_key].get("total_games", 0) + imported
-                    )
+            if hasattr(self, 'cluster_data_manifest') and self.cluster_data_manifest and config_key in self.cluster_data_manifest.by_board_type:
+                self.cluster_data_manifest.by_board_type[config_key]["total_games"] = (
+                    self.cluster_data_manifest.by_board_type[config_key].get("total_games", 0) + imported
+                )
 
             # Notify improvement cycle manager of new games
             if self.improvement_cycle_manager and imported > 0:
@@ -15177,9 +15156,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         # Check cache
         now = time.time()
-        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
-            if now - getattr(self, cache_time_key) < cache_ttl:
-                return getattr(self, cache_key)
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key) and now - getattr(self, cache_time_key) < cache_ttl:
+            return getattr(self, cache_key)
 
         # Skip JSONL scanning during startup grace period
         if self._is_in_startup_grace_period():
@@ -15234,9 +15212,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         cache_ttl = 300
 
         now = time.time()
-        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
-            if now - getattr(self, cache_time_key) < cache_ttl:
-                return getattr(self, cache_key)
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key) and now - getattr(self, cache_time_key) < cache_ttl:
+            return getattr(self, cache_key)
 
         # Skip JSONL scanning during startup grace period
         if self._is_in_startup_grace_period():
@@ -15313,9 +15290,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         cache_ttl = 120
 
         now = time.time()
-        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
-            if now - getattr(self, cache_time_key) < cache_ttl:
-                return getattr(self, cache_key)
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key) and now - getattr(self, cache_time_key) < cache_ttl:
+            return getattr(self, cache_key)
 
         ai_root = Path(self.ringrift_path) / "ai-service"
         logs_dir = ai_root / "logs" / "training"
@@ -15362,9 +15338,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         cache_ttl = 300
 
         now = time.time()
-        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
-            if now - getattr(self, cache_time_key) < cache_ttl:
-                return getattr(self, cache_key)
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key) and now - getattr(self, cache_time_key) < cache_ttl:
+            return getattr(self, cache_key)
 
         ai_root = Path(self.ringrift_path) / "ai-service"
         db_path = ai_root / "data" / "holdouts" / "holdout_validation.db"
@@ -15450,9 +15425,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         cache_ttl = 120
 
         now = time.time()
-        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
-            if now - getattr(self, cache_time_key) < cache_ttl:
-                return getattr(self, cache_key)
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key) and now - getattr(self, cache_time_key) < cache_ttl:
+            return getattr(self, cache_key)
 
         # Skip JSONL scanning during startup grace period
         if self._is_in_startup_grace_period():
@@ -15535,7 +15509,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     continue
 
         # Compute per-config averages
-        for config, data in stats["configs"].items():
+        for _config, data in stats["configs"].items():
             if data.get("nodes_samples"):
                 data["avg_nodes"] = sum(data["nodes_samples"]) / len(data["nodes_samples"])
             if data.get("depth_samples"):
@@ -15562,9 +15536,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         cache_ttl = 300
 
         now = time.time()
-        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
-            if now - getattr(self, cache_time_key) < cache_ttl:
-                return getattr(self, cache_key)
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key) and now - getattr(self, cache_time_key) < cache_ttl:
+            return getattr(self, cache_key)
 
         ai_root = Path(self.ringrift_path) / "ai-service"
         db_path = ai_root / "data" / "unified_elo.db"
@@ -15640,7 +15613,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             })
 
             # Compute config averages
-            for config, data in config_stats.items():
+            for _config, data in config_stats.items():
                 if data["avg_game_length"]:
                     data["avg_game_length"] = round(sum(data["avg_game_length"]) / len(data["avg_game_length"]), 1)
                 else:
@@ -15676,9 +15649,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         cache_ttl = 600
 
         now = time.time()
-        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
-            if now - getattr(self, cache_time_key) < cache_ttl:
-                return getattr(self, cache_key)
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key) and now - getattr(self, cache_time_key) < cache_ttl:
+            return getattr(self, cache_key)
 
         ai_root = Path(self.ringrift_path) / "ai-service"
         models_dir = ai_root / "models"
@@ -15777,9 +15749,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         cache_ttl = 300
 
         now = time.time()
-        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
-            if now - getattr(self, cache_time_key) < cache_ttl:
-                return getattr(self, cache_key)
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key) and now - getattr(self, cache_time_key) < cache_ttl:
+            return getattr(self, cache_key)
 
         # Skip JSONL scanning during startup grace period
         if self._is_in_startup_grace_period():
@@ -15923,9 +15894,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         cache_ttl = 300
 
         now = time.time()
-        if hasattr(self, cache_key) and hasattr(self, cache_time_key):
-            if now - getattr(self, cache_time_key) < cache_ttl:
-                return getattr(self, cache_key)
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key) and now - getattr(self, cache_time_key) < cache_ttl:
+            return getattr(self, cache_key)
 
         ai_root = Path(self.ringrift_path) / "ai-service"
         efficiency = {"configs": {}, "summary": {}, "cost_tracking": {}}
@@ -20942,12 +20912,11 @@ print(json.dumps({{
                     self.peers[info.node_id] = info
 
                 # Update leader if this voter claims leadership
-                if info.role == NodeRole.LEADER and info.node_id != self.node_id:
-                    if self.leader_id != info.node_id:
-                        logger.info(f"Discovered leader from voter heartbeat: {info.node_id}")
-                        self.leader_id = info.node_id
-                        self.role = NodeRole.FOLLOWER
-                        self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
+                if info.role == NodeRole.LEADER and info.node_id != self.node_id and self.leader_id != info.node_id:
+                    logger.info(f"Discovered leader from voter heartbeat: {info.node_id}")
+                    self.leader_id = info.node_id
+                    self.role = NodeRole.FOLLOWER
+                    self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
 
                 return True
         except Exception:
@@ -21701,17 +21670,16 @@ print(json.dumps({{
         import uuid
         lease_id = f"{self.node_id}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
         lease_expires = await self._acquire_voter_lease_quorum(lease_id, int(LEADER_LEASE_DURATION))
-        if getattr(self, "voter_node_ids", []):
-            if not lease_expires:
-                logger.error(f"Failed to obtain voter lease quorum; refusing leadership: {self.node_id}")
-                self.role = NodeRole.FOLLOWER
-                self.leader_id = None
-                self.leader_lease_id = ""
-                self.leader_lease_expires = 0.0
-                self.last_lease_renewal = 0.0
-                self._release_voter_grant_if_self()
-                self._save_state()
-                return
+        if getattr(self, "voter_node_ids", []) and not lease_expires:
+            logger.error(f"Failed to obtain voter lease quorum; refusing leadership: {self.node_id}")
+            self.role = NodeRole.FOLLOWER
+            self.leader_id = None
+            self.leader_lease_id = ""
+            self.leader_lease_expires = 0.0
+            self.last_lease_renewal = 0.0
+            self._release_voter_grant_if_self()
+            self._save_state()
+            return
 
         logger.info(f"I am now the leader: {self.node_id}")
         self.role = NodeRole.LEADER
@@ -22786,7 +22754,7 @@ print(json.dumps({{
         """
         active_configs = []
         with self.jobs_lock:
-            for job_id, job in self.local_jobs.items():
+            for _job_id, job in self.local_jobs.items():
                 job_type = getattr(job, "job_type", "")
                 # Only include training-type jobs
                 if job_type in ("nnue", "nnue_training", "training", "cmaes"):
@@ -23013,7 +22981,7 @@ print(json.dumps({{
                 all_models[model_name] = model_info
 
         # Include ELO summaries from gossip
-        for node_id, state in gossip_states.items():
+        for _node_id, state in gossip_states.items():
             if state.get("timestamp", 0) < now - 300:  # Skip stale states
                 continue
 
@@ -23276,7 +23244,7 @@ print(json.dumps({{
             successor_votes[our_hint["preferred_successor"]] = successor_votes.get(our_hint["preferred_successor"], 0) + 1
 
         # Count votes from gossip
-        for node_id, state in gossip_states.items():
+        for _node_id, state in gossip_states.items():
             if state.get("timestamp", 0) < now - 120:  # Skip stale states
                 continue
 
@@ -23450,7 +23418,7 @@ print(json.dumps({{
             all_scores[peer_id].append(peer_info["score"])
 
         # Include reputation from gossip
-        for node_id, state in gossip_states.items():
+        for _node_id, state in gossip_states.items():
             if state.get("timestamp", 0) < now - 300:
                 continue
 
@@ -23584,7 +23552,7 @@ print(json.dumps({{
         # Check recent data generation from gossip
         recent_data = False
         gossip_states = getattr(self, "_gossip_node_states", {}) or {}
-        for node_id, state in gossip_states.items():
+        for _node_id, state in gossip_states.items():
             if not isinstance(state, dict):
                 continue
             last_game = state.get("last_game_time", 0)
@@ -24210,37 +24178,36 @@ print(json.dumps({{
         if not lease_id:
             lease_id = f"{self.node_id}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
         lease_expires = await self._acquire_voter_lease_quorum(lease_id, int(LEADER_LEASE_DURATION))
-        if getattr(self, "voter_node_ids", []):
-            if not lease_expires:
-                # Voter quorum failed - try arbiter fallback before stepping down
-                logger.info(f"Voter lease quorum failed; checking arbiter...")
-                arbiter_leader = await self._query_arbiter_for_leader()
-                if arbiter_leader == self.node_id:
-                    # Arbiter still recognizes us as leader - extend lease provisionally
-                    logger.info(f"Arbiter confirms us as leader despite quorum failure; continuing with provisional lease")
-                    lease_expires = now + LEADER_LEASE_DURATION / 2  # Shorter lease until quorum recovers
-                elif arbiter_leader:
-                    # Arbiter says someone else is leader - defer to arbiter
-                    logger.info(f"Arbiter reports different leader ({arbiter_leader}); stepping down")
-                    self.role = NodeRole.FOLLOWER
-                    self.leader_id = arbiter_leader
-                    self.leader_lease_id = ""
-                    self.leader_lease_expires = 0.0
-                    self.last_lease_renewal = 0.0
-                    self._release_voter_grant_if_self()
-                    self._save_state()
-                    return
-                else:
-                    # Arbiter also unreachable - step down to be safe
-                    logger.error(f"Failed to renew voter lease quorum and arbiter unreachable; stepping down: {self.node_id}")
-                    self.role = NodeRole.FOLLOWER
-                    self.leader_id = None
-                    self.leader_lease_id = ""
-                    self.leader_lease_expires = 0.0
-                    self.last_lease_renewal = 0.0
-                    self._release_voter_grant_if_self()
-                    self._save_state()
-                    return
+        if getattr(self, "voter_node_ids", []) and not lease_expires:
+            # Voter quorum failed - try arbiter fallback before stepping down
+            logger.info(f"Voter lease quorum failed; checking arbiter...")
+            arbiter_leader = await self._query_arbiter_for_leader()
+            if arbiter_leader == self.node_id:
+                # Arbiter still recognizes us as leader - extend lease provisionally
+                logger.info(f"Arbiter confirms us as leader despite quorum failure; continuing with provisional lease")
+                lease_expires = now + LEADER_LEASE_DURATION / 2  # Shorter lease until quorum recovers
+            elif arbiter_leader:
+                # Arbiter says someone else is leader - defer to arbiter
+                logger.info(f"Arbiter reports different leader ({arbiter_leader}); stepping down")
+                self.role = NodeRole.FOLLOWER
+                self.leader_id = arbiter_leader
+                self.leader_lease_id = ""
+                self.leader_lease_expires = 0.0
+                self.last_lease_renewal = 0.0
+                self._release_voter_grant_if_self()
+                self._save_state()
+                return
+            else:
+                # Arbiter also unreachable - step down to be safe
+                logger.error(f"Failed to renew voter lease quorum and arbiter unreachable; stepping down: {self.node_id}")
+                self.role = NodeRole.FOLLOWER
+                self.leader_id = None
+                self.leader_lease_id = ""
+                self.leader_lease_expires = 0.0
+                self.last_lease_renewal = 0.0
+                self._release_voter_grant_if_self()
+                self._save_state()
+                return
 
         self.leader_lease_id = lease_id
         self.leader_lease_expires = float(lease_expires or (now + LEADER_LEASE_DURATION))
@@ -25365,9 +25332,8 @@ print(json.dumps({{
         Target: 60-80% CPU/GPU utilization for optimal training throughput.
         """
         # Check safeguards first
-        if HAS_SAFEGUARDS and _safeguards:
-            if _safeguards.is_emergency_active():
-                return 0
+        if HAS_SAFEGUARDS and _safeguards and _safeguards.is_emergency_active():
+            return 0
 
         # Check backpressure - reduce production when training queue is full
         backpressure_factor = 1.0
@@ -25505,11 +25471,8 @@ print(json.dumps({{
             target_selfplay = max(2, target_selfplay - 1)
 
         # Scale UP only if both resources have headroom (gradual)
-        if not gpu_overloaded and not cpu_overloaded and current_jobs > 0:
-            if (has_gpu and gpu_has_headroom and cpu_has_headroom) or (not has_gpu and cpu_has_headroom):
-                # Small increment toward max
-                if current_jobs < target_selfplay:
-                    target_selfplay = min(target_selfplay, current_jobs + 2)
+        if not gpu_overloaded and not cpu_overloaded and current_jobs > 0 and (has_gpu and gpu_has_headroom and cpu_has_headroom) or (not has_gpu and cpu_has_headroom) and current_jobs < target_selfplay:
+            target_selfplay = min(target_selfplay, current_jobs + 2)
 
         # Resource pressure warnings
         if disk_percent >= DISK_WARNING_THRESHOLD:
@@ -26241,7 +26204,7 @@ print(json.dumps({{
 
         stopped = 0
         with self.jobs_lock:
-            for job_id, job in to_stop:
+            for _job_id, job in to_stop:
                 try:
                     if job.pid:
                         os.kill(int(job.pid), signal.SIGTERM)
@@ -27321,9 +27284,8 @@ print(json.dumps({{
         # Set up HTTP server
         @web.middleware
         async def auth_middleware(request: web.Request, handler):
-            if self.auth_token and request.method not in ("GET", "HEAD", "OPTIONS"):
-                if not self._is_request_authorized(request):
-                    return web.json_response({"error": "unauthorized"}, status=401)
+            if self.auth_token and request.method not in ("GET", "HEAD", "OPTIONS") and not self._is_request_authorized(request):
+                return web.json_response({"error": "unauthorized"}, status=401)
             return await handler(request)
 
         app = web.Application(middlewares=[auth_middleware])
@@ -27606,10 +27568,8 @@ print(json.dumps({{
 
         # If no leader known, start election after short delay
         await asyncio.sleep(5)
-        if not self.leader_id:
-            # Avoid needless bully elections if we can already see a leader.
-            if not self._maybe_adopt_leader_from_peers():
-                await self._start_election()
+        if not self.leader_id and not self._maybe_adopt_leader_from_peers():
+            await self._start_election()
 
         # Run forever
         try:

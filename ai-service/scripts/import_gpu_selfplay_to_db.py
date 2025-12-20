@@ -50,11 +50,15 @@ def parse_position(pos_dict: dict[str, Any], board_type: BoardType = None) -> Po
     z = pos_dict.get("z")
 
     # Convert GPU array indices to canonical axial coordinates for hex boards
+    # Only convert if coordinates look like GPU array indices (0-24 range).
+    # Random/CPU selfplay already uses canonical axial coords (-12 to 12).
     if board_type == BoardType.HEXAGONAL:
-        # GPU uses array indices 0-24, canonical uses axial coords -12 to 12
         HEX_RADIUS = 12
-        x = x - HEX_RADIUS
-        y = y - HEX_RADIUS
+        # Detect if already canonical: if x or y is negative or > 24, it's axial
+        looks_like_gpu_indices = (0 <= x <= 24) and (0 <= y <= 24)
+        if looks_like_gpu_indices:
+            x = x - HEX_RADIUS
+            y = y - HEX_RADIUS
         # Compute z from axial constraint: x + y + z = 0
         z = -x - y
 
@@ -459,6 +463,7 @@ def import_game(
     game_record: dict[str, Any],
     source_file: str,
     verbose: bool = False,
+    skip_expansion: bool = False,
 ) -> bool:
     """Import a single game record into the database.
 
@@ -498,11 +503,23 @@ def import_game(
             print(f"  Warning: Failed to parse move {i} in {game_id}: {e}")
             return False
 
-    try:
-        canonical_moves, final_state = expand_gpu_jsonl_moves_to_canonical(moves, initial_state, verbose=verbose)
-    except Exception as e:
-        print(f"  Warning: Failed to canonicalize moves for {game_id}: {e}")
-        return False
+    if skip_expansion:
+        # Random/CPU selfplay already has canonical moves with bookkeeping - replay to get final state
+        canonical_moves = moves
+        state = initial_state
+        try:
+            for move in moves:
+                state = GameEngine.apply_move(state, move)
+            final_state = state
+        except Exception as e:
+            print(f"  Warning: Failed to replay moves for {game_id}: {e}")
+            return False
+    else:
+        try:
+            canonical_moves, final_state = expand_gpu_jsonl_moves_to_canonical(moves, initial_state, verbose=verbose)
+        except Exception as e:
+            print(f"  Warning: Failed to canonicalize moves for {game_id}: {e}")
+            return False
 
     # Prepare metadata
     metadata = {
@@ -553,6 +570,10 @@ def main():
         "--verbose", "-v", action="store_true",
         help="Print verbose debugging output for move canonicalization"
     )
+    parser.add_argument(
+        "--skip-expansion", action="store_true",
+        help="Skip move expansion (use for random/CPU selfplay data that already has canonical moves)"
+    )
 
     args = parser.parse_args()
 
@@ -585,7 +606,7 @@ def main():
                 games_failed += 1
                 continue
 
-            if import_game(db, record, source_file, verbose=args.verbose):
+            if import_game(db, record, source_file, verbose=args.verbose, skip_expansion=args.skip_expansion):
                 games_imported += 1
                 if games_imported % 50 == 0:
                     print(f"  Imported {games_imported} games...")

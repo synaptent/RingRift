@@ -1271,7 +1271,7 @@ class TrainingScheduler:
         priority_queue = ConfigPriorityQueue()
         prioritized_configs = priority_queue.get_prioritized_configs(self.state.configs)
 
-        for config_key, priority_score in prioritized_configs:
+        for config_key, _priority_score in prioritized_configs:
             config_state = self.state.configs[config_key]
 
             # Skip configs already training (per-config lock check)
@@ -1305,25 +1305,22 @@ class TrainingScheduler:
                 return config_key
 
             # Elo plateau detection
-            if self.feedback:
-                if self.feedback.eval_analyzer.is_plateau(
-                    config_key,
-                    min_improvement=self.feedback_config.elo_plateau_threshold,
-                    lookback=self.feedback_config.elo_plateau_lookback
-                ):
-                    if config_state.games_since_training >= self.config.trigger_threshold_games // 4:
-                        print(f"[Training] Trigger: Elo plateau detected for {config_key}")
-                        return config_key
+            if self.feedback and self.feedback.eval_analyzer.is_plateau(
+                config_key,
+                min_improvement=self.feedback_config.elo_plateau_threshold,
+                lookback=self.feedback_config.elo_plateau_lookback
+            ) and config_state.games_since_training >= self.config.trigger_threshold_games // 4:
+                print(f"[Training] Trigger: Elo plateau detected for {config_key}")
+                return config_key
 
             # Win rate degradation
             if self.feedback:
                 weak_configs = self.feedback.eval_analyzer.get_weak_configs(
                     threshold=self.feedback_config.win_rate_degradation_threshold
                 )
-                if config_key in weak_configs:
-                    if config_state.games_since_training >= self.config.trigger_threshold_games // 4:
-                        print(f"[Training] Trigger: Win rate degradation for {config_key}")
-                        return config_key
+                if config_key in weak_configs and config_state.games_since_training >= self.config.trigger_threshold_games // 4:
+                    print(f"[Training] Trigger: Win rate degradation for {config_key}")
+                    return config_key
 
         return None
 
@@ -1340,12 +1337,11 @@ class TrainingScheduler:
             return False
 
         # Circuit breaker check - avoid spawning if too many recent failures (2025-12)
-        if self._circuit_breaker:
-            if not self._circuit_breaker.can_proceed("training_spawn"):
-                print(f"[Training] BLOCKED by circuit breaker: training spawn circuit OPEN (too many recent failures)")
-                if HAS_PROMETHEUS:
-                    DATA_QUALITY_BLOCKED_TRAINING.labels(reason="circuit_breaker_open").inc()
-                return False
+        if self._circuit_breaker and not self._circuit_breaker.can_proceed("training_spawn"):
+            print(f"[Training] BLOCKED by circuit breaker: training spawn circuit OPEN (too many recent failures)")
+            if HAS_PROMETHEUS:
+                DATA_QUALITY_BLOCKED_TRAINING.labels(reason="circuit_breaker_open").inc()
+            return False
 
         self.record_training_start()
 
@@ -2626,7 +2622,7 @@ class TrainingScheduler:
 
     async def stop_streaming_pipelines(self) -> None:
         """Stop all streaming data pipelines."""
-        for config_key, pipeline in self._streaming_pipelines.items():
+        for _config_key, pipeline in self._streaming_pipelines.items():
             try:
                 await pipeline.stop()
             except Exception:
@@ -2893,10 +2889,9 @@ class TrainingScheduler:
 
         for config_key in self.state.configs:
             feedback = self.get_config_feedback(config_key)
-            if feedback is not None:
-                if feedback.urgency_score > best_urgency:
-                    best_urgency = feedback.urgency_score
-                    best_config = config_key
+            if feedback is not None and feedback.urgency_score > best_urgency:
+                best_urgency = feedback.urgency_score
+                best_config = config_key
 
         if best_config and best_urgency > 0.3:
             print(f"[Training] Most urgent config: {best_config} (urgency={best_urgency:.2f})")
@@ -3317,10 +3312,9 @@ class TrainingScheduler:
             self._last_checkpoint_time = 0.0
 
         now = time.time()
-        if force or (now - self._last_checkpoint_time) >= checkpoint_interval:
-            if self.save_checkpoint():
-                self._last_checkpoint_time = now
-                return True
+        if (force or (now - self._last_checkpoint_time) >= checkpoint_interval) and self.save_checkpoint():
+            self._last_checkpoint_time = now
+            return True
         return False
 
     # =========================================================================

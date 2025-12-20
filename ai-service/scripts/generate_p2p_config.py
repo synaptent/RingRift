@@ -65,7 +65,7 @@ def get_voters(hosts: dict) -> list[str]:
 def get_peer_urls(hosts: dict, port: int = 8770) -> list[str]:
     """Generate peer URLs from hosts config."""
     peers = []
-    for node_id, cfg in hosts.items():
+    for _node_id, cfg in hosts.items():
         if not isinstance(cfg, dict):
             continue
 
@@ -76,10 +76,8 @@ def get_peer_urls(hosts: dict, port: int = 8770) -> list[str]:
 
         # Prefer tailscale_ip for reliable connectivity
         ip = cfg.get("tailscale_ip") or cfg.get("ssh_host")
-        if ip:
-            # Validate it looks like an IP (not a hostname like ssh6.vast.ai)
-            if re.match(r'^\d+\.\d+\.\d+\.\d+$', str(ip)):
-                peers.append(f"http://{ip}:{port}")
+        if ip and re.match(r'^\d+\.\d+\.\d+\.\d+$', str(ip)):
+            peers.append(f"http://{ip}:{port}")
 
     return sorted(set(peers))
 
@@ -95,9 +93,8 @@ def get_voter_peer_urls(hosts: dict, port: int = 8770) -> list[str]:
             continue
 
         ip = cfg.get("tailscale_ip") or cfg.get("ssh_host")
-        if ip:
-            if re.match(r'^\d+\.\d+\.\d+\.\d+$', str(ip)):
-                peers.append(f"http://{ip}:{port}")
+        if ip and re.match(r'^\d+\.\d+\.\d+\.\d+$', str(ip)):
+            peers.append(f"http://{ip}:{port}")
 
     return sorted(set(peers))
 

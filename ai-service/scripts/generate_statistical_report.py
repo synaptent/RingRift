@@ -447,7 +447,7 @@ def rank_ais(vs_random: dict, pairwise: dict) -> list[dict]:
         }
 
     # Secondary: head-to-head results
-    for key, data in pairwise.items():
+    for _key, data in pairwise.items():
         p1, p2 = data["player1"], data["player2"]
 
         if p1 not in scores:
@@ -634,7 +634,7 @@ def print_summary(report: dict) -> None:
     print("-" * 70)
 
     pairwise = report["pairwise_comparisons"]
-    for key, data in pairwise.items():
+    for _key, data in pairwise.items():
         sig_str = "SIGNIFICANT" if data["significant"] else "not significant"
         ci_low, ci_high = data["player1_win_rate_ci"]
         print(f"   {data['player1']} vs {data['player2']}:")

@@ -687,10 +687,9 @@ def run_selfplay(
     Returns: (success, games_generated, staging_db_path)
     """
     # Check system load before starting
-    if is_system_overloaded(verbose=True):
-        if not wait_for_load_decrease(max_wait_seconds=300.0, verbose=True):
-            print("[selfplay] Skipping due to system overload", file=sys.stderr)
-            return False, 0, None
+    if is_system_overloaded(verbose=True) and not wait_for_load_decrease(max_wait_seconds=300.0, verbose=True):
+        print("[selfplay] Skipping due to system overload", file=sys.stderr)
+        return False, 0, None
 
     board = config["board"]
     players = config["players"]
@@ -1051,10 +1050,9 @@ def train_model(
     Returns: (success, model_path)
     """
     # Check system load before starting
-    if is_system_overloaded(verbose=True):
-        if not wait_for_load_decrease(max_wait_seconds=300.0, verbose=True):
-            print("[training] Skipping due to system overload", file=sys.stderr)
-            return False, Path("")
+    if is_system_overloaded(verbose=True) and not wait_for_load_decrease(max_wait_seconds=300.0, verbose=True):
+        print("[training] Skipping due to system overload", file=sys.stderr)
+        return False, Path("")
 
     board = config["board"]
     players = config["players"]
@@ -1619,10 +1617,9 @@ def _select_promotion_pool_opponents(
                 resolved = v5_path.resolve()
             except Exception:
                 resolved = v5_path
-            if resolved not in exclude and v5_path.stat().st_size > 0:
-                if not any(v5_path.samefile(p) for p in pool):
-                    pool.append(v5_path)
-                    break
+            if resolved not in exclude and v5_path.stat().st_size > 0 and not any(v5_path.samefile(p) for p in pool):
+                pool.append(v5_path)
+                break
 
     # Collect all candidates for diverse sampling
     candidates = [p for p in models_dir.glob("*.pth") if _is_candidate(p)]

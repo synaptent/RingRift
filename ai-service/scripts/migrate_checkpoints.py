@@ -394,16 +394,15 @@ def run_migration(
 
     # Migrate legacy checkpoints
     for info in checkpoint_infos:
-        if not info.is_legacy:
-            if skip_versioned:
-                result = MigrationResult(
-                    source_path=info.path,
-                    skipped=True,
-                    skip_reason="Already versioned",
-                )
-                report.results.append(result)
-                report.skipped_count += 1
-                continue
+        if not info.is_legacy and skip_versioned:
+            result = MigrationResult(
+                source_path=info.path,
+                skipped=True,
+                skip_reason="Already versioned",
+            )
+            report.results.append(result)
+            report.skipped_count += 1
+            continue
 
         if info.error:
             result = MigrationResult(

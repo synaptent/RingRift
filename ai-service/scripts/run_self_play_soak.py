@@ -1638,17 +1638,16 @@ def run_self_play_soak(
             game_start_time = time.time()
 
             # Hot model reload check
-            if hot_reloader and hot_reloader.should_check(game_idx, model_reload_interval):
-                if hot_reloader.check_for_updates():
-                    meta = hot_reloader.get_model_metadata()
-                    print(
-                        f"[hot-reload] Model updated! Reloading... "
-                        f"(update #{hot_reloader.update_count}, "
-                        f"source: {meta.get('source_model_id', 'unknown')})",
-                        flush=True,
-                    )
-                    # Clear the neural net model cache to force reload on next AI creation
-                    clear_model_cache()
+            if hot_reloader and hot_reloader.should_check(game_idx, model_reload_interval) and hot_reloader.check_for_updates():
+                meta = hot_reloader.get_model_metadata()
+                print(
+                    f"[hot-reload] Model updated! Reloading... "
+                    f"(update #{hot_reloader.update_count}, "
+                    f"source: {meta.get('source_model_id', 'unknown')})",
+                    flush=True,
+                )
+                # Clear the neural net model cache to force reload on next AI creation
+                clear_model_cache()
 
             # Periodic resource check (every 50 games) - stop early if 80% limits exceeded
             if game_idx > 0 and game_idx % 50 == 0:
@@ -3687,14 +3686,13 @@ def main() -> None:  # pragma: no cover - CLI entrypoint
             with open(args.summary_json, "w", encoding="utf-8") as f:
                 json.dump(summary, f, indent=2, sort_keys=True)
 
-        if args.fail_on_anomaly:
-            if _has_anomalies(records):
-                print(
-                    "GPU self-play soak detected anomalies; "
-                    "exiting with non-zero status due to --fail-on-anomaly.",
-                    file=sys.stderr,
-                )
-                raise SystemExit(1)
+        if args.fail_on_anomaly and _has_anomalies(records):
+            print(
+                "GPU self-play soak detected anomalies; "
+                "exiting with non-zero status due to --fail-on-anomaly.",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
 
         # Record task completion for duration learning (GPU mode)
         if HAS_COORDINATION and task_id:
@@ -3808,14 +3806,13 @@ def main() -> None:  # pragma: no cover - CLI entrypoint
         with open(args.summary_json, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, sort_keys=True)
 
-    if args.fail_on_anomaly:
-        if _has_anomalies(records):
-            print(
-                "Self-play soak detected invariant/engine anomalies; "
-                "exiting with non-zero status due to --fail-on-anomaly.",
-                file=sys.stderr,
-            )
-            raise SystemExit(1)
+    if args.fail_on_anomaly and _has_anomalies(records):
+        print(
+            "Self-play soak detected invariant/engine anomalies; "
+            "exiting with non-zero status due to --fail-on-anomaly.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
     # Record task completion for duration learning (non-GPU mode)
     if HAS_COORDINATION and task_id:

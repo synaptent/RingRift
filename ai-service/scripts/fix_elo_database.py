@@ -165,7 +165,7 @@ def deduplicate_matches(db_path: Path, dry_run: bool = False) -> int:
 
     # Find IDs to delete (keep first of each group)
     ids_to_delete = []
-    for sig, match_ids in signatures.items():
+    for _sig, match_ids in signatures.items():
         if len(match_ids) > 1:
             # Keep the first one, delete the rest
             ids_to_delete.extend(match_ids[1:])
@@ -270,7 +270,7 @@ def recalculate_ratings(db_path: Path, dry_run: bool = False) -> dict:
     })
 
     # Replay all matches
-    for i, (p_a, p_b, winner, board_type, num_players, ts) in enumerate(matches):
+    for i, (p_a, p_b, winner, board_type, num_players, _ts) in enumerate(matches):
         key_a = (board_type, num_players, p_a)
         key_b = (board_type, num_players, p_b)
 

@@ -138,7 +138,7 @@ def generate_labeled_samples_mcts(
 
         game_samples = 0
 
-        for move_num in range(max_moves_per_game):
+        for _move_num in range(max_moves_per_game):
             if state.winner is not None:
                 break
             if hasattr(state.game_status, 'value') and state.game_status.value != 'active':
@@ -188,7 +188,7 @@ def generate_labeled_samples_mcts(
                 continue
 
             # Add samples for all evaluated moves
-            for rank, (move_idx, visit_fraction, q_value) in enumerate(quality_results):
+            for rank, (move_idx, visit_fraction, _q_value) in enumerate(quality_results):
                 if move_idx >= len(valid_moves):
                     continue
 
@@ -257,7 +257,7 @@ def generate_labeled_samples_heuristic(
 
         game_samples = 0
 
-        for move_num in range(max_moves_per_game):
+        for _move_num in range(max_moves_per_game):
             if state.winner is not None:
                 break
 

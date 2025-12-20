@@ -57,7 +57,7 @@ def _load_known_peers() -> list[str]:
             config = yaml.safe_load(f) or {}
 
         peers = []
-        for name, info in config.get("hosts", {}).items():
+        for _name, info in config.get("hosts", {}).items():
             # Use Tailscale IP for P2P mesh
             ip = info.get("tailscale_ip")
             if ip and info.get("status") == "ready":

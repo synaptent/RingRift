@@ -647,9 +647,8 @@ def wait_for_healthy(
             elif hasattr(result, "is_healthy"):
                 if result.is_healthy:
                     return True
-            elif hasattr(result, "success"):
-                if result.success:
-                    return True
+            elif hasattr(result, "success") and result.success:
+                return True
         except Exception as e:
             logger.debug(f"Health check failed: {e}")
 

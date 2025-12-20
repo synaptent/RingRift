@@ -57,7 +57,7 @@ def _load_peers_from_config() -> list[str]:
         hosts = config.get("hosts", {})
         peers = []
         # Get p2p_voter nodes as default peers
-        for host_id, host_info in hosts.items():
+        for _host_id, host_info in hosts.items():
             if host_info.get("status") == "ready" and host_info.get("p2p_voter"):
                 tailscale_ip = host_info.get("tailscale_ip")
                 if tailscale_ip and tailscale_ip.startswith("100."):

@@ -41,7 +41,7 @@ def evaluate_config(model_path: str, config: EBMOConfig, num_games: int = 6):
     wins_random = 0
     wins_heuristic = 0
 
-    for i in range(num_games // 2):
+    for _i in range(num_games // 2):
         # vs Random
         ai_config = AIConfig(difficulty=5)
         ebmo = EBMO_AI(1, ai_config, model_path=model_path, ebmo_config=config)
@@ -55,7 +55,7 @@ def evaluate_config(model_path: str, config: EBMOConfig, num_games: int = 6):
         if play_game(opponent, ebmo) == 2:
             wins_random += 1
 
-    for i in range(num_games // 2):
+    for _i in range(num_games // 2):
         # vs Heuristic
         ai_config = AIConfig(difficulty=5)
         ebmo = EBMO_AI(1, ai_config, model_path=model_path, ebmo_config=config)

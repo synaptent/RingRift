@@ -231,7 +231,7 @@ class ModelPruner:
         logger.info(f"Applying magnitude pruning with sparsity={sparsity:.1%}...")
 
         # Apply pruning to all linear and conv layers
-        for name, module in model.named_modules():
+        for _name, module in model.named_modules():
             if isinstance(module, (nn.Linear, nn.Conv2d)):
                 prune.l1_unstructured(module, name="weight", amount=sparsity)
 
@@ -249,7 +249,7 @@ class ModelPruner:
         sparsity = sparsity or self.config.sparsity
         logger.info(f"Applying structured pruning with sparsity={sparsity:.1%}...")
 
-        for name, module in model.named_modules():
+        for _name, module in model.named_modules():
             if isinstance(module, nn.Conv2d):
                 # Prune entire output channels
                 prune.ln_structured(
@@ -265,7 +265,7 @@ class ModelPruner:
 
     def remove_pruning_reparameterization(self, model: nn.Module) -> nn.Module:
         """Make pruning permanent by removing the forward hooks."""
-        for name, module in model.named_modules():
+        for _name, module in model.named_modules():
             if isinstance(module, (nn.Linear, nn.Conv2d)):
                 try:
                     prune.remove(module, "weight")

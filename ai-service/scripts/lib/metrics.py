@@ -749,17 +749,17 @@ class MetricsCollection:
 
         if self._timings:
             lines.append("Timings:")
-            for name, timing in sorted(self._timings.items()):
+            for _name, timing in sorted(self._timings.items()):
                 lines.append(f"  {timing}")
 
         if self._counters:
             lines.append("Counters:")
-            for name, counter in sorted(self._counters.items()):
+            for _name, counter in sorted(self._counters.items()):
                 lines.append(f"  {counter}")
 
         if self._stats:
             lines.append("Statistics:")
-            for name, stats in sorted(self._stats.items()):
+            for _name, stats in sorted(self._stats.items()):
                 lines.append(f"  {stats}")
 
         return "\n".join(lines) if lines else "No metrics recorded"

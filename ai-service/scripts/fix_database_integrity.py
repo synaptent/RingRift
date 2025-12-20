@@ -250,15 +250,14 @@ def recalculate_stats_from_history(db_path: Path, dry_run: bool = False) -> dict
         """, (pid, bt, np))
         current = cur.fetchone()
 
-        if current:
-            if (current[0] != games or current[1] != wins or
-                current[2] != losses or current[3] != draws):
-                discrepancies.append({
-                    "participant_id": pid,
-                    "config": f"{bt}_{np}p",
-                    "current": {"games": current[0], "wins": current[1], "losses": current[2], "draws": current[3]},
-                    "actual": {"games": games, "wins": wins, "losses": losses, "draws": draws},
-                })
+        if current and (current[0] != games or current[1] != wins or
+            current[2] != losses or current[3] != draws):
+            discrepancies.append({
+                "participant_id": pid,
+                "config": f"{bt}_{np}p",
+                "current": {"games": current[0], "wins": current[1], "losses": current[2], "draws": current[3]},
+                "actual": {"games": games, "wins": wins, "losses": losses, "draws": draws},
+            })
 
     results["discrepancies"] = discrepancies[:50]  # Limit output
     results["total_discrepancies"] = len(discrepancies)

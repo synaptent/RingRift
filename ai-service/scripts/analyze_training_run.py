@@ -248,7 +248,7 @@ def print_loss_curve(summary: TrainingRunSummary, width: int = 50) -> None:
     max_loss = max(val_losses)
     loss_range = max_loss - min_loss if max_loss > min_loss else 1
 
-    for i, epoch in enumerate(summary.epochs):
+    for _i, epoch in enumerate(summary.epochs):
         normalized = int((epoch.val_loss - min_loss) / loss_range * width)
         bar = "#" * (width - normalized) + "." * normalized
         marker = "*" if epoch.epoch == summary.best_epoch else " "

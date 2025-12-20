@@ -256,10 +256,9 @@ def play_game_from_state(
             break
 
         # Track if P2 swaps on their first move
-        if move_count == 0 and current_player == 2:
-            if move.type == MoveType.SWAP_SIDES:
-                p2_swapped = True
-                p2_final_player_number = 1  # P2 becomes P1 after swap
+        if move_count == 0 and current_player == 2 and move.type == MoveType.SWAP_SIDES:
+            p2_swapped = True
+            p2_final_player_number = 1  # P2 becomes P1 after swap
 
         game_state = rules_engine.apply_move(game_state, move)
         move_count += 1

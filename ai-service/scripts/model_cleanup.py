@@ -120,7 +120,7 @@ def find_models_to_delete(models_dir, keep_per_config, dry_run=True):
         models.sort(key=lambda x: x["timestamp"], reverse=True)
 
         kept = 0
-        for i, model in enumerate(models):
+        for _i, model in enumerate(models):
             model_id = model["filename"].replace(".pth", "")
 
             # Check if protected
@@ -176,13 +176,13 @@ def main():
 
     # Calculate sizes
     total_delete_size = 0
-    for filename, reason in to_delete:
+    for filename, _reason in to_delete:
         filepath = os.path.join(models_dir, filename)
         if os.path.exists(filepath):
             total_delete_size += os.path.getsize(filepath)
 
     total_keep_size = 0
-    for filename, reason in to_keep:
+    for filename, _reason in to_keep:
         filepath = os.path.join(models_dir, filename)
         if os.path.exists(filepath):
             total_keep_size += os.path.getsize(filepath)
@@ -215,7 +215,7 @@ def main():
         # Actually delete
         deleted_count = 0
         deleted_size = 0
-        for filename, reason in to_delete:
+        for filename, _reason in to_delete:
             filepath = os.path.join(models_dir, filename)
             if os.path.exists(filepath):
                 size = os.path.getsize(filepath)

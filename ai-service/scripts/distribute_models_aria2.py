@@ -180,7 +180,7 @@ def distribute_models(
     for model_path in model_paths:
         model_name = os.path.basename(model_path)
         urls = []
-        for name, user, host, ts_ip in SOURCE_NODES:
+        for _name, _user, host, ts_ip in SOURCE_NODES:
             # Prefer Tailscale IP if available
             url_host = ts_ip or host
             urls.append(f"http://{url_host}:{ARIA2_DATA_PORT}/models/{model_name}")

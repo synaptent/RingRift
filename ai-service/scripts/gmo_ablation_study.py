@@ -198,7 +198,7 @@ def play_game(ai1, ai2, max_moves: int = 500) -> tuple[int | None, int]:
     state = create_initial_state(board_type=BoardType.SQUARE8, num_players=2)
     ais = {1: ai1, 2: ai2}
 
-    for move_num in range(max_moves):
+    for _move_num in range(max_moves):
         if state.game_status != GameStatus.ACTIVE:
             break
 

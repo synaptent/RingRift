@@ -349,7 +349,7 @@ def main():
         }
 
         print(f"\nCreated {len(profiles)} player-specific profiles:")
-        for name, weights in profiles.items():
+        for name, _weights in profiles.items():
             print(f"  - {name}")
     else:
         # General merge mode - all files must have same player count

@@ -59,7 +59,7 @@ def analyze_move_corruption(db_path: str, sample_size: int = 1000) -> dict:
     for board_type in board_types:
         for num_players in [2, 3, 4]:
             count = 0
-            for meta, initial_state, moves in db.iterate_games(
+            for meta, _initial_state, moves in db.iterate_games(
                 board_type=board_type,
                 num_players=num_players,
                 require_moves=True,
@@ -75,10 +75,9 @@ def analyze_move_corruption(db_path: str, sample_size: int = 1000) -> dict:
 
                 # Check for corrupt move_stack moves (from_pos=None)
                 for m in moves:
-                    if getattr(m, "type", None) == "move_stack":
-                        if m.from_pos is None:
-                            is_corrupt = True
-                            break
+                    if getattr(m, "type", None) == "move_stack" and m.from_pos is None:
+                        is_corrupt = True
+                        break
 
                 if is_corrupt:
                     stats["corrupt_games"] += 1
@@ -124,7 +123,7 @@ def delete_corrupt_games(db_path: str, dry_run: bool = True) -> int:
     for board_type in board_types:
         for num_players in [2, 3, 4]:
             type_count = 0
-            for meta, initial_state, moves in db.iterate_games(
+            for meta, _initial_state, moves in db.iterate_games(
                 board_type=board_type,
                 num_players=num_players,
                 require_moves=True,
@@ -135,11 +134,10 @@ def delete_corrupt_games(db_path: str, dry_run: bool = True) -> int:
 
                 # Check for corrupt move_stack moves
                 for m in moves:
-                    if getattr(m, "type", None) == "move_stack":
-                        if m.from_pos is None:
-                            corrupt_ids.append(game_id)
-                            type_count += 1
-                            break
+                    if getattr(m, "type", None) == "move_stack" and m.from_pos is None:
+                        corrupt_ids.append(game_id)
+                        type_count += 1
+                        break
 
             if type_count > 0:
                 logger.info(f"  {board_type.value} {num_players}p: {type_count} corrupt games")
@@ -251,10 +249,9 @@ def export_valid_games(
                 # Check for corrupt move_stack moves
                 is_corrupt = False
                 for m in moves:
-                    if getattr(m, "type", None) == "move_stack":
-                        if m.from_pos is None:
-                            is_corrupt = True
-                            break
+                    if getattr(m, "type", None) == "move_stack" and m.from_pos is None:
+                        is_corrupt = True
+                        break
 
                 if is_corrupt:
                     type_skipped += 1

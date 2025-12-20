@@ -283,9 +283,8 @@ def play_game(
         for _ in range(300):
             if state.game_status == GameStatus.COMPLETED:
                 break
-            if hasattr(state.game_status, 'value'):
-                if state.game_status.value not in ('active', 'in_progress'):
-                    break
+            if hasattr(state.game_status, 'value') and state.game_status.value not in ('active', 'in_progress'):
+                break
 
             current = state.current_player
             ai = ais.get(current)

@@ -3172,7 +3172,7 @@ class UnifiedAILoop:
         # Build host list from state
         hosts = []
         statuses = []
-        for name, host_state in self.state.hosts.items():
+        for _name, host_state in self.state.hosts.items():
             if host_state.enabled and host_state.consecutive_failures < 3:
                 hosts.append(host_state)
                 statuses.append(host_state)
@@ -3564,7 +3564,7 @@ class UnifiedAILoop:
                 self._previous_config_elo: dict[str, float] = {}
 
             # Check each active config
-            for config_key, config_state in self.state.configs.items():
+            for config_key, _config_state in self.state.configs.items():
                 try:
                     # Parse config key (e.g., "square8_2p" -> board_type="square8", num_players=2)
                     parts = config_key.rsplit("_", 1)
@@ -4110,19 +4110,14 @@ class UnifiedAILoop:
                 config_state = self.state.configs[config_key]
                 # Note: games_since_training is usually updated by the caller,
                 # but we can ensure consistency here
-                if hasattr(config_state, 'games_since_training'):
-                    # Log significant data additions
-                    if new_games >= 100:
-                        print(f"[DataPipeline] {config_key}: +{new_games} games "
-                              f"(total: {config_state.games_since_training})")
+                if hasattr(config_state, 'games_since_training') and new_games >= 100:
+                    print(f"[DataPipeline] {config_key}: +{new_games} games "
+                          f"(total: {config_state.games_since_training})")
 
             # Check if training scheduler should evaluate threshold
-            if hasattr(self, 'training_scheduler') and self.training_scheduler:
-                # The training scheduler will check thresholds in its regular loop
-                # But we can trigger an immediate check for high-volume additions
-                if new_games >= 500:
-                    print(f"[DataPipeline] High volume data ({new_games} games) - "
-                          f"training scheduler will check {config_key}")
+            if hasattr(self, 'training_scheduler') and self.training_scheduler and new_games >= 500:
+                print(f"[DataPipeline] High volume data ({new_games} games) - "
+                      f"training scheduler will check {config_key}")
 
         except Exception as e:
             if self.config.verbose:
@@ -4143,13 +4138,12 @@ class UnifiedAILoop:
                   f"{games_count} games with quality {quality_score:.2f}")
 
             # If training scheduler supports quality-aware training, notify it
-            if hasattr(self, 'training_scheduler') and self.training_scheduler:
-                if hasattr(self.training_scheduler, 'notify_high_quality_data'):
-                    self.training_scheduler.notify_high_quality_data(
-                        config_key=config_key,
-                        quality_score=quality_score,
-                        games_count=games_count,
-                    )
+            if hasattr(self, 'training_scheduler') and self.training_scheduler and hasattr(self.training_scheduler, 'notify_high_quality_data'):
+                self.training_scheduler.notify_high_quality_data(
+                    config_key=config_key,
+                    quality_score=quality_score,
+                    games_count=games_count,
+                )
 
         except Exception as e:
             if self.config.verbose:
@@ -5137,7 +5131,7 @@ class UnifiedAILoop:
         # Use NN-based modes for higher quality training data
         nn_modes = ["nn-only", "best-vs-pool", "nn-only", "mcts-only", "descent-only"]
         started = 0
-        for name, ssh_target, count, cpus, workers_needed in underutilized_hosts[:6]:
+        for name, ssh_target, _count, _cpus, workers_needed in underutilized_hosts[:6]:
             try:
                 # Start multiple workers based on capacity
                 # Cycle through NN-based modes for varied training data
@@ -5972,23 +5966,22 @@ class UnifiedAILoop:
                                           f"accuracy={result.holdout_accuracy:.2%}, samples={result.num_samples}")
 
                                     # Check overfit gap if we have enough samples
-                                    if result.num_samples >= 100:
-                                        if result.overfit_gap is not None and result.overfit_gap > OVERFIT_THRESHOLD:
-                                            print(f"[Promotion] REJECTED: {candidate['model_id']} - "
-                                                  f"overfit gap {result.overfit_gap:.4f} > {OVERFIT_THRESHOLD:.4f}")
-                                            promotion_approved = False
+                                    if result.num_samples >= 100 and result.overfit_gap is not None and result.overfit_gap > OVERFIT_THRESHOLD:
+                                        print(f"[Promotion] REJECTED: {candidate['model_id']} - "
+                                              f"overfit gap {result.overfit_gap:.4f} > {OVERFIT_THRESHOLD:.4f}")
+                                        promotion_approved = False
 
-                                            # Emit overfitting event
-                                            await self.event_bus.publish(DataEvent(
-                                                event_type=DataEventType.PROMOTION_REJECTED,
-                                                payload={
-                                                    "model_id": candidate['model_id'],
-                                                    "reason": "overfitting",
-                                                    "overfit_gap": result.overfit_gap,
-                                                    "holdout_loss": result.holdout_loss,
-                                                    "threshold": OVERFIT_THRESHOLD,
-                                                }
-                                            ))
+                                        # Emit overfitting event
+                                        await self.event_bus.publish(DataEvent(
+                                            event_type=DataEventType.PROMOTION_REJECTED,
+                                            payload={
+                                                "model_id": candidate['model_id'],
+                                                "reason": "overfitting",
+                                                "overfit_gap": result.overfit_gap,
+                                                "holdout_loss": result.holdout_loss,
+                                                "threshold": OVERFIT_THRESHOLD,
+                                            }
+                                        ))
                             except Exception as e:
                                 print(f"[Promotion] Holdout validation error (proceeding anyway): {e}")
                                 # Don't block on holdout errors - allow Elo-based promotion to continue
@@ -6503,31 +6496,30 @@ class UnifiedAILoop:
                 # Periodic feedback-based rate adjustment (every 5 minutes)
                 # This automatically adjusts selfplay rate to maintain 60-80% utilization
                 now = time.time()
-                if now - last_feedback_adjustment_time >= feedback_adjustment_interval:
-                    if apply_feedback_adjustment is not None:
-                        try:
-                            new_rate = apply_feedback_adjustment(requestor="unified_loop_utilization")
-                            status = get_utilization_status() if get_utilization_status is not None else {}  # type: ignore[misc]
-                            cpu_util = status.get('cpu_util', 0)
-                            gpu_util = status.get('gpu_util', 0)
-                            util_status_text = status.get('status', 'unknown')
+                if now - last_feedback_adjustment_time >= feedback_adjustment_interval and apply_feedback_adjustment is not None:
+                    try:
+                        new_rate = apply_feedback_adjustment(requestor="unified_loop_utilization")
+                        status = get_utilization_status() if get_utilization_status is not None else {}  # type: ignore[misc]
+                        cpu_util = status.get('cpu_util', 0)
+                        gpu_util = status.get('gpu_util', 0)
+                        util_status_text = status.get('status', 'unknown')
 
-                            # Update Prometheus metrics for cluster utilization tracking
-                            if HAS_PROMETHEUS:
-                                SELFPLAY_RATE.set(new_rate)
-                                # Map status text to numeric: below=-1, optimal=0, above=1
-                                status_value = 0 if util_status_text == 'optimal' else (-1 if 'below' in util_status_text else 1)
-                                UTILIZATION_STATUS.set(status_value)
-                                OPTIMIZER_IN_TARGET.labels(resource='cpu').set(1 if 60 <= cpu_util <= 80 else 0)
-                                OPTIMIZER_IN_TARGET.labels(resource='gpu').set(1 if 60 <= gpu_util <= 80 else 0)
+                        # Update Prometheus metrics for cluster utilization tracking
+                        if HAS_PROMETHEUS:
+                            SELFPLAY_RATE.set(new_rate)
+                            # Map status text to numeric: below=-1, optimal=0, above=1
+                            status_value = 0 if util_status_text == 'optimal' else (-1 if 'below' in util_status_text else 1)
+                            UTILIZATION_STATUS.set(status_value)
+                            OPTIMIZER_IN_TARGET.labels(resource='cpu').set(1 if 60 <= cpu_util <= 80 else 0)
+                            OPTIMIZER_IN_TARGET.labels(resource='gpu').set(1 if 60 <= gpu_util <= 80 else 0)
 
-                            if self.config.verbose:
-                                print(f"[Utilization] Feedback adjustment applied: rate={new_rate}/hr "
-                                      f"(CPU={cpu_util:.1f}%, GPU={gpu_util:.1f}%, status={util_status_text})")
-                            last_feedback_adjustment_time = now
-                        except Exception as e:
-                            if self.config.verbose:
-                                print(f"[Utilization] Feedback adjustment error: {e}")
+                        if self.config.verbose:
+                            print(f"[Utilization] Feedback adjustment applied: rate={new_rate}/hr "
+                                  f"(CPU={cpu_util:.1f}%, GPU={gpu_util:.1f}%, status={util_status_text})")
+                        last_feedback_adjustment_time = now
+                    except Exception as e:
+                        if self.config.verbose:
+                            print(f"[Utilization] Feedback adjustment error: {e}")
 
             except Exception as e:
                 print(f"[Utilization] Error: {e}")
@@ -7898,7 +7890,7 @@ class UnifiedAILoop:
 
         if self.config.dry_run:
             print("[UnifiedLoop] Dry run - showing planned operations:")
-            for host_name, host in self.state.hosts.items():
+            for _host_name, host in self.state.hosts.items():
                 print(f"  - Would sync from {host.ssh_user}@{host.ssh_host}")
             for config_key in self.state.configs:
                 print(f"  - Would run evaluations for {config_key}")

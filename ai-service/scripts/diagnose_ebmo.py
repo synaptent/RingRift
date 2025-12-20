@@ -137,7 +137,7 @@ def diagnose_model(model_path: str):
     zero_params = 0
     nan_params = 0
 
-    for name, param in network.named_parameters():
+    for _name, param in network.named_parameters():
         total_params += param.numel()
         zero_params += (param == 0).sum().item()
         nan_params += torch.isnan(param).sum().item()

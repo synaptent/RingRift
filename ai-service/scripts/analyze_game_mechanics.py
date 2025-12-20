@@ -243,7 +243,7 @@ def analyze_game(game: dict, game_index: int) -> GameStats:
     # Track recovery eligibility windows
     recovery_eligible: dict[int, bool] = {}
 
-    for i, move in enumerate(moves):
+    for _i, move in enumerate(moves):
         move_type = move.get("type", "")
         move_player = move.get("player", 0)
 

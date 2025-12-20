@@ -351,7 +351,7 @@ def get_all_node_states(cluster_config: dict[str, list[NodeConfig]]) -> list[Nod
     """Get state of all nodes in the cluster."""
     states = []
 
-    for node_type, nodes in cluster_config.items():
+    for _node_type, nodes in cluster_config.items():
         for config in nodes:
             state = check_node_state(config)
             states.append(state)

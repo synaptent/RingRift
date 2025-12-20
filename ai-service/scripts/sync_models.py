@@ -960,7 +960,7 @@ def get_canonical_model_for_config(board_type: str, num_players: int, model_type
 
     # Fallback: discover locally
     local_nn, local_nnue, local_info = get_local_models()
-    for name, info in local_info.items():
+    for _name, info in local_info.items():
         if info.model_type == model_type and info.board_type == board_type and info.num_players == num_players:
             return Path(info.path)
 

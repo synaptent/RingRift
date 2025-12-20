@@ -237,9 +237,8 @@ def normalize_game(game: dict[str, Any], file_path: str = "") -> dict[str, Any]:
         elif "moves" in game and game["moves"]:
             max_coord = 0
             for move in game["moves"]:
-                if isinstance(move, dict):
-                    if "to" in move:
-                        max_coord = max(max_coord, move["to"].get("x", 0), move["to"].get("y", 0))
+                if isinstance(move, dict) and "to" in move:
+                    max_coord = max(max_coord, move["to"].get("x", 0), move["to"].get("y", 0))
             if max_coord <= 7:
                 normalized["board_type"] = "square8"
             elif max_coord <= 18:

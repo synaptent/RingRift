@@ -238,13 +238,12 @@ def _evaluate_population(
         )
 
         # Time-based progress reporting via the shared reporter
-        if progress_reporter is not None:
-            if progress_reporter is not None:
-                progress_reporter.record_candidate(
-                    candidate_idx=idx,
-                    fitness=ind.fitness,
-                    games_played=games_this_individual,
-                )
+        if progress_reporter is not None and progress_reporter is not None:
+            progress_reporter.record_candidate(
+                candidate_idx=idx,
+                fitness=ind.fitness,
+                games_played=games_this_individual,
+            )
 
 
 def _select_elites(

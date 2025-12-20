@@ -122,7 +122,7 @@ def run_benchmark(board_type, board_size, num_games=3, max_moves=30):
     total_moves = 0
     total_time = 0.0
 
-    for game_idx in range(num_games):
+    for _game_idx in range(num_games):
         state = create_starting_state(board_type, board_size)
 
         ai1 = HeuristicAI(1, config1)
@@ -131,7 +131,7 @@ def run_benchmark(board_type, board_size, num_games=3, max_moves=30):
         # Use engine from AI
         engine = ai1.rules_engine
 
-        for move_idx in range(max_moves):
+        for _move_idx in range(max_moves):
             current_ai = ai1 if state.current_player == 1 else ai2
 
             start = time.perf_counter()

@@ -306,9 +306,8 @@ def convert_npz_to_hdf5(
         # Compare checksums
         mismatches = []
         for key in keys:
-            if key in checksums_npz and key in checksums_hdf5:
-                if checksums_npz[key] != checksums_hdf5[key]:
-                    mismatches.append(key)
+            if key in checksums_npz and key in checksums_hdf5 and checksums_npz[key] != checksums_hdf5[key]:
+                mismatches.append(key)
 
         if mismatches:
             result['success'] = False

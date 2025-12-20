@@ -392,7 +392,7 @@ def run_balanced_selfplay(
 
     # Build list of all game tasks
     game_tasks = []
-    for config_idx, (board_type, num_players) in enumerate(weighted_configs * games_per_config):
+    for _config_idx, (board_type, num_players) in enumerate(weighted_configs * games_per_config):
         if len(game_tasks) >= total_games:
             break
         matchup_def = random.choice(matchups)

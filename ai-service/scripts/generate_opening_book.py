@@ -111,7 +111,7 @@ class OpeningBook:
         node = self.root
         current_player = 0
 
-        for i, move in enumerate(moves[:self.max_depth]):
+        for _i, move in enumerate(moves[:self.max_depth]):
             move_str = str(move)
             if move_str not in node.children:
                 node.children[move_str] = OpeningNode(move=move_str)
@@ -473,7 +473,7 @@ def build_opening_tree(opening_book: dict[str, dict]) -> dict:
     """
     tree = {"stats": None, "children": {}}
 
-    for key, data in opening_book.items():
+    for _key, data in opening_book.items():
         moves = data["moves"]
         node = tree
 

@@ -155,14 +155,12 @@ def _complete_remaining_phases(
         current_player = state.current_player
 
         # If target move type is specified, check if we're already in the right phase for it
-        if target_move_type and target_phases:
-            if phase_str in target_phases and current_player == target_player:
-                return state
+        if target_move_type and target_phases and phase_str in target_phases and current_player == target_player:
+            return state
 
         # Fallback for no target_move_type: stop at ring_placement for target player
-        if not target_move_type:
-            if phase_str == "ring_placement" and current_player == target_player:
-                return state
+        if not target_move_type and phase_str == "ring_placement" and current_player == target_player:
+            return state
 
         # If we're at ring_placement for wrong player, apply no_placement
         if phase_str == "ring_placement" and current_player != target_player:
@@ -184,11 +182,10 @@ def _complete_remaining_phases(
 
         # If we're at ring_placement for target player but need a different phase,
         # we can't skip ring placement - return as-is
-        if phase_str == "ring_placement" and current_player == target_player:
-            if target_move_type and target_phases and "ring_placement" not in target_phases:
-                # This shouldn't happen - we need ring_placement but target wants different phase
-                # Return as-is and let caller handle
-                return state
+        if phase_str == "ring_placement" and current_player == target_player and target_move_type and target_phases and "ring_placement" not in target_phases:
+            # This shouldn't happen - we need ring_placement but target wants different phase
+            # Return as-is and let caller handle
+            return state
 
         # Check if we can apply a no-action move for the current phase
         if phase_str in NO_ACTION_MOVES:

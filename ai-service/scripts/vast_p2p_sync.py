@@ -76,7 +76,7 @@ def _load_p2p_leader_from_config() -> str:
                 return f"http://{tailscale_ip}:8770"
 
         # Fallback: find first ready p2p_voter node
-        for host_id, host_info in hosts.items():
+        for _host_id, host_info in hosts.items():
             if host_info.get("status") == "ready" and host_info.get("p2p_voter"):
                 tailscale_ip = host_info.get("tailscale_ip")
                 if tailscale_ip and tailscale_ip.startswith("100."):

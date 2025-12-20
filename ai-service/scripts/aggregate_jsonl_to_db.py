@@ -102,7 +102,7 @@ def compute_game_hash(record: dict[str, Any]) -> str:
 
     # Include first 5 moves for additional uniqueness
     moves = record.get("moves", [])
-    for i, move in enumerate(moves[:5]):
+    for _i, move in enumerate(moves[:5]):
         if isinstance(move, dict):
             key_parts.append(f"{move.get('type', '')}:{move.get('player', '')}:{move.get('to', {}).get('x', '')}:{move.get('to', {}).get('y', '')}")
         elif isinstance(move, str):
@@ -213,9 +213,8 @@ def scan_aggregated_directory(
         path_str = str(jsonl_file)
 
         # Check board type filter
-        if board_type:
-            if board_type not in path_str.lower():
-                continue
+        if board_type and board_type not in path_str.lower():
+            continue
 
         # Check player count filter (look for patterns like "2p", "_2_", etc.)
         if num_players:

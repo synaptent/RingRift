@@ -802,7 +802,7 @@ class NodeResilience:
             return
 
         logger.info(f"Starting {num_to_start} CPU fallback selfplay workers")
-        for i in range(num_to_start):
+        for _i in range(num_to_start):
             try:
                 env = os.environ.copy()
                 env["PYTHONPATH"] = self.config.ai_service_dir

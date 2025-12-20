@@ -111,7 +111,7 @@ echo "STARTED"
         return False
 
     # Wait for startup with multiple health checks
-    for i in range(4):  # Check up to 4 times over 20 seconds
+    for _i in range(4):  # Check up to 4 times over 20 seconds
         time.sleep(5)
         healthy, _, _ = check_p2p_health(inst)
         if healthy:

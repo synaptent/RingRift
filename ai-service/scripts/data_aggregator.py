@@ -186,7 +186,7 @@ class DataAggregator:
                         for line in output.split('\n'):
                             if 'games synced' in line.lower():
                                 parts = line.split()
-                                for i, p in enumerate(parts):
+                                for _i, p in enumerate(parts):
                                     if p.isdigit():
                                         games = int(p)
                                         break

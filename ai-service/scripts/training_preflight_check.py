@@ -461,7 +461,7 @@ class PreflightChecker:
             has_nan = False
             unreasonable_magnitude = False
 
-            for name, param in net.named_parameters():
+            for _name, param in net.named_parameters():
                 if torch.isnan(param).any():
                     has_nan = True
                     break
@@ -990,9 +990,8 @@ def _discover_db_paths_from_config(config_path: Path) -> list[Path]:
         elif isinstance(node, list):
             for value in node:
                 _walk(value)
-        elif isinstance(node, str):
-            if ".db" in node:
-                found.append(node)
+        elif isinstance(node, str) and ".db" in node:
+            found.append(node)
 
     _walk(data)
 

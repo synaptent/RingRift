@@ -369,7 +369,7 @@ def run_transfer_experiment(
         train_value_loss = 0.0
         train_samples = 0
 
-        for batch_idx, (features, globals_vec, policy_idx, values) in enumerate(train_loader):
+        for _batch_idx, (features, globals_vec, policy_idx, values) in enumerate(train_loader):
             features = features.to(device)
             globals_vec = globals_vec.to(device)
             policy_idx = policy_idx.to(device)

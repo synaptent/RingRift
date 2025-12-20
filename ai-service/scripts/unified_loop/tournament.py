@@ -523,11 +523,10 @@ class ShadowTournamentService:
 
         # Log significant changes
         now = time.time()
-        if now - self._last_interval_adjustment > 300:  # Log at most every 5 min
-            if final_interval != base_interval:
-                print(f"[ShadowTournament] Adaptive interval: {final_interval}s "
-                      f"(base={base_interval}s, success_rate={self._eval_success_rate:.1%}, "
-                      f"promotion_velocity={promotion_velocity:.2f}/hr)")
-                self._last_interval_adjustment = now
+        if now - self._last_interval_adjustment > 300 and final_interval != base_interval:  # Log at most every 5 min
+            print(f"[ShadowTournament] Adaptive interval: {final_interval}s "
+                  f"(base={base_interval}s, success_rate={self._eval_success_rate:.1%}, "
+                  f"promotion_velocity={promotion_velocity:.2f}/hr)")
+            self._last_interval_adjustment = now
 
         return final_interval

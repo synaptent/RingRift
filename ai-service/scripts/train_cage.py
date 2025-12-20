@@ -102,7 +102,7 @@ def generate_cage_data(
 
         game_samples = []
 
-        for move_num in range(100):
+        for _move_num in range(100):
             if state.winner is not None:
                 break
 

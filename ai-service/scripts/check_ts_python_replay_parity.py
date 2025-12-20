@@ -1189,9 +1189,8 @@ def check_game_parity(
                 step_mismatches.append("game_status")
             # ANM parity: when TS exposes an ANM flag for this k, compare it
             # against Python's ANM(state) classification for the same step.
-            if ts_summary.is_anm is not None:
-                if py_summary.is_anm is None or bool(py_summary.is_anm) != bool(ts_summary.is_anm):
-                    step_mismatches.append("anm_state")
+            if ts_summary.is_anm is not None and py_summary.is_anm is None or bool(py_summary.is_anm) != bool(ts_summary.is_anm):
+                step_mismatches.append("anm_state")
             # Treat any difference in the canonical state hash as a semantic
             # divergence. The hash is derived from the shared hash_game_state
             # fingerprint and should match whenever board geometry and core
@@ -1246,13 +1245,8 @@ def check_game_parity(
     # training; any structural difference (state_hash mismatch) is treated as
     # a full semantic divergence.
     is_end_of_game_only = False
-    if diverged_at is not None and diverged_at == total_moves_py and diverged_at == total_moves_ts:
-        if py_summary_at_diverge is not None and ts_summary_at_diverge is not None:
-            # Only treat as "end-of-game only" when the underlying board /
-            # territory / elimination fingerprint is identical and the
-            # divergence is limited to metadata fields.
-            if py_summary_at_diverge.state_hash == ts_summary_at_diverge.state_hash:
-                is_end_of_game_only = True
+    if diverged_at is not None and diverged_at == total_moves_py and diverged_at == total_moves_ts and py_summary_at_diverge is not None and ts_summary_at_diverge is not None and py_summary_at_diverge.state_hash == ts_summary_at_diverge.state_hash:
+        is_end_of_game_only = True
 
     result = GameParityResult(
         db_path=str(db_path),
@@ -1344,9 +1338,8 @@ def trace_game(
             init_dims.append("game_status")
         if py_initial.state_hash != ts_initial.state_hash:
             init_dims.append("state_hash")
-        if ts_initial.is_anm is not None:
-            if py_initial.is_anm is None or bool(py_initial.is_anm) != bool(ts_initial.is_anm):
-                init_dims.append("anm_state")
+        if ts_initial.is_anm is not None and py_initial.is_anm is None or bool(py_initial.is_anm) != bool(ts_initial.is_anm):
+            init_dims.append("anm_state")
 
     print(
         "TRACE "
@@ -1400,9 +1393,8 @@ def trace_game(
                 dims.append("game_status")
             if py_summary.state_hash != ts_summary.state_hash:
                 dims.append("state_hash")
-            if ts_summary.is_anm is not None:
-                if py_summary.is_anm is None or bool(py_summary.is_anm) != bool(ts_summary.is_anm):
-                    dims.append("anm_state")
+            if ts_summary.is_anm is not None and py_summary.is_anm is None or bool(py_summary.is_anm) != bool(ts_summary.is_anm):
+                dims.append("anm_state")
         elif py_summary is None and ts_summary is not None:
             dims.append("python_missing_step")
         elif py_summary is not None and ts_summary is None:

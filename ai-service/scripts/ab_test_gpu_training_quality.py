@@ -267,7 +267,7 @@ def check_win_balance(
     if total_wins == 0:
         return True
 
-    for player, wins in wins_by_player.items():
+    for _player, wins in wins_by_player.items():
         rate = wins / total_wins
         if rate < min_rate or rate > max_rate:
             return False

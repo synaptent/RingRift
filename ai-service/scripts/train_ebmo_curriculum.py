@@ -104,7 +104,7 @@ def play_game(
     nn = NeuralNetAI(1, AIConfig(difficulty=5))
     action_extractor = ActionFeatureExtractor(8)
 
-    for move_num in range(max_moves):
+    for _move_num in range(max_moves):
         if state.winner is not None:
             break
         if hasattr(state.game_status, 'value') and state.game_status.value != 'active':

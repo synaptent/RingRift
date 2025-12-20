@@ -142,7 +142,7 @@ def play_game(
     num_moves = 0
     total_time = 0.0
 
-    for move_num in range(max_moves):
+    for _move_num in range(max_moves):
         if state.game_status != GameStatus.ACTIVE:
             break
 

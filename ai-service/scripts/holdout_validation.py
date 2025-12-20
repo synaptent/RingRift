@@ -453,7 +453,7 @@ def extract_positions_for_config(
                 move_history = state.get("moveHistory", [])
 
                 # Sample positions from the game
-                for i, move in enumerate(move_history):
+                for _i, move in enumerate(move_history):
                     if len(features_list) >= max_positions:
                         break
 

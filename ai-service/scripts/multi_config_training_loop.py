@@ -839,7 +839,7 @@ def get_dynamic_jsonl_dirs(board_type: str, num_players: int) -> list[str]:
     board_patterns = BOARD_VARIANTS.get(board_type, [board_type])
     player_pattern = f"{num_players}p"
 
-    for dir_name, jsonl_files in discovered.items():
+    for dir_name, _jsonl_files in discovered.items():
         # Skip if already in static config
         rel_path = f"data/selfplay/{dir_name}"
         if rel_path in static_dirs:
@@ -901,10 +901,9 @@ def count_jsonl_games(jsonl_path: str, board_type: str, num_players: int,
                     # Must have moves array (canonical format)
                     has_moves = "moves" in game and len(game.get("moves", [])) > 0
 
-                    if board_match and players_match and has_moves:
-                        if game_id and game_id not in game_ids:
-                            game_ids.add(game_id)
-                            count += 1
+                    if board_match and players_match and has_moves and game_id and game_id not in game_ids:
+                        game_ids.add(game_id)
+                        count += 1
                 except json.JSONDecodeError:
                     continue
     except Exception as e:
@@ -927,9 +926,8 @@ def get_jsonl_file_metadata(jsonl_path: str, max_lines: int = 5000) -> dict[tupl
     """
     # Check cache
     cache_key = jsonl_path
-    if cache_key in _jsonl_cache_time:
-        if time.time() - _jsonl_cache_time[cache_key] < JSONL_CACHE_TTL:
-            return _jsonl_metadata_cache.get(cache_key, {})
+    if cache_key in _jsonl_cache_time and time.time() - _jsonl_cache_time[cache_key] < JSONL_CACHE_TTL:
+        return _jsonl_metadata_cache.get(cache_key, {})
 
     # Parse file
     result: dict[tuple[str, int], set[str]] = {}

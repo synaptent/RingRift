@@ -680,7 +680,7 @@ def main():
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         total = 0
 
-        for instance_id, gpu_model, host, port in nodes:
+        for instance_id, _gpu_model, host, port in nodes:
             status = check_node_status(instance_id, host, port)
             if status.is_reachable and status.games_completed > 0:
                 games, _ = collect_data_from_node(instance_id, host, port, DATA_DIR)
@@ -713,7 +713,7 @@ def main():
         nodes = get_cluster_nodes()
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-        for instance_id, gpu_model, host, port in nodes:
+        for instance_id, _gpu_model, host, port in nodes:
             status = check_node_status(instance_id, host, port)
             if status.is_reachable and status.games_completed > 0:
                 collect_data_from_node(instance_id, host, port, DATA_DIR)
@@ -749,7 +749,7 @@ def main():
             nodes = get_cluster_nodes()
             DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-            for instance_id, gpu_model, host, port in nodes:
+            for instance_id, _gpu_model, host, port in nodes:
                 status = check_node_status(instance_id, host, port)
                 if status.is_reachable and status.games_completed > 0:
                     collect_data_from_node(instance_id, host, port, DATA_DIR)

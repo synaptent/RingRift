@@ -415,10 +415,9 @@ def main():
                     games_skipped += 1
                     continue
 
-            if args.num_players:
-                if game.get("num_players") != args.num_players:
-                    games_skipped += 1
-                    continue
+            if args.num_players and game.get("num_players") != args.num_players:
+                games_skipped += 1
+                continue
 
             # Check max games
             if args.max_games and games_processed >= args.max_games:

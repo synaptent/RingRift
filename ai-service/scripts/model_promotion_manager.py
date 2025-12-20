@@ -503,16 +503,15 @@ class AutoPromotionTrigger:
             print(f"  Games: {candidate.games_played}")
 
         # Run regression tests if enabled
-        if self.config.run_regression:
-            if not run_regression_gate(
-                candidate.model_path,
-                candidate.board_type,
-                candidate.num_players,
-                verbose,
-            ):
-                if verbose:
-                    print(f"  Regression tests FAILED - skipping promotion")
-                return None
+        if self.config.run_regression and not run_regression_gate(
+            candidate.model_path,
+            candidate.board_type,
+            candidate.num_players,
+            verbose,
+        ):
+            if verbose:
+                print(f"  Regression tests FAILED - skipping promotion")
+            return None
 
         # Publish alias
         alias_id = best_alias_id(candidate.board_type, candidate.num_players)
@@ -1352,7 +1351,7 @@ def sync_to_cluster_ssh(
                         "ssh " + " ".join(ssh_opts),
                     ]
 
-                    for attempt in range(2):
+                    for _attempt in range(2):
                         rsync_cmd = [
                             *rsync_base,
                             *[str(p) for p in files],
@@ -1535,11 +1534,10 @@ def update_all_promotions(
             continue
 
         # Run regression tests before promotion
-        if run_regression:
-            if not run_regression_gate(model_path, board_type, num_players, verbose):
-                if verbose:
-                    print(f"  Skipping promotion due to failed regression tests")
-                continue
+        if run_regression and not run_regression_gate(model_path, board_type, num_players, verbose):
+            if verbose:
+                print(f"  Skipping promotion due to failed regression tests")
+            continue
 
         alias_id = best_alias_id(board_type, int(num_players))
         alias_paths = publish_best_alias(

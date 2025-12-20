@@ -144,7 +144,7 @@ def benchmark_maxn_ai(
         times = []
         moves_evaluated = 0
 
-        for i in range(iterations):
+        for _i in range(iterations):
             # Create a mid-game state for realistic evaluation
             initial = create_test_state(board_type, num_players)
             game_state = advance_game_state(initial, num_moves=8)
@@ -223,7 +223,7 @@ def benchmark_mcts_ai(
         times = []
         moves_evaluated = 0
 
-        for i in range(iterations):
+        for _i in range(iterations):
             # Create a mid-game state for realistic evaluation
             initial = create_test_state(board_type, num_players)
             game_state = advance_game_state(initial, num_moves=8)
@@ -386,9 +386,8 @@ def validate_game_python(db_path: str, game_id: str) -> ValidationResult:
             if hasattr(history_result, 'valid'):
                 if not history_result.valid:
                     errors.append(f"History validation failed: {getattr(history_result, 'error', 'Unknown')}")
-            elif isinstance(history_result, dict):
-                if not history_result.get("valid", False):
-                    errors.append(f"History validation failed: {history_result.get('error', 'Unknown')}")
+            elif isinstance(history_result, dict) and not history_result.get("valid", False):
+                errors.append(f"History validation failed: {history_result.get('error', 'Unknown')}")
         except Exception as e:
             errors.append(f"History validation error: {e}")
 

@@ -287,7 +287,7 @@ def get_cluster_hosts() -> list[str]:
         config = yaml.safe_load(f)
 
     hosts = []
-    for name, info in config.get("hosts", {}).items():
+    for _name, info in config.get("hosts", {}).items():
         ssh_host = info.get("ssh_host")
         ssh_user = info.get("ssh_user", "root")
         ssh_port = info.get("ssh_port", 22)

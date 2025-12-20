@@ -193,21 +193,19 @@ def main() -> int:
 
     # Basic compatibility checks.
     ok = True
-    if inferred_filters is not None and cfg.get("num_filters") is not None:
-        if int(cfg["num_filters"]) != int(inferred_filters):
-            ok = False
-            print(
-                f"Mismatch: metadata num_filters={cfg['num_filters']} vs weights={inferred_filters}",
-                file=sys.stderr,
-            )
+    if inferred_filters is not None and cfg.get("num_filters") is not None and int(cfg["num_filters"]) != int(inferred_filters):
+        ok = False
+        print(
+            f"Mismatch: metadata num_filters={cfg['num_filters']} vs weights={inferred_filters}",
+            file=sys.stderr,
+        )
 
-    if inferred_num_players is not None and cfg.get("num_players") is not None:
-        if int(cfg["num_players"]) != int(inferred_num_players):
-            ok = False
-            print(
-                f"Mismatch: metadata num_players={cfg['num_players']} vs weights={inferred_num_players}",
-                file=sys.stderr,
-            )
+    if inferred_num_players is not None and cfg.get("num_players") is not None and int(cfg["num_players"]) != int(inferred_num_players):
+        ok = False
+        print(
+            f"Mismatch: metadata num_players={cfg['num_players']} vs weights={inferred_num_players}",
+            file=sys.stderr,
+        )
 
     if inferred_in_features is not None and inferred_filters is not None:
         globals_expected = cfg.get("global_features")

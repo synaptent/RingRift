@@ -156,13 +156,11 @@ def send_alert(
 
     success = False
 
-    if slack:
-        if send_slack_alert(slack, title, message, level, node_id):
-            success = True
+    if slack and send_slack_alert(slack, title, message, level, node_id):
+        success = True
 
-    if discord:
-        if send_discord_alert(discord, title, message, level, node_id):
-            success = True
+    if discord and send_discord_alert(discord, title, message, level, node_id):
+        success = True
 
     return success
 

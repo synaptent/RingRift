@@ -125,7 +125,7 @@ def _load_hosts_from_config():
     try:
         # Extract hosts with data servers (prefer Tailscale IPs)
         sources = []
-        for name, host_config in config.get("hosts", {}).items():
+        for _name, host_config in config.get("hosts", {}).items():
             if host_config.get("status") == "terminated":
                 continue
 

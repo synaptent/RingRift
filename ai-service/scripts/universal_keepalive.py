@@ -72,9 +72,8 @@ def send_notification(event_type: str, message: str, node_id: str, severity: str
     # Check cooldown
     cache_key = f"{node_id}:{event_type}"
     now = time.time()
-    if cache_key in _last_notification_time:
-        if now - _last_notification_time[cache_key] < NOTIFICATION_COOLDOWN:
-            return False  # Skip due to cooldown
+    if cache_key in _last_notification_time and now - _last_notification_time[cache_key] < NOTIFICATION_COOLDOWN:
+        return False  # Skip due to cooldown
 
     if not SLACK_WEBHOOK_URL:
         logger.debug(f"No Slack webhook configured, skipping notification: {message}")

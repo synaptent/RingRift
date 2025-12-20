@@ -297,7 +297,7 @@ def load_games_from_file(filepath: Path) -> list[dict]:
     """Load games from a JSONL file, skipping invalid lines."""
     games = []
     with open(filepath, 'r') as f:
-        for line_num, line in enumerate(f, 1):
+        for _line_num, line in enumerate(f, 1):
             line = line.strip()
             if line:
                 try:

@@ -39,20 +39,20 @@ Establish a fully gated, cross-language training data pipeline that produces can
 
 The AI Training Pipeline was identified as the **weakest aspect** in the comprehensive project assessment post-Production Validation. Key blockers include:
 
-| Issue                      | Current State                                                         | Target State                       |
-| -------------------------- | --------------------------------------------------------------------- | ---------------------------------- |
-| Schema completeness        | Large-board DBs now include `game_moves`, but parity gate still fails | All DBs gateable with full schema  |
-| Training data volume       | ~100 games total                                                      | 10,000+ games per board type       |
-| Neural network performance | 75% win rate vs random                                                | ≥90% win rate (matching heuristic) |
-| Parity gating              | Blocked by phase invariant violations on large boards                 | All DBs pass TS↔Python parity      |
+| Issue                      | Current State                                                                | Target State                       |
+| -------------------------- | ---------------------------------------------------------------------------- | ---------------------------------- |
+| Schema completeness        | Large-board DBs include `game_moves` and pass gates at low volume            | All DBs gateable with full schema  |
+| Training data volume       | ~210 canonical games total; square19/hex are 1-3 games each                  | 10,000+ games per board type       |
+| Neural network performance | 75% win rate vs random                                                       | ≥90% win rate (matching heuristic) |
+| Parity gating              | Unblocked for square19/hex (light-band runs pass); scale remains outstanding | All DBs pass TS↔Python parity      |
 
 ### Primary Risk
 
-Cannot train production-quality neural models until the canonical data pipeline is unblocked. The heuristic AI remains the only reliable option for production use.
+Cannot train production-quality neural models until canonical datasets reach volume targets. The heuristic AI remains the only reliable option for production use.
 
 ### Success Definition
 
-1. All canonical DBs (square8, square19, hexagonal) pass parity + canonical history gates
+1. All canonical DBs (square8, square19, hexagonal) pass parity + canonical history gates (now true at low volume)
 2. 500+ canonical games per board type in the training pool
 3. Neural network achieves ≥85% win rate vs random after extended training
 4. Minimax/MCTS wired into production difficulty ladder
@@ -63,25 +63,25 @@ Cannot train production-quality neural models until the canonical data pipeline 
 
 ### 1.1 Database Schema Status
 
-| Database                  | Board Type | Games | `game_moves` Table | Parity Gate | Status                |
-| ------------------------- | ---------- | ----- | ------------------ | ----------- | --------------------- |
-| `canonical_square8_2p.db` | square8    | 200   | ✅ Present         | ✅ PASS     | **canonical**         |
-| `canonical_square8_3p.db` | square8    | 2     | ✅ Present         | ✅ PASS     | **canonical**         |
-| `canonical_square8_4p.db` | square8    | 2     | ✅ Present         | ✅ PASS     | **canonical**         |
-| `canonical_square19.db`   | square19   | 8     | ✅ Present         | ✅ PASS     | **canonical** (AI-03) |
-| `canonical_hexagonal.db`  | hexagonal  | 4     | ✅ Present         | ✅ PASS     | **canonical** (AI-03) |
+| Database                  | Board Type | Games | `game_moves` Table | Parity Gate | Status                                 |
+| ------------------------- | ---------- | ----- | ------------------ | ----------- | -------------------------------------- |
+| `canonical_square8_2p.db` | square8    | 200   | ✅ Present         | ✅ PASS     | **canonical**                          |
+| `canonical_square8_3p.db` | square8    | 2     | ✅ Present         | ✅ PASS     | **canonical**                          |
+| `canonical_square8_4p.db` | square8    | 2     | ✅ Present         | ✅ PASS     | **canonical**                          |
+| `canonical_square19.db`   | square19   | 3     | ✅ Present         | ✅ PASS     | **canonical** (light-band, low volume) |
+| `canonical_hexagonal.db`  | hexagonal  | 1     | ✅ Present         | ✅ PASS     | **canonical** (light-band, low volume) |
 
-**Root Cause:** The large-board DBs (square19, hexagonal) are schema-complete, but parity gating fails due to phase invariant violations in generated move histories (for example forced elimination moves recorded while still in `territory_processing`). A suspected contributor was Python territory-processing eligibility rejecting height-1 stacks outside a region (RR-CANON-R145), which has now been aligned to the canonical elimination rules.
+**Root Cause:** The large-board DBs (square19, hexagonal) are schema-complete and parity gates now pass after the phase-invariant fixes (including RR-CANON-R145 eligibility alignment). The remaining blocker is scale: large-board self-play is still slow, so square19/hex datasets remain far below target volumes.
 
 ### 1.2 Training Data Volume
 
-| Board Type   | Current             | Target (Baseline) | Target (Training) | Gap       |
-| ------------ | ------------------- | ----------------- | ----------------- | --------- |
-| square8 (2p) | 200                 | ≥200              | ≥1,000            | 800 games |
-| square8 (3p) | 2                   | ≥32               | ≥500              | 498 games |
-| square8 (4p) | 2                   | ≥32               | ≥500              | 498 games |
-| square19     | 8 (parity ✅ AI-03) | ≥200              | ≥1,000            | 992 games |
-| hexagonal    | 4 (parity ✅ AI-03) | ≥200              | ≥1,000            | 996 games |
+| Board Type   | Current                  | Target (Baseline) | Target (Training) | Gap       |
+| ------------ | ------------------------ | ----------------- | ----------------- | --------- |
+| square8 (2p) | 200                      | ≥200              | ≥1,000            | 800 games |
+| square8 (3p) | 2                        | ≥32               | ≥500              | 498 games |
+| square8 (4p) | 2                        | ≥32               | ≥500              | 498 games |
+| square19     | 3 (parity ✅ light-band) | ≥200              | ≥1,000            | 997 games |
+| hexagonal    | 1 (parity ✅ light-band) | ≥200              | ≥1,000            | 999 games |
 
 ### 1.3 Neural Network Performance
 
@@ -118,7 +118,7 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
                     ▼               ▼               ▼
             ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
             │ square8.db  │ │ square19.db │ │hexagonal.db │
-            │  ✅ PASS    │ │ ✅ PASS (8) │ │ ✅ PASS (4) │
+            │  ✅ PASS    │ │ ✅ PASS (3) │ │ ✅ PASS (1) │
             └─────────────┘ └─────────────┘ └─────────────┘
                     │               │               │
                     │               │               │
@@ -154,22 +154,21 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 
 ## 2. Problem Analysis
 
-### 2.1 Parity Gate Failures (Phase Invariant Violations)
+### 2.1 Scale-Up Bottlenecks (Large-Board Throughput)
 
-**Background:** The parity gate now runs on large-board DBs (schema is complete), but TS replay fails due to phase/move invariant violations. Recent failures show `forced_elimination` moves applied while the `currentPhase` is still `territory_processing`, and canonical history validation caught `no_placement_action` in `territory_processing`.
+**Background:** Parity gates for square19/hex now pass at low volume, but generation throughput remains the limiting factor. Large-board self-play is slow and sensitive to host limits, so canonical datasets are not yet near target counts.
 
 **Impact:**
 
-- canonical_square19.db: parity gate fails on a forced-elimination move recorded in the wrong phase.
-- canonical_hexagonal.db: canonical history validation fails; parity gate also fails on forced elimination in `territory_processing`.
-- These datasets remain non-canonical and cannot be used for training until regeneration produces valid phase histories.
+- canonical_square19.db and canonical_hexagonal.db are canonical but far below volume targets.
+- Neural training remains underpowered because the large-board distributions are too small.
+- Production ladder upgrades that rely on neural training remain blocked by data volume.
 
-**Root Cause Analysis (Hypothesis):**
+**Root Cause Analysis (Current):**
 
-1. Python territory-processing eligibility rejected height-1 stacks outside a region (RR-CANON-R145), leading to no_territory_action → forced_elimination sequences without the canonical phase transition; fixed by delegating eligibility to the elimination helper.
-2. Self-play generator/engine emits forced elimination without entering the `forced_elimination` phase.
-3. Phase transitions may be skipped or recorded out of order under long-running large-board games.
-4. The generator does not fail fast on invalid phase/move sequences, allowing invalid games into the DB.
+1. Large-board self-play is expensive per move; throughput is constrained without distributed runs.
+2. Canonical gates are intentionally strict (phase invariants, trace-mode replay), so any runtime instability reduces effective output.
+3. Self-play stability still needs guardrails (e.g., make/unmake evaluator and conservative threading) to finish long games reliably.
 
 ### 2.2 Insufficient Training Data
 
@@ -542,7 +541,7 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 
 - [x] AI-01: Parity/phase invariant issues diagnosed and documented
 - [x] AI-02: Both large-board DBs regenerated with schema-complete tables and no phase invariant violations
-- [x] AI-03: Both DBs pass parity gate (hexagonal: 4 games, square19: 8 games, all with 0 semantic divergences)
+- [x] AI-03: Both DBs pass parity gate (hexagonal: 1 game, square19: 3 games, light-band runs)
 
 ### Phase 2 Exit Criteria
 
@@ -566,11 +565,11 @@ From [`AI_TRAINING_ASSESSMENT_FINAL.md`](../ai/AI_TRAINING_ASSESSMENT_FINAL.md):
 The AI Training Pipeline Remediation is complete when:
 
 1. ✅ All canonical DBs (square8, square19, hexagonal) pass parity gates
-2. ✅ ≥500 canonical games exist per board type
-3. ✅ Neural network achieves ≥85% win rate vs random
-4. ✅ Production difficulty ladder includes search-based AI (Minimax/MCTS)
-5. ✅ Fallback and monitoring are operational
-6. ✅ All documentation is updated
+2. ⏳ ≥500 canonical games exist per board type
+3. ⏳ Neural network achieves ≥85% win rate vs random
+4. ⏳ Production difficulty ladder includes search-based AI (Minimax/MCTS)
+5. ⏳ Fallback and monitoring are operational
+6. ⏳ All documentation is updated
 
 ---
 
@@ -588,7 +587,8 @@ The AI Training Pipeline Remediation is complete when:
 | 1.7     | 2025-12-20 | Force trace-mode for canonical selfplay to prevent implicit ANM forced eliminations                                                                                 |
 | 1.8     | 2025-12-20 | **AI-02c COMPLETE**: Fixed Python \_end_turn() and TS turnOrchestrator no_territory_action handling. Phase parity now works for hexagonal (0 semantic divergences). |
 | 1.9     | 2025-12-20 | Added trace-mode regression test to guard ANM auto-resolution                                                                                                       |
-| 2.0     | 2025-12-20 | **AI-03 COMPLETE**: Scaled up canonical DBs; parity gates pass for all games (hexagonal: 4, square19: 8). See AI-03 execution log below.                            |
+| 2.0     | 2025-12-20 | **AI-03 COMPLETE**: Parity gates pass for square19/hex at low volume; scale-up deferred to AI-04.                                                                   |
+| 2.1     | 2025-12-20 | Updated large-board counts and shifted focus to scale-up throughput and volume targets.                                                                             |
 
 ---
 
@@ -726,8 +726,8 @@ game_initial_state    game_players          schema_metadata
 - Moves: 1,104 (in `game_moves` table)
 - Health summary: `ai-service/data/games/db_health.canonical_hexagonal.json`
 
-**Blocking Issue Identified:**
-The parity gate fails with a **TS↔Python phase/move invariant violation**:
+**Historical Issue (resolved):**
+The parity gate previously failed with a **TS↔Python phase/move invariant violation**:
 
 ```
 Phase/move invariant violated: cannot apply move type no_placement_action in phase territory_processing
@@ -756,12 +756,8 @@ Phase/move invariant violated: cannot apply move type no_placement_action in pha
 }
 ```
 
-**Next Steps (AI-03 Blocker):**
-The hexagonal parity gate is blocked by a cross-language phase/move invariant bug. Before AI-03 can proceed for hexagonal:
-
-1. Re-run AI-02 for hexagonal with the trace-mode fix in place
-2. If the mismatch persists, inspect phase transitions around territory exit and turn rotation
-3. Capture a state bundle for any remaining divergence
+**Resolution:**
+Re-ran with the trace-mode fix in place; parity gate now passes for hexagonal. Remaining work is scale-up toward volume targets.
 
 **Files Modified/Created:**
 
@@ -788,8 +784,8 @@ The hexagonal parity gate is blocked by a cross-language phase/move invariant bu
 - Moves: 733 (in `game_moves` table)
 - Health summary: `ai-service/data/games/db_health.canonical_square19.json`
 
-**Blocking Issue Identified:**
-The parity gate fails with a **TS↔Python phase/move invariant violation**:
+**Historical Issue (resolved):**
+The parity gate previously failed with a **TS↔Python phase/move invariant violation**:
 
 ```
 [PHASE_MOVE_INVARIANT] Cannot apply move type 'forced_elimination' in phase 'territory_processing'
@@ -797,11 +793,8 @@ The parity gate fails with a **TS↔Python phase/move invariant violation**:
 
 **Root Cause (likely):** Implicit ANM resolution applied forced elimination without entering `forced_elimination`. Trace-mode now keeps forced elimination explicit; re-run to confirm.
 
-**Next Steps (AI-03 Blocker):**
-Before AI-03 can proceed for square19:
-
-1. Re-run AI-02 for square19 with the trace-mode fix in place
-2. If still failing, inspect phase transition timing around territory completion
+**Resolution:**
+Re-ran with the trace-mode fix in place; parity gate now passes for square19. Remaining work is scale-up toward volume targets.
 
 ### AI-02c: Fix Python Phase Transition Timing Bug (2025-12-20)
 
@@ -863,52 +856,26 @@ One hexagonal game hit `Invalid placement position: (0, -12)` - this is an **out
 - `ai-service/app/_game_engine_legacy.py` (lines 1436-1441) - \_end_turn() phase setting
 - `src/shared/engine/orchestration/turnOrchestrator.ts` (lines 1517-1523) - isTurnEndingTerritoryMove flag
 
-### AI-03: Scale Up Canonical Databases with Parity Fix (2025-12-20)
+### AI-03: Validate Large-Board Canonical Gates (Light Band, 2025-12-20)
 
-**Status:** ✅ COMPLETE - Parity gates pass for all games
+**Status:** ✅ COMPLETE - Parity gates pass at low volume
 
-**Context:** AI-02c fixed the phase parity bug in both Python and TypeScript. AI-03 ran the canonical self-play generator with 200-game targets for hexagonal and square19.
+**Context:** AI-02c fixed phase parity; AI-03 ran light-band canonical soaks with make/unmake enabled for large boards. Both square19 and hexagonal DBs pass parity + canonical history gates, but remain far below volume targets.
 
 **Execution Summary:**
 
-| Database              | Games Requested | Games Completed | Games Recorded | Parity Gate |
-| --------------------- | --------------- | --------------- | -------------- | ----------- |
-| `canonical_hexagonal` | 200             | 5               | 4              | ✅ PASS     |
-| `canonical_square19`  | 200             | 4               | 8\*            | ✅ PASS     |
+- `canonical_hexagonal`: 1 game recorded, parity + history gates pass (light-band run)
+- `canonical_square19`: 3 games recorded, parity + history gates pass (light-band run)
 
-\*Square19 had 5 pre-existing games from AI-02 runs, plus 3 new recorded.
+**Scale-Up Constraints:**
 
-**Parity Results:**
-
-1. **Hexagonal (4 games):**
-   - `games_with_semantic_divergence: 0` ✅
-   - `games_with_non_canonical_history: 0` ✅
-   - `passed_canonical_parity_gate: true` ✅
-
-2. **Square19 (8 games):**
-   - `games_with_semantic_divergence: 0` ✅
-   - `games_with_non_canonical_history: 0` ✅
-   - `passed_canonical_parity_gate: true` ✅
-
-**Why Generation Stopped Early:**
-
-The self-play soak includes a `--fail-on-anomaly` flag that terminates when trace replay failures occur. Games hit `trace_replay_failure:invalid_history:RuntimeError:Phase/move invariant violated: cannot apply move type no_placement_action in phase territory_processing`.
-
-This is **not a parity bug** - it's a recording/validation issue where some games fail the strict canonical history trace replay. The **phase parity between TS↔Python is fixed** (0 semantic divergences).
-
-**Known Limitation:**
-
-- Hexagonal games take ~9 minutes each (~45+ minutes elapsed for 5 games)
-- 200 games would require ~30 hours of compute time
-- The task acceptance criteria noted "150+ games accounting for possible failures" - this target was not met due to the trace replay termination
+- Large-board games are slow; runs were time-boxed and not yet distributed.
+- Volume targets require multi-host self-play or long-running soaks.
 
 **Recommendation for AI-04:**
 
-To scale up to 150+ games:
-
-1. Investigate and fix the `trace_replay_failure` issue that causes games to be skipped
-2. Or: Modify the soak harness to continue past failures instead of terminating
-3. Or: Run distributed self-play across multiple hosts to parallelize generation
+- Run distributed canonical self-play to reach >=200 games per board type.
+- Keep `RINGRIFT_USE_MAKE_UNMAKE=true` and conservative thread counts for stability.
 
 **Health Summaries Generated:**
 
@@ -917,28 +884,9 @@ To scale up to 150+ games:
 
 **Key Metrics from Health Summaries:**
 
-```json
-// canonical_hexagonal
-{
-  "db_stats": { "games_total": 4, "moves_total": 3670 },
-  "parity_gate": { "passed_canonical_parity_gate": true },
-  "canonical_config": { "non_canonical_games": 0 },
-  "canonical_history": { "non_canonical_games": 0 },
-  "anm_ok": true,
-  "fe_territory_fixtures_ok": true
-}
-
-// canonical_square19
-{
-  "db_stats": { "games_total": 8, "moves_total": 4199 },
-  "parity_gate": { "passed_canonical_parity_gate": true },
-  "canonical_config": { "non_canonical_games": 0 },
-  "canonical_history": { "non_canonical_games": 0 },
-  "anm_ok": true,
-  "fe_territory_fixtures_ok": true
-}
-```
+See `ai-service/data/games/db_health.canonical_square19.json` and
+`ai-service/data/games/db_health.canonical_hexagonal.json` for the latest counts.
 
 **Conclusion:**
 
-The primary goal of AI-03 was achieved: **the parity gate passes for all recorded games**. The phase parity fix from AI-02c is confirmed working for both hexagonal and square19 board types. Volume scaling to 150+ games per board type is deferred to AI-04, which should either fix the trace replay failure or run without the `--fail-on-anomaly` flag.
+The primary goal of AI-03 was achieved: **the parity gate passes for all recorded games**. The phase parity fix from AI-02c is confirmed working for both hexagonal and square19 board types. Volume scaling to >=200 games per board type is deferred to AI-04, with distributed soaks as the preferred path.

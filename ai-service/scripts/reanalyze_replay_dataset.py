@@ -263,9 +263,8 @@ def reanalyze_replay_dataset(
         if total_moves <= 0 or not moves:
             continue
 
-        if exclude_recovery:
-            if any("recovery" in str(m.get("type", "")).lower() for m in moves):
-                continue
+        if exclude_recovery and any("recovery" in str(m.get("type", "")).lower() for m in moves):
+            continue
 
         max_safe_move_index: int | None = None
         if parity_cutoffs:

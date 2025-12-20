@@ -618,9 +618,8 @@ def get_eligible_hosts_for_board(
     for host in hosts:
         host_mem = host_memory.get(host, 8)
         if host_mem >= required_memory:
-            if host != "local" and min_disk_gb > 0 and host_disk_available is not None:
-                if host_disk_available.get(host, 0) < min_disk_gb:
-                    continue
+            if host != "local" and min_disk_gb > 0 and host_disk_available is not None and host_disk_available.get(host, 0) < min_disk_gb:
+                continue
             eligible.append(host)
 
     return eligible
@@ -1387,12 +1386,11 @@ def main():
 
     # Entry point resource validation (enforced 2025-12-16)
     # Check local resources before starting distributed work
-    if HAS_RESOURCE_GUARD and not args.dry_run:
-        if not resource_can_proceed(check_disk=True, check_mem=True):
-            print("ERROR: Insufficient local resources to start distributed soak.")
-            print("       Disk or memory usage exceeds 80% limit.")
-            print("       Free up resources or use --dry-run to preview jobs.")
-            sys.exit(1)
+    if HAS_RESOURCE_GUARD and not args.dry_run and not resource_can_proceed(check_disk=True, check_mem=True):
+        print("ERROR: Insufficient local resources to start distributed soak.")
+        print("       Disk or memory usage exceeds 80% limit.")
+        print("       Free up resources or use --dry-run to preview jobs.")
+        sys.exit(1)
 
     # Load remote host configuration
     global REMOTE_HOSTS
@@ -1549,7 +1547,7 @@ def main():
     print(f"Successful jobs: {successful}/{len(results)}")
     if failed > 0:
         print(f"Failed jobs: {failed}")
-        for job_id, success, output in results:
+        for job_id, success, _output in results:
             if not success:
                 print(f"  - {job_id}")
 

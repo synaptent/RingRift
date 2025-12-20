@@ -214,9 +214,8 @@ class AlertManager:
         """Send alert to configured channels."""
         alert_key = f"{title}:{message[:50]}"
 
-        if alert_key in self.alert_history:
-            if datetime.now() - self.alert_history[alert_key] < timedelta(minutes=self.cooldown_minutes):
-                return
+        if alert_key in self.alert_history and datetime.now() - self.alert_history[alert_key] < timedelta(minutes=self.cooldown_minutes):
+            return
 
         self.alert_history[alert_key] = datetime.now()
 

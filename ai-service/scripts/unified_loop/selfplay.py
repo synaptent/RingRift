@@ -605,11 +605,9 @@ class LocalSelfplayGenerator:
                     nn_model_id=nn_model_id,
                 )
 
-                if result["success"]:
-                    # Update state with new games
-                    if config_key in self.state.configs:
-                        self.state.configs[config_key].games_since_training += result["games"]
-                        self.state.total_games_pending += result["games"]
+                if result["success"] and config_key in self.state.configs:
+                    self.state.configs[config_key].games_since_training += result["games"]
+                    self.state.total_games_pending += result["games"]
 
                 # Wait for next batch
                 elapsed = time.time() - batch_start
