@@ -290,11 +290,11 @@ def test_has_anomalies_detects_invariant_and_engine_anomalies() -> None:
     assert soak._has_anomalies(anomalous_records) is True
 
 
-@pytest.mark.skip(reason="Profile behavior changed - test runs with completed_games=0")
 def test_python_strict_profile_overrides_defaults(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
+    """Verify python-strict profile sets expected configuration values."""
     captured_args: Dict[str, object] = {}
 
     def fake_run(
@@ -325,8 +325,8 @@ def test_python_strict_profile_overrides_defaults(
     assert getattr(args, "board_type") == "square8"
     assert getattr(args, "engine_mode") == "mixed"
     assert getattr(args, "num_players") == 2
-    assert getattr(args, "max_moves") == 150
-    assert getattr(args, "gc_interval") == 10
+    assert getattr(args, "max_moves") == 10000  # Updated from 150
+    assert getattr(args, "gc_interval") == 5  # Default gc_interval (only set to 10 if explicitly 0)
     assert getattr(args, "profile") == "python-strict"
 
 

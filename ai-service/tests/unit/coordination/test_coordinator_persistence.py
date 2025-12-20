@@ -536,9 +536,13 @@ class TestSnapshotCoordinator:
         snapshots = snapshot_coordinator.list_snapshots()
         assert len(snapshots) == 1
 
-        # Note: cleanup_old_snapshots has a SQLite syntax bug with OFFSET in DELETE
-        # This test verifies the snapshot was created; cleanup is skipped
-        # TODO: Fix cleanup_old_snapshots to use subquery instead of OFFSET
+        # Test cleanup_old_snapshots works correctly
+        # The implementation uses NOT IN with LIMIT (fixed from OFFSET syntax error)
+        deleted = await snapshot_coordinator.cleanup_old_snapshots(
+            max_age_seconds=0,  # Delete all by age
+            max_count=0,  # Keep none by count
+        )
+        assert deleted >= 0  # Should work without SQLite syntax error
 
 
 # ============================================

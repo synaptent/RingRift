@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from typing import Any, Dict
@@ -122,7 +123,6 @@ def test_evaluate_promotion_empty_matrix_is_conservative_failure() -> None:
     assert summary["matrices"] == {}
 
 
-@pytest.mark.skip(reason="Parity promotion gate API changed - needs update")
 def test_main_uses_matrix_stub_and_writes_report(tmp_path, monkeypatch) -> None:
     """Smoke test the CLI path with a stubbed matrix runner."""
     output_path = tmp_path / "parity_gate.json"
