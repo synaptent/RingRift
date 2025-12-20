@@ -28,7 +28,7 @@ pytest-asyncio==1.3.0
 pytest-timeout==2.4.0  # Global test timeout for CI safety
 pytest-cov==6.0.0  # Coverage reporting with pytest
 hypothesis==6.116.0
-black==25.11.0
+black==25.12.0
 flake8==7.3.0
 mypy==1.13.0  # Static type checking for Python/TS parity
 vulture==2.14  # Dead code detection
