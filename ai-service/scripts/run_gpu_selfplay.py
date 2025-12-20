@@ -1224,6 +1224,7 @@ def main():
         "ram_storage": selfplay_config.extra_options["ram_storage"],
         "sync_target": selfplay_config.extra_options["sync_target"],
         "sync_interval": selfplay_config.sync_interval,
+        "skip_resource_check": selfplay_config.extra_options["skip_resource_check"],
     })()
 
     if args.benchmark_only:
@@ -1273,9 +1274,11 @@ def main():
         # Graceful degradation: GPU selfplay is NORMAL priority
         # Under heavy resource pressure, reduce workload or skip
         degradation = get_degradation_level()
-        if degradation >= 4:  # CRITICAL - resources at/above limits
+        if degradation >= 4 and not args.skip_resource_check:  # CRITICAL - resources at/above limits
             logger.error("Resources at critical levels, aborting selfplay")
             sys.exit(1)
+        elif degradation >= 4:
+            logger.warning("Resources at critical levels but --skip-resource-check set, proceeding anyway")
         elif degradation >= 3:  # HEAVY - only critical ops proceed
             if not should_proceed_with_priority(OperationPriority.NORMAL):
                 logger.warning("Heavy resource pressure, reducing num_games by 75%")
