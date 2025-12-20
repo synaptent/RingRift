@@ -192,7 +192,8 @@ export type AITacticType =
   | 'mcts'
   | 'descent'
   | 'policy_only'
-  | 'gumbel_mcts';
+  | 'gumbel_mcts'
+  | 'ig_gmo';
 
 /**
  * Configuration for how many AI opponents should participate in a

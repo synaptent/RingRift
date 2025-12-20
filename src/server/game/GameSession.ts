@@ -36,6 +36,8 @@ import {
   PlayerChoiceType,
   LineInfo,
   Territory,
+  AIControlMode,
+  AITacticType,
 } from '../../shared/types/game';
 import type { GameStatus as PrismaGameStatus } from '@prisma/client';
 import type {
@@ -107,9 +109,9 @@ interface PersistedGameStateSnapshot {
   aiOpponents?: {
     count: number;
     difficulty: number[];
-    mode?: 'local_heuristic' | 'service';
-    aiType?: 'random' | 'heuristic' | 'minimax' | 'mcts' | 'descent';
-    aiTypes?: ('random' | 'heuristic' | 'minimax' | 'mcts' | 'descent')[];
+    mode?: AIControlMode;
+    aiType?: AITacticType;
+    aiTypes?: AITacticType[];
   };
   rulesOptions?: GameState['rulesOptions'];
   fixture?: DecisionPhaseFixtureMetadata;

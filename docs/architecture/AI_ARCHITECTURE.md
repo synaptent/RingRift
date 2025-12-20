@@ -299,6 +299,7 @@ behaviour across TS and Python.
 **Supporting / experimental components:**
 
 - **NeuralNetAI:** CNN-based evaluation (value and policy heads) shared across board types (8×8, 19×19, hex) and used internally by `MCTSAI` and `DescentAI`.
+- **Research AIs:** EBMO, GMO, and IG-GMO live in the Python AI service and are not part of the canonical difficulty ladder. Use them only via explicit AI type overrides or tournament tooling.
 - Training-side helpers and analysis tools under `ai-service/app/training/` (self-play data generation, tournaments, overfit tests).
 
 The Python `ai-service` exposes these tactical engines via the `AIType` enum, and the TypeScript backend selects them through [`AIServiceClient.AIType`](src/server/services/AIServiceClient.ts) and the profile-driven mapping in [`AIEngine`](src/server/game/ai/AIEngine.ts).

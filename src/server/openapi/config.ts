@@ -510,8 +510,18 @@ Rate limit headers are included in responses:
             },
             aiType: {
               type: 'string',
-              enum: ['random', 'heuristic', 'minimax', 'mcts'],
-              description: 'AI algorithm type',
+              enum: [
+                'random',
+                'heuristic',
+                'minimax',
+                'mcts',
+                'descent',
+                'policy_only',
+                'gumbel_mcts',
+                'ig_gmo',
+              ],
+              description:
+                'AI algorithm type (experimental values are not part of the difficulty ladder)',
             },
           },
         },

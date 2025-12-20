@@ -126,6 +126,7 @@ export enum AIType {
   DESCENT = 'descent',
   POLICY_ONLY = 'policy_only',
   GUMBEL_MCTS = 'gumbel_mcts',
+  IG_GMO = 'ig_gmo',
 }
 
 export interface MoveRequest {
