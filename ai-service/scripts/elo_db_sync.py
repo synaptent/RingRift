@@ -565,12 +565,32 @@ def pull_from_coordinator(coordinator: str, db_path: Path, port: int = DEFAULT_P
         count = cursor.fetchone()[0]
         conn.close()
 
-        # Replace local database atomically
-        # Use os.rename which is atomic on POSIX systems
+        # Replace local database atomically with proper WAL handling
+        # SQLite WAL mode uses 3 files: .db, .db-wal, .db-shm
+        # All 3 must be replaced together to avoid corruption
         backup_path = str(db_path) + '.backup'
+        wal_path = Path(str(db_path) + '-wal')
+        shm_path = Path(str(db_path) + '-shm')
+
         if db_path.exists():
             shutil.copy(db_path, backup_path)  # Keep backup
-        os.rename(temp_path, db_path)  # Atomic replacement
+
+        # Remove stale WAL and SHM files BEFORE replacing main DB
+        # This prevents corruption from mismatched WAL entries
+        if wal_path.exists():
+            wal_path.unlink()
+        if shm_path.exists():
+            shm_path.unlink()
+
+        os.rename(temp_path, db_path)  # Atomic replacement of main file
+
+        # Verify integrity of new database
+        try:
+            verify_conn = sqlite3.connect(str(db_path))
+            verify_conn.execute("PRAGMA integrity_check")
+            verify_conn.close()
+        except Exception as verify_err:
+            print(f"Warning: Integrity check failed after replacement: {verify_err}")
 
         print(f"Pulled database with {count} matches from {coordinator}")
         save_sync_timestamp(time.time())
@@ -617,6 +637,15 @@ class SyncHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/db':
+            # Checkpoint WAL before serving to ensure consistent snapshot
+            # This flushes pending writes from WAL to main database file
+            try:
+                checkpoint_conn = sqlite3.connect(self.db_path)
+                checkpoint_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                checkpoint_conn.close()
+            except Exception as e:
+                print(f"Warning: WAL checkpoint failed: {e}")
+
             # Serve the database file
             with open(self.db_path, 'rb') as f:
                 data = f.read()
