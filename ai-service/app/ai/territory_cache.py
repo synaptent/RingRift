@@ -53,7 +53,7 @@ class BoardGeometryCache:
         """Build position mappings and neighbor arrays."""
         positions = []
 
-        if self.board_type == "hexagonal":
+        if self.board_type in ("hexagonal", "hex8"):
             # For hex boards, size = 2*radius + 1, so radius = (size - 1) // 2
             radius = (self.size - 1) // 2
             for x in range(-radius, radius + 1):
@@ -75,9 +75,9 @@ class BoardGeometryCache:
 
         # Build neighbor arrays for territory adjacency.
         # Canonical rules (and TS BOARD_CONFIGS) use:
-        # - hexagonal: 6-direction hex adjacency in cube coords (x,y,z)
+        # - hexagonal/hex8: 6-direction hex adjacency in cube coords (x,y,z)
         # - square8/square19: von Neumann (4-direction) adjacency
-        if self.board_type == "hexagonal":
+        if self.board_type in ("hexagonal", "hex8"):
             # 6 hex directions in cube coordinates, mirroring TS getNeighbors
             directions_3d = [
                 (1, 0, -1),
