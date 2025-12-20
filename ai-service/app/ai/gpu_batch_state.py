@@ -36,6 +36,61 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# CPU to GPU MoveType Mapping
+# =============================================================================
+
+# Mapping from CPU MoveType string values to GPU MoveType integer values
+# CPU MoveType is a string enum, GPU MoveType is an IntEnum
+_CPU_TO_GPU_MOVE_TYPE = {
+    # Placement moves
+    'place_ring': MoveType.PLACEMENT,
+    'skip_placement': MoveType.SKIP,
+    'no_placement_action': MoveType.SKIP,
+    # Movement moves
+    'move_stack': MoveType.MOVEMENT,
+    'move_ring': MoveType.MOVEMENT,
+    'build_stack': MoveType.MOVEMENT,
+    'no_movement_action': MoveType.SKIP,
+    # Capture moves
+    'overtaking_capture': MoveType.CAPTURE,
+    'continue_capture_segment': MoveType.CAPTURE,
+    'skip_capture': MoveType.SKIP,
+    'chain_capture': MoveType.CAPTURE,
+    # Line moves
+    'process_line': MoveType.LINE_FORMATION,
+    'choose_line_reward': MoveType.LINE_FORMATION,
+    'no_line_action': MoveType.SKIP,
+    'line_formation': MoveType.LINE_FORMATION,
+    'choose_line_option': MoveType.LINE_FORMATION,
+    # Territory moves
+    'process_territory_region': MoveType.TERRITORY_CLAIM,
+    'skip_territory_processing': MoveType.SKIP,
+    'no_territory_action': MoveType.SKIP,
+    'territory_claim': MoveType.TERRITORY_CLAIM,
+    'choose_territory_option': MoveType.TERRITORY_CLAIM,
+    # Recovery moves
+    'recovery_slide': MoveType.MOVEMENT,
+    'skip_recovery': MoveType.SKIP,
+    # Other
+    'swap_sides': MoveType.SKIP,
+    'eliminate_rings_from_stack': MoveType.SKIP,
+    'forced_elimination': MoveType.SKIP,
+}
+
+
+def _cpu_move_type_to_gpu(cpu_move_type) -> int:
+    """Convert CPU MoveType to GPU MoveType integer value."""
+    if hasattr(cpu_move_type, 'value'):
+        # It's an enum, get the string value
+        value = cpu_move_type.value
+    else:
+        value = cpu_move_type
+
+    gpu_type = _CPU_TO_GPU_MOVE_TYPE.get(value, MoveType.SKIP)
+    return int(gpu_type)
+
+
+# =============================================================================
 # Batch Game State
 # =============================================================================
 
@@ -407,14 +462,16 @@ class BatchGameState:
 
             # Copy move history
             for i, move in enumerate(game_state.move_history[:max_history_moves]):
-                batch.move_history[g, i, 0] = move.move_type.value if hasattr(move.move_type, 'value') else move.move_type
+                # Convert CPU MoveType (string enum) to GPU MoveType (int enum)
+                batch.move_history[g, i, 0] = _cpu_move_type_to_gpu(move.type)
                 batch.move_history[g, i, 1] = move.player
                 if move.from_pos:
-                    batch.move_history[g, i, 2] = move.from_pos[0]
-                    batch.move_history[g, i, 3] = move.from_pos[1]
-                if move.to_pos:
-                    batch.move_history[g, i, 4] = move.to_pos[0]
-                    batch.move_history[g, i, 5] = move.to_pos[1]
+                    batch.move_history[g, i, 2] = move.from_pos.x if hasattr(move.from_pos, 'x') else move.from_pos[0]
+                    batch.move_history[g, i, 3] = move.from_pos.y if hasattr(move.from_pos, 'y') else move.from_pos[1]
+                # Move uses 'to' field, not 'to_pos'
+                if move.to:
+                    batch.move_history[g, i, 4] = move.to.x if hasattr(move.to, 'x') else move.to[0]
+                    batch.move_history[g, i, 5] = move.to.y if hasattr(move.to, 'y') else move.to[1]
 
         return batch
 
