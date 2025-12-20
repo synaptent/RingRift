@@ -617,6 +617,11 @@ def export_replay_dataset_multi(
             # Now we have final_state = current_state from incremental replay
             final_state = current_state
 
+            # Skip games without a valid winner - these produce value=0 which corrupts training
+            if getattr(final_state, 'winner', None) is None or final_state.winner == 0:
+                games_skipped += 1
+                continue
+
             # Compute values using the final replayed state
             if use_rank_aware_values:
                 values_vec = np.asarray(
