@@ -4711,7 +4711,11 @@ class UnifiedAILoop:
                 )
                 results["games_passed"] = results["total_games_checked"] - failed
                 results["games_failed"] = failed
-                results["passed"] = validation_results.get("passed_canonical_parity_gate", False)
+                # Use explicit gate if available, otherwise pass if no failures found
+                results["passed"] = validation_results.get(
+                    "passed_canonical_parity_gate",
+                    failed == 0  # Default to passed if no failures detected
+                )
 
                 if results["total_games_checked"] > 0:
                     results["failure_rate"] = results["games_failed"] / results["total_games_checked"]

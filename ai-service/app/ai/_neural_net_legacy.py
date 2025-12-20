@@ -3619,9 +3619,11 @@ class NeuralNetAI(BaseAI):
                 if hasattr(self.model, 'conv1') and hasattr(self.model.conv1, 'weight'):
                     model_in_channels = self.model.conv1.weight.shape[1]
 
-                use_v2_encoder = model_in_channels == 40
-
-                if use_v2_encoder:
+                # Encoder selection based on expected input channels:
+                # - 40 channels = V2 encoder (10 base × 4 frames, 2-player hex)
+                # - 56 channels = 4-player hex models (14 base × 4 frames) - UNSUPPORTED
+                # - 64 channels = V3 encoder (16 base × 4 frames, 2-player hex)
+                if model_in_channels == 40:
                     from ..training.encoding import HexStateEncoder
                     if board_type == BoardType.HEX8:
                         self._hex_encoder = HexStateEncoder(
@@ -3635,7 +3637,38 @@ class NeuralNetAI(BaseAI):
                             policy_size=P_HEX,
                             feature_version=self.feature_version,
                         )
+                elif model_in_channels == 56:
+                    # 4-player hex models (14 base × 4 frames) - not yet supported
+                    # Log warning and skip this model gracefully
+                    logger.warning(
+                        "Hex model expects 56 input channels (4-player hex), but no compatible "
+                        "encoder exists. This model was likely trained with square-board encoding. "
+                        "Skipping model initialization."
+                    )
+                    raise ValueError(
+                        f"Unsupported hex model architecture: {model_in_channels} input channels. "
+                        "4-player hex models (56 channels) are not yet supported by inference encoders."
+                    )
+                elif model_in_channels == 64:
+                    from ..training.encoding import HexStateEncoderV3
+                    if board_type == BoardType.HEX8:
+                        self._hex_encoder = HexStateEncoderV3(
+                            board_size=HEX8_BOARD_SIZE,
+                            policy_size=POLICY_SIZE_HEX8,
+                            feature_version=self.feature_version,
+                        )
+                    else:
+                        self._hex_encoder = HexStateEncoderV3(
+                            board_size=HEX_BOARD_SIZE,
+                            policy_size=P_HEX,
+                            feature_version=self.feature_version,
+                        )
                 else:
+                    # Unknown channel count - default to V3 but warn
+                    logger.warning(
+                        f"Unknown hex model input channels: {model_in_channels}. "
+                        "Defaulting to V3 encoder (64 channels). This may cause shape mismatches."
+                    )
                     from ..training.encoding import HexStateEncoderV3
                     if board_type == BoardType.HEX8:
                         self._hex_encoder = HexStateEncoderV3(

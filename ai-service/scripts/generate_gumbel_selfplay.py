@@ -97,7 +97,10 @@ def serialize_state(state) -> dict[str, Any]:
 
 
 def serialize_move(move, mcts_policy: dict[str, float] | None = None) -> dict[str, Any]:
-    """Serialize a Move object to a JSON-compatible dict."""
+    """Serialize a Move object to a JSON-compatible dict.
+
+    Positions include z coordinate for hex boards (cube coordinates).
+    """
     move_data = {
         "type": move.type.value,
         "player": move.player,
@@ -106,11 +109,20 @@ def serialize_move(move, mcts_policy: dict[str, float] | None = None) -> dict[st
     if mcts_policy:
         move_data["mcts_policy"] = mcts_policy
     if move.from_pos:
-        move_data["from"] = {"x": move.from_pos.x, "y": move.from_pos.y}
+        pos_dict = {"x": move.from_pos.x, "y": move.from_pos.y}
+        if move.from_pos.z is not None:
+            pos_dict["z"] = move.from_pos.z
+        move_data["from"] = pos_dict
     if move.to:
-        move_data["to"] = {"x": move.to.x, "y": move.to.y}
+        pos_dict = {"x": move.to.x, "y": move.to.y}
+        if move.to.z is not None:
+            pos_dict["z"] = move.to.z
+        move_data["to"] = pos_dict
     if move.capture_target:
-        move_data["capture_target"] = {"x": move.capture_target.x, "y": move.capture_target.y}
+        pos_dict = {"x": move.capture_target.x, "y": move.capture_target.y}
+        if move.capture_target.z is not None:
+            pos_dict["z"] = move.capture_target.z
+        move_data["capture_target"] = pos_dict
     return move_data
 
 

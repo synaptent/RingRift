@@ -241,10 +241,16 @@ def export_to_npz(
         logger.error(f"Export failed: {result.stderr}")
         return 0
 
-    # Parse sample count from output
-    for line in result.stdout.split('\n'):
+    # Parse sample count from output (logging goes to stderr)
+    combined_output = result.stdout + result.stderr
+    for line in combined_output.split('\n'):
         if 'Samples created:' in line:
             return int(line.split(':')[1].strip())
+
+    # If NPZ file was created, count is non-zero
+    if npz_path.exists():
+        logger.info(f"Export completed: {npz_path}")
+        return 1  # At least some samples
     return 0
 
 

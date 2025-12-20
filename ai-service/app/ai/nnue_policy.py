@@ -1796,17 +1796,25 @@ class NNUEPolicyDataset(Dataset):
                     games_skipped += 1
                     continue
 
-                # Detect selfplay data that skips phase handling moves
-                # GPU selfplay and Gumbel MCTS both record only the "main" moves
-                # without intermediate line_processing/territory_processing phases
+                # Detect selfplay data source and coordinate format
                 source = game.get("source", "")
                 engine_mode = game.get("engine_mode", "")
-                is_gpu_selfplay = (
+
+                # GPU heuristic uses offset coords for hex boards
+                is_gpu_heuristic = (
                     source.startswith("run_gpu") or
-                    engine_mode == "gpu_heuristic" or
+                    engine_mode == "gpu_heuristic"
+                )
+                # Gumbel MCTS and other CPU modes use cube coords (z omitted, derived from x+y)
+                is_gumbel_mcts = (
                     "gumbel" in source.lower() or
                     engine_mode == "gumbel_mcts"
                 )
+                # For phase handling: both GPU and Gumbel need special treatment
+                is_gpu_selfplay = is_gpu_heuristic or is_gumbel_mcts
+
+                # Track coordinate format for position parsing
+                uses_offset_coords = is_gpu_heuristic and not is_gumbel_mcts
 
                 # Warn about phase-skipping selfplay incompatibility
                 # Hex boards: GPU mode is completely incompatible (skip)
@@ -1876,7 +1884,7 @@ class NNUEPolicyDataset(Dataset):
                     if is_bookkeeping_move:
                         # Still need to apply the move to advance state
                         try:
-                            move = self._parse_jsonl_move(move_dict, move_idx)
+                            move = self._parse_jsonl_move(move_dict, move_idx, uses_offset_coords)
                             if move is not None:
                                 state = GameEngine.apply_move(state, move)
                         except Exception:
@@ -1908,7 +1916,7 @@ class NNUEPolicyDataset(Dataset):
                                 legal_moves = GameEngine.get_valid_moves(state, current_player)
                                 if legal_moves:
                                     # Parse the move that was played
-                                    played_move = self._parse_jsonl_move(move_dict, move_number)
+                                    played_move = self._parse_jsonl_move(move_dict, move_number, uses_offset_coords)
                                     if played_move is not None:
                                         # Find which legal move matches the played move
                                         target_idx = self._find_move_index(played_move, legal_moves)
@@ -1959,7 +1967,7 @@ class NNUEPolicyDataset(Dataset):
 
                     # Apply move to advance state
                     try:
-                        move = self._parse_jsonl_move(move_dict, move_idx)
+                        move = self._parse_jsonl_move(move_dict, move_idx, uses_offset_coords)
                         if move is not None:
                             # For GPU selfplay captures, compute capture_target from current state
                             # GPU records 'to' as landing position, but CPU needs actual target
@@ -2000,13 +2008,14 @@ class NNUEPolicyDataset(Dataset):
         logger.info(f"  JSONL extraction: {games_processed} games, {games_skipped} skipped in {total_time:.1f}s, {len(samples)} samples")
         return samples
 
-    def _parse_jsonl_move(self, move_dict: dict, move_number: int) -> Optional["Move"]:
+    def _parse_jsonl_move(
+        self, move_dict: dict, move_number: int, uses_offset_coords: bool = False
+    ) -> Optional["Move"]:
         """Parse a move dict from JSONL into a Move object.
 
-        For hexagonal boards, converts offset coordinates (used in JSONL selfplay data)
-        to cube coordinates (used by the rules engine). JSONL uses a square grid where
-        (0,0) is top-left and coordinates are positive. Cube coordinates use (0,0,0)
-        as center with the constraint x+y+z=0.
+        For hexagonal boards with GPU selfplay (uses_offset_coords=True), converts
+        offset coordinates to cube coordinates. For Gumbel MCTS and other CPU modes,
+        coordinates are already cube (just missing z, which is derived).
         """
         from datetime import datetime
 
@@ -2061,13 +2070,18 @@ class NNUEPolicyDataset(Dataset):
             y = pos_data.get("y", 0)
             z = pos_data.get("z")
 
-            # Convert offset coords to cube coords for hex boards
+            # Handle missing z for hex boards
             if is_hex_board and z is None:
-                # JSONL uses offset coordinates: convert to cube
-                cube_x = x - center_offset
-                cube_y = y - center_offset
-                cube_z = -cube_x - cube_y  # Cube constraint: x+y+z=0
-                return Position(x=cube_x, y=cube_y, z=cube_z)
+                if uses_offset_coords:
+                    # GPU selfplay uses offset coordinates: convert to cube
+                    cube_x = x - center_offset
+                    cube_y = y - center_offset
+                    cube_z = -cube_x - cube_y  # Cube constraint: x+y+z=0
+                    return Position(x=cube_x, y=cube_y, z=cube_z)
+                else:
+                    # Gumbel/canonical selfplay uses cube coords but omits z
+                    # Just derive z from cube constraint: x + y + z = 0
+                    return Position(x=x, y=y, z=-x - y)
 
             return Position(x=x, y=y, z=z)
 

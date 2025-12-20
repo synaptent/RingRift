@@ -51,6 +51,7 @@ tests/e2e/__snapshots__/
 
 # Database
 *.db
+*.db.bak
 *.sqlite
 *.sqlite3
 prisma/migrations/
@@ -159,6 +160,7 @@ ai-service/.hypothesis/
 
 # Local database and backup dumps
 backups/
+ai-service/data/*.db.bak
 
 # Local environment backups
 .env.bak

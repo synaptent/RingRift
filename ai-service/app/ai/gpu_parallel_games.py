@@ -2250,14 +2250,15 @@ class ParallelGameRunner:
                 # Flip opponent marker to our color
                 state.marker_owner[g, check_y, check_x] = player
 
-        # Handle landing on own marker (collapse cost)
+        # Handle landing on ANY marker (own or opponent) - per RR-CANON-R092:
+        # The marker is removed and the top ring of the landing stack is eliminated.
+        # Note: Landing does NOT collapse the position (only path markers collapse).
         dest_marker = state.marker_owner[g, to_y, to_x].item()
         landing_ring_cost = 0
-        if dest_marker == player:
-            # Landing on own marker costs 1 ring (cap elimination)
+        if dest_marker != 0:
+            # Landing on any marker costs 1 ring (cap elimination)
             landing_ring_cost = 1
-            state.is_collapsed[g, to_y, to_x] = True
-            state.marker_owner[g, to_y, to_x] = 0  # Marker consumed
+            state.marker_owner[g, to_y, to_x] = 0  # Marker removed
 
         # Clear origin
         state.stack_owner[g, from_y, from_x] = 0

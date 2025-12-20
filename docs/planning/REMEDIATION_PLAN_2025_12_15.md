@@ -37,7 +37,7 @@ The AI training infrastructure is substantial (13 nodes, ~2,500 selfplay jobs) b
 
 - **All current neural models:** Marked `legacy_noncanonical`
 - **v2 target models:** `ringrift_v2_square8/19/hex.pth` all pending
-- **Complex dependency chain:** canonical selfplay → parity gates → encoding → training → evaluation → promotion
+- **Complex dependency chain:** canonical selfplay → canonical gates → encoding → training → evaluation → promotion
 
 ---
 
@@ -55,7 +55,7 @@ The canonical selfplay audit revealed that while all 5 canonical DBs exist with 
 
 | Database                  | Current Games | Target    | Status          |
 | ------------------------- | ------------- | --------- | --------------- |
-| `canonical_square8.db`    | 12            | 100+      | ❌ Insufficient |
+| `canonical_square8_2p.db` | 12            | 100+      | ❌ Insufficient |
 | `canonical_square8_3p.db` | 2             | 50+       | ❌ Insufficient |
 | `canonical_square8_4p.db` | 2             | 50+       | ❌ Insufficient |
 | `canonical_square19.db`   | 1             | 25+       | ❌ Insufficient |
@@ -79,14 +79,14 @@ cd ai-service
 # Activate virtual environment
 source .venv/bin/activate  # or: source venv/bin/activate
 
-# Generate canonical selfplay with parity gate
+# Generate canonical selfplay with canonical gate
 # For square8 2-player (primary target: 100+ games)
 PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
   --board square8 \
   --num-players 2 \
   --num-games 100 \
-  --db data/games/canonical_square8.db \
-  --summary data/games/db_health.canonical_square8.json
+  --db data/games/canonical_square8_2p.db \
+  --summary data/games/db_health.canonical_square8_2p.json
 
 # For square8 3-player (target: 50+ games)
 PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
@@ -131,10 +131,12 @@ PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
 **Verification After Completion:**
 
 ```bash
-# Verify all DBs pass canonical gates
-PYTHONPATH=. python scripts/run_parity_and_history_gate.py \
-  --db data/games/canonical_square8.db \
-  --summary-json data/games/db_health.canonical_square8.json
+# Verify all DBs pass canonical gates (skip soak)
+PYTHONPATH=. python scripts/generate_canonical_selfplay.py \
+  --board square8 \
+  --num-games 0 \
+  --db data/games/canonical_square8_2p.db \
+  --summary data/games/db_health.canonical_square8_2p.json
 # Repeat for each DB
 ```
 
@@ -305,7 +307,7 @@ See [`docs/ux/FRONTEND_UX_PROGRESS.md`](../ux/FRONTEND_UX_PROGRESS.md) for detai
 
 **Deliverables:**
 
-- `canonical_square8.db`: Scale from 12 games to 100+ games
+- `canonical_square8_2p.db`: Scale from 12 games to 100+ games
 - `canonical_square8_3p.db`: Scale from 2 games to 50+ games
 - `canonical_square8_4p.db`: Scale from 2 games to 50+ games
 - `canonical_square19.db`: Scale from 1 game to 25+ games
@@ -315,12 +317,12 @@ See [`docs/ux/FRONTEND_UX_PROGRESS.md`](../ux/FRONTEND_UX_PROGRESS.md) for detai
 **Acceptance Criteria:**
 
 - [ ] Each canonical DB has `canonical_ok: true` in latest gate summary
-- [ ] `canonical_square8.db` ≥100 completed games
+- [ ] `canonical_square8_2p.db` ≥100 completed games
 - [ ] `canonical_square8_3p.db` ≥50 completed games
 - [ ] `canonical_square8_4p.db` ≥50 completed games
 - [ ] `canonical_square19.db` ≥25 completed games
 - [ ] `canonical_hexagonal.db` ≥25 completed games
-- [ ] All DBs pass parity + canonical history + FE/territory fixture gates
+- [ ] All DBs pass canonical gate (parity + history + FE/ANM)
 
 **Effort Estimate:** L (Large - compute intensive)  
 **Dependencies:** None (infrastructure exists)  
@@ -328,22 +330,23 @@ See [`docs/ux/FRONTEND_UX_PROGRESS.md`](../ux/FRONTEND_UX_PROGRESS.md) for detai
 
 ---
 
-### P2-AI-02: Parity Gate Validation (⏸️ BLOCKED)
+### P2-AI-02: Canonical Gate Validation (⏸️ BLOCKED)
 
 **Status:** ⏸️ Blocked - awaiting P2-AI-01 completion
-**Scope:** Verify TS↔Python parity for scaled canonical databases before training.
+**Scope:** Verify the canonical gate (parity + canonical history + FE/ANM) for scaled canonical databases before training.
 
 **Deliverables:**
 
-- Parity run output for each canonical DB
+- Canonical gate summaries (`db_health.canonical_*.json`) for each DB
 - State bundle analysis for any divergences
-- Documentation of parity gate status in `TRAINING_DATA_REGISTRY.md`
+- Documentation of canonical gate status in `TRAINING_DATA_REGISTRY.md`
 
 **Acceptance Criteria:**
 
-- [ ] Each DB passes `check_ts_python_replay_parity.py` with 0 semantic divergences
+- [ ] Each DB has `canonical_ok: true` in the latest `db_health.canonical_*.json`
+- [ ] `check_ts_python_replay_parity.py` reports 0 semantic divergences (if run standalone)
 - [ ] Structural issues (if any) documented with resolution path
-- [ ] Parity summaries stored as `parity_summary.canonical_*.json`
+- [ ] Canonical gate summaries stored as `db_health.canonical_*.json`
 - [ ] `TRAINING_DATA_REGISTRY.md` updated with current gate status
 
 **Effort Estimate:** M (Medium)  
@@ -385,7 +388,7 @@ See [`docs/ux/FRONTEND_UX_PROGRESS.md`](../ux/FRONTEND_UX_PROGRESS.md) for detai
 
 **Deliverables:**
 
-- `ringrift_v2_square8.pth` trained on `canonical_square8.db`
+- `ringrift_v2_square8.pth` trained on `canonical_square8_2p.db`
 - `ringrift_v2_square19.pth` trained on `canonical_square19.db`
 - `ringrift_v2_hex.pth` trained on `canonical_hexagonal.db`
 - Training logs and checkpoints with versioning metadata
@@ -718,13 +721,13 @@ The remediation is complete when:
 
 ## 8. Risk Mitigation
 
-| Risk                                | Likelihood | Impact | Mitigation                                        |
-| ----------------------------------- | ---------- | ------ | ------------------------------------------------- |
-| Training compute bottleneck         | Medium     | High   | Start P2-AI-01 immediately; use distributed nodes |
-| Parity divergence in scaled DBs     | Low        | High   | Run parity gates incrementally during scale-up    |
-| Mobile browser edge cases           | Medium     | Medium | Test early on real devices; prioritize iOS Safari |
-| Model evaluation shows poor quality | Low        | High   | Iterate on training hyperparameters; extend data  |
-| Teaching scenario authoring slows   | Low        | Medium | Reuse existing contract vectors as templates      |
+| Risk                                    | Likelihood | Impact | Mitigation                                        |
+| --------------------------------------- | ---------- | ------ | ------------------------------------------------- |
+| Training compute bottleneck             | Medium     | High   | Start P2-AI-01 immediately; use distributed nodes |
+| Canonical gate divergence in scaled DBs | Low        | High   | Run canonical gates incrementally during scale-up |
+| Mobile browser edge cases               | Medium     | Medium | Test early on real devices; prioritize iOS Safari |
+| Model evaluation shows poor quality     | Low        | High   | Iterate on training hyperparameters; extend data  |
+| Teaching scenario authoring slows       | Low        | Medium | Reuse existing contract vectors as templates      |
 
 ---
 

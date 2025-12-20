@@ -553,11 +553,15 @@ class CompositeGauntlet:
 
         if ai_type == "policy_only":
             if nn_path:
-                return self._PolicyOnlyAI(
-                    player_number=player_number,
-                    config=config,
-                    board_type=board_type_enum,
-                )
+                try:
+                    return self._PolicyOnlyAI(
+                        player_number=player_number,
+                        config=config,
+                        board_type=board_type_enum,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to create policy_only AI: {e}")
+                    return None
             return None
 
         # For other AI types, try to create appropriate AI
