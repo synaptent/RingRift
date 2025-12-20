@@ -505,12 +505,23 @@ def discover_all_nodes() -> dict[str, dict]:
 @dataclass
 class MatchResult:
     match_id: str
-    agent_a: str
-    agent_b: str
-    winner: str
+    agents: list[str]  # List of all agents in the match
+    winner: str  # "agent_a", "agent_b", "agent_c", "agent_d", or "draw"
+    winner_player: int  # 1-indexed player number, 0 for draw
     game_length: int
     duration_sec: float
     worker_node: str
+    num_players: int = 2
+
+    @property
+    def agent_a(self) -> str:
+        """Backward compatibility for 2-player format."""
+        return self.agents[0] if self.agents else ""
+
+    @property
+    def agent_b(self) -> str:
+        """Backward compatibility for 2-player format."""
+        return self.agents[1] if len(self.agents) > 1 else ""
 
 
 @dataclass
