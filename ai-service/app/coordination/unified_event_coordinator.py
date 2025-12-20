@@ -316,7 +316,7 @@ class UnifiedEventCoordinator:
 
     def _subscribe_to_data_events(self) -> None:
         """Subscribe to relevant DataEventBus events."""
-        if not self._data_bus or not DataEventType:
+        if not self._data_bus or DataEventType is None:
             return
 
         # Subscribe to events we want to bridge to cross-process
@@ -329,7 +329,7 @@ class UnifiedEventCoordinator:
 
     def _subscribe_to_stage_events(self) -> None:
         """Subscribe to relevant StageEventBus events."""
-        if not self._stage_bus or not StageEvent:
+        if not self._stage_bus or StageEvent is None:
             return
 
         # Subscribe to events we want to bridge to cross-process
@@ -454,7 +454,7 @@ class UnifiedEventCoordinator:
 
             # Bridge to DataEventBus
             data_event_value = CROSS_PROCESS_TO_DATA_MAP.get(event.event_type)
-            if data_event_value and self._data_bus and DataEventType and DataEvent:
+            if data_event_value and self._data_bus and DataEventType is not None and DataEvent is not None:
                 try:
                     event_type = DataEventType(data_event_value)
                     data_event = DataEvent(
@@ -560,7 +560,7 @@ class UnifiedEventCoordinator:
 
         # Emit to data events
         data_event_value = CROSS_PROCESS_TO_DATA_MAP.get(event_type)
-        if data_event_value and self._data_bus and DataEventType and DataEvent:
+        if data_event_value and self._data_bus and DataEventType is not None and DataEvent is not None:
             try:
                 et = DataEventType(data_event_value)
                 await self._data_bus.publish(DataEvent(

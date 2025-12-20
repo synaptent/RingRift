@@ -558,7 +558,9 @@ class DaemonManager:
             from app.coordination.cross_process_events import CrossProcessEventPoller
 
             poller = CrossProcessEventPoller()
-            await poller.start()
+            poller.start()  # start() is sync, runs in background thread
+            # Keep this coroutine alive while the poller runs
+            await asyncio.sleep(float('inf'))
         except ImportError:
             logger.warning("CrossProcessEventPoller not available")
             await asyncio.sleep(float('inf'))

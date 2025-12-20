@@ -429,7 +429,7 @@ class SelfplayOrchestrator:
     async def _emit_selfplay_complete(self, task: SelfplayTaskInfo) -> bool:
         """Emit SELFPLAY_COMPLETE stage event using centralized emitter."""
         # Use centralized event emitter (December 2025)
-        if HAS_CENTRALIZED_EMITTERS and _emit_selfplay_event:
+        if HAS_CENTRALIZED_EMITTERS and _emit_selfplay_event is not None:
             try:
                 # Map selfplay type to string for centralized emitter
                 selfplay_type_str = {

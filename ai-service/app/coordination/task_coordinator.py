@@ -714,7 +714,7 @@ class TaskHeartbeatMonitor:
             self.registry.update_task_status(task.task_id, "orphaned")
 
             # Emit event
-            if self._emit_orphaned:
+            if self._emit_orphaned is not None:
                 try:
                     import asyncio
                     last_hb = task.metadata.get('last_heartbeat', task.started_at)

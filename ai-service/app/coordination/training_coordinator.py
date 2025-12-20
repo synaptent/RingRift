@@ -757,7 +757,7 @@ def get_training_coordinator(use_nfs: bool = True) -> TrainingCoordinator:
         if _coordinator is None:
             _coordinator = TrainingCoordinator(use_nfs=use_nfs)
             # Register with orchestrator registry for visibility (December 2025)
-            if HAS_COORDINATOR_REGISTRY and register_coordinator:
+            if HAS_COORDINATOR_REGISTRY and register_coordinator is not None:
                 try:
                     register_coordinator(
                         name="training_coordinator",
