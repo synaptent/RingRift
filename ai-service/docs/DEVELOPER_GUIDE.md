@@ -357,13 +357,20 @@ print(f"AI type: {profile['ai_type']}, simulations: {profile.get('simulations', 
 
 **Difficulty Scale:**
 
-| Level | AI Type     | Description                    |
-| ----- | ----------- | ------------------------------ |
-| 1-2   | Random      | Random move selection          |
-| 3-4   | Heuristic   | Simple evaluation functions    |
-| 5-6   | Minimax     | Tree search with limited depth |
-| 7-8   | MCTS        | Monte Carlo Tree Search        |
-| 9-10  | Neural MCTS | Neural network guided MCTS     |
+| Level | AI Type     | Description                            |
+| ----- | ----------- | -------------------------------------- |
+| 1-2   | Random      | Random move selection                  |
+| 3-4   | Heuristic   | Simple evaluation functions            |
+| 5-6   | Minimax     | Tree search with limited depth         |
+| 7-8   | MCTS        | Monte Carlo Tree Search                |
+| 9-10  | Neural MCTS | Neural network guided MCTS             |
+| 11    | NNUE        | Efficiently updatable neural network   |
+| 12    | EBMO        | Energy-based move optimization         |
+| 13    | GMO         | Gradient move optimization             |
+| 14    | IG-GMO      | Information-gain GMO (experimental)    |
+| 15    | GPU Minimax | GPU-accelerated minimax (experimental) |
+
+> **Note:** Tiers 12-15 are experimental. See `docs/EXPERIMENTAL_AI.md` for details.
 
 **Current Status:**
 
