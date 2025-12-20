@@ -207,7 +207,6 @@ def iter_recorded_episodes_from_jsonl(
     """
     if limit is not None and limit <= 0:
         return
-        yield  # pragma: no cover
 
     count = 0
     for record in iter_game_records_from_jsonl(
